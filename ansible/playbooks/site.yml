@@ -29,4 +29,5 @@
   become: true
   roles:
     - wireguard
+    - cloudflare_dns
     - clickstack

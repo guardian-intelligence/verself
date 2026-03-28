@@ -24,8 +24,8 @@ otelcol_version: "0.120.0"
 # Caddy
 caddy_version: "2.*"  # pin to 2.x series
 
-# Caddy domain: set to a real domain for Let's Encrypt, or IP for self-signed.
-clickstack_domain: "{{ ansible_default_ipv4.address }}"
+# Caddy domain: uses forge_metal_domain when set, otherwise falls back to IP (self-signed).
+clickstack_domain: "{{ forge_metal_domain if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
 
 # Admin user (seeded on first run)
 clickstack_admin_email: "admin@forge-metal.local"
