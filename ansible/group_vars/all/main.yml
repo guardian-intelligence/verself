@@ -2,7 +2,10 @@
 # Global variables for all nodes.
 
 forge_metal_version: "0.1.0"
-node_version: "22"  # Node.js LTS
+
+# Nix server profile — all binaries live here after nix_deploy role.
+# Every systemd unit and config references this path.
+fm_bin: /opt/forge-metal/profile/bin
 
 # WireGuard
 wireguard_interface: wg0

@@ -5,9 +5,10 @@ After=network.target
 [Service]
 Type=simple
 User=forgejo
-ExecStart=/usr/local/bin/forgejo web --config /etc/forgejo/app.ini
+ExecStart={{ fm_bin }}/forgejo web --config /etc/forgejo/app.ini
 Restart=on-failure
 Environment=FORGEJO_WORK_DIR=/var/lib/forgejo
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

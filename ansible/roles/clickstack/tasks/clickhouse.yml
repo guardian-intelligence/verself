@@ -1,50 +1,56 @@
 ---
-- name: Add ClickHouse GPG key
-  ansible.builtin.apt_key:
-    keyserver: hkp://keyserver.ubuntu.com:80
-    id: 8919F6BD2B48D754
-    state: present
+# ClickHouse configuration.
+# Binary provided by Nix server profile.
 
-- name: Add ClickHouse repository
-  ansible.builtin.apt_repository:
-    repo: "deb https://packages.clickhouse.com/deb stable main"
-    state: present
-
-- name: Install ClickHouse (pinned version)
-  ansible.builtin.apt:
-    name:
-      - "clickhouse-server={{ clickhouse_version }}*"
-      - "clickhouse-client={{ clickhouse_version }}*"
-    state: present
-    update_cache: true
-  environment:
-    DEBIAN_FRONTEND: noninteractive
-
-- name: Create ClickHouse config directory
+- name: Create ClickHouse directories
   ansible.builtin.file:
-    path: /etc/clickhouse-server/config.d
+    path: "{{ item }}"
     state: directory
-    owner: clickhouse
-    group: clickhouse
     mode: "0750"
+  loop:
+    - /etc/clickhouse-server/config.d
+    - /var/lib/clickhouse
+    - /var/log/clickhouse-server
 
 - name: Deploy ClickHouse server config
   ansible.builtin.template:
     src: clickhouse-config.xml.j2
     dest: /etc/clickhouse-server/config.d/forge-metal.xml
-    owner: clickhouse
-    group: clickhouse
     mode: "0640"
   notify: restart clickhouse
+
+- name: Deploy ClickHouse systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=ClickHouse Server
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart={{ fm_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/forge-metal.xml
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=500000
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/clickhouse-server.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart clickhouse
 
 - name: Enable and start ClickHouse
   ansible.builtin.systemd:
     name: clickhouse-server
     enabled: true
     state: started
+    daemon_reload: true
 
 - name: Wait for ClickHouse
-  ansible.builtin.command: clickhouse-client --query "SELECT 1"
+  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SELECT 1'"
   register: ch_ready
   retries: 10
   delay: 3
@@ -58,11 +64,11 @@
     mode: "0644"
 
 - name: Create forge_metal database
-  ansible.builtin.command: clickhouse-client --query "CREATE DATABASE IF NOT EXISTS forge_metal"
+  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'CREATE DATABASE IF NOT EXISTS forge_metal'"
   changed_when: false
 
 - name: Apply ci_events migration
   ansible.builtin.command: >
-    clickhouse-client --database forge_metal --multiquery
+    {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
     --queries-file /opt/forge-metal/migrations/001_ci_events.up.sql
   changed_when: false

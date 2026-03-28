@@ -1,32 +1,24 @@
 ---
-# containerd + gVisor (runsc) setup for worker nodes.
+# containerd + gVisor (runsc) configuration for worker nodes.
+# containerd provided by Nix server profile.
+# gVisor (runsc) downloaded as pinned static binary (Go version sensitive).
 
-- name: Install containerd
-  ansible.builtin.apt:
-    name: containerd
-    state: present
+- name: Download gVisor runsc (pinned release)
+  ansible.builtin.get_url:
+    url: "https://storage.googleapis.com/gvisor/releases/release/{{ gvisor_version | default('20251110.0') }}/x86_64/runsc"
+    dest: /usr/local/bin/runsc
+    mode: "0755"
+
+- name: Download gVisor containerd-shim (pinned release)
+  ansible.builtin.get_url:
+    url: "https://storage.googleapis.com/gvisor/releases/release/{{ gvisor_version | default('20251110.0') }}/x86_64/containerd-shim-runsc-v1"
+    dest: /usr/local/bin/containerd-shim-runsc-v1
+    mode: "0755"
 
 - name: Create containerd config directory
   ansible.builtin.file:
     path: /etc/containerd
     state: directory
-    mode: "0755"
-
-- name: Generate default containerd config
-  ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
-
-- name: Download gVisor runsc
-  ansible.builtin.get_url:
-    url: "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc"
-    dest: /usr/local/bin/runsc
-    mode: "0755"
-
-- name: Download gVisor containerd-shim
-  ansible.builtin.get_url:
-    url: "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/containerd-shim-runsc-v1"
-    dest: /usr/local/bin/containerd-shim-runsc-v1
     mode: "0755"
 
 - name: Configure containerd to use runsc runtime
@@ -36,8 +28,35 @@
     mode: "0644"
   notify: restart containerd
 
+- name: Deploy containerd systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=containerd container runtime
+      After=network.target
+
+      [Service]
+      Type=notify
+      ExecStart={{ fm_bin }}/containerd --config /etc/containerd/config.toml
+      Restart=always
+      RestartSec=5
+      LimitNPROC=infinity
+      LimitCORE=infinity
+      LimitNOFILE=1048576
+      TasksMax=infinity
+      OOMScoreAdjust=-999
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/containerd.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart containerd
+
 - name: Enable and start containerd
   ansible.builtin.systemd:
     name: containerd
     enabled: true
     state: started
+    daemon_reload: true

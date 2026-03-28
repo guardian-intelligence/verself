@@ -1,10 +1,7 @@
 ---
 # ZFS pool and dataset setup for worker nodes.
-
-- name: Install ZFS utilities
-  ansible.builtin.apt:
-    name: zfsutils-linux
-    state: present
+# zfsutils-linux installed via apt in base role (kernel-dependent).
+# ZFS pool creation is hardware-specific and cannot be baked into an image.
 
 - name: Detect available disks for ZFS pool (skip root disk)
   ansible.builtin.shell: |

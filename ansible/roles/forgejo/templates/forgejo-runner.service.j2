@@ -6,9 +6,10 @@ Requires=forgejo.service
 [Service]
 Type=simple
 User=bench-ci
-ExecStart=/usr/local/bin/forgejo-runner daemon --config /etc/forgejo/runner-config.yaml
+ExecStart={{ fm_bin }}/forgejo-runner daemon --config /etc/forgejo/runner-config.yaml
 Restart=on-failure
 WorkingDirectory=/var/lib/bench-ci
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

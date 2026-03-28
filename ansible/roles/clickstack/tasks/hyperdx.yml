@@ -1,6 +1,12 @@
 ---
+# HyperDX observability UI.
+# Node.js and yarn provided by Nix server profile.
+# HyperDX itself is built from source (no pre-built distribution available).
+
 - name: Enable corepack for yarn
-  ansible.builtin.command: corepack enable
+  ansible.builtin.command: "{{ fm_bin }}/corepack enable"
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
   changed_when: false
 
 - name: Create ClickStack directory
@@ -20,7 +26,6 @@
   become: false
   register: hyperdx_clone
 
-# Clean build artifacts when source changes to prevent stale builds.
 - name: Clean stale build artifacts on source change
   ansible.builtin.file:
     path: "{{ item }}"
@@ -36,6 +41,8 @@
   args:
     chdir: "{{ hyperdx_install_dir }}"
   become: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
   when: hyperdx_clone.changed
 
 - name: Install HyperDX dependencies (first run)
@@ -44,6 +51,8 @@
     chdir: "{{ hyperdx_install_dir }}"
     creates: "{{ hyperdx_install_dir }}/node_modules"
   become: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
 - name: Build common-utils
   ansible.builtin.command: yarn build:common-utils
@@ -51,6 +60,8 @@
     chdir: "{{ hyperdx_install_dir }}"
     creates: "{{ hyperdx_install_dir }}/packages/common-utils/dist"
   become: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
 - name: Build API (tsc)
   ansible.builtin.command: npx tsc
@@ -58,18 +69,18 @@
     chdir: "{{ hyperdx_install_dir }}/packages/api"
     creates: "{{ hyperdx_install_dir }}/packages/api/build/src/index.js"
   become: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
-# Critical: tsc-alias must use --outDir build/src because tsc places output
-# there when baseUrl is ./src. Without this, @/ path aliases remain unresolved.
 - name: Resolve path aliases (tsc-alias)
   ansible.builtin.command: npx tsc-alias -p tsconfig.json --outDir build/src
   args:
     chdir: "{{ hyperdx_install_dir }}/packages/api"
   become: false
   changed_when: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
-# Critical: proto files must be at build/src/opamp/proto/ (not build/opamp/)
-# because tsc-alias rewrites imports relative to build/src/.
 - name: Create proto output directory
   ansible.builtin.file:
     path: "{{ hyperdx_install_dir }}/packages/api/build/src/opamp/proto"
@@ -88,6 +99,8 @@
     chdir: "{{ hyperdx_install_dir }}/packages/app"
     creates: "{{ hyperdx_install_dir }}/packages/app/.next"
   become: false
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
 - name: Check for existing session secret
   ansible.builtin.stat:

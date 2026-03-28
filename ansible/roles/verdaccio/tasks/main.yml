@@ -1,10 +1,13 @@
 ---
 # Sealed Verdaccio npm mirror for worker nodes.
+# Verdaccio is not in nixpkgs, so we install it via the Nix-provided npm.
 
-- name: Install Verdaccio
-  ansible.builtin.command: npm install -g verdaccio@{{ verdaccio_version }}
+- name: Install Verdaccio via npm
+  ansible.builtin.command: "{{ fm_bin }}/npm install -g verdaccio@{{ verdaccio_version }}"
   args:
-    creates: /usr/lib/node_modules/verdaccio
+    creates: /opt/forge-metal/profile/lib/node_modules/verdaccio
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
 - name: Create Verdaccio config directory
   ansible.builtin.file:
@@ -33,9 +36,3 @@
     name: verdaccio
     enabled: true
     state: started
-
-- name: Set system-wide npm registry
-  ansible.builtin.copy:
-    content: "registry=http://127.0.0.1:{{ verdaccio_port }}\n"
-    dest: /etc/npmrc
-    mode: "0644"

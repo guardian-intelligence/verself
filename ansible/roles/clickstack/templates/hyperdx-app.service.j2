@@ -7,9 +7,10 @@ Type=simple
 User={{ ansible_user }}
 WorkingDirectory={{ hyperdx_install_dir }}/packages/app
 EnvironmentFile=/opt/clickstack/hyperdx.env
-ExecStart=/usr/bin/npx next start -p {{ hyperdx_app_port }}
+ExecStart={{ fm_bin }}/npx next start -p {{ hyperdx_app_port }}
 Restart=on-failure
 RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

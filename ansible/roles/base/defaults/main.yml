@@ -1,3 +1,4 @@
 ---
-node_version: "22"
-nodejs_pin: "22.*"  # pin to major version series
+# Base role defaults.
+# Node.js version is now pinned by flake.lock via the Nix server profile.
+verdaccio_port: 4873
