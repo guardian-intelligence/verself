@@ -11,4 +11,5 @@
   roles:
     - nix_deploy
     - base
+    - cloudflare_dns
     - clickstack
