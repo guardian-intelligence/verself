@@ -1,0 +1,23 @@
+---
+- name: Add MongoDB GPG key
+  ansible.builtin.apt_key:
+    url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"
+    keyring: /usr/share/keyrings/mongodb-server-{{ mongodb_version }}.gpg
+    state: present
+
+- name: Add MongoDB repository (jammy for noble compat)
+  ansible.builtin.apt_repository:
+    repo: "deb [ signed-by=/usr/share/keyrings/mongodb-server-{{ mongodb_version }}.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/{{ mongodb_version }} multiverse"
+    state: present
+
+- name: Install MongoDB
+  ansible.builtin.apt:
+    name: mongodb-org
+    state: present
+    update_cache: true
+
+- name: Enable and start MongoDB
+  ansible.builtin.systemd:
+    name: mongod
+    enabled: true
+    state: started

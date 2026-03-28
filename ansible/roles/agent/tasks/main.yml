@@ -1,0 +1,30 @@
+---
+# Install and configure the forge-metal agent (bmci) on worker nodes.
+
+- name: Download bmci binary
+  ansible.builtin.get_url:
+    url: "{{ bmci_download_url | default('https://github.com/forge-metal/forge-metal/releases/download/v' + forge_metal_version + '/bmci-linux-amd64') }}"
+    dest: /usr/local/bin/bmci
+    mode: "0755"
+
+- name: Deploy agent config
+  ansible.builtin.template:
+    src: forge-metal.toml.j2
+    dest: /etc/forge-metal/config.toml
+    mode: "0640"
+  notify: restart bmci-agent
+
+- name: Deploy agent systemd unit
+  ansible.builtin.template:
+    src: bmci-agent.service.j2
+    dest: /etc/systemd/system/bmci-agent.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart bmci-agent
+
+- name: Enable and start bmci agent
+  ansible.builtin.systemd:
+    name: bmci-agent
+    enabled: true
+    state: started

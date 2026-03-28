@@ -1,0 +1,3 @@
+---
+node_version: "22"
+nodejs_pin: "22.*"  # pin to major version series

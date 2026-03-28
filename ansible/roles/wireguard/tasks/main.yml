@@ -1,0 +1,41 @@
+---
+# WireGuard mesh networking setup.
+
+- name: Install WireGuard
+  ansible.builtin.apt:
+    name: wireguard
+    state: present
+
+- name: Generate WireGuard private key
+  ansible.builtin.shell: wg genkey
+  register: wg_private_key
+  args:
+    creates: /etc/wireguard/private.key
+  no_log: true
+
+- name: Save private key
+  ansible.builtin.copy:
+    content: "{{ wg_private_key.stdout }}"
+    dest: /etc/wireguard/private.key
+    mode: "0600"
+  when: wg_private_key.changed
+  no_log: true
+
+- name: Generate WireGuard public key
+  ansible.builtin.shell: cat /etc/wireguard/private.key | wg pubkey
+  register: wg_public_key
+  changed_when: false
+  no_log: true
+
+- name: Deploy WireGuard config
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "/etc/wireguard/{{ wireguard_interface }}.conf"
+    mode: "0600"
+  notify: restart wireguard
+
+- name: Enable and start WireGuard
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wireguard_interface }}"
+    enabled: true
+    state: started

@@ -1,0 +1,29 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart clickhouse
+  ansible.builtin.systemd:
+    name: clickhouse-server
+    state: restarted
+
+- name: restart otelcol
+  ansible.builtin.systemd:
+    name: otelcol
+    state: restarted
+
+- name: restart hyperdx-api
+  ansible.builtin.systemd:
+    name: hyperdx-api
+    state: restarted
+
+- name: restart hyperdx-app
+  ansible.builtin.systemd:
+    name: hyperdx-app
+    state: restarted
+
+- name: restart caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: restarted

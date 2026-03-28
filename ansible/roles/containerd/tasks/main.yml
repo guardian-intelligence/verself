@@ -1,0 +1,43 @@
+---
+# containerd + gVisor (runsc) setup for worker nodes.
+
+- name: Install containerd
+  ansible.builtin.apt:
+    name: containerd
+    state: present
+
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: Generate default containerd config
+  ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+
+- name: Download gVisor runsc
+  ansible.builtin.get_url:
+    url: "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc"
+    dest: /usr/local/bin/runsc
+    mode: "0755"
+
+- name: Download gVisor containerd-shim
+  ansible.builtin.get_url:
+    url: "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/containerd-shim-runsc-v1"
+    dest: /usr/local/bin/containerd-shim-runsc-v1
+    mode: "0755"
+
+- name: Configure containerd to use runsc runtime
+  ansible.builtin.template:
+    src: containerd-runsc.toml.j2
+    dest: /etc/containerd/config.toml
+    mode: "0644"
+  notify: restart containerd
+
+- name: Enable and start containerd
+  ansible.builtin.systemd:
+    name: containerd
+    enabled: true
+    state: started

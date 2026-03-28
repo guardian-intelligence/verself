@@ -1,0 +1,9 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart bmci-agent
+  ansible.builtin.systemd:
+    name: bmci-agent
+    state: restarted

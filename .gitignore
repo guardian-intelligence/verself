@@ -1,0 +1,43 @@
+# Binary
+bmci
+
+# Config (contains credentials)
+forge-metal.toml
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars.json
+
+# Ansible
+ansible/*.retry
+ansible/inventory/hosts.ini
+
+# Age private keys (NEVER commit)
+**/keys.txt
+*.age-key
+
+# Go
+*.exe
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nix
+result
+result-*
+
+# Logs
+*.log

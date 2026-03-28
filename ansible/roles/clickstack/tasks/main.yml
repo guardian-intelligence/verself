@@ -1,0 +1,21 @@
+---
+# ClickStack: ClickHouse + HyperDX + OTel Collector + MongoDB + Caddy (auto TLS)
+# Deployed natively -- no Docker.
+
+- name: Include MongoDB tasks
+  ansible.builtin.include_tasks: mongodb.yml
+
+- name: Include ClickHouse tasks
+  ansible.builtin.include_tasks: clickhouse.yml
+
+- name: Include OTel Collector tasks
+  ansible.builtin.include_tasks: otelcol.yml
+
+- name: Include HyperDX tasks
+  ansible.builtin.include_tasks: hyperdx.yml
+
+- name: Include Caddy reverse proxy
+  ansible.builtin.include_tasks: caddy.yml
+
+- name: Include admin user seeding
+  ansible.builtin.include_tasks: seed_admin.yml

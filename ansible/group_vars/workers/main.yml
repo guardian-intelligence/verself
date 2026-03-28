@@ -1,0 +1,18 @@
+---
+# Variables specific to worker nodes.
+
+# ZFS
+zfs_pool: benchpool
+zfs_golden_dataset: golden
+zfs_ci_dataset: ci
+
+# gVisor
+gvisor_runtime: runsc
+max_concurrent_jobs: 1
+
+# Verdaccio
+verdaccio_port: 4873
+verdaccio_version: "6.1.2"
+
+# Forgejo
+forgejo_port: 3000

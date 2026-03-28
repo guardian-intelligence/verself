@@ -1,0 +1,33 @@
+---
+# ClickStack defaults — all versions pinned for reproducible deploys.
+
+# ClickHouse
+clickhouse_version: "26.3.2.3"
+clickhouse_http_port: 8123
+clickhouse_native_port: 9000
+clickhouse_data_path: /var/lib/clickhouse
+
+# MongoDB
+mongodb_version: "7.0"
+
+# HyperDX
+hyperdx_repo: "https://github.com/hyperdxio/hyperdx.git"
+hyperdx_version: "main"  # branch to clone; override with a tag like "hyperdx@1.9.0" for pinning
+hyperdx_api_port: 8000
+hyperdx_app_port: 8080
+hyperdx_opamp_port: 4320
+hyperdx_install_dir: /opt/clickstack/hyperdx
+
+# OTel Collector
+otelcol_version: "0.120.0"
+
+# Caddy
+caddy_version: "2.*"  # pin to 2.x series
+
+# Caddy domain: set to a real domain for Let's Encrypt, or IP for self-signed.
+clickstack_domain: "{{ ansible_default_ipv4.address }}"
+
+# Admin user (seeded on first run)
+clickstack_admin_email: "admin@forge-metal.local"
+# Password generated at deploy time if not set
+# clickstack_admin_password: ""

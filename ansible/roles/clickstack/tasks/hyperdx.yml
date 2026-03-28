@@ -1,0 +1,152 @@
+---
+- name: Enable corepack for yarn
+  ansible.builtin.command: corepack enable
+  changed_when: false
+
+- name: Create ClickStack directory
+  ansible.builtin.file:
+    path: /opt/clickstack
+    state: directory
+    owner: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Clone HyperDX repository
+  ansible.builtin.git:
+    repo: "{{ hyperdx_repo }}"
+    dest: "{{ hyperdx_install_dir }}"
+    depth: 1
+    version: "{{ hyperdx_version }}"
+    force: true
+  become: false
+  register: hyperdx_clone
+
+# Clean build artifacts when source changes to prevent stale builds.
+- name: Clean stale build artifacts on source change
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ hyperdx_install_dir }}/packages/api/build"
+    - "{{ hyperdx_install_dir }}/packages/app/.next"
+    - "{{ hyperdx_install_dir }}/packages/common-utils/dist"
+  when: hyperdx_clone.changed
+
+- name: Install HyperDX dependencies
+  ansible.builtin.command: yarn install
+  args:
+    chdir: "{{ hyperdx_install_dir }}"
+  become: false
+  when: hyperdx_clone.changed
+
+- name: Install HyperDX dependencies (first run)
+  ansible.builtin.command: yarn install
+  args:
+    chdir: "{{ hyperdx_install_dir }}"
+    creates: "{{ hyperdx_install_dir }}/node_modules"
+  become: false
+
+- name: Build common-utils
+  ansible.builtin.command: yarn build:common-utils
+  args:
+    chdir: "{{ hyperdx_install_dir }}"
+    creates: "{{ hyperdx_install_dir }}/packages/common-utils/dist"
+  become: false
+
+- name: Build API (tsc)
+  ansible.builtin.command: npx tsc
+  args:
+    chdir: "{{ hyperdx_install_dir }}/packages/api"
+    creates: "{{ hyperdx_install_dir }}/packages/api/build/src/index.js"
+  become: false
+
+# Critical: tsc-alias must use --outDir build/src because tsc places output
+# there when baseUrl is ./src. Without this, @/ path aliases remain unresolved.
+- name: Resolve path aliases (tsc-alias)
+  ansible.builtin.command: npx tsc-alias -p tsconfig.json --outDir build/src
+  args:
+    chdir: "{{ hyperdx_install_dir }}/packages/api"
+  become: false
+  changed_when: false
+
+# Critical: proto files must be at build/src/opamp/proto/ (not build/opamp/)
+# because tsc-alias rewrites imports relative to build/src/.
+- name: Create proto output directory
+  ansible.builtin.file:
+    path: "{{ hyperdx_install_dir }}/packages/api/build/src/opamp/proto"
+    state: directory
+    mode: "0755"
+
+- name: Copy OpAMP proto files to build output
+  ansible.builtin.shell: >
+    cp {{ hyperdx_install_dir }}/packages/api/src/opamp/proto/*.proto
+    {{ hyperdx_install_dir }}/packages/api/build/src/opamp/proto/
+  changed_when: false
+
+- name: Build Next.js frontend
+  ansible.builtin.command: npx next build --webpack
+  args:
+    chdir: "{{ hyperdx_install_dir }}/packages/app"
+    creates: "{{ hyperdx_install_dir }}/packages/app/.next"
+  become: false
+
+- name: Check for existing session secret
+  ansible.builtin.stat:
+    path: /opt/clickstack/session_secret
+  register: secret_file
+
+- name: Generate session secret (first run only)
+  ansible.builtin.shell: openssl rand -hex 32 > /opt/clickstack/session_secret && chmod 600 /opt/clickstack/session_secret
+  when: not secret_file.stat.exists
+  no_log: true
+
+- name: Read session secret
+  ansible.builtin.slurp:
+    src: /opt/clickstack/session_secret
+  register: session_secret_b64
+  no_log: true
+
+- name: Set session secret fact
+  ansible.builtin.set_fact:
+    session_secret: "{{ session_secret_b64.content | b64decode | trim }}"
+  no_log: true
+
+- name: Deploy HyperDX environment file
+  ansible.builtin.template:
+    src: hyperdx.env.j2
+    dest: /opt/clickstack/hyperdx.env
+    mode: "0640"
+  notify:
+    - restart hyperdx-api
+    - restart hyperdx-app
+
+- name: Deploy HyperDX API systemd unit
+  ansible.builtin.template:
+    src: hyperdx-api.service.j2
+    dest: /etc/systemd/system/hyperdx-api.service
+    mode: "0644"
+
+- name: Deploy HyperDX App systemd unit
+  ansible.builtin.template:
+    src: hyperdx-app.service.j2
+    dest: /etc/systemd/system/hyperdx-app.service
+    mode: "0644"
+
+- name: Enable and start HyperDX API
+  ansible.builtin.systemd:
+    name: hyperdx-api
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for HyperDX API to be ready
+  ansible.builtin.wait_for:
+    port: "{{ hyperdx_api_port }}"
+    host: 127.0.0.1
+    timeout: 60
+
+- name: Enable and start HyperDX App
+  ansible.builtin.systemd:
+    name: hyperdx-app
+    enabled: true
+    state: started
+    daemon_reload: true

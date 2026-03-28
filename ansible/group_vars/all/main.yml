@@ -1,0 +1,10 @@
+---
+# Global variables for all nodes.
+
+forge_metal_version: "0.1.0"
+node_version: "22"  # Node.js LTS
+
+# WireGuard
+wireguard_interface: wg0
+wireguard_port: 51820
+wireguard_network: "10.0.0.0/16"

@@ -1,0 +1,13 @@
+storage: /var/lib/verdaccio/storage
+auth:
+  htpasswd:
+    file: /etc/verdaccio/htpasswd
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+packages:
+  '**':
+    access: $all
+    publish: $authenticated
+    proxy: npmjs
+listen: 127.0.0.1:{{ verdaccio_port }}

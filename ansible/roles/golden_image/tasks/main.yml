@@ -1,0 +1,39 @@
+---
+# Build ZFS golden image with pre-cached dependencies and warm build caches.
+
+- name: Check if golden snapshot exists
+  ansible.builtin.command: zfs list -t snapshot {{ zfs_pool }}/{{ zfs_golden_dataset }}@ready
+  register: golden_exists
+  changed_when: false
+  failed_when: false
+
+- name: Build golden image
+  when: golden_exists.rc != 0
+  block:
+    - name: Clone target repo to golden dataset
+      ansible.builtin.git:
+        repo: "{{ golden_repo_url | default('https://github.com/ixartz/Next-js-Boilerplate.git') }}"
+        dest: "/{{ zfs_pool }}/{{ zfs_golden_dataset }}/workspace"
+        version: "{{ golden_repo_ref | default('main') }}"
+
+    - name: Install dependencies via Verdaccio
+      ansible.builtin.command: npm ci
+      args:
+        chdir: "/{{ zfs_pool }}/{{ zfs_golden_dataset }}/workspace"
+
+    - name: Warm build caches
+      ansible.builtin.shell: |
+        npx tsc --noEmit || true
+        npm run build || true
+      args:
+        chdir: "/{{ zfs_pool }}/{{ zfs_golden_dataset }}/workspace"
+
+    - name: Store lockfile hash
+      ansible.builtin.shell: |
+        sha256sum package-lock.json > .lockfile-hash
+      args:
+        chdir: "/{{ zfs_pool }}/{{ zfs_golden_dataset }}/workspace"
+
+    - name: Create golden snapshot
+      ansible.builtin.command: >
+        zfs snapshot {{ zfs_pool }}/{{ zfs_golden_dataset }}@ready

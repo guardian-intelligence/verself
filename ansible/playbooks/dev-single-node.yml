@@ -1,0 +1,10 @@
+---
+# Single-node dev setup: everything on one box.
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml
+
+- name: Configure single-node forge-metal dev environment
+  hosts: all
+  become: true
+  roles:
+    - base
+    - clickstack

@@ -1,0 +1,16 @@
+# Example inventory. Copy to hosts.ini and populate with real IPs.
+# Terraform outputs can generate this automatically.
+
+[workers]
+# fm-prod-w0 ansible_host=203.0.113.10
+# fm-prod-w1 ansible_host=203.0.113.11
+# fm-prod-w2 ansible_host=203.0.113.12
+
+[infra]
+# fm-prod-i0 ansible_host=203.0.113.20
+# fm-prod-i1 ansible_host=203.0.113.21
+# fm-prod-i2 ansible_host=203.0.113.22
+
+[all:vars]
+ansible_user=ubuntu
+ansible_python_interpreter=/usr/bin/python3

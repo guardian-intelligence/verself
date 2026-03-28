@@ -1,0 +1,13 @@
+[Unit]
+Description=Forgejo Git Server
+After=network.target
+
+[Service]
+Type=simple
+User=forgejo
+ExecStart=/usr/local/bin/forgejo web --config /etc/forgejo/app.ini
+Restart=on-failure
+Environment=FORGEJO_WORK_DIR=/var/lib/forgejo
+
+[Install]
+WantedBy=multi-user.target
