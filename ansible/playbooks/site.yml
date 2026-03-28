@@ -1,11 +1,15 @@
 ---
-# Full node setup playbook.
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+# Multi-node production deployment.
+# Separates worker and infra node roles.
+#
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
+#          -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 
-- name: Configure all forge-metal nodes
+- name: Deploy Nix closure to all nodes
   hosts: all
   become: true
   roles:
+    - nix_deploy
     - base
 
 - name: Configure worker nodes

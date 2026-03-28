@@ -1,6 +1,5 @@
 ---
 # Seed admin user on first run via HyperDX registration API.
-# POST /register/password only works when no team exists yet.
 
 - name: Generate admin password if not provided
   ansible.builtin.set_fact:
@@ -10,9 +9,15 @@
 
 - name: Check if a team already exists (via MongoDB)
   ansible.builtin.command: >
-    mongosh --quiet --eval "db.teams.countDocuments()" hyperdx
+    {{ fm_bin }}/mongosh --quiet --eval "db.teams.countDocuments()" hyperdx
   register: team_count
   changed_when: false
+
+- name: Create clickstack credentials directory
+  ansible.builtin.file:
+    path: /etc/clickstack
+    state: directory
+    mode: "0700"
 
 - name: Seed admin user via registration API
   ansible.builtin.uri:

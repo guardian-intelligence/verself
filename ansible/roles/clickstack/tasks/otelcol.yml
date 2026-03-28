@@ -1,22 +1,6 @@
 ---
-- name: Download OTel Collector
-  ansible.builtin.get_url:
-    url: "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{{ otelcol_version }}/otelcol-contrib_{{ otelcol_version }}_linux_amd64.tar.gz"
-    dest: "/tmp/otelcol-{{ otelcol_version }}.tar.gz"
-    mode: "0644"
-
-- name: Extract OTel Collector (version-aware)
-  ansible.builtin.unarchive:
-    src: "/tmp/otelcol-{{ otelcol_version }}.tar.gz"
-    dest: /usr/local/bin/
-    remote_src: true
-    extra_opts: ["otelcol-contrib"]
-  register: otelcol_extract
-
-- name: Make OTel Collector executable
-  ansible.builtin.file:
-    path: /usr/local/bin/otelcol-contrib
-    mode: "0755"
+# OpenTelemetry Collector configuration.
+# Binary provided by Nix server profile (otelcol-contrib).
 
 - name: Create OTel Collector config directory
   ansible.builtin.file:
@@ -32,11 +16,25 @@
   notify: restart otelcol
 
 - name: Deploy OTel Collector systemd unit
-  ansible.builtin.template:
-    src: otelcol.service.j2
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=OpenTelemetry Collector
+      After=network.target clickhouse-server.service
+
+      [Service]
+      Type=simple
+      ExecStart={{ fm_bin }}/otelcol-contrib --config /etc/otelcol/config.yaml
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
     dest: /etc/systemd/system/otelcol.service
     mode: "0644"
-  register: otelcol_unit
+  notify:
+    - reload systemd
+    - restart otelcol
 
 - name: Enable and start OTel Collector
   ansible.builtin.systemd:

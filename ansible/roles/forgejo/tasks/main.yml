@@ -1,5 +1,6 @@
 ---
-# Forgejo git server + CI runner setup.
+# Forgejo git server + CI runner configuration.
+# Binaries provided by Nix server profile (forgejo, forgejo-runner).
 
 - name: Create Forgejo user
   ansible.builtin.user:
@@ -8,12 +9,6 @@
     shell: /bin/bash
     home: /var/lib/forgejo
     create_home: true
-
-- name: Download Forgejo binary
-  ansible.builtin.get_url:
-    url: "https://codeberg.org/forgejo/forgejo/releases/download/v{{ forgejo_version | default('10.0.1') }}/forgejo-{{ forgejo_version | default('10.0.1') }}-linux-amd64"
-    dest: /usr/local/bin/forgejo
-    mode: "0755"
 
 - name: Create Forgejo config directory
   ansible.builtin.file:
@@ -36,12 +31,7 @@
     name: forgejo
     enabled: true
     state: started
-
-- name: Download Forgejo Runner
-  ansible.builtin.get_url:
-    url: "https://codeberg.org/forgejo/runner/releases/download/v{{ forgejo_runner_version | default('6.3.1') }}/forgejo-runner-{{ forgejo_runner_version | default('6.3.1') }}-linux-amd64"
-    dest: /usr/local/bin/forgejo-runner
-    mode: "0755"
+    daemon_reload: true
 
 - name: Deploy Forgejo Runner systemd unit
   ansible.builtin.template:

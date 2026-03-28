@@ -1,9 +1,10 @@
 ---
 # End-to-end CI pipeline for forge-metal itself.
-# Wipes the box, provisions everything, health checks, seeds test data,
+# Wipes the box, deploys via Nix closure, health checks, seeds test data,
 # and asserts ClickHouse wide events + OTLP traces are working.
 #
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/ci-e2e.yml
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/ci-e2e.yml \
+#          -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 #
 # This playbook IS the CI test. If it exits 0, the stack is healthy.
 
@@ -20,16 +21,23 @@
         - hyperdx-api
         - caddy
         - otelcol
+        - clickhouse-server
+        - mongod
       failed_when: false
-
-    - name: Drop HyperDX MongoDB database
-      ansible.builtin.command: mongosh --quiet --eval "db.dropDatabase()" hyperdx
-      failed_when: false
-      changed_when: true
 
     - name: Drop ClickHouse forge_metal database
-      ansible.builtin.command: clickhouse-client --query "DROP DATABASE IF EXISTS forge_metal"
+      ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'DROP DATABASE IF EXISTS forge_metal'"
+      failed_when: false
       changed_when: true
+      environment:
+        PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+
+    - name: Drop HyperDX MongoDB database
+      ansible.builtin.command: "{{ fm_bin }}/mongosh --quiet --eval 'db.dropDatabase()' hyperdx"
+      failed_when: false
+      changed_when: true
+      environment:
+        PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
     - name: Remove session secret (forces regeneration)
       ansible.builtin.file:
@@ -46,10 +54,11 @@
         path: /opt/clickstack/hyperdx
         state: absent
 
-- name: "Phase 2: Provision from scratch"
+- name: "Phase 2: Deploy Nix closure + configure"
   hosts: all
   become: true
   roles:
+    - nix_deploy
     - base
     - clickstack
 
@@ -73,11 +82,11 @@
         - caddy
 
     - name: Assert ClickHouse responds
-      ansible.builtin.command: clickhouse-client --query "SELECT 1"
+      ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SELECT 1'"
       changed_when: false
 
     - name: Assert forge_metal database exists
-      ansible.builtin.command: clickhouse-client --query "SELECT count() FROM forge_metal.ci_events"
+      ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SELECT count() FROM forge_metal.ci_events'"
       register: ch_count
       changed_when: false
       failed_when: ch_count.rc != 0
@@ -123,10 +132,9 @@
   vars:
     clickstack_domain: "{{ ansible_default_ipv4.address }}"
   tasks:
-    # -- ClickHouse wide events --
     - name: Insert test wide events
       ansible.builtin.command: >
-        clickhouse-client --database forge_metal --query "
+        {{ fm_bin }}/clickhouse-client --database forge_metal --query "
         INSERT INTO ci_events (
           job_id, run_id, node_id, region, plan,
           repo, branch, commit_sha, pr_number, pr_author, base_branch,
@@ -173,7 +181,7 @@
 
     - name: Assert event count is correct
       ansible.builtin.command: >
-        clickhouse-client --database forge_metal --query
+        {{ fm_bin }}/clickhouse-client --database forge_metal --query
         "SELECT count() FROM ci_events WHERE run_id LIKE 'e2e-run-%'"
       register: event_count
       changed_when: false
@@ -181,7 +189,7 @@
 
     - name: Assert wide event columns are queryable
       ansible.builtin.command: >
-        clickhouse-client --database forge_metal --query "
+        {{ fm_bin }}/clickhouse-client --database forge_metal --query "
         SELECT
           run_id,
           pr_author,
@@ -204,7 +212,7 @@
 
     - name: Assert aggregation queries work
       ansible.builtin.command: >
-        clickhouse-client --database forge_metal --query "
+        {{ fm_bin }}/clickhouse-client --database forge_metal --query "
         SELECT
           IF(lockfile_changed, 'dep-pr', 'code-pr') AS pr_type,
           count() AS jobs,
@@ -223,7 +231,7 @@
 
     - name: Assert compression codecs are applied
       ansible.builtin.command: >
-        clickhouse-client --query "
+        {{ fm_bin }}/clickhouse-client --query "
         SELECT name, compression_codec
         FROM system.columns
         WHERE database = 'forge_metal' AND table = 'ci_events'
@@ -273,7 +281,7 @@
 
     - name: Assert OTLP trace landed in ClickHouse
       ansible.builtin.command: >
-        clickhouse-client --query "
+        {{ fm_bin }}/clickhouse-client --query "
         SELECT count()
         FROM default.otel_traces
         WHERE ServiceName = 'forge-metal-e2e-test'

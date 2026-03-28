@@ -4,37 +4,128 @@ Self-hosted bare-metal CI platform with ClickStack observability.
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
-## Architecture
+## Quick Start
+
+### Prerequisites
+
+- A bare-metal server running Ubuntu 24.04 (e.g. [Latitude.sh](https://latitude.sh))
+- SSH access (`ssh ubuntu@<ip>` works)
+- [Nix](https://nixos.org/download/) on your workstation (provides all tooling)
+
+### 1. Clone and enter dev shell
+
+```bash
+git clone https://github.com/forge-metal/forge-metal.git
+cd forge-metal
+nix develop  # gives you Go, Terraform, Ansible, protoc, clickhouse-client, etc.
+```
+
+### 2. Configure inventory
+
+```bash
+cd ansible
+cat > inventory/hosts.ini << 'EOF'
+[workers]
+my-node ansible_host=<YOUR_IP>
+
+[infra]
+my-node ansible_host=<YOUR_IP>
+
+[all:vars]
+ansible_user=ubuntu
+ansible_python_interpreter=/usr/bin/python3
+EOF
+```
+
+### 3. Build the golden image and deploy
+
+```bash
+# Build the Nix server profile (first time downloads/builds everything, cached after)
+cd ..
+make e2e
+```
+
+This does:
+
+1. **Builds the Nix server profile** -- every service (ClickHouse, MongoDB, Caddy, OTel Collector, Node.js, containerd, gVisor, Forgejo, etc.) packaged into a single content-addressed closure. All versions pinned by `flake.lock`.
+2. **Installs Nix on the remote host** and pushes the closure over SSH.
+3. **Configures services** via Ansible (thin roles: just config templates + systemd enablement).
+4. **Health checks** -- asserts 6 services active, HTTPS works, admin seeded.
+5. **Verifies** -- inserts test wide events, queries ClickHouse, validates compression codecs, sends OTLP trace.
+
+If it exits 0, the stack is healthy.
+
+For subsequent deploys without wiping state:
+
+```bash
+make deploy  # idempotent, no wipe
+```
+
+### 4. Log in
+
+```bash
+# Admin credentials (generated on first deploy)
+ssh ubuntu@<ip> 'sudo cat /etc/clickstack/admin-credentials.txt'
+```
+
+Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
+
+### TLS with a real domain
+
+Set `clickstack_domain` in your Ansible vars and point your DNS:
+
+```yaml
+# ansible/group_vars/infra/main.yml
+clickstack_domain: ci.example.com
+```
+
+```bash
+make deploy
+```
+
+Caddy handles Let's Encrypt issuance, renewal, HTTP->HTTPS redirect, and OCSP stapling automatically.
+
+## How It Works
+
+### Nix Golden Image
+
+All server software is packaged in a single Nix closure (`flake.nix` -> `server-profile`). This means:
+
+- **Reproducible**: `flake.lock` pins every dependency transitively. Same lock = same binaries, always.
+- **Fast deploys**: The closure is pushed once over SSH. No apt repos, no GitHub downloads, no `yarn install`.
+- **Atomic updates**: `nix flake update` + `make deploy` upgrades everything. Rollback = `git revert flake.lock`.
+- **No apt, no get_url, no build-from-source at deploy time** (except HyperDX, which builds from source using Nix-provided Node.js).
+
+The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must match running kernel).
+
+### Version Updates
+
+```bash
+nix flake update           # update all packages
+make deploy --limit canary # deploy to one node
+make e2e --limit canary    # verify
+make deploy                # roll out fleet-wide
+```
+
+### Architecture
 
 ```
-Terraform --> provision Latitude.sh bare metal
-Ansible   --> configure nodes (ZFS, containerd, gVisor, Verdaccio, Forgejo, ClickStack)
-bmci agent    --> execute CI jobs in gVisor sandboxes, write wide events to ClickHouse
-bmci controller --> schedule jobs, track nodes, receive Forgejo webhooks
-
-Observability (ClickStack):
-  OTel Collector (4317/4318) --> ClickHouse (9000) <-- HyperDX UI (8080)
-  Agents emit OTLP telemetry --> wide events stored in ci_events table
+nix build .#server-profile --> content-addressed closure (~2GB)
+nix copy --to ssh://host   --> push closure to bare metal
+Ansible                    --> configure + enable services
 ```
-
-### ClickStack (Native)
-
-The observability stack runs natively (no Docker):
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| Caddy | 443, 80 | Reverse proxy with automatic Let's Encrypt TLS |
-| ClickHouse | 9000 (native), 8123 (HTTP) | Wide event storage with optimized codecs |
-| HyperDX UI | 8080 (internal) | Search, visualize, and explore CI events |
-| HyperDX API | 8000 (internal) | Backend for the UI, connects to ClickHouse + MongoDB |
-| OTel Collector | 4317 (gRPC), 4318 (HTTP) | Ingests OTLP telemetry from agents |
-| MongoDB | 27017 (internal) | HyperDX app state (dashboards, saved searches, users) |
+| Caddy | 443, 80 | Reverse proxy with automatic TLS |
+| ClickHouse | 9000, 8123 | Wide event storage with optimized codecs |
+| HyperDX | 8080, 8000 | Observability UI + API |
+| OTel Collector | 4317, 4318 | OTLP telemetry ingestion |
+| MongoDB | 27017 | HyperDX app state |
 
 ### Wide Events
 
-Every CI job produces one denormalized row in `ci_events` with ~50 columns:
-identity, git metadata, per-phase nanosecond timing, exit codes, cgroup resource usage,
-cache effectiveness, hardware info, and timestamps. No JOINs needed.
+Every CI job produces one denormalized row in `ci_events` with ~50 columns. No JOINs needed.
 
 Compression codecs per column type:
 - Timestamps: `DoubleDelta + ZSTD(3)`
@@ -43,83 +134,17 @@ Compression codecs per column type:
 - Low-cardinality strings: `LowCardinality + ZSTD(3)`
 - Floats: `Gorilla + ZSTD(3)`
 
-## Quick Start
+## Makefile Targets
 
-### Prerequisites
-
-- [Latitude.sh](https://latitude.sh) account (or any bare-metal provider)
-- [Terraform](https://terraform.io) >= 1.6
-- [Ansible](https://docs.ansible.com/) >= 2.16
-- SSH key pair
-- Go 1.23+ (to build) or [Nix](https://nixos.org/) (`nix develop`)
-
-### Build
-
-```bash
-# With Nix (recommended)
-nix develop
-make build
-
-# Without Nix
-go build -o bmci ./cmd/bmci
-```
-
-### Provision & Configure
-
-```bash
-# 1. Provision bare metal
-cd terraform
-terraform init
-terraform apply -var cluster_name=prod -var project_id=proj_xxx \
-  -var ssh_public_key_path=~/.ssh/id_ed25519.pub
-
-# 2. Configure nodes with Ansible
-cd ../ansible
-# Edit inventory/hosts.ini with IPs from terraform output
-# Set your domain in group_vars/infra/main.yml:
-#   clickstack_domain: ci.example.com
-ansible-playbook playbooks/site.yml
-```
-
-### TLS
-
-Set `clickstack_domain` in your Ansible vars:
-
-```yaml
-# ansible/group_vars/infra/main.yml
-clickstack_domain: ci.example.com  # Real domain → automatic Let's Encrypt
-# clickstack_domain: 192.168.1.1  # IP address → automatic self-signed (dev)
-```
-
-Point your DNS A record to the server IP. Caddy handles everything else:
-Let's Encrypt issuance, renewal, HTTP->HTTPS redirect, OCSP stapling.
-
-### Verify
-
-```bash
-# Check services
-ssh ubuntu@<node-ip> 'for svc in clickhouse-server mongod otelcol hyperdx-api hyperdx-app caddy; do
-  echo "$svc: $(systemctl is-active $svc)"; done'
-
-# Query wide events
-ssh ubuntu@<node-ip> 'clickhouse-client --database forge_metal --query "
-  SELECT pr_author, branch, round(total_e2e_ns/1e9, 1) as e2e_s
-  FROM ci_events ORDER BY created_at DESC LIMIT 10"'
-
-# Admin credentials (generated on first deploy)
-ssh ubuntu@<node-ip> 'sudo cat /etc/clickstack/admin-credentials.txt'
-
-# Open HyperDX UI
-open https://ci.example.com
-```
-
-## Commands
-
-```bash
-bmci controller    # Run the job scheduler
-bmci agent join    # Register a node with the controller
-bmci agent run     # Start the agent daemon
-```
+| Target | Description |
+|--------|-------------|
+| `make server-profile` | Build Nix server profile (golden image closure) |
+| `make deploy` | Deploy to all nodes (idempotent, no wipe) |
+| `make e2e` | Full wipe + reprovision + test |
+| `make benchmark` | Benchmark wipe+reprovision (3 iterations) |
+| `make build` | Build bmci Go binary locally |
+| `make test` | Run Go tests |
+| `make proto` | Generate gRPC code from proto |
 
 ## Project Structure
 
@@ -134,28 +159,25 @@ forge-metal/
 │   ├── sandbox/           # gVisor/containerd integration
 │   ├── network/           # WireGuard config generation
 │   └── proto/v1/          # gRPC protobuf (AgentService)
-├── ansible/               # Node configuration (8 roles, 3 playbooks)
+├── ansible/
+│   ├── playbooks/         # ci-e2e, dev-single-node, site, golden-refresh, security-patch
+│   └── roles/
+│       ├── nix_deploy/    # Install Nix + push server profile closure
+│       ├── base/          # System config (ZFS, users, npm registry)
+│       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
+│       ├── zfs/           # Pool creation, golden/ci datasets
+│       ├── containerd/    # containerd + gVisor runsc (config only)
+│       ├── verdaccio/     # Sealed npm mirror (config only)
+│       ├── wireguard/     # Mesh networking (config only)
+│       ├── golden_image/  # ZFS snapshot with warm caches
+│       ├── forgejo/       # Git server + CI runner (config only)
+│       └── agent/         # bmci agent (config only)
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
-├── scripts/security/      # Registry sealing, network policy, tarball inspection
+├── scripts/               # Security scripts, benchmark runner
 ├── config/default.toml    # Embedded defaults
-└── flake.nix              # Nix dev shell + reproducible builds
+└── flake.nix              # Dev shell + server profile (golden image)
 ```
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Provisioning | Terraform + Latitude.sh |
-| Node config | Ansible (8 idempotent roles) |
-| Container runtime | containerd + gVisor (runsc) |
-| CI engine | Forgejo Actions |
-| Workspace | ZFS golden image clones |
-| Observability | ClickStack (ClickHouse + HyperDX + OTel Collector + Caddy) |
-| Package mirror | Verdaccio (sealed) |
-| Networking | WireGuard mesh |
-| Orchestration | gRPC + SQLite job queue |
-| Builds | Nix flakes |
 
 ## License
 

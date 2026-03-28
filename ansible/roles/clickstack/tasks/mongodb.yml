@@ -1,4 +1,7 @@
 ---
+# MongoDB: installed via apt (SSPL license, no Nix binary cache, long source build).
+# This is the only apt-installed application alongside zfsutils-linux.
+
 - name: Add MongoDB GPG key
   ansible.builtin.apt_key:
     url: "https://www.mongodb.org/static/pgp/server-{{ mongodb_version }}.asc"

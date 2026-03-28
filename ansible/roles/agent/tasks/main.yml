@@ -1,10 +1,11 @@
 ---
-# Install and configure the forge-metal agent (bmci) on worker nodes.
+# Configure the forge-metal agent (bmci) on worker nodes.
+# Binary provided by Nix server profile.
 
-- name: Download bmci binary
-  ansible.builtin.get_url:
-    url: "{{ bmci_download_url | default('https://github.com/forge-metal/forge-metal/releases/download/v' + forge_metal_version + '/bmci-linux-amd64') }}"
-    dest: /usr/local/bin/bmci
+- name: Create forge-metal config directory
+  ansible.builtin.file:
+    path: /etc/forge-metal
+    state: directory
     mode: "0755"
 
 - name: Deploy agent config
@@ -28,3 +29,4 @@
     name: bmci-agent
     enabled: true
     state: started
+    daemon_reload: true

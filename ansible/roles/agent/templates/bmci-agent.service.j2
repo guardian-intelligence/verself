@@ -5,9 +5,10 @@ Requires=containerd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/bmci agent run --config /etc/forge-metal/config.toml
+ExecStart={{ fm_bin }}/bmci agent run --config /etc/forge-metal/config.toml
 Restart=on-failure
 RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

@@ -8,9 +8,10 @@ Type=simple
 User={{ ansible_user }}
 WorkingDirectory={{ hyperdx_install_dir }}/packages/api
 EnvironmentFile=/opt/clickstack/hyperdx.env
-ExecStart=/usr/bin/node ./build/src/index.js
+ExecStart={{ fm_bin }}/node ./build/src/index.js
 Restart=on-failure
 RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target

@@ -1,10 +1,14 @@
 ---
-# Single-node dev setup: everything on one box.
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml
+# Idempotent single-node deployment (no wipe).
+# Use for config changes and updates after initial deploy.
+#
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
+#          -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 
-- name: Configure single-node forge-metal dev environment
+- name: Deploy forge-metal (single node, idempotent)
   hosts: all
   become: true
   roles:
+    - nix_deploy
     - base
     - clickstack

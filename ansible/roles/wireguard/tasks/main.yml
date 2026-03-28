@@ -1,13 +1,16 @@
 ---
 # WireGuard mesh networking setup.
+# wireguard-tools provided by Nix server profile.
+# Kernel module is built-in on Linux 6.8+.
 
-- name: Install WireGuard
-  ansible.builtin.apt:
-    name: wireguard
-    state: present
+- name: Create WireGuard config directory
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: "0700"
 
 - name: Generate WireGuard private key
-  ansible.builtin.shell: wg genkey
+  ansible.builtin.shell: "{{ fm_bin }}/wg genkey"
   register: wg_private_key
   args:
     creates: /etc/wireguard/private.key
@@ -22,7 +25,7 @@
   no_log: true
 
 - name: Generate WireGuard public key
-  ansible.builtin.shell: cat /etc/wireguard/private.key | wg pubkey
+  ansible.builtin.shell: "cat /etc/wireguard/private.key | {{ fm_bin }}/wg pubkey"
   register: wg_public_key
   changed_when: false
   no_log: true
