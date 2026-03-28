@@ -3,6 +3,11 @@
     <http_port>{{ clickhouse_http_port }}</http_port>
     <tcp_port>{{ clickhouse_native_port }}</tcp_port>
 
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
     <logger>
         <level>information</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
@@ -10,4 +15,34 @@
         <size>100M</size>
         <count>3</count>
     </logger>
+
+    <!-- Default profiles and users (required when running standalone without /etc/clickhouse-server/users.xml) -->
+    <profiles>
+        <default/>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+            <interval>
+                <duration>3600</duration>
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
 </clickhouse>

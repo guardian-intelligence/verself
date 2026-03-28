@@ -71,12 +71,12 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             # Go
-            pkgs.go_1_23
+            pkgs.go_1_25
             pkgs.golangci-lint
             pkgs.gofumpt
 
             # Infrastructure
-            pkgs.terraform
+            pkgs.opentofu
             pkgs.ansible
 
             # Protobuf
@@ -88,7 +88,7 @@
             # Tools
             pkgs.shellcheck
             pkgs.jq
-            pkgs.clickhouse
+            clickhouse-static
 
             # Nix
             pkgs.nil
@@ -97,7 +97,7 @@
           shellHook = ''
             echo "forge-metal dev shell"
             echo "  go:         $(go version | cut -d' ' -f3)"
-            echo "  terraform:  $(terraform version -json | jq -r .terraform_version)"
+            echo "  tofu:       $(tofu version -json | jq -r .terraform_version)"
             echo "  ansible:    $(ansible --version | head -1)"
             echo "  buf:        $(buf --version)"
             echo ""
