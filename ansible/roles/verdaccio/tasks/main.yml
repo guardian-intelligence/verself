@@ -1,0 +1,41 @@
+---
+# Sealed Verdaccio npm mirror for worker nodes.
+
+- name: Install Verdaccio
+  ansible.builtin.command: npm install -g verdaccio@{{ verdaccio_version }}
+  args:
+    creates: /usr/lib/node_modules/verdaccio
+
+- name: Create Verdaccio config directory
+  ansible.builtin.file:
+    path: /etc/verdaccio
+    state: directory
+    mode: "0755"
+
+- name: Deploy Verdaccio config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/verdaccio/config.yaml
+    mode: "0644"
+  notify: restart verdaccio
+
+- name: Deploy Verdaccio systemd unit
+  ansible.builtin.template:
+    src: verdaccio.service.j2
+    dest: /etc/systemd/system/verdaccio.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart verdaccio
+
+- name: Enable and start Verdaccio
+  ansible.builtin.systemd:
+    name: verdaccio
+    enabled: true
+    state: started
+
+- name: Set system-wide npm registry
+  ansible.builtin.copy:
+    content: "registry=http://127.0.0.1:{{ verdaccio_port }}\n"
+    dest: /etc/npmrc
+    mode: "0644"

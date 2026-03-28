@@ -1,0 +1,68 @@
+---
+- name: Add ClickHouse GPG key
+  ansible.builtin.apt_key:
+    keyserver: hkp://keyserver.ubuntu.com:80
+    id: 8919F6BD2B48D754
+    state: present
+
+- name: Add ClickHouse repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://packages.clickhouse.com/deb stable main"
+    state: present
+
+- name: Install ClickHouse (pinned version)
+  ansible.builtin.apt:
+    name:
+      - "clickhouse-server={{ clickhouse_version }}*"
+      - "clickhouse-client={{ clickhouse_version }}*"
+    state: present
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Create ClickHouse config directory
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/config.d
+    state: directory
+    owner: clickhouse
+    group: clickhouse
+    mode: "0750"
+
+- name: Deploy ClickHouse server config
+  ansible.builtin.template:
+    src: clickhouse-config.xml.j2
+    dest: /etc/clickhouse-server/config.d/forge-metal.xml
+    owner: clickhouse
+    group: clickhouse
+    mode: "0640"
+  notify: restart clickhouse
+
+- name: Enable and start ClickHouse
+  ansible.builtin.systemd:
+    name: clickhouse-server
+    enabled: true
+    state: started
+
+- name: Wait for ClickHouse
+  ansible.builtin.command: clickhouse-client --query "SELECT 1"
+  register: ch_ready
+  retries: 10
+  delay: 3
+  until: ch_ready.rc == 0
+  changed_when: false
+
+- name: Upload migrations
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../migrations/"
+    dest: /opt/forge-metal/migrations/
+    mode: "0644"
+
+- name: Create forge_metal database
+  ansible.builtin.command: clickhouse-client --query "CREATE DATABASE IF NOT EXISTS forge_metal"
+  changed_when: false
+
+- name: Apply ci_events migration
+  ansible.builtin.command: >
+    clickhouse-client --database forge_metal --multiquery
+    --queries-file /opt/forge-metal/migrations/001_ci_events.up.sql
+  changed_when: false

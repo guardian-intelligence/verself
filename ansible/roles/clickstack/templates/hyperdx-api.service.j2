@@ -1,0 +1,16 @@
+[Unit]
+Description=HyperDX API Server
+After=network.target mongod.service clickhouse-server.service
+Requires=mongod.service clickhouse-server.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ hyperdx_install_dir }}/packages/api
+EnvironmentFile=/opt/clickstack/hyperdx.env
+ExecStart=/usr/bin/node ./build/src/index.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

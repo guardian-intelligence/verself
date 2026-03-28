@@ -1,0 +1,28 @@
+---
+# Full node setup playbook.
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+
+- name: Configure all forge-metal nodes
+  hosts: all
+  become: true
+  roles:
+    - base
+
+- name: Configure worker nodes
+  hosts: workers
+  become: true
+  roles:
+    - zfs
+    - containerd
+    - verdaccio
+    - wireguard
+    - golden_image
+    - forgejo
+    - agent
+
+- name: Configure infrastructure nodes
+  hosts: infra
+  become: true
+  roles:
+    - wireguard
+    - clickstack

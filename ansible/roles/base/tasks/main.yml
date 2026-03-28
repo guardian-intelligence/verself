@@ -1,0 +1,44 @@
+---
+# Base packages and system configuration for all nodes.
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - git
+      - curl
+      - jq
+      - python3
+      - python3-pip
+      - ca-certificates
+      - gnupg
+      - sqlite3
+    state: present
+
+- name: Add NodeSource GPG key
+  ansible.builtin.apt_key:
+    url: "https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
+    state: present
+
+- name: Add NodeSource repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://deb.nodesource.com/node_{{ node_version }}.x nodistro main"
+    state: present
+
+- name: Install Node.js (pinned to major version)
+  ansible.builtin.apt:
+    name: "nodejs={{ nodejs_pin }}"
+    state: present
+
+- name: Create bench-ci system user
+  ansible.builtin.user:
+    name: bench-ci
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/bench-ci
+    create_home: true

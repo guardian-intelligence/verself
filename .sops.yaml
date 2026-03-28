@@ -1,0 +1,9 @@
+# sops configuration for forge-metal secrets.
+# The age public key is written by: make setup-sops
+#
+# Encrypted files (*.sops.yml) are safe to commit.
+# The age private key (~/.config/sops/age/keys.txt) is NOT.
+
+creation_rules:
+  - path_regex: \.sops\.yml$
+    age: AGE_PUBLIC_KEY_PLACEHOLDER

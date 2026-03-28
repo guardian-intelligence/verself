@@ -1,0 +1,14 @@
+[Unit]
+Description=Forgejo Actions Runner
+After=forgejo.service
+Requires=forgejo.service
+
+[Service]
+Type=simple
+User=bench-ci
+ExecStart=/usr/local/bin/forgejo-runner daemon --config /etc/forgejo/runner-config.yaml
+Restart=on-failure
+WorkingDirectory=/var/lib/bench-ci
+
+[Install]
+WantedBy=multi-user.target

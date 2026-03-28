@@ -1,0 +1,13 @@
+[Unit]
+Description=forge-metal CI agent
+After=network.target containerd.service
+Requires=containerd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bmci agent run --config /etc/forge-metal/config.toml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

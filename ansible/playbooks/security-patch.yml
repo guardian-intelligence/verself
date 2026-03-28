@@ -1,0 +1,23 @@
+---
+# Rolling OS security updates across the fleet.
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/security-patch.yml
+
+- name: Apply security patches
+  hosts: all
+  become: true
+  serial: "10%"  # Conservative rolling update
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade security packages
+      ansible.builtin.apt:
+        upgrade: safe
+      register: apt_result
+
+    - name: Reboot if required
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+      when: apt_result.changed and ansible_facts['os_family'] == 'Debian'

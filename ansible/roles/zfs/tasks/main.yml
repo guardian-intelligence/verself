@@ -1,0 +1,47 @@
+---
+# ZFS pool and dataset setup for worker nodes.
+
+- name: Install ZFS utilities
+  ansible.builtin.apt:
+    name: zfsutils-linux
+    state: present
+
+- name: Detect available disks for ZFS pool (skip root disk)
+  ansible.builtin.shell: |
+    root_disk=$(lsblk -npo PKNAME $(findmnt -no SOURCE /) 2>/dev/null | head -1)
+    lsblk -dnpo NAME,TYPE | awk -v root="$root_disk" '$2 == "disk" && $1 != root {print $1}' | head -1
+  register: zfs_disk
+  changed_when: false
+
+- name: Check if ZFS pool exists
+  ansible.builtin.command: zpool status {{ zfs_pool }}
+  register: zpool_status
+  changed_when: false
+  failed_when: false
+
+- name: Wipe old filesystem signatures on target disk
+  ansible.builtin.command: wipefs -a {{ zfs_disk.stdout }}
+  when:
+    - zpool_status.rc != 0
+    - zfs_disk.stdout | length > 0
+
+- name: Create ZFS pool
+  ansible.builtin.command: >
+    zpool create -f -o ashift=12
+    -O compression=lz4
+    -O atime=off
+    -O xattr=sa
+    {{ zfs_pool }} {{ zfs_disk.stdout }}
+  when:
+    - zpool_status.rc != 0
+    - zfs_disk.stdout | length > 0
+
+- name: Create golden dataset
+  community.general.zfs:
+    name: "{{ zfs_pool }}/{{ zfs_golden_dataset }}"
+    state: present
+
+- name: Create CI dataset
+  community.general.zfs:
+    name: "{{ zfs_pool }}/{{ zfs_ci_dataset }}"
+    state: present

@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenTelemetry Collector
+After=network.target clickhouse-server.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+ExecStart=/usr/local/bin/otelcol-contrib --config /etc/otelcol/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

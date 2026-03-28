@@ -1,0 +1,306 @@
+---
+# End-to-end CI pipeline for forge-metal itself.
+# Wipes the box, provisions everything, health checks, seeds test data,
+# and asserts ClickHouse wide events + OTLP traces are working.
+#
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/ci-e2e.yml
+#
+# This playbook IS the CI test. If it exits 0, the stack is healthy.
+
+- name: "Phase 1: Wipe existing state"
+  hosts: all
+  become: true
+  tasks:
+    - name: Stop all forge-metal services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - hyperdx-app
+        - hyperdx-api
+        - caddy
+        - otelcol
+      failed_when: false
+
+    - name: Drop HyperDX MongoDB database
+      ansible.builtin.command: mongosh --quiet --eval "db.dropDatabase()" hyperdx
+      failed_when: false
+      changed_when: true
+
+    - name: Drop ClickHouse forge_metal database
+      ansible.builtin.command: clickhouse-client --query "DROP DATABASE IF EXISTS forge_metal"
+      changed_when: true
+
+    - name: Remove session secret (forces regeneration)
+      ansible.builtin.file:
+        path: /opt/clickstack/session_secret
+        state: absent
+
+    - name: Remove admin credentials
+      ansible.builtin.file:
+        path: /etc/clickstack/admin-credentials.txt
+        state: absent
+
+    - name: Remove entire HyperDX clone (forces fresh clone + build)
+      ansible.builtin.file:
+        path: /opt/clickstack/hyperdx
+        state: absent
+
+- name: "Phase 2: Provision from scratch"
+  hosts: all
+  become: true
+  roles:
+    - base
+    - clickstack
+
+- name: "Phase 3: Health checks"
+  hosts: all
+  become: true
+  vars:
+    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+  tasks:
+    - name: Assert all services are running
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+      register: svc_status
+      failed_when: svc_status.status.ActiveState != "active"
+      loop:
+        - clickhouse-server
+        - mongod
+        - otelcol
+        - hyperdx-api
+        - hyperdx-app
+        - caddy
+
+    - name: Assert ClickHouse responds
+      ansible.builtin.command: clickhouse-client --query "SELECT 1"
+      changed_when: false
+
+    - name: Assert forge_metal database exists
+      ansible.builtin.command: clickhouse-client --query "SELECT count() FROM forge_metal.ci_events"
+      register: ch_count
+      changed_when: false
+      failed_when: ch_count.rc != 0
+
+    - name: Assert HyperDX API responds via Caddy
+      ansible.builtin.uri:
+        url: "https://{{ clickstack_domain }}/api/installation"
+        validate_certs: false
+        return_content: true
+      register: api_check
+      failed_when: "'isTeamExisting' not in api_check.content"
+
+    - name: Assert admin user was seeded
+      ansible.builtin.uri:
+        url: "https://{{ clickstack_domain }}/api/installation"
+        validate_certs: false
+        return_content: true
+      register: install_check
+      failed_when: "not (install_check.json.isTeamExisting | bool)"
+
+    - name: Assert OTel Collector health check
+      ansible.builtin.uri:
+        url: "http://localhost:13133"
+        return_content: true
+      register: otel_health
+      failed_when: otel_health.status != 200
+
+    - name: Assert Caddy serves HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ clickstack_domain }}/"
+        validate_certs: false
+        status_code: 200
+
+    - name: Assert HTTP redirects to HTTPS
+      ansible.builtin.uri:
+        url: "http://{{ clickstack_domain }}/"
+        follow_redirects: none
+        status_code: [301, 302, 307, 308]
+
+- name: "Phase 4: Seed test data and verify pipelines"
+  hosts: all
+  become: true
+  vars:
+    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+  tasks:
+    # -- ClickHouse wide events --
+    - name: Insert test wide events
+      ansible.builtin.command: >
+        clickhouse-client --database forge_metal --query "
+        INSERT INTO ci_events (
+          job_id, run_id, node_id, region, plan,
+          repo, branch, commit_sha, pr_number, pr_author, base_branch,
+          diff_files_changed, diff_lines_added, diff_lines_deleted,
+          zfs_clone_ns, gvisor_setup_ns, deps_install_ns,
+          lint_ns, typecheck_ns, build_ns, test_ns,
+          total_ci_ns, total_e2e_ns, cleanup_ns, gvisor_teardown_ns,
+          lint_exit, typecheck_exit, build_exit, test_exit,
+          cpu_user_ms, cpu_system_ms, memory_peak_bytes,
+          io_read_bytes, io_write_bytes, zfs_written_bytes,
+          npm_cache_hit, next_cache_hit, tsc_cache_hit, lockfile_changed,
+          cpu_model, cores, memory_mb, disk_type,
+          golden_snapshot, golden_age_hours, node_version, npm_version,
+          created_at, started_at, completed_at
+        ) VALUES
+        ('00000000-0000-0000-0000-000000000001', 'e2e-run-001', 'e2e-node', 'ASH', 's3-large-x86',
+         'Next-js-Boilerplate', 'feat/e2e-test', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'ci-bot', 'main',
+         2, 50, 10,
+         28000000, 85000000, 0,
+         1590000000, 2990000000, 820000000, 1330000000,
+         6730000000, 6843000000, 124000000, 12000000,
+         0, 0, 0, 0,
+         4200, 890, 534773760,
+         102400000, 51200000, 8388608,
+         1, 1, 1, 0,
+         'AMD EPYC 7443P', 48, 1015808, 'NVMe',
+         'benchpool/golden@ready', 2.5, '22.11.0', '10.2.4',
+         now(), now(), now()),
+        ('00000000-0000-0000-0000-000000000002', 'e2e-run-002', 'e2e-node', 'ASH', 's3-large-x86',
+         'Next-js-Boilerplate', 'feat/deps-update', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 2, 'ci-bot', 'main',
+         5, 200, 50,
+         27000000, 90000000, 8300000000,
+         1600000000, 3010000000, 830000000, 1340000000,
+         15080000000, 15197000000, 126000000, 13000000,
+         0, 0, 0, 0,
+         5100, 1020, 612368384,
+         204800000, 102400000, 16777216,
+         0, 0, 0, 1,
+         'AMD EPYC 7443P', 48, 1015808, 'NVMe',
+         'benchpool/golden@ready', 1.2, '22.11.0', '10.2.4',
+         now(), now(), now())
+        "
+      changed_when: true
+
+    - name: Assert event count is correct
+      ansible.builtin.command: >
+        clickhouse-client --database forge_metal --query
+        "SELECT count() FROM ci_events WHERE run_id LIKE 'e2e-run-%'"
+      register: event_count
+      changed_when: false
+      failed_when: event_count.stdout | trim != "2"
+
+    - name: Assert wide event columns are queryable
+      ansible.builtin.command: >
+        clickhouse-client --database forge_metal --query "
+        SELECT
+          run_id,
+          pr_author,
+          branch,
+          round(total_e2e_ns / 1e9, 2) AS e2e_seconds,
+          IF(lockfile_changed, 'dep-pr', 'code-pr') AS pr_type,
+          IF(npm_cache_hit, 'hit', 'miss') AS cache
+        FROM ci_events
+        WHERE run_id LIKE 'e2e-run-%'
+        ORDER BY run_id
+        FORMAT TSV
+        "
+      register: query_result
+      changed_when: false
+      failed_when: >
+        'e2e-run-001' not in query_result.stdout or
+        'e2e-run-002' not in query_result.stdout or
+        'code-pr' not in query_result.stdout or
+        'dep-pr' not in query_result.stdout
+
+    - name: Assert aggregation queries work
+      ansible.builtin.command: >
+        clickhouse-client --database forge_metal --query "
+        SELECT
+          IF(lockfile_changed, 'dep-pr', 'code-pr') AS pr_type,
+          count() AS jobs,
+          round(quantile(0.5)(total_e2e_ns) / 1e9, 2) AS p50_e2e_s
+        FROM ci_events
+        WHERE run_id LIKE 'e2e-run-%'
+        GROUP BY pr_type
+        ORDER BY pr_type
+        FORMAT TSV
+        "
+      register: agg_result
+      changed_when: false
+      failed_when: >
+        'code-pr' not in agg_result.stdout or
+        'dep-pr' not in agg_result.stdout
+
+    - name: Assert compression codecs are applied
+      ansible.builtin.command: >
+        clickhouse-client --query "
+        SELECT name, compression_codec
+        FROM system.columns
+        WHERE database = 'forge_metal' AND table = 'ci_events'
+          AND name IN ('created_at', 'lint_ns', 'memory_peak_bytes', 'region')
+        ORDER BY name
+        FORMAT TSV
+        "
+      register: codec_result
+      changed_when: false
+      failed_when: >
+        'DoubleDelta' not in codec_result.stdout or
+        'Delta(8)' not in codec_result.stdout or
+        'T64' not in codec_result.stdout
+
+    # -- OTLP trace pipeline --
+    - name: Send test OTLP trace to OTel Collector
+      ansible.builtin.uri:
+        url: "http://localhost:4318/v1/traces"
+        method: POST
+        body_format: json
+        body:
+          resourceSpans:
+            - resource:
+                attributes:
+                  - key: service.name
+                    value:
+                      stringValue: forge-metal-e2e-test
+              scopeSpans:
+                - spans:
+                    - traceId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      spanId: "bbbbbbbbbbbbbbbb"
+                      name: "e2e-test-span"
+                      kind: 1
+                      startTimeUnixNano: "1774680000000000000"
+                      endTimeUnixNano: "1774680001000000000"
+                      attributes:
+                        - key: test.type
+                          value:
+                            stringValue: e2e
+        status_code: 200
+      register: otlp_result
+      failed_when: otlp_result.status != 200
+
+    - name: Wait for OTel batch flush
+      ansible.builtin.pause:
+        seconds: 8
+
+    - name: Assert OTLP trace landed in ClickHouse
+      ansible.builtin.command: >
+        clickhouse-client --query "
+        SELECT count()
+        FROM default.otel_traces
+        WHERE ServiceName = 'forge-metal-e2e-test'
+        "
+      register: trace_count
+      changed_when: false
+      failed_when: trace_count.stdout | trim | int < 1
+
+- name: "Phase 5: Summary"
+  hosts: all
+  become: true
+  vars:
+    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+  tasks:
+    - name: Print results
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          forge-metal e2e CI: ALL CHECKS PASSED
+          ========================================
+          Services:     6/6 active
+          ClickHouse:   forge_metal.ci_events OK
+          Wide events:  2 inserted, queried, aggregated
+          Codecs:       DoubleDelta, Delta(8), T64 verified
+          OTLP:         trace ingested via OTel Collector
+          HyperDX:      API + UI responding via Caddy
+          Admin:        user seeded
+          TLS:          HTTPS active, HTTP redirects
+          ========================================
+          URL: https://{{ clickstack_domain }}

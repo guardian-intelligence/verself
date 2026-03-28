@@ -1,0 +1,14 @@
+[Unit]
+Description=Verdaccio npm registry mirror
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/verdaccio --config /etc/verdaccio/config.yaml
+Restart=on-failure
+User=nobody
+Group=nogroup
+CPUAffinity=0 1
+
+[Install]
+WantedBy=multi-user.target
