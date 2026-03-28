@@ -3,9 +3,8 @@
 
 forge_metal_version: "0.1.0"
 
-# Nix server profile — all binaries live here after nix_deploy role.
-# Every systemd unit and config references this path.
-fm_bin: /opt/forge-metal/profile/bin
+# Nix server profile path. All binaries here after nix_deploy role.
+fm_bin: "/opt/forge-metal/profile/bin"
 
 # WireGuard
 wireguard_interface: wg0

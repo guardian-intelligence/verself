@@ -9,7 +9,7 @@
 
 - name: Check if a team already exists (via MongoDB)
   ansible.builtin.command: >
-    {{ fm_bin }}/mongosh --quiet --eval "db.teams.countDocuments()" hyperdx
+    mongosh --quiet --eval "db.teams.countDocuments()" hyperdx
   register: team_count
   changed_when: false
 

@@ -25,19 +25,15 @@
         - mongod
       failed_when: false
 
-    - name: Drop ClickHouse forge_metal database
-      ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'DROP DATABASE IF EXISTS forge_metal'"
-      failed_when: false
-      changed_when: true
-      environment:
-        PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    - name: Remove ClickHouse data (clean wipe while server is stopped)
+      ansible.builtin.file:
+        path: /var/lib/clickhouse
+        state: absent
 
     - name: Drop HyperDX MongoDB database
-      ansible.builtin.command: "{{ fm_bin }}/mongosh --quiet --eval 'db.dropDatabase()' hyperdx"
+      ansible.builtin.shell: "mongosh --quiet --eval 'db.dropDatabase()' hyperdx || true"
       failed_when: false
       changed_when: true
-      environment:
-        PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
 
     - name: Remove session secret (forces regeneration)
       ansible.builtin.file:
