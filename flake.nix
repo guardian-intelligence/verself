@@ -96,6 +96,10 @@
 
             # Nix
             pkgs.nil
+
+            # Test runtime (ZFS integration tests)
+            pkgs.crun
+            pkgs.debootstrap
           ];
 
           shellHook = ''
@@ -150,6 +154,8 @@
               pkgs.sops
               pkgs.age
               pkgs.nil
+              pkgs.crun
+              pkgs.debootstrap
             ];
             pathsToLink = [ "/bin" ];
           };
