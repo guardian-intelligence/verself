@@ -1,5 +1,5 @@
-.PHONY: build clean test lint fmt vet tidy proto \
-       setup-sops edit-secrets setup-domain \
+.PHONY: build clean test lint fmt vet tidy \
+       doctor setup-sops edit-secrets setup-domain \
        server-profile deploy e2e benchmark
 
 BINARY := bmci
@@ -30,8 +30,8 @@ vet:
 tidy:
 	go mod tidy
 
-proto:
-	buf generate internal/proto
+doctor: build ## Check that all required dev tools are present and at the right version
+	./$(BINARY) doctor
 
 setup-sops: ## Generate age key, encrypt initial secrets, install sops collection
 	./scripts/setup-sops.sh
