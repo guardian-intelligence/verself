@@ -4,6 +4,15 @@ Self-hosted bare-metal CI platform with ClickStack observability.
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
+The goal is for turnkey bootstrap from 0 -> latitude.sh bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB. 
+
+Hard requirement: everything must be self-hosted.
+
+Exceptions:
+
+Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups
+
+
 ## Quick Start
 
 ### Prerequisites
@@ -70,20 +79,23 @@ ssh ubuntu@<ip> 'sudo cat /etc/clickstack/admin-credentials.txt'
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
 
-### TLS with a real domain
-
-Set `clickstack_domain` in your Ansible vars and point your DNS:
-
-```yaml
-# ansible/group_vars/infra/main.yml
-clickstack_domain: ci.example.com
-```
+### TLS with a real domain (Cloudflare)
 
 ```bash
+make setup-domain DOMAIN=anveio.com
 make deploy
 ```
 
-Caddy handles Let's Encrypt issuance, renewal, HTTP->HTTPS redirect, and OCSP stapling automatically.
+`setup-domain` walks you through everything: initializes secrets if needed, guides you through creating a Cloudflare API token, validates it, and writes the config. Then `deploy` creates DNS records and provisions TLS.
+
+Services get subdomains automatically:
+
+| Subdomain | Service |
+|-----------|---------|
+| `admin.<domain>` | ClickStack dashboard |
+| `git.<domain>` | Forgejo (when enabled) |
+
+To route traffic through Cloudflare's CDN/WAF instead of direct-to-origin, set `cloudflare_proxied: true` in `ansible/group_vars/all/main.yml`.
 
 ## How It Works
 
@@ -138,6 +150,7 @@ Compression codecs per column type:
 
 | Target | Description |
 |--------|-------------|
+| `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) |
 | `make e2e` | Full wipe + reprovision + test |
@@ -164,6 +177,7 @@ forge-metal/
 │   └── roles/
 │       ├── nix_deploy/    # Install Nix + push server profile closure
 │       ├── base/          # System config (ZFS, users, npm registry)
+│       ├── cloudflare_dns/ # Cloudflare DNS A record management
 │       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
 │       ├── zfs/           # Pool creation, golden/ci datasets
 │       ├── containerd/    # containerd + gVisor runsc (config only)

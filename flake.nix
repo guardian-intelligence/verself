@@ -90,6 +90,10 @@
             pkgs.jq
             clickhouse-static
 
+            # Secrets
+            pkgs.sops
+            pkgs.age
+
             # Nix
             pkgs.nil
           ];
@@ -122,6 +126,32 @@
               "-s" "-w"
               "-X main.version=${self.shortRev or "dev"}"
             ];
+          };
+
+          # Dev tools, installable to user profile:
+          #   nix profile install .#dev-tools
+          # Same packages as devShell, but in PATH permanently. No shell hook latency.
+          dev-tools = pkgs.buildEnv {
+            name = "forge-metal-dev-tools";
+            ignoreCollisions = true;
+            paths = [
+              pkgs.go_1_25
+              pkgs.golangci-lint
+              pkgs.gofumpt
+              pkgs.opentofu
+              pkgs.ansible
+              pkgs.protobuf
+              pkgs.buf
+              pkgs.protoc-gen-go
+              pkgs.protoc-gen-go-grpc
+              pkgs.shellcheck
+              pkgs.jq
+              clickhouse-static
+              pkgs.sops
+              pkgs.age
+              pkgs.nil
+            ];
+            pathsToLink = [ "/bin" ];
           };
 
           # The golden image closure. Push to bare metal with:

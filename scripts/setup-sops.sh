@@ -53,6 +53,12 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
   cat > "$SECRETS_FILE" <<EOF
 clickstack_admin_email: admin@forge-metal.local
 clickstack_admin_password: "${GENERATED_PW}"
+
+# Cloudflare API token — required when forge_metal_domain is set.
+# Create a token with Zone:DNS:Edit permission at:
+#   https://dash.cloudflare.com/profile/api-tokens
+# Use the "Edit zone DNS" template, scoped to your zone.
+cloudflare_api_token: ""
 EOF
   sops encrypt -i "$SECRETS_FILE"
   echo "Created and encrypted: $SECRETS_FILE"
