@@ -1,8 +1,6 @@
 # forge-metal
 
-
-
-Turnkey company in a box: Self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability.
+Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability.
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
@@ -15,46 +13,36 @@ Exceptions:
 Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (done through `zfs send`, not LINSTOR + DRBD)
 Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
+Required (not implemented) - Email Delivery (Resend only in the future)
 
 
 ## Quick Start
 
-### Prerequisites
-
-- A bare-metal server running Ubuntu 24.04 (e.g. [Latitude.sh](https://latitude.sh))
-- SSH access (`ssh ubuntu@<ip>` works)
-- [Nix](https://nixos.org/download/) on your workstation (provides all tooling)
-
 ### 1. Clone and enter dev shell
 
 ```bash
-git clone https://github.com/forge-metal/forge-metal.git
-cd forge-metal
 nix develop  # gives you Go, Terraform, Ansible, protoc, clickhouse-client, etc.
 ```
 
-### 2. Configure inventory
+### 2. Provision bare metal
 
 ```bash
-cd ansible
-cat > inventory/hosts.ini << 'EOF'
-[workers]
-my-node ansible_host=<YOUR_IP>
+# Set your Latitude.sh API token
+export LATITUDESH_AUTH_TOKEN="your-token-here"
 
-[infra]
-my-node ansible_host=<YOUR_IP>
+# Create your tfvars (one-time)
+cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json
+# Edit terraform/terraform.tfvars.json — set project_id to your Latitude.sh project
 
-[all:vars]
-ansible_user=ubuntu
-ansible_python_interpreter=/usr/bin/python3
-EOF
+# Provision server + generate Ansible inventory
+make provision
 ```
+
+This provisions a bare metal server via OpenTofu and auto-generates `ansible/inventory/hosts.ini` from the outputs.
 
 ### 3. Build the golden image and deploy
 
 ```bash
-# Build the Nix server profile (first time downloads/builds everything, cached after)
-cd ..
 make e2e
 ```
 
@@ -100,6 +88,14 @@ Services get subdomains automatically:
 | `git.<domain>` | Forgejo (when enabled) |
 
 To route traffic through Cloudflare's CDN/WAF instead of direct-to-origin, set `cloudflare_proxied: true` in `ansible/group_vars/all/main.yml`.
+
+### Deprovision
+
+```bash
+make deprovision  # destroys server + SSH key via OpenTofu, removes inventory
+```
+
+This runs `tofu destroy` and cleans up the generated Ansible inventory. DNS records (if any) must be removed separately via the Cloudflare dashboard or API.
 
 ## How It Works
 
@@ -156,6 +152,8 @@ Compression codecs per column type:
 
 | Target | Description |
 |--------|-------------|
+| `make provision` | Provision bare metal via OpenTofu, generate Ansible inventory |
+| `make deprovision` | Destroy all bare metal infrastructure |
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) |
@@ -194,6 +192,10 @@ forge-metal/
 ├── config/default.toml    # Embedded defaults
 └── flake.nix              # Dev shell + server profile (golden image)
 ```
+
+## Output Contract
+
+* When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
 
 ## License
 
