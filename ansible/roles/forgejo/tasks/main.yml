@@ -17,6 +17,16 @@
     owner: forgejo
     mode: "0750"
 
+- name: Deploy Forgejo app.ini
+  ansible.builtin.template:
+    src: app.ini.j2
+    dest: /etc/forgejo/app.ini
+    owner: forgejo
+    group: forgejo
+    mode: "0640"
+  notify:
+    - restart forgejo
+
 - name: Deploy Forgejo systemd unit
   ansible.builtin.template:
     src: forgejo.service.j2

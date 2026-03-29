@@ -3,7 +3,7 @@
 # Verdaccio is not in nixpkgs, so we install it via the Nix-provided npm.
 
 - name: Install Verdaccio via npm
-  ansible.builtin.command: "{{ fm_bin }}/npm install -g verdaccio@{{ verdaccio_version }}"
+  ansible.builtin.command: "{{ fm_bin }}/npm install -g verdaccio@{{ verdaccio_version }} --registry https://registry.npmjs.org"
   args:
     creates: /opt/forge-metal/profile/lib/node_modules/verdaccio
   environment:

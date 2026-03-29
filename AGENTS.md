@@ -15,6 +15,10 @@ Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required (not implemented) - Email Delivery (Resend only in the future)
 
+## ZFS
+
+This project makes heavy use of ZFS. We have compiled some reasearch in docs/research. @docs/research/README.md
+
 
 ## Quick Start
 

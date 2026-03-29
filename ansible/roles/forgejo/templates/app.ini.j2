@@ -1,0 +1,45 @@
+; Forgejo configuration — managed by Ansible.
+; https://forgejo.org/docs/latest/admin/config-cheat-sheet/
+
+APP_NAME = Forge Metal
+RUN_MODE = prod
+RUN_USER = forgejo
+WORK_PATH = /var/lib/forgejo
+
+[server]
+DOMAIN = {{ forgejo_domain }}
+ROOT_URL = https://{{ forgejo_domain }}/
+HTTP_PORT = {{ forgejo_port }}
+HTTP_ADDR = 127.0.0.1
+SSH_DOMAIN = {{ forgejo_domain }}
+SSH_PORT = {{ forgejo_ssh_port }}
+SSH_LISTEN_PORT = {{ forgejo_ssh_port }}
+START_SSH_SERVER = true
+LFS_START_SERVER = true
+OFFLINE_MODE = true
+
+[database]
+DB_TYPE = sqlite3
+PATH = /var/lib/forgejo/data/forgejo.db
+
+[repository]
+ROOT = /var/lib/forgejo/repositories
+DEFAULT_BRANCH = main
+
+[lfs]
+PATH = /var/lib/forgejo/data/lfs
+
+[log]
+MODE = console
+LEVEL = info
+ROOT_PATH = /var/lib/forgejo/log
+
+[security]
+INSTALL_LOCK = true
+
+[service]
+DISABLE_REGISTRATION = false
+REQUIRE_SIGNIN_VIEW = false
+
+[actions]
+ENABLED = true

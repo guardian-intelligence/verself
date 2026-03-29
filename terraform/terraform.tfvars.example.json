@@ -1,0 +1,10 @@
+{
+  "cluster_name": "dev",
+  "project_id": "proj_REPLACE_ME",
+  "worker_count": 1,
+  "infra_count": 0,
+  "region": "ASH",
+  "plan": "s3-large-x86",
+  "billing": "hourly",
+  "ssh_public_key_path": "~/.ssh/id_ed25519.pub"
+}

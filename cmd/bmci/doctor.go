@@ -13,52 +13,39 @@ func doctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Check that all required dev tools are installed and at the correct version",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			results, summary := doctor.CheckAll(doctor.SystemResolver{})
+			results, summary := doctor.CheckAll(&doctor.SystemResolver{})
 
+			if autoFix {
+				fixable := summary.Missing + summary.Installable + summary.Upgradable
+				if fixable > 0 {
+					fixed, errs := doctor.Fix(results)
+					for _, name := range fixed {
+						fmt.Printf("  + installed %s\n", name)
+					}
+					for _, err := range errs {
+						fmt.Printf("  ✗ %s\n", err)
+					}
+					if len(fixed) > 0 {
+						fmt.Println()
+					}
+				}
+				// Re-check after fix to show current state
+				results, summary = doctor.CheckAll(&doctor.SystemResolver{})
+			}
+
+			fmt.Println("    Tool          Have       Want")
 			for _, r := range results {
 				printResult(r)
 			}
 			fmt.Println()
 
-			fmt.Printf("%d ok", summary.OK)
-			if summary.Installable > 0 {
-				fmt.Printf(", %d installable", summary.Installable)
-			}
-			if summary.Upgradable > 0 {
-				fmt.Printf(", %d upgradable", summary.Upgradable)
-			}
-			if summary.Missing > 0 {
-				fmt.Printf(", %d missing", summary.Missing)
-			}
+			printSummary(summary)
+
 			if summary.Conflict > 0 {
-				fmt.Printf(", %d conflict", summary.Conflict)
-			}
-			fmt.Println()
-
-			fixable := summary.Missing + summary.Installable + summary.Upgradable
-			unfixable := summary.Conflict
-
-			if autoFix && fixable > 0 {
-				fmt.Println()
-				fixed, errs := doctor.Fix(results)
-				for _, name := range fixed {
-					fmt.Printf("  + installed %s\n", name)
-				}
-				for _, err := range errs {
-					fmt.Printf("  ✗ %s\n", err)
-				}
-				// Adjust counts: successfully fixed tools are now OK
-				fixable -= len(fixed)
+				fmt.Println("  hint: remove system versions or ensure ~/.nix-profile/bin is first in PATH")
 			}
 
-			for _, r := range results {
-				if r.Status == doctor.Conflict {
-					fmt.Printf("  ⚠ %s %s from %s conflicts — remove it or add nix profile to PATH first\n",
-						r.Spec.Name, r.ActualVer, r.BinPath)
-				}
-			}
-
-			issues := fixable + unfixable
+			issues := summary.Missing + summary.Installable + summary.Upgradable + summary.Conflict
 			if issues > 0 {
 				return fmt.Errorf("%d issues found", issues)
 			}
@@ -69,17 +56,38 @@ func doctorCmd() *cobra.Command {
 	return cmd
 }
 
+func printSummary(s doctor.Summary) {
+	fmt.Printf("%d ok", s.OK)
+	if s.Installable > 0 {
+		fmt.Printf(", %d installable", s.Installable)
+	}
+	if s.Upgradable > 0 {
+		fmt.Printf(", %d upgradable", s.Upgradable)
+	}
+	if s.Missing > 0 {
+		fmt.Printf(", %d missing", s.Missing)
+	}
+	if s.Conflict > 0 {
+		fmt.Printf(", %d conflict", s.Conflict)
+	}
+	fmt.Println()
+}
+
 func printResult(r doctor.CheckResult) {
+	var icon, have, note string
 	switch r.Status {
 	case doctor.OK:
-		fmt.Printf("  ✓ %-12s %s\n", r.Spec.Name, r.ActualVer)
-	case doctor.Missing:
-		fmt.Printf("  ✗ %-12s missing (run: bmci doctor --fix)\n", r.Spec.Name)
-	case doctor.Installable:
-		fmt.Printf("  ✗ %-12s not in PATH (run: bmci doctor --fix)\n", r.Spec.Name)
+		icon, have = "✓", r.ActualVer
+	case doctor.Missing, doctor.Installable:
+		icon, have = "✗", "—"
 	case doctor.Upgradable:
-		fmt.Printf("  ⚠ %-12s %s (want %s, nix-managed)\n", r.Spec.Name, r.ActualVer, r.Spec.Expected)
+		icon, have = "⚠", r.ActualVer
 	case doctor.Conflict:
-		fmt.Printf("  ⚠ %-12s %s (want %s, from %s)\n", r.Spec.Name, r.ActualVer, r.Spec.Expected, r.BinPath)
+		icon, have, note = "⚠", r.ActualVer, r.BinPath
+	}
+	if note != "" {
+		fmt.Printf("  %s %-12s  %-8s   %-8s   %s\n", icon, r.Spec.Name, have, r.Spec.Expected, note)
+	} else {
+		fmt.Printf("  %s %-12s  %-8s   %s\n", icon, r.Spec.Name, have, r.Spec.Expected)
 	}
 }

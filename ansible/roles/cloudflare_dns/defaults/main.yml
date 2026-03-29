@@ -9,6 +9,7 @@
 # This list is the union of all subdomains that need DNS records.
 cloudflare_dns_records:
   - "{{ clickstack_subdomain | default('admin') }}"
+  - "{{ forgejo_subdomain | default('git') }}"
 
 # DNS record type. Override to AAAA for IPv6-only hosts.
 cloudflare_record_type: A

@@ -1,3 +1,7 @@
 {{ clickstack_domain }} {
 	reverse_proxy localhost:{{ hyperdx_app_port }}
 }
+
+{{ forgejo_domain | default(ansible_default_ipv4.address) }} {
+	reverse_proxy localhost:{{ forgejo_port | default('3000') }}
+}

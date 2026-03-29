@@ -12,9 +12,6 @@ fm_bin: "/opt/forge-metal/profile/bin"
 # Leave empty to use bare IP with self-signed TLS.
 forge_metal_domain: "anveio.com"
 
-# Cloudflare DNS (only used when forge_metal_domain is set)
-cloudflare_proxied: false # Set true to route traffic through Cloudflare's CDN/WAF.
-
 # WireGuard
 wireguard_interface: wg0
 wireguard_port: 51820
