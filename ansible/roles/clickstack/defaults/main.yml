@@ -24,8 +24,11 @@ otelcol_version: "0.120.0"
 # Caddy
 caddy_version: "2.*"  # pin to 2.x series
 
-# Caddy domain: uses forge_metal_domain when set, otherwise falls back to IP (self-signed).
-clickstack_domain: "{{ forge_metal_domain if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
+# Subdomain prefix for the ClickStack dashboard.
+clickstack_subdomain: admin
+
+# Full domain: auto-derived as <subdomain>.<forge_metal_domain>, or bare IP if no domain set.
+clickstack_domain: "{{ (clickstack_subdomain ~ '.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
 
 # Admin user (seeded on first run)
 clickstack_admin_email: "admin@forge-metal.local"
