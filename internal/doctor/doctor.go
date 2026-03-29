@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 type Status int
@@ -73,13 +74,21 @@ func Check(spec ToolSpec, r Resolver) CheckResult {
 	return CheckResult{Spec: spec, Status: Conflict, ActualVer: actual, BinPath: binPath}
 }
 
-// CheckAll runs the full manifest, returns the list and summary counts.
+// CheckAll runs the full manifest concurrently, returns results in manifest order.
 func CheckAll(r Resolver) ([]CheckResult, Summary) {
-	results := make([]CheckResult, 0, len(Manifest))
+	results := make([]CheckResult, len(Manifest))
+	var wg sync.WaitGroup
+	wg.Add(len(Manifest))
+	for i, spec := range Manifest {
+		go func(i int, spec ToolSpec) {
+			defer wg.Done()
+			results[i] = Check(spec, r)
+		}(i, spec)
+	}
+	wg.Wait()
+
 	var s Summary
-	for _, spec := range Manifest {
-		cr := Check(spec, r)
-		results = append(results, cr)
+	for _, cr := range results {
 		switch cr.Status {
 		case OK:
 			s.OK++
@@ -109,7 +118,14 @@ func Fix(results []CheckResult) (fixed []string, errs []error) {
 		return
 	}
 
-	cmd := exec.Command("nix", "profile", "install", ".#dev-tools")
+	// Remove any stale dev-tools entry so re-running --fix is idempotent.
+	// Ignore errors — the entry may not exist yet.
+	exec.Command("nix", "profile", "remove", "dev-tools").Run()
+
+	// Install with elevated priority (4 < default 5) so dev-tools binaries
+	// win over any individually-installed nix packages (e.g. a user's
+	// standalone jq or opentofu) without requiring them to be removed first.
+	cmd := exec.Command("nix", "profile", "install", ".#dev-tools", "--priority", "4")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		errs = append(errs, fmt.Errorf("nix profile install .#dev-tools: %s", strings.TrimSpace(string(out))))
@@ -123,11 +139,14 @@ func Fix(results []CheckResult) (fixed []string, errs []error) {
 }
 
 // SystemResolver implements Resolver using real exec and nix lookups.
-type SystemResolver struct{}
+type SystemResolver struct {
+	nixOnce   sync.Once
+	nixResult string
+}
 
 var semverRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-func (SystemResolver) Which(binary string) string {
+func (s *SystemResolver) Which(binary string) string {
 	path, err := exec.LookPath(binary)
 	if err != nil {
 		return ""
@@ -135,7 +154,7 @@ func (SystemResolver) Which(binary string) string {
 	return path
 }
 
-func (SystemResolver) Version(cmd string) string {
+func (s *SystemResolver) Version(cmd string) string {
 	parts := strings.Fields(cmd)
 	if len(parts) == 0 {
 		return ""
@@ -148,19 +167,21 @@ func (SystemResolver) Version(cmd string) string {
 	return match
 }
 
-func (SystemResolver) NixStorePath(attr string) string {
-	out, err := exec.Command("nix", "path-info", ".#dev-tools").CombinedOutput()
-	if err != nil {
-		return ""
-	}
-	path := strings.TrimSpace(string(out))
-	if path == "" {
-		return ""
-	}
-	return strings.SplitN(path, "\n", 2)[0]
+func (s *SystemResolver) NixStorePath(attr string) string {
+	s.nixOnce.Do(func() {
+		out, err := exec.Command("nix", "path-info", ".#dev-tools").CombinedOutput()
+		if err != nil {
+			return
+		}
+		path := strings.TrimSpace(string(out))
+		if path != "" {
+			s.nixResult = strings.SplitN(path, "\n", 2)[0]
+		}
+	})
+	return s.nixResult
 }
 
-func (SystemResolver) IsNixProfile(path string) bool {
+func (s *SystemResolver) IsNixProfile(path string) bool {
 	if strings.HasPrefix(path, "/nix/store/") {
 		return true
 	}
