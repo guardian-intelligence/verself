@@ -1,16 +1,20 @@
 # forge-metal
 
-Self-hosted bare-metal CI platform with ClickStack observability.
+
+
+Turnkey company in a box: Self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability.
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
-The goal is for turnkey bootstrap from 0 -> latitude.sh bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB. 
+The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB. 
 
 Hard requirement: everything must be self-hosted.
 
 Exceptions:
 
-Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups
+Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (done through `zfs send`, not LINSTOR + DRBD)
+Required - Domain Registar (Cloudflare only for now)
+Required - Compute Provider (Latitude.sh only for now)
 
 
 ## Quick Start
@@ -130,6 +134,8 @@ Ansible                    --> configure + enable services
 | Component | Port | Purpose |
 |-----------|------|---------|
 | Caddy | 443, 80 | Reverse proxy with automatic TLS |
+| Forgejo | 3000 | Git server + CI runner |
+| Verdaccio | 4873 | Sealed npm registry mirror |
 | ClickHouse | 9000, 8123 | Wide event storage with optimized codecs |
 | HyperDX | 8080, 8000 | Observability UI + API |
 | OTel Collector | 4317, 4318 | OTLP telemetry ingestion |
@@ -157,21 +163,18 @@ Compression codecs per column type:
 | `make benchmark` | Benchmark wipe+reprovision (3 iterations) |
 | `make build` | Build bmci Go binary locally |
 | `make test` | Run Go tests |
-| `make proto` | Generate gRPC code from proto |
 
 ## Project Structure
 
 ```
 forge-metal/
-├── cmd/bmci/              # CLI entry point (controller, agent)
+├── cmd/bmci/              # CLI entry point (doctor, setup-domain)
 ├── internal/
-│   ├── agent/             # Worker agent (heartbeat, job execution)
-│   ├── controller/        # Job scheduler, node registry
-│   ├── config/            # Layered TOML config
 │   ├── clickhouse/        # ClickHouse client, wide event struct
-│   ├── sandbox/           # gVisor/containerd integration
-│   ├── network/           # WireGuard config generation
-│   └── proto/v1/          # gRPC protobuf (AgentService)
+│   ├── cloudflare/        # Cloudflare API client (DNS, zone lookup)
+│   ├── config/            # Layered TOML config
+│   ├── doctor/            # Dev environment health checks
+│   └── domain/            # Domain setup wizard
 ├── ansible/
 │   ├── playbooks/         # ci-e2e, dev-single-node, site, golden-refresh, security-patch
 │   └── roles/
@@ -181,11 +184,10 @@ forge-metal/
 │       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
 │       ├── zfs/           # Pool creation, golden/ci datasets
 │       ├── containerd/    # containerd + gVisor runsc (config only)
-│       ├── verdaccio/     # Sealed npm mirror (config only)
+│       ├── verdaccio/     # Sealed npm registry mirror (config only)
 │       ├── wireguard/     # Mesh networking (config only)
 │       ├── golden_image/  # ZFS snapshot with warm caches
-│       ├── forgejo/       # Git server + CI runner (config only)
-│       └── agent/         # bmci agent (config only)
+│       └── forgejo/       # Git server + CI runner (config only)
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
 ├── scripts/               # Security scripts, benchmark runner
