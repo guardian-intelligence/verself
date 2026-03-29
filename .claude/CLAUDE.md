@@ -1,0 +1,1 @@
+/home/ubuntu/Projects/forge-metal/AGENTS.md
