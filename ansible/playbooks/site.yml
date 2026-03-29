@@ -11,18 +11,15 @@
   roles:
     - nix_deploy
     - base
+    - zfs
 
 - name: Configure worker nodes
   hosts: workers
   become: true
   roles:
-    - zfs
     - containerd
-    - verdaccio
     - wireguard
     - golden_image
-    - forgejo
-    - agent
 
 - name: Configure infrastructure nodes
   hosts: infra
@@ -31,3 +28,5 @@
     - wireguard
     - cloudflare_dns
     - clickstack
+    - verdaccio
+    - forgejo

@@ -6,4 +6,5 @@
 
 creation_rules:
   - path_regex: \.sops\.yml$
-    age: AGE_PUBLIC_KEY_PLACEHOLDER
+    age: >-
+      age10qyzk366rw595gfzqrun6dgcjslqcvpn4s6t7ee4l04c8dtdpvxqdkd823

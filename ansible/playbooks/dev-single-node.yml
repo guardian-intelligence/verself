@@ -13,3 +13,5 @@
     - base
     - cloudflare_dns
     - clickstack
+    - verdaccio
+    - forgejo
