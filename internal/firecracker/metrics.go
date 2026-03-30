@@ -51,20 +51,14 @@ type vcpuMetrics struct {
 	ExitMMIOWrite uint64 `json:"exit_mmio_write"`
 }
 
-// parseMetricsFile reads the last line of a metrics FIFO/file and
-// extracts VM metrics. Returns zero metrics on any error (best-effort).
-func parseMetricsFile(path string) *VMMetrics {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return &VMMetrics{}
-	}
-
-	// Metrics file contains NDJSON (one JSON object per line).
-	// The last non-empty line is the most recent flush.
+// parseMetricsBytes parses metrics from NDJSON data read from the FIFO.
+// Returns zero metrics on any error (best-effort).
+func parseMetricsBytes(data []byte) *VMMetrics {
 	lines := splitLines(data)
 	if len(lines) == 0 {
 		return &VMMetrics{}
 	}
+	// The last non-empty line is the most recent flush.
 	lastLine := lines[len(lines)-1]
 
 	var m metricsJSON

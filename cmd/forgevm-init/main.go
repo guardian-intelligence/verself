@@ -154,7 +154,17 @@ func main() {
 	fmt.Fprintf(os.Stdout, "[init] child exited with code %d (%dms total)\n",
 		exitCode, time.Since(bootStart).Milliseconds())
 
-	os.Exit(exitCode)
+	// Machine-parseable exit code marker for the host orchestrator.
+	// The host parses serial output for this line since Firecracker's
+	// own exit code doesn't reflect the guest command's exit code.
+	fmt.Fprintf(os.Stdout, "FORGEVM_EXIT_CODE=%d\n", exitCode)
+
+	// Clean VM shutdown via reboot syscall. Without this, os.Exit(N)
+	// from PID 1 causes a kernel panic ("Attempted to kill init!"),
+	// which reboots the VM (panic=1). The reboot syscall triggers
+	// a clean ACPI power-off that Firecracker handles gracefully.
+	syscall.Sync()
+	syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
 }
 
 // reapUntilChild blocks on Wait4(-1) reaping all children until the
