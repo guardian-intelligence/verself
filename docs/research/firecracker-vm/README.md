@@ -15,6 +15,7 @@ Conducted 2026-03-29.
 | [Guest Kernel](guest-kernel.md) | Minimal kernel config for CI, container/gVisor support, PVH boot, init binary vs systemd, boot time optimization |
 | [Networking](networking.md) | TAP at scale, namespace isolation, nftables vs iptables, CNI tc-redirect-tap, rate limiting, MAC generation |
 | [Metrics & Observability](metrics-observability.md) | Metrics categories, ClickHouse wide event mapping, serial capture, vsock logs, balloon memory stats |
+| [Go SDK](go-sdk.md) | Machine lifecycle, DrivesBuilder for zvols, jailer hard-link problem + custom ChrootStrategy, CNI networking, MMDS, vsock, snapshot load, handler system |
 
 ## Key findings
 

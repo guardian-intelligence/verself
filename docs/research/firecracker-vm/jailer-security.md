@@ -374,6 +374,30 @@ The key insight is that the jailer itself never touches the zvol. The orchestrat
 The jailer creates the jail, drops privileges, and execs Firecracker. Firecracker
 then opens the block device path (inside the jail) via its API configuration.
 
+**Note:** The Go SDK's `NaiveChrootStrategy` hard-links drives into the chroot, which
+fails for block devices. A custom `ChrootStrategy` using `mknod` is required. See
+[go-sdk.md](go-sdk.md#zfs-zvol--jailer-the-hard-link-problem) for the implementation pattern.
+
+For networking setup within the jailer's namespace, see
+[networking.md](networking.md#jailer---netns-integration).
+
+## Edge case: zvol destroyed while VM is running
+
+If `zfs destroy` is called while Firecracker still holds the zvol's block device open
+(e.g., timeout-based cleanup racing against a slow job), the zvol is not immediately
+freed. ZFS defers destruction until the last reference is released. However, new I/O
+from the guest may encounter errors depending on timing:
+
+- **Before destroy completes:** Existing file descriptors continue working (ZFS zvols
+  use the kernel block device layer, which holds a reference).
+- **After destroy + close:** The device node becomes invalid. Any guest I/O after
+  Firecracker reopens the device (unlikely but possible on error recovery paths)
+  would fail with `ENXIO`.
+
+**Safe pattern:** Always wait for VM exit (`m.Wait(ctx)`) before `zfs destroy`. If
+using timeout-based cleanup, `SIGTERM` the Firecracker process first, wait for exit,
+then destroy. The LIFO cleanup stack in the Go SDK handles this ordering naturally.
+
 ## Sources
 
 - [Firecracker source: `src/jailer/src/env.rs`](https://github.com/firecracker-microvm/firecracker/blob/main/src/jailer/src/env.rs) -- jailer environment setup and `run()` method

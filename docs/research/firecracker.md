@@ -83,7 +83,7 @@ Source: [Container Loading in AWS Lambda (USENIX ATC'23)](https://www.usenix.org
 | Disk management | NOT included — needs device-mapper/overlay | Unified, disk IS the snapshot |
 | Uniqueness | Duplicate entropy, crypto keys, boot IDs | No concern (stateless files) |
 | Complexity | KVM + guest kernel + rootfs + jailer + device-mapper | `zfsutils-linux` |
-| Production readiness | Docs warn "not recommended" for snapshots | Battle-tested filesystem |
+| Production readiness | Full snapshots GA since v1.13 (Aug 2025); diff snapshots still dev preview | Battle-tested filesystem |
 
 ## The uniqueness footgun
 
@@ -113,13 +113,18 @@ Since Firecracker doesn't snapshot disk, users need separate COW for block devic
 
 ## Honest comparison for forge-metal's Next.js CI workload
 
-- ZFS clone: ~28ms clone + ~2-5s to start Node.js + load modules + V8 JIT
-- Firecracker: ~28ms restore with Node.js running, V8 warm, modules loaded
-- Delta: 2-5s of process startup
+- ZFS clone (~2-6ms) + Firecracker cold boot (~125ms to init) + Node.js startup (~50ms)
+  + npm module loading + V8 JIT warmup (~1-2s) = **~1.4-2.2s to job start**
+- Firecracker snapshot restore (~28ms) with Node.js running, V8 warm, modules loaded
+  = **~28ms to job start**
+- Delta: ~1.4-2.2s of boot + process startup
 
-The 2-5s saved doesn't justify the complexity cost (KVM, guest kernel, rootfs images,
+The 1-2s saved doesn't justify the complexity cost (KVM, guest kernel, rootfs images,
 device-mapper for disk, jailer, CPU-model portability, snapshot versioning, entropy
 remediation). Especially since forge-metal already has gVisor for sandboxing.
+
+See [firecracker-vm/](firecracker-vm/) for deep-dive research on the Go SDK, jailer
+integration, guest kernel config, networking, metrics, and production deployments.
 
 Firecracker wins for: CI jobs needing a running database with warm buffer pools and
 established connections (the process state is expensive to reconstruct).
