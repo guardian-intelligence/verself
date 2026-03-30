@@ -25,6 +25,30 @@ type Config struct {
 	WireGuard  WireGuardConfig  `toml:"wireguard" json:"wireguard"`
 	Latitude   LatitudeConfig   `toml:"latitude" json:"latitude"`
 	SSH        SSHConfig        `toml:"ssh" json:"ssh"`
+	Source     ConfigSource     `toml:"-" json:"-"`
+}
+
+// ValueSource records where a config value came from.
+type ValueSource string
+
+const (
+	SourceUnset   ValueSource = ""
+	SourceDefault ValueSource = "default"
+	SourceFile    ValueSource = "file"
+	SourceEnv     ValueSource = "env"
+)
+
+// ConfigSource tracks provenance for the fields that drive CLI UX.
+type ConfigSource struct {
+	Latitude LatitudeSource `toml:"-" json:"-"`
+}
+
+// LatitudeSource tracks provenance for Latitude-specific settings.
+type LatitudeSource struct {
+	AuthToken ValueSource `toml:"-" json:"-"`
+	Region    ValueSource `toml:"-" json:"-"`
+	Plan      ValueSource `toml:"-" json:"-"`
+	Project   ValueSource `toml:"-" json:"-"`
 }
 
 // ControllerConfig holds settings for the job scheduler.
@@ -78,9 +102,9 @@ type ReplicationConfig struct {
 
 // ZFSConfig holds ZFS pool and dataset settings.
 type ZFSConfig struct {
-	Pool           string `toml:"pool" json:"pool"`
-	GoldenDataset  string `toml:"golden_dataset" json:"golden_dataset"`
-	CIDataset      string `toml:"ci_dataset" json:"ci_dataset"`
+	Pool          string `toml:"pool" json:"pool"`
+	GoldenDataset string `toml:"golden_dataset" json:"golden_dataset"`
+	CIDataset     string `toml:"ci_dataset" json:"ci_dataset"`
 }
 
 // WireGuardConfig holds WireGuard mesh networking settings.
@@ -110,25 +134,39 @@ type SSHConfig struct {
 // Load builds a Config by layering: embedded defaults, then forge-metal.toml,
 // then explicit --config file, then environment variable overrides.
 func Load(path string) (*Config, error) {
+	paths, err := DefaultPaths()
+	if err != nil {
+		return nil, err
+	}
+	return LoadWithPaths(paths, path)
+}
+
+// LoadWithPaths builds a Config using explicit scope paths.
+func LoadWithPaths(paths Paths, path string) (*Config, error) {
 	cfg := &Config{}
 
 	// 1. Embedded defaults.
 	if err := toml.Unmarshal(defaultConfig, cfg); err != nil {
 		return nil, fmt.Errorf("parsing embedded default config: %w", err)
 	}
+	cfg.markDefaultSources()
 
-	// 2. Local forge-metal.toml overlay.
-	const localFile = "forge-metal.toml"
-	if _, err := os.Stat(localFile); err == nil {
-		if err := overlayFile(cfg, localFile); err != nil {
-			return nil, fmt.Errorf("loading config from %s: %w", localFile, err)
+	// 2. System/global/local overlays.
+	for _, candidate := range []string{paths.System, paths.Global, paths.Local} {
+		if candidate == "" {
+			continue
 		}
-		slog.Info("loaded config", "path", localFile)
+		if _, err := os.Stat(candidate); err == nil {
+			if err := overlayFile(cfg, candidate, SourceFile); err != nil {
+				return nil, fmt.Errorf("loading config from %s: %w", candidate, err)
+			}
+			slog.Info("loaded config", "path", candidate)
+		}
 	}
 
 	// 3. Explicit --config file overlay.
 	if path != "" {
-		if err := overlayFile(cfg, path); err != nil {
+		if err := overlayFile(cfg, path, SourceFile); err != nil {
 			return nil, fmt.Errorf("loading config from %s: %w", path, err)
 		}
 		slog.Info("loaded config overlay", "path", path)
@@ -140,10 +178,13 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func overlayFile(cfg *Config, path string) error {
+func overlayFile(cfg *Config, path string, source ValueSource) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading file: %w", err)
+	}
+	if err := cfg.markOverlaySources(data, source); err != nil {
+		return fmt.Errorf("tracking config sources: %w", err)
 	}
 	if err := toml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parsing TOML: %w", err)
@@ -154,9 +195,11 @@ func overlayFile(cfg *Config, path string) error {
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("LATITUDESH_AUTH_TOKEN"); v != "" {
 		cfg.Latitude.AuthToken = v
+		cfg.Source.Latitude.AuthToken = SourceEnv
 	}
 	if v := os.Getenv("LATITUDESH_PROJECT"); v != "" {
 		cfg.Latitude.Project = v
+		cfg.Source.Latitude.Project = SourceEnv
 	}
 	if v := os.Getenv("FORGE_METAL_CLICKHOUSE_PASSWORD"); v != "" {
 		cfg.ClickHouse.Password = v
@@ -164,6 +207,47 @@ func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("FORGE_METAL_CONTROLLER_ADDR"); v != "" {
 		cfg.Agent.ControllerAddr = v
 	}
+}
+
+func (c *Config) markDefaultSources() {
+	if c.Latitude.Region != "" {
+		c.Source.Latitude.Region = SourceDefault
+	}
+	if c.Latitude.Plan != "" {
+		c.Source.Latitude.Plan = SourceDefault
+	}
+}
+
+func (c *Config) markOverlaySources(data []byte, source ValueSource) error {
+	var raw map[string]any
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	latitudeRaw, ok := raw["latitude"]
+	if !ok {
+		return nil
+	}
+
+	latitudeMap, ok := latitudeRaw.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	if _, ok := latitudeMap["auth_token"]; ok {
+		c.Source.Latitude.AuthToken = source
+	}
+	if _, ok := latitudeMap["project"]; ok {
+		c.Source.Latitude.Project = source
+	}
+	if _, ok := latitudeMap["region"]; ok {
+		c.Source.Latitude.Region = source
+	}
+	if _, ok := latitudeMap["plan"]; ok {
+		c.Source.Latitude.Plan = source
+	}
+
+	return nil
 }
 
 // ExpandPaths resolves ~ to the current user's home directory in file paths.
@@ -185,4 +269,29 @@ func expandTilde(path, home string) string {
 		return home
 	}
 	return path
+}
+
+// SaveLatitude persists Latitude.sh provisioning selections to forge-metal.toml.
+// Merges with existing file content so other sections are preserved.
+// File is written with 0600 permissions since it contains the API token.
+func SaveLatitude(token, project, region, plan string) error {
+	const localFile = "forge-metal.toml"
+
+	existing := make(map[string]any)
+	if data, err := os.ReadFile(localFile); err == nil {
+		_ = toml.Unmarshal(data, &existing)
+	}
+
+	existing["latitude"] = map[string]any{
+		"auth_token": token,
+		"project":    project,
+		"region":     region,
+		"plan":       plan,
+	}
+
+	data, err := toml.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(localFile, data, 0600)
 }
