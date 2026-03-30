@@ -5,6 +5,55 @@
 > Repo: [firecracker-microvm/firecracker-go-sdk](https://github.com/firecracker-microvm/firecracker-go-sdk)
 > SDK Version: 1.0.0, API target: v1.4.1, Go 1.24+
 > Researched 2026-03-29.
+>
+> **Staleness warning:** The SDK targets Firecracker API v1.4.1. Firecracker is now
+> at v1.15.0. The SDK has had no feature release since 2022-09-07 and is community-maintained
+> only. Use the hybrid approach described below: SDK for process lifecycle, thin HTTP
+> client for missing endpoints.
+
+## SDK staleness and hybrid approach
+
+The Firecracker Go SDK is **functionally stale**:
+
+| Property | Value |
+|----------|-------|
+| SDK version | v1.0.0 (released 2022-09-07, 3.5 years ago) |
+| Swagger API target | **v1.4.1** |
+| Current Firecracker | **v1.15.0** |
+| Last human commit | 2025-12-24 (dep bump, not feature work) |
+| Core maintainers active | No -- only community maintenance |
+| Release planned | No -- [issue #590](https://github.com/firecracker-microvm/firecracker-go-sdk/issues/590) unanswered |
+
+**Missing from the SDK:**
+- `network_overrides` on snapshot load (v1.12+)
+- virtio-mem hotplug (v1.14+)
+- virtio-pmem (v1.14+)
+- Balloon free_page_reporting/hinting (v1.14+)
+- Serial output path (v1.14+)
+
+**What still works:** PCI transport is a CLI flag (`--enable-pci`), passable via
+`VMCommandBuilder.AddArgs()`. VMClock is automatic (no API call). The SDK's process
+lifecycle management (jailer, socket, CNI, signal handling, cleanup) is ~4,000 lines
+of tested code worth keeping.
+
+**Decision: hybrid approach.** Use the SDK for process lifecycle. Use a thin HTTP
+client over the Unix socket for missing API endpoints:
+
+```go
+// SDK manages lifecycle
+m, _ := firecracker.NewMachine(ctx, cfg)
+m.Start(ctx)
+
+// Supplemental HTTP client for endpoints the SDK doesn't cover
+fc := &http.Client{Transport: &http.Transport{
+    DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+        return net.Dial("unix", socketPath)
+    },
+}}
+fc.Post("http://localhost/memory-hotplug", "application/json", body)
+```
+
+Source: [SDK issues #590, #690, #694, #707](https://github.com/firecracker-microvm/firecracker-go-sdk/issues)
 
 ## Architecture
 
