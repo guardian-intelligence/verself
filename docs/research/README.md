@@ -16,6 +16,7 @@ Conducted 2026-03-29 as background research for forge-metal's ZFS golden image c
 | [Impermanence](impermanence.md) | Nix | Ephemeral root filesystem via ZFS rollback-on-boot | Opt-in persistence, boot sequence, CI runner patterns |
 | [Incus](incus.md) | Go | System container & VM manager with deep ZFS driver | Ghost graveyard GC, forkzfs namespace isolation, GUID migration, seccomp interceptor |
 | [Firecracker](firecracker.md) | N/A | MicroVM memory+CPU snapshots for instant VM resume | Comparison with ZFS approach, tradeoffs for CI |
+| [Firecracker Deep Dive](firecracker-vm/) | N/A | REST API, jailer, seccomp, production deployments | Jailer+zvol integration, Fly.io/E2B/Koyeb/Actuated patterns |
 
 ## Cross-cutting patterns
 
