@@ -218,6 +218,40 @@ TypeScript's `--incremental` flag with `.tsbuildinfo`:
 - **Requirement:** `.tsbuildinfo` must persist between builds (golden image)
 - **Measured impact:** 10-50% faster for typical PR changes
 
+### Git clone optimization
+
+The `git clone` step in CI is often overlooked but can take 5-30s for large repos.
+forge-metal's golden image already has the repo, but PR builds need the latest changes.
+
+**Strategies (from fastest to slowest):**
+
+| Strategy | Command | Data transferred | Best for |
+|----------|---------|-----------------|----------|
+| Shallow fetch | `git fetch --depth=1 origin PR-ref` | Minimal (tip commit only) | All CI jobs |
+| Treeless clone | `git clone --filter=tree:0` | Commits only, trees/blobs on demand | First clone |
+| Blobless clone | `git clone --filter=blob:none` | Commits + trees, blobs on demand | Needs git log |
+| Sparse checkout | `git sparse-checkout set apps/web` | Only selected paths | Monorepos |
+
+**Real-world results:**
+- GitLab website repo: full clone 6m26s → treeless clone **6.49s** (98.3% reduction)
+- Chromium repo: 55.7 GB → 850 MB with treeless clone (93% reduction)
+
+Source: [GitHub Blog: Partial Clone](https://github.blog/open-source/git/get-up-to-speed-with-partial-clone-and-shallow-clone/)
+
+**forge-metal approach:** The golden image has a full clone. PR jobs do:
+```bash
+git fetch --depth=1 origin refs/pull/123/head:pr-branch
+git checkout pr-branch
+```
+This fetches only the PR tip commit (~1-3s), not the full history. The golden image's
+existing objects serve as a local cache for any shared blobs.
+
+**Sparse checkout for cal.com:** Since the benchmark only builds `apps/web`, sparse
+checkout could skip fetching 80% of the monorepo:
+```bash
+git sparse-checkout set apps/web packages/
+```
+
 ## Putting it all together — projected CI timeline
 
 For a 1000-line PR on cal.com (worst case benchmark):
