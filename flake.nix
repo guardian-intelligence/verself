@@ -116,13 +116,17 @@ GROUP
           cp ${pkgs.linuxPackages_6_6.kernel.dev}/vmlinux $out/vmlinux
         '';
 
-        # Bundle guest artifacts into a single derivation with /share/ci/.
-        # This gets included in the server profile so `nix copy` pushes
-        # rootfs.ext4 and vmlinux to worker hosts alongside everything else.
-        ciArtifacts = pkgs.runCommand "ci-artifacts" {} ''
-          mkdir -p $out/share/ci
-          ln -s ${ciGuestRootfs}/rootfs.ext4 $out/share/ci/rootfs.ext4
-          ln -s ${ciKernel}/vmlinux $out/share/ci/vmlinux
+        # Minimal bundle for tracer-bullet validation on a remote host.
+        # Contains only the 5 files needed to run bmci firecracker-test.
+        # Build: nix build .#firecracker-test-bundle
+        # Deploy: scp result/* host:/var/lib/ci/ (or nix copy)
+        fcTestBundle = pkgs.runCommand "firecracker-test-bundle" {} ''
+          mkdir -p $out
+          cp ${self.packages.${system}.default}/bin/bmci $out/bmci
+          cp ${pkgs.firecracker}/bin/firecracker $out/firecracker
+          cp ${pkgs.firecracker}/bin/jailer $out/jailer
+          cp ${ciGuestRootfs}/rootfs.ext4 $out/rootfs.ext4
+          cp ${ciKernel}/vmlinux $out/vmlinux
         '';
 
         # Server profile: every service needed on a forge-metal node.
@@ -145,7 +149,6 @@ GROUP
             pkgs.forgejo           # Git server
             pkgs.forgejo-runner    # CI runner (act_runner)
             pkgs.firecracker       # Firecracker microVM + jailer
-            ciArtifacts            # Guest rootfs + kernel for CI VMs
 
             # --- System tools ---
             pkgs.wireguard-tools
@@ -219,7 +222,8 @@ GROUP
             };
             vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
             subPackages = [ "cmd/bmci" ];
-            doCheck = false; # upstream test uses temp scripts that don't survive nix sandbox
+            # Skip sandbox-hostile test that shells out to a temp script.
+            checkFlags = [ "-run" "^(?!TestConfigEditUsesEditorAndCreatesFile)" ];
 
             ldflags = [
               "-s" "-w"
@@ -259,6 +263,7 @@ GROUP
           ci-guest-rootfs = ciGuestRootfs;
           ci-kernel = ciKernel;
           forgevm-init = forgevmInit;
+          firecracker-test-bundle = fcTestBundle;
 
           # The golden image closure. Push to bare metal with:
           #   nix copy --to ssh://user@host .#server-profile
