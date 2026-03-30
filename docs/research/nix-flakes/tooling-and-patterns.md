@@ -1075,3 +1075,347 @@ Sources:
 - [a quick nix repl tutorial — gist.github.com/crabdancing](https://gist.github.com/crabdancing/fd14d7e4fb209e13012d071046fbed37)
 - [nix flakes repl — blog.rjpc.net](https://blog.rjpc.net/posts/2023-12-18-nix-flakes-repl.html)
 - [Use repl to inspect a flake — NixOS Discourse](https://discourse.nixos.org/t/use-repl-to-inspect-a-flake/28275)
+
+---
+
+## Topic 7: `buildNpmPackage` — Packaging JavaScript/Node.js for Nix
+
+Sources: `pkgs/build-support/node/build-npm-package/default.nix`, `doc/languages-frameworks/javascript.section.md`, nixpkgs PR #189539, NixOS Discourse.
+
+### Why it matters for forge-metal
+
+The CI target for this project is JavaScript/TypeScript monorepos. `buildNpmPackage` is the nixpkgs-native way to bake `node_modules` into a reproducible Nix derivation — relevant for golden image construction where you want a warm, pre-populated module cache on the ZFS zvol.
+
+### Two-Phase Architecture (mirrors `buildGoModule`)
+
+`buildNpmPackage` follows the same two-phase pattern as `buildGoModule`:
+
+**Phase 1 — `fetchNpmDeps` (Fixed-Output Derivation)**
+
+```nix
+fetchNpmDeps {
+  inherit src;
+  name = "${pname}-npm-deps-${version}";
+  hash = npmDepsHash;               # sha256 of the npm cache directory
+  npmDepsFetcherVersion = 1;        # or 2 for workspace support
+}
+```
+
+`fetchNpmDeps` is implemented as a small Rust binary (added to nixpkgs in 2023). It runs `npm install --ignore-scripts --cache $out` against the `package-lock.json`, producing an npm-format cache directory as the FOD output. The `npmDepsHash` is the SHA-256 of this cache directory.
+
+Compute the hash with:
+```bash
+prefetch-npm-deps package-lock.json
+# Output: sha256-AAAA...=
+```
+
+**Phase 2 — Main Build**
+
+The main derivation:
+1. Sets `npm_config_cache` to point to the Phase 1 FOD output
+2. Runs `npm ci --offline` (offline because the cache is pre-populated)
+3. Runs `npm run $npmBuildScript` (default: `"build"`)
+4. Runs `npm pack --dry-run` to determine install files, then installs to `$out/lib/node_modules/$name/`
+5. Links binaries from `package.json`'s `bin` field to `$out/bin/`
+
+### Key Configuration Options
+
+```nix
+buildNpmPackage {
+  pname = "myapp";
+  version = "1.0";
+  src = lib.fileset.toSource { root = ./.; fileset = lib.fileset.gitTracked ./.; };
+  npmDepsHash = "sha256-AAAA...=";
+
+  # Build control:
+  npmBuildScript = "build";          # default; set to null or use dontNpmBuild = true to skip
+  dontNpmBuild = false;              # skip build phase entirely
+  npmBuildFlags = [ "--workspace=apps/web" ];  # flags to npm run
+
+  # Install control:
+  npmInstallFlags = [ "--ignore-scripts" ];    # flags to npm ci
+  npmPackFlags = [ "--pack-destination" "/tmp" ]; # flags to npm pack
+
+  # Cache:
+  makeCacheWritable = false;         # set true if npm needs to write to cache (rare)
+  npmDepsFetcherVersion = 1;         # use 2 for packument caching (workspace support)
+
+  nativeBuildInputs = [ makeWrapper ]; # for wrapProgram in postInstall
+}
+```
+
+**`dontStrip = true` by default**: Node.js package trees have tens of thousands of small files. The default strip pass over all of them takes minutes and does nothing useful. `buildNpmPackage` sets `dontStrip = args.dontStrip or true` — stripping is off unless you explicitly enable it.
+
+### `npmDepsFetcherVersion = 2`
+
+Version 2 of the fetcher enables "packument caching" — it caches the package metadata JSON (packuments) from the npm registry in addition to tarballs. This is required for npm workspace support (monorepos with multiple packages referencing each other via `workspace:` protocol).
+
+**The hash changes when `npmDepsFetcherVersion` changes.** The FOD output format differs between v1 and v2. Any package that bumps from v1 to v2 must recompute `npmDepsHash`. This is why bumping `npmDepsFetcherVersion` appears as a breaking change even when the dependencies are identical.
+
+### Next.js Sandboxing Problem
+
+The core tension: Next.js `next build` downloads Google Fonts and other assets from the network during build (for static optimization). This fails in the Nix sandbox.
+
+Workarounds:
+1. `NEXT_TELEMETRY_DISABLED=1` (env var in `buildNpmPackage`) — disables telemetry, not fonts
+2. `NEXT_DISABLE_FONT_OPTIMIZATION=1` — disables font download, builds without optimized fonts
+3. `next.config.js`: `const nextConfig = { images: { unoptimized: true } }` — disables image optimization which also tries network
+4. For Google Fonts: switch from `next/font/google` (runtime download) to local font files served from `/public/`
+
+The `next build --no-mangling` flag (2024) helps with determinism but not sandboxing.
+
+**Standalone output mode** (`output: 'standalone'` in `next.config.js`): creates a self-contained server in `.next/standalone/`. Works with Nix but the FOD hash covers only `node_modules`, not build outputs — the standalone directory is in the main derivation output.
+
+### `importNpmLock` — The Alternative Approach
+
+Source: `pkgs/build-support/node/import-npm-lock/` (merged into nixpkgs).
+
+`importNpmLock` resolves each package in `package-lock.json` to its own Nix store path, similar to how `gomod2nix` works vs `buildGoModule`:
+
+```nix
+{ pkgs, lib, ... }:
+let
+  nodeModules = pkgs.importNpmLock {
+    npmRoot = ./.;              # directory containing package.json + package-lock.json
+  };
+in pkgs.stdenv.mkDerivation {
+  name = "myapp";
+  src = ./.;
+  nativeBuildInputs = [ pkgs.nodejs pkgs.importNpmLock.npmConfigHook ];
+  buildPhase = "npm run build";
+  installPhase = "cp -r .next $out";
+}
+```
+
+Key distinction from `buildNpmPackage`:
+- `importNpmLock` resolves dependencies to individual store paths at eval time (via IFD)
+- The `npmConfigHook` sets up `npm` to install from those store paths
+- **Known limitation**: EPERM errors when npm tries to set executable bits on store-path-derived files (immutable Nix store). The `--no-bin-links` workaround breaks binaries. Still rough as of early 2026.
+
+**Use `buildNpmPackage` for production packages; `importNpmLock` is experimental.**
+
+### Heretic Alternative: `__noChroot = true`
+
+For packages with intractable network requirements during build (zimbatm's "heretic way"):
+
+```nix
+stdenv.mkDerivation {
+  __noChroot = true;    # disables all sandboxing; requires trusted-users membership
+  # ...rest of derivation
+}
+```
+
+`__noChroot` requires the builder to be in `nix.conf`'s `trusted-users` list (or run as root). It is explicitly unsuitable for `nixpkgs` contributions or public Hydra builds. For a self-hosted single-operator setup where you control the build machine, it's pragmatic for stubborn packages.
+
+---
+
+## Topic 8: `lib.fileset` — Source Filtering for Hash Stability
+
+Sources: `nixpkgs/lib/fileset/default.nix`, `ryantm.github.io/nixpkgs/functions/library/fileset/`, Tweag blog (November 2023), `johns.codes/blog/efficient-nix-derivations-with-file-sets`.
+
+### The Problem: `src = ./.` Poisons Your Build Cache
+
+When a derivation uses `src = ./.`, the entire project directory becomes part of the derivation's input hash. Changing a README or `.gitignore` invalidates the build, triggering a rebuild even though no source file changed.
+
+In a CI context (like forge-metal's benchmark runner), this means every documentation commit forces a full binary rebuild and binary cache miss.
+
+### `lib.fileset` API (added in nixpkgs 23.11)
+
+`lib.fileset` provides a declarative, composable file selection system. All functions operate on "file set" values, which are opaque and cannot be inspected directly.
+
+**`toSource`** — converts a file set to a store path:
+```nix
+lib.fileset.toSource {
+  root = ./.;        # directory that becomes the root of the store path
+  fileset = ./src;   # which files to include (path coerces to "all files under ./src")
+}
+```
+
+**`union` / `unions`** — include files from multiple sets:
+```nix
+lib.fileset.unions [
+  ./src
+  ./go.mod
+  ./go.sum
+  (lib.fileset.fileFilter (f: lib.hasSuffix ".proto" f.name) ./api)
+]
+```
+
+**`intersection`** — files present in BOTH sets (rarely needed directly)
+
+**`difference`** — exclude files from a base set:
+```nix
+lib.fileset.difference ./. ./docs   # everything except docs/
+```
+
+**`gitTracked`** — include only files tracked by git (`git ls-files`):
+```nix
+lib.fileset.gitTracked ./.
+# Equivalent to union of all files from `git ls-files`
+# Respects .gitignore automatically via git's tracking
+```
+
+This is the safest default for flake-based projects: if a file is tracked, it's included; if it's untracked (generated, local config), it's excluded.
+
+**`fileFilter`** — predicate-based filtering:
+```nix
+lib.fileset.fileFilter (file: lib.hasSuffix ".go" file.name) ./.
+```
+
+The `file` argument has attributes:
+- `file.name` — filename string (e.g., `"main.go"`)
+- `file.type` — `"regular"` or `"symlink"`
+- `file.hasExt "go"` — convenience method checking extension
+
+**`fromSource`** — convert a `lib.cleanSourceWith`-style source back to a fileset (for interop with older patterns)
+
+**`maybeMissing`** — silently ignore a path if it doesn't exist:
+```nix
+lib.fileset.unions [
+  ./src
+  (lib.fileset.maybeMissing ./generated)  # ok if this dir doesn't exist
+]
+```
+
+**`trace`** — debug: prints all files in the fileset to stderr during eval:
+```nix
+lib.fileset.toSource { root = ./.; fileset = lib.fileset.trace myFileset; }
+# Prints all included paths during `nix build`
+```
+
+### Complete Example: Go Binary with Filtered Source
+
+```nix
+# flake.nix pattern for forge-metal's cmd/bmci
+packages.x86_64-linux.bmci = pkgs.buildGoModule {
+  pname = "bmci";
+  version = "0.1.0";
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./cmd
+      ./internal
+      ./go.mod
+      ./go.sum
+    ];
+  };
+  vendorHash = "sha256-...";
+};
+```
+
+With this pattern:
+- Changing `ansible/` → no rebuild (not in fileset)
+- Changing `docs/` → no rebuild
+- Changing `go.mod` → rebuild (expected)
+- Changing `cmd/bmci/main.go` → rebuild (expected)
+
+### `cleanSourceWith` — The Older Pattern
+
+`lib.fileset` supersedes `lib.cleanSourceWith` for new code but both are still widely used.
+
+```nix
+lib.cleanSourceWith {
+  name = "bmci-source";
+  src = ./.;
+  filter = path: type:
+    let relPath = lib.removePrefix (toString ./.) (toString path);
+    in lib.hasPrefix "/cmd" relPath ||
+       lib.hasPrefix "/internal" relPath ||
+       relPath == "/go.mod" ||
+       relPath == "/go.sum";
+}
+```
+
+`cleanSourceWith` is chainable (the `src` can itself be a `cleanSourceWith` result). `lib.fileset` is generally more readable for complex filters.
+
+### Key Gotcha: `root` Must Contain All Files
+
+In `lib.fileset.toSource`, the `root` must be an ancestor of every file in the fileset. If you pass a fileset containing `./go.mod` but set `root = ./cmd`, you get an evaluation error. Always use `./.` (or the flake root) as `root` and restrict via `fileset`.
+
+---
+
+## Topic 9: `flake-parts` Advanced Patterns
+
+Sources: `flake.parts/system`, `github.com/hercules-ci/flake-parts/blob/main/modules/perSystem.nix`, NixOS Wiki.
+
+### `perSystem` Module Arguments
+
+Inside a `perSystem` module, these special arguments are automatically injected:
+
+| Argument | Type | Value |
+|----------|------|-------|
+| `system` | string | `"x86_64-linux"`, `"aarch64-linux"`, etc. |
+| `pkgs` | package set | `nixpkgs.legacyPackages.${system}` (configurable) |
+| `config` | module config | per-system merged options |
+| `self'` | attr set | `self` scoped to current system — `self'.packages` = `self.packages.${system}` |
+| `inputs'` | attr set | each input scoped to current system — `inputs'.nixpkgs.legacyPackages` |
+
+`self'` and `inputs'` eliminate the `${system}` suffix everywhere:
+
+```nix
+# Without flake-parts (tedious):
+packages.${system}.myTool = inputs.nixpkgs.legacyPackages.${system}.hello;
+
+# With flake-parts perSystem (clean):
+perSystem = { pkgs, inputs', ... }: {
+  packages.myTool = pkgs.hello;
+};
+```
+
+### Configuring `pkgs` with Overlays
+
+The default `pkgs` in `perSystem` is `nixpkgs.legacyPackages.${system}` — no config, no overlays. To inject overlays:
+
+```nix
+flake-parts.lib.mkFlake { inherit inputs; } {
+  perSystem = { system, ... }: {
+    _module.args.pkgs = import inputs.nixpkgs {
+      inherit system;
+      overlays = [ inputs.myOverlay.overlays.default ];
+      config.allowUnfree = true;
+    };
+  };
+  # Now all other perSystem modules receive this configured pkgs
+}
+```
+
+### `withSystem` — Bridging perSystem to Flake-Level Outputs
+
+NixOS configurations are not system-scoped in the flake output schema. Use `withSystem` to access per-system values from within a `nixosSystem` call:
+
+```nix
+flake-parts.lib.mkFlake { inherit inputs; } {
+  perSystem = { pkgs, ... }: {
+    packages.myapp = pkgs.callPackage ./myapp.nix {};
+  };
+
+  flake.nixosConfigurations.myhost = withSystem "x86_64-linux" ({ config, pkgs, ... }:
+    inputs.nixpkgs.lib.nixosSystem {
+      inherit pkgs;  # use the perSystem-configured pkgs
+      modules = [
+        ({ pkgs, ... }: {
+          environment.systemPackages = [ config.packages.myapp ];
+        })
+      ];
+    }
+  );
+}
+```
+
+`withSystem` takes a system string and a callback receiving the full `perSystem` config for that system. This is how you avoid evaluating `pkgs` twice — once in `perSystem` and once in `nixosSystem`.
+
+### The `readOnlyPkgs` Pattern
+
+When using `withSystem` to pass `pkgs` into `nixosSystem`, other NixOS modules can silently override `pkgs` via `_module.args.pkgs`. To prevent this:
+
+```nix
+nixosSystem {
+  inherit pkgs;
+  modules = [
+    inputs.nixpkgs.nixosModules.readOnlyPkgs  # makes pkgs immutable in this config
+    ./configuration.nix
+  ];
+}
+```
+
+`readOnlyPkgs` is a NixOS module that sets `_module.args.pkgs = lib.mkForce pkgs`, preventing downstream modules from overriding it. Source: `nixpkgs/nixos/modules/misc/nixpkgs/read-only.nix`.
