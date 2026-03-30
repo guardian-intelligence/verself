@@ -3,6 +3,7 @@ package zfsharness
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -149,4 +150,42 @@ func (h *Harness) ListClones(ctx context.Context) ([]CloneInfo, error) {
 // GoldenDatasetInfo returns metadata about the golden dataset.
 func (h *Harness) GoldenDatasetInfo(ctx context.Context) (*DatasetInfo, error) {
 	return h.exec.getDataset(ctx, fmt.Sprintf("%s/%s", h.pool, h.golden))
+}
+
+// EnsureGoldenDataset creates the golden dataset as a ZFS filesystem if it
+// doesn't already exist. Idempotent (uses zfs create -p).
+func (h *Harness) EnsureGoldenDataset(ctx context.Context) error {
+	ds := fmt.Sprintf("%s/%s", h.pool, h.golden)
+	return h.exec.createFilesystem(ctx, ds)
+}
+
+// SnapshotGoldenReady creates (or replaces) the golden @ready snapshot.
+// Any existing @ready snapshot is destroyed first.
+func (h *Harness) SnapshotGoldenReady(ctx context.Context) error {
+	snap := h.GoldenSnapshot()
+	exists, err := h.exec.exists(ctx, snap)
+	if err != nil {
+		return fmt.Errorf("check existing snapshot: %w", err)
+	}
+	if exists {
+		if err := h.exec.destroy(ctx, snap, false); err != nil {
+			return fmt.Errorf("destroy old snapshot: %w", err)
+		}
+	}
+	return h.exec.snapshot(ctx, snap)
+}
+
+// GoldenAge returns the age of the golden @ready snapshot.
+// Uses the ZFS 'creation' property which is a Unix epoch timestamp with -p flag.
+func (h *Harness) GoldenAge(ctx context.Context) (time.Duration, error) {
+	snap := h.GoldenSnapshot()
+	val, err := h.exec.getProperty(ctx, snap, "creation")
+	if err != nil {
+		return 0, fmt.Errorf("get creation time: %w", err)
+	}
+	epoch, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse creation epoch %q: %w", val, err)
+	}
+	return time.Since(time.Unix(epoch, 0)), nil
 }

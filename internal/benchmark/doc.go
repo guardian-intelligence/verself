@@ -32,13 +32,15 @@
 //
 // # Workload model
 //
-// Each [Workload] is a real git repository with explicit phase commands
-// and a weight controlling dispatch frequency. The default catalog
-// includes small (next-learn), medium (taxonomy), and large (cal.com)
-// Next.js projects. Phases run sequentially within a job but jobs run
-// concurrently across ZFS clones. A phase failure (non-zero exit) does
-// NOT stop subsequent phases — we want timing data for every phase
-// regardless of outcome.
+// Each [Workload] describes both the repository and the CI configuration
+// to benchmark: clone-based or seeded-workspace source prep, explicit
+// cache-hit metadata, per-workload environment overrides, and weighted
+// frequency in the mix. The default catalog includes small (next-learn),
+// medium (taxonomy), and large (cal.com) Next.js projects. Phases run
+// sequentially by default, but phases sharing the same stage run in
+// parallel within a job. Jobs themselves run concurrently across ZFS
+// clones. A phase failure (non-zero exit) does NOT stop subsequent
+// phases — we want timing data for every phase regardless of outcome.
 //
 // # Weighted dispatch
 //

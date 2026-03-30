@@ -2,9 +2,14 @@
        doctor setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e benchmark
 
-BINARY := bmci
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+BINARY   := bmci
+VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
+
+INVENTORY   := ansible/inventory/hosts.ini
+REMOTE_HOST := $(shell grep -m1 'ansible_host=' $(INVENTORY) 2>/dev/null | sed 's/.*ansible_host=\([^ ]*\).*/\1/')
+REMOTE_USER := $(shell grep -m1 'ansible_user=' $(INVENTORY) 2>/dev/null | sed 's/.*ansible_user=\([^ ]*\).*/\1/')
+SSH_OPTS    := -o StrictHostKeyChecking=no
 
 # Nix server profile store path (cached after first build)
 NIX_PROFILE = $(shell nix build .#server-profile --no-link --print-out-paths 2>/dev/null)
@@ -72,5 +77,34 @@ e2e: ## Full wipe + reprovision + test
 	cd ansible && ansible-playbook playbooks/ci-e2e.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
 
-benchmark: build ## Run CI benchmark workloads on ZFS clones
-	sudo ./$(BINARY) benchmark
+BENCH_ITERATIONS ?= 5
+
+# PATH for sudo on the remote — includes Nix profile where node lives.
+REMOTE_PATH := /home/$(REMOTE_USER)/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REMOTE_SUDO = sudo env "PATH=$(REMOTE_PATH)"
+
+benchmark: build ## Run baseline vs optimized benchmark on bare metal
+	@test -f $(INVENTORY) || \
+		{ echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	@test -n "$(REMOTE_HOST)" || \
+		{ echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
+	@echo "→ deploying bmci to $(REMOTE_USER)@$(REMOTE_HOST)"
+	scp $(SSH_OPTS) $(BINARY) config/workloads-baseline.toml config/workloads-optimized.toml \
+		$(REMOTE_USER)@$(REMOTE_HOST):/tmp/
+	@echo "→ ensuring node.js and build tools are available"
+	ssh $(SSH_OPTS) $(REMOTE_USER)@$(REMOTE_HOST) \
+		'command -v node >/dev/null 2>&1 || nix profile install nixpkgs\#nodejs_22'
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'command -v gcc >/dev/null 2>&1 || sudo apt-get install -y build-essential'
+	@echo "→ building golden image (idempotent)"
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'$(REMOTE_SUDO) /tmp/bmci golden-build'
+	@echo "→ baseline: cold git clone ($(BENCH_ITERATIONS) runs)"
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'$(REMOTE_SUDO) /tmp/bmci benchmark -w /tmp/workloads-baseline.toml -n $(BENCH_ITERATIONS) -c 1'
+	@echo "→ optimized: warm seeded workspace ($(BENCH_ITERATIONS) runs)"
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'$(REMOTE_SUDO) /tmp/bmci benchmark -w /tmp/workloads-optimized.toml -n $(BENCH_ITERATIONS) -c 1'
+	@echo "→ comparison (requires ClickHouse)"
+	-ssh $(SSH_OPTS) $(REMOTE_USER)@$(REMOTE_HOST) \
+		'$(REMOTE_SUDO) /tmp/bmci bench-results --project next-learn'

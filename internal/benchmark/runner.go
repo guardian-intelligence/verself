@@ -109,6 +109,10 @@ func (r *Runner) Run(ctx context.Context) error {
 		return fmt.Errorf("no workloads configured")
 	}
 
+	if err := r.runPreflight(ctx); err != nil {
+		return err
+	}
+
 	initCgroupSlice(r.logger)
 	cleanStaleCgroupScopes(r.logger)
 
@@ -204,6 +208,29 @@ wait:
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	return nil
+}
+
+// runPreflight checks that required infrastructure is in place before dispatching jobs.
+func (r *Runner) runPreflight(ctx context.Context) error {
+	ready, err := r.harness.GoldenReady(ctx)
+	if err != nil {
+		return fmt.Errorf("preflight: check golden snapshot: %w", err)
+	}
+	if !ready {
+		return fmt.Errorf("preflight: golden snapshot %s does not exist — run 'bmci golden-build' first", r.harness.GoldenSnapshot())
+	}
+	r.logger.Info("preflight: golden snapshot ready", "snapshot", r.harness.GoldenSnapshot())
+
+	if r.chClient != nil {
+		if err := r.chClient.Ping(ctx); err != nil {
+			r.logger.Warn("preflight: clickhouse unreachable, events will be logged only", "err", err)
+			r.chClient = nil
+		} else {
+			r.logger.Info("preflight: clickhouse connected")
+		}
+	}
+
 	return nil
 }
 
