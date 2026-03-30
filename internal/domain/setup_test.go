@@ -25,6 +25,13 @@ func (m *mockPrompter) Ask(prompt string) string {
 	return a
 }
 
+func (m *mockPrompter) AskWithDefault(prompt, current string) string {
+	a := m.Ask(prompt)
+	if a == "" {
+		return current
+	}
+	return a
+}
 func (m *mockPrompter) AskSecret(prompt string) string                      { return m.Ask(prompt) }
 func (m *mockPrompter) Confirm(prompt string) bool                          { return m.Ask(prompt) == "y" }
 func (m *mockPrompter) Select(prompt string, options []string) (int, string) { return 0, options[0] }
