@@ -181,12 +181,21 @@ func reapUntilChild(childPID int) int {
 }
 
 // resolveCommand finds the absolute path for a command name.
+// Searches PATH in the same order as the environment variable.
 func resolveCommand(name string) (string, error) {
 	if strings.Contains(name, "/") {
 		return name, nil
 	}
-	// Search PATH manually since os/exec.LookPath uses Go runtime.
-	for _, dir := range []string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"} {
+	// Match PATH order: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+	pathDirs := []string{
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+	}
+	for _, dir := range pathDirs {
 		path := dir + "/" + name
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
@@ -198,12 +207,14 @@ func resolveCommand(name string) (string, error) {
 func mustMount(source, target, fstype string, flags uintptr, data string) {
 	mustMkdir(target, 0755)
 	if err := syscall.Mount(source, target, fstype, flags, data); err != nil {
-		fmt.Fprintf(os.Stderr, "[init] mount %s on %s (%s): %v\n", source, target, fstype, err)
+		fatal(fmt.Sprintf("mount %s on %s (%s)", source, target, fstype), err)
 	}
 }
 
 func mustMkdir(path string, perm os.FileMode) {
-	os.MkdirAll(path, perm)
+	if err := os.MkdirAll(path, perm); err != nil {
+		fatal(fmt.Sprintf("mkdir %s", path), err)
+	}
 }
 
 func fatal(msg string, err error) {
