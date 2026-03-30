@@ -4,10 +4,11 @@ This corpus covers Nix Flakes with emphasis on non-obvious, technically precise,
 
 ## Contents
 
-- [internals.md](internals.md) — How flakes work under the hood: registry, lock format, eval cache, fetching pipeline, `self` reference
-- [gotchas.md](gotchas.md) — Sharp edges: dirty trees, `self.outPath` vs `sourceInfo`, CI failures, `--impure`, `nixConfig` security
+- [internals.md](internals.md) — How flakes work under the hood: registry, lock format, eval cache, fetching pipeline, `self` reference, `flake=false` inputs, parent node field
+- [source-code-deep-dive.md](source-code-deep-dive.md) — Annotated `call-flake.nix` source, how `self` is constructed, lazy recursion trap, `builtins.fetchTree` coupling, `nix-direnv`, `nix flake archive`
+- [gotchas.md](gotchas.md) — Sharp edges: dirty trees, `self.outPath` vs `sourceInfo`, CI failures, `--impure`, `nixConfig` security, `self` infinite recursion, locked URL crash
 - [dependency-management.md](dependency-management.md) — The `follows` mechanism, diamond dependency problem, `flake-utils` controversy, `flake-parts`
-- [performance.md](performance.md) — Eval cache, copy-to-store overhead, `nix copy` over SSH, `legacyPackages` caching
+- [performance.md](performance.md) — Eval cache, copy-to-store overhead, `nix copy` over SSH, `legacyPackages` caching, `nix-direnv`, `nix flake archive`
 - [security.md](security.md) — `narHash`, content-addressed store, supply chain guarantees, `nixConfig` / `accept-flake-config` attack surface
 - [community-and-stabilization.md](community-and-stabilization.md) — Experimental status, RFC 49/136, Determinate Systems fork, alternatives
 

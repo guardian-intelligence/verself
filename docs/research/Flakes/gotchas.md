@@ -168,3 +168,60 @@ Without these, submodule directories appear empty. This silently breaks builds t
 ## 15. `nix develop path:` Bypasses Eval Cache
 
 Commands of the form `nix develop path:/some/dir` (explicit path-based flake reference) skip the evaluation cache entirely. Computing a content fingerprint for a path flake requires hashing the entire directory, which is slower than using the git-based fingerprint. Always use `nix develop` (implicit current dir) inside a git repo.
+
+## 16. `self` Infinite Recursion in Function Body Position
+
+Accessing `self` in the **function body** (strict/non-lazy position) of the outputs function causes infinite recursion:
+
+```nix
+# WRONG — evaluates self.outPath before self is fully constructed:
+outputs = { self, ... }:
+  builtins.trace "${self.outPath}" {
+    packages = {};
+  };
+```
+
+The mechanism (from `call-flake.nix`): `self = outputs // sourceInfo // ...` and `outputs = flake.outputs (inputs // { self = result; })`. These are mutually recursive. When the outputs function body is evaluated, `self` is not yet fully defined — forcing `self.outPath` in the body creates a cycle.
+
+The fix: access `self` only inside **attribute values** (lazy positions):
+
+```nix
+# CORRECT — self.outPath only evaluated when packages.x86_64-linux.default is demanded:
+outputs = { self, ... }: {
+  packages.x86_64-linux.default =
+    pkgs.callPackage ./pkg.nix { version = self.shortRev or "dev"; };
+};
+```
+
+This is why `system.configurationRevision = self.rev or "dirty"` works inside `nixosConfigurations` — the NixOS module system evaluates it lazily.
+
+Source: [github.com/NixOS/nix/issues/8300](https://github.com/NixOS/nix/issues/8300)
+
+## 17. `nixpkgs.lib.nixosSystem` Injects a Module with `self.outPath`
+
+Nixpkgs's `flake.nix` exposes `lib.nixosSystem`. Internally, it injects a NixOS module that makes `self.outPath` available to the module system via `_module.args` or a direct module. This is a non-obvious side-effect of using `lib.nixosSystem` from a flake input.
+
+The implication: `nixosConfigurations.hostname = nixpkgs.lib.nixosSystem { modules = [...]; }` does NOT automatically give modules access to `self`. If you need `self` inside a NixOS module (e.g., for `self.packages.x86_64-linux.myService`), you must pass it explicitly:
+
+```nix
+nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+  specialArgs = { inherit self; };   # pass self via specialArgs, NOT _module.args
+  modules = [ ./configuration.nix ];
+};
+```
+
+Using `_module.args.self` instead of `specialArgs.self` causes infinite recursion because `_module.args` is itself a module option that's part of the evaluation.
+
+## 18. `nix flake metadata` Locked URL Cannot Be Used as Input
+
+`nix flake metadata .` outputs a "Locked URL" like:
+```
+github:NixOS/nixpkgs/abc123?narHash=sha256-xyz
+```
+
+Attempting to use this locked URL directly as a flake input causes Nix to crash with a parse error — the `narHash` query parameter is not accepted in the URL-form flake reference syntax. Issue [#9303](https://github.com/NixOS/nix/issues/9303). Use the `rev` only:
+
+```nix
+inputs.nixpkgs.url = "github:NixOS/nixpkgs/abc123";  # OK
+# NOT: "github:NixOS/nixpkgs/abc123?narHash=sha256-xyz"  # crashes
+```
