@@ -72,5 +72,5 @@ e2e: ## Full wipe + reprovision + test
 	cd ansible && ansible-playbook playbooks/ci-e2e.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
 
-benchmark: ## Benchmark wipe+reprovision (3 iterations)
-	./scripts/benchmark-reprovision.sh 3 $(NIX_PROFILE)
+benchmark: build ## Run CI benchmark workloads on ZFS clones
+	sudo ./$(BINARY) benchmark
