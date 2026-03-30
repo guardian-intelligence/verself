@@ -227,23 +227,9 @@ Files in `/lib`, `/share`, etc. are entirely skipped — not even traversed.
 
 ### `buildEnv` vs `symlinkJoin`
 
-`symlinkJoin` (from `pkgs/build-support/trivial-builders/default.nix`) is a thin wrapper around `buildEnv`:
+`symlinkJoin` (from `pkgs/build-support/trivial-builders/default.nix`) uses `lib.extendMkDerivation` with `stdenvNoCC.mkDerivation` and calls `lndir` directly to create symlink forests — it does **not** wrap `buildEnv`. The build script iterates through input paths and calls `lndir -silent $path $out` for each one.
 
-```nix
-symlinkJoin = args_@{
-  name,
-  paths,
-  preferLocalBuild ? true,
-  allowSubstitutes ? false,
-  postBuild ? "",
-  ...
-}: buildEnv {
-  inherit name paths postBuild;
-  ignoreCollisions = true;   # ← KEY difference
-};
-```
-
-`symlinkJoin` hard-codes `ignoreCollisions = true`. It is intended for combining packages where collisions are expected and the first-one-wins behavior is acceptable. `buildEnv` exposes collision handling as a parameter.
+`symlinkJoin` uses last-path-wins collision semantics (determined by list order). It is intended for combining packages where collisions are expected and the first-one-wins behavior is acceptable. `buildEnv` exposes collision handling as a configurable parameter with a priority system.
 
 Additional `buildEnv`-only features not available in `symlinkJoin`:
 - `pathsToLink` (filter to specific subdirectories)
