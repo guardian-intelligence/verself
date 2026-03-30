@@ -11,6 +11,7 @@ Nix Flakes is an experimental (but widely adopted) feature providing hermetic, r
 | [gotchas.md](gotchas.md) | Dirty trees, untracked files, `legacyPackages`, impure eval, `self` recursion |
 | [advanced-topics.md](advanced-topics.md) | `buildGoModule`/`vendorHash`, `nix copy` SSH/NAR, `buildEnv`, CA derivations, `nixConfig` security, lazy trees, `nix flake metadata` |
 | [ecosystem.md](ecosystem.md) | `flake-utils` vs `flake-parts`, binary caches, hermetic evaluation limits |
+| [outputs-and-ci.md](outputs-and-ci.md) | Complete output schema, `nix flake check`, `nix develop` internals, GitHub Actions CI, `nix profile`, `nix-systems` |
 | [community.md](community.md) | RFC 136 stabilization plan, Lix/Determinate forks, design criticisms, `flake-compat`, alternatives |
 
 ## Key Facts for forge-metal
