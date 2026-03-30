@@ -172,7 +172,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 
 	cleanups = append(cleanups, func() {
 		// Only destroy datasets under our CI prefix to prevent accidents.
-		if strings.HasPrefix(dataset, o.ciDatasetPrefix()) || dataset == o.ciDatasetPrefix()[:len(o.ciDatasetPrefix())-1] {
+		if strings.HasPrefix(dataset, o.ciDatasetPrefix()) {
 			if destroyErr := zfsDestroy(context.Background(), dataset); destroyErr != nil {
 				logger.Warn("zvol destroy failed", "err", destroyErr)
 			}
@@ -224,13 +224,30 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	cleanups = append(cleanups, netCleanup)
 	logger.Info("network ready", "tap", netSetup.TapName)
 
-	// --- 6. Start jailer ---
-	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
+	// --- 6. Start metrics reader ---
+	// Must start BEFORE jailer so the read side of the FIFO is open
+	// when Firecracker tries to open the write side (otherwise FC blocks).
 	metricsPathHost := filepath.Join(jailRoot, "metrics.fifo")
+	var metricsData []byte
+	metricsDone := make(chan struct{})
+	go func() {
+		defer close(metricsDone)
+		f, openErr := os.Open(metricsPathHost)
+		if openErr != nil {
+			return
+		}
+		defer f.Close()
+		metricsData, _ = io.ReadAll(f)
+	}()
 
-	// Use background context for the jailer command to prevent context
-	// cancellation from killing the process before we can collect output.
-	// We manage the jailer lifetime explicitly via Kill + Wait.
+	// --- 7. Start jailer ---
+	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
+
+	// Background context — we manage the jailer lifetime explicitly.
+	// With --new-pid-ns, the jailer clones into a new PID namespace,
+	// then the PARENT calls waitpid(child) and exits with the child's
+	// exit code. So jailerCmd.Wait() correctly blocks until Firecracker
+	// exits. (This only breaks with --daemonize, which we don't use.)
 	jailerCmd, startErr := o.startJailer(job.JobID)
 	if startErr != nil {
 		err = fmt.Errorf("start jailer: %w", startErr)
@@ -246,8 +263,6 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		err = fmt.Errorf("jailer stdout pipe: %w", pipeErr)
 		return
 	}
-	// Stderr goes to parent's stderr (terminal) for jailer diagnostics.
-	// Serial console output (from guest init) goes through stdout pipe.
 
 	if execErr := jailerCmd.Start(); execErr != nil {
 		err = fmt.Errorf("jailer exec: %w", execErr)
@@ -269,7 +284,6 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
-			// Cap total log size at 10 MiB to prevent memory exhaustion.
 			if logBuf.Len() < 10*1024*1024 {
 				logBuf.WriteString(line)
 				logBuf.WriteByte('\n')
@@ -279,20 +293,24 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 
 	logger.Info("jailer started", "pid", jailerCmd.Process.Pid)
 
-	// --- 7. Wait for API socket ---
+	// --- 8. Wait for API socket ---
 	if waitErr := waitForSocket(ctx, apiSockHost); waitErr != nil {
 		err = fmt.Errorf("wait for API socket: %w", waitErr)
 		return
 	}
 
-	// --- 8. Configure VM via API ---
+	// --- 9. Configure VM via API ---
 	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
 
-	// Boot args: serial console, static IP, init path.
-	bootArgs := fmt.Sprintf("console=ttyS0 reboot=k panic=1 %s init=/sbin/init", netSetup.BootIPArg)
+	// Boot args: root device, serial console, static IP, init path.
+	// root=/dev/vda is the virtio block device — without this the kernel
+	// has no filesystem to mount as /.
+	bootArgs := fmt.Sprintf(
+		"root=/dev/vda rw console=ttyS0 reboot=k panic=1 %s init=/sbin/init",
+		netSetup.BootIPArg,
+	)
 
-	// Order matters: logger, metrics, boot-source, drives, machine-config, network, then start.
 	apiSteps := []struct {
 		name string
 		fn   func() error
@@ -314,7 +332,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		}
 	}
 
-	// --- 9. Start VM ---
+	// --- 10. Start VM ---
 	if startVMErr := client.startInstance(ctx); startVMErr != nil {
 		err = fmt.Errorf("start VM: %w", startVMErr)
 		return
@@ -322,45 +340,48 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	result.VMBootTime = time.Since(bootStart)
 	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
-	// --- 10. Wait for VM exit ---
-	// The jailer process exits when Firecracker exits (which happens
-	// when the guest init calls os.Exit or the VM is killed).
-	//
-	// Apply context deadline: if ctx expires, kill the jailer.
+	// --- 11. Wait for VM exit ---
+	// The jailer parent waits for the Firecracker child (see --new-pid-ns
+	// comment above), so this blocks until the VM actually shuts down.
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailerCmd.Wait() }()
 
-	var waitErr error
 	select {
-	case waitErr = <-waitDone:
+	case <-waitDone:
 		// Normal exit.
 	case <-ctx.Done():
-		// Timeout — kill jailer, then wait for it to actually exit.
+		// Timeout — kill jailer, then wait for cleanup.
 		jailerCmd.Process.Kill()
-		waitErr = <-waitDone
+		<-waitDone
 	}
 	jailerExited.Store(true)
 
 	logWg.Wait()
 	result.Logs = logBuf.String()
 
-	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			result.ExitCode = -1
-			logger.Warn("jailer wait error", "err", waitErr)
-		}
-	}
+	// --- 12. Parse guest exit code from serial output ---
+	// Firecracker's own exit code doesn't reflect the guest command's
+	// exit code. The guest init prints FORGEVM_EXIT_CODE=N to serial
+	// before calling reboot(POWER_OFF), and we parse it here.
+	result.ExitCode = parseGuestExitCode(result.Logs)
 
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
-	// --- 11. Parse metrics ---
-	// Metrics file written by Firecracker before exit. Best-effort.
-	result.Metrics = parseMetricsFile(metricsPathHost)
+	// --- 13. Collect metrics ---
+	// Wait for the metrics reader goroutine with a timeout.
+	// After FC exits, the FIFO write side closes and our reader gets EOF.
+	select {
+	case <-metricsDone:
+		result.Metrics = parseMetricsBytes(metricsData)
+	case <-time.After(3 * time.Second):
+		logger.Warn("metrics reader timed out, skipping metrics")
+		result.Metrics = &VMMetrics{}
+	}
 
-	// --- 12. Read ZFS written bytes ---
-	if written, writtenErr := zfsWritten(ctx, dataset); writtenErr == nil {
+	// --- 14. Read ZFS written bytes ---
+	bgCtx, bgCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer bgCancel()
+	if written, writtenErr := zfsWritten(bgCtx, dataset); writtenErr == nil {
 		result.ZFSWritten = written
 	}
 
@@ -378,14 +399,13 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 // setupJail creates the jail directory structure and places the
 // kernel, zvol device node, and metrics FIFO inside it.
 func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath string) error {
-	// Create jail directory structure.
 	for _, dir := range []string{jailRoot, filepath.Join(jailRoot, "run")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
 
-	// Copy kernel to jail. Firecracker reads it from inside the chroot.
+	// Copy kernel to jail.
 	kernelDst := filepath.Join(jailRoot, "vmlinux")
 	if err := copyFile(o.cfg.KernelPath, kernelDst); err != nil {
 		return fmt.Errorf("copy kernel: %w", err)
@@ -395,8 +415,6 @@ func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath stri
 	}
 
 	// Create zvol block device node inside jail.
-	// The jailer creates /dev/kvm, /dev/net/tun, /dev/urandom but we
-	// must create the zvol device node ourselves.
 	major, minor, err := deviceMajorMinor(ctx, zvolDevPath)
 	if err != nil {
 		return fmt.Errorf("device major/minor: %w", err)
@@ -414,7 +432,6 @@ func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath stri
 	}
 
 	// Create metrics FIFO inside jail.
-	// Firecracker requires this to exist before PUT /metrics.
 	metricsFifo := filepath.Join(jailRoot, "metrics.fifo")
 	if err := syscall.Mkfifo(metricsFifo, 0644); err != nil {
 		return fmt.Errorf("mkfifo %s: %w", metricsFifo, err)
@@ -445,8 +462,6 @@ func (o *Orchestrator) startJailer(jobID string) (*exec.Cmd, error) {
 }
 
 // waitForSocket polls until the Unix socket is connectable.
-// Checking file existence isn't enough — the socket may exist before
-// Firecracker is ready to accept connections.
 func waitForSocket(ctx context.Context, path string) error {
 	for {
 		conn, dialErr := net.DialTimeout("unix", path, 100*time.Millisecond)
@@ -482,8 +497,7 @@ func writeJobConfig(mountDir string, job JobConfig) error {
 	return nil
 }
 
-// copyFile streams src to dst. Used for placing the kernel (~30-90 MB)
-// in the jail without reading the entire file into memory.
+// copyFile streams src to dst without buffering the whole file.
 func copyFile(src, dst string) error {
 	s, err := os.Open(src)
 	if err != nil {
@@ -501,4 +515,20 @@ func copyFile(src, dst string) error {
 		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
 	}
 	return nil
+}
+
+// parseGuestExitCode extracts the exit code from serial console output.
+// The guest init prints "FORGEVM_EXIT_CODE=N" before shutdown.
+// Falls back to -1 if the marker is not found (e.g., kernel panic).
+func parseGuestExitCode(logs string) int {
+	const marker = "FORGEVM_EXIT_CODE="
+	for _, line := range strings.Split(logs, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, marker) {
+			if code, err := strconv.Atoi(line[len(marker):]); err == nil {
+				return code
+			}
+		}
+	}
+	return -1
 }

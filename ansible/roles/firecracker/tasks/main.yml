@@ -62,28 +62,31 @@
   loop:
     - /var/lib/ci
 
-# --- Kernel deployment ---
+# --- Guest artifact deployment ---
+# The server profile (pushed via nix copy) includes ciArtifacts at
+# {{ nix_server_profile_path }}/share/ci/{rootfs.ext4,vmlinux}.
+# We copy them to /var/lib/ci/ for stable paths.
 
-- name: Check if guest kernel exists
+- name: Check if Nix profile has CI artifacts
   ansible.builtin.stat:
-    path: "{{ fc_kernel_path }}"
-  register: kernel_stat
+    path: "{{ nix_server_profile_path }}/share/ci/vmlinux"
+  register: nix_ci_artifacts
 
-- name: Find vmlinux in Nix profile
-  ansible.builtin.shell: |
-    readlink -f /nix/var/nix/profiles/default/lib/modules/*/vmlinux 2>/dev/null || \
-    find /nix/store -maxdepth 3 -name vmlinux -path '*/lib/modules/*' 2>/dev/null | head -1
-  register: vmlinux_find
-  changed_when: false
-  when: not kernel_stat.stat.exists
-
-- name: Deploy guest vmlinux kernel
+- name: Copy vmlinux from Nix profile
   ansible.builtin.copy:
-    src: "{{ vmlinux_find.stdout_lines[0] }}"
+    src: "{{ nix_server_profile_path }}/share/ci/vmlinux"
     dest: "{{ fc_kernel_path }}"
     mode: "0644"
     remote_src: true
-  when: not kernel_stat.stat.exists and vmlinux_find.stdout_lines | length > 0
+  when: nix_ci_artifacts.stat.exists
+
+- name: Copy rootfs.ext4 from Nix profile
+  ansible.builtin.copy:
+    src: "{{ nix_server_profile_path }}/share/ci/rootfs.ext4"
+    dest: "{{ fc_rootfs_path }}"
+    mode: "0644"
+    remote_src: true
+  when: nix_ci_artifacts.stat.exists
 
 # --- Golden zvol ---
 

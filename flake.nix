@@ -109,10 +109,21 @@ GROUP
           mke2fs -t ext4 -d $root -L ciroot -b 4096 $out/rootfs.ext4 4G
         '';
 
-        # Guest kernel: stock nixpkgs kernel with vmlinux extracted.
+        # Guest kernel: extract vmlinux to a predictable path.
         # Firecracker requires uncompressed ELF vmlinux (not bzImage).
-        # The dev output of the kernel derivation includes vmlinux.
-        ciKernel = pkgs.linuxPackages_6_6.kernel.dev;
+        ciKernel = pkgs.runCommand "ci-kernel-vmlinux" {} ''
+          mkdir -p $out
+          cp ${pkgs.linuxPackages_6_6.kernel.dev}/vmlinux $out/vmlinux
+        '';
+
+        # Bundle guest artifacts into a single derivation with /share/ci/.
+        # This gets included in the server profile so `nix copy` pushes
+        # rootfs.ext4 and vmlinux to worker hosts alongside everything else.
+        ciArtifacts = pkgs.runCommand "ci-artifacts" {} ''
+          mkdir -p $out/share/ci
+          ln -s ${ciGuestRootfs}/rootfs.ext4 $out/share/ci/rootfs.ext4
+          ln -s ${ciKernel}/vmlinux $out/share/ci/vmlinux
+        '';
 
         # Server profile: every service needed on a forge-metal node.
         # This Nix closure gets pushed to bare metal via `nix copy`.
@@ -134,6 +145,7 @@ GROUP
             pkgs.forgejo           # Git server
             pkgs.forgejo-runner    # CI runner (act_runner)
             pkgs.firecracker       # Firecracker microVM + jailer
+            ciArtifacts            # Guest rootfs + kernel for CI VMs
 
             # --- System tools ---
             pkgs.wireguard-tools
