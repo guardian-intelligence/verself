@@ -159,12 +159,12 @@ func main() {
 	// own exit code doesn't reflect the guest command's exit code.
 	fmt.Fprintf(os.Stdout, "FORGEVM_EXIT_CODE=%d\n", exitCode)
 
-	// Clean VM shutdown via reboot syscall. Without this, os.Exit(N)
-	// from PID 1 causes a kernel panic ("Attempted to kill init!"),
-	// which reboots the VM (panic=1). The reboot syscall triggers
-	// a clean ACPI power-off that Firecracker handles gracefully.
+	// Trigger VM shutdown. POWER_OFF halts the CPU but Firecracker
+	// doesn't exit (it sees a halt, not a reboot). RESTART triggers
+	// the keyboard controller reset path (reboot=k in boot args),
+	// which Firecracker detects and exits cleanly.
 	syscall.Sync()
-	syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
+	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
 // reapUntilChild blocks on Wait4(-1) reaping all children until the
@@ -217,6 +217,11 @@ func resolveCommand(name string) (string, error) {
 func mustMount(source, target, fstype string, flags uintptr, data string) {
 	mustMkdir(target, 0755)
 	if err := syscall.Mount(source, target, fstype, flags, data); err != nil {
+		// EBUSY means the target is already mounted (e.g., kernel auto-mounts
+		// devtmpfs when CONFIG_DEVTMPFS_MOUNT=y). Not an error.
+		if err == syscall.EBUSY {
+			return
+		}
 		fatal(fmt.Sprintf("mount %s on %s (%s)", source, target, fstype), err)
 	}
 }
