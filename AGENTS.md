@@ -216,7 +216,7 @@ Compression codecs per column type:
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) |
 | `make e2e` | Full wipe + reprovision + test |
-| `make benchmark` | Benchmark wipe+reprovision (3 iterations) |
+| `make benchmark` | Run CI benchmark workloads on ZFS clones |
 | `make build` | Build bmci Go binary locally |
 | `make test` | Run Go tests |
 
@@ -224,7 +224,7 @@ Compression codecs per column type:
 
 ```
 forge-metal/
-├── cmd/bmci/              # CLI entry point (doctor, setup-domain)
+├── cmd/bmci/              # CLI entry point (doctor, setup-domain, benchmark)
 ├── internal/
 │   ├── clickhouse/        # ClickHouse client, wide event struct
 │   ├── cloudflare/        # Cloudflare API client (DNS, zone lookup)
@@ -232,6 +232,7 @@ forge-metal/
 │   ├── doctor/            # Dev environment health checks
 │   ├── domain/            # Domain setup wizard
 │   ├── prompt/            # Shared Prompter interface + TTY implementation
+│   ├── benchmark/         # Pressure-test runner: weighted workloads, cgroup metrics, SIGHUP reload
 │   └── zfsharness/        # ZFS golden image clone allocation + recovery
 ├── ansible/
 │   ├── playbooks/         # ci-e2e, dev-single-node, site, golden-refresh, security-patch
@@ -248,7 +249,7 @@ forge-metal/
 │       └── forgejo/       # Git server + CI runner (config only)
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
-├── scripts/               # Security scripts, benchmark runner
+├── scripts/               # Security scripts, setup helpers
 ├── config/default.toml    # Embedded defaults
 └── flake.nix              # Dev shell + server profile (golden image)
 ```
