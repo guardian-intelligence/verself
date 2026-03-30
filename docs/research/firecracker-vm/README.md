@@ -12,6 +12,9 @@ Conducted 2026-03-29.
 | [API & Internals](api-and-internals.md) | REST API, snapshot endpoints, memory backends, MMDS, balloon, entropy, recent releases (v1.12-v1.15) |
 | [Jailer & Security](jailer-security.md) | Jailer step-by-step execution, seccomp filters (48 syscalls), threat model, ZFS zvol integration pattern |
 | [Production Deployments](production-deployments.md) | Fly.io, Koyeb, Hocus, E2B, Actuated, Ignite, Unikraft — storage patterns, networking, migration stories |
+| [Guest Kernel](guest-kernel.md) | Minimal kernel config for CI, container/gVisor support, PVH boot, init binary vs systemd, boot time optimization |
+| [Networking](networking.md) | TAP at scale, namespace isolation, nftables vs iptables, CNI tc-redirect-tap, rate limiting, MAC generation |
+| [Metrics & Observability](metrics-observability.md) | Metrics categories, ClickHouse wide event mapping, serial capture, vsock logs, balloon memory stats |
 
 ## Key findings
 
