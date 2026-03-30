@@ -37,12 +37,13 @@ func zfsClone(ctx context.Context, snapshot, target string) error {
 	return nil
 }
 
-// zfsDestroy removes a ZFS dataset/zvol. Best-effort for cleanup.
+// zfsDestroy removes a ZFS dataset/zvol. No -r flag: only destroys
+// the exact dataset, not children. Caller must validate the path.
 func zfsDestroy(ctx context.Context, dataset string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-r", dataset)
+	cmd := exec.CommandContext(ctx, "zfs", "destroy", dataset)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("zfs destroy %s: %s: %w",

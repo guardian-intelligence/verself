@@ -69,12 +69,21 @@
     path: "{{ fc_kernel_path }}"
   register: kernel_stat
 
+- name: Find vmlinux in Nix profile
+  ansible.builtin.shell: |
+    readlink -f /nix/var/nix/profiles/default/lib/modules/*/vmlinux 2>/dev/null || \
+    find /nix/store -maxdepth 3 -name vmlinux -path '*/lib/modules/*' 2>/dev/null | head -1
+  register: vmlinux_find
+  changed_when: false
+  when: not kernel_stat.stat.exists
+
 - name: Deploy guest vmlinux kernel
   ansible.builtin.copy:
-    src: "{{ fc_rootfs_path | dirname }}/vmlinux"
+    src: "{{ vmlinux_find.stdout_lines[0] }}"
     dest: "{{ fc_kernel_path }}"
     mode: "0644"
-  when: not kernel_stat.stat.exists
+    remote_src: true
+  when: not kernel_stat.stat.exists and vmlinux_find.stdout_lines | length > 0
 
 # --- Golden zvol ---
 

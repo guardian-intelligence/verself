@@ -94,16 +94,16 @@
           echo "nameserver 8.8.8.8" > $root/etc/resolv.conf
 
           cat > $root/etc/passwd <<'PASSWD'
-          root:x:0:0:root:/root:/bin/bash
-          runner:x:1000:1000:runner:/home/runner:/bin/bash
-          nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
-          PASSWD
+root:x:0:0:root:/root:/bin/bash
+runner:x:1000:1000:runner:/home/runner:/bin/bash
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+PASSWD
 
           cat > $root/etc/group <<'GROUP'
-          root:x:0:
-          runner:x:1000:
-          nogroup:x:65534:
-          GROUP
+root:x:0:
+runner:x:1000:
+nogroup:x:65534:
+GROUP
 
           # Create ext4 image (4G, enough for node_modules + build artifacts).
           mke2fs -t ext4 -d $root -L ciroot -b 4096 $out/rootfs.ext4 4G
