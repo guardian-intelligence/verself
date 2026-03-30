@@ -12,3 +12,9 @@ forgejo_port: 3000
 
 # SSH port for git clone over SSH.
 forgejo_ssh_port: 2222
+
+# Admin user (seeded on first run via CLI)
+# Username and password generated at deploy time if not set.
+# forgejo_admin_user: ""
+# forgejo_admin_password: ""
+# forgejo_admin_email: ""

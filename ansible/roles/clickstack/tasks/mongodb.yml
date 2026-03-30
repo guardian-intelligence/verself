@@ -19,6 +19,14 @@
     state: present
     update_cache: true
 
+- name: Ensure MongoDB data directory exists
+  ansible.builtin.file:
+    path: /var/lib/mongodb
+    state: directory
+    owner: mongodb
+    group: mongodb
+    mode: "0755"
+
 - name: Enable and start MongoDB
   ansible.builtin.systemd:
     name: mongod

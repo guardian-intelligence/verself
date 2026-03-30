@@ -17,6 +17,7 @@
         name: "{{ item }}"
         state: stopped
       loop:
+        - forgejo
         - hyperdx-app
         - hyperdx-api
         - caddy
@@ -30,10 +31,10 @@
         path: /var/lib/clickhouse
         state: absent
 
-    - name: Drop HyperDX MongoDB database
-      ansible.builtin.shell: "mongosh --quiet --eval 'db.dropDatabase()' hyperdx || true"
-      failed_when: false
-      changed_when: true
+    - name: Remove MongoDB data (clean wipe while server is stopped)
+      ansible.builtin.file:
+        path: /var/lib/mongodb
+        state: absent
 
     - name: Remove session secret (forces regeneration)
       ansible.builtin.file:
@@ -42,7 +43,15 @@
 
     - name: Remove admin credentials
       ansible.builtin.file:
-        path: /etc/clickstack/admin-credentials.txt
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/clickstack/admin-credentials.txt
+        - /etc/forgejo/admin-credentials.txt
+
+    - name: Remove Forgejo data (clean wipe)
+      ansible.builtin.file:
+        path: /var/lib/forgejo
         state: absent
 
     - name: Remove entire HyperDX clone (forces fresh clone + build)
@@ -58,18 +67,29 @@
     - base
     - cloudflare_dns
     - clickstack
+    - forgejo
 
 - name: "Phase 3: Health checks"
   hosts: all
   become: true
   vars:
-    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+    clickstack_domain: "{{ ('admin.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
+    forgejo_domain: "{{ ('git.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
   tasks:
+    - name: Wait for ClickHouse to be ready (otelcol depends on it)
+      ansible.builtin.wait_for:
+        port: 9000
+        host: 127.0.0.1
+        timeout: 30
+
     - name: Assert all services are running
       ansible.builtin.systemd:
         name: "{{ item }}"
       register: svc_status
       failed_when: svc_status.status.ActiveState != "active"
+      retries: 5
+      delay: 5
+      until: svc_status.status.ActiveState == "active"
       loop:
         - clickhouse-server
         - mongod
@@ -77,6 +97,7 @@
         - hyperdx-api
         - hyperdx-app
         - caddy
+        - forgejo
 
     - name: Assert ClickHouse responds
       ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SELECT 1'"
@@ -95,6 +116,9 @@
         return_content: true
       register: api_check
       failed_when: "'isTeamExisting' not in api_check.content"
+      retries: 6
+      delay: 5
+      until: api_check is not failed
 
     - name: Assert admin user was seeded
       ansible.builtin.uri:
@@ -103,6 +127,9 @@
         return_content: true
       register: install_check
       failed_when: "not (install_check.json.isTeamExisting | bool)"
+      retries: 3
+      delay: 5
+      until: install_check is not failed
 
     - name: Assert OTel Collector health check
       ansible.builtin.uri:
@@ -123,11 +150,21 @@
         follow_redirects: none
         status_code: [301, 302, 307, 308]
 
+    - name: Assert Forgejo responds via Caddy
+      ansible.builtin.uri:
+        url: "https://{{ forgejo_domain }}/"
+        validate_certs: false
+        status_code: 200
+      retries: 6
+      delay: 5
+      register: forgejo_check
+      until: forgejo_check is not failed
+
 - name: "Phase 4: Seed test data and verify pipelines"
   hosts: all
   become: true
   vars:
-    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+    clickstack_domain: "{{ ('admin.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
   tasks:
     - name: Insert test wide events
       ansible.builtin.command: >
@@ -291,21 +328,37 @@
   hosts: all
   become: true
   vars:
-    clickstack_domain: "{{ ansible_default_ipv4.address }}"
+    clickstack_domain: "{{ ('admin.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
+    forgejo_domain: "{{ ('git.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
   tasks:
+    - name: Read ClickStack credentials
+      ansible.builtin.slurp:
+        src: /etc/clickstack/admin-credentials.txt
+      register: clickstack_creds_b64
+      no_log: true
+
+    - name: Read Forgejo credentials
+      ansible.builtin.slurp:
+        src: /etc/forgejo/admin-credentials.txt
+      register: forgejo_creds_b64
+      no_log: true
+
     - name: Print results
       ansible.builtin.debug:
         msg: |
           ========================================
           forge-metal e2e CI: ALL CHECKS PASSED
           ========================================
-          Services:     6/6 active
+          Services:     7/7 active
           ClickHouse:   forge_metal.ci_events OK
           Wide events:  2 inserted, queried, aggregated
           Codecs:       DoubleDelta, Delta(8), T64 verified
           OTLP:         trace ingested via OTel Collector
           HyperDX:      API + UI responding via Caddy
-          Admin:        user seeded
+          Forgejo:      responding via Caddy
+          Admin:        users seeded (ClickStack + Forgejo)
           TLS:          HTTPS active, HTTP redirects
           ========================================
-          URL: https://{{ clickstack_domain }}
+
+          {{ clickstack_creds_b64.content | b64decode }}
+          {{ forgejo_creds_b64.content | b64decode }}

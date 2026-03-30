@@ -1,0 +1,30 @@
+# Baseline workloads: cold git clone, no pre-warmed caches.
+# Simulates traditional CI (GitHub Actions) for comparison.
+
+concurrency = 1
+job_timeout = "10m"
+
+[[workload]]
+name = "next-learn/cold"
+project = "next-learn"
+source = "git_clone"
+repo_url = "https://github.com/vercel/next-learn.git"
+branch = "main"
+sub_dir = "dashboard/final-example"
+timeout = "5m"
+weight = 1
+npm_cache_hit = false
+next_cache_hit = false
+lockfile_changed = false
+
+[[workload.phases]]
+phase = "deps"
+command = ["npm", "ci"]
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]

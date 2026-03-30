@@ -76,3 +76,9 @@
     {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
     --queries-file /opt/forge-metal/migrations/001_ci_events.up.sql
   changed_when: false
+
+- name: Apply firecracker_columns migration
+  ansible.builtin.command: >
+    {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
+    --queries-file /opt/forge-metal/migrations/002_firecracker_columns.up.sql
+  changed_when: false

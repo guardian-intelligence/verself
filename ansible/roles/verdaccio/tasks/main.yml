@@ -7,7 +7,7 @@
   args:
     creates: /opt/forge-metal/profile/lib/node_modules/verdaccio
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Create Verdaccio config directory
   ansible.builtin.file:
