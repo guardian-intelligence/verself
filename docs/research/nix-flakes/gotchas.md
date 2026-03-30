@@ -42,7 +42,7 @@ Every `nix develop .` invocation re-evaluates `flake.nix` from scratch. For larg
 
 ## Impure Eval Disables the Cache
 
-Even for non-path flakes, if `--impure` is passed (or `allow-import-from-derivation = true` is set), `pureEval` is false and the eval cache is disabled. Source: eval-cache.cc checks `pureEval` before attempting cache lookup.
+Even for non-path flakes, if `--impure` is passed (setting `pureEval = false`), the eval cache is disabled. Source: `eval-cache.cc` checks `pureEval` before attempting cache lookup. Note: `allow-import-from-derivation` is an orthogonal setting controlling whether IFD is permitted — it has no effect on `pureEval` or the eval cache.
 
 ## `flake.lock` Is Committed Per-Repo, Not Per-Input
 
