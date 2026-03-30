@@ -194,10 +194,10 @@ Surprises:
 
 The official eval cache has the "path: flakes bypass cache" problem. `nix-direnv` solves this for development workflows:
 
-1. Calls `nix print-dev-env` to capture the shell environment as JSON
-2. Caches the result in `.direnv/` keyed by `flake.nix` + `flake.lock` content hash
-3. Creates a GC root pointing at the cached environment derivation
-4. Only re-evaluates when `flake.nix`, `flake.lock`, `shell.nix`, or `default.nix` change
+1. Calls `nix print-dev-env --profile <profile-path>` to build the devShell and capture the environment as a shell script (bash `export` statements, not JSON)
+2. Caches the result in `direnv_layout_dir` (typically `~/.cache/direnv/layouts/<sha256-of-pwd>/`) keyed by a SHA1 of the flake expression string; the profile symlink is the cache artifact
+3. Creates a GC root via `nix build --out-link` on the profile, registering it in `/nix/var/nix/gcroots/auto/` — this survives `nix-collect-garbage`
+4. Only re-evaluates when watched files are newer than the cached profile: `flake.nix`, `flake.lock`, `devshell.toml`, and `~/.direnvrc`
 
 The GC root is critical: without it, `nix-collect-garbage` removes the cached shell derivation, forcing re-evaluation. `nix develop` without `nix-direnv` creates no GC root and the evaluated environment is garbage-collected after the session ends.
 
