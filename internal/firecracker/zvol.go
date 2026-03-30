@@ -130,8 +130,9 @@ func waitForDevice(ctx context.Context, path string) error {
 }
 
 // deviceMajorMinor returns the major/minor numbers of a block device.
+// Uses -L to follow symlinks (/dev/zvol/... are symlinks to /dev/zdN).
 func deviceMajorMinor(ctx context.Context, devicePath string) (uint32, uint32, error) {
-	cmd := exec.CommandContext(ctx, "stat", "-c", "%t %T", devicePath)
+	cmd := exec.CommandContext(ctx, "stat", "-L", "-c", "%t %T", devicePath)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, 0, fmt.Errorf("stat %s: %w", devicePath, err)
