@@ -45,7 +45,7 @@
               let baseName = baseNameOf (toString path);
               in !(baseName == "result" || baseName == "results" || baseName == ".direnv");
           };
-          vendorHash = "sha256-gXsDmFP3ZLITxOZnZAQH+BoDpSsn78trFYnexBfhmSU=";
+          vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
           subPackages = [ "cmd/forgevm-init" ];
           ldflags = [ "-s" "-w" ];
           env.CGO_ENABLED = 0;
@@ -217,7 +217,7 @@ GROUP
                 let baseName = baseNameOf (toString path);
                 in !(baseName == "result" || baseName == "results" || baseName == ".direnv");
             };
-            vendorHash = "sha256-gXsDmFP3ZLITxOZnZAQH+BoDpSsn78trFYnexBfhmSU=";
+            vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
             subPackages = [ "cmd/bmci" ];
 
             ldflags = [
