@@ -47,8 +47,8 @@
           };
           vendorHash = "sha256-gXsDmFP3ZLITxOZnZAQH+BoDpSsn78trFYnexBfhmSU=";
           subPackages = [ "cmd/forgevm-init" ];
-          CGO_ENABLED = 0;
           ldflags = [ "-s" "-w" ];
+          env.CGO_ENABLED = 0;
         };
 
         # Guest rootfs: ext4 image containing init + toolchain for CI jobs.
