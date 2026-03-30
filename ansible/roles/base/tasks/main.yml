@@ -13,9 +13,17 @@
   ansible.builtin.user:
     name: bench-ci
     system: true
-    shell: /usr/sbin/nologin
+    shell: /bin/bash
     home: /var/lib/bench-ci
     create_home: true
+
+- name: Disable unsupported GSSAPIAuthentication in ssh_config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/ssh_config
+    regexp: '^\s*GSSAPIAuthentication'
+    line: "    # GSSAPIAuthentication yes  # disabled — not supported by this SSH build"
+    backrefs: false
+  ignore_errors: true
 
 - name: Set system-wide npm registry to local Verdaccio
   ansible.builtin.copy:

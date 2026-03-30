@@ -1,6 +1,6 @@
 # forge-metal
 
-Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability.
+Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability. This is free open-source software, not a PaaS.
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
@@ -254,9 +254,18 @@ forge-metal/
 └── flake.nix              # Dev shell + server profile (golden image)
 ```
 
-## Output Contract
+## Assistant Contract
 
 * When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
+
+## Tool Use Contract
+
+* When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
+
+## Output Contract
+
+* 
+* Do not assume 
 
 ## License
 
