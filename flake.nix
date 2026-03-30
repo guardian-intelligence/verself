@@ -131,9 +131,11 @@ GROUP
             PARAVIRT         = yes;
           };
         });
-        ciKernel = pkgs.runCommand "ci-kernel-vmlinux" {} ''
+        ciKernel = pkgs.runCommand "ci-kernel-vmlinux" {
+          nativeBuildInputs = [ pkgs.binutils ];
+        } ''
           mkdir -p $out
-          cp ${ciKernelPackage.dev}/vmlinux $out/vmlinux
+          strip -o $out/vmlinux ${ciKernelPackage.dev}/vmlinux
         '';
 
         # Minimal bundle for tracer-bullet validation on a remote host.

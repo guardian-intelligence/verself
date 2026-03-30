@@ -353,10 +353,14 @@ func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath stri
 		}
 	}
 
-	// Copy kernel to jail.
+	// Place kernel in jail. Try hardlink first (instant, same filesystem),
+	// fall back to copy (cross-filesystem). The kernel is read-only so
+	// hardlinking is safe — all jails share the same inode.
 	kernelDst := filepath.Join(jailRoot, "vmlinux")
-	if err := copyFile(o.cfg.KernelPath, kernelDst); err != nil {
-		return fmt.Errorf("copy kernel: %w", err)
+	if err := os.Link(o.cfg.KernelPath, kernelDst); err != nil {
+		if linkErr := copyFile(o.cfg.KernelPath, kernelDst); linkErr != nil {
+			return fmt.Errorf("place kernel in jail: %w", linkErr)
+		}
 	}
 	if err := os.Chown(kernelDst, o.cfg.JailerUID, o.cfg.JailerGID); err != nil {
 		return fmt.Errorf("chown kernel: %w", err)
