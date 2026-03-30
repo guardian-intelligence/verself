@@ -112,8 +112,41 @@ equivalent of `.next/cache` for webpack.**
 | `turbopackRemoveUnusedImports` | Dead import elimination | `true` |
 | `turbopackRemoveUnusedExports` | Dead export elimination | `true` |
 
+**Turbopack persistent caching (Next.js 16.1+):** Filesystem caching for `next dev` is
+stable and on-by-default since 16.1. For `next build`, it's opt-in via
+`turbopackFileSystemCacheForBuild`. The persistent cache stores:
+- The dependency graph (all value cells and their relationships)
+- The aggregation graph (multi-layer summaries for fast queries)
+- All intermediate results (ASTs, module metadata, chunking info)
+
+Took over a year of dedicated work to ship. When `next dev` restarts, it resumes from
+warm cache instead of recompiling from scratch.
+Source: [Inside Turbopack](https://nextjs.org/blog/turbopack-incremental-computation)
+
 **Trace files for debugging:** `NEXT_TURBOPACK_TRACING=1 next build` generates
 `.next/dev/trace-turbopack` for analysis.
+
+## Tailwind CSS v4 — the CSS compilation bottleneck solved
+
+Tailwind CSS v4 replaced the PostCSS-based compiler with the **Oxide engine** (Rust +
+Lightning CSS). This eliminates CSS compilation as a build bottleneck.
+
+**Performance:**
+- Full rebuilds: **3.5-10x faster** (e.g., 12s → 1.2s)
+- Incremental builds (no new CSS): **100-182x faster** (completes in microseconds)
+- HMR: 340ms → 12ms
+- Engine binary: 35% smaller
+
+Source: [Tailwind CSS v4.0 announcement](https://tailwindcss.com/blog/tailwindcss-v4)
+
+**How it works:** The Oxide engine has its own CSS parser (2x faster than PostCSS),
+integrates Lightning CSS for transforms and optimization, and uses a Rust content
+scanner for class detection.
+
+**Applicability to forge-metal:** All three benchmark projects likely use Tailwind (it's
+the dominant CSS framework in Next.js). The upgrade to v4 means CSS compilation is no
+longer a measurable bottleneck — but projects still on Tailwind v3 will have PostCSS
+overhead in the build phase.
 
 ## The `.next` output directory
 
