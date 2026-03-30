@@ -16,6 +16,7 @@ Conducted 2026-03-30.
 | [gVisor Filesystem](gvisor-filesystem.md) | Rootfs overlay (82x fsstress speedup), directfs (2x stat), dcache tuning, fsync behavior in gVisor |
 | [Competitive Landscape](competitive-landscape.md) | Vercel Hive (Firecracker on bare metal), WunderGraph (13s builds), E2B snapshots, isolation benchmarks |
 | [Node I/O Patterns](node-io-patterns.md) | npm ci syscall counts (measured), fsync analysis, zvol volblocksize, package manager I/O, memory profiling |
+| [Golden Image Strategy](golden-image-strategy.md) | Three-layer cache warming, NODE_COMPILE_CACHE, RSC build model, cal.com structure, refresh cadence |
 
 ## Key findings
 
