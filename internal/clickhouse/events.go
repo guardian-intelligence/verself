@@ -54,6 +54,18 @@ type CIEvent struct {
 	IOWriteBytes    uint64 `ch:"io_write_bytes"`
 	ZFSWrittenBytes uint64 `ch:"zfs_written_bytes"`
 
+	// Firecracker VM metrics
+	VMBootTimeUs    uint64 `ch:"vm_boot_time_us"`
+	BlockReadBytes  uint64 `ch:"block_read_bytes"`
+	BlockWriteBytes uint64 `ch:"block_write_bytes"`
+	BlockReadCount  uint64 `ch:"block_read_count"`
+	BlockWriteCount uint64 `ch:"block_write_count"`
+	NetRxBytes      uint64 `ch:"net_rx_bytes"`
+	NetTxBytes      uint64 `ch:"net_tx_bytes"`
+	VCPUExitCount   uint64 `ch:"vcpu_exit_count"`
+	VMExitCode      int32  `ch:"vm_exit_code"`
+	JobConfigJSON   string `ch:"job_config_json"`
+
 	// Cache effectiveness
 	NPMCacheHit    uint8 `ch:"npm_cache_hit"`
 	NextCacheHit   uint8 `ch:"next_cache_hit"`
