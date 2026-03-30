@@ -13,6 +13,7 @@ Nix Flakes is an experimental (but widely adopted) feature providing hermetic, r
 | [ecosystem.md](ecosystem.md) | `flake-utils` vs `flake-parts`, binary caches, hermetic evaluation limits |
 | [outputs-and-ci.md](outputs-and-ci.md) | Complete output schema, `nix flake check`, `nix develop` internals, GitHub Actions CI, `nix profile`, `nix-systems` |
 | [deployment-and-secrets.md](deployment-and-secrets.md) | `nix copy` bootstrap flow, `--substitute-on-destination`, `nix store sign`, sops-nix/agenix, `cleanSourceWith`/`lib.fileset`, closure analysis (`path-info`, `why-depends`, `diff-closures`), channel strategy |
+| [fods-ifd-and-internals.md](fods-ifd-and-internals.md) | Fixed-output derivations (network sandbox exception, hash modes, `impureEnvVars`), IFD semantics and perf, `nix shell`/`nix run` vs `nix develop`, narinfo wire format + signing, `callPackage`/`makeOverridable`, monorepo subflake patterns |
 | [community.md](community.md) | RFC 136 stabilization plan, Lix/Determinate forks, design criticisms, `flake-compat`, alternatives |
 | [tooling-and-patterns.md](tooling-and-patterns.md) | `nix eval` CI patterns, overlay fixpoint mechanics (`lib.fix`/`lib.extends`), `writeShellApplication` for `apps` output, `nixosModules` export patterns, remote builders, `nix repl` debugging |
 
