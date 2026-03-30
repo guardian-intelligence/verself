@@ -104,7 +104,7 @@ The merge order is: `outputs` first, then `sourceInfo` fields override (which in
 
 `self.outPath` is the store path of the flake source tree (same as `builtins.toString self`). For a git input, this is the NAR-extracted source. For a path input (local dev), this is the filtered source tree after applying the `AllowListSourceAccessor`.
 
-`self.outputs == self.packages` — `self.packages` is not a copy; it is literally `self.outputs.packages`. No indirection. Accessing `self.packages.x86_64-linux.default` from within the flake's own output is perfectly valid (lazy) — the evaluator only forces the thunk when it's needed.
+`self.packages` is not a copy; it is literally `self.outputs.packages`. No indirection. Accessing `self.packages.x86_64-linux.default` from within the flake's own output is perfectly valid (lazy) — the evaluator only forces the thunk when it's needed.
 
 The lazy self-reference trap: `outputs = self: { x = self.x + 1; }` causes infinite recursion at force time. But `outputs = self: { foo = self.packages.default; }` is fine because the value is a thunk, not evaluated until `foo` is forced.
 

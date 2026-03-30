@@ -9,6 +9,7 @@ Nix Flakes is an experimental (but widely adopted) feature that provides hermeti
 | [internals.md](internals.md) | Source-level: lockfile format, `follows` resolver, eval cache, fetcher, `self` assembly |
 | [gotchas.md](gotchas.md) | Sharp edges: dirty trees, untracked files, `legacyPackages`, impure eval |
 | [ecosystem.md](ecosystem.md) | `flake-utils` vs `flake-parts`, community debates, alternatives |
+| [advanced-topics.md](advanced-topics.md) | `buildGoModule`/`vendorHash`, `nix copy` SSH/NAR, `buildEnv` internals, CA derivations, `nixConfig` security, lazy trees, `nix flake metadata` |
 
 ## Key Facts for forge-metal
 
