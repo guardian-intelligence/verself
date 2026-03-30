@@ -109,11 +109,31 @@ GROUP
           mke2fs -t ext4 -d $root -L ciroot -b 4096 $out/rootfs.ext4 4G
         '';
 
-        # Guest kernel: extract vmlinux to a predictable path.
-        # Firecracker requires uncompressed ELF vmlinux (not bzImage).
+        # Guest kernel for Firecracker VMs.
+        # Firecracker requires uncompressed ELF vmlinux with virtio drivers
+        # built-in (=y not =m) because there is no initramfs to load modules.
+        # We override the stock nixpkgs kernel to force the critical drivers
+        # to built-in. This rebuilds the kernel from source (~20 min first build,
+        # cached after).
+        ciKernelPackage = (pkgs.linuxPackages_6_6.kernel.override {
+          structuredExtraConfig = with pkgs.lib.kernel; {
+            # Firecracker requires these as built-in (=y), not modules (=m),
+            # because there is no initramfs to load modules.
+            VIRTIO_BLK       = yes;
+            VIRTIO_NET       = yes;
+            VIRTIO_MMIO      = yes;
+            VIRTIO_PCI       = yes;
+            VIRTIO_CONSOLE   = yes;
+            EXT4_FS          = yes;
+            DEVTMPFS         = yes;
+            DEVTMPFS_MOUNT   = yes;
+            KVM_GUEST        = yes;
+            PARAVIRT         = yes;
+          };
+        });
         ciKernel = pkgs.runCommand "ci-kernel-vmlinux" {} ''
           mkdir -p $out
-          cp ${pkgs.linuxPackages_6_6.kernel.dev}/vmlinux $out/vmlinux
+          cp ${ciKernelPackage.dev}/vmlinux $out/vmlinux
         '';
 
         # Minimal bundle for tracer-bullet validation on a remote host.
