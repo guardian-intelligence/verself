@@ -48,6 +48,10 @@ type Runner struct {
 	inFlight  atomic.Int64
 	startTime time.Time
 
+	// slotOpen signals the dispatch loop that a concurrency slot freed up
+	// or that concurrency limits changed via Reconfigure.
+	slotOpen chan struct{}
+
 	logger *slog.Logger
 }
 
@@ -60,18 +64,22 @@ func New(harness *zfsharness.Harness, chClient *clickhouse.Client,
 	}
 
 	r := &Runner{
-		harness:  harness,
-		chClient: chClient,
-		hw:       detectHardware(),
-		env:      detectEnv(),
-		logger:   logger,
+		harness:   harness,
+		chClient:  chClient,
+		hw:        detectHardware(),
+		env:       detectEnv(),
+		startTime: time.Now(),
+		slotOpen:  make(chan struct{}, 1),
+		logger:    logger,
 	}
 	r.config.Store(&cfg)
 	return r
 }
 
 // Run starts the benchmark loop. Blocks until ctx is cancelled or
-// Iterations is reached. Dispatches up to Concurrency jobs in parallel.
+// Iterations is reached. Uses inFlight counter + slotOpen signal
+// instead of a fixed-size semaphore, so Reconfigure'd concurrency
+// limits take effect immediately.
 //
 // Individual job failures are logged but do not stop the runner.
 func (r *Runner) Run(ctx context.Context) error {
@@ -91,61 +99,62 @@ func (r *Runner) Run(ctx context.Context) error {
 		return fmt.Errorf("no workloads configured")
 	}
 
-	sem := make(chan struct{}, cfg.Concurrency)
+	initCgroupSlice(r.logger)
+	cleanStaleCgroupScopes(r.logger)
+
 	var wg sync.WaitGroup
-	var next int
-	dispatched := int64(0)
+	var next, dispatched int
 
 	for {
-		// Check context cancellation.
 		if ctx.Err() != nil {
 			break
 		}
 
-		// Re-read config for runtime reconfiguration.
 		cfg = r.config.Load()
 
-		// Check iteration limit.
-		if cfg.Iterations > 0 && dispatched >= int64(cfg.Iterations) {
+		if cfg.Iterations > 0 && dispatched >= cfg.Iterations {
 			break
 		}
-
 		if len(cfg.Workloads) == 0 {
 			break
 		}
 
-		// Pick next workload (round-robin).
+		// Wait for a concurrency slot. Re-reads config each wake so
+		// Reconfigure'd concurrency limits take effect immediately.
+		for r.inFlight.Load() >= int64(cfg.Concurrency) {
+			select {
+			case <-r.slotOpen:
+				cfg = r.config.Load()
+			case <-ctx.Done():
+				goto wait
+			}
+		}
+
 		w := cfg.Workloads[next%len(cfg.Workloads)]
 		next++
 		dispatched++
 
-		// Determine timeout.
 		timeout := cfg.JobTimeout
 		if w.Timeout > 0 {
 			timeout = w.Timeout
-		}
-
-		// Acquire semaphore slot.
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			dispatched-- // didn't actually dispatch
-			goto done
 		}
 
 		wg.Add(1)
 		r.inFlight.Add(1)
 		go func(w Workload, timeout time.Duration, cfgSnap *Config) {
 			defer func() {
-				<-sem
 				r.inFlight.Add(-1)
+				select {
+				case r.slotOpen <- struct{}{}:
+				default:
+				}
 				wg.Done()
 			}()
 
 			jobCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
-			result := runJob(jobCtx, r.harness, w, r.hw, r.env, cfgSnap, r.logger)
+			result := r.runJob(jobCtx, w, cfgSnap)
 			if result.Err != nil {
 				r.failed.Add(1)
 				r.logger.Error("job failed",
@@ -156,15 +165,14 @@ func (r *Runner) Run(ctx context.Context) error {
 				r.completed.Add(1)
 			}
 
-			// Emit event (even on failure — we want partial data).
+			// Emit event even on failure — we want partial data.
 			if result.Event != nil {
 				r.emit(ctx, result.Event)
 			}
 		}(w, timeout, cfg)
 	}
 
-done:
-	// Wait for in-flight jobs to finish.
+wait:
 	wg.Wait()
 
 	stats := r.Stats()
@@ -193,6 +201,11 @@ func (r *Runner) Reconfigure(cfg Config) {
 		"workloads", len(cfg.Workloads),
 		"iterations", cfg.Iterations,
 	)
+	// Wake dispatch loop so it re-reads config.
+	select {
+	case r.slotOpen <- struct{}{}:
+	default:
+	}
 }
 
 // Stats returns current run statistics.
