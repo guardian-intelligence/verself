@@ -18,7 +18,7 @@ There may be existing research in docs/research/$1. If there is, study the exist
 
 Your main focus: collect primary sources about the topic. E.g. case studies, open-source repos extending or depending on $1, historical and open CVEs, offical docs, manuals and handbooks, and source code for $1 itself. Key differences from other libraries solving the same problem from a different angle are helpful as well.
 
-Authoritative econdary sources are helpful as well: blogs from subject matter experts, writing from maintainers and creators, community sentiment and Q&A on forums, and opinions of communities of competing tools.
+Authoritative secondary sources are helpful as well: blogs from subject matter experts, writing from maintainers and creators, community sentiment and Q&A on forums, and opinions of communities of competing tools.
 
 Extract from the landscape anything surprising, interesting, or otherwise notewory. A code link to a surprising workaround or hacky patch is worth a thousand words. Explain via careful additions to the repo with specific terms and citations to specific lines of code or pull quotes. After completing your additions via research, review the totality of the research documents and consolidate repeated information and strike anything that you found to be untrue.
 
