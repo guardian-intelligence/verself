@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,14 +18,15 @@ import (
 // Config holds tunable benchmark parameters.
 // Immutable once created — reconfiguration swaps the entire struct atomically.
 type Config struct {
-	Workloads   []Workload
-	Concurrency int           // max parallel jobs
-	Iterations  int           // total jobs to run (0 = run until stopped)
-	JobTimeout  time.Duration // default per-job timeout
-	RunID       string        // shared across all jobs in a session
-	NodeID      string        // bare-metal node identifier
-	Region      string        // datacenter region
-	Plan        string        // server plan
+	Workloads      []Workload
+	SelectionTable []int // weighted index into Workloads, built by prepareConfig
+	Concurrency    int
+	Iterations     int           // total jobs to run (0 = run until stopped)
+	JobTimeout     time.Duration // default per-job timeout
+	RunID          string
+	NodeID         string
+	Region         string
+	Plan           string
 }
 
 // RunStats holds live counters for the benchmark run.
@@ -53,6 +55,11 @@ type Runner struct {
 	slotOpen chan struct{}
 
 	logger *slog.Logger
+
+	// Per-workload tracking for end-of-run summary.
+	mu        sync.Mutex
+	durations map[string][]time.Duration
+	written   map[string][]uint64
 }
 
 // New creates a Runner. Detects hardware and environment once at startup.
@@ -62,6 +69,7 @@ func New(harness *zfsharness.Harness, chClient *clickhouse.Client,
 	if cfg.RunID == "" {
 		cfg.RunID = uuid.New().String()
 	}
+	prepareConfig(&cfg)
 
 	r := &Runner{
 		harness:   harness,
@@ -71,6 +79,8 @@ func New(harness *zfsharness.Harness, chClient *clickhouse.Client,
 		startTime: time.Now(),
 		slotOpen:  make(chan struct{}, 1),
 		logger:    logger,
+		durations: make(map[string][]time.Duration),
+		written:   make(map[string][]uint64),
 	}
 	r.config.Store(&cfg)
 	return r
@@ -102,6 +112,10 @@ func (r *Runner) Run(ctx context.Context) error {
 	initCgroupSlice(r.logger)
 	cleanStaleCgroupScopes(r.logger)
 
+	// Progress ticker — logs throughput every 10s, stops when Run returns.
+	progressCtx, progressCancel := context.WithCancel(ctx)
+	go r.progressLoop(progressCtx)
+
 	var wg sync.WaitGroup
 	var next, dispatched int
 
@@ -115,7 +129,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		if cfg.Iterations > 0 && dispatched >= cfg.Iterations {
 			break
 		}
-		if len(cfg.Workloads) == 0 {
+		if len(cfg.Workloads) == 0 || len(cfg.SelectionTable) == 0 {
 			break
 		}
 
@@ -130,7 +144,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 		}
 
-		w := cfg.Workloads[next%len(cfg.Workloads)]
+		w := cfg.Workloads[cfg.SelectionTable[next%len(cfg.SelectionTable)]]
 		next++
 		dispatched++
 
@@ -168,12 +182,17 @@ func (r *Runner) Run(ctx context.Context) error {
 			// Emit event even on failure — we want partial data.
 			if result.Event != nil {
 				r.emit(ctx, result.Event)
+				r.recordResult(w.Name,
+					time.Duration(result.Event.TotalE2ENs),
+					result.Event.ZFSWrittenBytes)
 			}
 		}(w, timeout, cfg)
 	}
 
 wait:
 	wg.Wait()
+	progressCancel()
+	r.logSummary()
 
 	stats := r.Stats()
 	r.logger.Info("benchmark complete",
@@ -195,6 +214,7 @@ func (r *Runner) Reconfigure(cfg Config) {
 	if cfg.RunID == "" {
 		cfg.RunID = r.config.Load().RunID
 	}
+	prepareConfig(&cfg)
 	r.config.Store(&cfg)
 	r.logger.Info("reconfigured",
 		"concurrency", cfg.Concurrency,
@@ -244,4 +264,83 @@ func (r *Runner) emit(ctx context.Context, event *clickhouse.CIEvent) {
 			r.logger.Warn("clickhouse insert failed", "err", err)
 		}
 	}
+}
+
+// prepareConfig builds derived fields (SelectionTable) from the config.
+func prepareConfig(cfg *Config) {
+	cfg.SelectionTable = BuildSelectionTable(cfg.Workloads)
+}
+
+// recordResult tracks per-workload metrics for the end-of-run summary.
+func (r *Runner) recordResult(workload string, e2e time.Duration, writtenBytes uint64) {
+	r.mu.Lock()
+	r.durations[workload] = append(r.durations[workload], e2e)
+	r.written[workload] = append(r.written[workload], writtenBytes)
+	r.mu.Unlock()
+}
+
+// progressLoop logs throughput every 10 seconds until ctx is cancelled.
+func (r *Runner) progressLoop(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	var lastCompleted int64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			completed := r.completed.Load()
+			delta := completed - lastCompleted
+			lastCompleted = completed
+			// 10s interval: multiply by 6 for per-minute rate.
+			rate := float64(delta) * 6
+
+			r.logger.Info("progress",
+				"completed", completed,
+				"failed", r.failed.Load(),
+				"in_flight", r.inFlight.Load(),
+				"jobs_per_min", fmt.Sprintf("%.1f", rate),
+				"elapsed", time.Since(r.startTime).Round(time.Second),
+			)
+		}
+	}
+}
+
+// logSummary prints per-workload percentile breakdown at end of run.
+func (r *Runner) logSummary() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.durations) == 0 {
+		return
+	}
+
+	r.logger.Info("--- benchmark summary ---")
+	for name, durs := range r.durations {
+		sort.Slice(durs, func(i, j int) bool { return durs[i] < durs[j] })
+
+		var totalWritten uint64
+		for _, w := range r.written[name] {
+			totalWritten += w
+		}
+
+		r.logger.Info("workload",
+			"name", name,
+			"count", len(durs),
+			"p50", percentile(durs, 0.50).Round(time.Millisecond),
+			"p99", percentile(durs, 0.99).Round(time.Millisecond),
+			"min", durs[0].Round(time.Millisecond),
+			"max", durs[len(durs)-1].Round(time.Millisecond),
+			"zfs_written_total_mb", totalWritten/(1024*1024),
+		)
+	}
+}
+
+func percentile(sorted []time.Duration, p float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := int(float64(len(sorted)-1) * p)
+	return sorted[idx]
 }

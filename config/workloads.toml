@@ -1,0 +1,83 @@
+# Workload catalog for forge-metal benchmarks.
+# Reload at runtime: kill -HUP $(pidof bmci)
+#
+# Each [[workload]] defines a real project to build. Weight controls
+# relative frequency in the mix (default 1). Higher weight = more often.
+#
+# Optional top-level settings (CLI flags override on initial load,
+# SIGHUP reload uses file values):
+# concurrency = 4
+# job_timeout = "10m"
+
+[[workload]]
+name = "next-learn"
+repo_url = "https://github.com/vercel/next-learn.git"
+branch = "main"
+sub_dir = "dashboard/final-example"
+timeout = "5m"
+weight = 1
+
+[[workload.phases]]
+phase = "deps"
+command = ["npm", "ci"]
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]
+
+
+[[workload]]
+name = "taxonomy"
+repo_url = "https://github.com/shadcn-ui/taxonomy.git"
+branch = "main"
+timeout = "8m"
+weight = 1
+
+[[workload.phases]]
+phase = "deps"
+command = ["npm", "ci"]
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+
+[[workload.phases]]
+phase = "typecheck"
+command = ["npx", "tsc", "--noEmit"]
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]
+
+
+[[workload]]
+name = "cal.com"
+repo_url = "https://github.com/calcom/cal.com.git"
+branch = "main"
+sub_dir = "apps/web"
+timeout = "15m"
+weight = 1
+
+[[workload.phases]]
+phase = "deps"
+command = ["npm", "ci"]
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+
+[[workload.phases]]
+phase = "typecheck"
+command = ["npx", "tsc", "--noEmit"]
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]
+
+[[workload.phases]]
+phase = "test"
+command = ["npm", "test", "--", "--passWithNoTests"]
