@@ -313,10 +313,11 @@ path instead, which is the actual block device node.
    which may not be optimal. Consider `none` (noop) scheduler since ZFS has its own
    I/O scheduler internally. See [openzfs/zfs#1017](https://github.com/openzfs/zfs/issues/1017).
 
-5. **zvol blocksize vs Firecracker**: The default ZFS zvol blocksize is 8K. Firecracker's
-   virtio-block device has no blocksize constraint from its side -- it presents the
-   block device as-is to the guest. The guest kernel negotiates optimal I/O size.
-   For CI workloads, the default 8K or 16K volblocksize is fine.
+5. **zvol blocksize vs Firecracker**: Firecracker's virtio-block device has no
+   blocksize constraint -- it presents the block device as-is to the guest.
+   **Use 16K volblocksize** (ZFS 2.2+ default). 4K is actively harmful (compression
+   disabled, metadata overhead). See
+   [capacity-and-operations.md](capacity-and-operations.md#zvol-volblocksize-use-16k).
 
 6. **Read-only drives**: For the kernel image drive, use `is_read_only: true` in the
    drive config. This can be a shared file (hardlinked or copied once) rather than

@@ -23,7 +23,16 @@ Firecracker provides configs in `resources/guest_configs/`:
 these configs target Amazon Linux's microvm kernel fork (`github.com/amazonlinux/linux`,
 `microvm-kernel-*` tags), not upstream mainline. They may include backported patches.
 
-Source: [`resources/guest_configs/`](https://github.com/firecracker-microvm/firecracker/tree/main/resources/guest_configs)
+**These configs fail on mainline Linux 6.1 without `CONFIG_PCI=y`.**
+[Issue #4881](https://github.com/firecracker-microvm/firecracker/issues/4881): kernel
+panic `VFS: Cannot open root device "vda"` because mainline requires PCI for ACPI-based
+VirtIO device discovery. Amazon Linux's fork has patches that bypass this. Adding
+`CONFIG_PCI=y` increases vmlinux from ~29MB to ~38MB. The "Absolute minimum for boot"
+and "Two boot architecture choices" sections below already include this option, but if
+you copy Firecracker's configs verbatim for use with mainline, you must add it manually.
+
+Source: [`resources/guest_configs/`](https://github.com/firecracker-microvm/firecracker/tree/main/resources/guest_configs),
+[Firecracker issue #4881](https://github.com/firecracker-microvm/firecracker/issues/4881)
 
 ## Absolute minimum for boot (x86_64)
 

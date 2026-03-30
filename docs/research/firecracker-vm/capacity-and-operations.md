@@ -112,6 +112,30 @@ Typical CI RSS: `npm install` peaks at 200-400MB, `tsc` at 400-800MB, `next buil
 
 **Practical limit on 64GB host:** ~50-80 concurrent 512MB VMs.
 
+## zvol volblocksize: use 16K
+
+ZFS zvol volblocksize is **fixed at creation time** (unlike recordsize for datasets).
+
+**4K volblocksize is actively harmful:**
+- Compression effectively disabled (1.07x at 4K vs 1.94x at 16K on same data)
+- Metadata overhead explodes (each 4K block needs ~4K of indirect block pointers)
+- Sequential throughput degrades (60% improvement going from 8K to 64K)
+
+**npm install creates new files (no read-modify-write penalty).** ZFS allocates
+fresh blocks for new file creation -- RMW only applies to in-place modification of
+existing data. With compression at 16K, a 2K .js file compresses to ~800 bytes on disk.
+
+**16K is the production default** across Proxmox (since PVE 8.x), Incus, and TrueNAS.
+OpenZFS changed the default from 8K to 16K in ZFS 2.2.
+
+```bash
+zfs create -V 4G -o volblocksize=16K pool/golden-zvol
+```
+
+Source: [OpenZFS #17677](https://github.com/openzfs/zfs/issues/17677),
+[OpenZFS #14771](https://github.com/openzfs/zfs/issues/14771),
+[Proxmox forums](https://discourse.practicalzfs.com/t/proxmoxs-volblocksize-default-is-16k-for-qemu-vm-disks-why/2438)
+
 ## MMIO vs PCI throughput
 
 ### The bottleneck

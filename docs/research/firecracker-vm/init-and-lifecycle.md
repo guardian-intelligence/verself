@@ -61,7 +61,7 @@ orchestrator, not from Forgejo directly:
 
 | Message | Purpose |
 |---------|---------|
-| `Init{wrapping_token, env_vars, job_id}` | Bootstrap: inject secrets, set up environment |
+| `Init{secrets, env_vars, job_id}` | Bootstrap: inject plaintext secrets (unwrapped on host), set up environment |
 | `Exec{command, args, workdir, env}` | Run the CI step |
 | `Signal{signal}` | Send signal to running process |
 | `Shutdown{}` | Clean shutdown |
@@ -75,10 +75,58 @@ orchestrator, not from Forgejo directly:
 | `ExitStatus{code, oom_killed}` | Process exit |
 | `Metrics{rss_bytes, written_bytes}` | Resource usage |
 
+### Forgejo runner integration
+
+The forge-metal orchestrator **implements the RunnerService protocol directly**
+rather than delegating to act_runner. The protocol has only 5 RPCs:
+
+| RPC | Purpose |
+|-----|---------|
+| `Register` | One-time registration (name, token, labels) |
+| `Declare` | Declare capabilities at startup |
+| `FetchTask` | Poll for work (returns one job's YAML + context + secrets) |
+| `UpdateTask` | Report step state transitions |
+| `UpdateLog` | Stream log lines back |
+
 The architecture is:
 ```
-Forgejo --> act_runner (on host, polls FetchTask) --> orchestrator --> vsock --> init (in VM)
+Forgejo server
+    |  (Connect RPC, protobuf)
+forge-metal orchestrator
+    |
+    ├── FetchTask() every 2s
+    |     └── Receives: Task{workflow_payload (YAML), context, secrets}
+    |
+    ├── On task:
+    |     1. Parse YAML with act/model.ReadWorkflow()
+    |     2. zfs clone pool/golden-zvol@ready pool/ci/job-{id}
+    |     3. Boot Firecracker VM
+    |     4. For each step: exec via vsock, stream logs
+    |     5. UpdateTask + UpdateLog every 1s
+    |     6. VM exits → zfs destroy → final UpdateTask
+    |
+    └── Go dependencies:
+          code.gitea.io/actions-proto-go
+          connectrpc.com/connect
+          github.com/nektos/act/pkg/model  (YAML parsing only)
 ```
+
+**Why not fork act_runner?** Adding a Firecracker executor requires forking both
+act_runner and `nektos/act`, maintaining the fork, and pulling in Docker dependencies.
+The protocol is simple enough (~500 lines of Go) that implementing it directly is
+less maintenance burden.
+
+**Why not run act_runner inside the VM?** This works for GitHub Actions (actuated's
+approach) because the official runner binary exists. Forgejo uses a different protocol.
+You'd need act_runner inside the VM, meaning networking from VM to Forgejo, larger
+golden image, and polling latency from inside the VM.
+
+**Secrets, artifacts, cache:** Secrets delivered in `Task.Secrets`. Artifacts use
+Forgejo's API directly (runner sets `ACTIONS_RUNTIME_URL` env var). Cache is optional.
+
+Source: [Gitea Actions design](https://docs.gitea.com/usage/actions/design),
+[actions-proto-go](https://pkg.go.dev/code.gitea.io/actions-proto-go),
+[Forgejo discussion #152](https://codeberg.org/forgejo/discussions/issues/152)
 
 ## SIGCHLD reaping (zombie prevention)
 
@@ -154,72 +202,28 @@ E2B uses MMDS for bootstrap identity (sandbox ID, access token hash) and HTTP PO
 for actual secrets. The MMDS hash acts as authentication -- the orchestrator's POST
 includes the real token, and envd validates against the hash.
 
-### Recommendation: vsock
+### Recommendation: unwrap on host, push secrets via vsock
 
-Use **vsock** for the OpenBao wrapping token. The host orchestrator pushes it as part
-of the init handshake (first message after vsock connection). No disk, no network stack,
-available as soon as the vsock driver loads. The guest init reads the wrapping token,
-unwraps it against OpenBao, and injects secrets as env vars into the CI process.
+The guest **cannot reach OpenBao** -- it binds to `127.0.0.1:8200` on the host, and
+the guest is in a network namespace with NAT to the internet only. Routing OpenBao
+to the TAP gateway (`172.16.0.1:8200`) would expose it on a non-localhost interface,
+widening the attack surface.
 
-## OpenBao integration inside the VM
-
-### Two approaches
-
-**Option A: OpenBao Agent as process supervisor**
-
-```hcl
-exec {
-  command = ["/usr/bin/ci-step", "--arg"]
-  restart_on_secret_changes = "always"
-}
-auto_auth {
-  method {
-    type = "approle"
-    config = {
-      role_id_file_path = "/run/openbao/role-id"
-      secret_id_file_path = "/run/openbao/secret-id"
-      remove_secret_id_file_after_reading = true
-    }
-  }
-}
-env_template "DB_PASSWORD" {
-  contents = "{{ with secret \"secret/data/db\" }}{{ .Data.data.password }}{{ end }}"
-}
-```
-
-Agent reads wrapping token, unwraps to get SecretID, authenticates, renders templates
-into env vars, then starts the CI process. **Known issue:** agent cannot survive restarts
-with response-wrapped tokens ([hashicorp/vault#16148](https://github.com/hashicorp/vault/issues/16148)).
-Fine for ephemeral CI VMs.
-
-**Option B: Direct Go API call (simpler, recommended)**
-
-```go
-client, _ := openbao.NewClient(&openbao.Config{Address: baoAddr})
-secret, err := client.Logical().Unwrap(wrappingToken)
-// secret.Data contains actual secrets
-// inject into CI process env
-```
-
-No separate agent process. The init binary itself calls the OpenBao API directly.
-Wrapping token consumed once, in memory, never on disk.
-
-### Recommended flow
+**Decision: orchestrator unwraps on host side, pushes plaintext secrets via vsock.**
 
 ```
-1. Host: bao write -wrap-ttl=120s auth/approle/role/ci-runner/secret-id
-2. Host: zfs clone pool/golden-zvol@ready pool/ci/job-abc
-3. Host: boot Firecracker VM, connect to guest init over vsock
-4. Host -> Guest (vsock): Init{wrapping_token, role_id, bao_addr, job_env}
-5. Guest init: call OpenBao API to unwrap token (in-memory, no disk)
-6. Guest init: authenticate with RoleID + SecretID -> get Vault token
-7. Guest init: read secrets, inject as env vars into CI process
-8. Guest init: stream logs over vsock, report exit code
-9. Host: zfs destroy pool/ci/job-abc
+1. Orchestrator: bao write -wrap-ttl=120s -f auth/approle/role/ci/secret-id
+2. Orchestrator: unwrap → get actual secrets (DB_PASSWORD, API_KEY, etc.)
+3. Orchestrator: boot Firecracker VM
+4. Orchestrator → Guest (vsock): Init{secrets: {DB_PASSWORD: "...", ...}, job_id, ...}
+5. Guest init: inject secrets as env vars into CI process
 ```
 
-Source: [OpenBao Agent process supervisor](https://openbao.org/docs/agent-and-proxy/agent/process-supervisor/),
-[OpenBao response wrapping](https://openbao.org/docs/concepts/response-wrapping/)
+**Trust model:** Secrets are plaintext in the orchestrator's memory (they always were
+during the unwrap call). The vsock channel is kernel-to-kernel with no network exposure.
+The guest never needs to contact OpenBao at all.
+
+Source: [OpenBao response wrapping](https://openbao.org/docs/concepts/response-wrapping/)
 
 ## Decision summary
 
@@ -228,8 +232,8 @@ Source: [OpenBao Agent process supervisor](https://openbao.org/docs/agent-and-pr
 | Host-guest protocol | Connect RPC over vsock | ForgeVM regret, Forgejo precedent |
 | Vsock port | Single port (e.g., 10000) | Fly.io pattern |
 | Zombie reaping | `signal.Notify(SIGCHLD)` + `Wait4(-1, WNOHANG)` loop | go-reaper, containerd |
-| Credential injection | Wrapping token over vsock | No disk, no network, available at boot |
-| Secret unwrap | Direct Go API call, no agent process | Simplicity for ephemeral VMs |
+| Credential injection | Plaintext secrets over vsock (unwrapped on host) | OpenBao unreachable from guest |
+| Secret unwrap | Orchestrator unwraps on host side | Guest never contacts OpenBao |
 | Log streaming | Bidirectional streaming over vsock | firecracker-containerd pattern |
 | Subreaper | `prctl(PR_SET_CHILD_SUBREAPER, 1)` | npm child process adoption |
 | VM shutdown | `syscall.Reboot(LINUX_REBOOT_CMD_RESTART)` | Fly.io pattern |
@@ -243,5 +247,6 @@ Source: [OpenBao Agent process supervisor](https://openbao.org/docs/agent-and-pr
 - [Firecracker vsock.md](https://github.com/firecracker-microvm/firecracker/blob/main/docs/vsock.md)
 - [tini](https://github.com/krallin/tini), [dumb-init](https://github.com/Yelp/dumb-init), [go-reaper](https://github.com/ramr/go-reaper)
 - [Gitea Actions design](https://docs.gitea.com/usage/actions/design)
-- [OpenBao Agent](https://openbao.org/docs/agent-and-proxy/agent/process-supervisor/)
+- [actions-proto-go](https://pkg.go.dev/code.gitea.io/actions-proto-go)
+- [Forgejo discussion #152](https://codeberg.org/forgejo/discussions/issues/152)
 - [OpenBao response wrapping](https://openbao.org/docs/concepts/response-wrapping/)

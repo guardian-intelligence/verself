@@ -100,6 +100,10 @@ ciGuestRootfs = pkgs.callPackage (pkgs.path + "/nixos/lib/make-ext4-fs.nix") {
 };
 
 # The vmlinux kernel for Firecracker
+# WARNING: Firecracker's configs target Amazon Linux's fork, not mainline.
+# You MUST add CONFIG_PCI=y when building against mainline linux_6_1
+# (see guest-kernel.md). Without it: kernel panic "VFS: Cannot open root
+# device vda" (issue #4881).
 ciKernel = pkgs.linuxManualConfig {
   src = pkgs.linuxKernel.kernels.linux_6_1.src;
   version = "6.1-firecracker";
@@ -168,6 +172,25 @@ manage Firecracker directly.
 
 Only a third-party Nix environment exists:
 [MarcoPolo/firecracker-containerd-nix](https://github.com/MarcoPolo/firecracker-containerd-nix)
+
+### tc-redirect-tap: not in nixpkgs
+
+The CNI plugin [tc-redirect-tap](https://github.com/awslabs/tc-redirect-tap) is
+required for Firecracker networking (see [networking.md](networking.md)) but is **not
+in nixpkgs**. It is a simple Go binary:
+
+```nix
+buildGoModule {
+  pname = "tc-redirect-tap";
+  version = "unstable-2025-XX-XX";
+  src = fetchFromGitHub { owner = "awslabs"; repo = "tc-redirect-tap"; ... };
+  vendorHash = "sha256-XXXX";
+  subPackages = [ "cmd/tc-redirect-tap" ];
+}
+```
+
+**Alternative:** Embed TAP+TC logic directly in the Go orchestrator using
+`vishvananda/netlink` (~500 lines), eliminating the CNI dependency entirely.
 
 ### Kernel options
 

@@ -15,11 +15,10 @@ Conducted 2026-03-29.
 | [Guest Kernel](guest-kernel.md) | Minimal kernel config for CI, container/gVisor support, PVH boot, init binary vs systemd, boot time optimization |
 | [Networking](networking.md) | TAP at scale, namespace isolation, nftables vs iptables, CNI tc-redirect-tap, rate limiting, MAC generation |
 | [Metrics & Observability](metrics-observability.md) | Metrics categories, ClickHouse wide event mapping, serial capture, vsock logs, balloon memory stats |
-| [Go SDK](go-sdk.md) | Machine lifecycle, DrivesBuilder for zvols, jailer hard-link problem + custom ChrootStrategy, CNI networking, MMDS, vsock, snapshot load, handler system |
-| [Init & Lifecycle](init-and-lifecycle.md) | Custom PID 1 design, vsock protocol (Connect RPC), SIGCHLD reaping, credential injection (vsock > MMDS > file), OpenBao wrapping token flow |
-| [Golden Image & Nix](golden-image-nix.md) | `make-ext4-fs.nix` rootfs recipe, Firecracker v1.14.2 in nixpkgs (includes jailer), KVM verified on Latitude.sh AMD EPYC |
-| [Capacity & Operations](capacity-and-operations.md) | ZFS ARC contention (set `zfs_arc_max`), MMIO vs PCI (+50%), memory layout for 64GB host, UID pools, crash recovery, overwatcher |
-| [Corrections & Decisions](corrections.md) | **Read this last.** SDK is stale (v1.4.1 API) — use hybrid. OpenBao unreachable from VM — unwrap on host. Forgejo runner — implement RunnerService directly. Kernel needs CONFIG_PCI=y. volblocksize=16K. |
+| [Go SDK](go-sdk.md) | Machine lifecycle, DrivesBuilder for zvols, jailer hard-link problem, **SDK staleness (API v1.4.1 vs v1.15.0) and hybrid approach** |
+| [Init & Lifecycle](init-and-lifecycle.md) | Custom PID 1, vsock protocol, SIGCHLD reaping, **credential injection (unwrap on host, push via vsock)**, **Forgejo RunnerService protocol (5 RPCs)** |
+| [Golden Image & Nix](golden-image-nix.md) | `make-ext4-fs.nix` rootfs recipe, Firecracker v1.14.2 in nixpkgs (includes jailer), tc-redirect-tap derivation, KVM on Latitude.sh |
+| [Capacity & Operations](capacity-and-operations.md) | ZFS ARC contention (`zfs_arc_max`), **volblocksize=16K**, MMIO vs PCI (+50%), memory layout for 64GB host, UID pools, crash recovery |
 
 ## Key findings
 
