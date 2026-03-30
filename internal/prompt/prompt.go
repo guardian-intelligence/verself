@@ -6,13 +6,17 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // Prompter abstracts stdin/stdout for testability.
 type Prompter interface {
 	Ask(prompt string) string
+	AskWithDefault(prompt, current string) string
 	AskSecret(prompt string) string
 	Confirm(prompt string) bool
 	Select(prompt string, options []string) (int, string)
@@ -33,8 +37,41 @@ func (p *TTYPrompter) Ask(prompt string) string {
 	return ""
 }
 
+// AskWithDefault shows the current value in brackets. Enter keeps it.
+func (p *TTYPrompter) AskWithDefault(prompt, current string) string {
+	var input string
+	if current != "" {
+		input = p.Ask(fmt.Sprintf("%s [%s]: ", prompt, current))
+	} else {
+		input = p.Ask(prompt + ": ")
+	}
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return current
+	}
+	return input
+}
+
+// AskSecret prompts for input with terminal echo disabled.
+// Falls back to plain Ask if stdin is not a terminal.
 func (p *TTYPrompter) AskSecret(prompt string) string {
-	return p.Ask(prompt)
+	fmt.Fprint(p.Out, prompt)
+
+	if f, ok := p.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		b, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(p.Out) // newline after hidden input
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
+
+	// Not a terminal (pipe, test) — read normally.
+	scanner := bufio.NewScanner(p.In)
+	if scanner.Scan() {
+		return scanner.Text()
+	}
+	return ""
 }
 
 func (p *TTYPrompter) Confirm(prompt string) bool {
