@@ -49,28 +49,40 @@ A typical `node_modules` directory contains:
 npm uses `graceful-fs` as its filesystem layer, which wraps Node.js's `fs` module with
 retry logic for `EMFILE` (too many open file descriptors).
 
-**The fsync problem:** When npm extracts packages, it writes files and calls `fs.writeFileSync`
-on many of them. Node.js's `fs.writeFileSync` does NOT call `fsync` by default — but many
-packages in the npm ecosystem use `write-file-atomic` or similar libraries that DO call
-`fsync`/`fdatasync` to ensure durability.
+**CORRECTION: npm's bulk extraction does NOT call fsync.** This is a critical finding
+from deeper investigation. npm extracts tarballs directly into `node_modules/` using
+streaming decompression. The extraction path does NOT call `fsync` on each file.
 
-The `write-file-atomic` package (used by npm internals and many popular packages) writes to
-a temp file, calls `fsync`, then `rename`. This pattern generates:
-1. `open` (temp file)
+Only `write-file-atomic` (used for `package-lock.json` and a handful of metadata files)
+calls `fs.fsync()`. The `write-file-atomic` pattern is:
+1. `open` (temp file with murmurhex suffix)
 2. `write` (contents)
-3. `fsync` (force to disk)
+3. `fsync` (force to disk) — **only for these few files, not bulk package content**
 4. `rename` (atomic swap)
 5. `close`
 
-**Measured impact:** OBuilder's research (see `docs/research/obuilder.md`) found that
-intercepting `fsync`/`fdatasync`/`msync`/`sync`/`syncfs`/`sync_file_range` via seccomp
-and returning success without syncing provides a "massive speedup for `npm install` style
-workloads." This is safe in CI because if the build crashes, the result is discarded.
+Source: [write-file-atomic](https://github.com/npm/write-file-atomic),
+[cacache](https://github.com/npm/cacache)
 
-**Applicability to forge-metal:** gVisor's `runsc` supports seccomp profiles. A profile
-that intercepts sync syscalls could eliminate the single biggest I/O bottleneck in the
-`deps` phase. The golden image already has `node_modules` pre-populated, but for
-projects where the lockfile changes (every real PR), `npm ci` will delete and re-extract.
+**The real bottleneck is metadata operations.** For 41K files, npm performs:
+- ~41K `open`/`write`/`close` sequences (file creation)
+- ~5K `mkdir` calls (directory creation)
+- ~41K `chmod` calls (permission setting)
+- Plus symlinks in `.bin/`
+
+Each of these is a metadata operation that hits the ZFS Intent Log (ZIL) on the zvol.
+
+**OBuilder's seccomp fsync bypass** (see `docs/research/obuilder.md`) provides a 3.9x
+speedup for `apt-get` but **limited benefit for npm** since npm doesn't call fsync during
+bulk extraction. The `eatmydata` approach (LD_PRELOAD fsync suppression) gave ~33% overall
+Docker build speedup, mostly from apt-get, not npm.
+Source: [eatmydata Docker builds](https://wildwolf.name/speeding-up-docker-builds-with-eatmydata/)
+
+**Applicability to forge-metal:** fsync interception is less impactful than initially
+thought for the `deps` phase. The real optimization is **skipping `npm ci` entirely**
+when the lockfile is unchanged, or using the golden image's pre-populated `node_modules`
+with `npm install` instead of `npm ci` (which nukes everything). For builds, `next build`
+does call fsync when writing `.next/` output, so interception still helps there.
 
 ## Copy-on-write interaction with node_modules
 
@@ -106,14 +118,32 @@ help `node_modules` — the small files are already efficiently stored.
 **Where recordsize matters:** The `.next/cache` directory contains fewer, larger files
 (webpack serialized modules, cached pages). These benefit from the default 128K recordsize.
 
+**IMPORTANT: zvol volblocksize is FIXED, not dynamic like recordsize.** This is the
+critical difference. A ZFS dataset with `recordsize=128K` stores small files efficiently
+(dynamic block sizing). But a **zvol** with `volblocksize=128K` uses 128K blocks for
+EVERY write, regardless of size. A 4K ext4 write on a 128K zvol copies a full 128K block.
+
+**Write amplification for zvol volblocksize:**
+
+| volblocksize | 4K random write amplification | Sequential throughput |
+|-------------|------------------------------|----------------------|
+| 4K | 1x (no amplification) | Lower (more metadata) |
+| 8K | 2x | Moderate |
+| **16K** | **4x** | **Good compromise** |
+| 64K | 16x | Better sequential |
+| 128K | 32x | Best sequential |
+
+Source: [ZFS zvol write amplification](https://github.com/openzfs/zfs/issues/11407)
+
 **Recommendation for forge-metal zvols:**
-- **Don't tune recordsize for node_modules** — small files already get small blocks
-- **Do set `xattr=sa`** — stores extended attributes inline in the inode instead of in
-  hidden subdirectories. Reduces I/O for metadata-heavy workloads.
-- **Do set `dnodesize=auto`** — allows larger dnodes to store extended attributes inline.
-- For zvols specifically, `volblocksize` is the relevant parameter (fixed, not dynamic
-  like recordsize). The ext4 filesystem inside the zvol handles its own block allocation.
-  A 4K `volblocksize` matches ext4's default block size.
+- **Set `volblocksize=16K`** — ZFS 2.2 default, good compromise between random I/O
+  (4x amplification for 4K writes, acceptable for CI) and sequential throughput
+- **Enable zstd compression** — 3-4x ratio on JS/JSON content. Reduces actual I/O
+  significantly. Most npm files are highly compressible text.
+- **Consider a ZFS special vdev** for metadata — can halve random I/O latency for the
+  stat-heavy module resolution workload.
+  Source: [ZFS special vdev](https://www.xda-developers.com/i-added-a-metadata-vdev-to-my-zfs-pool-and-everything-got-faster/)
+- For the ext4 inside the zvol: use 4K block size (default), `noatime` mount option
 
 ### The special_small_blocks optimization
 
@@ -132,9 +162,19 @@ Benchmarks from [pnpm.io/benchmarks](https://pnpm.io/benchmarks) (2026-03-30):
 | Cache + lockfile | 7.5s | 2.0s | 3.5s | 5.2s | 1.3s |
 | Cache + lockfile + node_modules | 1.3s | 0.68s | 0.56s | 5.0s | n/a |
 
+**Syscall comparison (measured):**
+- npm: ~1,000,000 syscalls for a typical install
+- Bun: ~165,000 syscalls (6x fewer) — the dominant speed factor
+  Source: [Bun install performance](https://betterstack.com/community/guides/scaling-nodejs/bun-install-performance/)
+
 **pnpm's advantage:** Content-addressable global store + hard links. When installing
 packages, pnpm creates hard links from the global store to `node_modules/.pnpm/`, then
 symlinks from `node_modules/<package>` to the `.pnpm` store.
+
+**pnpm caveat for forge-metal:** Hard links require the global store and `node_modules`
+to be on the **same filesystem**. In Firecracker VMs where the zvol is the sole filesystem,
+this works. But if the global store were on a separate volume, hard links would fail and
+pnpm would fall back to copying.
 
 **Why this matters for ZFS clones:**
 - **pnpm with warm global store:** Only creates hard links and symlinks. Minimal data
@@ -223,21 +263,22 @@ This is the TypeScript equivalent of Next.js's build cache.
 
 ## Applicability to forge-metal
 
-1. **fsync interception is the #1 optimization for deps phase.** Seccomp profile in gVisor
-   intercepting `fsync`/`fdatasync`/`sync`/`syncfs`/`sync_file_range` → return 0. Safe
-   because CI results are discarded on crash. See OBuilder's proven approach.
+1. **Lockfile-hash skip is the #1 optimization** (not fsync interception — npm doesn't
+   call fsync during bulk extraction). When golden image lockfile matches PR lockfile,
+   skip `npm ci` entirely. This eliminates the most expensive phase. Track via
+   `lockfile_changed` in CIEvent.
 
-2. **Lockfile-hash skip:** When golden image lockfile matches PR lockfile, skip `npm ci`
-   entirely. This eliminates the most expensive phase. Track via `lockfile_changed` in
-   CIEvent.
+2. **Use `npm install` instead of `npm ci`** when the golden image has pre-populated
+   `node_modules`. `npm ci` unconditionally deletes everything. `npm install` preserves
+   existing files and only updates what changed. This preserves the ZFS COW advantage.
 
 3. **Pre-warm all caches in golden image:** `.next/cache`, `.eslintcache`, `.tsbuildinfo`
    for each benchmark project. On unchanged source files, lint + typecheck + build become
    incremental.
 
-4. **ZFS zvol tuning:** Set `xattr=sa` and `dnodesize=auto` on the golden zvol. Use 4K
-   `volblocksize` to match ext4 default. Don't bother with `special_small_blocks` on
-   NVMe-only pools.
+4. **ZFS zvol tuning:** Use `volblocksize=16K` (ZFS 2.2 default), enable zstd compression
+   (3-4x ratio on JS/JSON). Consider a ZFS special vdev for metadata to halve random I/O
+   latency. Mount ext4 with `noatime`.
 
 5. **Consider pnpm for golden image preparation.** Even if benchmarks use `npm ci`,
    the golden image itself could be built with pnpm to minimize initial disk usage.
