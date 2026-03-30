@@ -25,10 +25,10 @@ As of 2025, Phase 1 is in progress (milestone #27 in NixOS/nix, 47% complete as 
 ## Community Divergence: Lix and Determinate Nix
 
 The governance crisis produced forks:
-- **Lix** (lix.systems): Community fork emphasizing stability and fewer experimental features. Consolidated flakes to "de-facto version 1" rather than treating them as changeable.
-- **Determinate Nix** (determinate.systems): Commercial Nix distribution that declares flakes stable, ships them enabled by default, and maintains `FlakeHub` (a versioned flake registry).
+- **Lix** (`lix.systems`, `git.lix.systems/lix-project/lix`): Community fork of CppNix 2.18, started in 2024. Focuses on correctness, improved error messages, and community governance (no single commercial backer). Lix has ported additional components to Rust but is not a ground-up rewrite. It treats flakes as de-facto stable but keeps them behind the experimental feature flag for backward compatibility. Installed on NixOS via the `lix-module` flake (`git.lix.systems/lix-project/nixos-lix-module`), which replaces the `nix` package via overlay. Does NOT include lazy trees or FlakeHub integration. See [lang-advanced-determinate-fleet.md](lang-advanced-determinate-fleet.md) for full Lix vs Determinate Nix comparison.
+- **Determinate Nix** (`determinate.systems`, `github.com/DeterminateSystems/nix-src`): Commercial downstream fork of CppNix, continuously rebased against upstream. Ships flakes as stable and enabled by default, includes lazy trees (enabled by default since 3.8.0), parallel evaluation, FlakeHub native integration (`fh` CLI, `flakehub:` URL scheme), and FlakeHub Cache binary cache. The Determinate installer uses `receipt.json` for clean uninstall. Also includes `Determinate Nixd` daemon for certificate management and automatic GC. See [lang-advanced-determinate-fleet.md](lang-advanced-determinate-fleet.md) for details.
 
-Both forks treat flakes as stable despite the upstream experimental flag.
+Both forks treat flakes as stable despite the upstream experimental flag. The key distinction: Determinate Nix adds major new features (lazy trees, parallel eval, FlakeHub); Lix focuses on correctness, better error messages, and community ownership without adding proprietary capabilities.
 
 ## Key Design Criticisms
 
@@ -141,4 +141,4 @@ Despite experimental status, flakes are the dominant pattern for new Nix project
 - Package publishing
 - CI (GitHub Actions via `DeterminateSystems/nix-installer-action` + `nix flake check`)
 
-FlakeHub (Determinate Systems) provides versioned, semver-compatible flake distribution — addressing the "no versioning beyond git commit hash" limitation of the base flake system.
+FlakeHub (Determinate Systems) provides versioned, semver-compatible flake distribution — addressing the "no versioning beyond git commit hash" limitation of the base flake system. FlakeHub inputs use HTTPS tar.gz URLs (`https://flakehub.com/f/NixOS/nixpkgs/0.1.*.tar.gz`), not a custom URL scheme. A companion `fh` CLI (`github.com/DeterminateSystems/fh`) handles `fh add nixpkgs` and related operations. FlakeHub Cache is a separate binary cache service for CI. See [lang-advanced-determinate-fleet.md](lang-advanced-determinate-fleet.md) §2.2 for the full breakdown.
