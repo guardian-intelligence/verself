@@ -15,20 +15,6 @@ import (
 	"github.com/forge-metal/forge-metal/internal/prompt"
 )
 
-// Supported bare-metal providers.
-var supportedProviders = []string{"latitude.sh"}
-
-// Providers shown in the picker (disabled ones have coming-soon label).
-var providerOptions = []struct {
-	Name     string
-	Enabled  bool
-}{
-	{"Latitude.sh", true},
-	{"Hetzner", false},
-	{"Equinix Metal", false},
-	{"Vultr Bare Metal", false},
-}
-
 // Wizard orchestrates the interactive provision flow.
 type Wizard struct {
 	Cfg          *config.Config
@@ -38,123 +24,86 @@ type Wizard struct {
 	LatBaseURL   string // override for testing; empty = production
 }
 
-type summary struct {
-	Provider string
-	Project  latitude.Project
-	Region   latitude.Region
-	Plan     latitude.Plan
-	SSHKey   string
-	Billing  string
+// resolved holds all validated form fields ready for provisioning.
+type resolved struct {
+	token   string
+	email   string
+	project latitude.Project
+	sshKey  string
+	region  latitude.Region
+	plan    latitude.Plan
 }
 
-// Run executes the full provisioning wizard.
+// Run executes the provisioning wizard.
+//
+// Each field is resolved in order: if already configured and valid, it prints
+// a ✓ and moves on. If missing or invalid, the user is prompted. This means
+// a fully configured second run shows all ✓ marks and goes straight to confirm.
 func (w *Wizard) Run(ctx context.Context) error {
-	provider, err := w.checkProvider()           // S0
-	if err != nil {
-		return err
-	}
-	_ = provider
-
-	token, err := w.ensureAPIToken()             // S1
-	if err != nil {
-		return err
-	}
-
-	project, err := w.ensureProject(token)       // S2
-	if err != nil {
-		return err
-	}
-
-	sshKey, err := w.ensureSSHKey()              // S3
-	if err != nil {
-		return err
-	}
-
-	region, err := w.selectRegion(token)         // S4
-	if err != nil {
-		return err
-	}
-
-	plan, err := w.selectPlan(token, region)     // S5
-	if err != nil {
-		return err
-	}
-
-	s := summary{
-		Provider: "Latitude.sh",
-		Project:  project,
-		Region:   region,
-		Plan:     plan,
-		SSHKey:   sshKey,
-		Billing:  w.Cfg.Latitude.Billing,
-	}
-
-	if err := w.confirm(s); err != nil {         // S6
-		return err
-	}
-
-	if err := w.writeConfig(s); err != nil {     // S7
-		return err
-	}
-
-	return w.provision()                          // S8
-}
-
-// S0: Check if a valid bare-metal provider is configured.
-func (w *Wizard) checkProvider() (string, error) {
-	// For now the only valid value is "latitude.sh" (or unset, which defaults to it).
-	// If the user has something else in config, tell them.
-	current := strings.TrimSpace(w.Cfg.Latitude.Region)
-
-	// We don't have a "provider" field yet — presence of a Latitude auth token
-	// or project implies latitude.sh. For the picker, we always show it.
-	fmt.Fprintln(w.Out, "Bare metal provider")
+	fmt.Fprintln(w.Out, "Provision: Latitude.sh bare metal")
 	fmt.Fprintln(w.Out)
 
-	var options []string
-	for _, p := range providerOptions {
-		label := p.Name
-		if !p.Enabled {
-			label += "  (coming soon)"
-		}
-		options = append(options, label)
+	token, email, err := w.resolveToken()
+	if err != nil {
+		return err
 	}
 
-	idx, _ := w.Prompter.Select("Select provider:", options)
-	chosen := providerOptions[idx]
-
-	if !chosen.Enabled {
-		return "", fmt.Errorf("%s is not yet supported. Supported providers: %s",
-			chosen.Name, strings.Join(supportedProviders, ", "))
+	project, err := w.resolveProject(token)
+	if err != nil {
+		return err
 	}
 
-	_ = current
-	fmt.Fprintf(w.Out, "  Provider: %s\n\n", chosen.Name)
-	return strings.ToLower(chosen.Name), nil
+	sshKey, err := w.resolveSSHKey()
+	if err != nil {
+		return err
+	}
+
+	region, err := w.resolveRegion(token)
+	if err != nil {
+		return err
+	}
+
+	plan, err := w.resolvePlan(token, region)
+	if err != nil {
+		return err
+	}
+
+	r := resolved{
+		token: token, email: email,
+		project: project, sshKey: sshKey,
+		region: region, plan: plan,
+	}
+
+	fmt.Fprintln(w.Out)
+	if err := w.confirm(r); err != nil {
+		return err
+	}
+
+	if err := w.save(r); err != nil {
+		return err
+	}
+
+	return w.provision(r.token)
 }
 
-// S1: Ensure we have a valid Latitude.sh API token.
-func (w *Wizard) ensureAPIToken() (string, error) {
+// resolveToken validates the configured token or prompts for a new one.
+func (w *Wizard) resolveToken() (string, string, error) {
 	token := w.Cfg.Latitude.AuthToken
 
-	client := w.latClient(token)
-
-	// Try existing token first.
 	if token != "" {
-		fmt.Fprintf(w.Out, "Validating Latitude.sh API token...\n")
+		client := w.latClient(token)
 		user, err := client.ValidateToken()
 		if err == nil {
-			fmt.Fprintf(w.Out, "  ✓ Authenticated as %s\n\n", user.Email)
-			return token, nil
+			fmt.Fprintf(w.Out, "  ✓ API Token    %s\n", user.Email)
+			return token, user.Email, nil
 		}
-		fmt.Fprintf(w.Out, "  ✗ Existing token is invalid.\n\n")
+		fmt.Fprintf(w.Out, "  ✗ API Token    saved token is invalid\n\n")
 	}
 
-	// Prompt loop.
 	for {
 		fmt.Fprintln(w.Out, "Latitude.sh API token required")
 		fmt.Fprintln(w.Out, "  1. Go to https://www.latitude.sh/dashboard/api-keys")
-		fmt.Fprintln(w.Out, "  2. Click 'Create API Key' (top right)")
+		fmt.Fprintln(w.Out, "  2. Click 'Create API Key'")
 		fmt.Fprintln(w.Out, "  3. Copy the token")
 		fmt.Fprintln(w.Out)
 
@@ -165,21 +114,20 @@ func (w *Wizard) ensureAPIToken() (string, error) {
 			continue
 		}
 
-		fmt.Fprintf(w.Out, "Validating...\n")
-		client = w.latClient(input)
+		client := w.latClient(input)
 		user, err := client.ValidateToken()
 		if err != nil {
 			fmt.Fprintf(w.Out, "  ✗ Token invalid. Check that you copied the full token.\n\n")
 			continue
 		}
 
-		fmt.Fprintf(w.Out, "  ✓ Authenticated as %s\n\n", user.Email)
-		return input, nil
+		fmt.Fprintf(w.Out, "  ✓ API Token    %s\n", user.Email)
+		return input, user.Email, nil
 	}
 }
 
-// S2: Ensure we have a project selected.
-func (w *Wizard) ensureProject(token string) (latitude.Project, error) {
+// resolveProject validates the configured project or prompts for selection.
+func (w *Wizard) resolveProject(token string) (latitude.Project, error) {
 	client := w.latClient(token)
 
 	projects, err := client.ListProjects()
@@ -190,25 +138,24 @@ func (w *Wizard) ensureProject(token string) (latitude.Project, error) {
 		return latitude.Project{}, fmt.Errorf("no projects found — create one at https://dash.latitude.sh")
 	}
 
-	// If the config already has a project ID, try to match it.
+	// Check if configured project still exists.
 	if w.Cfg.Latitude.Project != "" {
 		for _, p := range projects {
 			if p.ID == w.Cfg.Latitude.Project || p.Slug == w.Cfg.Latitude.Project {
-				fmt.Fprintf(w.Out, "  Project: %s (%s)\n\n", p.Name, p.ID)
+				fmt.Fprintf(w.Out, "  ✓ Project      %s\n", p.Name)
 				return p, nil
 			}
 		}
-		fmt.Fprintf(w.Out, "  ⚠ Configured project %q not found in your account.\n\n", w.Cfg.Latitude.Project)
+		fmt.Fprintf(w.Out, "  ✗ Project      %q not found in your account\n\n", w.Cfg.Latitude.Project)
 	}
 
 	// Auto-select if there's only one.
 	if len(projects) == 1 {
 		p := projects[0]
-		fmt.Fprintf(w.Out, "  Project: %s (%s) — auto-selected (only project)\n\n", p.Name, p.ID)
+		fmt.Fprintf(w.Out, "  ✓ Project      %s (auto-selected)\n", p.Name)
 		return p, nil
 	}
 
-	// Prompt to pick.
 	var options []string
 	for _, p := range projects {
 		options = append(options, fmt.Sprintf("%s (%s)", p.Name, p.ID))
@@ -216,23 +163,23 @@ func (w *Wizard) ensureProject(token string) (latitude.Project, error) {
 
 	idx, _ := w.Prompter.Select("Select project:", options)
 	chosen := projects[idx]
-	fmt.Fprintf(w.Out, "  Project: %s (%s)\n\n", chosen.Name, chosen.ID)
+	fmt.Fprintf(w.Out, "  ✓ Project      %s\n", chosen.Name)
 	return chosen, nil
 }
 
-// S3: Ensure SSH key exists.
-func (w *Wizard) ensureSSHKey() (string, error) {
+// resolveSSHKey checks the configured SSH key path or prompts for one.
+func (w *Wizard) resolveSSHKey() (string, error) {
 	if err := w.Cfg.ExpandPaths(); err != nil {
 		return "", err
 	}
 
 	pubPath := w.Cfg.SSH.PublicKeyPath
 	if _, err := os.Stat(pubPath); err == nil {
-		fmt.Fprintf(w.Out, "  SSH key: %s\n\n", pubPath)
+		fmt.Fprintf(w.Out, "  ✓ SSH Key      %s\n", pubPath)
 		return pubPath, nil
 	}
 
-	fmt.Fprintf(w.Out, "  SSH key not found at %s\n\n", pubPath)
+	fmt.Fprintf(w.Out, "  ✗ SSH Key      not found at %s\n\n", pubPath)
 
 	if w.Prompter.Confirm("Generate a new ed25519 SSH key?") {
 		privPath := strings.TrimSuffix(pubPath, ".pub")
@@ -248,11 +195,10 @@ func (w *Wizard) ensureSSHKey() (string, error) {
 			return "", fmt.Errorf("ssh-keygen: %w", err)
 		}
 
-		fmt.Fprintf(w.Out, "  ✓ Generated %s\n\n", pubPath)
+		fmt.Fprintf(w.Out, "  ✓ SSH Key      %s\n", pubPath)
 		return pubPath, nil
 	}
 
-	// Ask for custom path.
 	custom := w.Prompter.Ask("Path to SSH public key (.pub): ")
 	custom = strings.TrimSpace(custom)
 	if custom == "" {
@@ -261,11 +207,12 @@ func (w *Wizard) ensureSSHKey() (string, error) {
 	if _, err := os.Stat(custom); err != nil {
 		return "", fmt.Errorf("SSH key not found at %s", custom)
 	}
+	fmt.Fprintf(w.Out, "  ✓ SSH Key      %s\n", custom)
 	return custom, nil
 }
 
-// S4: Select datacenter region.
-func (w *Wizard) selectRegion(token string) (latitude.Region, error) {
+// resolveRegion validates the configured region or prompts for selection.
+func (w *Wizard) resolveRegion(token string) (latitude.Region, error) {
 	client := w.latClient(token)
 
 	regions, err := client.ListRegions()
@@ -273,36 +220,36 @@ func (w *Wizard) selectRegion(token string) (latitude.Region, error) {
 		return latitude.Region{}, fmt.Errorf("fetch regions: %w", err)
 	}
 	if len(regions) == 0 {
-		return latitude.Region{}, fmt.Errorf("no regions available from Latitude.sh API")
+		return latitude.Region{}, fmt.Errorf("no regions available")
 	}
 
-	defaultSlug := w.Cfg.Latitude.Region
+	// Check if configured region still exists.
+	configSlug := w.Cfg.Latitude.Region
+	if configSlug != "" && w.Cfg.Source.Latitude.Region != config.SourceDefault {
+		for _, r := range regions {
+			if r.Slug == configSlug {
+				fmt.Fprintf(w.Out, "  ✓ Region       %s — %s, %s\n", r.Slug, r.Name, r.Country)
+				return r, nil
+			}
+		}
+		fmt.Fprintf(w.Out, "  ✗ Region       %q not available\n\n", configSlug)
+	}
+
+	regions = prioritizeRegion(regions, configSlug)
 
 	var options []string
-	defaultIdx := 0
-	for i, r := range regions {
-		label := fmt.Sprintf("%s — %s, %s", r.Slug, r.City, r.Country)
-		if r.Slug == defaultSlug {
-			label += "  (default)"
-			defaultIdx = i
-		}
-		options = append(options, label)
-	}
-
-	// Move default to top for convenience.
-	if defaultIdx > 0 {
-		regions[0], regions[defaultIdx] = regions[defaultIdx], regions[0]
-		options[0], options[defaultIdx] = options[defaultIdx], options[0]
+	for _, r := range regions {
+		options = append(options, fmt.Sprintf("%s — %s, %s", r.Slug, r.Name, r.Country))
 	}
 
 	idx, _ := w.Prompter.Select("Select region:", options)
 	chosen := regions[idx]
-	fmt.Fprintf(w.Out, "  Region: %s (%s, %s)\n\n", chosen.Slug, chosen.City, chosen.Country)
+	fmt.Fprintf(w.Out, "  ✓ Region       %s — %s, %s\n", chosen.Slug, chosen.Name, chosen.Country)
 	return chosen, nil
 }
 
-// S5: Select server plan.
-func (w *Wizard) selectPlan(token string, region latitude.Region) (latitude.Plan, error) {
+// resolvePlan validates the configured plan or prompts for selection.
+func (w *Wizard) resolvePlan(token string, region latitude.Region) (latitude.Plan, error) {
 	client := w.latClient(token)
 
 	plans, err := client.ListPlans(region.Slug)
@@ -313,42 +260,44 @@ func (w *Wizard) selectPlan(token string, region latitude.Region) (latitude.Plan
 		return latitude.Plan{}, fmt.Errorf("no plans available for region %s", region.Slug)
 	}
 
-	defaultSlug := w.Cfg.Latitude.Plan
-
-	var options []string
-	defaultIdx := 0
-	for i, p := range plans {
-		label := fmt.Sprintf("%s — %s", p.Slug, p.Name)
-		if p.Slug == defaultSlug {
-			label += "  (default)"
-			defaultIdx = i
+	// Check if configured plan is available.
+	configSlug := w.Cfg.Latitude.Plan
+	if configSlug != "" && w.Cfg.Source.Latitude.Plan != config.SourceDefault {
+		for _, p := range plans {
+			if p.Slug == configSlug {
+				fmt.Fprintf(w.Out, "  ✓ Plan         %s\n", p.Slug)
+				return p, nil
+			}
 		}
-		options = append(options, label)
+		fmt.Fprintf(w.Out, "  ✗ Plan         %q not available in %s\n\n", configSlug, region.Slug)
 	}
 
-	if defaultIdx > 0 {
-		plans[0], plans[defaultIdx] = plans[defaultIdx], plans[0]
-		options[0], options[defaultIdx] = options[defaultIdx], options[0]
+	plans = prioritizePlan(plans, configSlug)
+
+	var options []string
+	for _, p := range plans {
+		options = append(options, fmt.Sprintf("%s — %s", p.Slug, p.Name))
 	}
 
 	idx, _ := w.Prompter.Select("Select server plan:", options)
 	chosen := plans[idx]
-	fmt.Fprintf(w.Out, "  Plan: %s (%s)\n\n", chosen.Slug, chosen.Name)
+	fmt.Fprintf(w.Out, "  ✓ Plan         %s\n", chosen.Slug)
 	return chosen, nil
 }
 
-// S6: Show summary and ask for confirmation.
-func (w *Wizard) confirm(s summary) error {
+// confirm shows the provision summary and asks to proceed.
+func (w *Wizard) confirm(r resolved) error {
 	fmt.Fprintln(w.Out, "──────────────────────────────────")
 	fmt.Fprintln(w.Out, "  Provision Summary")
 	fmt.Fprintln(w.Out, "──────────────────────────────────")
-	fmt.Fprintf(w.Out, "  Provider:  %s\n", s.Provider)
-	fmt.Fprintf(w.Out, "  Project:   %s (%s)\n", s.Project.Name, s.Project.ID)
-	fmt.Fprintf(w.Out, "  Region:    %s (%s, %s)\n", s.Region.Slug, s.Region.City, s.Region.Country)
-	fmt.Fprintf(w.Out, "  Plan:      %s (%s)\n", s.Plan.Slug, s.Plan.Name)
+	fmt.Fprintf(w.Out, "  Provider:  Latitude.sh\n")
+	fmt.Fprintf(w.Out, "  Account:   %s\n", r.email)
+	fmt.Fprintf(w.Out, "  Project:   %s (%s)\n", r.project.Name, r.project.ID)
+	fmt.Fprintf(w.Out, "  Region:    %s (%s, %s)\n", r.region.Slug, r.region.Name, r.region.Country)
+	fmt.Fprintf(w.Out, "  Plan:      %s (%s)\n", r.plan.Slug, r.plan.Name)
 	fmt.Fprintf(w.Out, "  OS:        %s\n", w.Cfg.Latitude.OperatingSystem)
-	fmt.Fprintf(w.Out, "  Billing:   %s\n", s.Billing)
-	fmt.Fprintf(w.Out, "  SSH Key:   %s\n", s.SSHKey)
+	fmt.Fprintf(w.Out, "  Billing:   %s\n", w.Cfg.Latitude.Billing)
+	fmt.Fprintf(w.Out, "  SSH Key:   %s\n", r.sshKey)
 	fmt.Fprintln(w.Out, "──────────────────────────────────")
 	fmt.Fprintln(w.Out)
 
@@ -358,19 +307,25 @@ func (w *Wizard) confirm(s summary) error {
 	return nil
 }
 
-// S7: Write terraform.tfvars.json.
-func (w *Wizard) writeConfig(s summary) error {
-	tfDir := w.terraformDir()
+// save persists selections to forge-metal.toml and terraform.tfvars.json.
+func (w *Wizard) save(r resolved) error {
+	// Persist to forge-metal.toml so next run skips prompts.
+	if err := config.SaveLatitude(r.token, r.project.ID, r.region.Slug, r.plan.Slug); err != nil {
+		fmt.Fprintf(w.Out, "  ⚠ Could not save config: %v\n", err)
+		// Non-fatal — provisioning can still proceed.
+	}
 
+	// Write terraform.tfvars.json.
+	tfDir := w.terraformDir()
 	tfvars := map[string]interface{}{
-		"cluster_name":       "dev",
-		"project_id":         s.Project.ID,
-		"worker_count":       1,
-		"infra_count":        0,
-		"region":             s.Region.Slug,
-		"plan":               s.Plan.Slug,
-		"billing":            s.Billing,
-		"ssh_public_key_path": s.SSHKey,
+		"cluster_name":        "dev",
+		"project_id":          r.project.ID,
+		"worker_count":        1,
+		"infra_count":         0,
+		"region":              r.region.Slug,
+		"plan":                r.plan.Slug,
+		"billing":             w.Cfg.Latitude.Billing,
+		"ssh_public_key_path": r.sshKey,
 	}
 
 	data, err := json.MarshalIndent(tfvars, "", "  ")
@@ -387,15 +342,17 @@ func (w *Wizard) writeConfig(s summary) error {
 	return nil
 }
 
-// S8: Run tofu init + apply, then generate inventory.
-func (w *Wizard) provision() error {
+// provision runs tofu init + apply, then generates inventory.
+func (w *Wizard) provision(token string) error {
 	tfDir := w.terraformDir()
+	env := append(os.Environ(), "LATITUDESH_AUTH_TOKEN="+token)
 
 	fmt.Fprintln(w.Out, "Initializing Terraform...")
 	init := exec.Command("tofu", "init", "-input=false")
 	init.Dir = tfDir
 	init.Stdout = w.Out
 	init.Stderr = w.Out
+	init.Env = env
 	if err := init.Run(); err != nil {
 		return fmt.Errorf("tofu init failed: %w", err)
 	}
@@ -406,6 +363,7 @@ func (w *Wizard) provision() error {
 	apply.Dir = tfDir
 	apply.Stdout = w.Out
 	apply.Stderr = w.Out
+	apply.Env = env
 	if err := apply.Run(); err != nil {
 		return fmt.Errorf("tofu apply failed: %w\n\nRun `bmci doctor` to check your environment.", err)
 	}
@@ -420,7 +378,7 @@ func (w *Wizard) provision() error {
 	}
 
 	fmt.Fprintln(w.Out)
-	fmt.Fprintln(w.Out, "✓ Server provisioned!")
+	fmt.Fprintln(w.Out, "Done! Server provisioned.")
 	fmt.Fprintln(w.Out)
 	fmt.Fprintln(w.Out, "Next steps:")
 	fmt.Fprintln(w.Out, "  bmci setup-domain   Configure DNS (optional)")
@@ -437,4 +395,44 @@ func (w *Wizard) terraformDir() string {
 		return w.TerraformDir
 	}
 	return "terraform"
+}
+
+func prioritizeRegion(regions []latitude.Region, slug string) []latitude.Region {
+	if slug == "" {
+		return regions
+	}
+	for i, region := range regions {
+		if region.Slug != slug {
+			continue
+		}
+		if i == 0 {
+			return regions
+		}
+		prioritized := make([]latitude.Region, 0, len(regions))
+		prioritized = append(prioritized, region)
+		prioritized = append(prioritized, regions[:i]...)
+		prioritized = append(prioritized, regions[i+1:]...)
+		return prioritized
+	}
+	return regions
+}
+
+func prioritizePlan(plans []latitude.Plan, slug string) []latitude.Plan {
+	if slug == "" {
+		return plans
+	}
+	for i, plan := range plans {
+		if plan.Slug != slug {
+			continue
+		}
+		if i == 0 {
+			return plans
+		}
+		prioritized := make([]latitude.Plan, 0, len(plans))
+		prioritized = append(prioritized, plan)
+		prioritized = append(prioritized, plans[:i]...)
+		prioritized = append(prioritized, plans[i+1:]...)
+		return prioritized
+	}
+	return plans
 }

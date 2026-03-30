@@ -11,6 +11,16 @@ resource "latitudesh_ssh_key" "forge_metal" {
 }
 
 # -----------------------------------------------------------------
+# User Data
+# -----------------------------------------------------------------
+resource "latitudesh_user_data" "forge_metal" {
+  description = "forge-metal-${var.cluster_name} bootstrap"
+  content = base64encode(templatefile("${path.module}/cloud-init.yml.tpl", {
+    ssh_public_key = trimspace(file(var.ssh_public_key_path))
+  }))
+}
+
+# -----------------------------------------------------------------
 # Worker nodes
 # -----------------------------------------------------------------
 resource "latitudesh_server" "worker" {
@@ -23,10 +33,7 @@ resource "latitudesh_server" "worker" {
   billing          = var.billing
   ssh_keys         = [latitudesh_ssh_key.forge_metal.id]
   allow_reinstall  = true
-
-  user_data = templatefile("${path.module}/cloud-init.yml.tpl", {
-    ssh_public_key = trimspace(file(var.ssh_public_key_path))
-  })
+  user_data        = latitudesh_user_data.forge_metal.id
 }
 
 # -----------------------------------------------------------------
@@ -42,8 +49,5 @@ resource "latitudesh_server" "infra" {
   billing          = var.billing
   ssh_keys         = [latitudesh_ssh_key.forge_metal.id]
   allow_reinstall  = true
-
-  user_data = templatefile("${path.module}/cloud-init.yml.tpl", {
-    ssh_public_key = trimspace(file(var.ssh_public_key_path))
-  })
+  user_data        = latitudesh_user_data.forge_metal.id
 }
