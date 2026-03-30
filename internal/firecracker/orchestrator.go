@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,8 +43,8 @@ func DefaultConfig() Config {
 		GoldenZvol:     "golden-zvol",
 		CIDataset:      "ci",
 		KernelPath:     "/var/lib/ci/vmlinux",
-		FirecrackerBin: "/nix/var/nix/profiles/default/bin/firecracker",
-		JailerBin:      "/nix/var/nix/profiles/default/bin/jailer",
+		FirecrackerBin: "/usr/local/bin/firecracker",
+		JailerBin:      "/usr/local/bin/jailer",
 		JailerRoot:     "/srv/jailer",
 		JailerUID:      10000,
 		JailerGID:      10000,
@@ -96,49 +95,35 @@ func New(cfg Config, logger *slog.Logger) *Orchestrator {
 	return &Orchestrator{cfg: cfg, logger: logger}
 }
 
-// goldenSnapshot returns the full golden zvol snapshot path.
 func (o *Orchestrator) goldenSnapshot() string {
 	return fmt.Sprintf("%s/%s@ready", o.cfg.Pool, o.cfg.GoldenZvol)
 }
 
-// cloneDataset returns the full dataset path for a job clone.
 func (o *Orchestrator) cloneDataset(jobID string) string {
 	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.CIDataset, jobID)
 }
 
-// jailDir returns the jail root directory path for a job.
-// Matches jailer convention: <base>/<exec-name>/<id>/root/
 func (o *Orchestrator) jailDir(jobID string) string {
 	return filepath.Join(o.cfg.JailerRoot, "firecracker", jobID, "root")
 }
 
-// ciDatasetPrefix returns the prefix that all job clone datasets must
-// match. Used to validate destroy targets.
 func (o *Orchestrator) ciDatasetPrefix() string {
 	return fmt.Sprintf("%s/%s/", o.cfg.Pool, o.cfg.CIDataset)
 }
 
 // Run executes a CI job inside a Firecracker VM.
-//
-// Full lifecycle with LIFO cleanup on any error:
-//
-//	clone zvol -> mount & write config -> jail setup -> network ->
-//	start jailer -> configure VM -> boot -> wait -> collect metrics -> cleanup
 func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult, err error) {
-	// Validate job ID is a UUID to prevent command injection in ZFS/shell args.
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 		return
 	}
 
-	// Serialize VM runs — single subnet means one VM at a time.
 	o.vmMu.Lock()
 	defer o.vmMu.Unlock()
 
 	start := time.Now()
 	logger := o.logger.With("job_id", job.JobID)
 
-	// LIFO cleanup stack (Velo pattern).
 	var cleanups []func()
 	defer func() {
 		cleanupStart := time.Now()
@@ -149,7 +134,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		result.Duration = time.Since(start)
 	}()
 
-	// --- 1. Verify golden snapshot exists ---
+	// --- 1. Verify golden snapshot ---
 	exists, checkErr := zfsSnapshotExists(ctx, o.goldenSnapshot())
 	if checkErr != nil {
 		err = fmt.Errorf("check golden snapshot: %w", checkErr)
@@ -171,7 +156,6 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	logger.Info("zvol cloned", "duration_ms", result.CloneTime.Milliseconds(), "dataset", dataset)
 
 	cleanups = append(cleanups, func() {
-		// Only destroy datasets under our CI prefix to prevent accidents.
 		if strings.HasPrefix(dataset, o.ciDatasetPrefix()) {
 			if destroyErr := zfsDestroy(context.Background(), dataset); destroyErr != nil {
 				logger.Warn("zvol destroy failed", "err", destroyErr)
@@ -209,7 +193,6 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	result.JailSetupTime = time.Since(jailStart)
 	logger.Info("jail ready", "duration_ms", result.JailSetupTime.Milliseconds())
 
-	// Cleanup: remove the entire jail tree (grandparent of root/).
 	jailBase := filepath.Dir(filepath.Dir(jailRoot))
 	cleanups = append(cleanups, func() {
 		os.RemoveAll(jailBase)
@@ -224,30 +207,10 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	cleanups = append(cleanups, netCleanup)
 	logger.Info("network ready", "tap", netSetup.TapName)
 
-	// --- 6. Start metrics reader ---
-	// Must start BEFORE jailer so the read side of the FIFO is open
-	// when Firecracker tries to open the write side (otherwise FC blocks).
-	metricsPathHost := filepath.Join(jailRoot, "metrics.fifo")
-	var metricsData []byte
-	metricsDone := make(chan struct{})
-	go func() {
-		defer close(metricsDone)
-		f, openErr := os.Open(metricsPathHost)
-		if openErr != nil {
-			return
-		}
-		defer f.Close()
-		metricsData, _ = io.ReadAll(f)
-	}()
-
-	// --- 7. Start jailer ---
+	// --- 6. Start jailer ---
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
+	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
 
-	// Background context — we manage the jailer lifetime explicitly.
-	// With --new-pid-ns, the jailer clones into a new PID namespace,
-	// then the PARENT calls waitpid(child) and exits with the child's
-	// exit code. So jailerCmd.Wait() correctly blocks until Firecracker
-	// exits. (This only breaks with --daemonize, which we don't use.)
 	jailerCmd, startErr := o.startJailer(job.JobID)
 	if startErr != nil {
 		err = fmt.Errorf("start jailer: %w", startErr)
@@ -293,19 +256,16 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 
 	logger.Info("jailer started", "pid", jailerCmd.Process.Pid)
 
-	// --- 8. Wait for API socket ---
+	// --- 7. Wait for API socket ---
 	if waitErr := waitForSocket(ctx, apiSockHost); waitErr != nil {
 		err = fmt.Errorf("wait for API socket: %w", waitErr)
 		return
 	}
 
-	// --- 9. Configure VM via API ---
+	// --- 8. Configure VM via API ---
 	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
 
-	// Boot args: root device, serial console, static IP, init path.
-	// root=/dev/vda is the virtio block device — without this the kernel
-	// has no filesystem to mount as /.
 	bootArgs := fmt.Sprintf(
 		"root=/dev/vda rw console=ttyS0 reboot=k panic=1 %s init=/sbin/init",
 		netSetup.BootIPArg,
@@ -315,8 +275,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		name string
 		fn   func() error
 	}{
-		{"logger", func() error { return client.putLogger(ctx, "/dev/null") }},
-		{"metrics", func() error { return client.putMetrics(ctx, "/metrics.fifo") }},
+		{"metrics", func() error { return client.putMetrics(ctx, "/metrics.json") }},
 		{"boot-source", func() error { return client.putBootSource(ctx, "/vmlinux", bootArgs) }},
 		{"rootfs", func() error { return client.putDrive(ctx, "rootfs", "/rootfs", true) }},
 		{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
@@ -332,7 +291,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		}
 	}
 
-	// --- 10. Start VM ---
+	// --- 9. Start VM ---
 	if startVMErr := client.startInstance(ctx); startVMErr != nil {
 		err = fmt.Errorf("start VM: %w", startVMErr)
 		return
@@ -340,17 +299,13 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	result.VMBootTime = time.Since(bootStart)
 	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
-	// --- 11. Wait for VM exit ---
-	// The jailer parent waits for the Firecracker child (see --new-pid-ns
-	// comment above), so this blocks until the VM actually shuts down.
+	// --- 10. Wait for VM exit ---
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailerCmd.Wait() }()
 
 	select {
 	case <-waitDone:
-		// Normal exit.
 	case <-ctx.Done():
-		// Timeout — kill jailer, then wait for cleanup.
 		jailerCmd.Process.Kill()
 		<-waitDone
 	}
@@ -359,26 +314,19 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	logWg.Wait()
 	result.Logs = logBuf.String()
 
-	// --- 12. Parse guest exit code from serial output ---
-	// Firecracker's own exit code doesn't reflect the guest command's
-	// exit code. The guest init prints FORGEVM_EXIT_CODE=N to serial
-	// before calling reboot(POWER_OFF), and we parse it here.
+	// --- 11. Parse guest exit code from serial output ---
+	// Firecracker's exit code doesn't reflect the guest command's result.
+	// The init prints FORGEVM_EXIT_CODE=N before reboot(POWER_OFF).
 	result.ExitCode = parseGuestExitCode(result.Logs)
 
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
-	// --- 13. Collect metrics ---
-	// Wait for the metrics reader goroutine with a timeout.
-	// After FC exits, the FIFO write side closes and our reader gets EOF.
-	select {
-	case <-metricsDone:
-		result.Metrics = parseMetricsBytes(metricsData)
-	case <-time.After(3 * time.Second):
-		logger.Warn("metrics reader timed out, skipping metrics")
-		result.Metrics = &VMMetrics{}
-	}
+	// --- 12. Collect metrics ---
+	// Metrics file is a regular file (not FIFO). Firecracker appends
+	// NDJSON every 60s and on FlushMetrics. Just read it after exit.
+	result.Metrics = parseMetricsFile(metricsPathHost)
 
-	// --- 14. Read ZFS written bytes ---
+	// --- 13. Read ZFS written bytes ---
 	bgCtx, bgCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer bgCancel()
 	if written, writtenErr := zfsWritten(bgCtx, dataset); writtenErr == nil {
@@ -397,7 +345,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 }
 
 // setupJail creates the jail directory structure and places the
-// kernel, zvol device node, and metrics FIFO inside it.
+// kernel, zvol device node, and metrics file inside it.
 func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath string) error {
 	for _, dir := range []string{jailRoot, filepath.Join(jailRoot, "run")} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -431,20 +379,27 @@ func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath stri
 		return fmt.Errorf("chown rootfs device: %w", err)
 	}
 
-	// Create metrics FIFO inside jail.
-	metricsFifo := filepath.Join(jailRoot, "metrics.fifo")
-	if err := syscall.Mkfifo(metricsFifo, 0644); err != nil {
-		return fmt.Errorf("mkfifo %s: %w", metricsFifo, err)
+	// Create metrics file (regular file, not FIFO).
+	// Firecracker appends NDJSON to this. A regular file avoids the
+	// reader-must-be-open-before-writer deadlock that FIFOs have.
+	metricsFile := filepath.Join(jailRoot, "metrics.json")
+	if err := os.WriteFile(metricsFile, nil, 0644); err != nil {
+		return fmt.Errorf("create metrics file: %w", err)
 	}
-	if err := os.Chown(metricsFifo, o.cfg.JailerUID, o.cfg.JailerGID); err != nil {
-		return fmt.Errorf("chown metrics fifo: %w", err)
+	if err := os.Chown(metricsFile, o.cfg.JailerUID, o.cfg.JailerGID); err != nil {
+		return fmt.Errorf("chown metrics file: %w", err)
 	}
 
 	return nil
 }
 
 // startJailer builds the jailer exec.Cmd.
-// Uses background context — caller manages the process lifetime explicitly.
+//
+// No --new-pid-ns for the tracer bullet. The PID namespace adds a
+// fork that makes jailerCmd.Wait() ambiguous about which process
+// exited. Without it, the jailer execs Firecracker directly, so
+// Wait() returns exactly when the VM shuts down. PID namespace
+// isolation is a phase 2 concern — the VM already isolates processes.
 func (o *Orchestrator) startJailer(jobID string) (*exec.Cmd, error) {
 	args := []string{
 		"--id", jobID,
@@ -452,7 +407,6 @@ func (o *Orchestrator) startJailer(jobID string) (*exec.Cmd, error) {
 		"--uid", strconv.Itoa(o.cfg.JailerUID),
 		"--gid", strconv.Itoa(o.cfg.JailerGID),
 		"--chroot-base-dir", o.cfg.JailerRoot,
-		"--new-pid-ns",
 		"--", // Separator: args after this go to Firecracker.
 		"--api-sock", "/run/firecracker.sock",
 	}
@@ -477,8 +431,6 @@ func waitForSocket(ctx context.Context, path string) error {
 	}
 }
 
-// writeJobConfig writes the job config JSON to /etc/ci/job.json
-// on the mounted zvol filesystem.
 func writeJobConfig(mountDir string, job JobConfig) error {
 	configDir := filepath.Join(mountDir, "etc", "ci")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
@@ -497,7 +449,6 @@ func writeJobConfig(mountDir string, job JobConfig) error {
 	return nil
 }
 
-// copyFile streams src to dst without buffering the whole file.
 func copyFile(src, dst string) error {
 	s, err := os.Open(src)
 	if err != nil {

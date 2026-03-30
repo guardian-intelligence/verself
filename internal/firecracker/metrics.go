@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// VMMetrics holds Firecracker metrics extracted from the metrics FIFO.
+// VMMetrics holds Firecracker metrics extracted from the metrics file.
 // Fields map to ClickHouse wide event columns.
 type VMMetrics struct {
 	BootTimeUs      uint64 // api_server.process_startup_time_us
@@ -51,8 +51,16 @@ type vcpuMetrics struct {
 	ExitMMIOWrite uint64 `json:"exit_mmio_write"`
 }
 
-// parseMetricsBytes parses metrics from NDJSON data read from the FIFO.
-// Returns zero metrics on any error (best-effort).
+// parseMetricsFile reads the metrics file (regular file, not FIFO) and
+// extracts VM metrics. Returns zero metrics on any error (best-effort).
+func parseMetricsFile(path string) *VMMetrics {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &VMMetrics{}
+	}
+	return parseMetricsBytes(data)
+}
+
 func parseMetricsBytes(data []byte) *VMMetrics {
 	lines := splitLines(data)
 	if len(lines) == 0 {

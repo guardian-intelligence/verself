@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -19,7 +18,6 @@ import (
 
 func firecrackerTestCmd() *cobra.Command {
 	var (
-		command       string
 		repo          string
 		commitSHA     string
 		pool          string
@@ -34,16 +32,21 @@ func firecrackerTestCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "firecracker-test",
-		Short: "Run a tracer bullet test: zvol clone -> Firecracker VM -> command -> ClickHouse event",
+		Use:   "firecracker-test -- <command> [args...]",
+		Short: "Tracer bullet: zvol clone -> Firecracker VM -> command -> wide event",
 		Long: `Tracer bullet for the Firecracker CI pipeline.
 
-Clones a golden zvol, boots a Firecracker VM, runs a command inside it,
-captures output and metrics, and records a ClickHouse wide event.
+Clones a golden zvol, boots a Firecracker VM, runs the command inside it,
+captures output and metrics, and prints a wide event summary.
 
-Example:
-  bmci firecracker-test --command "node -e 'console.log(42)'"
-  bmci firecracker-test --command "bash -c 'echo hello && sleep 1'"`,
+The command and its arguments are passed as positional args after --.
+
+Examples:
+  bmci firecracker-test -- node -e 'console.log(42)'
+  bmci firecracker-test -- bash -c 'echo hello && sleep 1'
+  bmci firecracker-test --vcpus 4 --memory 1024 -- npm test`,
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 				Level: slog.LevelInfo,
@@ -80,21 +83,11 @@ Example:
 
 			orch := firecracker.New(cfg, logger)
 
-			// Parse command into argv.
-			argv := parseCommand(command)
-			if len(argv) == 0 {
-				return fmt.Errorf("--command is required")
-			}
-
 			jobID := uuid.New().String()
-			// Truncate for jailer ID (max 64 chars, alphanumeric + hyphens).
-			if len(jobID) > 64 {
-				jobID = jobID[:64]
-			}
 
 			job := firecracker.JobConfig{
 				JobID:   jobID,
-				Command: argv,
+				Command: args, // positional args after --
 				Env: map[string]string{
 					"CI":   "true",
 					"REPO": repo,
@@ -107,7 +100,6 @@ Example:
 			ctx, cancel := context.WithTimeout(context.Background(), dur)
 			defer cancel()
 
-			// Graceful shutdown on SIGINT/SIGTERM.
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			go func() {
@@ -118,7 +110,7 @@ Example:
 
 			logger.Info("starting firecracker test",
 				"job_id", jobID,
-				"command", command,
+				"command", args,
 			)
 
 			result, err := orch.Run(ctx, job)
@@ -153,15 +145,14 @@ Example:
 				fmt.Println(result.Logs)
 			}
 
-			// Print the ClickHouse-ready wide event as JSON for verification.
 			jobJSON, _ := json.Marshal(job)
 			fmt.Println()
 			fmt.Println("=== Wide Event (ClickHouse) ===")
-			fmt.Printf("job_id:           %s\n", jobID)
-			fmt.Printf("vm_boot_time_us:  %d\n", result.Metrics.BootTimeUs)
-			fmt.Printf("vm_exit_code:     %d\n", result.ExitCode)
+			fmt.Printf("job_id:            %s\n", jobID)
+			fmt.Printf("vm_boot_time_us:   %d\n", result.Metrics.BootTimeUs)
+			fmt.Printf("vm_exit_code:      %d\n", result.ExitCode)
 			fmt.Printf("zfs_written_bytes: %d\n", result.ZFSWritten)
-			fmt.Printf("job_config_json:  %s\n", string(jobJSON))
+			fmt.Printf("job_config_json:   %s\n", string(jobJSON))
 
 			if result.ExitCode != 0 {
 				os.Exit(result.ExitCode)
@@ -170,7 +161,6 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&command, "command", "", "Command to run inside VM (required)")
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (metadata)")
 	cmd.Flags().StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
 	cmd.Flags().StringVar(&pool, "pool", "", "ZFS pool name (default: benchpool)")
@@ -184,14 +174,4 @@ Example:
 	cmd.Flags().StringVar(&hostInterface, "host-interface", "", "Host interface for NAT (auto-detected)")
 
 	return cmd
-}
-
-// parseCommand splits a command string into argv. Handles simple quoting.
-func parseCommand(s string) []string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	// Simple split on spaces. For complex commands, use bash -c "..."
-	return strings.Fields(s)
 }
