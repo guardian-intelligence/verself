@@ -58,6 +58,6 @@
 //
 // CI jobs spawn deep process trees (npm → node → eslint → workers).
 // Cgroup v2 aggregates all processes in a scope automatically. Create
-// one scope, add the root PID, read once after completion. No process
-// tree walking needed.
+// one scope, place the root process at fork via CgroupFD, read once
+// after completion. No process tree walking needed.
 package benchmark
