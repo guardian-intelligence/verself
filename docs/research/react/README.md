@@ -33,10 +33,10 @@ Conducted 2026-03-30.
 entirely. Turbopack's filesystem cache (`turbopackFileSystemCacheForBuild`) is opt-in
 but provides function-level memoization. Webpack's disk cache is coarser.
 
-**The Rust rewrite wave is real.** Every major JS tool now has a 10-100x faster Rust
-replacement. The remaining irreducible bottleneck is `tsc --noEmit` — no Rust replacement
-exists for TypeScript's type-checker. TypeScript's `--incremental` mode is the only
-mitigation.
+**The native rewrite wave is real — including TypeScript itself.** Every major JS tool now
+has a 10-100x faster native replacement. The "irreducible bottleneck" of `tsc --noEmit`
+may be solved by **tsgo** (Microsoft's Go port, TypeScript 7): **10.8x faster compilation,
+30x faster type-checking, 2.9x less memory.** Not yet stable, but on the roadmap.
 
 **ZFS clone gives forge-metal a structural advantage over traditional CI.** GitHub Actions
 spends 30-60s downloading/uploading cache artifacts per job. forge-metal's golden image
@@ -59,9 +59,11 @@ expensive phase. forge-metal already has the `lockfile_changed` field in CIEvent
 
 ## Cross-cutting patterns with other research
 
-**fsync interception** — documented in [OBuilder research](../obuilder.md) for CI workloads.
-npm's `write-file-atomic` calls fsync on every package file. Intercepting this via gVisor's
-seccomp is safe for ephemeral CI (if crash → destroy clone, no data integrity risk).
+**fsync interception — less impactful than expected for npm.** Deeper investigation found
+npm's bulk extraction does NOT call fsync (only `write-file-atomic` for metadata files).
+The bottleneck is metadata operations (mkdir/open/write/close × 41K files). fsync bypass
+still helps `next build` output and `apt-get` (3.9x speedup per OBuilder), but the #1 npm
+optimization is skipping installation entirely via lockfile-hash match.
 
 **Cache-in-golden-image** — analogous to [DBLab's warm snapshot approach](../dblab.md).
 Pre-populate `.next/cache`, `.eslintcache`, `.tsbuildinfo`, `node_modules` in the golden

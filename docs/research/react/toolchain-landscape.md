@@ -103,6 +103,26 @@ In practice, both achieve similar speedups over ESLint.
 
 ## TypeScript alternatives for type-checking
 
+### tsgo — TypeScript native port (Go)
+
+**The "irreducible bottleneck" may not be irreducible.** Microsoft announced a native Go
+port of the TypeScript compiler in March 2025. Performance numbers:
+
+| Metric | tsc (JS) | tsgo (Go) | Speedup |
+|--------|----------|-----------|---------|
+| Compilation | 1x | **10.8x faster** | 10.8x |
+| Type-checking | 1x | **30x faster** | 30x |
+| Memory usage | 1x | **2.9x less** | 2.9x |
+
+Source: [TypeScript native port announcement](https://devblogs.microsoft.com/typescript/typescript-native-port/)
+
+**Status (March 2026):** tsgo is being developed as TypeScript 7. It is not yet production-
+ready but is expected to eventually replace tsc. When available, it would eliminate the
+single largest remaining bottleneck in the CI pipeline.
+
+**Applicability to forge-metal:** Track tsgo maturity. When stable, replace `npx tsc --noEmit`
+with tsgo in benchmark workloads. Expected reduction: typecheck phase from 15-45s to 1-5s.
+
 ### Isolated declarations (`--isolatedDeclarations`)
 
 TypeScript 5.5 (June 2024) added `--isolatedDeclarations`, which enforces that each file's
@@ -173,13 +193,13 @@ If every tool in the JS toolchain were replaced with its Rust equivalent:
 | Formatter | Prettier (12s/10K files) | Biome (0.3s) | 40x |
 | Transpiler | Babel (old) | SWC (already default in Next.js) | 17x |
 | Bundler | webpack | Turbopack (already default in Next.js 16) | varies |
-| Type-checker | tsc | None yet (stc abandoned, oxc partial) | 1x |
-| Test runner | Jest | Vitest (5-10x) or Bun (20-50x) | 5-50x |
+| Type-checker | tsc | **tsgo** (Go, TypeScript 7) — 10.8x compile, **30x check** | 10-30x |
+| Test runner | Jest | Vitest (3.7x) or Bun (11x) | 3.7-11x |
 
-**The bottleneck shifts:** With fast linting (oxlint) and fast bundling (Turbopack), the
-remaining bottleneck is `tsc --noEmit`. TypeScript's type-checker has no fast replacement
-and uses single-threaded in-process checking. For large projects, it remains the slowest
-phase.
+**The bottleneck shifts — and tsgo may eliminate it.** With fast linting (oxlint) and fast
+bundling (Turbopack), `tsc --noEmit` was the remaining bottleneck. Microsoft's native Go
+port (tsgo, targeting TypeScript 7) achieves 30x faster type-checking. When stable, the
+entire CI pipeline would have fast-path alternatives for every phase.
 
 ## Applicability to forge-metal
 
