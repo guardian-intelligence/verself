@@ -204,7 +204,7 @@ The captured environment includes:
 `mkShell` routes attrs as follows:
 - `packages` → `nativeBuildInputs` (executables in PATH)
 - `buildInputs` → passed through as-is (for libraries/headers needed by C code in the shell)
-- `inputsFrom` → `mergeInputs` collects `buildInputs`, `nativeBuildInputs`, `propagatedBuildInputs`, `propagatedNativeBuildInputs` from each listed derivation; `shellHook` strings are concatenated in reverse order then prepended to the current `shellHook`
+- `inputsFrom` → `mergeInputs` collects `buildInputs`, `nativeBuildInputs`, `propagatedBuildInputs`, `propagatedNativeBuildInputs` from each listed derivation; `shellHook` strings from `inputsFrom` are reversed then concatenated, with the current module's `shellHook` appended last (so `inputsFrom` hooks run before the module's own hook; see `drv-tooling-mkshell-modules.md` for full ordering details)
 - Unknown attrs coercible to strings → exported as env vars
 
 The `inputsFrom` derivations themselves are excluded from the resulting `buildInputs` to avoid circular build-time references.
