@@ -16,6 +16,7 @@ Nix Flakes is an experimental (but widely adopted) feature providing hermetic, r
 | [fods-ifd-and-internals.md](fods-ifd-and-internals.md) | Fixed-output derivations (network sandbox exception, hash modes, `impureEnvVars`), IFD semantics and perf, `nix shell`/`nix run` vs `nix develop`, narinfo wire format + signing, `callPackage`/`makeOverridable`, monorepo subflake patterns |
 | [community.md](community.md) | RFC 136 stabilization plan, Lix/Determinate forks, design criticisms, `flake-compat`, alternatives |
 | [tooling-and-patterns.md](tooling-and-patterns.md) | `nix eval` CI patterns, overlay fixpoint mechanics (`lib.fix`/`lib.extends`), `writeShellApplication` for `apps` output, `nixosModules` export patterns, remote builders, `nix repl` debugging |
+| [stdenv-and-packaging.md](stdenv-and-packaging.md) | All 9 stdenv build phases in order with env vars, `fixupPhase` deep dive (patchShebangs/patchELF/wrapProgram), multiple outputs (`$out`/`$dev`/`$lib`/`$man`), `installShellFiles`, cross-compilation (pkgsCross/three-platform model), `nixpkgs.config` in flakes (allowUnfree/legacyPackages gotcha), `pkgs.testers` (testVersion/testBuildFailure/runNixOSTest), `passthru`/`meta` conventions, `nix build --check` determinism, R13Y project |
 
 ## Key Facts for forge-metal
 
