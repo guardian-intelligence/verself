@@ -26,8 +26,11 @@ each one at the syscall/process level:
 Next.js replaced Babel with [SWC](https://swc.rs/) (Rust) in v12. Every `.ts`/`.tsx`/`.js`/`.jsx`
 file passes through SWC for transpilation.
 
-**Performance claims (from Next.js docs):**
-- Compilation: **17x faster than Babel**
+**Performance (from Next.js docs + SWC benchmarks):**
+- Compilation: **17x faster than Babel** (single-threaded)
+- Multi-core scaling: **253x faster than Babel** on 8 cores with hyperthreading (ES2018,
+  100 concurrent promises). SWC uses rayon for work-stealing parallelism.
+  Source: [SWC vs Babel benchmarks](https://swc.rs/blog/perf-swc-vs-babel)
 - Minification: **7x faster than Terser** (default since v13)
 - Fast Refresh: **~3x faster** than Babel-based
 - Overall builds: **~5x faster** than Babel-based
@@ -63,12 +66,31 @@ Turbopack is an incremental bundler written in Rust, integrated into Next.js.
 **Architecture differences from webpack:**
 - **Unified graph:** Single computation graph for client + server + edge. Webpack runs
   separate compilers and stitches results.
-- **Incremental computation:** Function-level caching. Results memoized and only recomputed
-  when inputs change. Parallelized across CPU cores.
+- **Value Cells (`Vc<T>`):** Every intermediate result (parsed AST, module metadata, chunk
+  info, file contents) is stored in a value cell. Functions that read a cell automatically
+  register as dependents. Changes propagate like a spreadsheet. This is finer than webpack's
+  file-level caching — Turbopack tracks at function granularity.
+- **Aggregation graph:** For millions of nodes, Turbopack maintains parallel aggregation
+  layers that summarize sub-graphs. Operations like "collect all errors" don't traverse
+  every node. Similar to skip lists or hierarchical caches.
+  Source: [Inside Turbopack](https://nextjs.org/blog/turbopack-incremental-computation)
 - **Lazy bundling:** Only bundles what's actually requested (dev) or needed (build). Reduces
   peak memory.
 - **No plugin system:** Webpack plugins don't work. Supports webpack *loaders* via config.
   This means `webpack-bundle-analyzer` and similar tools are not available with Turbopack.
+
+**WARNING — Turbopack regressions to monitor:**
+- **Bundle size regression:** On cal.com, Turbopack produces **72% larger App Router JS
+  bundles** than webpack (666 kB vs 387 kB first-load JS). Shared client chunk is +211 kB
+  (+117%). Zero routes had smaller payloads with Turbopack.
+  Source: [CatchMetrics benchmark](https://www.catchmetrics.io/blog/nextjs-webpack-vs-turbopack-performance-improvements-serious-regression)
+- **Docker/VM I/O regression:** Turbopack build reported **6.8x slower than webpack in
+  Docker containers** (issue #88174). This is directly relevant to Firecracker VMs with
+  virtio block devices. The I/O layer overhead amplifies Turbopack's fine-grained caching
+  (many small reads/writes vs webpack's coarser batches).
+  Source: [vercel/next.js#88174](https://github.com/vercel/next.js/issues/88174)
+- **Build time improvement modest:** On cal.com cold build, Turbopack is only **19% faster**
+  (152s vs 187s median). Not the dramatic improvement seen in dev mode.
 
 **Turbopack caching (Next.js 16):**
 

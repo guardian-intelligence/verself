@@ -67,6 +67,10 @@ Source: [oxc-project/bench-linter](https://github.com/oxc-project/bench-linter)
 - Runs rules in parallel across files
 - No `node_modules` resolution needed for the linter itself
 
+**Important:** `next lint` was **removed in Next.js 16**. Projects should use ESLint
+directly (`npx eslint .`). This changes the lint phase invocation in benchmark workloads.
+Source: [Next.js ESLint guide 2026](https://thelinuxcode.com/nextjs-eslint-a-practical-modern-guide-for-2026/)
+
 **Applicability to forge-metal:** Replacing ESLint with oxlint in the `lint` phase would
 reduce it from seconds-to-minutes down to sub-second. However, benchmark fidelity requires
 using the same tools as the benchmarked projects. Consider adding an `oxlint` phase as a
@@ -133,16 +137,18 @@ bottlenecks.
 
 [Vitest](https://vitest.dev/) is a Vite-native test runner. For Next.js projects:
 - Uses the same transform pipeline as Vite (esbuild/SWC)
-- **5-10x faster than Jest** for large test suites (parallel workers, smart re-runs)
+- **3.7x faster than Jest** (200 files, 1500 tests: Jest 45s → Vitest 12s)
 - Built-in TypeScript support without `ts-jest`
 - Compatible with Jest's API (`describe`, `it`, `expect`)
 - Better ESM support than Jest
+- `vitest --changed` runs only tests affected by git changes
 
 ### Bun as test runner
 
 [Bun](https://bun.sh/) includes a built-in test runner (`bun test`):
 - No transpilation step — Bun natively runs TypeScript
-- ~20-50x faster than Jest for startup-dominated suites
+- **11x faster than Jest** (200 files, 1500 tests: Jest 45s → Bun 4s)
+  Source: [PkgPulse test runner benchmarks](https://www.pkgpulse.com/blog/bun-test-vs-vitest-vs-jest-test-runner-benchmark-2026)
 - Jest-compatible API
 - Not yet widely adopted in Next.js ecosystem (Next.js itself doesn't support Bun runtime)
 
