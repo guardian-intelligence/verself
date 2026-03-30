@@ -17,13 +17,6 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 
 ## CI Architecture (Target)
 
-The goal is to build Javascript/Typescript monorepos in milliseconds and seconds, not minutes.
-
-Target KPIs:
-
-p99.9 CI job e2e latency for <1,000 line PR with no change to dependencies: 10,000ms. p50: 1,000ms
-p99.9 CI job e2e latency for >1,000 and <10,000 line PR with no change to dependencies: 100,000ms. p50: 10,000
-
 Each CI job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of a golden image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
 
 ```
