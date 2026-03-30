@@ -19,6 +19,7 @@ func main() {
 	root.AddCommand(doctorCmd())
 	root.AddCommand(provisionCmd())
 	root.AddCommand(setupDomainCmd())
+	root.AddCommand(benchmarkCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
