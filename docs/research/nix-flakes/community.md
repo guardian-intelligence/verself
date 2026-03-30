@@ -85,13 +85,13 @@ Pattern:
 # shell.nix
 (import (let lock = builtins.fromJSON (builtins.readFile ./flake.lock); in
   fetchTarball {
-    url = lock.nodes.flake-compat.locked.url or "https://github.com/edolstra/flake-compat/archive/master.tar.gz";
+    url = lock.nodes.flake-compat.locked.url or "https://github.com/NixOS/flake-compat/archive/master.tar.gz";
     sha256 = lock.nodes.flake-compat.locked.narHash;
   }
 ) { src = ./.; }).shellNix
 ```
 
-Limitation: requires `flake.lock` to already exist. Does not provide the flake CLI tooling.
+Limitations: requires `flake.lock` to already exist; `self.rev`/`self.shortRev` are unavailable (always `"dev"`); `nixConfig` is ignored. See [home-manager-darwin-compat.md](home-manager-darwin-compat.md) for full flake-compat coverage.
 
 ## Alternatives to Flakes
 
