@@ -1,0 +1,13 @@
+---
+# Firecracker host setup defaults.
+fc_zfs_pool: benchpool
+fc_golden_zvol: golden-zvol
+fc_golden_zvol_size: 4G
+fc_ci_dataset: ci
+fc_jailer_root: /srv/jailer
+fc_jailer_uid: 10000
+fc_jailer_gid: 10000
+fc_jailer_user: firecracker
+fc_kernel_path: /var/lib/ci/vmlinux
+fc_rootfs_path: /var/lib/ci/rootfs.ext4
+fc_zfs_arc_max_bytes: 8589934592  # 8 GiB
