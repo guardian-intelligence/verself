@@ -107,13 +107,22 @@ For forge-metal's dev shell (`nix develop`), `devenv` would be overkill — the 
 - With Cachix, the first build pushes, subsequent runs download. Download is typically faster than build even on fast machines.
 - `nix copy --to s3://bucket?region=...&secret-key=...` can use S3/R2 as a binary cache. This integrates with Backblaze B2 (which is on the allowed-exceptions list for this project).
 
-Setting up S3 binary cache in `flake.nix`:
+Setting up an S3-backed binary cache in `flake.nix` (clients pull via HTTPS, not the S3 protocol — the `s3://` scheme is for `nix copy --to`, not substituters):
 ```nix
 nixConfig = {
-  extra-substituters = [ "s3://my-bucket?endpoint=https://s3.us-east-005.backblazeb2.com" ];
+  # Substituters use HTTPS; the S3 bucket must have public read or be fronted by a CDN/worker:
+  extra-substituters = [ "https://my-bucket.s3.us-east-005.backblazeb2.com" ];
   extra-trusted-public-keys = [ "my-cache:pubkey..." ];
 };
 ```
+
+For the upload side, `nix copy` uses the `s3://` scheme:
+```bash
+nix copy --to 's3://my-bucket?region=us-east-005&endpoint=https://s3.us-east-005.backblazeb2.com' \
+  /nix/store/...-server-profile
+```
+
+See [binary-caches-and-fetchers.md](binary-caches-and-fetchers.md) for the full S3 parameter reference and self-hosted cache server options (harmonia, nix-serve-ng, attic).
 
 ## Hermetic Evaluation: What Still Escapes
 
