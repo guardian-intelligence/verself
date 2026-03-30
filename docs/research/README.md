@@ -15,6 +15,8 @@ bare-metal CI platform.
 | [npm & Filesystem](react/npm-and-filesystem.md) | npm ci internals, fsync pressure, ZFS recordsize, pnpm comparison |
 | [Toolchain Landscape](react/toolchain-landscape.md) | React Compiler 1.0, oxlint (50-100x), Biome, Vitest, Rust rewrite wave |
 | [CI Optimization](react/ci-optimization.md) | Five levers, projected timelines, monorepo patterns, Turborepo/Nx |
+| [gVisor Filesystem](react/gvisor-filesystem.md) | Rootfs overlay (82x speedup), directfs (2x stat), dcache tuning for node_modules |
+| [Competitive Landscape](react/competitive-landscape.md) | Vercel Hive, Fly.io, E2B, isolation benchmarks, remote cache vs ZFS, CI runner startups |
 
 ### ZFS Snapshot Ecosystem
 
