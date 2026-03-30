@@ -1,11 +1,22 @@
-# ZFS Snapshot Ecosystem Research
+# forge-metal Research
 
-Research notes on projects using ZFS copy-on-write for fast isolation — database cloning,
-build caching, CI acceleration, and ephemeral infrastructure.
+Research notes on infrastructure (ZFS copy-on-write, Firecracker, secrets management) and
+workload optimization (React/Next.js build pipelines, JS toolchain) for forge-metal's
+bare-metal CI platform.
 
-Conducted 2026-03-29 as background research for forge-metal's ZFS golden image clone architecture.
+## Research areas
 
-## Projects studied
+### React/Next.js Build Optimization
+
+| Document | Focus |
+|----------|-------|
+| [React/Next.js Overview](react/) | Build pipeline, toolchain landscape, CI optimization strategies |
+| [Build Pipeline](react/build-pipeline.md) | SWC (17x vs Babel), Turbopack (default in v16), `.next` structure, memory pressure |
+| [npm & Filesystem](react/npm-and-filesystem.md) | npm ci internals, fsync pressure, ZFS recordsize, pnpm comparison |
+| [Toolchain Landscape](react/toolchain-landscape.md) | React Compiler 1.0, oxlint (50-100x), Biome, Vitest, Rust rewrite wave |
+| [CI Optimization](react/ci-optimization.md) | Five levers, projected timelines, monorepo patterns, Turborepo/Nx |
+
+### ZFS Snapshot Ecosystem
 
 | Project | Language | What it does | Focus |
 |---------|----------|-------------|-------|
@@ -45,6 +56,27 @@ clone→parent relationships:
 | Incus | Ghost graveyard (rename to `deleted/` namespace, recursive GC when dependents die) |
 
 ## Techniques most applicable to forge-metal
+
+### React/Next.js CI optimization (from react/ research)
+
+10. **Lockfile-hash deps skip** — compare golden image lockfile hash to PR lockfile. If match,
+    skip `npm ci` entirely. ~90% of PRs don't change dependencies. Saves 60-120s.
+
+11. **Turbopack filesystem cache on golden image** — pre-build with
+    `turbopackFileSystemCacheForBuild: true`. ZFS clone preserves the cache. Subsequent
+    builds only recompile changed modules. Build time: 5-15s instead of 30-120s.
+
+12. **Pre-warm `.eslintcache` and `.tsbuildinfo`** — ESLint and TypeScript both support
+    incremental checking. Warm caches in golden image make lint+typecheck near-instant
+    for unchanged files.
+
+13. **TypeScript `--skipLibCheck`** — skips type-checking `.d.ts` library files. 43% faster
+    type-checking, 24% less memory. Safe for CI (libraries are checked by their own CI).
+
+14. **oxlint as comparison metric** — 50-100x faster than ESLint. Add as a parallel lint
+    phase in benchmarks to quantify the "ESLint tax."
+
+### ZFS and infrastructure (from ZFS ecosystem research)
 
 1. **OBuilder's seccomp fsync bypass** — intercept sync syscalls, return success. If build
    crashes, result is discarded. Eliminates biggest I/O bottleneck in npm workloads.
