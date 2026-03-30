@@ -33,8 +33,24 @@ func New(cfg config.ClickHouseConfig) (*Client, error) {
 
 // InsertEvent writes a single wide event to the ci_events table.
 func (c *Client) InsertEvent(ctx context.Context, event *CIEvent) error {
-	// TODO: implement columnar batch insert for performance
-	return fmt.Errorf("not yet implemented")
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO "+c.cfg.Database+".ci_events")
+	if err != nil {
+		return fmt.Errorf("prepare batch: %w", err)
+	}
+	if err := batch.AppendStruct(event); err != nil {
+		return fmt.Errorf("append event: %w", err)
+	}
+	return batch.Send()
+}
+
+// Ping checks connectivity to the ClickHouse server.
+func (c *Client) Ping(ctx context.Context) error {
+	return c.conn.Ping(ctx)
+}
+
+// QueryRows executes a query and returns the result rows.
+func (c *Client) QueryRows(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+	return c.conn.Query(ctx, query, args...)
 }
 
 // Close closes the ClickHouse connection.

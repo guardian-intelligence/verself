@@ -2,12 +2,15 @@ package benchmark
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,28 +32,37 @@ type phaseResult struct {
 
 // runJob executes a single workload on a ZFS clone and returns a populated CIEvent.
 //
-// Lifecycle: allocate clone -> git clone -> run phases -> collect metrics -> release.
+// Lifecycle: allocate clone -> prepare workspace -> run phases -> collect metrics -> release.
 // A phase failure (non-zero exit) does NOT stop subsequent phases.
 func (r *Runner) runJob(ctx context.Context, w Workload, cfg *Config) jobResult {
 	jobID := uuid.New()
 	e2eStart := time.Now()
 	event := &clickhouse.CIEvent{
-		JobID:          jobID,
-		RunID:          cfg.RunID,
-		NodeID:         cfg.NodeID,
-		Region:         cfg.Region,
-		Plan:           cfg.Plan,
-		Repo:           w.Name,
-		Branch:         w.Branch,
-		StartedAt:      e2eStart,
-		CreatedAt:      e2eStart,
-		CPUModel:       r.hw.CPUModel,
-		Cores:          r.hw.Cores,
-		MemoryMB:       r.hw.MemoryMB,
-		DiskType:       r.hw.DiskType,
-		GoldenSnapshot: r.harness.GoldenSnapshot(),
-		NodeVersion:    r.env.NodeVersion,
-		NPMVersion:     r.env.NPMVersion,
+		JobID:           jobID,
+		RunID:           cfg.RunID,
+		NodeID:          cfg.NodeID,
+		Region:          cfg.Region,
+		Plan:            cfg.Plan,
+		Repo:            w.RepoName(),
+		Branch:          w.Branch,
+		StartedAt:       e2eStart,
+		CreatedAt:       e2eStart,
+		CPUModel:        r.hw.CPUModel,
+		Cores:           r.hw.Cores,
+		MemoryMB:        r.hw.MemoryMB,
+		DiskType:        r.hw.DiskType,
+		GoldenSnapshot:  r.harness.GoldenSnapshot(),
+		NodeVersion:     r.env.NodeVersion,
+		NPMVersion:      r.env.NPMVersion,
+		NPMCacheHit:     boolToUint8(w.NPMCacheHit),
+		NextCacheHit:    boolToUint8(w.NextCacheHit),
+		TSCCacheHit:     boolToUint8(w.TSCCacheHit),
+		LockfileChanged: boolToUint8(w.LockfileChanged),
+	}
+	event.JobConfigJSON = marshalJobConfig(w)
+
+	if age, err := r.harness.GoldenAge(ctx); err == nil {
+		event.GoldenAgeHours = float32(age.Hours())
 	}
 
 	logger := r.logger.With("job_id", jobID, "workload", w.Name)
@@ -71,17 +83,12 @@ func (r *Runner) runJob(ctx context.Context, w Workload, cfg *Config) jobResult 
 	event.ZFSCloneNs = clone.AllocDuration.Nanoseconds()
 	logger.Info("clone allocated", "duration_ms", clone.AllocDuration.Milliseconds())
 
-	// git clone creates the target directory.
-	workDir := filepath.Join(clone.Mountpoint(), "workspace")
-	if err := gitClone(ctx, w.RepoURL, w.Branch, workDir); err != nil {
-		return jobResult{Event: event, Err: fmt.Errorf("git clone %s: %w", w.RepoURL, err)}
+	workDir, err := prepareWorkspace(ctx, clone.Mountpoint(), w)
+	if err != nil {
+		return jobResult{Event: event, Err: err}
 	}
 
 	event.CommitSHA = resolveCommitSHA(ctx, workDir)
-
-	if w.SubDir != "" {
-		workDir = filepath.Join(workDir, w.SubDir)
-	}
 
 	cg, cgErr := newCgroupScope(jobID.String())
 	if cgErr != nil {
@@ -96,13 +103,15 @@ func (r *Runner) runJob(ctx context.Context, w Workload, cfg *Config) jobResult 
 		"NODE_ENV=production",
 		"NEXT_TELEMETRY_DISABLED=1",
 	)
+	phaseEnv = appendEnvMap(phaseEnv, w.Env)
 
-	for _, pc := range w.Phases {
+	for _, stage := range buildPhaseStages(w.Phases) {
 		if ctx.Err() != nil {
 			break
 		}
-		pr := runPhase(ctx, pc.Command, workDir, phaseEnv, cg, logger)
-		applyPhaseResult(event, pc.Phase, pr)
+		for _, result := range runPhaseStage(ctx, stage, workDir, phaseEnv, cg, logger) {
+			applyPhaseResult(event, result.Phase, result.Result)
+		}
 	}
 
 	if cg != nil {
@@ -136,6 +145,11 @@ func (r *Runner) runJob(ctx context.Context, w Workload, cfg *Config) jobResult 
 	event.CleanupNs = time.Since(cleanupStart).Nanoseconds()
 
 	return jobResult{Event: event}
+}
+
+type stageResult struct {
+	Phase  Phase
+	Result phaseResult
 }
 
 // runPhase executes a single command within the working directory.
@@ -182,6 +196,40 @@ func runPhase(ctx context.Context, argv []string, workDir string, env []string,
 	return phaseResult{Duration: dur, ExitCode: exitCode}
 }
 
+func runPhaseStage(ctx context.Context, stage phaseStage, workDir string, env []string,
+	cg *cgroupScope, logger *slog.Logger) []stageResult {
+
+	results := make([]stageResult, len(stage.Phases))
+
+	if len(stage.Phases) == 1 {
+		pc := stage.Phases[0]
+		results[0] = stageResult{
+			Phase:  pc.Phase,
+			Result: runPhase(ctx, pc.Command, workDir, env, cg, logger.With("phase", pc.Phase)),
+		}
+		return results
+	}
+
+	logger.Info("phase stage starting",
+		"stage", stage.Number,
+		"parallelism", len(stage.Phases),
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(len(stage.Phases))
+	for i, pc := range stage.Phases {
+		go func(i int, pc PhaseCmd) {
+			defer wg.Done()
+			results[i] = stageResult{
+				Phase:  pc.Phase,
+				Result: runPhase(ctx, pc.Command, workDir, env, cg, logger.With("phase", pc.Phase)),
+			}
+		}(i, pc)
+	}
+	wg.Wait()
+	return results
+}
+
 // applyPhaseResult maps a phase result into the appropriate CIEvent fields.
 func applyPhaseResult(event *clickhouse.CIEvent, phase Phase, pr phaseResult) {
 	ns := pr.Duration.Nanoseconds()
@@ -203,6 +251,61 @@ func applyPhaseResult(event *clickhouse.CIEvent, phase Phase, pr phaseResult) {
 		event.TestNs = ns
 		event.TestExit = exit
 	}
+}
+
+func prepareWorkspace(ctx context.Context, cloneMountpoint string, w Workload) (string, error) {
+	var workDir string
+	switch w.Source {
+	case SourceGitClone:
+		workDir = filepath.Join(cloneMountpoint, "workspace")
+		if err := gitClone(ctx, w.RepoURL, w.Branch, workDir); err != nil {
+			return "", fmt.Errorf("git clone %s: %w", w.RepoURL, err)
+		}
+	case SourceSeededWorkspace:
+		resolved, err := resolveSeededWorkspace(cloneMountpoint, w.WorkspacePath)
+		if err != nil {
+			return "", fmt.Errorf("resolve workspace %q: %w", w.WorkspacePath, err)
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return "", fmt.Errorf("seeded workspace %s: %w", resolved, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("seeded workspace %s is not a directory", resolved)
+		}
+		workDir = resolved
+	default:
+		return "", fmt.Errorf("unsupported source %q", w.Source)
+	}
+
+	if w.SubDir != "" {
+		workDir = filepath.Join(workDir, w.SubDir)
+	}
+
+	info, err := os.Stat(workDir)
+	if err != nil {
+		return "", fmt.Errorf("workdir %s: %w", workDir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %s is not a directory", workDir)
+	}
+	return workDir, nil
+}
+
+func resolveSeededWorkspace(cloneMountpoint, workspacePath string) (string, error) {
+	if workspacePath == "" {
+		return "", fmt.Errorf("workspace_path is empty")
+	}
+	root := filepath.Clean(cloneMountpoint)
+	target := filepath.Join(root, workspacePath)
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes clone root")
+	}
+	return target, nil
 }
 
 // gitClone performs a shallow git clone into the target directory.
@@ -241,4 +344,72 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return "..." + s[len(s)-n:]
+}
+
+func appendEnvMap(env []string, vars map[string]string) []string {
+	if len(vars) == 0 {
+		return env
+	}
+	keys := make([]string, 0, len(vars))
+	for key := range vars {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		env = append(env, key+"="+vars[key])
+	}
+	return env
+}
+
+func boolToUint8(v bool) uint8 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func marshalJobConfig(w Workload) string {
+	timeout := ""
+	if w.Timeout > 0 {
+		timeout = w.Timeout.String()
+	}
+	payload := struct {
+		Name            string            `json:"name"`
+		Project         string            `json:"project,omitempty"`
+		Source          SourceMode        `json:"source"`
+		RepoURL         string            `json:"repo_url,omitempty"`
+		Branch          string            `json:"branch,omitempty"`
+		WorkspacePath   string            `json:"workspace_path,omitempty"`
+		SubDir          string            `json:"sub_dir,omitempty"`
+		Timeout         string            `json:"timeout,omitempty"`
+		Weight          int               `json:"weight"`
+		NPMCacheHit     bool              `json:"npm_cache_hit"`
+		NextCacheHit    bool              `json:"next_cache_hit"`
+		TSCCacheHit     bool              `json:"tsc_cache_hit"`
+		LockfileChanged bool              `json:"lockfile_changed"`
+		Env             map[string]string `json:"env,omitempty"`
+		Phases          []PhaseCmd        `json:"phases"`
+	}{
+		Name:            w.Name,
+		Project:         w.Project,
+		Source:          w.Source,
+		RepoURL:         w.RepoURL,
+		Branch:          w.Branch,
+		WorkspacePath:   w.WorkspacePath,
+		SubDir:          w.SubDir,
+		Timeout:         timeout,
+		Weight:          w.Weight,
+		NPMCacheHit:     w.NPMCacheHit,
+		NextCacheHit:    w.NextCacheHit,
+		TSCCacheHit:     w.TSCCacheHit,
+		LockfileChanged: w.LockfileChanged,
+		Env:             w.Env,
+		Phases:          w.Phases,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Sprintf(`{"name":%q,"error":"marshal_job_config"}`, w.Name)
+	}
+	return string(data)
 }

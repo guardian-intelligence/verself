@@ -1,83 +1,205 @@
-# Workload catalog for forge-metal benchmarks.
+# Scenario mix for forge-metal benchmarks.
 # Reload at runtime: kill -HUP $(pidof bmci)
 #
-# Each [[workload]] defines a real project to build. Weight controls
-# relative frequency in the mix (default 1). Higher weight = more often.
+# These workloads are biased toward the common CI path we actually want to
+# optimize: dependency-stable PRs running on a warm golden image.
 #
-# Optional top-level settings (CLI flags override on initial load,
-# SIGHUP reload uses file values):
-# concurrency = 4
-# job_timeout = "10m"
+# `source = "seeded_workspace"` means the repo already exists inside the ZFS
+# clone, typically because the golden image builder pre-warmed it under
+# `/workspaces/<repo>`.
+#
+# `stage` groups phases that should run in parallel. For example, lint and
+# typecheck both using `stage = 0` will execute concurrently before build.
+#
+# Cache flags are stamped into CIEvent so ClickHouse queries can compare warm
+# incremental runs against forced cache-miss scenarios without inferring them
+# indirectly from timings.
+
+concurrency = 4
+job_timeout = "12m"
 
 [[workload]]
-name = "next-learn"
-repo_url = "https://github.com/vercel/next-learn.git"
-branch = "main"
+name = "next-learn/incremental"
+project = "next-learn"
+source = "seeded_workspace"
+workspace_path = "workspaces/next-learn"
 sub_dir = "dashboard/final-example"
 timeout = "5m"
-weight = 1
-
-[[workload.phases]]
-phase = "deps"
-command = ["npm", "ci"]
+weight = 3
+npm_cache_hit = true
+next_cache_hit = true
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache" }
 
 [[workload.phases]]
 phase = "lint"
 command = ["npm", "run", "lint"]
+stage = 0
 
 [[workload.phases]]
 phase = "build"
 command = ["npm", "run", "build"]
+stage = 1
 
 
 [[workload]]
-name = "taxonomy"
-repo_url = "https://github.com/shadcn-ui/taxonomy.git"
-branch = "main"
+name = "taxonomy/incremental"
+project = "taxonomy"
+source = "seeded_workspace"
+workspace_path = "workspaces/taxonomy"
+timeout = "8m"
+weight = 3
+npm_cache_hit = true
+next_cache_hit = true
+tsc_cache_hit = true
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache", TSC_WATCHFILE = "UseFsEventsWithFallbackDynamicPolling" }
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+stage = 0
+
+[[workload.phases]]
+phase = "typecheck"
+command = ["npx", "tsc", "--noEmit", "--incremental"]
+stage = 0
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]
+stage = 1
+
+
+[[workload]]
+name = "taxonomy/build-cache-miss"
+project = "taxonomy"
+source = "seeded_workspace"
+workspace_path = "workspaces/taxonomy"
 timeout = "8m"
 weight = 1
-
-[[workload.phases]]
-phase = "deps"
-command = ["npm", "ci"]
+npm_cache_hit = true
+next_cache_hit = false
+tsc_cache_hit = true
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache", TSC_WATCHFILE = "UseFsEventsWithFallbackDynamicPolling" }
 
 [[workload.phases]]
 phase = "lint"
 command = ["npm", "run", "lint"]
+stage = 0
 
 [[workload.phases]]
 phase = "typecheck"
-command = ["npx", "tsc", "--noEmit"]
+command = ["npx", "tsc", "--noEmit", "--incremental"]
+stage = 0
 
 [[workload.phases]]
 phase = "build"
-command = ["npm", "run", "build"]
+command = ["bash", "-lc", "rm -rf .next/cache && npm run build"]
+stage = 1
 
 
 [[workload]]
-name = "cal.com"
-repo_url = "https://github.com/calcom/cal.com.git"
-branch = "main"
+name = "cal.com/incremental"
+project = "cal.com"
+source = "seeded_workspace"
+workspace_path = "workspaces/cal.com"
 sub_dir = "apps/web"
 timeout = "15m"
-weight = 1
-
-[[workload.phases]]
-phase = "deps"
-command = ["npm", "ci"]
+weight = 4
+npm_cache_hit = true
+next_cache_hit = true
+tsc_cache_hit = true
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache", TSC_WATCHFILE = "UseFsEventsWithFallbackDynamicPolling" }
 
 [[workload.phases]]
 phase = "lint"
 command = ["npm", "run", "lint"]
+stage = 0
 
 [[workload.phases]]
 phase = "typecheck"
-command = ["npx", "tsc", "--noEmit"]
+command = ["npx", "tsc", "--noEmit", "--incremental"]
+stage = 0
 
 [[workload.phases]]
 phase = "build"
 command = ["npm", "run", "build"]
+stage = 1
 
 [[workload.phases]]
 phase = "test"
 command = ["npm", "test", "--", "--passWithNoTests"]
+stage = 2
+
+
+[[workload]]
+name = "cal.com/typecheck-cache-miss"
+project = "cal.com"
+source = "seeded_workspace"
+workspace_path = "workspaces/cal.com"
+sub_dir = "apps/web"
+timeout = "15m"
+weight = 2
+npm_cache_hit = true
+next_cache_hit = true
+tsc_cache_hit = false
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache", TSC_WATCHFILE = "UseFsEventsWithFallbackDynamicPolling" }
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+stage = 0
+
+[[workload.phases]]
+phase = "typecheck"
+command = ["bash", "-lc", "rm -f tsconfig.tsbuildinfo && npx tsc --noEmit --incremental"]
+stage = 0
+
+[[workload.phases]]
+phase = "build"
+command = ["npm", "run", "build"]
+stage = 1
+
+[[workload.phases]]
+phase = "test"
+command = ["npm", "test", "--", "--passWithNoTests"]
+stage = 2
+
+
+[[workload]]
+name = "cal.com/full-cache-miss"
+project = "cal.com"
+source = "seeded_workspace"
+workspace_path = "workspaces/cal.com"
+sub_dir = "apps/web"
+timeout = "15m"
+weight = 1
+npm_cache_hit = true
+next_cache_hit = false
+tsc_cache_hit = false
+lockfile_changed = false
+env = { NODE_COMPILE_CACHE = "/var/cache/node-compile-cache", TSC_WATCHFILE = "UseFsEventsWithFallbackDynamicPolling" }
+
+[[workload.phases]]
+phase = "lint"
+command = ["npm", "run", "lint"]
+stage = 0
+
+[[workload.phases]]
+phase = "typecheck"
+command = ["bash", "-lc", "rm -f tsconfig.tsbuildinfo && npx tsc --noEmit --incremental"]
+stage = 0
+
+[[workload.phases]]
+phase = "build"
+command = ["bash", "-lc", "rm -rf .next/cache && npm run build"]
+stage = 1
+
+[[workload.phases]]
+phase = "test"
+command = ["npm", "test", "--", "--passWithNoTests"]
+stage = 2
