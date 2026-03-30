@@ -112,6 +112,10 @@ nix eval --json --apply 'outputs: builtins.hasAttr "myPkg" outputs.packages.x86_
 
 By default, flakes evaluate in **pure mode**: no access to environment variables, no `builtins.currentTime`, no `builtins.getEnv`, no mutable paths outside the Nix store. This is enforced at the Nix evaluator level.
 
+**Precise pure-mode behavior** (important gotchas):
+- `builtins.currentSystem` and `builtins.currentTime` are **absent** in pure mode — accessing them throws `attribute 'currentSystem' missing`, not a special sentinel. `currentTime` does NOT return `0` in pure mode (a common misconception).
+- `builtins.getEnv` **silently returns `""`** in pure mode — it does not throw. Code that reads a config value via `getEnv` will silently get an empty string, producing wrong results with no warning.
+
 ```bash
 # Pure (default for flakes): hermetic, reproducible
 nix eval .#packages.x86_64-linux.default.version
