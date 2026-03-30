@@ -55,7 +55,9 @@
         # Written to a ZFS zvol on the host; Firecracker boots from it.
         ciGuestRootfs = let
           closureInfo = pkgs.closureInfo {
-            rootPaths = [ forgevmInit pkgs.bashInteractive pkgs.coreutils pkgs.git pkgs.nodejs_22 ];
+            # gitMinimal drops perl (61MB) and python (113MB) transitive deps.
+            # 565MB -> ~150MB closure.
+            rootPaths = [ forgevmInit pkgs.bashInteractive pkgs.coreutils pkgs.gitMinimal pkgs.nodejs_22 ];
           };
         in pkgs.runCommand "ci-guest-rootfs" {
           nativeBuildInputs = [ pkgs.e2fsprogs ];
@@ -83,7 +85,7 @@
             ln -sf ${pkgs.coreutils}/bin/$bin $root/usr/bin/$bin
             ln -sf ${pkgs.coreutils}/bin/$bin $root/bin/$bin
           done
-          ln -sf ${pkgs.git}/bin/git $root/usr/bin/git
+          ln -sf ${pkgs.gitMinimal}/bin/git $root/usr/bin/git
           ln -sf ${pkgs.nodejs_22}/bin/node $root/usr/bin/node
           ln -sf ${pkgs.nodejs_22}/bin/node $root/usr/local/bin/node
           ln -sf ${pkgs.nodejs_22}/bin/npm $root/usr/bin/npm
