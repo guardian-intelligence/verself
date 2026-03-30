@@ -43,6 +43,15 @@
     state: started
     daemon_reload: true
 
+- name: Wait for Forgejo to be ready
+  ansible.builtin.wait_for:
+    port: "{{ forgejo_port }}"
+    host: 127.0.0.1
+    timeout: 60
+
+- name: Include admin user seeding
+  ansible.builtin.include_tasks: seed_admin.yml
+
 - name: Deploy Forgejo Runner systemd unit
   ansible.builtin.template:
     src: forgejo-runner.service.j2

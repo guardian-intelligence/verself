@@ -16,7 +16,7 @@
 - name: Enable corepack for yarn
   ansible.builtin.command: "{{ fm_bin }}/corepack enable"
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
   changed_when: false
 
 - name: Create ClickStack directory
@@ -52,7 +52,7 @@
     chdir: "{{ hyperdx_install_dir }}"
   become: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
   when: hyperdx_clone.changed
 
 - name: Install HyperDX dependencies (first run)
@@ -62,7 +62,7 @@
     creates: "{{ hyperdx_install_dir }}/node_modules"
   become: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Build common-utils
   ansible.builtin.command: yarn build:common-utils
@@ -71,7 +71,7 @@
     creates: "{{ hyperdx_install_dir }}/packages/common-utils/dist"
   become: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Build API (tsc)
   ansible.builtin.command: npx tsc
@@ -80,7 +80,7 @@
     creates: "{{ hyperdx_install_dir }}/packages/api/build/src/index.js"
   become: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Resolve path aliases (tsc-alias)
   ansible.builtin.command: npx tsc-alias -p tsconfig.json --outDir build/src
@@ -89,7 +89,7 @@
   become: false
   changed_when: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Create proto output directory
   ansible.builtin.file:
@@ -110,7 +110,7 @@
     creates: "{{ hyperdx_install_dir }}/packages/app/.next"
   become: false
   environment:
-    PATH: "{{ fm_bin }}:{{ ansible_env.PATH }}"
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
 - name: Check for existing session secret
   ansible.builtin.stat:
@@ -173,3 +173,9 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Wait for HyperDX App to be ready
+  ansible.builtin.wait_for:
+    port: "{{ hyperdx_app_port }}"
+    host: 127.0.0.1
+    timeout: 60
