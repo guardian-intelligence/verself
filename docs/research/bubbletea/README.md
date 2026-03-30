@@ -8,10 +8,12 @@ single-threaded event loop. v2.0.0 released 2026-02-24; import path moved to
 
 | Document | Focus |
 |----------|-------|
-| [Architecture](architecture.md) | Elm Architecture in Go, Program lifecycle, messages/commands, renderer |
-| [Ecosystem](ecosystem.md) | Bubbles, Lip Gloss, Huh, Wish, Gum, Soft-Serve, company/funding |
+| [Architecture](architecture.md) | Elm Architecture in Go, Program lifecycle, source code internals, renderer diff algorithm |
+| [Ecosystem](ecosystem.md) | Bubbles, Lip Gloss (compositor, color downsampling, Cassowary), Huh, Wish, company |
 | [Alternatives](alternatives.md) | tview, tcell, gocui, termbox-go, termui -- architecture and tradeoff comparison |
-| [Patterns & Gotchas](patterns.md) | Parent-child composition, concurrency, testing, subprocess exec, common pitfalls |
+| [Patterns & Gotchas](patterns.md) | Composition, concurrency, testing, v1→v2 migration pain points, open regressions |
+| [Security](security.md) | CVE history, escape injection, Wish isolation model, threat model for SSH-served TUI |
+| [Performance](performance.md) | Table/list scaling, v2 renderer regression, memory, BubbleTea vs Ratatui benchmarks |
 | [CI Orchestrator Application](ci-orchestrator.md) | How BubbleTea applies to forge-metal's Firecracker+ZFS CI platform |
 
 ## Why this research exists

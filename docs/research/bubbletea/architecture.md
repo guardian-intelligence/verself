@@ -143,9 +143,111 @@ unwrapped.
 | `tea.RequestCapability(name)` | Query terminal capability |
 | `tea.RequestBackgroundColor` | Detect light/dark mode |
 
+## Source Code Internals
+
+### The `msgs` channel is unbuffered
+
+```go
+p.msgs = make(chan Msg)  // no buffer
+```
+
+`p.Send(msg)` blocks until the event loop reads the message. A `select` on
+`p.ctx.Done()` prevents deadlock on shutdown -- if the program is dead, `Send()`
+silently drops. **Implication:** calling `p.Send()` before `p.Run()` starts draining
+blocks the caller.
+
+### BatchMsg bypasses Update()
+
+When a `BatchMsg` arrives in the event loop, it calls `go p.execBatchMsg(msg)` and
+`continue` -- skipping `model.Update()` entirely. Batch/sequence handlers recursively
+unpack commands and send results back via `p.Send()`. A `Batch` never reaches your
+`Update`.
+
+### Commands are fire-and-forget goroutines (intentionally leaked)
+
+```go
+go func() {
+    msg := cmd()    // can sleep, do HTTP, etc.
+    p.Send(msg)     // silently dropped if program exited
+}()
+```
+
+Source comment: *"Don't wait on these goroutines, otherwise the shutdown latency would
+get too large as a Cmd can run for some time (e.g. tick commands that sleep for half a
+second)."* Commands running at shutdown are orphaned; their `Send()` hits `ctx.Done()`.
+
+### The renderer is completely decoupled from the event loop
+
+`model.View()` is called synchronously after every `Update()`, but only stores the
+view behind a mutex:
+
+```go
+func (s *cursedRenderer) render(v View) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.view = v
+}
+```
+
+A separate goroutine driven by `time.Ticker` reads the latest view at each tick and
+diffs it. Multiple rapid `Update()` calls may produce only one terminal write. If the
+view hasn't changed, the flush is skipped entirely.
+
+### tea.Println bypasses the cell buffer
+
+`insertAbove()` writes directly to the terminal, bypassing the cell buffer:
+1. Move cursor to bottom of managed area
+2. Emit newlines to scroll content up
+3. Move cursor to the new space at top
+4. Insert blank lines and write text
+
+The text is "unmanaged" -- it lives above the TUI's tracked region and persists across
+renders. This is why it only works in inline mode (alt screen has no scrollback).
+
+### tea.ExecProcess blocks the event loop
+
+`exec` runs inside the event loop's message handler:
+1. `releaseTerminal()` -- cancels input reader, stops renderer, restores terminal
+2. Gives stdin/stdout to the subprocess
+3. Subprocess runs (blocking)
+4. `RestoreTerminal()` -- re-enters raw mode, restarts input, restarts renderer
+5. Callback sent via `go p.Send()` (the `go` prevents deadlock inside event loop)
+
+### cancelreader uses epoll + self-pipe trick
+
+Go's `os.Stdin.Read()` is a blocking syscall with no way to interrupt from another
+goroutine. `cancelreader` uses `epoll_wait` on both stdin's fd and a cancel-signal
+pipe. `Cancel()` writes a byte to the pipe, waking epoll. This avoids `Close()` on
+stdin which is destructive and can't be undone.
+
+### Every() vs Tick() -- wall clock alignment
+
+```go
+// Every: aligns to system clock
+d := n.Truncate(duration).Add(duration).Sub(n)
+
+// Tick: fires after exactly the specified duration
+t := time.NewTimer(d)
+```
+
+A 1-second `Every()` at 12:34:20 fires at 12:35:00. `Tick()` fires at 12:34:21.
+
+### Shutdown sequence (sync.Once)
+
+1. Cancel program context
+2. Wait for handler goroutines (signals, resize, commands) via WaitGroup
+3. Cancel input reader (epoll/kqueue wakeup)
+4. Wait for read loop (skipped on `Kill()` for speed)
+5. Stop renderer
+6. Restore terminal
+
+Panic recovery calls `shutdown(true)` and prints stack with `\r\n` (terminal may still
+be in raw mode where `\n` alone doesn't carriage-return).
+
 ## Renderer Architecture (v2: "Cursed Renderer")
 
-Built from the ground up based on the ncurses rendering algorithm.
+Built from the ground up based on the ncurses rendering algorithm. Delegates to
+`ultraviolet` (`charmbracelet/ultraviolet`) for the actual cell-buffer diff engine.
 
 ### Key properties
 
@@ -157,6 +259,52 @@ Built from the ground up based on the ncurses rendering algorithm.
 - **Color downsampling** -- via `charmbracelet/colorprofile`, auto-degrades ANSI colors
   to match terminal capabilities (TrueColor -> 256 -> 16 -> monochrome)
 - **Optimization:** hard tabs and backspace for cursor movement; NL mapping for non-TTY
+
+### The diff algorithm (`ultraviolet/terminal_renderer.go`)
+
+The Cursed Renderer uses **per-line cell diff** (ncurses-derived):
+
+1. `Render()` checks `touchedLines` -- lines where cells changed. If zero, skip entirely.
+2. For each touched line, `transformLine()`:
+   - Find first changed cell from the left
+   - Find last non-blank cell in old and new
+   - Use `EL` (Erase Line), `ICH` (Insert Character), `DCH` (Delete Character) for
+     minimal output
+   - `putRange()` further skips runs of identical cells in the middle
+
+### Scroll optimization (hashmap-based, ncurses-derived)
+
+In alt-screen mode, a hashmap-based algorithm (`terminal_renderer_hashmap.go`) detects
+scrolled content:
+
+1. Hash each line in old and new buffers
+2. Build hashmap of old→new line indices
+3. Identify "hunks" of moved content (bidirectional hunk growth)
+4. Emit `DECSTBM` (scroll regions) + `SU`/`SD` (scroll up/down) commands
+
+Scrolling a list doesn't rewrite the entire screen -- the terminal physically moves
+the content. Disabled on Windows due to Windows Terminal bugs.
+
+### Cursor movement optimization (4 methods compared)
+
+For every cursor move, `moveCursor()` evaluates four methods and picks the shortest
+byte sequence:
+
+| Method | Technique |
+|--------|-----------|
+| #0 | Absolute CUP (`ESC[row;colH`) |
+| #1 | Relative movement from current position |
+| #2 | Carriage return + relative movement |
+| #3 | Home + relative movement |
+
+Within each, it further considers hard tabs vs `CHT`, backspace vs `CUB`, and
+overwriting existing cells instead of escape sequences. Critical for SSH bandwidth.
+
+### Three layers of tearing prevention
+
+1. **Mode 2026** -- atomic frame writes in supported terminals (Ghostty, WezTerm, etc.)
+2. **Cursor hide/show** -- fallback for terminals without Mode 2026
+3. **Ticker coalescing** -- rapid state changes produce a single terminal write
 
 ### Two rendering modes
 
