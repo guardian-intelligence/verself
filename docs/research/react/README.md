@@ -13,6 +13,8 @@ Conducted 2026-03-30.
 | [npm & Filesystem](npm-and-filesystem.md) | `npm ci` internals, node_modules I/O patterns, fsync pressure, ZFS recordsize tuning, pnpm comparison, TypeScript stat() storms |
 | [Toolchain Landscape](toolchain-landscape.md) | React Compiler 1.0, oxlint (50-100x vs ESLint), Biome, Vitest, the Rust rewrite wave |
 | [CI Optimization](ci-optimization.md) | Five optimization levers, projected timelines, monorepo patterns (Turborepo/Nx), emerging tools |
+| [gVisor Filesystem](gvisor-filesystem.md) | Rootfs overlay (82x fsstress speedup), directfs (2x stat), dcache tuning, fsync behavior in gVisor |
+| [Competitive Landscape](competitive-landscape.md) | Vercel Hive (Firecracker on bare metal), WunderGraph (13s builds), E2B snapshots, isolation benchmarks |
 
 ## Key findings
 
@@ -39,6 +41,16 @@ mitigation.
 spends 30-60s downloading/uploading cache artifacts per job. forge-metal's golden image
 provides the same caches via a 1.7ms ZFS clone. This is a ~20,000x improvement on cache
 restore time.
+
+**gVisor filesystem configuration is make-or-break.** Without rootfs overlay, gVisor's
+filesystem overhead is 80x+ for write-heavy workloads (fsstress: 262s → 3.18s with overlay).
+Directfs makes `stat(2)` 2x faster — critical for TypeScript's 30K-45K stat() calls during
+module resolution. Default dcache (1000 entries) is too small for node_modules (50K+ files).
+
+**Vercel uses the same stack.** Vercel's Hive build platform uses Firecracker on bare metal,
+the same approach as forge-metal. But Vercel doesn't use ZFS — their pre-warming takes seconds
+vs. forge-metal's 1.7ms ZFS clone. WunderGraph achieved 13s commit-to-production on Fly.io
+Machines (Firecracker) using OverlayFS caching.
 
 **The #1 optimization is skipping deps.** ~90% of PRs don't change `package-lock.json`.
 Comparing lockfile hashes and skipping `npm ci` when unchanged eliminates the most
