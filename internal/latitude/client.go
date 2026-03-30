@@ -69,7 +69,7 @@ func (c *Client) do(method, path string, body interface{}) ([]byte, error) {
 	return data, nil
 }
 
-// User is a Latitude.sh user from /auth/current_user.
+// User is a Latitude.sh user from /user/profile.
 type User struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
@@ -86,7 +86,7 @@ type userResponse struct {
 
 // ValidateToken checks the API token by fetching the current user.
 func (c *Client) ValidateToken() (*User, error) {
-	data, err := c.do("GET", "/auth/current_user", nil)
+	data, err := c.do("GET", "/user/profile", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -140,9 +140,9 @@ func (c *Client) ListProjects() ([]Project, error) {
 
 // Region is a Latitude.sh datacenter site.
 type Region struct {
-	ID   string `json:"id"`
-	Slug string `json:"slug"`
-	City string `json:"city"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
 	Country string `json:"country"`
 }
 
@@ -150,9 +150,11 @@ type regionsResponse struct {
 	Data []struct {
 		ID         string `json:"id"`
 		Attributes struct {
+			Name    string `json:"name"`
 			Slug    string `json:"slug"`
-			City    string `json:"city"`
-			Country string `json:"country"`
+			Country struct {
+				Name string `json:"name"`
+			} `json:"country"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
@@ -171,9 +173,9 @@ func (c *Client) ListRegions() ([]Region, error) {
 	for i, d := range resp.Data {
 		regions[i] = Region{
 			ID:      d.ID,
+			Name:    d.Attributes.Name,
 			Slug:    d.Attributes.Slug,
-			City:    d.Attributes.City,
-			Country: d.Attributes.Country,
+			Country: d.Attributes.Country.Name,
 		}
 	}
 	return regions, nil
@@ -190,19 +192,21 @@ type plansResponse struct {
 	Data []struct {
 		ID         string `json:"id"`
 		Attributes struct {
-			Name string `json:"name"`
-			Slug string `json:"slug"`
+			Name    string `json:"name"`
+			Slug    string `json:"slug"`
+			Regions []struct {
+				Locations struct {
+					Available []string `json:"available"`
+				} `json:"locations"`
+			} `json:"regions"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
 
-// ListPlans returns available server plans, optionally filtered by region.
+// ListPlans returns available server plans. If region is non-empty,
+// only plans available in that region slug are returned.
 func (c *Client) ListPlans(region string) ([]Plan, error) {
-	path := "/plans"
-	if region != "" {
-		path = fmt.Sprintf("/plans?filter[region]=%s", region)
-	}
-	data, err := c.do("GET", path, nil)
+	data, err := c.do("GET", "/plans", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -210,13 +214,31 @@ func (c *Client) ListPlans(region string) ([]Plan, error) {
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("parse plans: %w", err)
 	}
-	plans := make([]Plan, len(resp.Data))
-	for i, d := range resp.Data {
-		plans[i] = Plan{
+	var plans []Plan
+	for _, d := range resp.Data {
+		if region != "" && !planAvailableIn(d.Attributes.Regions, region) {
+			continue
+		}
+		plans = append(plans, Plan{
 			ID:   d.ID,
 			Name: d.Attributes.Name,
 			Slug: d.Attributes.Slug,
-		}
+		})
 	}
 	return plans, nil
+}
+
+func planAvailableIn(regions []struct {
+	Locations struct {
+		Available []string `json:"available"`
+	} `json:"locations"`
+}, slug string) bool {
+	for _, r := range regions {
+		for _, loc := range r.Locations.Available {
+			if loc == slug {
+				return true
+			}
+		}
+	}
+	return false
 }
