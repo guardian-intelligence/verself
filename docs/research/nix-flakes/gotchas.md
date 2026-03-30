@@ -13,11 +13,11 @@ Nix calls libgit2's `git_status_foreach_ext` with `GIT_STATUS_OPT_INCLUDE_UNMODI
 When a tracked file is modified (`isDirty = true`):
 ```cpp
 input.attrs.insert_or_assign("dirtyRev", headRev + "-dirty");
-input.attrs.insert_or_assign("dirtyShortRev", headRev shortRev + "-dirty");
+input.attrs.insert_or_assign("dirtyShortRev", headRev.substr(0, 7) + "-dirty");
 // rev, shortRev, revCount are NOT set
 ```
 
-When dirty, `self.rev` and `self.shortRev` **throw an evaluation error** (attribute missing). The `or` operator in Nix catches evaluation errors on the left-hand side, so `self.shortRev or "dev"` returns `"dev"` on a dirty tree.
+When dirty, `self.rev` and `self.shortRev` **are absent** (attribute missing). The `or` operator in Nix handles missing-attribute errors on the left-hand side, so `self.shortRev or "dev"` returns `"dev"` on a dirty tree. Note: `or` specifically catches `MissingAttribute` errors — it is not a general exception handler.
 
 **Untracked files**: Adding an untracked file does NOT trigger dirty. It also cannot be accessed from `flake.nix` — the `AllowListSourceAccessor` only allows paths that appear in `wd.files` (tracked set). Accessing an untracked file from `flake.nix` throws "file not allowed by the source filter". Fix: `git add --intent-to-add <file>` to stage it without content.
 

@@ -36,4 +36,4 @@ The eval cache is **disabled** for local path flakes. `nix develop .` never hits
 
 ## Historical Context
 
-RFC 0049 was authored by Eelco Dolstra and merged in 2020 before the RFC process completed — a procedural anomaly. Flakes remain behind `--extra-experimental-features nix-command flakes` in the official Nix installer defaults. RFC 136 (accepted August 2023) established a phased stabilization plan; Phase 1 is ~47% complete as of 2025.
+RFC 0049 was authored by Eelco Dolstra but was **withdrawn** after the implementation was already merged — a procedural anomaly that raised governance questions. Flakes remain behind `--extra-experimental-features nix-command flakes` in the official Nix installer defaults. RFC 136 (accepted August 2023) established a phased stabilization plan; see [community.md](community.md) for current phase status.
