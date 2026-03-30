@@ -60,3 +60,9 @@
   notify:
     - reload systemd
     - restart forgejo-runner
+
+- name: Flush handlers before runner registration
+  ansible.builtin.meta: flush_handlers
+
+- name: Include runner registration
+  ansible.builtin.include_tasks: register_runner.yml
