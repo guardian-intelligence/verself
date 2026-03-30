@@ -16,7 +16,12 @@ the only entity with access to Forgejo admin credentials.
 |----------|-------|
 | [Source Architecture](source-architecture.md) | Repo layout, Core struct, server startup |
 | [Static Key Seal](static-seal.md) | OpenBao-only auto-unseal via AES-256-GCM key file |
+| [Self-Init](self-init.md) | Declarative first-launch config -- zero-touch bootstrap |
 | [Raft Storage](raft-storage.md) | Integrated storage backend, on-disk format, snapshots |
+| [Backup & Recovery](backup-recovery.md) | Raft snapshots, ZFS consistency, disaster recovery |
+| [Transit Engine](transit-engine.md) | Cryptography as a service, SOPS integration, key rotation |
+| [Agent & Proxy](agent-proxy.md) | Auto-auth, template rendering, process supervisor mode |
+| [Go API Client](go-api-client.md) | Programmatic access, AppRole login, KV v2 operations |
 | [Nix Integration](nix-integration.md) | nixpkgs package, NixOS module, systemd hardening |
 | [CI Integration](ci-integration.md) | AppRole auth, Forgejo Actions, agent pattern for Firecracker |
 | [Comparisons](comparisons.md) | OpenBao vs Vault vs SOPS vs Infisical |
@@ -31,14 +36,19 @@ Same pattern as ZFS ecosystem research (see `../README.md`). OpenBao's own Go cl
 (`api/v2`) wraps HTTP, not the CLI, but every deployment tool (Ansible, Terraform, NixOS module)
 shells out to the `bao` binary. The CLI is the stable interface.
 
-### Static Key seal is the key enabler for self-hosted
+### Static Key seal + Self-Init = zero-touch bootstrap
 
 HashiCorp Vault requires cloud KMS (AWS, GCP, Azure) or a physical HSM for auto-unseal.
 OpenBao's static key seal (`seal "static"`) reads a 32-byte AES key from a local file and
-auto-unseals on every reboot. No cloud dependency. This is the feature that makes self-hosted
-OpenBao viable without manual intervention on every restart.
+auto-unseals on every reboot. No cloud dependency.
+
+Combined with Self-Init (`initialize` stanzas in the config file, shipped v2.4.0), you get
+**fully declarative, zero-touch OpenBao bootstrap**: the server initializes itself, configures
+auth methods/policies/secret engines, and revokes the root token -- all on first boot with
+no manual ceremony. See [Self-Init](self-init.md) for the full design.
 
 Source: `wrappers/static/static.go` in https://github.com/openbao/go-kms-wrapping
+Source: `helper/profiles/` in https://github.com/openbao/openbao
 
 ### Nix package is current and first-class
 
@@ -65,8 +75,13 @@ token issuance for CI jobs.
 | Pattern | Source | Applicability |
 |---------|--------|---------------|
 | Static key auto-unseal | OpenBao (unique) | Eliminates manual unseal on reboot. Deploy key via Ansible to `/etc/openbao/unseal.key` |
+| Self-Init | OpenBao (unique) | Zero-touch first boot: auth, policies, secrets engines configured declaratively |
 | Raft integrated storage | OpenBao | Single binary, no external DB. Data dir on ZFS for snapshot backup |
+| ZFS snapshot backup | ZFS + BoltDB | Crash-consistent snapshots of Raft data. BoltDB two-phase commit + ZFS atomic blocks |
 | AppRole + response wrapping | OpenBao | Per-Firecracker-VM scoped tokens. Orchestrator generates wrapped SecretID, injects into VM |
+| Agent process supervisor | OpenBao | Inject secrets as env vars into CI build scripts inside Firecracker VMs |
+| Go API client | `openbao/api/v2` | Orchestrator authenticates + generates per-job SecretIDs programmatically |
+| Transit engine | OpenBao | Future: CI artifact signing, SOPS backend migration |
 | NixOS module | nixpkgs | Add to `server-profile`, configure via Ansible role (thin config template) |
-| SOPS for bootstrap | Current stack | Keep SOPS for unseal key + root token only. Migrate all other secrets to OpenBao |
+| SOPS for bootstrap | Current stack | Keep SOPS for unseal key only. Migrate all other secrets to OpenBao |
 | PKI engine | OpenBao | Defer until multi-node. Single-node uses localhost/unix sockets |
