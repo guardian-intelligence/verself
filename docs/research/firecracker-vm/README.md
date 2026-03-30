@@ -16,6 +16,9 @@ Conducted 2026-03-29.
 | [Networking](networking.md) | TAP at scale, namespace isolation, nftables vs iptables, CNI tc-redirect-tap, rate limiting, MAC generation |
 | [Metrics & Observability](metrics-observability.md) | Metrics categories, ClickHouse wide event mapping, serial capture, vsock logs, balloon memory stats |
 | [Go SDK](go-sdk.md) | Machine lifecycle, DrivesBuilder for zvols, jailer hard-link problem + custom ChrootStrategy, CNI networking, MMDS, vsock, snapshot load, handler system |
+| [Init & Lifecycle](init-and-lifecycle.md) | Custom PID 1 design, vsock protocol (Connect RPC), SIGCHLD reaping, credential injection (vsock > MMDS > file), OpenBao wrapping token flow |
+| [Golden Image & Nix](golden-image-nix.md) | `make-ext4-fs.nix` rootfs recipe, Firecracker v1.14.2 in nixpkgs (includes jailer), KVM verified on Latitude.sh AMD EPYC |
+| [Capacity & Operations](capacity-and-operations.md) | ZFS ARC contention (set `zfs_arc_max`), MMIO vs PCI (+50%), memory layout for 64GB host, UID pools, crash recovery, overwatcher |
 
 ## Key findings
 
