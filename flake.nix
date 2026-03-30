@@ -219,6 +219,7 @@ GROUP
             };
             vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
             subPackages = [ "cmd/bmci" ];
+            doCheck = false; # upstream test uses temp scripts that don't survive nix sandbox
 
             ldflags = [
               "-s" "-w"
