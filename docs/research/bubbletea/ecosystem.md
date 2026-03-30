@@ -61,6 +61,80 @@ style := lipgloss.NewStyle().
 manages all terminal queries. Colors are standard `color.Color`. `AdaptiveColor`
 removed; replaced by `LightDark(isDark bool)`.
 
+#### Compositor deep dive
+
+The compositor is a two-tier system:
+
+- **`Layer`**: data struct holding content, x/y/z coordinates, optional children.
+  Children's coordinates are relative to parent. Forms a tree.
+- **`Compositor`**: takes layer tree, flattens to sorted list, renders.
+
+**Composition model: opaque painter's algorithm (NOT alpha blending).** Layers are
+drawn low-z to high-z. Higher-z layers overwrite cells completely. No alpha channel --
+cells either have content or are empty.
+
+**Hit testing is bounding-box, NOT cell-level.** `comp.Hit(x, y)` checks
+`pt.In(cl.bounds)` where bounds is computed from content width/height. Clicking on
+"transparent" (empty) parts of a layer still registers as a hit. Layers without an ID
+are skipped. Top-most (highest z) layer with an ID wins.
+
+**Performance:** O(n) flatten + O(n log n) sort + O(n * cells) draw. No dirty-region
+tracking in the compositor itself. The underlying `RenderBuffer` has touched-line
+tracking for terminal rendering. All layers drawn every `Render()` call. For 10-20
+layers on a typical terminal: negligible. Hundreds of layers with large content: the
+ANSI string parsing via `ansi.DecodeSequence` per layer is the bottleneck.
+
+#### Color downsampling algorithm
+
+Three-layer system:
+
+1. **`colorprofile.Profile`** -- detects capability (NoTTY, ASCII, ANSI, ANSI256,
+   TrueColor) via `$COLORTERM`, `$TERM`, terminal queries
+2. **TrueColor -> ANSI 256** -- ported from tmux's `colour.c`. Maps to 6x6x6 cube
+   (levels: `[0x00, 0x5f, 0x87, 0xaf, 0xd7, 0xff]`) or 24-grey ramp. Uses
+   `colorful.DistanceHSLuv()` (perceptual distance in HSLuv space, not Euclidean RGB)
+   to pick between cube color and grey. Better results for near-greys.
+3. **ANSI 256 -> ANSI 16** -- static lookup table `ansi256To16[256]`.
+
+Conversions are cached in a global RWMutex-protected `map[Profile]map[color.Color]color.Color`.
+
+In v2, downsampling happens at **output time** (via `colorprofile.Writer` wrapping
+stdout), not render time. `Style.Render()` always emits full-fidelity ANSI. This is
+a key v2 change: v1 styles carried `*Renderer` pointers and downsampled during render.
+
+#### Table sub-package internals
+
+**No virtual scrolling.** `DataToMatrix()` materializes ALL rows. See
+[performance.md](performance.md) for scaling implications.
+
+**Column resizing** is median-based (not uniform):
+1. Track min/max/median content widths per column across all rows
+2. Expanding: widen shortest column by 1 pixel repeatedly until target width
+3. Shrinking (three-phase): shrink columns >= half table width first, then shrink
+   columns with biggest gap between actual width and median, then shrink widest remaining
+
+This avoids naive uniform shrinking -- a column with header "Age of Person" (15 chars)
+but data values of 2 chars gets shrunk first.
+
+#### JoinHorizontal/JoinVertical
+
+Float-based position (0.0-1.0) with proportional padding distribution. Uses
+`ansi.StringWidth()` which is ANSI-aware and handles CJK/emoji double-width correctly.
+Padding uses `strings.Repeat(" ", gap)` -- character-based, not pixel-based.
+
+**Limitation:** does NOT handle ANSI escape sequences spanning multiple lines. Each
+line is treated independently. Styles wrapping across newlines get split.
+
+#### Cassowary constraint solver (ultraviolet, not yet surfaced)
+
+`ultraviolet/layout/` contains a Cassowary-based constraint layout engine ported from
+Ratatui. Constraint types: `Len`, `Min`, `Max`, `Percent`, `Ratio`, `Fill`. Flex modes:
+`FlexStart`, `FlexEnd`, `FlexCenter`, `FlexSpaceEvenly`, `FlexSpaceAround`,
+`FlexSpaceBetween`. LRU-cached with FNV hash keys.
+
+Not yet exposed through lipgloss's public API -- it's the infrastructure for future
+layout primitives. `JoinHorizontal`/`JoinVertical` remain the primary layout tools.
+
 ### Huh (6,722 stars)
 
 Interactive forms and prompts. Terminal equivalent of web forms.

@@ -345,14 +345,91 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 `TEA_LOGFILE` environment variable is checked by several examples.
 
+## v1 to v2 Migration Pain Points
+
+The migration is **mechanically straightforward** (searchable patterns) but has
+cascading scope and real regressions.
+
+### The charm.land vanity import
+
+`github.com/charmbracelet/bubbletea` -> `charm.land/bubbletea/v2`. The entire Charm
+ecosystem moved simultaneously (lipgloss, bubbles, huh, glamour).
+
+Community concern: if `charm.land` goes down or Charm ceases operations, the import
+path becomes unresolvable. Mitigated somewhat by Go module proxy caching. Lobsters
+user carlana noted they should have moved to v3 to avoid address-mismatch bugs during
+incremental upgrades.
+
+**Checksum mismatch (issue #1448):** At least one user hit verification failure with
+`GOPROXY=direct`. The proxy's cached version differed from direct download, producing
+`SECURITY ERROR` warnings.
+
+### Cascading dependency upgrade
+
+Migrating BubbleTea v2 forces **simultaneous** upgrades of:
+- Lip Gloss v2 (color system overhauled, `AdaptiveColor` removed)
+- Bubbles v2 (every component API changed: fields -> getters/setters, `NewModel` -> `New()`)
+
+Bubbles v2 changes were extensive:
+- Width/Height fields became getter/setter methods
+- `DefaultKeyMap` variables became functions
+- `AdaptiveColor` replaced with explicit `isDark bool`
+- Progress colors changed from strings to `image/color.Color`
+- Textarea/Textinput: styles restructured into `Styles.Focused`/`Styles.Blurred`
+
+### v2 renderer regressions (still open)
+
+| Issue | Problem |
+|-------|---------|
+| #1481 | 2x performance degradation -- cellbuf allocations cause heavy GC |
+| #1614 | Tab cursor optimization breaks space-padded column alignment (6 comments) |
+| #1541 | Tab characters in content silently swallowed |
+| #1590 | Garbage characters on early quit (<100ms lifecycle) |
+| #1577 | SSH padding/whitespace renders incorrectly ("exact same v1 code works fine") |
+| #1571 | macOS WezTerm: scrollback lost on quit, requires `reset` |
+
+### Keyboard input traps
+
+- Space bar: `case " ":` -> `case "space":` (silent breakage in type switches)
+- `alt+?` reported as `alt+shift+/` instead of `alt+?` (issue #1591). Kitty protocol
+  enables `ansi.KittyDisambiguateEscapeCodes` but not `ansi.KittyReportAlternateKeys`.
+- Non-QWERTY layouts broken in VSCode (issue #1623): capital letters on AZERTY
+  reported as QWERTY equivalents.
+
+### Platform-specific regressions
+
+- **Windows:** resize events lost (#1601). VT input mode doesn't deliver
+  `WINDOW_BUFFER_SIZE_EVENT`. Confirmed regression from v1.
+- **macOS+WezTerm:** scrollback destroyed on quit (#1571). Works fine on Kitty.
+- **expect/spawn:** init sequence queries produce garbage OSC sequences (#1572, fixed).
+
+### Data race in shutdown (#1599, open)
+
+Race between `cancelreader.Close()` and `cancelreader.wait()` during shutdown,
+detectable with `-race`. `StreamEvents` returns on `ctx.Done()` without joining its
+inner goroutine.
+
+### Community sentiment
+
+**Positive:** declarative View is architecturally cleaner; Cursed Renderer bandwidth
+is 10x lower (great for SSH); keyboard enhancements are forward-looking; upgrade guide
+is comprehensive and LLM-friendly.
+
+**Negative:** simultaneous 3-library migration is heavy churn; performance regression
+in the new renderer; tab handling bugs corrupt output; vanity domain raises trust
+questions; `View()` struct is verbose for simple apps.
+
 ## Open Issues Worth Watching
 
-| Issue | Topic | Comments |
-|-------|-------|----------|
-| #163 | Displaying images inline | 17 |
-| #573 | Altscreen resize artifacts | 13 |
-| #309 | Compositing (mostly resolved in v2 via lipgloss layers) | 10 |
-| #1017 | Viewport visible area incorrect when content exceeds width | 10 |
-| #874 | IME input position | 7 |
-| #162 | Native text selection + mouse wheel | 7 |
-| #1244 | Two-way background goroutine communication example | 7 |
+| Issue | Topic | Status |
+|-------|-------|--------|
+| #163 | Displaying images inline | 17 comments |
+| #573 | Altscreen resize artifacts | 13 comments |
+| #1481 | v2 renderer 2x performance regression | Open, no response |
+| #1614 | Tab optimization breaks column alignment | 6 comments |
+| #1601 | Windows resize events lost (v2 regression) | Open |
+| #1599 | Data race in shutdown | Open, no response |
+| #1577 | SSH rendering broken in v2 | Open |
+| #1017 | Viewport visible area incorrect | 10 comments |
+| #874 | IME input position | 7 comments |
+| #162 | Native text selection + mouse wheel | 7 comments |
