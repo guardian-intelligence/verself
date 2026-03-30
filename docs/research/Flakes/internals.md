@@ -111,6 +111,16 @@ Any attribute set with an `outPath` field can be coerced to a string in Nix. Bec
 
 The verbose `sourceInfo.outPath` form is unnecessary for the common case.
 
+## `self.outputs` vs Top-Level `self` Attributes
+
+From `call-flake.nix`: `result = outputs // sourceInfo // { inherit outPath inputs outputs sourceInfo _type; }`. The `outputs` attribute set is merged onto `self` directly AND also available as `self.outputs`. So:
+
+```nix
+self.packages.x86_64-linux.default == self.outputs.packages.x86_64-linux.default  # identical
+```
+
+This means `self.packages` and `self.outputs.packages` are the same object — `self.outputs` is a convenience accessor to the un-merged outputs function result, not a separate namespace.
+
 ## Hermetic Evaluation
 
 Flakes evaluate in pure mode by default. The following builtins are disabled or throw errors:
@@ -153,9 +163,27 @@ The fetching pipeline in `src/libfetchers/`:
 4. Fetch and verify against `narHash` in lock file
 5. Return store path + locked metadata
 
-`call-flake.nix` is the internal wrapper that imports all locked inputs as arguments and calls the `outputs` function. The result is cached via `EvalCache` keyed on flake reference + lock file hash.
+`call-flake.nix` is the internal wrapper that constructs `self`, resolves inputs via the lock file, and calls the `outputs` function. See [source-code-deep-dive.md](source-code-deep-dive.md) for the complete annotated source.
 
 Git repositories are cloned shallow into `~/.cache/nix/` using `libgit2`. HTTP downloads use `libcurl` with connection pooling, retry with exponential backoff, and brotli/gzip decompression.
+
+### `flake = false` Inputs
+
+Setting `flake = false` on an input tells `call-flake.nix` to skip flake evaluation entirely for that node. The result is just `sourceInfo // { inherit sourceInfo outPath; }` — only the fetched source tree, no `outputs`, no `inputs`. This is the correct way to include arbitrary source archives (vendored code, data files) as flake dependencies.
+
+```nix
+inputs.mySource = {
+  url = "github:user/some-repo";
+  flake = false;   # don't try to evaluate flake.nix, just fetch the tree
+};
+# Usage: "${inputs.mySource}/path/to/file"
+```
+
+Non-flake inputs expose: `outPath` (store path), `sourceInfo` (metadata). They do NOT expose `packages`, `devShells`, or any outputs.
+
+### `parent` Field in Lock Nodes (Undocumented)
+
+Lock file nodes for relative path inputs have a `parent` field not documented in the official manual. This field contains the node key of the containing flake. The `call-flake.nix` source uses it to resolve `isRelative` nodes: their `sourceInfo` is inherited from the parent, and their `outPath` is constructed as `parentNode.outPath + "/" + node.locked.path`. This is how monorepos can have sub-flakes with `path:./subpackage` inputs that share the same fetched tree.
 
 ## `nix copy` Over SSH
 

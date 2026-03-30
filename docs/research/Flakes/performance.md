@@ -82,6 +82,33 @@ The performance difference is most visible in large configurations with 10+ flak
 
 For your own flake, `nix flake show` evaluates all non-`legacyPackages` outputs. If you have many `packages.${system}` entries or `nixosConfigurations`, this can be slow. Adding `nix flake check` to CI is faster than `nix flake show` because `check` evaluates outputs in parallel.
 
+## `nix-direnv`: Production Eval Cache Solution
+
+The official eval cache bypasses for `path:` flakes makes `nix develop` slow for large configurations. `nix-direnv` solves this for development:
+
+- Calls `nix print-dev-env` once and caches the result in `.direnv/` keyed by `flake.nix` + `flake.lock` hash
+- Creates a **GC root** for the cached derivation — critical because without it, `nix-collect-garbage` removes the cached shell, forcing re-evaluation
+- Watches `flake.nix`, `flake.lock`, `shell.nix`, and `default.nix` for changes; re-evaluates only on change
+- Falls back to the previous working devShell if new evaluation fails
+
+Without `nix-direnv`, `nix develop` creates no GC root — the evaluated environment is garbage-collected after the session.
+
+Source: [github.com/nix-community/nix-direnv](https://github.com/nix-community/nix-direnv)
+
+## `nix flake archive`: Pre-fetching Inputs for Offline Use
+
+`nix flake archive` copies the **source trees** of all flake inputs (not build outputs) to a Nix store. Unlike `nix copy` (which copies build output closures), `nix flake archive` copies the flake DAG nodes from `flake.lock`.
+
+```bash
+# Pre-fetch all inputs to a local cache before entering network-isolated CI:
+nix flake archive --to file:///tmp/flake-inputs-cache
+
+# Inspect the transfer without executing:
+nix flake archive --dry-run --json | jq '{inputs: .inputs | keys}'
+```
+
+Use case: airgapped CI where `nix build` must evaluate the flake without internet. Archive first, then run builds in a `--network none` environment.
+
 ## `nix flake check` Validation Cost
 
 `nix flake check` builds (not just evaluates) every derivation in `checks.${system}`. This is potentially expensive:
