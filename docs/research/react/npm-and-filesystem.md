@@ -25,13 +25,17 @@
 
 ## node_modules by the numbers
 
+**Measured baseline** (1,507 packages, moderate project):
+- 41,087 files, 5,240 directories, 258 MB logical (387 MB on-disk), ~1,300 tarballs
+  Source: [Demystifying npm installation](https://dev.to/pavel-zeman/demystifying-npm-package-installation-insights-analysis-and-optimization-tips-4nmj)
+
+**Estimated for forge-metal benchmark projects:**
+
 | Project | node_modules size | Approximate file count | Typical install time (npm ci, cold) |
 |---------|-------------------|----------------------|-------------------------------------|
 | next-learn (small) | ~200-300 MB | ~20K-30K files | ~15-30s |
 | taxonomy (medium) | ~400-600 MB | ~40K-60K files | ~30-60s |
 | cal.com (large monorepo) | ~800 MB - 1.2 GB | ~80K-120K files | ~60-120s |
-
-These are rough estimates. The exact numbers depend on lockfile state and deduplication.
 
 **The fundamental problem:** JavaScript's ecosystem produces an extreme number of small files.
 A typical `node_modules` directory contains:
@@ -197,14 +201,21 @@ From [Arpad Borsos's research](https://swatinem.de/blog/optimizing-tsc/):
 **AST node memory:** TypeScript maintains ~1 million AST nodes for a medium project. Each
 node is 104-160 bytes (V8 object overhead). Total AST memory: ~100-180 MB.
 
-**Module resolution stat() storm:** `tsc` resolves every import by trying multiple file
-paths. For `import { foo } from './bar'`, it tries:
-- `./bar.ts`, `./bar.tsx`, `./bar.d.ts`
+**Module resolution stat() storm (measured):** `tsc` resolves every import by trying
+multiple file paths. For `import { foo } from './bar'`, it tries:
+- `./bar.ts`, `./bar.tsx`, `./bar.d.ts`, `./bar.mts`, `./bar.cts`
 - `./bar/index.ts`, `./bar/index.tsx`, `./bar/index.d.ts`
-- `./bar.js`, `./bar.jsx` (for JS projects)
+- `./bar.js`, `./bar.jsx`, `./bar.cjs`, `./bar.mjs` (16 total with index variants)
 
-Each attempt is a `stat()` call. For a project with 500 source files averaging 10 imports
-each, that's potentially 5000 imports × 6-9 stat() attempts = 30K-45K stat() calls.
+Each attempt is a `stat()` call. **Measured: in a 1,500-file project, `isFile()` was
+called 15,000 times** — a 10x overhead over actual file count. Only 2,500 unique paths
+were checked, showing massive redundancy from repeated resolution of the same modules.
+Source: [Marvin Hagemeister](https://marvinh.dev/blog/speeding-up-javascript-ecosystem-part-2/)
+
+A simple `Map<string, boolean>` cache for stat results yields **15% speedup**. Using
+`fs.statSync(file, { throwIfNoEntry: false })` instead of try/catch eliminates stack
+trace creation, adding another **7% improvement** to ESLint (which uses the same
+resolution).
 
 **`--incremental` with `.tsbuildinfo`:** TypeScript can persist its dependency graph to
 `.tsbuildinfo`. On subsequent runs, it only re-checks files whose dependencies changed.
