@@ -36,6 +36,7 @@ func newRootCmd(paths config.Paths) *cobra.Command {
 	root.AddCommand(setupDomainCmd())
 	root.AddCommand(benchmarkCmd())
 	root.AddCommand(configCmd(paths))
+	root.AddCommand(firecrackerTestCmd())
 
 	return root
 }

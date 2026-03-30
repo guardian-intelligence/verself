@@ -1,0 +1,125 @@
+---
+# Firecracker host setup: KVM, jailer directories, golden zvol, kernel.
+# Thin role: binaries come from the Nix server profile, this just
+# configures the host and creates the golden image.
+
+# --- KVM ---
+
+- name: Ensure KVM module is loaded
+  community.general.modprobe:
+    name: kvm_amd
+    state: present
+  failed_when: false
+
+- name: Verify /dev/kvm exists
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: dev_kvm
+
+- name: Fail if KVM is not available
+  ansible.builtin.fail:
+    msg: "/dev/kvm does not exist. Ensure KVM is enabled in BIOS and kvm_amd/kvm_intel is loaded."
+  when: not dev_kvm.stat.exists
+
+# --- ZFS ARC tuning ---
+
+- name: Set ZFS ARC max to prevent VM OOM
+  ansible.builtin.copy:
+    content: "options zfs zfs_arc_max={{ fc_zfs_arc_max_bytes }}\n"
+    dest: /etc/modprobe.d/zfs-arc.conf
+    mode: "0644"
+  notify: rebuild initramfs
+
+# --- Jailer user and directories ---
+
+- name: Create firecracker group
+  ansible.builtin.group:
+    name: "{{ fc_jailer_user }}"
+    gid: "{{ fc_jailer_gid }}"
+    state: present
+
+- name: Create firecracker user
+  ansible.builtin.user:
+    name: "{{ fc_jailer_user }}"
+    uid: "{{ fc_jailer_uid }}"
+    group: "{{ fc_jailer_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+
+- name: Create jailer root directory
+  ansible.builtin.file:
+    path: "{{ fc_jailer_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Create CI directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /var/lib/ci
+
+# --- Kernel deployment ---
+
+- name: Check if guest kernel exists
+  ansible.builtin.stat:
+    path: "{{ fc_kernel_path }}"
+  register: kernel_stat
+
+- name: Deploy guest vmlinux kernel
+  ansible.builtin.copy:
+    src: "{{ fc_rootfs_path | dirname }}/vmlinux"
+    dest: "{{ fc_kernel_path }}"
+    mode: "0644"
+  when: not kernel_stat.stat.exists
+
+# --- Golden zvol ---
+
+- name: Check if golden zvol exists
+  ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}"
+  register: golden_zvol_check
+  changed_when: false
+  failed_when: false
+
+- name: Create golden zvol
+  ansible.builtin.command: >
+    zfs create -V {{ fc_golden_zvol_size }}
+    -o volblocksize=16K
+    -o compression=lz4
+    {{ fc_zfs_pool }}/{{ fc_golden_zvol }}
+  when: golden_zvol_check.rc != 0
+
+- name: Wait for zvol device node
+  ansible.builtin.wait_for:
+    path: "/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}"
+    state: present
+    timeout: 10
+  when: golden_zvol_check.rc != 0
+
+- name: Write Nix-built ext4 rootfs to golden zvol
+  ansible.builtin.command: >
+    dd if={{ fc_rootfs_path }}
+    of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
+    bs=1M status=progress
+  when: golden_zvol_check.rc != 0
+
+- name: Check if golden snapshot exists
+  ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+  register: golden_snap_check
+  changed_when: false
+  failed_when: false
+
+- name: Create golden snapshot
+  ansible.builtin.command: "zfs snapshot {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+  when: golden_snap_check.rc != 0
+
+# --- CI dataset for job clones ---
+
+- name: Ensure CI dataset exists
+  community.general.zfs:
+    name: "{{ fc_zfs_pool }}/{{ fc_ci_dataset }}"
+    state: present
+
