@@ -153,8 +153,8 @@ func (w *Wizard) ensureAPIToken() (string, error) {
 	// Prompt loop.
 	for {
 		fmt.Fprintln(w.Out, "Latitude.sh API token required")
-		fmt.Fprintln(w.Out, "  1. Go to https://dash.latitude.sh/api-keys")
-		fmt.Fprintln(w.Out, "  2. Create a new API key")
+		fmt.Fprintln(w.Out, "  1. Go to https://www.latitude.sh/dashboard/api-keys")
+		fmt.Fprintln(w.Out, "  2. Click 'Create API Key' (top right)")
 		fmt.Fprintln(w.Out, "  3. Copy the token")
 		fmt.Fprintln(w.Out)
 
