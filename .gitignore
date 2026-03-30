@@ -41,3 +41,5 @@ result-*
 
 # Logs
 *.log
+
+.claude/scheduled_tasks.lock
