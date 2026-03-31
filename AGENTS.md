@@ -100,27 +100,15 @@ make provision
 
 This provisions a bare metal server via OpenTofu and auto-generates `ansible/inventory/hosts.ini` from the outputs.
 
-### 3. Build the golden image and deploy
+### 3. Deploy
 
 ```bash
-make e2e
+make deploy  # idempotent, no wipe — this is the normal workflow
 ```
 
-This does:
+This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
 
-1. **Builds the Nix server profile** -- every service (ClickHouse, MongoDB, Caddy, OTel Collector, Node.js, containerd, gVisor, Forgejo, etc.) packaged into a single content-addressed closure. All versions pinned by `flake.lock`.
-2. **Installs Nix on the remote host** and pushes the closure over SSH.
-3. **Configures services** via Ansible (thin roles: just config templates + systemd enablement).
-4. **Health checks** -- asserts 6 services active, HTTPS works, admin seeded.
-5. **Verifies** -- inserts test wide events, queries ClickHouse, validates compression codecs, sends OTLP trace.
-
-If it exits 0, the stack is healthy.
-
-For subsequent deploys without wiping state:
-
-```bash
-make deploy  # idempotent, no wipe
-```
+> **`make e2e` — destructive, rarely needed.** This wipes ALL data (ClickHouse, MongoDB, Forgejo repos, credentials) and reprovisions from scratch. Only run this when bootstrapping a brand new server or when you need to verify the full zero-to-healthy pipeline. Once your Forgejo has repos, runners registered, and CI history, `make e2e` destroys all of that. Use `make deploy` for normal iteration.
 
 ### 4. Log in
 
@@ -172,8 +160,7 @@ The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must 
 
 ```bash
 nix flake update           # update all packages
-make deploy --limit canary # deploy to one node
-make e2e --limit canary    # verify
+make deploy --limit canary # deploy to one node, verify services come up
 make deploy                # roll out fleet-wide
 ```
 
@@ -214,9 +201,8 @@ Compression codecs per column type:
 | `make deprovision` | Destroy all bare metal infrastructure |
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
 | `make server-profile` | Build Nix server profile (golden image closure) |
-| `make deploy` | Deploy to all nodes (idempotent, no wipe) |
-| `make e2e` | Full wipe + reprovision + test |
-| `make benchmark` | Run CI benchmark workloads on ZFS clones |
+| `make deploy` | Deploy to all nodes (idempotent, no wipe) — **use this normally** |
+| `make e2e` | **DESTRUCTIVE** full wipe + reprovision + test — rarely needed |
 | `make build` | Build bmci Go binary locally |
 | `make test` | Run Go tests |
 
@@ -257,6 +243,7 @@ forge-metal/
 ## Assistant Contract
 
 * When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
+* When beginning an ambiguous task, collect information about t
 
 ## Tool Use Contract
 
@@ -265,7 +252,7 @@ forge-metal/
 ## Output Contract
 
 * 
-* Do not assume 
+* 
 
 ## License
 

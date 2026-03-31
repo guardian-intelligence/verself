@@ -41,6 +41,10 @@ Thumbs.db
 result
 result-*
 
+# CI build artifacts
+ci/output/rootfs.ext4
+ci/output/sbom.txt
+
 # Logs
 *.log
 

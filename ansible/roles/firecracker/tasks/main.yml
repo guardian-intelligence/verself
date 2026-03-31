@@ -1,7 +1,7 @@
 ---
 # Firecracker host setup: KVM, jailer directories, golden zvol, kernel.
-# Thin role: binaries come from the Nix server profile, this just
-# configures the host and creates the golden image.
+# CI artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
+# and pre-staged to /var/lib/ci/ before this role runs.
 
 # --- KVM ---
 
@@ -62,31 +62,25 @@
   loop:
     - /var/lib/ci
 
-# --- Guest artifact deployment ---
-# The server profile (pushed via nix copy) includes ciArtifacts at
-# {{ nix_server_profile_path }}/share/ci/{rootfs.ext4,vmlinux}.
-# We copy them to /var/lib/ci/ for stable paths.
+# --- Guest artifact verification ---
+# Artifacts built by scripts/build-guest-rootfs.sh, pre-staged to /var/lib/ci/.
 
-- name: Check if Nix profile has CI artifacts
+- name: Verify CI kernel exists
   ansible.builtin.stat:
-    path: "{{ nix_server_profile_path }}/share/ci/vmlinux"
-  register: nix_ci_artifacts
+    path: "{{ fc_kernel_path }}"
+  register: ci_kernel
 
-- name: Copy vmlinux from Nix profile
-  ansible.builtin.copy:
-    src: "{{ nix_server_profile_path }}/share/ci/vmlinux"
-    dest: "{{ fc_kernel_path }}"
-    mode: "0644"
-    remote_src: true
-  when: nix_ci_artifacts.stat.exists
+- name: Verify CI rootfs exists
+  ansible.builtin.stat:
+    path: "{{ fc_rootfs_path }}"
+  register: ci_rootfs
 
-- name: Copy rootfs.ext4 from Nix profile
-  ansible.builtin.copy:
-    src: "{{ nix_server_profile_path }}/share/ci/rootfs.ext4"
-    dest: "{{ fc_rootfs_path }}"
-    mode: "0644"
-    remote_src: true
-  when: nix_ci_artifacts.stat.exists
+- name: Fail if CI artifacts are missing
+  ansible.builtin.fail:
+    msg: >
+      CI artifacts not found at {{ fc_kernel_path }} and/or {{ fc_rootfs_path }}.
+      Build with: sudo scripts/build-guest-rootfs.sh
+  when: not ci_kernel.stat.exists or not ci_rootfs.stat.exists
 
 # --- Golden zvol ---
 
@@ -111,7 +105,7 @@
     timeout: 10
   when: golden_zvol_check.rc != 0
 
-- name: Write Nix-built ext4 rootfs to golden zvol
+- name: Write ext4 rootfs to golden zvol
   ansible.builtin.command: >
     dd if={{ fc_rootfs_path }}
     of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
