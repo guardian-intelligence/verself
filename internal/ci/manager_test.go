@@ -32,7 +32,7 @@ func TestBuildGuestCommand_InstallsFromRepoRootAndRunsFromWorkdir(t *testing.T) 
 	}
 
 	script := cmd[9]
-	if !strings.Contains(script, "cd '/workspace' && 'bun' 'install' '--frozen-lockfile'") {
+	if !strings.Contains(script, `cd '/workspace' && 'bash' '-lc' 'HOST_GATEWAY="$(ip route show default | awk '"'"'/default/ {print $3; exit}'"'"')" && test -n "$HOST_GATEWAY" && bun install --frozen-lockfile --registry "http://${HOST_GATEWAY}:4873"'`) {
 		t.Fatalf("install script: got %q", script)
 	}
 	if !strings.Contains(script, "cd '/workspace/apps/web' && 'bun' 'run' 'ci'") {
@@ -45,5 +45,21 @@ func TestUniquePRBranch_IsRepoScopedAndStable(t *testing.T) {
 	want := "test/forge-metal-warm-path-next-bun-monorepo-20260331-120000"
 	if branch != want {
 		t.Fatalf("branch: got %q want %q", branch, want)
+	}
+}
+
+func TestFixtureWorkflow_IncludesRunID(t *testing.T) {
+	workflow := fixtureWorkflow("http://127.0.0.1:3000", "fixtures-e2e-20260401")
+	if !strings.Contains(workflow, "--run-id 'fixtures-e2e-20260401'") {
+		t.Fatalf("workflow missing run-id flag: %q", workflow)
+	}
+}
+
+func TestPRNumberFromRef(t *testing.T) {
+	if got := prNumberFromRef("refs/pull/42/head"); got != 42 {
+		t.Fatalf("prNumberFromRef: got %d want 42", got)
+	}
+	if got := prNumberFromRef("refs/heads/main"); got != 0 {
+		t.Fatalf("prNumberFromRef non-PR ref: got %d want 0", got)
 	}
 }

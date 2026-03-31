@@ -84,6 +84,7 @@ func ciExecCmd() *cobra.Command {
 	var (
 		repo            string
 		ref             string
+		runID           string
 		forgejoURL      string
 		pool            string
 		goldenZvol      string
@@ -122,6 +123,7 @@ func ciExecCmd() *cobra.Command {
 				Repo:    repo,
 				RepoURL: forgejoRepoURL(forgejoURL, repo),
 				Ref:     ref,
+				RunID:   runID,
 			})
 			if err != nil {
 				return err
@@ -139,6 +141,7 @@ func ciExecCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository in owner/name form")
 	cmd.Flags().StringVar(&ref, "ref", "", "Commit SHA or ref to execute")
+	cmd.Flags().StringVar(&runID, "run-id", "", "Logical run ID for telemetry grouping")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
 	_ = cmd.MarkFlagRequired("repo")

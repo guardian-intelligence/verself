@@ -40,6 +40,40 @@ func TestDetectToolchain_FixtureBun(t *testing.T) {
 	}
 }
 
+func TestDetectToolchain_FixtureNPMWorkspaces(t *testing.T) {
+	root := filepath.Join("..", "..", "test", "fixtures", "next-npm-workspaces")
+	tc, err := DetectToolchain(root)
+	if err != nil {
+		t.Fatalf("DetectToolchain: %v", err)
+	}
+	if tc.PackageManager != PackageManagerNPM {
+		t.Fatalf("package manager: got %q, want %q", tc.PackageManager, PackageManagerNPM)
+	}
+	if tc.PackageManagerVersion != "10.9.0" {
+		t.Fatalf("package manager version: got %q", tc.PackageManagerVersion)
+	}
+	if tc.LockfileRelPath != "package-lock.json" {
+		t.Fatalf("lockfile: got %q", tc.LockfileRelPath)
+	}
+}
+
+func TestDetectToolchain_FixtureNPMSingleApp(t *testing.T) {
+	root := filepath.Join("..", "..", "test", "fixtures", "next-npm-single-app")
+	tc, err := DetectToolchain(root)
+	if err != nil {
+		t.Fatalf("DetectToolchain: %v", err)
+	}
+	if tc.PackageManager != PackageManagerNPM {
+		t.Fatalf("package manager: got %q, want %q", tc.PackageManager, PackageManagerNPM)
+	}
+	if tc.PackageManagerVersion != "10.9.0" {
+		t.Fatalf("package manager version: got %q", tc.PackageManagerVersion)
+	}
+	if tc.LockfileRelPath != "package-lock.json" {
+		t.Fatalf("lockfile: got %q", tc.LockfileRelPath)
+	}
+}
+
 func TestDetectToolchain_NPMFromPackageManagerField(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{
