@@ -15,4 +15,4 @@
     - clickstack
     - verdaccio
     - forgejo
-    - fc_ci_seed
+    - firecracker

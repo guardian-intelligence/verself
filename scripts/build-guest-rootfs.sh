@@ -48,6 +48,9 @@ fi
 # Read version pins
 ALPINE_URL=$(jq -r '.alpine.url' "$VERSIONS")
 ALPINE_SHA256=$(jq -r '.alpine.sha256' "$VERSIONS")
+FIRECRACKER_VERSION=$(jq -r '.firecracker.version' "$VERSIONS")
+ARCH=$(jq -r '.alpine.arch' "$VERSIONS")
+FC_CI_VERSION="${FIRECRACKER_VERSION%.*}"
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -68,10 +71,27 @@ echo "$ALPINE_SHA256  $TARBALL" | sha256sum -c - || {
 echo "→ extracting rootfs"
 tar -xzf "$TARBALL" -C "$ROOTFS"
 
+# --- Download Firecracker-compatible guest kernel ---
+echo "→ downloading guest kernel for Firecracker CI v${FC_CI_VERSION}"
+KERNEL_KEY=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/v${FC_CI_VERSION}/${ARCH}/vmlinux-&list-type=2" \
+  | grep -oE "firecracker-ci/v${FC_CI_VERSION}/${ARCH}/vmlinux-[0-9]+\.[0-9]+\.[0-9]{1,3}" \
+  | sort -V | tail -1)
+if [[ -z "$KERNEL_KEY" ]]; then
+  echo "ERROR: could not resolve Firecracker CI kernel for v${FC_CI_VERSION}/${ARCH}" >&2
+  exit 1
+fi
+mkdir -p "$OUTPUT_DIR"
+curl -fsSL -o "$OUTPUT_DIR/vmlinux" "https://s3.amazonaws.com/spec.ccfc.min/${KERNEL_KEY}"
+
 # --- Install packages via chroot ---
 echo "→ installing packages"
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
-chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils git nodejs npm ca-certificates postgresql"
+chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils curl git nodejs npm unzip ca-certificates postgresql"
+if ! chroot "$ROOTFS" /bin/sh -c "apk add --no-cache bun" >/dev/null 2>&1; then
+  echo "→ installing bun via upstream installer"
+  chroot "$ROOTFS" /bin/sh -c "export BUN_INSTALL=/usr/local && curl -fsSL https://bun.sh/install | bash"
+fi
+chroot "$ROOTFS" /bin/sh -c "corepack enable || true"
 
 # --- Install forgevm-init (static Go binary → /sbin/init) ---
 # If a pre-built binary exists next to the script (e.g., scp'd by Makefile), use it.
@@ -106,6 +126,9 @@ nogroup:x:65534:
 GROUP
 
 echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
+cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
+registry=http://172.16.0.1:4873
+NPMRC
 
 # --- Create required directories ---
 mkdir -p "$ROOTFS"/{etc/ci,home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,dev/shm}
@@ -125,26 +148,65 @@ echo "unix_socket_directories = '/run/postgresql'" >> "$ROOTFS/var/lib/postgresq
 sed -i 's/^local.*all.*all.*trust/local all all trust/' "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
 echo "host all all 127.0.0.1/32 trust" >> "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
 
-# --- Write CI start wrapper ---
+# --- Write generic CI service runner ---
+cat > "$ROOTFS/usr/local/bin/forge-metal-ci-run" << 'WRAPPER'
+#!/bin/sh
+# Start requested services, switch to the requested workdir, and exec the CI command.
+set -e
+services=""
+workdir="/workspace"
+registry="${FORGE_METAL_NPM_REGISTRY:-http://172.16.0.1:4873}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --services)
+      services="$2"
+      shift 2
+      ;;
+    --workdir)
+      workdir="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+export npm_config_registry="$registry"
+export NPM_CONFIG_REGISTRY="$registry"
+
+case ",$services," in
+  *,postgres,*)
+    mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
+    su postgres -c "pg_ctl start -D /var/lib/postgresql/data -l /tmp/pg.log -w"
+    ;;
+esac
+
+cd "$workdir"
+exec "$@"
+WRAPPER
+chmod +x "$ROOTFS/usr/local/bin/forge-metal-ci-run"
+
+# Backward-compatible wrapper for the earlier tracer bullet path.
 cat > "$ROOTFS/ci-start.sh" << 'WRAPPER'
 #!/bin/sh
-# Start PostgreSQL, then exec the CI command.
-# Usage: /ci-start.sh bash -c "tsc && next build"
-set -e
-mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
-su postgres -c "pg_ctl start -D /var/lib/postgresql/data -l /tmp/pg.log -w"
-exec "$@"
+exec /usr/local/bin/forge-metal-ci-run --services postgres --workdir /workspace -- "$@"
 WRAPPER
 chmod +x "$ROOTFS/ci-start.sh"
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"
-mkdir -p "$OUTPUT_DIR"
 chroot "$ROOTFS" apk list --installed > "$OUTPUT_DIR/sbom.txt"
 
 # --- Build ext4 image ---
 echo "→ building ext4 image (4G)"
-mke2fs -t ext4 -d "$ROOTFS" -L ciroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" 4G
+mke2fs -F -t ext4 -d "$ROOTFS" -L ciroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" 4G
 
 echo "✓ rootfs built: $OUTPUT_DIR/rootfs.ext4"
 echo "✓ SBOM written: $OUTPUT_DIR/sbom.txt"

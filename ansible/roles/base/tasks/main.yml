@@ -25,15 +25,11 @@
     backrefs: false
   ignore_errors: true
 
-- name: Allow bench-ci to run forge-vm-run.sh as root
+- name: Allow bench-ci to execute forge-metal CI runs as root
   ansible.builtin.copy:
-    content: "bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/scripts/forge-vm-run.sh *\n"
+    content: |
+      bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/profile/bin/forge-metal ci exec *
+      bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/scripts/forge-vm-run.sh *
     dest: /etc/sudoers.d/bench-ci-firecracker
     mode: "0440"
     validate: "visudo -cf %s"
-
-- name: Set system-wide npm registry to local Verdaccio
-  ansible.builtin.copy:
-    content: "registry=http://127.0.0.1:{{ verdaccio_port | default(4873) }}\n"
-    dest: /etc/npmrc
-    mode: "0644"
