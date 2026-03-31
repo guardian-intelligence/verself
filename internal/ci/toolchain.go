@@ -109,7 +109,7 @@ func (tc *Toolchain) InstallCommand() []string {
 		}
 		return []string{"bash", "-lc", "npm install -g pnpm && pnpm install --frozen-lockfile"}
 	case PackageManagerBun:
-		return []string{"bun", "install", "--frozen-lockfile", "--registry", "http://172.16.0.1:4873"}
+		return []string{"bash", "-lc", `HOST_GATEWAY="$(ip route show default | awk '/default/ {print $3; exit}')" && test -n "$HOST_GATEWAY" && bun install --frozen-lockfile --registry "http://${HOST_GATEWAY}:4873"`}
 	default:
 		return []string{"npm", "install"}
 	}

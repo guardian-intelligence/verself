@@ -37,6 +37,7 @@ type ExecRequest struct {
 	Repo    string
 	RepoURL string
 	Ref     string
+	RunID   string
 }
 
 func NewManager(cfg firecracker.Config, logger *slog.Logger) *Manager {
@@ -149,6 +150,11 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 	if req.Ref == "" {
 		return nil, fmt.Errorf("ref is required")
 	}
+	createdAt := time.Now().UTC()
+	runID := strings.TrimSpace(req.RunID)
+	if runID == "" {
+		runID = "ci-exec-" + uuid.NewString()
+	}
 
 	repoKey := sanitizeRepoKey(req.Repo)
 	repoDataset, err := m.activeRepoGoldenDataset(repoKey)
@@ -169,9 +175,11 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 
 	jobID := uuid.NewString()
 	jobDataset := fmt.Sprintf("%s/%s/%s", m.firecrackerConfig.Pool, m.firecrackerConfig.CIDataset, jobID)
+	cloneStart := time.Now()
 	if err := zfsClone(ctx, snapshot, jobDataset); err != nil {
 		return nil, err
 	}
+	cloneDuration := time.Since(cloneStart)
 
 	mountDir, err := mountDataset(ctx, jobDataset)
 	if err != nil {
@@ -197,6 +205,12 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
 		return nil, err
 	}
+	commitSHA, err := gitHeadSHA(workspace)
+	if err != nil {
+		_ = unmountDataset(context.Background(), mountDir)
+		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		return nil, err
+	}
 	installNeeded, err := lockfileChanged(workspace, toolchain)
 	if err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
@@ -218,7 +232,30 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 	}
 
 	orch := firecracker.New(m.firecrackerConfig, m.logger)
+	startedAt := time.Now().UTC()
 	result, err := orch.RunDataset(ctx, job, jobDataset, true)
+	completedAt := time.Now().UTC()
+	prNumber := prNumberFromRef(req.Ref)
+	if telemetryErr := emitExecTelemetry(m.logger, emitExecTelemetryInput{
+		FirecrackerConfig: m.firecrackerConfig,
+		Request:           req,
+		RunID:             runID,
+		Manifest:          manifest,
+		Toolchain:         toolchain,
+		InstallNeeded:     installNeeded,
+		GoldenSnapshot:    snapshot,
+		Job:               job,
+		JobResult:         result,
+		CloneDuration:     cloneDuration,
+		CreatedAt:         createdAt,
+		StartedAt:         startedAt,
+		CompletedAt:       completedAt,
+		CommitSHA:         commitSHA,
+		PRNumber:          prNumber,
+		RunErr:            err,
+	}); telemetryErr != nil {
+		m.logger.Warn("emit ci exec telemetry failed", "repo", req.Repo, "run_id", runID, "err", telemetryErr)
+	}
 	if err != nil {
 		return nil, err
 	}

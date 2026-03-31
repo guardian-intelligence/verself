@@ -127,7 +127,7 @@ GROUP
 
 echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
 cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
-registry=http://172.16.0.1:4873
+# Registry is injected at runtime by /usr/local/bin/forge-metal-ci-run.
 NPMRC
 
 # --- Create required directories ---
@@ -155,7 +155,7 @@ cat > "$ROOTFS/usr/local/bin/forge-metal-ci-run" << 'WRAPPER'
 set -e
 services=""
 workdir="/workspace"
-registry="${FORGE_METAL_NPM_REGISTRY:-http://172.16.0.1:4873}"
+registry="${FORGE_METAL_NPM_REGISTRY:-}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -177,6 +177,15 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -z "$registry" ]; then
+  gateway="$(ip route show default | awk '/default/ {print $3; exit}')"
+  if [ -z "$gateway" ]; then
+    echo "unable to determine host gateway for registry access" >&2
+    exit 1
+  fi
+  registry="http://${gateway}:4873"
+fi
 
 export npm_config_registry="$registry"
 export NPM_CONFIG_REGISTRY="$registry"

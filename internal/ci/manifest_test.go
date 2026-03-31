@@ -35,3 +35,37 @@ func TestLoadManifest_FixtureBun(t *testing.T) {
 		t.Fatalf("services: got %+v", manifest.Services)
 	}
 }
+
+func TestLoadManifest_FixtureNPMWorkspaces(t *testing.T) {
+	root := filepath.Join("..", "..", "test", "fixtures", "next-npm-workspaces")
+	manifest, err := LoadManifest(root)
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if manifest.RepoName != "next-npm-workspaces" {
+		t.Fatalf("repo_name: got %q", manifest.RepoName)
+	}
+	if manifest.RepoWorkDir() != "/workspace" {
+		t.Fatalf("workdir: got %q", manifest.RepoWorkDir())
+	}
+	if len(manifest.Services) != 0 {
+		t.Fatalf("services: got %+v", manifest.Services)
+	}
+}
+
+func TestLoadManifest_FixtureNPMSingleApp(t *testing.T) {
+	root := filepath.Join("..", "..", "test", "fixtures", "next-npm-single-app")
+	manifest, err := LoadManifest(root)
+	if err != nil {
+		t.Fatalf("LoadManifest: %v", err)
+	}
+	if manifest.RepoName != "next-npm-single-app" {
+		t.Fatalf("repo_name: got %q", manifest.RepoName)
+	}
+	if manifest.RepoWorkDir() != "/workspace" {
+		t.Fatalf("workdir: got %q", manifest.RepoWorkDir())
+	}
+	if len(manifest.Services) != 0 {
+		t.Fatalf("services: got %+v", manifest.Services)
+	}
+}

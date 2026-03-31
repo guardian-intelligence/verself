@@ -90,7 +90,7 @@ func New(cfg Config, logger *slog.Logger) *Orchestrator {
 		cfg.VCPUs = 2
 	}
 	if cfg.MemoryMiB == 0 {
-		cfg.MemoryMiB = 512
+		cfg.MemoryMiB = 2048
 	}
 	return &Orchestrator{cfg: cfg, logger: logger}
 }

@@ -25,6 +25,17 @@ type E2EOptions struct {
 	Email        string
 }
 
+type preparedFixture struct {
+	Fixture Fixture
+	RepoURL string
+	PushURL string
+}
+
+type triggeredFixture struct {
+	Prepared  preparedFixture
+	CommitSHA string
+}
+
 func LoadFixtures(root string) ([]Fixture, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -73,11 +84,14 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 		return err
 	}
 	runStamp := time.Now().UTC().Format("20060102-150405")
+	runID := "fixtures-e2e-" + runStamp
 
-	for _, fixture := range fixtures {
-		manifestCopy := *fixture.Manifest
-		manifestCopy.PRBranch = uniquePRBranch(manifestCopy.PRBranch, fixture.Name, runStamp)
-		fixture.Manifest = &manifestCopy
+	prepared := make([]preparedFixture, 0, len(fixtures))
+	for i := range fixtures {
+		manifestCopy := *fixtures[i].Manifest
+		manifestCopy.PRBranch = uniquePRBranch(manifestCopy.PRBranch, fixtures[i].Name, runStamp)
+		fixtures[i].Manifest = &manifestCopy
+		fixture := fixtures[i]
 
 		repo := Repository{
 			Name:        fixture.Name,
@@ -90,12 +104,12 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 		repoURL := forgejoRepoURL(opts.ForgejoURL, opts.Owner, fixture.Name)
 		pushURL := forgejoAuthenticatedPushURL(opts.ForgejoURL, opts.Username, opts.Token, opts.Owner, fixture.Name)
 
-		logger.Info("seeding fixture main branch", "repo", fixture.Name)
+		logger.Info("seeding fixture main branch", "repo", fixture.Name, "run_id", runID)
 		if err := pushFixtureMain(fixture, pushURL, opts.Username, opts.Email); err != nil {
 			return err
 		}
 
-		logger.Info("warming repo golden", "repo", fixture.Name)
+		logger.Info("warming repo golden", "repo", fixture.Name, "run_id", runID)
 		if err := mgr.Warm(ctx, WarmRequest{
 			Repo:          fmt.Sprintf("%s/%s", opts.Owner, fixture.Name),
 			RepoURL:       repoURL,
@@ -104,19 +118,39 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 			return err
 		}
 
-		logger.Info("installing workflow on main", "repo", fixture.Name)
-		if err := addWorkflowToMain(opts, fixture, pushURL); err != nil {
+		logger.Info("installing workflow on main", "repo", fixture.Name, "run_id", runID)
+		if err := addWorkflowToMain(opts, fixture, pushURL, runID); err != nil {
 			return err
 		}
 
-		logger.Info("creating PR trigger branch", "repo", fixture.Name)
-		commitSHA, err := createTriggerPR(ctx, client, opts, fixture, pushURL, repoURL)
+		prepared = append(prepared, preparedFixture{
+			Fixture: fixture,
+			RepoURL: repoURL,
+			PushURL: pushURL,
+		})
+	}
+
+	witness := startLeaseWitness(mgr.firecrackerConfig.NetworkLeaseDir)
+	defer func() {
+		logLeaseWitnessSummary(logger, runID, witness.Stop())
+	}()
+
+	triggered := make([]triggeredFixture, 0, len(prepared))
+	for _, item := range prepared {
+		logger.Info("creating PR trigger branch", "repo", item.Fixture.Name, "run_id", runID)
+		commitSHA, err := createTriggerPR(ctx, client, opts, item.Fixture, item.PushURL, item.RepoURL)
 		if err != nil {
 			return err
 		}
+		triggered = append(triggered, triggeredFixture{
+			Prepared:  item,
+			CommitSHA: commitSHA,
+		})
+	}
 
-		logger.Info("waiting for CI run", "repo", fixture.Name)
-		if err := waitForCommitRun(ctx, client, opts.Owner, fixture.Name, commitSHA); err != nil {
+	for _, item := range triggered {
+		logger.Info("waiting for CI run", "repo", item.Prepared.Fixture.Name, "run_id", runID)
+		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA); err != nil {
 			return err
 		}
 	}
@@ -141,7 +175,7 @@ func pushFixtureMain(fixture Fixture, pushURL, username, email string) error {
 	return initializeAndPushRepo(tmp, pushURL, username, email, fmt.Sprintf("feat: seed %s fixture", fixture.Name), "main")
 }
 
-func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL string) error {
+func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL, runID string) error {
 	tmp, err := os.MkdirTemp("", "forge-metal-fixture-workflow-*")
 	if err != nil {
 		return err
@@ -152,7 +186,7 @@ func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL string) error {
 		return err
 	}
 	workflowPath := filepath.Join(tmp, ".forgejo", "workflows", "ci.yml")
-	if err := writeFile(workflowPath, fixtureWorkflow(opts.ForgejoURL), 0o644); err != nil {
+	if err := writeFile(workflowPath, fixtureWorkflow(opts.ForgejoURL, runID), 0o644); err != nil {
 		return err
 	}
 	if err := commitAll(tmp, opts.Username, opts.Email, "ci: add forge-metal workflow"); err != nil {
@@ -241,7 +275,7 @@ func uniquePRBranch(base, repoName, stamp string) string {
 	return fmt.Sprintf("%s-%s-%s", strings.TrimRight(base, "/"), sanitizeRepoKey(repoName), stamp)
 }
 
-func fixtureWorkflow(forgejoURL string) string {
+func fixtureWorkflow(forgejoURL, runID string) string {
 	return fmt.Sprintf(`name: CI
 on:
   pull_request:
@@ -250,8 +284,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - shell: bash
-        run: sudo /opt/forge-metal/profile/bin/forge-metal ci exec --forgejo-url %s --repo "${{ github.repository }}" --ref "${{ github.ref }}"
-`, shellQuote(forgejoURL))
+        run: sudo /opt/forge-metal/profile/bin/forge-metal ci exec --run-id %s --forgejo-url %s --repo "${{ github.repository }}" --ref "${{ github.ref }}"
+`, shellQuote(runID), shellQuote(forgejoURL))
+}
+
+func logLeaseWitnessSummary(logger *slog.Logger, runID string, summary leaseWitnessSummary) {
+	if logger == nil {
+		return
+	}
+	attrs := []any{
+		"run_id", runID,
+		"max_active_leases", summary.MaxActiveLeases,
+		"distinct_job_ids", len(summary.DistinctJobIDs),
+		"samples", summary.Samples,
+		"read_errors", summary.ReadErrors,
+	}
+	if !summary.FirstOverlapAt.IsZero() {
+		attrs = append(attrs, "first_overlap_at", summary.FirstOverlapAt.Format(time.RFC3339Nano))
+	}
+	if summary.MaxActiveLeases >= 2 {
+		logger.Info("fixture parallelism observed", attrs...)
+		return
+	}
+	logger.Warn("fixture parallelism not observed", attrs...)
 }
 
 func forgejoRepoURL(baseURL, owner, repo string) string {

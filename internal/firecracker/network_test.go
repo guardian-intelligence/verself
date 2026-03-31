@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestDeriveLease(t *testing.T) {
@@ -142,6 +143,10 @@ func TestAllocatorRecoverRemovesStaleLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
+	lease.CreatedAtUTC = time.Now().UTC().Add(-pendingLeaseTTL - time.Minute)
+	if err := writeLeaseFile(filepath.Join(allocator.cfg.LeaseDir, "000000.json"), lease); err != nil {
+		t.Fatalf("writeLeaseFile: %v", err)
+	}
 
 	if err := allocator.Recover(context.Background()); err != nil {
 		t.Fatalf("Recover: %v", err)
@@ -149,6 +154,23 @@ func TestAllocatorRecoverRemovesStaleLease(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected stale lease to be removed, got err=%v lease=%+v", err, lease)
+	}
+}
+
+func TestAllocatorRecoverKeepsRecentPendingLease(t *testing.T) {
+	t.Parallel()
+
+	allocator := testAllocator(t, "172.16.0.0/29")
+	if _, err := allocator.Acquire(context.Background(), "job-1"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	if err := allocator.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); err != nil {
+		t.Fatalf("expected recent pending lease to remain, got err=%v", err)
 	}
 }
 

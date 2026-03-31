@@ -21,6 +21,7 @@ const (
 	defaultLeaseDir      = "/var/lib/ci/net/leases"
 	defaultGuestNetmask  = "255.255.255.252"
 	defaultIf            = "eth0"
+	pendingLeaseTTL      = 5 * time.Minute
 )
 
 var ErrNoNetworkSlots = errors.New("no network slots available")
@@ -206,16 +207,18 @@ func (a *Allocator) Recover(ctx context.Context) error {
 		}
 
 		tapExists := tapExists(lease.TapName)
+		if lease.PID == 0 && time.Since(lease.CreatedAtUTC) < pendingLeaseTTL {
+			continue
+		}
+
 		if tapExists {
 			if cleanupErr := cleanupNetwork(ctx, lease.TapName, 3); cleanupErr != nil {
 				return cleanupErr
 			}
 		}
 
-		if lease.PID > 0 || !tapExists {
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove stale lease %s: %w", path, err)
-			}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale lease %s: %w", path, err)
 		}
 	}
 
