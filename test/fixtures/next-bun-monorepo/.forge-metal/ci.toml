@@ -1,0 +1,15 @@
+version = 1
+repo_name = "next-bun-monorepo"
+description = "bun workspace Next.js fixture without external services"
+default_branch = "main"
+workdir = "apps/web"
+services = []
+warm_command = ["bun", "run", "ci"]
+ci_command = ["bun", "run", "ci"]
+pr_branch = "test/forge-metal-warm-path"
+pr_title = "test: trigger forge-metal warm path"
+pr_commit_message = "test: trigger forge-metal warm path"
+pr_change_path = "apps/web/app/page.js"
+pr_change_find = "Hello from Bun main"
+pr_change_replace = "Hello from Bun warm PR"
+

@@ -26,7 +26,7 @@ func main() {
 
 func newRootCmd(paths config.Paths) *cobra.Command {
 	root := &cobra.Command{
-		Use:     "bmci",
+		Use:     "forge-metal",
 		Short:   "forge-metal: bare-metal CI platform",
 		Version: version,
 	}
@@ -36,6 +36,8 @@ func newRootCmd(paths config.Paths) *cobra.Command {
 	root.AddCommand(setupDomainCmd())
 	root.AddCommand(configCmd(paths))
 	root.AddCommand(firecrackerTestCmd())
+	root.AddCommand(ciCmd())
+	root.AddCommand(fixturesCmd())
 
 	return root
 }

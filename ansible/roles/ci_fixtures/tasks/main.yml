@@ -1,0 +1,60 @@
+---
+# Seed controlled Next.js fixture repos into Forgejo and prove the warm path.
+
+- name: Reset fixture staging directory
+  ansible.builtin.file:
+    path: /opt/forge-metal/test-fixtures
+    state: absent
+
+- name: Create fixture staging directory
+  ansible.builtin.file:
+    path: /opt/forge-metal/test-fixtures
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy local Next.js fixtures to server
+  delegate_to: localhost
+  become: false
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../test/fixtures/"
+    dest: /opt/forge-metal/test-fixtures/
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.next"
+      - "--exclude=.turbo"
+      - "--exclude=dist"
+      - "--no-owner"
+      - "--no-group"
+
+- name: Create API token for fixture seeding
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/users/{{ forgejo_admin_user }}/tokens"
+    method: POST
+    user: "{{ forgejo_admin_user }}"
+    password: "{{ forgejo_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      name: "forge-metal-fixtures-{{ 999999999 | random }}"
+      scopes:
+        - "all"
+    status_code: [201]
+  register: fixture_api_token
+  no_log: true
+
+- name: Run fixture end-to-end validation
+  ansible.builtin.command: >
+    {{ fm_bin }}/forge-metal fixtures e2e
+      --fixtures-root /opt/forge-metal/test-fixtures
+      --forgejo-url http://127.0.0.1:{{ forgejo_port }}
+      --owner {{ forgejo_admin_user }}
+      --username {{ forgejo_admin_user }}
+      --email {{ forgejo_admin_email }}
+      --token {{ fixture_api_token.json.sha1 }}
+  environment:
+    PATH: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  no_log: true

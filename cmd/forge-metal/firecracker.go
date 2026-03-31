@@ -26,10 +26,12 @@ func firecrackerTestCmd() *cobra.Command {
 		fcBin         string
 		jailerBin     string
 		vcpus         int
-		memoryMiB     int
-		timeout       string
-		hostInterface string
-	)
+			memoryMiB     int
+			timeout       string
+			hostInterface string
+			guestPoolCIDR string
+			networkLeaseDir string
+		)
 
 	cmd := &cobra.Command{
 		Use:   "firecracker-test -- <command> [args...]",
@@ -42,9 +44,9 @@ captures output and metrics, and prints a wide event summary.
 The command and its arguments are passed as positional args after --.
 
 Examples:
-  bmci firecracker-test -- node -e 'console.log(42)'
-  bmci firecracker-test -- bash -c 'echo hello && sleep 1'
-  bmci firecracker-test --vcpus 4 --memory 1024 -- npm test`,
+  forge-metal firecracker-test -- node -e 'console.log(42)'
+  forge-metal firecracker-test -- bash -c 'echo hello && sleep 1'
+  forge-metal firecracker-test --vcpus 4 --memory 1024 -- npm test`,
 		Args:                  cobra.MinimumNArgs(1),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,10 +78,16 @@ Examples:
 			if vcpus > 0 {
 				cfg.VCPUs = vcpus
 			}
-			if memoryMiB > 0 {
-				cfg.MemoryMiB = memoryMiB
-			}
-			cfg.HostInterface = hostInterface
+				if memoryMiB > 0 {
+					cfg.MemoryMiB = memoryMiB
+				}
+				cfg.HostInterface = hostInterface
+				if guestPoolCIDR != "" {
+					cfg.GuestPoolCIDR = guestPoolCIDR
+				}
+				if networkLeaseDir != "" {
+					cfg.NetworkLeaseDir = networkLeaseDir
+				}
 
 			orch := firecracker.New(cfg, logger)
 
@@ -169,9 +177,11 @@ Examples:
 	cmd.Flags().StringVar(&fcBin, "firecracker-bin", "", "Path to firecracker binary")
 	cmd.Flags().StringVar(&jailerBin, "jailer-bin", "", "Path to jailer binary")
 	cmd.Flags().IntVar(&vcpus, "vcpus", 0, "vCPU count (default: 2)")
-	cmd.Flags().IntVar(&memoryMiB, "memory", 0, "Memory in MiB (default: 512)")
-	cmd.Flags().StringVar(&timeout, "timeout", "2m", "Job timeout")
-	cmd.Flags().StringVar(&hostInterface, "host-interface", "", "Host interface for NAT (auto-detected)")
+		cmd.Flags().IntVar(&memoryMiB, "memory", 0, "Memory in MiB (default: 512)")
+		cmd.Flags().StringVar(&timeout, "timeout", "2m", "Job timeout")
+		cmd.Flags().StringVar(&hostInterface, "host-interface", "", "Host interface for NAT (auto-detected)")
+		cmd.Flags().StringVar(&guestPoolCIDR, "guest-pool-cidr", "", "IPv4 pool reserved for Firecracker guests")
+		cmd.Flags().StringVar(&networkLeaseDir, "network-lease-dir", "", "Directory for persistent guest network leases")
 
-	return cmd
-}
+		return cmd
+	}

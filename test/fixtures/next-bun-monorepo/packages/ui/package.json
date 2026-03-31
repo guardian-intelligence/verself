@@ -1,0 +1,13 @@
+{
+  "name": "@fixture-bun/ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0"
+  }
+}
+

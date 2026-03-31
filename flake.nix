@@ -126,7 +126,7 @@
                 in !(baseName == "result" || baseName == "results" || baseName == ".direnv");
             };
             vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
-            subPackages = [ "cmd/bmci" ];
+            subPackages = [ "cmd/forge-metal" ];
             # Skip sandbox-hostile test that shells out to a temp script.
             checkFlags = [ "-run" "^(?!TestConfigEditUsesEditorAndCreatesFile)" ];
 

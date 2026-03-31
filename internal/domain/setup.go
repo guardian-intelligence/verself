@@ -155,7 +155,7 @@ func runInteractive(cfg Config, fields [totalFields]*Field, p prompt.Prompter, w
 
 	anyChanged := fields[0].Changed || fields[1].Changed
 	if !anyChanged {
-		fmt.Fprintf(w, "  All fields configured. Run bmci setup-domain --domain [string] --token [string] to configure fields\n")
+		fmt.Fprintf(w, "  All fields configured. Run forge-metal setup-domain --domain [string] --token [string] to configure fields\n")
 		fmt.Fprintf(w, "  Next: make deploy\n")
 		return nil
 	}
@@ -399,4 +399,3 @@ func writeDomain(varsFile, domain string) error {
 
 	return os.WriteFile(varsFile, []byte(content), 0644)
 }
-

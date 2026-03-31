@@ -1,9 +1,9 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
        doctor setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
-       guest-rootfs deploy-ci-artifacts
+       guest-rootfs deploy-ci-artifacts fixtures-e2e
 
-BINARY   := bmci
+BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 
@@ -16,7 +16,7 @@ SSH_OPTS    := -o StrictHostKeyChecking=no
 NIX_PROFILE = $(shell nix build .#server-profile --no-link --print-out-paths 2>/dev/null)
 
 build:
-	go build $(LDFLAGS) -o $(BINARY) ./cmd/bmci
+	go build $(LDFLAGS) -o $(BINARY) ./cmd/forge-metal
 
 clean:
 	rm -f $(BINARY)
@@ -94,7 +94,14 @@ deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
 	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4'
+		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4 && sudo cp /tmp/ci/output/vmlinux /var/lib/ci/vmlinux'
+
+fixtures-e2e: ## Deploy Forgejo + Firecracker and validate two controlled Next.js fixtures
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	$(MAKE) guest-rootfs
+	$(MAKE) deploy-ci-artifacts
+	cd ansible && ansible-playbook playbooks/nextjs-fixtures-e2e.yml \
+		-e nix_server_profile_path=$(NIX_PROFILE)
 
 # PATH for sudo on the remote — includes Nix profile where node lives.
 REMOTE_PATH := /home/$(REMOTE_USER)/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

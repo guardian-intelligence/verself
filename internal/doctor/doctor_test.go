@@ -118,7 +118,7 @@ func findLine(output, substr string) string {
 	return strings.Join(matches, "\n")
 }
 
-// formatOutput replicates the CLI table formatting from cmd/bmci/doctor.go.
+// formatOutput replicates the CLI table formatting from cmd/forge-metal/doctor.go.
 func formatOutput(results []CheckResult, summary Summary) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "    Tool          Have       Want")

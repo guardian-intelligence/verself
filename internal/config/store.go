@@ -232,9 +232,9 @@ func Set(paths Paths, scope Scope, key, value string) error {
 	}
 	if spec.Secret {
 		if spec.EnvVar != "" {
-			return fmt.Errorf("config key %q is secret and cannot be set with `bmci config set`; use %s or the interactive workflow instead", key, spec.EnvVar)
+			return fmt.Errorf("config key %q is secret and cannot be set with `forge-metal config set`; use %s or the interactive workflow instead", key, spec.EnvVar)
 		}
-		return fmt.Errorf("config key %q is secret and cannot be set with `bmci config set`", key)
+		return fmt.Errorf("config key %q is secret and cannot be set with `forge-metal config set`", key)
 	}
 
 	path, err := paths.pathFor(scope)

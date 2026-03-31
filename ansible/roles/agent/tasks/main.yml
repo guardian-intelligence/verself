@@ -1,5 +1,5 @@
 ---
-# Configure the forge-metal agent (bmci) on worker nodes.
+# Configure the forge-metal agent on worker nodes.
 # Binary provided by Nix server profile.
 
 - name: Create forge-metal config directory
@@ -13,20 +13,20 @@
     src: forge-metal.toml.j2
     dest: /etc/forge-metal/config.toml
     mode: "0640"
-  notify: restart bmci-agent
+  notify: restart forge-metal-agent
 
 - name: Deploy agent systemd unit
   ansible.builtin.template:
-    src: bmci-agent.service.j2
-    dest: /etc/systemd/system/bmci-agent.service
+    src: forge-metal-agent.service.j2
+    dest: /etc/systemd/system/forge-metal-agent.service
     mode: "0644"
   notify:
     - reload systemd
-    - restart bmci-agent
+    - restart forge-metal-agent
 
-- name: Enable and start bmci agent
+- name: Enable and start forge-metal agent
   ansible.builtin.systemd:
-    name: bmci-agent
+    name: forge-metal-agent
     enabled: true
     state: started
     daemon_reload: true
