@@ -17,6 +17,14 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 
 ## CI Architecture (Target)
 
+The optimization stack is, at a high level:
+
+- keep a golden image of main with all cache loaded
+- zfs for instant copy of golden image
+- git fetch all every second for local mirror
+- golden image of database so only last migration runs (as Postgres template)
+- turbo cache locally
+
 Each CI job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of a golden image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
 
 ```
@@ -224,7 +232,7 @@ forge-metal/
 │   ├── firecracker/       # Firecracker orchestrator (Go reference impl, used by bmci)
 │   └── zfsharness/        # ZFS golden image clone allocation + recovery
 ├── ansible/
-│   ├── playbooks/         # ci-e2e, dev-single-node, site, golden-refresh, security-patch
+│   ├── playbooks/         # ci-e2e, dev-single-node, site
 │   └── roles/
 │       ├── nix_deploy/    # Install Nix + push server profile closure
 │       ├── base/          # System config (ZFS, users, npm registry, sudoers)
@@ -236,8 +244,6 @@ forge-metal/
 │       ├── containerd/    # containerd + gVisor runsc (config only)
 │       ├── verdaccio/     # Sealed npm registry mirror (config only)
 │       ├── wireguard/     # Mesh networking (config only)
-│       ├── golden_image/  # ZFS snapshot with warm caches (dataset-based, legacy)
-│       ├── benchmark_seed/ # Seed benchmark repo in Forgejo
 │       └── forgejo/       # Git server + CI runner (config only)
 ├── scripts/
 │   ├── forge-vm-run.sh    # Shell-based Firecracker VM lifecycle (replaces Go orchestrator for CI)
