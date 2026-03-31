@@ -27,27 +27,27 @@ func ciCmd() *cobra.Command {
 
 func ciWarmCmd() *cobra.Command {
 	var (
-		repo          string
-		forgejoURL    string
-		defaultBranch string
-		pool          string
-		goldenZvol    string
-		kernelPath    string
-		fcBin         string
-		jailerBin     string
-		vcpus         int
-			memoryMiB     int
-			timeout       string
-			hostInterface string
-			guestPoolCIDR string
-			networkLeaseDir string
-		)
+		repo            string
+		forgejoURL      string
+		defaultBranch   string
+		pool            string
+		goldenZvol      string
+		kernelPath      string
+		fcBin           string
+		jailerBin       string
+		vcpus           int
+		memoryMiB       int
+		timeout         string
+		hostInterface   string
+		guestPoolCIDR   string
+		networkLeaseDir string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "warm",
 		Short: "Build or refresh a repo golden from its default branch",
 		RunE: func(cmd *cobra.Command, args []string) error {
-				cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
+			cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
 			if err != nil {
 				return err
 			}
@@ -75,34 +75,34 @@ func ciWarmCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository in owner/name form")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "main", "Default branch to warm")
-		addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
+	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
 	_ = cmd.MarkFlagRequired("repo")
 	return cmd
 }
 
 func ciExecCmd() *cobra.Command {
 	var (
-		repo          string
-		ref           string
-		forgejoURL    string
-		pool          string
-		goldenZvol    string
-		kernelPath    string
-		fcBin         string
-		jailerBin     string
-		vcpus         int
-			memoryMiB     int
-			timeout       string
-			hostInterface string
-			guestPoolCIDR string
-			networkLeaseDir string
-		)
+		repo            string
+		ref             string
+		forgejoURL      string
+		pool            string
+		goldenZvol      string
+		kernelPath      string
+		fcBin           string
+		jailerBin       string
+		vcpus           int
+		memoryMiB       int
+		timeout         string
+		hostInterface   string
+		guestPoolCIDR   string
+		networkLeaseDir string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "exec",
 		Short: "Execute a repo ref from its warmed golden image",
 		RunE: func(cmd *cobra.Command, args []string) error {
-				cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
+			cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
 			if err != nil {
 				return err
 			}
@@ -140,7 +140,7 @@ func ciExecCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository in owner/name form")
 	cmd.Flags().StringVar(&ref, "ref", "", "Commit SHA or ref to execute")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
-		addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
+	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("ref")
 	return cmd

@@ -22,39 +22,39 @@ import (
 
 // Config holds settings for the Firecracker orchestrator.
 type Config struct {
-	Pool           string // ZFS pool name, e.g. "benchpool"
-	GoldenZvol     string // zvol name under pool, e.g. "golden-zvol"
-	CIDataset      string // dataset for job clones, e.g. "ci"
-	KernelPath     string // path to vmlinux on host, e.g. "/var/lib/ci/vmlinux"
-	FirecrackerBin string // path to firecracker binary
-	JailerBin      string // path to jailer binary
-	JailerRoot     string // chroot base dir, e.g. "/srv/jailer"
-	JailerUID      int    // unprivileged UID for jailer
-	JailerGID      int    // unprivileged GID for jailer
-	VCPUs          int    // vCPU count per VM (default 2)
-	MemoryMiB      int    // memory per VM in MiB (default 512)
-	HostInterface  string // outbound interface for guest egress (auto-detected if empty)
-	GuestPoolCIDR  string // guest IPv4 pool subdivided into /30s
+	Pool            string // ZFS pool name, e.g. "benchpool"
+	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
+	CIDataset       string // dataset for job clones, e.g. "ci"
+	KernelPath      string // path to vmlinux on host, e.g. "/var/lib/ci/vmlinux"
+	FirecrackerBin  string // path to firecracker binary
+	JailerBin       string // path to jailer binary
+	JailerRoot      string // chroot base dir, e.g. "/srv/jailer"
+	JailerUID       int    // unprivileged UID for jailer
+	JailerGID       int    // unprivileged GID for jailer
+	VCPUs           int    // vCPU count per VM (default 2)
+	MemoryMiB       int    // memory per VM in MiB (default 512)
+	HostInterface   string // outbound interface for guest egress (auto-detected if empty)
+	GuestPoolCIDR   string // guest IPv4 pool subdivided into /30s
 	NetworkLeaseDir string // persistent lease directory for guest network slots
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Pool:           "benchpool",
-		GoldenZvol:     "golden-zvol",
-		CIDataset:      "ci",
-		KernelPath:     "/var/lib/ci/vmlinux",
-		FirecrackerBin: "/usr/local/bin/firecracker",
-		JailerBin:      "/usr/local/bin/jailer",
-		JailerRoot:     "/srv/jailer",
-			JailerUID:      10000,
-			JailerGID:      10000,
-			VCPUs:          2,
-			MemoryMiB:      2048,
-			GuestPoolCIDR:  defaultGuestPoolCIDR,
-			NetworkLeaseDir: defaultLeaseDir,
-		}
+		Pool:            "benchpool",
+		GoldenZvol:      "golden-zvol",
+		CIDataset:       "ci",
+		KernelPath:      "/var/lib/ci/vmlinux",
+		FirecrackerBin:  "/usr/local/bin/firecracker",
+		JailerBin:       "/usr/local/bin/jailer",
+		JailerRoot:      "/srv/jailer",
+		JailerUID:       10000,
+		JailerGID:       10000,
+		VCPUs:           2,
+		MemoryMiB:       2048,
+		GuestPoolCIDR:   defaultGuestPoolCIDR,
+		NetworkLeaseDir: defaultLeaseDir,
+	}
 }
 
 // JobConfig describes the CI job to run inside the VM.
@@ -291,11 +291,11 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		{"metrics", func() error { return client.putMetrics(ctx, "/metrics.json") }},
 		{"boot-source", func() error { return client.putBootSource(ctx, "/vmlinux", bootArgs) }},
 		{"rootfs", func() error { return client.putDrive(ctx, "rootfs", "/rootfs", true) }},
-			{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
-			{"network", func() error {
-				return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
-			}},
-		}
+		{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
+		{"network", func() error {
+			return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
+		}},
+	}
 
 	for _, step := range apiSteps {
 		if apiErr := step.fn(); apiErr != nil {
