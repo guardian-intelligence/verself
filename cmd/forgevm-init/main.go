@@ -11,7 +11,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -22,6 +24,8 @@ import (
 // As PID 1 inside the VM, we already get this behavior, but setting it
 // explicitly is harmless and documents the intent.
 const prSetChildSubreaper = 36
+
+const ipBin = "/sbin/ip"
 
 // jobConfig is the schema for /etc/ci/job.json, written to the zvol
 // by the host orchestrator before VM boot.
@@ -66,6 +70,12 @@ func main() {
 	mustMount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 
 	fmt.Fprintf(os.Stdout, "[init] mounts complete (%dms)\n", time.Since(bootStart).Milliseconds())
+
+	// --- Configure network from kernel boot params ---
+	// The host orchestrator passes ip=<client>::<gw>:<mask>::<device>:off
+	// in the kernel command line. Since CONFIG_IP_PNP is not enabled in
+	// the kernel, we parse and apply it here in userspace.
+	configureNetwork()
 
 	// --- Read job config ---
 	data, err := os.ReadFile("/etc/ci/job.json")
@@ -212,6 +222,103 @@ func resolveCommand(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("command not found: %s", name)
+}
+
+// configureNetwork parses the ip= kernel boot parameter from /proc/cmdline
+// and configures the network interface. Non-fatal: offline CI jobs still work.
+//
+// Format: ip=<client>:<server>:<gw>:<netmask>:<hostname>:<device>:<autoconf>
+// Example: ip=172.16.0.2::172.16.0.1:255.255.255.252::eth0:off
+// LEARNING: The kernel boot param ip=172.16.0.2::172.16.0.1:255.255.255.252::eth0:off
+// is ignored because CONFIG_IP_PNP is not enabled. The kernel logs it as "Unknown
+// kernel command line parameters". We parse and apply it here in userspace.
+//
+// LEARNING: Loopback (127.0.0.1) is NOT configured by default in Firecracker VMs.
+// PostgreSQL binds to localhost and fails with "Address not available" without this.
+//
+// LEARNING: Must use absolute path /sbin/ip — BusyBox provides it, but PATH is not
+// set when forgevm-init runs as PID 1 (before the job's env is applied).
+func configureNetwork() {
+	// Bring up loopback (required for localhost/127.0.0.1 services like Postgres).
+	loSteps := [][]string{
+		{ipBin, "addr", "add", "127.0.0.1/8", "dev", "lo"},
+		{ipBin, "link", "set", "lo", "up"},
+	}
+	for _, args := range loSteps {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.CombinedOutput() // best-effort, don't fail
+	}
+
+	cmdline, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[init] warning: read /proc/cmdline: %v\n", err)
+		return
+	}
+
+	var ipParam string
+	for _, param := range strings.Fields(string(cmdline)) {
+		if strings.HasPrefix(param, "ip=") {
+			ipParam = strings.TrimPrefix(param, "ip=")
+			break
+		}
+	}
+	if ipParam == "" {
+		return // No ip= parameter, skip network setup.
+	}
+
+	// Parse: client:server:gw:netmask:hostname:device:autoconf
+	parts := strings.Split(ipParam, ":")
+	if len(parts) < 6 {
+		fmt.Fprintf(os.Stderr, "[init] warning: malformed ip= parameter: %s\n", ipParam)
+		return
+	}
+	clientIP := parts[0]
+	gateway := parts[2]
+	netmask := parts[3]
+	device := parts[5]
+	if clientIP == "" || device == "" {
+		return
+	}
+
+	// Convert netmask to prefix length.
+	prefixLen := 32
+	if netmask != "" {
+		mask := net.IPMask(net.ParseIP(netmask).To4())
+		if mask != nil {
+			ones, _ := mask.Size()
+			if ones > 0 {
+				prefixLen = ones
+			}
+		}
+	}
+
+	cidr := fmt.Sprintf("%s/%d", clientIP, prefixLen)
+
+	// Apply network configuration via /sbin/ip (BusyBox applet).
+	steps := []struct {
+		name string
+		args []string
+	}{
+		{"addr", []string{ipBin, "addr", "add", cidr, "dev", device}},
+		{"link", []string{ipBin, "link", "set", device, "up"}},
+	}
+	if gateway != "" {
+		steps = append(steps, struct {
+			name string
+			args []string
+		}{"route", []string{ipBin, "route", "add", "default", "via", gateway}})
+	}
+
+	for _, step := range steps {
+		cmd := exec.Command(step.args[0], step.args[1:]...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "[init] warning: network %s: %s: %v\n",
+				step.name, strings.TrimSpace(string(out)), err)
+			return
+		}
+	}
+
+	fmt.Fprintf(os.Stdout, "[init] network: %s dev %s gw %s\n", cidr, device, gateway)
 }
 
 func mustMount(source, target, fstype string, flags uintptr, data string) {

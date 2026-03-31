@@ -9,9 +9,14 @@ CMD="${2:?Usage: forge-vm-run.sh <work-dir> <command>}"
 
 # --- Constants ---
 POOL="benchpool"
-GOLDEN_SNAP="${POOL}/golden-zvol@ready"
+# HACK: golden-zvol2 because golden-zvol is stuck in "dataset is busy" state.
+# TODO: destroy golden-zvol (may need server reboot to release), rename to golden-zvol.
+GOLDEN_SNAP="${POOL}/golden-zvol2@ready"
 CI_PREFIX="${POOL}/ci"
 KERNEL="/var/lib/ci/vmlinux"
+# LEARNING: Nix-packaged firecracker at /opt/forge-metal/profile/bin/ is dynamically
+# linked against /nix/store/ paths — unusable inside the jailer's chroot.
+# Static binaries at /usr/local/bin/ work. These were manually deployed.
 FC_BIN="/usr/local/bin/firecracker"
 JAILER_BIN="/usr/local/bin/jailer"
 JAILER_ROOT="/srv/jailer"

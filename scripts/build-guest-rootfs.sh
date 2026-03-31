@@ -2,7 +2,17 @@
 set -euo pipefail
 
 # build-guest-rootfs.sh — Build an Alpine-based ext4 rootfs for Firecracker CI VMs.
-# Requires: root, go in PATH, internet access, e2fsprogs.
+# Replaces the former Nix ciGuestRootfs derivation. Standard Linux paths, standard SBOM.
+#
+# LEARNING: Nix rootfs had /nix/store/ symlink farms inside the guest. Alpine gives
+# standard paths (/usr/bin/node, /usr/bin/git) that work natively with forgevm-init's
+# PATH resolution and chroot-based golden image baking.
+#
+# Two-layer architecture:
+#   Layer 1 (this script): base OS + packages + initdb → rootfs.ext4
+#   Layer 2 (golden_image.yml): app code + npm install + DB seed → ZFS snapshot
+#
+# Requires: root, internet access, e2fsprogs. go only if no pre-built forgevm-init.
 # Produces: ci/output/rootfs.ext4, ci/output/sbom.txt
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -61,12 +71,14 @@ tar -xzf "$TARBALL" -C "$ROOTFS"
 # --- Install packages via chroot ---
 echo "→ installing packages"
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
-chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils git nodejs npm ca-certificates"
+chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils git nodejs npm ca-certificates postgresql"
 
 # --- Install forgevm-init (static Go binary → /sbin/init) ---
 # If a pre-built binary exists next to the script (e.g., scp'd by Makefile), use it.
 # Otherwise, build from source (requires Go project checkout).
-rm -f "$ROOTFS/sbin/init"  # Remove Alpine's busybox symlink
+# LEARNING: Alpine creates /sbin/init as a busybox symlink. `cp` follows symlinks,
+# so without this rm, cp overwrites /bin/busybox instead of replacing the symlink.
+rm -f "$ROOTFS/sbin/init"
 if [[ -f "$SCRIPT_DIR/forgevm-init" ]]; then
   echo "→ using pre-built forgevm-init"
   cp "$SCRIPT_DIR/forgevm-init" "$ROOTFS/sbin/init"
@@ -81,12 +93,14 @@ fi
 # --- Essential config ---
 cat > "$ROOTFS/etc/passwd" <<'PASSWD'
 root:x:0:0:root:/root:/bin/bash
+postgres:x:70:70:PostgreSQL:/var/lib/postgresql:/bin/sh
 runner:x:1000:1000:runner:/home/runner:/bin/bash
 nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 PASSWD
 
 cat > "$ROOTFS/etc/group" <<'GROUP'
 root:x:0:
+postgres:x:70:
 runner:x:1000:
 nogroup:x:65534:
 GROUP
@@ -95,6 +109,33 @@ echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
 
 # --- Create required directories ---
 mkdir -p "$ROOTFS"/{etc/ci,home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,dev/shm}
+
+# --- Initialize PostgreSQL data directory ---
+echo "→ initializing PostgreSQL"
+mkdir -p "$ROOTFS/run/postgresql"
+chown 70:70 "$ROOTFS/run/postgresql"  # postgres uid/gid on Alpine
+# LEARNING: initdb needs /dev/null which doesn't exist in an unpacked tarball.
+# mknod fails because Alpine's /dev has conflicting entries. bind-mount works.
+mount --bind /dev "$ROOTFS/dev"
+chroot "$ROOTFS" su postgres -c "initdb -D /var/lib/postgresql/data --no-locale --encoding=UTF8"
+umount "$ROOTFS/dev"
+# Configure: listen on localhost, no SSL, trust local connections
+echo "listen_addresses = 'localhost'" >> "$ROOTFS/var/lib/postgresql/data/postgresql.conf"
+echo "unix_socket_directories = '/run/postgresql'" >> "$ROOTFS/var/lib/postgresql/data/postgresql.conf"
+sed -i 's/^local.*all.*all.*trust/local all all trust/' "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
+echo "host all all 127.0.0.1/32 trust" >> "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
+
+# --- Write CI start wrapper ---
+cat > "$ROOTFS/ci-start.sh" << 'WRAPPER'
+#!/bin/sh
+# Start PostgreSQL, then exec the CI command.
+# Usage: /ci-start.sh bash -c "tsc && next build"
+set -e
+mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
+su postgres -c "pg_ctl start -D /var/lib/postgresql/data -l /tmp/pg.log -w"
+exec "$@"
+WRAPPER
+chmod +x "$ROOTFS/ci-start.sh"
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"

@@ -1,6 +1,9 @@
 ---
 # Firecracker host setup defaults.
 fc_zfs_pool: benchpool
+# HACK: Server currently uses golden-zvol2 because golden-zvol is stuck in
+# "dataset is busy" state. forge-vm-run.sh has its own GOLDEN_SNAP constant
+# that must match. TODO: unify into a single config source.
 fc_golden_zvol: golden-zvol
 fc_golden_zvol_size: 4G
 fc_ci_dataset: ci
