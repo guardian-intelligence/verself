@@ -5,6 +5,12 @@
 
 # --- KVM ---
 
+- name: Ensure iptables is installed
+  ansible.builtin.apt:
+    name: iptables
+    state: present
+    update_cache: true
+
 - name: Ensure KVM module is loaded
   community.general.modprobe:
     name: kvm_amd
@@ -61,6 +67,29 @@
     mode: "0755"
   loop:
     - /var/lib/ci
+    - /var/lib/ci/net
+    - "{{ fc_net_lease_dir }}"
+
+- name: Install Firecracker host networking setup script
+  ansible.builtin.template:
+    src: firecracker-network-setup.sh.j2
+    dest: /usr/local/bin/forge-metal-firecracker-network-setup
+    mode: "0755"
+  notify: restart firecracker networking
+
+- name: Install Firecracker host networking service
+  ansible.builtin.template:
+    src: forge-metal-firecracker-network.service.j2
+    dest: /etc/systemd/system/forge-metal-firecracker-network.service
+    mode: "0644"
+  notify: restart firecracker networking
+
+- name: Ensure Firecracker host networking service is enabled and started
+  ansible.builtin.systemd:
+    name: forge-metal-firecracker-network.service
+    enabled: true
+    state: started
+    daemon_reload: true
 
 # --- Guest artifact verification ---
 # Artifacts built by scripts/build-guest-rootfs.sh, pre-staged to /var/lib/ci/.
@@ -105,22 +134,81 @@
     timeout: 10
   when: golden_zvol_check.rc != 0
 
-- name: Write ext4 rootfs to golden zvol
-  ansible.builtin.command: >
-    dd if={{ fc_rootfs_path }}
-    of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
-    bs=1M status=progress
-  when: golden_zvol_check.rc != 0
-
 - name: Check if golden snapshot exists
   ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
   register: golden_snap_check
   changed_when: false
   failed_when: false
 
+- name: Compute CI rootfs checksum
+  ansible.builtin.command: "sha256sum {{ fc_rootfs_path }}"
+  register: ci_rootfs_sha256
+  changed_when: false
+
+- name: Check recorded golden rootfs checksum
+  ansible.builtin.stat:
+    path: "{{ fc_rootfs_hash_record }}"
+  register: golden_rootfs_hash_stat
+
+- name: Read recorded golden rootfs checksum
+  ansible.builtin.slurp:
+    src: "{{ fc_rootfs_hash_record }}"
+  register: golden_rootfs_hash
+  when: golden_rootfs_hash_stat.stat.exists
+
+- name: Decide whether the base golden needs refresh
+  ansible.builtin.set_fact:
+    fc_refresh_base_golden_needed: >-
+      {{
+        fc_refresh_base_golden
+        or golden_zvol_check.rc != 0
+        or golden_snap_check.rc != 0
+        or not golden_rootfs_hash_stat.stat.exists
+        or ((golden_rootfs_hash.content | default('') | b64decode | trim) != (ci_rootfs_sha256.stdout.split()[0] | trim))
+      }}
+
+- name: Prune repo goldens before base golden refresh
+  ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/repo-goldens"
+  when:
+    - fc_refresh_base_golden_needed
+    - fc_prune_repo_goldens_on_refresh
+  failed_when: false
+  changed_when: true
+
+- name: Prune CI job clones before base golden refresh
+  ansible.builtin.shell: |
+    set -euo pipefail
+    zfs list -H -o name -r {{ fc_zfs_pool }}/{{ fc_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -r
+  args:
+    executable: /bin/bash
+  when:
+    - fc_refresh_base_golden_needed
+    - fc_prune_ci_children_on_refresh
+  changed_when: true
+
+- name: Destroy old golden snapshot before refresh
+  ansible.builtin.command: "zfs destroy {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+  when:
+    - fc_refresh_base_golden_needed
+    - golden_snap_check.rc == 0
+
+- name: Write ext4 rootfs to golden zvol
+  ansible.builtin.command: >
+    dd if={{ fc_rootfs_path }}
+    of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
+    bs=1M conv=fsync status=progress
+  when: fc_refresh_base_golden_needed
+
 - name: Create golden snapshot
   ansible.builtin.command: "zfs snapshot {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
-  when: golden_snap_check.rc != 0
+  when: fc_refresh_base_golden_needed
+
+- name: Record golden rootfs checksum
+  ansible.builtin.copy:
+    content: "{{ ci_rootfs_sha256.stdout.split()[0] }}\n"
+    dest: "{{ fc_rootfs_hash_record }}"
+    mode: "0644"
+  when: fc_refresh_base_golden_needed
 
 # --- CI dataset for job clones ---
 
@@ -128,4 +216,3 @@
   community.general.zfs:
     name: "{{ fc_zfs_pool }}/{{ fc_ci_dataset }}"
     state: present
-

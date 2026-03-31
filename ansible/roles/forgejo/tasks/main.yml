@@ -15,7 +15,7 @@
     path: /etc/forgejo
     state: directory
     owner: forgejo
-    mode: "0750"
+    mode: "0751"
 
 - name: Deploy Forgejo app.ini
   ansible.builtin.template:

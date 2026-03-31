@@ -1,19 +1,61 @@
 ---
 # Sealed Verdaccio npm mirror for worker nodes.
-# Verdaccio is not in nixpkgs, so we install it via the Nix-provided npm.
+# Verdaccio is not in nixpkgs, so we install it via the Nix-provided npm into a
+# writable prefix under /opt/forge-metal instead of the immutable Nix profile.
+
+- name: Create Verdaccio system user
+  ansible.builtin.user:
+    name: verdaccio
+    system: true
+    home: /var/lib/verdaccio
+    shell: /usr/sbin/nologin
+    create_home: true
+
+- name: Create Verdaccio install prefix
+  ansible.builtin.file:
+    path: "{{ verdaccio_install_prefix }}"
+    state: directory
+    mode: "0755"
+
+- name: Create Verdaccio storage directory
+  ansible.builtin.file:
+    path: /var/lib/verdaccio/storage
+    state: directory
+    owner: verdaccio
+    group: verdaccio
+    mode: "0755"
 
 - name: Install Verdaccio via npm
-  ansible.builtin.command: "{{ fm_bin }}/npm install -g verdaccio@{{ verdaccio_version }} --registry https://registry.npmjs.org"
+  ansible.builtin.command: >
+    {{ fm_bin }}/npm install --global
+    --prefix {{ verdaccio_install_prefix }}
+    verdaccio@{{ verdaccio_version }}
+    --registry https://registry.npmjs.org
   args:
-    creates: /opt/forge-metal/profile/lib/node_modules/verdaccio
+    creates: "{{ verdaccio_install_prefix }}/bin/verdaccio"
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
+    HOME: /root
 
 - name: Create Verdaccio config directory
   ansible.builtin.file:
     path: /etc/verdaccio
     state: directory
     mode: "0755"
+
+- name: Point npm at local Verdaccio
+  ansible.builtin.copy:
+    content: "registry=http://127.0.0.1:{{ verdaccio_port }}\n"
+    dest: /etc/npmrc
+    mode: "0644"
+
+- name: Ensure Verdaccio htpasswd file exists
+  ansible.builtin.file:
+    path: /etc/verdaccio/htpasswd
+    state: touch
+    owner: verdaccio
+    group: verdaccio
+    mode: "0640"
 
 - name: Deploy Verdaccio config
   ansible.builtin.template:
@@ -34,5 +76,6 @@
 - name: Enable and start Verdaccio
   ansible.builtin.systemd:
     name: verdaccio
+    daemon_reload: true
     enabled: true
     state: started

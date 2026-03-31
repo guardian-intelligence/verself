@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+POOL_CIDR="{{ fc_guest_pool_cidr }}"
+UPLINK_IF="{{ fc_host_uplink_interface }}"
+NAT_CHAIN="FORGE_METAL_FC_NAT"
+FWD_CHAIN="FORGE_METAL_FC_FWD"
+
+if [[ -z "${UPLINK_IF}" ]]; then
+  UPLINK_IF="$(ip route show default | awk '/default/ {print $5; exit}')"
+fi
+
+if [[ -z "${UPLINK_IF}" ]]; then
+  echo "unable to detect default uplink interface" >&2
+  exit 1
+fi
+
+sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+iptables -t nat -N "${NAT_CHAIN}" 2>/dev/null || true
+iptables -t nat -F "${NAT_CHAIN}"
+iptables -t nat -C POSTROUTING -s "${POOL_CIDR}" -j "${NAT_CHAIN}" 2>/dev/null || \
+  iptables -t nat -A POSTROUTING -s "${POOL_CIDR}" -j "${NAT_CHAIN}"
+iptables -t nat -A "${NAT_CHAIN}" -o "${UPLINK_IF}" -j MASQUERADE
+
+iptables -N "${FWD_CHAIN}" 2>/dev/null || true
+iptables -F "${FWD_CHAIN}"
+iptables -C FORWARD -s "${POOL_CIDR}" -j "${FWD_CHAIN}" 2>/dev/null || \
+  iptables -A FORWARD -s "${POOL_CIDR}" -j "${FWD_CHAIN}"
+iptables -C FORWARD -i "${UPLINK_IF}" -d "${POOL_CIDR}" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+  iptables -A FORWARD -i "${UPLINK_IF}" -d "${POOL_CIDR}" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A "${FWD_CHAIN}" -d "${POOL_CIDR}" -j DROP
+iptables -A "${FWD_CHAIN}" -o "${UPLINK_IF}" -j ACCEPT

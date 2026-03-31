@@ -4,12 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{ fm_bin }}/verdaccio --config /etc/verdaccio/config.yaml
+ExecStart={{ verdaccio_install_prefix }}/bin/verdaccio --config /etc/verdaccio/config.yaml
 Restart=on-failure
-User=nobody
-Group=nogroup
+User=verdaccio
+Group=verdaccio
+WorkingDirectory=/var/lib/verdaccio
 CPUAffinity=0 1
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=HOME=/var/lib/verdaccio
+Environment=PATH={{ verdaccio_install_prefix }}/bin:{{ fm_bin }}:/usr/bin:/bin
 
 [Install]
 WantedBy=multi-user.target
