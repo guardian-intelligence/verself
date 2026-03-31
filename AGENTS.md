@@ -2,7 +2,7 @@
 
 Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability. This is free open-source software, not a PaaS.
 
-Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
+Performance-first CI on bare metal. ZFS golden image clones (~1.7ms), Firecracker microVM isolation, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
 The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB.
 
@@ -58,9 +58,9 @@ Host (CI Orchestrator — bare metal, root, ZFS kernel module)
 ### Key distinctions
 
 - **zvol, not dataset.** Firecracker takes block devices (`/dev/zvol/...`), not mounted filesystems. A zvol is a ZFS block device — clone/destroy/written all work identically to datasets.
-- **Golden image is a zvol with ext4 inside.** Built by the orchestrator: `zfs create -V <size> pool/golden-zvol`, `mkfs.ext4`, mount, populate (Nix closure, node_modules, warm caches), unmount, `zfs snapshot pool/golden-zvol@ready`.
+- **Golden image is a zvol with ext4 inside.** Built by `scripts/build-guest-rootfs.sh` (Alpine Linux base), then baked with app code by `fc_ci_seed` Ansible role. `zfs snapshot pool/golden-zvol@ready`.
 - **Guest is unaware of ZFS.** It sees `/dev/vda` with ext4. No ZFS tooling needed in the VM image.
-- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Maps directly to the `Harness.Allocate` → `Clone.Release` lifecycle in `internal/zfsharness/`.
+- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in `scripts/forge-vm-run.sh`.
 
 ### Orchestrator flow per job
 
@@ -76,12 +76,12 @@ Host (CI Orchestrator — bare metal, root, ZFS kernel module)
 ### What this does NOT use
 
 - **CRIU** — process checkpointing is fragile with Node.js/V8 (timer FDs, JIT pages, epoll). Not worth the complexity when ZFS clone already eliminates the expensive part (warm caches, pre-installed deps). Process startup of `node` is ~50ms.
-- **libzfs** — shells out to `zfs` CLI like every production ZFS project (OpenZFS, Incus, DBLab, OBuilder). See `internal/zfsharness/doc.go` for rationale.
+- **libzfs** — shells out to `zfs` CLI like every production ZFS project (OpenZFS, Incus, DBLab, OBuilder).
 - **Nested ZFS in guest** — the guest runs ext4 on a raw block device. ZFS stays on the host where it belongs.
 
 ## ZFS
 
-This project makes heavy use of ZFS. We have compiled some research in docs/research. @docs/research/README.md
+This project makes heavy use of ZFS. Research notes are in `docs/research/`.
 
 
 ## Quick Start
@@ -153,9 +153,9 @@ This runs `tofu destroy` and cleans up the generated Ansible inventory. DNS reco
 
 ## How It Works
 
-### Nix Golden Image
+### Nix Server Profile
 
-All server software is packaged in a single Nix closure (`flake.nix` -> `server-profile`). This means:
+All server software (Caddy, Forgejo, ClickHouse, etc.) is packaged in a single Nix closure (`flake.nix` -> `server-profile`). This means:
 
 - **Reproducible**: `flake.lock` pins every dependency transitively. Same lock = same binaries, always.
 - **Fast deploys**: The closure is pushed once over SSH. No apt repos, no GitHub downloads, no `yarn install`.
@@ -211,7 +211,7 @@ Compression codecs per column type:
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) — **use this normally** |
 | `make e2e` | **DESTRUCTIVE** full wipe + reprovision + test — rarely needed |
-| `make build` | Build bmci Go binary locally |
+| `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
 | `make deploy-ci-artifacts` | Deploy rootfs to /var/lib/ci/ on the server |
@@ -220,7 +220,7 @@ Compression codecs per column type:
 
 ```
 forge-metal/
-├── cmd/bmci/              # CLI entry point (doctor, setup-domain, benchmark)
+├── cmd/forge-metal/       # CLI entry point (doctor, setup-domain, Firecracker CI, fixtures e2e)
 ├── cmd/forgevm-init/      # PID 1 inside Firecracker VMs (mounts, network, fork+exec)
 ├── internal/
 │   ├── clickhouse/        # ClickHouse client, wide event struct
@@ -228,9 +228,11 @@ forge-metal/
 │   ├── config/            # Layered TOML config
 │   ├── doctor/            # Dev environment health checks
 │   ├── domain/            # Domain setup wizard
+│   ├── ci/                # Repo goldens, toolchain detection, Forgejo fixture e2e
+│   ├── firecracker/       # Firecracker orchestrator (Go reference impl, used by forge-metal)
+│   ├── latitude/          # Latitude.sh API client
 │   ├── prompt/            # Shared Prompter interface + TTY implementation
-│   ├── firecracker/       # Firecracker orchestrator (Go reference impl, used by bmci)
-│   └── zfsharness/        # ZFS golden image clone allocation + recovery
+│   └── provision/         # Server provisioning logic
 ├── ansible/
 │   ├── playbooks/         # ci-e2e, dev-single-node, site
 │   └── roles/
@@ -254,7 +256,7 @@ forge-metal/
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
 ├── config/default.toml    # Embedded defaults
-└── flake.nix              # Dev shell + server profile (Nix removed from VM builds)
+└── flake.nix              # Dev shell + server profile (Nix is dev tooling only, not in VMs)
 ```
 
 ## Firecracker CI: Tracer Bullet Status
@@ -301,6 +303,21 @@ Layer 2 (ansible/roles/fc_ci_seed/tasks/golden_image.yml):
 ### Next: generalize workload configuration
 
 The platform vision: describe a workload in YAML (repo, runtime, services, setup, env, CI steps), and the platform builds the golden image and runs CI automatically. See `HACK:` comments for what needs to change.
+
+### Current platform decisions
+
+- Retire the old benchmark-oriented control plane. `forge-metal` is the primary Go binary for real Forgejo + Firecracker CI execution.
+- Keep the guest base image generic and boring: Node/Next.js-capable substrate only (Node, corepack, pnpm, Bun, git, certs, common service binaries). Do not create a distinct base image per repo or per package manager version.
+- Put the optimization boundary at the **repo golden image**, not the base image. For each repo, do one cold bootstrap on the default branch in the same Firecracker environment used for CI, then snapshot that warmed state as the golden image.
+- Use ZFS zvol clones + Firecracker as the only copy-on-write strategy. Do not add OverlayFS layering on top.
+- Prefer a layered model conceptually: generic guest substrate + repo-specific golden + optional service state derived from the repo's default branch.
+- Treat package manager/toolchain detection as a routing problem, not an image explosion problem. Resolve package manager/version from repo metadata (`package.json.packageManager`, lockfiles, and standard version files), then activate the toolchain inside a small set of generic base images.
+- Support heuristics with explicit override. Auto-detect package manager, monorepo root, and common Node/Next.js signals, but keep a minimal manifest/override path for working directory, services, env, and install/build/test overrides.
+- Run requested services inside the same VM first. Sidecar VMs may come later; host-level shared databases/services are out of scope for untrusted CI.
+- For database-backed projects, the warm path should snapshot default-branch database state and apply only branch deltas at job time. Do not hardcode a single app-specific seed path into infrastructure.
+- Keep git local. Use internal Forgejo and local mirrors/fetches for repeatable tests rather than pulling live upstream repos into the verification path.
+- Define "little to no custom glue" strictly: workflow file and minimal manifest are acceptable; patching app source, hardcoded repo branches in infra, inline app-specific env hacks, and explicit helper-script calls from project workflows are not.
+- Verification for this phase: seed two controlled Next.js monorepo fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
 
 ## Assistant Contract
 
