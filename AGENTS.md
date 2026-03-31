@@ -4,7 +4,7 @@ Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform 
 
 Performance-first CI on bare metal. ZFS golden image clones (~28ms), gVisor sandboxing, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
 
-The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB. 
+The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB.
 
 Hard requirement: everything must be self-hosted.
 
@@ -205,12 +205,15 @@ Compression codecs per column type:
 | `make e2e` | **DESTRUCTIVE** full wipe + reprovision + test — rarely needed |
 | `make build` | Build bmci Go binary locally |
 | `make test` | Run Go tests |
+| `make guest-rootfs` | Build Alpine guest rootfs on the server |
+| `make deploy-ci-artifacts` | Deploy rootfs to /var/lib/ci/ on the server |
 
 ## Project Structure
 
 ```
 forge-metal/
 ├── cmd/bmci/              # CLI entry point (doctor, setup-domain, benchmark)
+├── cmd/forgevm-init/      # PID 1 inside Firecracker VMs (mounts, network, fork+exec)
 ├── internal/
 │   ├── clickhouse/        # ClickHouse client, wide event struct
 │   ├── cloudflare/        # Cloudflare API client (DNS, zone lookup)
@@ -218,32 +221,86 @@ forge-metal/
 │   ├── doctor/            # Dev environment health checks
 │   ├── domain/            # Domain setup wizard
 │   ├── prompt/            # Shared Prompter interface + TTY implementation
-│   ├── benchmark/         # Pressure-test runner: weighted workloads, cgroup metrics, SIGHUP reload
+│   ├── firecracker/       # Firecracker orchestrator (Go reference impl, used by bmci)
 │   └── zfsharness/        # ZFS golden image clone allocation + recovery
 ├── ansible/
 │   ├── playbooks/         # ci-e2e, dev-single-node, site, golden-refresh, security-patch
 │   └── roles/
 │       ├── nix_deploy/    # Install Nix + push server profile closure
-│       ├── base/          # System config (ZFS, users, npm registry)
+│       ├── base/          # System config (ZFS, users, npm registry, sudoers)
 │       ├── cloudflare_dns/ # Cloudflare DNS A record management
 │       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
 │       ├── zfs/           # Pool creation, golden/ci datasets
+│       ├── firecracker/   # KVM, jailer user, golden zvol, CI dataset
+│       ├── fc_ci_seed/    # Forgejo CI seeding: golden image bake, action repo, bench repo
 │       ├── containerd/    # containerd + gVisor runsc (config only)
 │       ├── verdaccio/     # Sealed npm registry mirror (config only)
 │       ├── wireguard/     # Mesh networking (config only)
-│       ├── golden_image/  # ZFS snapshot with warm caches
+│       ├── golden_image/  # ZFS snapshot with warm caches (dataset-based, legacy)
+│       ├── benchmark_seed/ # Seed benchmark repo in Forgejo
 │       └── forgejo/       # Git server + CI runner (config only)
+├── scripts/
+│   ├── forge-vm-run.sh    # Shell-based Firecracker VM lifecycle (replaces Go orchestrator for CI)
+│   └── build-guest-rootfs.sh # Alpine rootfs builder (Layer 1 of golden image)
+├── ci/
+│   ├── versions.json      # Pinned Alpine + Firecracker versions with SHA256
+│   └── seed.sql           # PostgreSQL schema + data for next-learn demo app
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
-├── scripts/               # Security scripts, setup helpers
 ├── config/default.toml    # Embedded defaults
-└── flake.nix              # Dev shell + server profile (golden image)
+└── flake.nix              # Dev shell + server profile (Nix removed from VM builds)
 ```
+
+## Firecracker CI: Tracer Bullet Status
+
+Full CI proven: `tsc --noEmit && next build` runs in 22.3s inside a Firecracker VM with pre-seeded Postgres.
+
+### Two-layer golden image
+
+```
+Layer 1 (scripts/build-guest-rootfs.sh):
+  Alpine 3.21 + Node 22 + PostgreSQL 17 + git + forgevm-init + /ci-start.sh
+  → ci/output/rootfs.ext4
+
+Layer 2 (ansible/roles/fc_ci_seed/tasks/golden_image.yml):
+  Mount zvol, copy app, npm install, patch SSL, seed DB, unmount, snapshot
+  → benchpool/golden-zvol2@ready
+```
+
+### Known hacks (search for HACK: and LEARNING: in codebase)
+
+| Hack | Location | Fix |
+|------|----------|-----|
+| `golden-zvol2` instead of `golden-zvol` | `forge-vm-run.sh`, `firecracker/defaults` | Reboot server, destroy old zvol |
+| Entire golden_image.yml is next-learn specific | `golden_image.yml` | Generalize into workload config |
+| Inline POSTGRES_URL/AUTH_SECRET in workflow | `fc_bench_repo.yml` | forge-ci-action env input |
+| /ci-start.sh called explicitly | `fc_bench_repo.yml` | Auto-detect services from golden image |
+| ci/seed.sql is next-learn specific | `ci/seed.sql` | Per-workload seed scripts |
+| Static firecracker binaries manually deployed | `forge-vm-run.sh` | Ansible role or Makefile target |
+| Sudoers file wiped on server | Server state | Run base role |
+| golden_image.yml Postgres seed untested via Ansible | `golden_image.yml` | Add bind-mount tasks, test e2e |
+
+### Key learnings
+
+1. Nix + Firecracker don't mix (dynamic linking vs jailer chroot)
+2. Alpine > Nix for guest rootfs (standard paths)
+3. Kernel CONFIG_IP_PNP not enabled — forgevm-init configures network in userspace
+4. Loopback (127.0.0.1) not auto-configured in Firecracker VMs
+5. Alpine /sbin/init is a busybox symlink — must rm before cp
+6. initdb needs /dev/null — bind-mount host /dev
+7. uuid-ossp not in Alpine postgresql — use gen_random_uuid()
+8. sed -i fails on zvols after repeated create/destroy
+9. ZFS zvol "dataset is busy" — may need server reboot
+
+### Next: generalize workload configuration
+
+The platform vision: describe a workload in YAML (repo, runtime, services, setup, env, CI steps), and the platform builds the golden image and runs CI automatically. See `HACK:` comments for what needs to change.
 
 ## Assistant Contract
 
 * When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
-* When beginning an ambiguous task, collect information about t
+* When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so its important to understand how everything connects.
+* You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM)
 
 ## Tool Use Contract
 
@@ -251,8 +308,7 @@ forge-metal/
 
 ## Output Contract
 
-* 
-* 
+* Act as a dispassionate CTO.
 
 ## License
 
