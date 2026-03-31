@@ -390,7 +390,7 @@ func macForSlot(slot int) string {
 }
 
 func tapDeviceName(slot int) string {
-	return fmt.Sprintf("fc-tap-%x", slot)
+	return "fc-tap-" + strconv.FormatInt(int64(slot), 36)
 }
 
 func writeLeaseFile(path string, lease NetworkLease) error {
