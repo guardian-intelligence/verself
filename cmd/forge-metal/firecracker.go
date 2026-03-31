@@ -177,9 +177,9 @@ Examples:
 	cmd.Flags().StringVar(&fcBin, "firecracker-bin", "", "Path to firecracker binary")
 	cmd.Flags().StringVar(&jailerBin, "jailer-bin", "", "Path to jailer binary")
 	cmd.Flags().IntVar(&vcpus, "vcpus", 0, "vCPU count (default: 2)")
-	cmd.Flags().IntVar(&memoryMiB, "memory", 0, "Memory in MiB (default: 512)")
+	cmd.Flags().IntVar(&memoryMiB, "memory", 0, "Memory in MiB (default: 2048)")
 	cmd.Flags().StringVar(&timeout, "timeout", "2m", "Job timeout")
-	cmd.Flags().StringVar(&hostInterface, "host-interface", "", "Host interface for NAT (auto-detected)")
+	cmd.Flags().StringVar(&hostInterface, "host-interface", "", "Host uplink interface for guest egress (auto-detected)")
 	cmd.Flags().StringVar(&guestPoolCIDR, "guest-pool-cidr", "", "IPv4 pool reserved for Firecracker guests")
 	cmd.Flags().StringVar(&networkLeaseDir, "network-lease-dir", "", "Directory for persistent guest network leases")
 

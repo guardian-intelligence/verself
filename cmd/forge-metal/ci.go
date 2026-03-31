@@ -188,7 +188,7 @@ func addFirecrackerFlags(cmd *cobra.Command, pool, goldenZvol, kernelPath, fcBin
 	cmd.Flags().IntVar(vcpus, "vcpus", 0, "vCPU count")
 	cmd.Flags().IntVar(memoryMiB, "memory", 0, "Memory in MiB")
 	cmd.Flags().StringVar(timeout, "timeout", "20m", "Command timeout")
-	cmd.Flags().StringVar(hostInterface, "host-interface", "", "Host interface for NAT")
+	cmd.Flags().StringVar(hostInterface, "host-interface", "", "Host uplink interface for guest egress")
 	cmd.Flags().StringVar(guestPoolCIDR, "guest-pool-cidr", "", "IPv4 pool reserved for Firecracker guests")
 	cmd.Flags().StringVar(networkLeaseDir, "network-lease-dir", "", "Directory for persistent guest network leases")
 }
