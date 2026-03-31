@@ -1,7 +1,0 @@
----
-# benchmark_seed defaults.
-
-benchmark_repo_name: next-learn-bench
-benchmark_repo_clone_url: "https://github.com/vercel/next-learn.git"
-benchmark_repo_subdir: "dashboard/final-example"
-benchmark_ci_timeout_seconds: 300

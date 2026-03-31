@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
        doctor setup-sops edit-secrets setup-domain \
-       server-profile provision deprovision deploy e2e benchmark \
+       server-profile provision deprovision deploy e2e \
        guest-rootfs deploy-ci-artifacts
 
 BINARY   := bmci
@@ -96,34 +96,5 @@ deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
 		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4'
 
-BENCH_ITERATIONS ?= 5
-
 # PATH for sudo on the remote — includes Nix profile where node lives.
 REMOTE_PATH := /home/$(REMOTE_USER)/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-REMOTE_SUDO = sudo env "PATH=$(REMOTE_PATH)"
-
-benchmark: build ## Run baseline vs optimized benchmark on bare metal
-	@test -f $(INVENTORY) || \
-		{ echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
-	@test -n "$(REMOTE_HOST)" || \
-		{ echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
-	@echo "→ deploying bmci to $(REMOTE_USER)@$(REMOTE_HOST)"
-	scp $(SSH_OPTS) $(BINARY) config/workloads-baseline.toml config/workloads-optimized.toml \
-		$(REMOTE_USER)@$(REMOTE_HOST):/tmp/
-	@echo "→ ensuring node.js and build tools are available"
-	ssh $(SSH_OPTS) $(REMOTE_USER)@$(REMOTE_HOST) \
-		'command -v node >/dev/null 2>&1 || nix profile install nixpkgs\#nodejs_22'
-	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'command -v gcc >/dev/null 2>&1 || sudo apt-get install -y build-essential'
-	@echo "→ building golden image (idempotent)"
-	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'$(REMOTE_SUDO) /tmp/bmci golden-build'
-	@echo "→ baseline: cold git clone ($(BENCH_ITERATIONS) runs)"
-	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'$(REMOTE_SUDO) /tmp/bmci benchmark -w /tmp/workloads-baseline.toml -n $(BENCH_ITERATIONS) -c 1'
-	@echo "→ optimized: warm seeded workspace ($(BENCH_ITERATIONS) runs)"
-	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'$(REMOTE_SUDO) /tmp/bmci benchmark -w /tmp/workloads-optimized.toml -n $(BENCH_ITERATIONS) -c 1'
-	@echo "→ comparison (requires ClickHouse)"
-	-ssh $(SSH_OPTS) $(REMOTE_USER)@$(REMOTE_HOST) \
-		'$(REMOTE_SUDO) /tmp/bmci bench-results --project next-learn'

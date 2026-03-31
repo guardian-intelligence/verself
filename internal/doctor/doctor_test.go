@@ -1,55 +1,9 @@
-//go:build integration
-
-// Doctor integration tests — ZFS-backed, real binary execution.
+// Doctor tests — real binary execution against temp directories.
 //
-// Run via: make test-integration
-//
-// # Why ZFS, not mocks
-//
-// These tests replaced three layers that existed before:
-//
-//   1. Go unit tests with mockResolver (doctor_test.go) — tested Check()
-//      logic with canned strings. Caught logic bugs but couldn't detect
-//      issues in version extraction, PATH resolution, or IsNixProfile.
-//
-//   2. Go scenario tests with fakeResolver (scenario_test.go) — tested
-//      output formatting with a struct-based mock. Same coverage as the
-//      unit tests, just with different ergonomics.
-//
-//   3. Bash testbed (tests/testbed/) — ZFS-backed nspawn containers running
-//      real nix. Full integration coverage but ~90s per run (debootstrap +
-//      nix eval + nspawn overhead). Scenarios defined in bash with manual
-//      string-grep assertions.
-//
-// The ZFS harness approach (zfstest.NewHarness) collapses all three into
-// one: each test gets a fresh ZFS clone (~6ms), writes real executable
-// scripts to it, and runs the doctor logic against a filesystem-backed
-// resolver that calls exec.Command on real binaries. This catches the
-// same bugs the bash testbed caught (e.g., Version() resolving the wrong
-// binary via PATH) while running in ~0.5s instead of ~90s.
-//
-// # What these tests exercise
-//
-//   - Check() and CheckAll() with real exec.Command calls against scripts
-//     on ZFS clones (not mocked — the resolver runs the actual binary)
-//   - Output formatting (icons, table layout, summary, hint lines)
-//   - Status classification: OK, Missing, Conflict, Upgradable
-//   - Fix flow simulation (pre/post state with real binary writes)
-//   - SystemResolver.Version() and IsNixProfile() against real paths
-//
-// # What still requires the bash testbed (deleted, not replaced)
-//
-// The bash testbed tested Fix() with real nix profile install, nix priority
-// collisions (--priority 4), and cross-run idempotency. These require a nix
-// daemon and isolated nix profile state. They were deleted because:
-//
-//   - Fix() is a thin wrapper around `nix profile install .#dev-tools`
-//   - The priority/collision behavior is nix's responsibility, not ours
-//   - 90s per run for 6 scenarios was not sustainable in CI
-//   - The e2e pipeline (make e2e) exercises the full stack on real hardware
-//
-// If nix profile integration regresses, it will surface in the e2e pipeline
-// running on provisioned bare metal, not in unit/integration tests.
+// Each test gets a fresh t.TempDir(), writes executable scripts to it,
+// and runs the doctor logic against a filesystem-backed resolver that
+// calls exec.Command on real binaries. This catches version extraction
+// and PATH resolution bugs without mocks.
 package doctor
 
 import (
@@ -59,8 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/forge-metal/forge-metal/internal/zfsharness/zfstest"
 )
 
 // ---------------------------------------------------------------------------
@@ -212,20 +164,13 @@ func formatOutput(results []CheckResult, summary Summary) string {
 	return b.String()
 }
 
-// newClone allocates a ZFS clone and returns the bin directory path.
-func newClone(t *testing.T, id string) string {
+// newBinDir creates a temp directory with a bin/ subdirectory for test scripts.
+func newBinDir(t *testing.T) string {
 	t.Helper()
-	h := zfstest.NewHarness(t)
-	zfstest.SeedGolden(t, h)
-
-	clone, err := h.Allocate(t.Context(), id)
-	if err != nil {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { clone.Release() })
-
-	binDir := filepath.Join(clone.Mountpoint(), "bin")
-	os.MkdirAll(binDir, 0755)
 	return binDir
 }
 
@@ -235,7 +180,7 @@ func newClone(t *testing.T, id string) string {
 
 // TestCleanState: no tools installed, all 8 report missing.
 func TestCleanState(t *testing.T) {
-	binDir := newClone(t, "clean")
+	binDir := newBinDir(t)
 
 	r := &cloneResolver{binDir: binDir}
 	results, summary := CheckAll(r)
@@ -260,7 +205,7 @@ func TestCleanState(t *testing.T) {
 
 // TestFixFlow: all missing → write binaries → all OK.
 func TestFixFlow(t *testing.T) {
-	binDir := newClone(t, "fix-flow")
+	binDir := newBinDir(t)
 
 	// Phase 1: all missing.
 	r1 := &cloneResolver{binDir: binDir}
@@ -298,7 +243,7 @@ func TestFixFlow(t *testing.T) {
 
 // TestSystemConflict: wrong-version system binaries → Conflict with path shown.
 func TestSystemConflict(t *testing.T) {
-	binDir := newClone(t, "sys-conflict")
+	binDir := newBinDir(t)
 
 	writeBinary(t, binDir, "go", "go version go1.21.0 linux/amd64")
 	writeBinary(t, binDir, "shellcheck", "version: 0.9.0")
@@ -334,7 +279,7 @@ func TestSystemConflict(t *testing.T) {
 
 // TestMixedConflict: all tools OK except system go shadows nix go.
 func TestMixedConflict(t *testing.T) {
-	binDir := newClone(t, "mixed")
+	binDir := newBinDir(t)
 
 	nixPaths := make(map[string]bool)
 	for _, spec := range Manifest {
@@ -367,7 +312,7 @@ func TestMixedConflict(t *testing.T) {
 
 // TestAllOK: every tool present at correct version.
 func TestAllOK(t *testing.T) {
-	binDir := newClone(t, "all-ok")
+	binDir := newBinDir(t)
 
 	for _, spec := range Manifest {
 		writeBinary(t, binDir, spec.Name, versionOutput(spec.Name, spec.Expected))
@@ -394,7 +339,7 @@ func TestAllOK(t *testing.T) {
 
 // TestIdempotent: after fix, second check finds nothing to fix.
 func TestIdempotent(t *testing.T) {
-	binDir := newClone(t, "idempotent")
+	binDir := newBinDir(t)
 
 	for _, spec := range Manifest {
 		writeBinary(t, binDir, spec.Name, versionOutput(spec.Name, spec.Expected))
@@ -417,7 +362,7 @@ func TestIdempotent(t *testing.T) {
 
 // TestRealVersionExtraction: SystemResolver.Version against real scripts on ZFS.
 func TestRealVersionExtraction(t *testing.T) {
-	binDir := newClone(t, "version-extract")
+	binDir := newBinDir(t)
 
 	goBin := writeBinary(t, binDir, "go", "go version go1.21.0 linux/amd64")
 	scBin := writeBinary(t, binDir, "shellcheck", "ShellCheck - shell script analysis tool\nversion: 0.9.0")

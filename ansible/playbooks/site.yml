@@ -19,7 +19,6 @@
   roles:
     - containerd
     - wireguard
-    - golden_image
     - firecracker
 
 - name: Configure infrastructure nodes
