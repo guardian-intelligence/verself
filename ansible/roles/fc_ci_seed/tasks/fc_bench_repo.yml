@@ -1,0 +1,168 @@
+---
+# Create next-app-fc-bench repo with a CI workflow using forge-ci-action,
+# push code, open a PR, and verify CI runs.
+
+- name: Check if fc-bench repo exists
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/repos/{{ forgejo_admin_user }}/{{ fc_bench_repo_name }}"
+    method: GET
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    status_code: [200, 404]
+  register: fc_bench_check
+
+- name: Seed fc-bench repo
+  when: fc_bench_check.status == 404
+  block:
+    - name: Create repository via API
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/user/repos"
+        method: POST
+        headers:
+          Authorization: "token {{ forgejo_api_token }}"
+        body_format: json
+        body:
+          name: "{{ fc_bench_repo_name }}"
+          auto_init: true
+          default_branch: main
+          description: "Next.js app for Firecracker CI benchmarking"
+          private: false
+        status_code: [201]
+
+    - name: Clone next-learn from GitHub
+      ansible.builtin.git:
+        repo: "{{ fc_bench_clone_url }}"
+        dest: /tmp/next-learn-upstream
+        version: main
+        depth: 1
+        force: true
+
+    - name: Prepare local workspace
+      ansible.builtin.file:
+        path: /tmp/fc-bench-seed
+        state: absent
+
+    - name: Clone repo locally (token auth)
+      ansible.builtin.shell: |
+        git clone http://{{ forgejo_admin_user }}:{{ forgejo_api_token }}@127.0.0.1:{{ forgejo_port }}/{{ forgejo_admin_user }}/{{ fc_bench_repo_name }}.git /tmp/fc-bench-seed
+      args:
+        executable: /bin/bash
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Copy dashboard app into repo
+      ansible.builtin.shell: |
+        cp -a /tmp/next-learn-upstream/{{ fc_bench_subdir }}/. /tmp/fc-bench-seed/
+      args:
+        executable: /bin/bash
+
+    - name: Create workflow directory
+      ansible.builtin.file:
+        path: /tmp/fc-bench-seed/.forgejo/workflows
+        state: directory
+        mode: "0755"
+
+    - name: Write CI workflow
+      ansible.builtin.copy:
+        content: |
+          name: CI (Firecracker)
+          on: [push, pull_request]
+          jobs:
+            typecheck:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: http://127.0.0.1:3000/{{ forgejo_admin_user }}/forge-ci-action@main
+                  with:
+                    run: npx tsc --noEmit
+        dest: /tmp/fc-bench-seed/.forgejo/workflows/ci.yml
+        mode: "0644"
+
+    - name: Commit and push to main
+      ansible.builtin.shell: |
+        cd /tmp/fc-bench-seed
+        git config user.name "{{ forgejo_admin_user }}"
+        git config user.email "{{ forgejo_admin_email }}"
+        git add -A
+        git commit -m "feat: add Next.js dashboard app with Firecracker CI"
+        git push origin main
+      args:
+        executable: /bin/bash
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Wait for push event to register
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Create trigger branch
+      ansible.builtin.shell: |
+        cd /tmp/fc-bench-seed
+        git checkout -b test/trigger-fc-ci
+        echo "// FC CI trigger test" >> app/page.tsx
+        git add -A
+        git commit -m "test: trigger Firecracker CI pipeline"
+        git push origin test/trigger-fc-ci
+      args:
+        executable: /bin/bash
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Create pull request
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/repos/{{ forgejo_admin_user }}/{{ fc_bench_repo_name }}/pulls"
+        method: POST
+        headers:
+          Authorization: "token {{ forgejo_api_token }}"
+        body_format: json
+        body:
+          title: "test: trigger Firecracker CI baseline run"
+          head: "test/trigger-fc-ci"
+          base: "main"
+        status_code: [201]
+      register: pr_result
+
+    - name: Log PR created
+      ansible.builtin.debug:
+        msg: "PR #{{ pr_result.json.number }} created: {{ pr_result.json.title }}"
+
+- name: Wait for CI run to appear and complete
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/repos/{{ forgejo_admin_user }}/{{ fc_bench_repo_name }}/actions/runs"
+    method: GET
+    headers:
+      Authorization: "token {{ forgejo_api_token }}"
+    return_content: true
+  register: runs_result
+  until: >
+    runs_result.json.workflow_runs | default([]) | length > 0
+    and (runs_result.json.workflow_runs | selectattr('status', 'equalto', 'success') | list | length > 0
+         or runs_result.json.workflow_runs | selectattr('status', 'equalto', 'failure') | list | length > 0)
+  retries: "{{ (fc_ci_timeout_seconds | int / 15) | int }}"
+  delay: 15
+  failed_when: false
+
+- name: Evaluate CI results
+  block:
+    - name: Set CI run facts
+      ansible.builtin.set_fact:
+        ci_runs: "{{ runs_result.json.workflow_runs | default([]) }}"
+
+    - name: Log CI run results
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Firecracker CI Results
+          ========================================
+          Total runs: {{ ci_runs | length }}
+          {% for run in ci_runs %}
+          Run #{{ run.id }}: status={{ run.status }} event={{ run.event }}
+          {% endfor %}
+          ========================================
+
+    - name: Assert at least one CI run completed
+      ansible.builtin.assert:
+        that:
+          - ci_runs | length > 0
+          - ci_runs | selectattr('status', 'in', ['success', 'failure']) | list | length > 0
+        fail_msg: "No CI runs completed within {{ fc_ci_timeout_seconds }}s timeout"
+        success_msg: "Firecracker CI pipeline executed successfully"
