@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "ci": {
+      "dependsOn": [
+        "^ci"
+      ],
+      "outputs": [
+        "apps/web/.next/**"
+      ]
+    }
+  }
+}
+

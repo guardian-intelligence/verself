@@ -3,7 +3,7 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: restart bmci-agent
+- name: restart forge-metal-agent
   ansible.builtin.systemd:
-    name: bmci-agent
+    name: forge-metal-agent
     state: restarted

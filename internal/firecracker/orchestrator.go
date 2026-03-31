@@ -33,7 +33,9 @@ type Config struct {
 	JailerGID      int    // unprivileged GID for jailer
 	VCPUs          int    // vCPU count per VM (default 2)
 	MemoryMiB      int    // memory per VM in MiB (default 512)
-	HostInterface  string // outbound interface for NAT (auto-detected if empty)
+	HostInterface  string // outbound interface for guest egress (auto-detected if empty)
+	GuestPoolCIDR  string // guest IPv4 pool subdivided into /30s
+	NetworkLeaseDir string // persistent lease directory for guest network slots
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -46,11 +48,13 @@ func DefaultConfig() Config {
 		FirecrackerBin: "/usr/local/bin/firecracker",
 		JailerBin:      "/usr/local/bin/jailer",
 		JailerRoot:     "/srv/jailer",
-		JailerUID:      10000,
-		JailerGID:      10000,
-		VCPUs:          2,
-		MemoryMiB:      512,
-	}
+			JailerUID:      10000,
+			JailerGID:      10000,
+			VCPUs:          2,
+			MemoryMiB:      2048,
+			GuestPoolCIDR:  defaultGuestPoolCIDR,
+			NetworkLeaseDir: defaultLeaseDir,
+		}
 }
 
 // JobConfig describes the CI job to run inside the VM.
@@ -78,10 +82,6 @@ type JobResult struct {
 type Orchestrator struct {
 	cfg    Config
 	logger *slog.Logger
-	// vmMu serializes VM runs. The tracer bullet uses hardcoded network
-	// constants (single subnet, single TAP IP), so only one VM can run
-	// at a time. Phase 2: network namespaces with per-VM addressing.
-	vmMu sync.Mutex
 }
 
 // New creates an Orchestrator from configuration.
@@ -118,22 +118,6 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		return
 	}
 
-	o.vmMu.Lock()
-	defer o.vmMu.Unlock()
-
-	start := time.Now()
-	logger := o.logger.With("job_id", job.JobID)
-
-	var cleanups []func()
-	defer func() {
-		cleanupStart := time.Now()
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-		result.CleanupTime = time.Since(cleanupStart)
-		result.Duration = time.Since(start)
-	}()
-
 	// --- 1. Verify golden snapshot ---
 	exists, checkErr := zfsSnapshotExists(ctx, o.goldenSnapshot())
 	if checkErr != nil {
@@ -152,91 +136,123 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		err = fmt.Errorf("clone zvol: %w", cloneErr)
 		return
 	}
-	result.CloneTime = time.Since(cloneStart)
-	logger.Info("zvol cloned", "duration_ms", result.CloneTime.Milliseconds(), "dataset", dataset)
+	cloneDuration := time.Since(cloneStart)
+	o.logger.Info("zvol cloned", "job_id", job.JobID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
 
-	cleanups = append(cleanups, func() {
-		if strings.HasPrefix(dataset, o.ciDatasetPrefix()) {
-			if destroyErr := zfsDestroy(context.Background(), dataset); destroyErr != nil {
-				logger.Warn("zvol destroy failed", "err", destroyErr)
-			}
+	result, err = o.runDataset(ctx, job, dataset, true)
+	if err != nil {
+		return result, err
+	}
+	result.CloneTime = cloneDuration
+	return result, nil
+}
+
+// RunDataset executes a job against an existing zvol dataset. When destroyAfter
+// is true, the dataset is destroyed during cleanup.
+func (o *Orchestrator) RunDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (JobResult, error) {
+	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
+		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
+	}
+	return o.runDataset(ctx, job, dataset, destroyAfter)
+}
+
+func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (result JobResult, err error) {
+	start := time.Now()
+	logger := o.logger.With("job_id", job.JobID, "dataset", dataset)
+
+	var cleanups []func()
+	defer func() {
+		cleanupStart := time.Now()
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
 		}
-	})
+		result.CleanupTime = time.Since(cleanupStart)
+		result.Duration = time.Since(start)
+	}()
 
-	// --- 3. Mount clone, write job config, unmount ---
+	if destroyAfter {
+		cleanups = append(cleanups, func() {
+			if strings.HasPrefix(dataset, o.ciDatasetPrefix()) {
+				if destroyErr := zfsDestroy(context.Background(), dataset); destroyErr != nil {
+					logger.Warn("zvol destroy failed", "err", destroyErr)
+				}
+			}
+		})
+	}
+
 	devPath := zvolDevicePath(dataset)
 	mountDir, mountErr := mountZvol(ctx, devPath)
 	if mountErr != nil {
-		err = fmt.Errorf("mount zvol: %w", mountErr)
-		return
+		return result, fmt.Errorf("mount zvol: %w", mountErr)
 	}
 
 	if writeErr := writeJobConfig(mountDir, job); writeErr != nil {
-		unmount(ctx, mountDir)
-		err = fmt.Errorf("write job config: %w", writeErr)
-		return
+		_ = unmount(ctx, mountDir)
+		return result, fmt.Errorf("write job config: %w", writeErr)
 	}
 
 	if umountErr := unmount(ctx, mountDir); umountErr != nil {
-		err = fmt.Errorf("unmount zvol: %w", umountErr)
-		return
+		return result, fmt.Errorf("unmount zvol: %w", umountErr)
 	}
 	logger.Info("job config written to zvol")
 
-	// --- 4. Set up jail ---
 	jailStart := time.Now()
 	jailRoot := o.jailDir(job.JobID)
 	if jailErr := o.setupJail(ctx, jailRoot, devPath); jailErr != nil {
-		err = fmt.Errorf("setup jail: %w", jailErr)
-		return
+		return result, fmt.Errorf("setup jail: %w", jailErr)
 	}
 	result.JailSetupTime = time.Since(jailStart)
 	logger.Info("jail ready", "duration_ms", result.JailSetupTime.Milliseconds())
 
 	jailBase := filepath.Dir(filepath.Dir(jailRoot))
 	cleanups = append(cleanups, func() {
-		os.RemoveAll(jailBase)
+		_ = os.RemoveAll(jailBase)
 	})
 
-	// --- 5. Set up network ---
-	netSetup, netCleanup, netErr := setupNetwork(ctx, job.JobID, o.cfg.HostInterface)
+	netCfg := NetworkPoolConfig{
+		PoolCIDR:      o.cfg.GuestPoolCIDR,
+		LeaseDir:      o.cfg.NetworkLeaseDir,
+		HostInterface: o.cfg.HostInterface,
+	}
+	netSetup, netCleanup, netErr := setupNetwork(ctx, job.JobID, netCfg)
 	if netErr != nil {
-		err = fmt.Errorf("setup network: %w", netErr)
-		return
+		return result, fmt.Errorf("setup network: %w", netErr)
 	}
 	cleanups = append(cleanups, netCleanup)
-	logger.Info("network ready", "tap", netSetup.TapName)
+	logger.Info("network ready",
+		"tap", netSetup.Lease.TapName,
+		"subnet", netSetup.Lease.SubnetCIDR,
+		"guest_ip", netSetup.Lease.GuestIP,
+	)
 
-	// --- 6. Start jailer ---
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
 	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
 
 	jailerCmd, startErr := o.startJailer(job.JobID)
 	if startErr != nil {
-		err = fmt.Errorf("start jailer: %w", startErr)
-		return
+		return result, fmt.Errorf("start jailer: %w", startErr)
 	}
 
-	// Capture serial output from jailer stdout.
 	var logBuf strings.Builder
 	var logWg sync.WaitGroup
 
 	stdout, pipeErr := jailerCmd.StdoutPipe()
 	if pipeErr != nil {
-		err = fmt.Errorf("jailer stdout pipe: %w", pipeErr)
-		return
+		return result, fmt.Errorf("jailer stdout pipe: %w", pipeErr)
 	}
 
 	if execErr := jailerCmd.Start(); execErr != nil {
-		err = fmt.Errorf("jailer exec: %w", execErr)
-		return
+		return result, fmt.Errorf("jailer exec: %w", execErr)
+	}
+	if attachErr := NewAllocator(netCfg).AttachPID(ctx, job.JobID, jailerCmd.Process.Pid); attachErr != nil {
+		return result, fmt.Errorf("record network lease pid: %w", attachErr)
 	}
 
 	var jailerExited atomic.Bool
 	cleanups = append(cleanups, func() {
 		if !jailerExited.Load() {
-			jailerCmd.Process.Kill()
-			jailerCmd.Wait()
+			_ = jailerCmd.Process.Kill()
+			_, _ = jailerCmd.Process.Wait()
 		}
 	})
 
@@ -256,13 +272,10 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 
 	logger.Info("jailer started", "pid", jailerCmd.Process.Pid)
 
-	// --- 7. Wait for API socket ---
 	if waitErr := waitForSocket(ctx, apiSockHost); waitErr != nil {
-		err = fmt.Errorf("wait for API socket: %w", waitErr)
-		return
+		return result, fmt.Errorf("wait for API socket: %w", waitErr)
 	}
 
-	// --- 8. Configure VM via API ---
 	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
 
@@ -278,55 +291,42 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		{"metrics", func() error { return client.putMetrics(ctx, "/metrics.json") }},
 		{"boot-source", func() error { return client.putBootSource(ctx, "/vmlinux", bootArgs) }},
 		{"rootfs", func() error { return client.putDrive(ctx, "rootfs", "/rootfs", true) }},
-		{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
-		{"network", func() error {
-			return client.putNetworkInterface(ctx, "eth0", netSetup.TapName, netSetup.MAC)
-		}},
-	}
+			{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
+			{"network", func() error {
+				return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
+			}},
+		}
 
 	for _, step := range apiSteps {
 		if apiErr := step.fn(); apiErr != nil {
-			err = fmt.Errorf("configure VM %s: %w", step.name, apiErr)
-			return
+			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
 		}
 	}
 
-	// --- 9. Start VM ---
 	if startVMErr := client.startInstance(ctx); startVMErr != nil {
-		err = fmt.Errorf("start VM: %w", startVMErr)
-		return
+		return result, fmt.Errorf("start VM: %w", startVMErr)
 	}
 	result.VMBootTime = time.Since(bootStart)
 	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
-	// --- 10. Wait for VM exit ---
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailerCmd.Wait() }()
 
 	select {
 	case <-waitDone:
 	case <-ctx.Done():
-		jailerCmd.Process.Kill()
+		_ = jailerCmd.Process.Kill()
 		<-waitDone
 	}
 	jailerExited.Store(true)
 
 	logWg.Wait()
 	result.Logs = logBuf.String()
-
-	// --- 11. Parse guest exit code from serial output ---
-	// Firecracker's exit code doesn't reflect the guest command's result.
-	// The init prints FORGEVM_EXIT_CODE=N before reboot(POWER_OFF).
 	result.ExitCode = parseGuestExitCode(result.Logs)
-
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
-	// --- 12. Collect metrics ---
-	// Metrics file is a regular file (not FIFO). Firecracker appends
-	// NDJSON every 60s and on FlushMetrics. Just read it after exit.
 	result.Metrics = parseMetricsFile(metricsPathHost)
 
-	// --- 13. Read ZFS written bytes ---
 	bgCtx, bgCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer bgCancel()
 	if written, writtenErr := zfsWritten(bgCtx, dataset); writtenErr == nil {
@@ -336,12 +336,11 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	logger.Info("job complete",
 		"exit_code", result.ExitCode,
 		"total_ms", time.Since(start).Milliseconds(),
-		"clone_ms", result.CloneTime.Milliseconds(),
 		"boot_ms", result.VMBootTime.Milliseconds(),
 		"zfs_written_mb", result.ZFSWritten/(1024*1024),
 	)
 
-	return
+	return result, nil
 }
 
 // setupJail creates the jail directory structure and places the

@@ -365,7 +365,7 @@ func (w *Wizard) provision(token string) error {
 	apply.Stderr = w.Out
 	apply.Env = env
 	if err := apply.Run(); err != nil {
-		return fmt.Errorf("tofu apply failed: %w\n\nRun `bmci doctor` to check your environment.", err)
+		return fmt.Errorf("tofu apply failed: %w\n\nRun `forge-metal doctor` to check your environment.", err)
 	}
 
 	fmt.Fprintln(w.Out)
@@ -381,7 +381,7 @@ func (w *Wizard) provision(token string) error {
 	fmt.Fprintln(w.Out, "Done! Server provisioned.")
 	fmt.Fprintln(w.Out)
 	fmt.Fprintln(w.Out, "Next steps:")
-	fmt.Fprintln(w.Out, "  bmci setup-domain   Configure DNS (optional)")
+	fmt.Fprintln(w.Out, "  forge-metal setup-domain   Configure DNS (optional)")
 	fmt.Fprintln(w.Out, "  make deploy         Deploy the stack")
 	return nil
 }
