@@ -1,0 +1,53 @@
+---
+# Seed Firecracker CI: golden image, Forgejo action, benchmark repo + PR.
+# Idempotent: skips steps that are already done.
+
+- name: Create scripts directory on server
+  ansible.builtin.file:
+    path: /opt/forge-metal/scripts
+    state: directory
+    mode: "0755"
+
+- name: Deploy forge-vm-run.sh to server
+  ansible.builtin.copy:
+    src: "{{ fc_vm_script_src }}"
+    dest: "{{ fc_vm_script_dest }}"
+    mode: "0755"
+
+- name: Create API token for admin user
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/users/{{ forgejo_admin_user }}/tokens"
+    method: POST
+    user: "{{ forgejo_admin_user }}"
+    password: "{{ forgejo_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      name: "fc-ci-seed-{{ 999999999 | random }}"
+      scopes:
+        - "all"
+    status_code: [201]
+  register: api_token_result
+
+- name: Set API token fact
+  ansible.builtin.set_fact:
+    forgejo_api_token: "{{ api_token_result.json.sha1 }}"
+  no_log: true
+
+- name: Bake golden image
+  ansible.builtin.include_tasks: golden_image.yml
+
+- name: Create forge-ci-action repo
+  ansible.builtin.include_tasks: forge_ci_action.yml
+
+- name: Create fc benchmark repo
+  ansible.builtin.include_tasks: fc_bench_repo.yml
+
+- name: Cleanup temp directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/next-learn-upstream
+    - /tmp/fc-action-seed
+    - /tmp/fc-bench-seed

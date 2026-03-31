@@ -1,0 +1,97 @@
+---
+# Bake Next.js app into the golden zvol so CI jobs have pre-installed deps.
+# Idempotent: skips if /workspace already exists inside the zvol.
+
+- name: Create temp mount point for golden zvol check
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: fc-golden-check-
+  register: golden_check_mount
+
+- name: Mount golden zvol for workspace check
+  ansible.builtin.command: mount /dev/zvol/benchpool/golden-zvol {{ golden_check_mount.path }}
+
+- name: Check if /workspace/node_modules exists (install completed)
+  ansible.builtin.stat:
+    path: "{{ golden_check_mount.path }}/workspace/node_modules"
+  register: workspace_check
+
+- name: Unmount golden zvol after check
+  ansible.builtin.shell: |
+    umount {{ golden_check_mount.path }}
+  args:
+    executable: /bin/bash
+
+- name: Remove check mount point
+  ansible.builtin.file:
+    path: "{{ golden_check_mount.path }}"
+    state: absent
+
+- name: Populate golden image with Next.js app
+  when: not workspace_check.stat.exists
+  block:
+    - name: Destroy old golden snapshot before modifying zvol
+      ansible.builtin.command: zfs destroy benchpool/golden-zvol@ready
+      failed_when: false
+
+    - name: Clone next-learn from GitHub
+      ansible.builtin.git:
+        repo: "{{ fc_bench_clone_url }}"
+        dest: /tmp/next-learn-upstream
+        version: main
+        depth: 1
+        force: true
+
+    - name: Create temp mount point for golden zvol
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: fc-golden-
+      register: golden_mount
+
+    - name: Mount golden zvol
+      ansible.builtin.shell: |
+        mount /dev/zvol/benchpool/golden-zvol {{ golden_mount.path }}
+      args:
+        executable: /bin/bash
+
+    - name: Create workspace directory
+      ansible.builtin.file:
+        path: "{{ golden_mount.path }}/workspace"
+        state: directory
+        mode: "0755"
+
+    - name: Copy dashboard app into workspace
+      ansible.builtin.shell: |
+        cp -a /tmp/next-learn-upstream/{{ fc_bench_subdir }}/. {{ golden_mount.path }}/workspace/
+      args:
+        executable: /bin/bash
+
+    - name: Copy CA certificates into golden image for HTTPS
+      ansible.builtin.shell: |
+        mkdir -p {{ golden_mount.path }}/etc/ssl/certs
+        cp /etc/ssl/certs/ca-certificates.crt {{ golden_mount.path }}/etc/ssl/certs/ca-certificates.crt
+      args:
+        executable: /bin/bash
+
+    - name: Install npm dependencies inside golden image (chroot)
+      ansible.builtin.shell: |
+        chroot {{ golden_mount.path }} bash -c "cd /workspace && SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt npm install --registry=https://registry.npmjs.org"
+      args:
+        executable: /bin/bash
+      environment:
+        HOME: /root
+
+    - name: Unmount golden zvol
+      ansible.builtin.shell: |
+        umount {{ golden_mount.path }}
+      args:
+        executable: /bin/bash
+
+    - name: Remove mount point
+      ansible.builtin.file:
+        path: "{{ golden_mount.path }}"
+        state: absent
+
+- name: Recreate golden snapshot
+  ansible.builtin.command: zfs snapshot benchpool/golden-zvol@ready
+  when: not workspace_check.stat.exists

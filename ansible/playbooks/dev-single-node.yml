@@ -16,3 +16,4 @@
     - verdaccio
     - forgejo
     - benchmark_seed
+    - fc_ci_seed
