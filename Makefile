@@ -1,6 +1,7 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
        doctor setup-sops edit-secrets setup-domain \
-       server-profile provision deprovision deploy e2e benchmark
+       server-profile provision deprovision deploy e2e benchmark \
+       guest-rootfs deploy-ci-artifacts
 
 BINARY   := bmci
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -76,6 +77,24 @@ deploy: ## Deploy to all nodes (idempotent, no wipe)
 e2e: ## Full wipe + reprovision + test
 	cd ansible && ansible-playbook playbooks/ci-e2e.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
+
+guest-rootfs: ## Build Alpine guest rootfs on the server
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
+	@echo "→ building forgevm-init (static, linux/amd64)"
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o /tmp/forgevm-init ./cmd/forgevm-init
+	@echo "→ uploading build script, version pins, and forgevm-init"
+	scp $(SSH_OPTS) scripts/build-guest-rootfs.sh ci/versions.json /tmp/forgevm-init \
+		$(REMOTE_USER)@$(REMOTE_HOST):/tmp/
+	@echo "→ building guest rootfs on $(REMOTE_HOST)"
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'cd /tmp && sudo env "PATH=$(REMOTE_PATH)" bash build-guest-rootfs.sh'
+
+deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
+	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
+		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4'
 
 BENCH_ITERATIONS ?= 5
 

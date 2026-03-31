@@ -1,0 +1,12 @@
+{
+  "alpine": {
+    "version": "3.21.6",
+    "arch": "x86_64",
+    "url": "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.6-x86_64.tar.gz",
+    "sha256": "460e7ea6d359b7ea6913326639cb88e5eef65292a09b63c89b4aecf048a90959"
+  },
+  "firecracker": {
+    "version": "1.14.2",
+    "note": "Static binaries at /usr/local/bin/ deployed separately"
+  }
+}
