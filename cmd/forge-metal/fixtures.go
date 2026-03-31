@@ -23,22 +23,24 @@ func fixturesCmd() *cobra.Command {
 
 func fixturesE2ECmd() *cobra.Command {
 	var (
-		fixturesRoot  string
-		forgejoURL    string
-		owner         string
-		token         string
-		username      string
-		password      string
-		email         string
-		pool          string
-		goldenZvol    string
-		kernelPath    string
-		fcBin         string
-		jailerBin     string
-		vcpus         int
-		memoryMiB     int
-		timeout       string
-		hostInterface string
+		fixturesRoot    string
+		forgejoURL      string
+		owner           string
+		token           string
+		username        string
+		password        string
+		email           string
+		pool            string
+		goldenZvol      string
+		kernelPath      string
+		fcBin           string
+		jailerBin       string
+		vcpus           int
+		memoryMiB       int
+		timeout         string
+		hostInterface   string
+		guestPoolCIDR   string
+		networkLeaseDir string
 	)
 
 	cmd := &cobra.Command{
@@ -48,7 +50,7 @@ func fixturesE2ECmd() *cobra.Command {
 			if owner == "" {
 				return fmt.Errorf("owner is required")
 			}
-			cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface)
+			cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
 			if err != nil {
 				return err
 			}
@@ -98,6 +100,6 @@ func fixturesE2ECmd() *cobra.Command {
 	cmd.Flags().StringVar(&username, "username", "", "Forgejo username for token creation and git pushes")
 	cmd.Flags().StringVar(&password, "password", "", "Forgejo password for token creation")
 	cmd.Flags().StringVar(&email, "email", "forge-metal-fixtures@local", "Git author email for seeded commits")
-	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface)
+	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)
 	return cmd
 }
