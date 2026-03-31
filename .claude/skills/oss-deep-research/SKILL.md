@@ -23,5 +23,3 @@ Extract from the landscape anything surprising, interesting, or otherwise notewo
 Pay special attention to subtle inaccuracies like our research containing contradictory information or outdated information due to new releases. Filter out information that is incorrect, low-signal, or obsolete.
 
 Your output contract is a git commit prefixed [epic:research:$1] such that when the diff is viewed in context with the previous commits with the same prefix, it will create a story of deepening technical research into the topic. All changes should be to files within the docs/research/$1 directory.
-
-Then /loop 1m continue-oss-deep-research $1
