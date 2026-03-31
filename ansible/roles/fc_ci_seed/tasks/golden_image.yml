@@ -1,6 +1,19 @@
 ---
 # Bake Next.js app into the golden zvol so CI jobs have pre-installed deps.
-# Idempotent: skips if /workspace already exists inside the zvol.
+# Idempotent: skips if /workspace/node_modules already exists inside the zvol.
+#
+# HACK: This entire file is next-learn specific. A real platform would accept
+# any workload config and generalize the bake process. The SSL patch, seed.sql,
+# and hardcoded paths are all next-learn artifacts.
+#
+# HACK: The Postgres seed task (line ~97) requires bind-mounting /dev and /proc
+# into the chroot. On the server this was done manually — this Ansible task has
+# NOT been tested end-to-end via ansible-playbook. The chroot needs:
+#   mount --bind /dev $MNT/dev && mount --bind /proc $MNT/proc
+# before pg_ctl start, and corresponding umounts after pg_ctl stop.
+#
+# HACK: zvol name is hardcoded to golden-zvol, but server uses golden-zvol2.
+# These must match forge-vm-run.sh's GOLDEN_SNAP constant.
 
 - name: Create temp mount point for golden zvol check
   ansible.builtin.tempfile:
@@ -81,6 +94,36 @@
       environment:
         HOME: /root
 
+    # HACK: next-learn hardcodes ssl: 'require' for Postgres connections.
+    # We patch it to ssl: false because Postgres runs on localhost inside the VM.
+    # LEARNING: sed -i fails on zvols with "Structure needs cleaning" after
+    # repeated create/destroy cycles. Use python3 for reliable in-place edits.
+    - name: Patch postgres client to disable SSL (localhost, no TLS needed)
+      ansible.builtin.shell: |
+        sed -i "s/ssl: 'require'/ssl: false/g" {{ golden_mount.path }}/workspace/app/lib/data.ts
+        sed -i "s/ssl: 'require'/ssl: false/g" {{ golden_mount.path }}/workspace/app/seed/route.ts
+      args:
+        executable: /bin/bash
+
+    - name: Copy seed.sql into golden image
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../ci/seed.sql"
+        dest: "{{ golden_mount.path }}/tmp/seed.sql"
+        mode: "0644"
+
+    - name: Seed PostgreSQL database in golden image
+      ansible.builtin.shell: |
+        # Start Postgres inside the chroot
+        chroot {{ golden_mount.path }} bash -c '
+          mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
+          su postgres -c "pg_ctl start -D /var/lib/postgresql/data -l /tmp/pg.log -o \"-k /run/postgresql -h localhost\" -w"
+          su postgres -c "createdb nextlearn"
+          su postgres -c "psql -d nextlearn -f /tmp/seed.sql"
+          su postgres -c "pg_ctl stop -D /var/lib/postgresql/data -m fast"
+        '
+      args:
+        executable: /bin/bash
+
     - name: Unmount golden zvol
       ansible.builtin.shell: |
         umount {{ golden_mount.path }}
@@ -92,6 +135,10 @@
         path: "{{ golden_mount.path }}"
         state: absent
 
-- name: Recreate golden snapshot
-  ansible.builtin.command: zfs snapshot benchpool/golden-zvol@ready
+- name: Ensure golden snapshot exists
+  ansible.builtin.shell: |
+    zfs list -t snapshot benchpool/golden-zvol@ready >/dev/null 2>&1 || \
+    zfs snapshot benchpool/golden-zvol@ready
+  args:
+    executable: /bin/bash
   when: not workspace_check.stat.exists

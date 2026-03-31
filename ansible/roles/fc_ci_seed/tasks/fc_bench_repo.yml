@@ -62,18 +62,22 @@
         state: directory
         mode: "0755"
 
+    # HACK: POSTGRES_URL and AUTH_SECRET are inline env vars in the run command.
+    # A real platform would set these via the action's env input or a .env file.
+    # HACK: /ci-start.sh is called explicitly — should be automatic when the
+    # golden image includes services (Postgres, Redis, etc).
     - name: Write CI workflow
       ansible.builtin.copy:
         content: |
           name: CI (Firecracker)
           on: [push, pull_request]
           jobs:
-            typecheck:
+            ci:
               runs-on: ubuntu-latest
               steps:
                 - uses: http://127.0.0.1:3000/{{ forgejo_admin_user }}/forge-ci-action@main
                   with:
-                    run: npx tsc --noEmit
+                    run: /ci-start.sh bash -c "node_modules/.bin/tsc --noEmit && POSTGRES_URL=postgresql://postgres@localhost/nextlearn AUTH_SECRET=ci-secret npx --offline next build"
         dest: /tmp/fc-bench-seed/.forgejo/workflows/ci.yml
         mode: "0644"
 
