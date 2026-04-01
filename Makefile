@@ -74,9 +74,7 @@ deploy: ## Deploy to all nodes (idempotent, no wipe)
 	cd ansible && ansible-playbook playbooks/dev-single-node.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
 
-e2e: ## Full wipe + reprovision + test
-	cd ansible && ansible-playbook playbooks/ci-e2e.yml \
-		-e nix_server_profile_path=$(NIX_PROFILE)
+e2e: fixtures-e2e ## Deploy Forgejo + Firecracker and validate fixture repos
 
 guest-rootfs: ## Build Alpine guest rootfs on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
@@ -96,7 +94,7 @@ deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
 		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4 && sudo cp /tmp/ci/output/vmlinux /var/lib/ci/vmlinux'
 
-fixtures-e2e: ## Deploy Forgejo + Firecracker and validate two controlled Next.js fixtures
+fixtures-e2e: ## Deploy Forgejo + Firecracker and validate controlled Next.js fixtures
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
 	$(MAKE) guest-rootfs
 	$(MAKE) deploy-ci-artifacts

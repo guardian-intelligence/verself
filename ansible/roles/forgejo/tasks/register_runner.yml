@@ -12,6 +12,31 @@
     path: /etc/forgejo
     mode: "0755"
 
+- name: Resolve Forgejo runner capacity
+  ansible.builtin.set_fact:
+    forgejo_runner_capacity_effective: >-
+      {{
+        (
+          forgejo_runner_capacity
+          if forgejo_runner_capacity is not none
+          else (
+            ansible_facts.processor_vcpus
+            | default(ansible_processor_vcpus)
+            | default(ansible_facts.processor_nproc)
+            | default(ansible_processor_nproc)
+            | default(1)
+          )
+        ) | int
+      }}
+
+- name: Assert Forgejo runner capacity is valid
+  ansible.builtin.assert:
+    that:
+      - forgejo_runner_capacity_effective > 0
+    fail_msg: >-
+      Forgejo runner capacity must be a positive integer; got
+      {{ forgejo_runner_capacity_effective }}.
+
 - name: Generate default runner config
   ansible.builtin.command: >
     {{ fm_bin }}/forgejo-runner generate-config
@@ -37,7 +62,7 @@
   ansible.builtin.lineinfile:
     path: /etc/forgejo/runner-config.yaml
     regexp: '^(\s*)capacity:\s*.*$'
-    line: '  capacity: {{ forgejo_runner_capacity }}'
+    line: '  capacity: {{ forgejo_runner_capacity_effective }}'
     backrefs: false
   register: runner_capacity_line
 
