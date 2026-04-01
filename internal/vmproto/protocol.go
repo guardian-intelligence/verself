@@ -66,8 +66,10 @@ type RunRequest struct {
 	Env                 map[string]string `json:"env,omitempty"`
 	Network             NetworkConfig     `json:"network"`
 	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
-	TemplateGeneration  string            `json:"template_generation,omitempty"`
-	ProtocolVersion     int               `json:"protocol_version"`
+	// TemplateGeneration is reserved for the next snapshot/template phase.
+	// The cold-boot runtime leaves it empty.
+	TemplateGeneration string `json:"template_generation,omitempty"`
+	ProtocolVersion    int    `json:"protocol_version"`
 }
 
 type PhaseStart struct {

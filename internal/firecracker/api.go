@@ -66,19 +66,15 @@ type actionReq struct {
 	ActionType string `json:"action_type"`
 }
 
-type loggerReq struct {
-	LogPath    string `json:"log_path"`
-	Level      string `json:"level"`
-	ShowLevel  bool   `json:"show_level"`
-	ShowOrigin bool   `json:"show_log_origin"`
-}
-
 type metricsReq struct {
 	MetricsPath string `json:"metrics_path"`
 }
 
 type entropyReq struct{}
 
+// The snapshot helpers below are intentionally reserved for the next runtime
+// phase. The current cold-boot path does not call them, but restore support
+// will build on this exact Firecracker v1.15.0 API surface.
 type vmStateReq struct {
 	State string `json:"state"`
 }
@@ -148,15 +144,6 @@ func (c *apiClient) putVsock(ctx context.Context, guestCID uint32, udsPath strin
 	})
 }
 
-func (c *apiClient) putLogger(ctx context.Context, logPath string) error {
-	return c.put(ctx, "/logger", loggerReq{
-		LogPath:    logPath,
-		Level:      "Warning",
-		ShowLevel:  true,
-		ShowOrigin: true,
-	})
-}
-
 func (c *apiClient) putMetrics(ctx context.Context, metricsPath string) error {
 	return c.put(ctx, "/metrics", metricsReq{
 		MetricsPath: metricsPath,
@@ -194,10 +181,6 @@ func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath 
 
 func (c *apiClient) startInstance(ctx context.Context) error {
 	return c.put(ctx, "/actions", actionReq{ActionType: "InstanceStart"})
-}
-
-func (c *apiClient) flushMetrics(ctx context.Context) error {
-	return c.put(ctx, "/actions", actionReq{ActionType: "FlushMetrics"})
 }
 
 // put sends a PUT request with JSON body.

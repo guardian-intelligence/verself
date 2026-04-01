@@ -21,7 +21,6 @@ import (
 const (
 	defaultGuestPoolCIDR = "172.16.0.0/16"
 	defaultLeaseDir      = "/var/lib/ci/net/leases"
-	defaultGuestNetmask  = "255.255.255.252"
 	defaultIf            = "eth0"
 	pendingLeaseTTL      = 5 * time.Minute
 )
@@ -44,7 +43,6 @@ type NetworkLease struct {
 	HostCIDR     string    `json:"host_cidr"`
 	GuestIP      string    `json:"guest_ip"`
 	GatewayIP    string    `json:"gateway_ip"`
-	Netmask      string    `json:"netmask"`
 	MAC          string    `json:"mac"`
 	PID          int       `json:"pid,omitempty"`
 	CreatedAtUTC time.Time `json:"created_at_utc"`
@@ -363,7 +361,6 @@ func deriveLease(pool netip.Prefix, jobID string, slot int) (NetworkLease, error
 		HostCIDR:     hostCIDR,
 		GuestIP:      guestIP.String(),
 		GatewayIP:    gatewayIP.String(),
-		Netmask:      defaultGuestNetmask,
 		MAC:          macForSlot(slot),
 		CreatedAtUTC: time.Now().UTC(),
 	}, nil

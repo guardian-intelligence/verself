@@ -79,7 +79,7 @@ Those are fixture orchestration concerns, not workload execution concerns.
 - Fixture metadata for Forgejo E2E lives in the internal fixture layer, not in `.forge-metal/ci.toml`.
 - Toolchain detection is derived behavior behind the current Node profile; it is not part of the repo-owned config surface.
 - The host now sends structured guest phases instead of generating `bash -lc` scripts. Shell is still allowed, but only when the workload explicitly uses it in `run` or `prepare`.
-- Per-job guest config is injected through Firecracker MMDS, not by mounting and mutating the cloned root disk before boot.
+- Per-job guest config is delivered over the host-initiated vsock control stream. MMDS is not part of the steady-state runtime path.
 
 ## Basic Commands
 
