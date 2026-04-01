@@ -29,7 +29,6 @@
   ansible.builtin.copy:
     content: |
       bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/profile/bin/forge-metal ci exec *
-      bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/scripts/forge-vm-run.sh *
     dest: /etc/sudoers.d/bench-ci-firecracker
     mode: "0440"
     validate: "visudo -cf %s"

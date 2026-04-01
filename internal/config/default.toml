@@ -1,22 +1,6 @@
 # forge-metal default configuration
 # Override with forge-metal.toml, --config flag, or environment variables.
 
-[controller]
-listen = "0.0.0.0:8443"
-grpc_listen = "0.0.0.0:9443"
-
-[controller.queue]
-# SQLite-backed job queue
-db_path = "/var/lib/forge-metal/queue.db"
-
-[agent]
-heartbeat_interval = "5s"
-controller_addr = ""
-
-[agent.sandbox]
-runtime = "runsc"  # gVisor
-max_concurrent_jobs = 1
-
 [clickhouse]
 addr = "127.0.0.1:9000"
 database = "forge_metal"
