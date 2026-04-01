@@ -1,7 +1,7 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
        doctor setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
-       guest-rootfs deploy-ci-artifacts fixtures-e2e
+       guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build
 
 BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -17,6 +17,9 @@ NIX_PROFILE = $(shell nix build .#server-profile --no-link --print-out-paths 2>/
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) ./cmd/forge-metal
+
+smelter-build: ## Build the homestead-smelter Zig host/guest binaries
+	cd homestead-smelter && zig build -Doptimize=ReleaseSafe
 
 clean:
 	rm -f $(BINARY)
@@ -79,11 +82,23 @@ e2e: fixtures-e2e ## Deploy Forgejo + Firecracker and validate fixture repos
 guest-rootfs: ## Build Alpine guest rootfs on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
 	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
+	@if command -v zig >/dev/null 2>&1; then \
+		echo "→ building homestead-smelter guest (zig)"; \
+		cd homestead-smelter && zig build -Doptimize=ReleaseSafe; \
+		cp homestead-smelter/zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest 2>/dev/null || \
+		cp zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest; \
+	else \
+		echo "→ skipping homestead-smelter guest (zig not in PATH)"; \
+		rm -f /tmp/homestead-smelter-guest; \
+	fi
 	@echo "→ building forgevm-init (static, linux/amd64)"
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o /tmp/forgevm-init ./cmd/forgevm-init
 	@echo "→ uploading build script, version pins, and forgevm-init"
-	scp $(SSH_OPTS) scripts/build-guest-rootfs.sh ci/versions.json /tmp/forgevm-init \
-		$(REMOTE_USER)@$(REMOTE_HOST):/tmp/
+	@UPLOADS="scripts/build-guest-rootfs.sh ci/versions.json /tmp/forgevm-init"; \
+	if [ -f /tmp/homestead-smelter-guest ]; then \
+		UPLOADS="$$UPLOADS /tmp/homestead-smelter-guest"; \
+	fi; \
+	scp $(SSH_OPTS) $$UPLOADS $(REMOTE_USER)@$(REMOTE_HOST):/tmp/
 	@echo "→ building guest rootfs on $(REMOTE_HOST)"
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
 		'cd /tmp && sudo env "PATH=$(REMOTE_PATH)" bash build-guest-rootfs.sh'

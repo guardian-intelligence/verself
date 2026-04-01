@@ -143,6 +143,15 @@ else
   exit 1
 fi
 
+# --- Install homestead-smelter guest agent when present ---
+# This is optional for now. The host-side hello-world can connect to it over the
+# existing Firecracker vsock bridge on a separate port from the Go control plane.
+if [[ -f "$SCRIPT_DIR/homestead-smelter-guest" ]]; then
+  echo "→ installing homestead-smelter-guest"
+  install -D -m 0755 "$SCRIPT_DIR/homestead-smelter-guest" \
+    "$ROOTFS/usr/local/bin/homestead-smelter-guest"
+fi
+
 # --- Essential config ---
 cat > "$ROOTFS/etc/passwd" <<'PASSWD'
 root:x:0:0:root:/root:/bin/bash

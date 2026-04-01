@@ -143,6 +143,27 @@
     state: started
     daemon_reload: true
 
+- name: Install homestead-smelter host service
+  ansible.builtin.template:
+    src: homestead-smelter-host.service.j2
+    dest: /etc/systemd/system/homestead-smelter-host.service
+    mode: "0644"
+  notify: restart homestead smelter
+
+- name: Ensure homestead-smelter host service is enabled and started
+  ansible.builtin.systemd:
+    name: homestead-smelter-host.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Verify homestead-smelter host service responds
+  ansible.builtin.command: >
+    {{ fm_bin }}/homestead-smelter-host ping
+    --control-uds {{ fc_smelter_control_socket }}
+  register: smelter_ping
+  changed_when: false
+
 # --- Guest artifact verification ---
 # Artifacts built by scripts/build-guest-rootfs.sh, pre-staged to /var/lib/ci/.
 

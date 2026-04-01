@@ -1,0 +1,16 @@
+[Unit]
+Description=Homestead Smelter Firecracker Host Agent
+After=network-online.target forge-metal-firecracker-network.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ fm_bin }}/homestead-smelter-host serve --listen-uds {{ fc_smelter_control_socket }}
+Restart=always
+RestartSec=2
+RuntimeDirectory=homestead-smelter
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

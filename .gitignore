@@ -41,6 +41,10 @@ Thumbs.db
 result
 result-*
 
+# Zig
+homestead-smelter/.zig-cache/
+homestead-smelter/zig-out/
+
 # CI build artifacts
 ci/output/rootfs.ext4
 ci/output/sbom.txt
