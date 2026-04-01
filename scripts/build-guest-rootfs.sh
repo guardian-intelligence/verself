@@ -164,8 +164,6 @@ mkdir -p "$ROOTFS"/{etc/ci,home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,de
 
 # --- Initialize PostgreSQL data directory ---
 echo "→ initializing PostgreSQL"
-mkdir -p "$ROOTFS/run/postgresql"
-chown 70:70 "$ROOTFS/run/postgresql"  # postgres uid/gid on Alpine
 # LEARNING: initdb needs /dev/null which doesn't exist in an unpacked tarball.
 # mknod fails because Alpine's /dev has conflicting entries. bind-mount works.
 mount --bind /dev "$ROOTFS/dev"
