@@ -195,9 +195,6 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 	}
 
 	witness := startLeaseWitness(mgr.firecrackerConfig.NetworkLeaseDir)
-	defer func() {
-		logLeaseWitnessSummary(logger, runID, witness.Stop())
-	}()
 
 	triggered := make([]triggeredFixture, 0, len(prepared))
 	for _, item := range prepared {
@@ -217,6 +214,12 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA); err != nil {
 			return err
 		}
+	}
+
+	summary := witness.Stop()
+	logLeaseWitnessSummary(logger, runID, summary)
+	if err := validateLeaseWitnessSummary(summary, len(triggered)); err != nil {
+		return fmt.Errorf("fixture runtime overlap check failed: %w", err)
 	}
 
 	return nil
@@ -372,6 +375,23 @@ func logLeaseWitnessSummary(logger *slog.Logger, runID string, summary leaseWitn
 		return
 	}
 	logger.Warn("fixture parallelism not observed", attrs...)
+}
+
+func validateLeaseWitnessSummary(summary leaseWitnessSummary, expectedJobs int) error {
+	if expectedJobs <= 0 {
+		return fmt.Errorf("expected_jobs must be positive")
+	}
+	if len(summary.DistinctJobIDs) < expectedJobs {
+		return fmt.Errorf("observed %d distinct jobs, expected %d", len(summary.DistinctJobIDs), expectedJobs)
+	}
+	requiredOverlap := 2
+	if expectedJobs == 1 {
+		requiredOverlap = 1
+	}
+	if summary.MaxActiveLeases < requiredOverlap {
+		return fmt.Errorf("max active leases %d, required at least %d", summary.MaxActiveLeases, requiredOverlap)
+	}
+	return nil
 }
 
 func forgejoRepoURL(baseURL, owner, repo string) string {

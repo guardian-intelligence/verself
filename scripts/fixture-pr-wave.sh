@@ -251,5 +251,24 @@ printf 'peak_leases\t%s\n' "$peak_leases"
 printf 'peak_taps\t%s\n' "$peak_taps"
 printf 'peak_jailers\t%s\n' "$peak_jailers"
 
+expected_jobs=$((${#repos[@]} * prs_per_repo))
+required_overlap=2
+if [ "$expected_jobs" -lt 2 ]; then
+  required_overlap=1
+fi
+
+if [ "$peak_leases" -lt "$required_overlap" ]; then
+  echo "expected at least ${required_overlap} overlapping active leases, observed ${peak_leases}" >&2
+  exit 1
+fi
+if [ "$peak_taps" -lt "$required_overlap" ]; then
+  echo "expected at least ${required_overlap} overlapping tap devices, observed ${peak_taps}" >&2
+  exit 1
+fi
+if [ "$peak_jailers" -lt "$required_overlap" ]; then
+  echo "expected at least ${required_overlap} overlapping jailers, observed ${peak_jailers}" >&2
+  exit 1
+fi
+
 exit "$status_rc"
 EOF
