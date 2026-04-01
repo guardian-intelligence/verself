@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # build-guest-rootfs.sh — Build an Alpine-based ext4 rootfs for Firecracker CI VMs.
-# Replaces the former Nix ciGuestRootfs derivation. Standard Linux paths, standard SBOM.
+# Standard Linux paths, standard SBOM.
 #
 # LEARNING: Nix rootfs had /nix/store/ symlink farms inside the guest. Alpine gives
 # standard paths (/usr/bin/node, /usr/bin/git) that work natively with forgevm-init's
 # PATH resolution and chroot-based golden image baking.
 #
 # Two-layer architecture:
-#   Layer 1 (this script): base OS + packages + initdb → rootfs.ext4
-#   Layer 2 (golden_image.yml): app code + npm install + DB seed → ZFS snapshot
+#   Layer 1 (this script): base OS + packages + initdb -> rootfs.ext4
+#   Layer 2 (repo warm): repo checkout + prepare command + optional DB setup -> ZFS snapshot
 #
 # Requires: root, internet access, e2fsprogs. go only if no pre-built forgevm-init.
 # Produces: ci/output/rootfs.ext4, ci/output/sbom.txt
@@ -94,7 +94,7 @@ fi
 chroot "$ROOTFS" /bin/sh -c "corepack enable || true"
 
 # --- Install forgevm-init (static Go binary → /sbin/init) ---
-# If a pre-built binary exists next to the script (e.g., scp'd by Makefile), use it.
+# If a pre-built binary exists next to the script (for example, scp'd by Makefile), use it.
 # Otherwise, build from source (requires Go project checkout).
 # LEARNING: Alpine creates /sbin/init as a busybox symlink. `cp` follows symlinks,
 # so without this rm, cp overwrites /bin/busybox instead of replacing the symlink.
@@ -201,13 +201,6 @@ cd "$workdir"
 exec "$@"
 WRAPPER
 chmod +x "$ROOTFS/usr/local/bin/forge-metal-ci-run"
-
-# Backward-compatible wrapper for the earlier tracer bullet path.
-cat > "$ROOTFS/ci-start.sh" << 'WRAPPER'
-#!/bin/sh
-exec /usr/local/bin/forge-metal-ci-run --services postgres --workdir /workspace -- "$@"
-WRAPPER
-chmod +x "$ROOTFS/ci-start.sh"
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"

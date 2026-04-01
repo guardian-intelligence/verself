@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -36,7 +37,59 @@ func TestBuildGuestCommand_InstallsFromRepoRootAndRunsFromWorkdir(t *testing.T) 
 		t.Fatalf("install script: got %q", script)
 	}
 	if !strings.Contains(script, "cd '/workspace/apps/web' && 'bun' 'run' 'ci'") {
-		t.Fatalf("ci script: got %q", script)
+		t.Fatalf("run script: got %q", script)
+	}
+}
+
+func TestBuildGuestCommand_UsesPrepareDuringWarm(t *testing.T) {
+	manifest := &Manifest{
+		Version: 1,
+		WorkDir: ".",
+		Prepare: []string{"npm", "run", "warm"},
+		Run:     []string{"npm", "test"},
+		Profile: RuntimeProfileNode,
+	}
+	toolchain := &Toolchain{PackageManager: PackageManagerNPM}
+
+	cmd := buildGuestCommand(manifest, toolchain, false, true)
+	if !strings.Contains(cmd[9], "cd '/workspace' && 'npm' 'run' 'warm'") {
+		t.Fatalf("warm script: got %q", cmd[9])
+	}
+	if strings.Contains(cmd[9], "'npm' 'test'") {
+		t.Fatalf("warm script unexpectedly contains run command: %q", cmd[9])
+	}
+}
+
+func TestBuildJobEnv_IncludesCIAndConfiguredVars(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://fixture")
+	manifest := &Manifest{
+		Version: 1,
+		Run:     []string{"npm", "test"},
+		Env:     []string{"DATABASE_URL"},
+	}
+
+	env, err := buildJobEnv(manifest)
+	if err != nil {
+		t.Fatalf("buildJobEnv: %v", err)
+	}
+	if env["CI"] != "true" {
+		t.Fatalf("CI env: got %q", env["CI"])
+	}
+	if env["DATABASE_URL"] != "postgres://fixture" {
+		t.Fatalf("DATABASE_URL env: got %q", env["DATABASE_URL"])
+	}
+}
+
+func TestBuildJobEnv_RequiresConfiguredVars(t *testing.T) {
+	manifest := &Manifest{
+		Version: 1,
+		Run:     []string{"npm", "test"},
+		Env:     []string{"MISSING_SECRET"},
+	}
+
+	_, err := buildJobEnv(manifest)
+	if err == nil || !strings.Contains(err.Error(), "required env MISSING_SECRET is not set") {
+		t.Fatalf("buildJobEnv error: %v", err)
 	}
 }
 
@@ -61,5 +114,23 @@ func TestPRNumberFromRef(t *testing.T) {
 	}
 	if got := prNumberFromRef("refs/heads/main"); got != 0 {
 		t.Fatalf("prNumberFromRef non-PR ref: got %d want 0", got)
+	}
+}
+
+func TestSortedEnvKeys_RedactsValues(t *testing.T) {
+	keys := sortedEnvKeys(map[string]string{
+		"B": "two",
+		"A": "one",
+	})
+	if got := strings.Join(keys, ","); got != "A,B" {
+		t.Fatalf("sortedEnvKeys: got %q", got)
+	}
+}
+
+func TestWriteManifestForTestHelperUsesExpectedPath(t *testing.T) {
+	root := t.TempDir()
+	writeManifestForTest(t, root, "version = 1\nrun = [\"npm\", \"test\"]\n")
+	if _, err := os.Stat(filepath.Join(root, ".forge-metal", "ci.toml")); err != nil {
+		t.Fatalf("stat manifest: %v", err)
 	}
 }

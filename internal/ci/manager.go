@@ -97,6 +97,11 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
+	jobEnv, err := buildJobEnv(manifest)
+	if err != nil {
+		_ = unmountDataset(context.Background(), mountDir)
+		return err
+	}
 	if err := writeLockfileHash(workspace, toolchain); err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
 		return err
@@ -106,9 +111,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		JobID:   uuid.NewString(),
 		WorkDir: "/workspace",
 		Command: buildGuestCommand(manifest, toolchain, true, true),
-		Env: map[string]string{
-			"CI": "true",
-		},
+		Env:     jobEnv,
 	}
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		return err
@@ -162,7 +165,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		return nil, err
 	}
 	if repoDataset == "" {
-		repoDataset = m.legacyRepoGoldenDataset(repoKey)
+		return nil, fmt.Errorf("repo golden for %s does not exist; run warm first", req.Repo)
 	}
 	snapshot := repoDataset + "@ready"
 	exists, err := snapshotExists(ctx, snapshot)
@@ -188,6 +191,11 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 	}
 
 	workspace := filepath.Join(mountDir, "workspace")
+	if err := fetchRef(workspace, req.Ref); err != nil {
+		_ = unmountDataset(context.Background(), mountDir)
+		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		return nil, err
+	}
 	manifest, err := LoadManifest(workspace)
 	if err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
@@ -200,7 +208,8 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
 		return nil, err
 	}
-	if err := fetchRef(workspace, req.Ref); err != nil {
+	jobEnv, err := buildJobEnv(manifest)
+	if err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
 		return nil, err
@@ -222,9 +231,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		JobID:   jobID,
 		WorkDir: "/workspace",
 		Command: buildGuestCommand(manifest, toolchain, installNeeded, false),
-		Env: map[string]string{
-			"CI": "true",
-		},
+		Env:     jobEnv,
 	}
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
@@ -270,10 +277,6 @@ func (m *Manager) repoGoldensRootDataset() string {
 	return fmt.Sprintf("%s/%s", m.firecrackerConfig.Pool, repoGoldensDataset)
 }
 
-func (m *Manager) legacyRepoGoldenDataset(repoKey string) string {
-	return fmt.Sprintf("%s/%s", m.repoGoldensRootDataset(), repoKey)
-}
-
 func (m *Manager) nextRepoGoldenDataset(repoKey string) string {
 	return fmt.Sprintf("%s/%s-%d", m.repoGoldensRootDataset(), repoKey, time.Now().UTC().UnixNano())
 }
@@ -303,13 +306,16 @@ func (m *Manager) writeActiveRepoGoldenDataset(repoKey, dataset string) error {
 func buildGuestCommand(manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool) []string {
 	parts := make([]string, 0, 2)
 	repoRoot := "/workspace"
-	if installNeeded {
-		parts = append(parts, fmt.Sprintf("cd %s && %s", shellQuote(repoRoot), shellJoin(toolchain.InstallCommand())))
+	switch resolvedProfile(manifest) {
+	case RuntimeProfileNode:
+		if installNeeded {
+			parts = append(parts, fmt.Sprintf("cd %s && %s", shellQuote(repoRoot), shellJoin(toolchain.InstallCommand())))
+		}
 	}
 
-	command := manifest.CICommand
+	command := manifest.Run
 	if warm {
-		command = manifest.WarmCommand
+		command = manifest.ResolvedPrepare()
 	}
 	parts = append(parts, fmt.Sprintf("cd %s && %s", shellQuote(manifest.RepoWorkDir()), shellJoin(command)))
 
@@ -322,6 +328,27 @@ func buildGuestCommand(manifest *Manifest, toolchain *Toolchain, installNeeded b
 		"--",
 		"bash", "-lc", strings.Join(parts, " && "),
 	}
+}
+
+func buildJobEnv(manifest *Manifest) (map[string]string, error) {
+	env := map[string]string{
+		"CI": "true",
+	}
+	for _, name := range manifest.Env {
+		value, ok := os.LookupEnv(name)
+		if !ok {
+			return nil, fmt.Errorf("required env %s is not set", name)
+		}
+		env[name] = value
+	}
+	return env, nil
+}
+
+func resolvedProfile(manifest *Manifest) RuntimeProfile {
+	if manifest == nil || manifest.Profile == "" || manifest.Profile == RuntimeProfileAuto {
+		return RuntimeProfileNode
+	}
+	return manifest.Profile
 }
 
 func fetchRef(repoRoot, ref string) error {

@@ -11,7 +11,7 @@ import (
 )
 
 // apiClient is a thin HTTP client over a Firecracker Unix socket.
-// Covers only the endpoints needed for the tracer bullet.
+// It covers only the endpoints used by forge-metal's VM runtime.
 type apiClient struct {
 	client *http.Client
 	base   string // "http://localhost" (routed via Unix socket)

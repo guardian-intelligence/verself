@@ -1,14 +1,2 @@
 version = 1
-repo_name = "next-npm-workspaces"
-description = "npm workspaces monorepo fixture with a root-level CI entrypoint"
-default_branch = "main"
-workdir = "."
-services = []
-warm_command = ["npm", "run", "ci"]
-ci_command = ["npm", "run", "ci"]
-pr_branch = "test/forge-metal-warm-path"
-pr_title = "test: trigger forge-metal warm path"
-pr_commit_message = "test: trigger forge-metal warm path"
-pr_change_path = "apps/dashboard/app/page.js"
-pr_change_find = "Hello from npm workspace main"
-pr_change_replace = "Hello from npm workspace warm PR"
+run = ["npm", "run", "ci"]

@@ -14,6 +14,61 @@ type Fixture struct {
 	Name     string
 	Path     string
 	Manifest *Manifest
+	Metadata FixtureMetadata
+}
+
+type FixtureMetadata struct {
+	Description     string
+	DefaultBranch   string
+	PRBranchBase    string
+	PRTitle         string
+	PRCommitMessage string
+	PRChangePath    string
+	PRChangeFind    string
+	PRChangeReplace string
+}
+
+var fixtureMetadataByName = map[string]FixtureMetadata{
+	"next-bun-monorepo": {
+		Description:     "bun workspace Next.js fixture without external services",
+		DefaultBranch:   "main",
+		PRBranchBase:    "test/forge-metal-warm-path",
+		PRTitle:         "test: trigger forge-metal warm path",
+		PRCommitMessage: "test: trigger forge-metal warm path",
+		PRChangePath:    "apps/web/app/page.js",
+		PRChangeFind:    "Hello from Bun main",
+		PRChangeReplace: "Hello from Bun warm PR",
+	},
+	"next-npm-single-app": {
+		Description:     "single-package npm Next.js fixture with a multi-step CI script",
+		DefaultBranch:   "main",
+		PRBranchBase:    "test/forge-metal-warm-path",
+		PRTitle:         "test: trigger forge-metal warm path",
+		PRCommitMessage: "test: trigger forge-metal warm path",
+		PRChangePath:    "app/page.js",
+		PRChangeFind:    "Hello from npm single main",
+		PRChangeReplace: "Hello from npm single warm PR",
+	},
+	"next-npm-workspaces": {
+		Description:     "npm workspaces monorepo fixture with a root-level CI entrypoint",
+		DefaultBranch:   "main",
+		PRBranchBase:    "test/forge-metal-warm-path",
+		PRTitle:         "test: trigger forge-metal warm path",
+		PRCommitMessage: "test: trigger forge-metal warm path",
+		PRChangePath:    "apps/dashboard/app/page.js",
+		PRChangeFind:    "Hello from npm workspace main",
+		PRChangeReplace: "Hello from npm workspace warm PR",
+	},
+	"next-pnpm-postgres": {
+		Description:     "pnpm + Turborepo Next.js fixture with a Postgres service requirement",
+		DefaultBranch:   "main",
+		PRBranchBase:    "test/forge-metal-warm-path",
+		PRTitle:         "test: trigger forge-metal warm path",
+		PRCommitMessage: "test: trigger forge-metal warm path",
+		PRChangePath:    "apps/web/app/page.js",
+		PRChangeFind:    "Hello from main",
+		PRChangeReplace: "Hello from warm PR",
+	},
 }
 
 type E2EOptions struct {
@@ -52,20 +107,29 @@ func LoadFixtures(root string) ([]Fixture, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load fixture %s: %w", entry.Name(), err)
 		}
-		name := manifest.RepoName
-		if name == "" {
-			name = entry.Name()
+		metadata, err := lookupFixtureMetadata(entry.Name())
+		if err != nil {
+			return nil, err
 		}
 		fixtures = append(fixtures, Fixture{
-			Name:     name,
+			Name:     entry.Name(),
 			Path:     fixturePath,
 			Manifest: manifest,
+			Metadata: metadata,
 		})
 	}
 	if len(fixtures) == 0 {
 		return nil, fmt.Errorf("no fixtures found in %s", root)
 	}
 	return fixtures, nil
+}
+
+func lookupFixtureMetadata(name string) (FixtureMetadata, error) {
+	metadata, ok := fixtureMetadataByName[name]
+	if !ok {
+		return FixtureMetadata{}, fmt.Errorf("fixture %s is missing metadata", name)
+	}
+	return metadata, nil
 }
 
 func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, client *ForgejoClient, opts E2EOptions) error {
@@ -88,14 +152,14 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 
 	prepared := make([]preparedFixture, 0, len(fixtures))
 	for i := range fixtures {
-		manifestCopy := *fixtures[i].Manifest
-		manifestCopy.PRBranch = uniquePRBranch(manifestCopy.PRBranch, fixtures[i].Name, runStamp)
-		fixtures[i].Manifest = &manifestCopy
+		metadataCopy := fixtures[i].Metadata
+		metadataCopy.PRBranchBase = uniquePRBranch(metadataCopy.PRBranchBase, fixtures[i].Name, runStamp)
+		fixtures[i].Metadata = metadataCopy
 		fixture := fixtures[i]
 
 		repo := Repository{
 			Name:        fixture.Name,
-			Description: fixture.Manifest.Description,
+			Description: fixture.Metadata.Description,
 			Private:     false,
 		}
 		if err := client.EnsureRepository(ctx, opts.Owner, repo); err != nil {
@@ -113,7 +177,7 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 		if err := mgr.Warm(ctx, WarmRequest{
 			Repo:          fmt.Sprintf("%s/%s", opts.Owner, fixture.Name),
 			RepoURL:       repoURL,
-			DefaultBranch: fixture.Manifest.DefaultBranch,
+			DefaultBranch: fixture.Metadata.DefaultBranch,
 		}); err != nil {
 			return err
 		}
@@ -172,7 +236,7 @@ func pushFixtureMain(fixture Fixture, pushURL, username, email string) error {
 		return err
 	}
 
-	return initializeAndPushRepo(tmp, pushURL, username, email, fmt.Sprintf("feat: seed %s fixture", fixture.Name), "main")
+	return initializeAndPushRepo(tmp, pushURL, username, email, fmt.Sprintf("feat: seed %s fixture", fixture.Name), fixture.Metadata.DefaultBranch)
 }
 
 func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL, runID string) error {
@@ -192,7 +256,7 @@ func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL, runID string) 
 	if err := commitAll(tmp, opts.Username, opts.Email, "ci: add forge-metal workflow"); err != nil {
 		return err
 	}
-	return runGit(tmp, []string{"GIT_TERMINAL_PROMPT=0"}, "push", "origin", "HEAD:main")
+	return runGit(tmp, []string{"GIT_TERMINAL_PROMPT=0"}, "push", "origin", "HEAD:"+fixture.Metadata.DefaultBranch)
 }
 
 func createTriggerPR(ctx context.Context, client *ForgejoClient, opts E2EOptions, fixture Fixture, pushURL, repoURL string) (string, error) {
@@ -205,34 +269,35 @@ func createTriggerPR(ctx context.Context, client *ForgejoClient, opts E2EOptions
 	if err := runGit("", nil, "clone", "--depth", "1", pushURL, tmp); err != nil {
 		return "", err
 	}
-	if err := runGit(tmp, nil, "checkout", "-b", fixture.Manifest.PRBranch); err != nil {
+	prBranch := fixture.Metadata.PRBranchBase
+	if err := runGit(tmp, nil, "checkout", "-b", prBranch); err != nil {
 		return "", err
 	}
 
-	changePath := filepath.Join(tmp, fixture.Manifest.PRChangePath)
+	changePath := filepath.Join(tmp, fixture.Metadata.PRChangePath)
 	data, err := os.ReadFile(changePath)
 	if err != nil {
 		return "", err
 	}
-	updated := strings.Replace(string(data), fixture.Manifest.PRChangeFind, fixture.Manifest.PRChangeReplace, 1)
+	updated := strings.Replace(string(data), fixture.Metadata.PRChangeFind, fixture.Metadata.PRChangeReplace, 1)
 	if updated == string(data) {
-		return "", fmt.Errorf("fixture %s: pr_change_find not found in %s", fixture.Name, fixture.Manifest.PRChangePath)
+		return "", fmt.Errorf("fixture %s: pr_change_find not found in %s", fixture.Name, fixture.Metadata.PRChangePath)
 	}
 	if err := os.WriteFile(changePath, []byte(updated), 0o644); err != nil {
 		return "", err
 	}
 
-	if err := commitAll(tmp, opts.Username, opts.Email, fixture.Manifest.PRCommitMessage); err != nil {
+	if err := commitAll(tmp, opts.Username, opts.Email, fixture.Metadata.PRCommitMessage); err != nil {
 		return "", err
 	}
 	commitSHA, err := gitHeadSHA(tmp)
 	if err != nil {
 		return "", err
 	}
-	if err := runGit(tmp, []string{"GIT_TERMINAL_PROMPT=0"}, "push", "--force", "origin", "HEAD:"+fixture.Manifest.PRBranch); err != nil {
+	if err := runGit(tmp, []string{"GIT_TERMINAL_PROMPT=0"}, "push", "--force", "origin", "HEAD:"+prBranch); err != nil {
 		return "", err
 	}
-	_, err = client.CreatePullRequest(ctx, opts.Owner, fixture.Name, fixture.Manifest.PRTitle, fixture.Manifest.PRBranch, fixture.Manifest.DefaultBranch)
+	_, err = client.CreatePullRequest(ctx, opts.Owner, fixture.Name, fixture.Metadata.PRTitle, prBranch, fixture.Metadata.DefaultBranch)
 	if err != nil {
 		return "", err
 	}

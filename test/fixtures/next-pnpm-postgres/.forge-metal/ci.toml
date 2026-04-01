@@ -1,15 +1,3 @@
 version = 1
-repo_name = "next-pnpm-postgres"
-description = "pnpm + Turborepo Next.js fixture with a Postgres service requirement"
-default_branch = "main"
-workdir = "."
 services = ["postgres"]
-warm_command = ["pnpm", "run", "ci"]
-ci_command = ["pnpm", "run", "ci"]
-pr_branch = "test/forge-metal-warm-path"
-pr_title = "test: trigger forge-metal warm path"
-pr_commit_message = "test: trigger forge-metal warm path"
-pr_change_path = "apps/web/app/page.js"
-pr_change_find = "Hello from main"
-pr_change_replace = "Hello from warm PR"
-
+run = ["pnpm", "run", "ci"]
