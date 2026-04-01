@@ -19,11 +19,11 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 
 The optimization stack is, at a high level:
 
-- keep a golden image of main with all cache loaded
-- zfs for instant copy of golden image
-- git fetch all every second for local mirror
-- golden image of database so only last migration runs (as Postgres template)
-- turbo cache locally
+- keep a repo-specific golden image of `main` with warmed caches
+- zfs for instant copy of the warmed golden image
+- local Forgejo fetches and mirrors for deterministic refs
+- warm default-branch database state when a fixture requests Postgres
+- turbo cache locally when the repo uses it
 
 Each CI job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of a golden image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
 
@@ -58,9 +58,9 @@ Host (CI Orchestrator — bare metal, root, ZFS kernel module)
 ### Key distinctions
 
 - **zvol, not dataset.** Firecracker takes block devices (`/dev/zvol/...`), not mounted filesystems. A zvol is a ZFS block device — clone/destroy/written all work identically to datasets.
-- **Golden image is a zvol with ext4 inside.** Built by `scripts/build-guest-rootfs.sh` (Alpine Linux base), then baked with app code by `fc_ci_seed` Ansible role. `zfs snapshot pool/golden-zvol@ready`.
+- **Golden image is a zvol with ext4 inside.** Built from the generic guest image produced by `scripts/build-guest-rootfs.sh`, then refreshed by the `forge-metal ci warm` path into repo-specific goldens.
 - **Guest is unaware of ZFS.** It sees `/dev/vda` with ext4. No ZFS tooling needed in the VM image.
-- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in `scripts/forge-vm-run.sh`.
+- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in the `forge-metal` Go binary.
 
 ### Orchestrator flow per job
 
@@ -116,7 +116,7 @@ make deploy  # idempotent, no wipe — this is the normal workflow
 
 This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
 
-> **`make e2e` — destructive, rarely needed.** This wipes ALL data (ClickHouse, MongoDB, Forgejo repos, credentials) and reprovisions from scratch. Only run this when bootstrapping a brand new server or when you need to verify the full zero-to-healthy pipeline. Once your Forgejo has repos, runners registered, and CI history, `make e2e` destroys all of that. Use `make deploy` for normal iteration.
+> **`make e2e` runs the live Firecracker + Forgejo fixture validation path.** It builds guest artifacts, stages them on the worker, and runs the controlled Next.js fixture suite. Use `make deploy` for normal iteration when you do not need a full CI validation pass.
 
 ### 4. Log in
 
@@ -210,7 +210,7 @@ Compression codecs per column type:
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) — **use this normally** |
-| `make e2e` | **DESTRUCTIVE** full wipe + reprovision + test — rarely needed |
+| `make e2e` | Run the live Firecracker + Forgejo fixture validation path |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
@@ -242,67 +242,23 @@ forge-metal/
 │       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
 │       ├── zfs/           # Pool creation, golden/ci datasets
 │       ├── firecracker/   # KVM, jailer user, golden zvol, CI dataset
-│       ├── fc_ci_seed/    # Forgejo CI seeding: golden image bake, action repo, bench repo
 │       ├── containerd/    # containerd + gVisor runsc (config only)
 │       ├── verdaccio/     # Sealed npm registry mirror (config only)
 │       ├── wireguard/     # Mesh networking (config only)
 │       └── forgejo/       # Git server + CI runner (config only)
 ├── scripts/
-│   ├── forge-vm-run.sh    # Shell-based Firecracker VM lifecycle (replaces Go orchestrator for CI)
-│   └── build-guest-rootfs.sh # Alpine rootfs builder (Layer 1 of golden image)
+│   └── build-guest-rootfs.sh # Alpine rootfs builder for the generic guest image
 ├── ci/
-│   ├── versions.json      # Pinned Alpine + Firecracker versions with SHA256
-│   └── seed.sql           # PostgreSQL schema + data for next-learn demo app
+│   └── versions.json      # Pinned Alpine + Firecracker versions with SHA256
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
 ├── config/default.toml    # Embedded defaults
 └── flake.nix              # Dev shell + server profile (Nix is dev tooling only, not in VMs)
 ```
 
-## Firecracker CI: Tracer Bullet Status
+## Firecracker CI Status
 
-Full CI proven: `tsc --noEmit && next build` runs in 22.3s inside a Firecracker VM with pre-seeded Postgres.
-
-### Two-layer golden image
-
-```
-Layer 1 (scripts/build-guest-rootfs.sh):
-  Alpine 3.21 + Node 22 + PostgreSQL 17 + git + forgevm-init + /ci-start.sh
-  → ci/output/rootfs.ext4
-
-Layer 2 (ansible/roles/fc_ci_seed/tasks/golden_image.yml):
-  Mount zvol, copy app, npm install, patch SSL, seed DB, unmount, snapshot
-  → benchpool/golden-zvol2@ready
-```
-
-### Known hacks (search for HACK: and LEARNING: in codebase)
-
-| Hack | Location | Fix |
-|------|----------|-----|
-| `golden-zvol2` instead of `golden-zvol` | `forge-vm-run.sh`, `firecracker/defaults` | Reboot server, destroy old zvol |
-| Entire golden_image.yml is next-learn specific | `golden_image.yml` | Generalize into workload config |
-| Inline POSTGRES_URL/AUTH_SECRET in workflow | `fc_bench_repo.yml` | forge-ci-action env input |
-| /ci-start.sh called explicitly | `fc_bench_repo.yml` | Auto-detect services from golden image |
-| ci/seed.sql is next-learn specific | `ci/seed.sql` | Per-workload seed scripts |
-| Static firecracker binaries manually deployed | `forge-vm-run.sh` | Ansible role or Makefile target |
-| Sudoers file wiped on server | Server state | Run base role |
-| golden_image.yml Postgres seed untested via Ansible | `golden_image.yml` | Add bind-mount tasks, test e2e |
-
-### Key learnings
-
-1. Nix + Firecracker don't mix (dynamic linking vs jailer chroot)
-2. Alpine > Nix for guest rootfs (standard paths)
-3. Kernel CONFIG_IP_PNP not enabled — forgevm-init configures network in userspace
-4. Loopback (127.0.0.1) not auto-configured in Firecracker VMs
-5. Alpine /sbin/init is a busybox symlink — must rm before cp
-6. initdb needs /dev/null — bind-mount host /dev
-7. uuid-ossp not in Alpine postgresql — use gen_random_uuid()
-8. sed -i fails on zvols after repeated create/destroy
-9. ZFS zvol "dataset is busy" — may need server reboot
-
-### Next: generalize workload configuration
-
-The platform vision: describe a workload in YAML (repo, runtime, services, setup, env, CI steps), and the platform builds the golden image and runs CI automatically. See `HACK:` comments for what needs to change.
+The current end-to-end proof is the controlled fixture suite under `test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
 
 ### Current platform decisions
 

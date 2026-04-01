@@ -6,13 +6,12 @@ zfs_pool: benchpool
 zfs_golden_dataset: golden
 zfs_ci_dataset: ci
 
-# gVisor
-gvisor_runtime: runsc
-max_concurrent_jobs: 4
-
 # Verdaccio
 verdaccio_port: 4873
 verdaccio_version: "6.1.2"
 
 # Forgejo
 forgejo_port: 3000
+# Optional override for Forgejo Actions runner concurrency.
+# Unset uses the host vCPU count.
+# forgejo_runner_capacity: 24
