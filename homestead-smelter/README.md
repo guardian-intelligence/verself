@@ -12,6 +12,8 @@ This first cut is intentionally small:
 
 The existing Go control plane stays in place on port `10789`. The hello-world guest agent uses port `10790`.
 
+The bare-metal host agent is now deployed by the Firecracker Ansible role as a standalone binary at `/usr/local/bin/homestead-smelter-host`. It is not packaged into the Nix server profile.
+
 ## Build
 
 ```bash

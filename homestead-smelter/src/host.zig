@@ -41,7 +41,10 @@ pub fn main() !void {
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
-    const config = parseArgs(gpa) catch |err| switch (err) {
+    const args = try std.process.argsAlloc(gpa);
+    defer std.process.argsFree(gpa, args);
+
+    const config = parseArgs(args) catch |err| switch (err) {
         error.ShowUsage => {
             try std.fs.File.stdout().writeAll(usage);
             return;
@@ -56,10 +59,7 @@ pub fn main() !void {
     }
 }
 
-fn parseArgs(allocator: std.mem.Allocator) !Config {
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
+fn parseArgs(args: []const []const u8) !Config {
     if (args.len < 2) return error.ShowUsage;
 
     var config = Config{

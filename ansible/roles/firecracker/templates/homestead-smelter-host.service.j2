@@ -5,11 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{ fm_bin }}/homestead-smelter-host serve --listen-uds {{ fc_smelter_control_socket }}
+ExecStart={{ fc_smelter_host_binary_path }} serve --listen-uds {{ fc_smelter_control_socket }}
 Restart=always
 RestartSec=2
 RuntimeDirectory=homestead-smelter
-Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 NoNewPrivileges=yes
 
 [Install]
