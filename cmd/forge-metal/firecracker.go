@@ -150,8 +150,13 @@ Examples:
 
 			if result.Logs != "" {
 				fmt.Println()
-				fmt.Println("=== Serial Console Output ===")
+				fmt.Println("=== Guest Output ===")
 				fmt.Println(result.Logs)
+			}
+			if result.SerialLogs != "" {
+				fmt.Println()
+				fmt.Println("=== Serial Diagnostics ===")
+				fmt.Println(result.SerialLogs)
 			}
 
 			jobJSON, _ := json.Marshal(job)

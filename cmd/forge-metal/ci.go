@@ -129,8 +129,12 @@ func ciExecCmd() *cobra.Command {
 				return err
 			}
 			if result.Logs != "" {
-				fmt.Println("=== Serial Console Output ===")
+				fmt.Println("=== Guest Output ===")
 				fmt.Println(result.Logs)
+			}
+			if result.SerialLogs != "" {
+				fmt.Println("=== Serial Diagnostics ===")
+				fmt.Println(result.SerialLogs)
 			}
 			if result.ExitCode != 0 {
 				os.Exit(result.ExitCode)

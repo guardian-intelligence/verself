@@ -67,6 +67,8 @@ func emitExecTelemetry(logger *slog.Logger, input emitExecTelemetryInput) error 
 		PRNumber:        input.PRNumber,
 		BaseBranch:      "",
 		ZFSCloneNs:      input.CloneDuration.Nanoseconds(),
+		DepsInstallNs:   input.JobResult.PrepareDuration.Nanoseconds(),
+		TestNs:          input.JobResult.RunDuration.Nanoseconds(),
 		TotalCINs:       input.JobResult.Duration.Nanoseconds(),
 		TotalE2ENs:      endToEndDuration(input).Nanoseconds(),
 		CleanupNs:       input.JobResult.CleanupTime.Nanoseconds(),
@@ -88,6 +90,11 @@ func emitExecTelemetry(logger *slog.Logger, input emitExecTelemetryInput) error 
 		CompletedAt:     input.CompletedAt.UTC(),
 		VMExitCode:      int32(execExitCode(input)),
 		JobConfigJSON:   jobConfigJSON,
+		BootToReadyNs:   input.JobResult.BootToReadyDuration.Nanoseconds(),
+		ServiceStartNs:  input.JobResult.ServiceStartDuration.Nanoseconds(),
+		StdoutBytes:     input.JobResult.StdoutBytes,
+		StderrBytes:     input.JobResult.StderrBytes,
+		DroppedLogBytes: input.JobResult.DroppedLogBytes,
 	}
 
 	if input.JobResult.Metrics != nil {
@@ -132,9 +139,16 @@ func buildExecJobConfigJSON(input emitExecTelemetryInput) (string, error) {
 		"job_prepare_workdir":     input.Job.PrepareWorkDir,
 		"job_run_command":         input.Job.RunCommand,
 		"job_run_workdir":         input.Job.RunWorkDir,
-		"job_transport":           strings.TrimSpace(input.JobResult.ConfigTransport),
 		"job_services":            input.Job.Services,
 		"job_env_names":           sortedEnvKeys(input.Job.Env),
+		"runtime_protocol":        "vsock-v1",
+		"boot_to_ready_ns":        input.JobResult.BootToReadyDuration.Nanoseconds(),
+		"service_start_ns":        input.JobResult.ServiceStartDuration.Nanoseconds(),
+		"prepare_ns":              input.JobResult.PrepareDuration.Nanoseconds(),
+		"run_ns":                  input.JobResult.RunDuration.Nanoseconds(),
+		"stdout_bytes":            input.JobResult.StdoutBytes,
+		"stderr_bytes":            input.JobResult.StderrBytes,
+		"dropped_log_bytes":       input.JobResult.DroppedLogBytes,
 	}
 	if input.RunErr != nil {
 		payload["run_error"] = input.RunErr.Error()
