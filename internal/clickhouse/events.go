@@ -55,21 +55,27 @@ type CIEvent struct {
 	ZFSWrittenBytes uint64 `ch:"zfs_written_bytes"`
 
 	// Firecracker VM metrics
-	VMBootTimeUs    uint64 `ch:"vm_boot_time_us"`
-	BlockReadBytes  uint64 `ch:"block_read_bytes"`
-	BlockWriteBytes uint64 `ch:"block_write_bytes"`
-	BlockReadCount  uint64 `ch:"block_read_count"`
-	BlockWriteCount uint64 `ch:"block_write_count"`
-	NetRxBytes      uint64 `ch:"net_rx_bytes"`
-	NetTxBytes      uint64 `ch:"net_tx_bytes"`
-	VCPUExitCount   uint64 `ch:"vcpu_exit_count"`
-	VMExitCode      int32  `ch:"vm_exit_code"`
-	JobConfigJSON   string `ch:"job_config_json"`
-	BootToReadyNs   int64  `ch:"boot_to_ready_ns"`
-	ServiceStartNs  int64  `ch:"service_start_ns"`
-	StdoutBytes     uint64 `ch:"stdout_bytes"`
-	StderrBytes     uint64 `ch:"stderr_bytes"`
-	DroppedLogBytes uint64 `ch:"dropped_log_bytes"`
+	VMBootTimeUs               uint64 `ch:"vm_boot_time_us"`
+	BlockReadBytes             uint64 `ch:"block_read_bytes"`
+	BlockWriteBytes            uint64 `ch:"block_write_bytes"`
+	BlockReadCount             uint64 `ch:"block_read_count"`
+	BlockWriteCount            uint64 `ch:"block_write_count"`
+	NetRxBytes                 uint64 `ch:"net_rx_bytes"`
+	NetTxBytes                 uint64 `ch:"net_tx_bytes"`
+	VCPUExitCount              uint64 `ch:"vcpu_exit_count"`
+	VMExitCode                 int32  `ch:"vm_exit_code"`
+	JobConfigJSON              string `ch:"job_config_json"`
+	BootToReadyNs              int64  `ch:"boot_to_ready_ns"`
+	ServiceStartNs             int64  `ch:"service_start_ns"`
+	StdoutBytes                uint64 `ch:"stdout_bytes"`
+	StderrBytes                uint64 `ch:"stderr_bytes"`
+	DroppedLogBytes            uint64 `ch:"dropped_log_bytes"`
+	GuestRootfsTreeBytes       uint64 `ch:"guest_rootfs_tree_bytes"`
+	GuestRootfsAllocatedBytes  uint64 `ch:"guest_rootfs_allocated_bytes"`
+	GuestRootfsFilesystemBytes uint64 `ch:"guest_rootfs_filesystem_bytes"`
+	GuestRootfsUsedBytes       uint64 `ch:"guest_rootfs_used_bytes"`
+	GuestKernelBytes           uint64 `ch:"guest_kernel_bytes"`
+	GuestPackageCount          uint32 `ch:"guest_package_count"`
 
 	// Cache effectiveness
 	NPMCacheHit     uint8 `ch:"npm_cache_hit"`

@@ -10,6 +10,7 @@ fc_jailer_gid: 10000
 fc_jailer_user: firecracker
 fc_kernel_path: /var/lib/ci/vmlinux
 fc_rootfs_path: /var/lib/ci/rootfs.ext4
+fc_guest_artifact_manifest_path: /var/lib/ci/guest-artifacts.json
 fc_rootfs_hash_record: /var/lib/ci/golden-zvol.rootfs.sha256
 fc_refresh_base_golden: false
 fc_prune_repo_goldens_on_refresh: false

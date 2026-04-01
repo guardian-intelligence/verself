@@ -92,7 +92,7 @@ deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
 	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
-		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4 && sudo cp /tmp/ci/output/vmlinux /var/lib/ci/vmlinux'
+		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4 && sudo cp /tmp/ci/output/vmlinux /var/lib/ci/vmlinux && sudo cp /tmp/ci/output/sbom.txt /var/lib/ci/sbom.txt && sudo cp /tmp/ci/output/guest-artifacts.json /var/lib/ci/guest-artifacts.json'
 
 fixtures-e2e: ## Deploy Forgejo + Firecracker and validate controlled Next.js fixtures
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }

@@ -50,7 +50,13 @@ func emitExecTelemetry(logger *slog.Logger, input emitExecTelemetryInput) error 
 		return fmt.Errorf("parse job id %s: %w", input.Job.JobID, err)
 	}
 
-	jobConfigJSON, err := buildExecJobConfigJSON(input)
+	artifactManifestPath := guestArtifactManifestPath(input.FirecrackerConfig)
+	guestArtifactManifest, guestArtifactErr := loadGuestArtifactManifest(artifactManifestPath)
+	if guestArtifactErr != nil && logger != nil {
+		logger.Warn("load guest artifact manifest failed", "path", artifactManifestPath, "err", guestArtifactErr)
+	}
+
+	jobConfigJSON, err := buildExecJobConfigJSON(input, artifactManifestPath, guestArtifactManifest, guestArtifactErr)
 	if err != nil {
 		return err
 	}
@@ -96,6 +102,14 @@ func emitExecTelemetry(logger *slog.Logger, input emitExecTelemetryInput) error 
 		StderrBytes:     input.JobResult.StderrBytes,
 		DroppedLogBytes: input.JobResult.DroppedLogBytes,
 	}
+	if guestArtifactManifest != nil {
+		event.GuestRootfsTreeBytes = guestArtifactManifest.RootfsTreeBytes
+		event.GuestRootfsAllocatedBytes = guestArtifactManifest.RootfsAllocatedBytes
+		event.GuestRootfsFilesystemBytes = guestArtifactManifest.RootfsFilesystemBytes
+		event.GuestRootfsUsedBytes = guestArtifactManifest.RootfsUsedBytes
+		event.GuestKernelBytes = guestArtifactManifest.KernelBytes
+		event.GuestPackageCount = guestArtifactManifest.PackageCount
+	}
 
 	if input.JobResult.Metrics != nil {
 		event.VMBootTimeUs = input.JobResult.Metrics.BootTimeUs
@@ -119,36 +133,60 @@ func emitExecTelemetry(logger *slog.Logger, input emitExecTelemetryInput) error 
 	return nil
 }
 
-func buildExecJobConfigJSON(input emitExecTelemetryInput) (string, error) {
+func buildExecJobConfigJSON(input emitExecTelemetryInput, manifestPath string, guestArtifacts *GuestArtifactManifest, guestArtifactErr error) (string, error) {
 	payload := map[string]any{
-		"run_id":                  input.RunID,
-		"repo":                    input.Request.Repo,
-		"ref":                     input.Request.Ref,
-		"commit_sha":              input.CommitSHA,
-		"pr_number":               input.PRNumber,
-		"manifest_workdir":        input.Manifest.WorkDir,
-		"manifest_services":       input.Manifest.Services,
-		"manifest_env":            input.Manifest.Env,
-		"manifest_profile":        string(input.Manifest.Profile),
-		"resolved_profile":        string(resolvedProfile(input.Manifest)),
-		"package_manager":         string(input.Toolchain.PackageManager),
-		"package_manager_version": input.Toolchain.PackageManagerVersion,
-		"node_version":            input.Toolchain.NodeVersion,
-		"install_needed":          input.InstallNeeded,
-		"job_prepare_command":     input.Job.PrepareCommand,
-		"job_prepare_workdir":     input.Job.PrepareWorkDir,
-		"job_run_command":         input.Job.RunCommand,
-		"job_run_workdir":         input.Job.RunWorkDir,
-		"job_services":            input.Job.Services,
-		"job_env_names":           sortedEnvKeys(input.Job.Env),
-		"runtime_protocol":        "vsock-v1",
-		"boot_to_ready_ns":        input.JobResult.BootToReadyDuration.Nanoseconds(),
-		"service_start_ns":        input.JobResult.ServiceStartDuration.Nanoseconds(),
-		"prepare_ns":              input.JobResult.PrepareDuration.Nanoseconds(),
-		"run_ns":                  input.JobResult.RunDuration.Nanoseconds(),
-		"stdout_bytes":            input.JobResult.StdoutBytes,
-		"stderr_bytes":            input.JobResult.StderrBytes,
-		"dropped_log_bytes":       input.JobResult.DroppedLogBytes,
+		"run_id":                          input.RunID,
+		"repo":                            input.Request.Repo,
+		"ref":                             input.Request.Ref,
+		"commit_sha":                      input.CommitSHA,
+		"pr_number":                       input.PRNumber,
+		"manifest_workdir":                input.Manifest.WorkDir,
+		"manifest_services":               input.Manifest.Services,
+		"manifest_env":                    input.Manifest.Env,
+		"manifest_profile":                string(input.Manifest.Profile),
+		"resolved_profile":                string(resolvedProfile(input.Manifest)),
+		"package_manager":                 string(input.Toolchain.PackageManager),
+		"package_manager_version":         input.Toolchain.PackageManagerVersion,
+		"node_version":                    input.Toolchain.NodeVersion,
+		"install_needed":                  input.InstallNeeded,
+		"job_prepare_command":             input.Job.PrepareCommand,
+		"job_prepare_workdir":             input.Job.PrepareWorkDir,
+		"job_run_command":                 input.Job.RunCommand,
+		"job_run_workdir":                 input.Job.RunWorkDir,
+		"job_services":                    input.Job.Services,
+		"job_env_names":                   sortedEnvKeys(input.Job.Env),
+		"runtime_protocol":                "vsock-v1",
+		"boot_to_ready_ns":                input.JobResult.BootToReadyDuration.Nanoseconds(),
+		"service_start_ns":                input.JobResult.ServiceStartDuration.Nanoseconds(),
+		"prepare_ns":                      input.JobResult.PrepareDuration.Nanoseconds(),
+		"run_ns":                          input.JobResult.RunDuration.Nanoseconds(),
+		"stdout_bytes":                    input.JobResult.StdoutBytes,
+		"stderr_bytes":                    input.JobResult.StderrBytes,
+		"dropped_log_bytes":               input.JobResult.DroppedLogBytes,
+		"guest_artifact_manifest_path":    manifestPath,
+		"guest_artifact_manifest_present": guestArtifacts != nil,
+	}
+	if guestArtifacts != nil {
+		payload["guest_alpine_version"] = guestArtifacts.AlpineVersion
+		payload["guest_firecracker_version"] = guestArtifacts.FirecrackerVersion
+		payload["guest_kernel_version"] = guestArtifacts.GuestKernelVersion
+		payload["guest_rootfs_sha256"] = guestArtifacts.RootfsSHA256
+		payload["guest_rootfs_tree_bytes"] = guestArtifacts.RootfsTreeBytes
+		payload["guest_rootfs_apparent_bytes"] = guestArtifacts.RootfsApparentBytes
+		payload["guest_rootfs_allocated_bytes"] = guestArtifacts.RootfsAllocatedBytes
+		payload["guest_rootfs_filesystem_bytes"] = guestArtifacts.RootfsFilesystemBytes
+		payload["guest_rootfs_used_bytes"] = guestArtifacts.RootfsUsedBytes
+		payload["guest_rootfs_free_bytes"] = guestArtifacts.RootfsFreeBytes
+		payload["guest_kernel_sha256"] = guestArtifacts.KernelSHA256
+		payload["guest_kernel_bytes"] = guestArtifacts.KernelBytes
+		payload["guest_sbom_sha256"] = guestArtifacts.SBOMSHA256
+		payload["guest_sbom_bytes"] = guestArtifacts.SBOMBytes
+		payload["guest_package_count"] = guestArtifacts.PackageCount
+		payload["guest_init_bytes"] = guestArtifacts.InitBytes
+		payload["guest_artifacts_built_at_utc"] = guestArtifacts.BuiltAtUTC
+	}
+	if guestArtifactErr != nil {
+		payload["guest_artifact_manifest_error"] = guestArtifactErr.Error()
 	}
 	if input.RunErr != nil {
 		payload["run_error"] = input.RunErr.Error()
