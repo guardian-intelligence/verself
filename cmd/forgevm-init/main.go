@@ -2,7 +2,8 @@
 //
 // It mounts a minimal Linux userspace, brings up loopback, waits for a host
 // vsock control connection, applies runtime network state from the host, runs
-// the requested CI workload, and reboots cleanly when told to shut down.
+// the requested CI workload, and gracefully reboots to terminate the microVM
+// when told to shut down.
 package main
 
 import (

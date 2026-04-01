@@ -104,6 +104,18 @@ func unmountDataset(ctx context.Context, mountDir string) error {
 	return os.RemoveAll(mountDir)
 }
 
+func checkFilesystem(ctx context.Context, dataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+	devPath := "/dev/zvol/" + dataset
+	cmd := exec.CommandContext(ctx, "fsck.ext4", "-n", devPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("fsck.ext4 %s: %s: %w", devPath, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func runZFS(ctx context.Context, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()

@@ -6,15 +6,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// CIEvent is the wide event struct: one row per CI job.
+// CIEvent is the wide event struct: one row per CI execution event.
 // Every dimension is denormalized into a single flat row.
 type CIEvent struct {
 	// Identity
-	JobID  uuid.UUID `ch:"job_id"`
-	RunID  string    `ch:"run_id"`
-	NodeID string    `ch:"node_id"`
-	Region string    `ch:"region"`
-	Plan   string    `ch:"plan"`
+	JobID     uuid.UUID `ch:"job_id"`
+	RunID     string    `ch:"run_id"`
+	EventKind string    `ch:"event_kind"`
+	NodeID    string    `ch:"node_id"`
+	Region    string    `ch:"region"`
+	Plan      string    `ch:"plan"`
 
 	// Git metadata
 	Repo             string `ch:"repo"`
@@ -67,6 +68,12 @@ type CIEvent struct {
 	JobConfigJSON              string `ch:"job_config_json"`
 	BootToReadyNs              int64  `ch:"boot_to_ready_ns"`
 	ServiceStartNs             int64  `ch:"service_start_ns"`
+	VMExitWaitNs               int64  `ch:"vm_exit_wait_ns"`
+	VMExitForced               uint8  `ch:"vm_exit_forced"`
+	WarmFilesystemCheckNs      int64  `ch:"warm_filesystem_check_ns"`
+	WarmSnapshotPromotionNs    int64  `ch:"warm_snapshot_promotion_ns"`
+	WarmPreviousDestroyNs      int64  `ch:"warm_previous_destroy_ns"`
+	WarmFilesystemCheckOK      uint8  `ch:"warm_filesystem_check_ok"`
 	StdoutBytes                uint64 `ch:"stdout_bytes"`
 	StderrBytes                uint64 `ch:"stderr_bytes"`
 	DroppedLogBytes            uint64 `ch:"dropped_log_bytes"`

@@ -28,6 +28,7 @@ func ciCmd() *cobra.Command {
 func ciWarmCmd() *cobra.Command {
 	var (
 		repo            string
+		runID           string
 		forgejoURL      string
 		defaultBranch   string
 		pool            string
@@ -68,11 +69,13 @@ func ciWarmCmd() *cobra.Command {
 				Repo:          repo,
 				RepoURL:       repoURL,
 				DefaultBranch: defaultBranch,
+				RunID:         runID,
 			})
 		},
 	}
 
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository in owner/name form")
+	cmd.Flags().StringVar(&runID, "run-id", "", "Optional run identifier for telemetry correlation")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "main", "Default branch to warm")
 	addFirecrackerFlags(cmd, &pool, &goldenZvol, &kernelPath, &fcBin, &jailerBin, &vcpus, &memoryMiB, &timeout, &hostInterface, &guestPoolCIDR, &networkLeaseDir)

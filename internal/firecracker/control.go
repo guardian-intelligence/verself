@@ -182,6 +182,9 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeResult, ForSeq: env.Seq}); err != nil {
 				return guestControlResult{hello: hello, logs: logBuf.String(), result: msg}, fmt.Errorf("ack guest result: %w", err)
 			}
+			if logger != nil {
+				logger.Info("guest result received; requesting graceful guest reboot", "job_id", job.JobID, "exit_code", msg.ExitCode)
+			}
 			if err := c.send(vmproto.TypeShutdown, vmproto.Shutdown{}); err != nil {
 				return guestControlResult{hello: hello, logs: logBuf.String(), result: msg}, fmt.Errorf("send guest shutdown: %w", err)
 			}

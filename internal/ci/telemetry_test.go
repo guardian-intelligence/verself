@@ -41,6 +41,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			ServiceStartDuration: 147 * time.Millisecond,
 			PrepareDuration:      2 * time.Second,
 			RunDuration:          11 * time.Second,
+			VMExitWaitDuration:   320 * time.Millisecond,
 			StdoutBytes:          876,
 			StderrBytes:          13,
 		},
@@ -80,6 +81,18 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 	if payload["runtime_protocol"] != "vsock-v1" {
 		t.Fatalf("runtime_protocol: got %v", payload["runtime_protocol"])
 	}
+	if payload["event_kind"] != "exec" {
+		t.Fatalf("event_kind: got %v", payload["event_kind"])
+	}
+	if payload["shutdown_mode"] != "guest_reboot_k" {
+		t.Fatalf("shutdown_mode: got %v", payload["shutdown_mode"])
+	}
+	if payload["vm_exit_wait_ns"] != float64((320 * time.Millisecond).Nanoseconds()) {
+		t.Fatalf("vm_exit_wait_ns: got %v", payload["vm_exit_wait_ns"])
+	}
+	if payload["vm_exit_forced"] != false {
+		t.Fatalf("vm_exit_forced: got %v", payload["vm_exit_forced"])
+	}
 	if payload["guest_artifact_manifest_present"] != true {
 		t.Fatalf("guest_artifact_manifest_present: got %v", payload["guest_artifact_manifest_present"])
 	}
@@ -91,5 +104,99 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 	}
 	if payload["guest_package_count"] != float64(137) {
 		t.Fatalf("guest_package_count: got %v", payload["guest_package_count"])
+	}
+}
+
+func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
+	input := emitWarmTelemetryInput{
+		Request: WarmRequest{
+			Repo:          "forge-admin-usj5/next-bun-monorepo",
+			RepoURL:       "http://127.0.0.1:3000/forge-admin-usj5/next-bun-monorepo.git",
+			DefaultBranch: "main",
+			RunID:         "fixtures-e2e-20260401-072318",
+		},
+		RunID:           "fixtures-e2e-20260401-072318-warm",
+		ParentRunID:     "fixtures-e2e-20260401-072318",
+		Manifest:        &Manifest{Version: 1, WorkDir: ".", Profile: RuntimeProfileNode},
+		Toolchain:       &Toolchain{PackageManager: PackageManagerBun, PackageManagerVersion: "1.2.20", NodeVersion: "22.14.0"},
+		TargetDataset:   "benchpool/repo-goldens/next-bun-monorepo-1",
+		PreviousDataset: "benchpool/repo-goldens/next-bun-monorepo-0",
+		Job: firecracker.JobConfig{
+			JobID:          "5c0e6fd6-d718-4b52-abcd-1234567890ab",
+			RunCommand:     []string{"bun", "run", "warm"},
+			RunWorkDir:     "/workspace",
+			PrepareCommand: []string{"bun", "install", "--frozen-lockfile"},
+			PrepareWorkDir: "/workspace",
+			Env:            map[string]string{"CI": "true"},
+		},
+		JobResult: firecracker.JobResult{
+			BootToReadyDuration:  5 * time.Millisecond,
+			PrepareDuration:      2 * time.Second,
+			RunDuration:          3 * time.Second,
+			ServiceStartDuration: 0,
+			VMExitWaitDuration:   410 * time.Millisecond,
+			StdoutBytes:          128,
+			StderrBytes:          0,
+		},
+		FilesystemCheckDuration:   221 * time.Millisecond,
+		SnapshotPromotionDuration: 9 * time.Millisecond,
+		PreviousDestroyDuration:   4 * time.Millisecond,
+		FilesystemCheckOK:         true,
+		Promoted:                  true,
+		CommitSHA:                 "367befa8562f50dfac64b5589e842a215598b90a",
+	}
+	artifacts := &GuestArtifactManifest{
+		SchemaVersion:      1,
+		RootfsSHA256:       "rootfs-sha",
+		KernelSHA256:       "kernel-sha",
+		PackageCount:       63,
+		RootfsUsedBytes:    405045248,
+		RootfsTreeBytes:    257605887,
+		KernelBytes:        44279576,
+		FirecrackerVersion: "1.15.0",
+		GuestKernelVersion: "6.1.155",
+	}
+
+	data, err := buildWarmJobConfigJSON(input, "/var/lib/ci/guest-artifacts.json", artifacts, nil)
+	if err != nil {
+		t.Fatalf("buildWarmJobConfigJSON: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if payload["event_kind"] != "warm" {
+		t.Fatalf("event_kind: got %v", payload["event_kind"])
+	}
+	if payload["parent_run_id"] != "fixtures-e2e-20260401-072318" {
+		t.Fatalf("parent_run_id: got %v", payload["parent_run_id"])
+	}
+	if payload["filesystem_check_ok"] != true {
+		t.Fatalf("filesystem_check_ok: got %v", payload["filesystem_check_ok"])
+	}
+	if payload["filesystem_check_ns"] != float64((221 * time.Millisecond).Nanoseconds()) {
+		t.Fatalf("filesystem_check_ns: got %v", payload["filesystem_check_ns"])
+	}
+	if payload["shutdown_mode"] != "guest_reboot_k" {
+		t.Fatalf("shutdown_mode: got %v", payload["shutdown_mode"])
+	}
+	if payload["vm_exit_wait_ns"] != float64((410 * time.Millisecond).Nanoseconds()) {
+		t.Fatalf("vm_exit_wait_ns: got %v", payload["vm_exit_wait_ns"])
+	}
+	if payload["vm_exit_forced"] != false {
+		t.Fatalf("vm_exit_forced: got %v", payload["vm_exit_forced"])
+	}
+}
+
+func TestWarmRunIDs(t *testing.T) {
+	runID, parent := warmRunIDs("fixtures-e2e-20260401-072318")
+	if runID != "fixtures-e2e-20260401-072318-warm" || parent != "fixtures-e2e-20260401-072318" {
+		t.Fatalf("warmRunIDs explicit: got run_id=%q parent=%q", runID, parent)
+	}
+	runID, parent = warmRunIDs("")
+	if parent != "" || runID == "" || runID == "-warm" {
+		t.Fatalf("warmRunIDs generated: got run_id=%q parent=%q", runID, parent)
 	}
 }

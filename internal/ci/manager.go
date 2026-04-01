@@ -31,6 +31,7 @@ type WarmRequest struct {
 	Repo          string
 	RepoURL       string
 	DefaultBranch string
+	RunID         string
 }
 
 type ExecRequest struct {
@@ -47,7 +48,7 @@ func NewManager(cfg firecracker.Config, logger *slog.Logger) *Manager {
 	}
 }
 
-func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
+func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	if req.Repo == "" {
 		return fmt.Errorf("repo is required")
 	}
@@ -58,19 +59,84 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		req.DefaultBranch = "main"
 	}
 
+	createdAt := time.Now().UTC()
+	runID, parentRunID := warmRunIDs(req.RunID)
 	repoKey := sanitizeRepoKey(req.Repo)
 	targetDataset := m.nextRepoGoldenDataset(repoKey)
 	previousDataset, err := m.activeRepoGoldenDataset(repoKey)
 	if err != nil {
 		return err
 	}
+	logger := m.logger.With("repo", req.Repo, "run_id", runID, "dataset", targetDataset)
+
+	var (
+		manifest                  *Manifest
+		toolchain                 *Toolchain
+		job                       firecracker.JobConfig
+		result                    firecracker.JobResult
+		cloneDuration             time.Duration
+		filesystemCheckDuration   time.Duration
+		snapshotPromotionDuration time.Duration
+		previousDestroyDuration   time.Duration
+		commitSHA                 string
+		filesystemCheckOK         bool
+		promoted                  bool
+		startedAt                 time.Time
+		completedAt               time.Time
+	)
+	defer func() {
+		completedAt = time.Now().UTC()
+		if telemetryErr := emitWarmTelemetry(logger, emitWarmTelemetryInput{
+			FirecrackerConfig:         m.firecrackerConfig,
+			Request:                   req,
+			RunID:                     runID,
+			ParentRunID:               parentRunID,
+			Manifest:                  manifest,
+			Toolchain:                 toolchain,
+			TargetDataset:             targetDataset,
+			PreviousDataset:           previousDataset,
+			Job:                       job,
+			JobResult:                 result,
+			CloneDuration:             cloneDuration,
+			FilesystemCheckDuration:   filesystemCheckDuration,
+			SnapshotPromotionDuration: snapshotPromotionDuration,
+			PreviousDestroyDuration:   previousDestroyDuration,
+			FilesystemCheckOK:         filesystemCheckOK,
+			Promoted:                  promoted,
+			CreatedAt:                 createdAt,
+			StartedAt:                 startedAt,
+			CompletedAt:               completedAt,
+			CommitSHA:                 commitSHA,
+			RunErr:                    err,
+		}); telemetryErr != nil {
+			logger.Warn("emit ci warm telemetry failed", "err", telemetryErr)
+		}
+	}()
 
 	if err := ensureDataset(ctx, m.repoGoldensRootDataset()); err != nil {
 		return err
 	}
+	cloneStart := time.Now()
 	if err := zfsClone(ctx, m.baseGoldenSnapshot(), targetDataset); err != nil {
 		return err
 	}
+	cloneDuration = time.Since(cloneStart)
+	logger.Info("repo golden clone created", "clone_ms", cloneDuration.Milliseconds(), "base_snapshot", m.baseGoldenSnapshot(), "previous_dataset", previousDataset)
+
+	cleanupTargetDataset := true
+	defer func() {
+		if !cleanupTargetDataset {
+			return
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), zfsTimeout)
+		defer cleanupCancel()
+		cleanupStart := time.Now()
+		if destroyErr := destroyDatasetRecursive(cleanupCtx, targetDataset); destroyErr != nil {
+			logger.Warn("failed to destroy warm target dataset", "err", destroyErr)
+			return
+		}
+		logger.Warn("destroyed warm target dataset after failed promotion", "cleanup_ms", time.Since(cleanupStart).Milliseconds())
+	}()
 
 	mountDir, err := mountDataset(ctx, targetDataset)
 	if err != nil {
@@ -87,12 +153,12 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		return err
 	}
 
-	manifest, err := LoadManifest(workspace)
+	manifest, err = LoadManifest(workspace)
 	if err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
-	toolchain, err := DetectToolchain(workspace)
+	toolchain, err = DetectToolchain(workspace)
 	if err != nil {
 		_ = unmountDataset(context.Background(), mountDir)
 		return err
@@ -106,17 +172,24 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
+	commitSHA, err = gitHeadSHA(workspace)
+	if err != nil {
+		_ = unmountDataset(context.Background(), mountDir)
+		return err
+	}
 
-	job := buildGuestJob(uuid.NewString(), manifest, toolchain, true, true, jobEnv)
+	job = buildGuestJob(uuid.NewString(), manifest, toolchain, true, true, jobEnv)
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		return err
 	}
 
 	orch := firecracker.New(m.firecrackerConfig, m.logger)
-	result, err := orch.RunDataset(ctx, job, targetDataset, false)
+	startedAt = time.Now().UTC()
+	result, err = orch.RunDataset(ctx, job, targetDataset, false)
 	if err != nil {
 		return fmt.Errorf("warm run failed: %w", err)
 	}
+	logger.Info("warm run finished", "exit_code", result.ExitCode, "duration_ms", result.Duration.Milliseconds(), "commit_sha", commitSHA)
 	if result.ExitCode != 0 {
 		logs := strings.TrimSpace(formatJobLogs(result))
 		if logs == "" {
@@ -124,15 +197,38 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		}
 		return fmt.Errorf("warm run exited with code %d\n%s", result.ExitCode, logs)
 	}
+
+	logger.Info("warm filesystem check starting", "dataset", targetDataset)
+	filesystemCheckStart := time.Now()
+	if err := checkFilesystem(ctx, targetDataset); err != nil {
+		filesystemCheckDuration = time.Since(filesystemCheckStart)
+		logger.Error("warm filesystem check failed", "dataset", targetDataset, "duration_ms", filesystemCheckDuration.Milliseconds(), "err", err)
+		return fmt.Errorf("warm filesystem check failed: %w", err)
+	}
+	filesystemCheckDuration = time.Since(filesystemCheckStart)
+	filesystemCheckOK = true
+	logger.Info("warm filesystem check passed", "dataset", targetDataset, "duration_ms", filesystemCheckDuration.Milliseconds())
+
+	logger.Info("promoting repo golden snapshot", "dataset", targetDataset)
+	snapshotPromotionStart := time.Now()
 	if err := replaceReadySnapshot(ctx, targetDataset); err != nil {
+		snapshotPromotionDuration = time.Since(snapshotPromotionStart)
 		return err
 	}
+	snapshotPromotionDuration = time.Since(snapshotPromotionStart)
 	if err := m.writeActiveRepoGoldenDataset(repoKey, targetDataset); err != nil {
 		return err
 	}
+	cleanupTargetDataset = false
+	promoted = true
+	logger.Info("repo golden promoted", "dataset", targetDataset, "promotion_ms", snapshotPromotionDuration.Milliseconds(), "previous_dataset", previousDataset)
 	if previousDataset != "" && previousDataset != targetDataset {
+		previousDestroyStart := time.Now()
 		if err := destroyDatasetRecursive(ctx, previousDataset); err != nil {
 			m.logger.Warn("failed to destroy previous repo golden", "repo", req.Repo, "dataset", previousDataset, "err", err)
+		} else {
+			previousDestroyDuration = time.Since(previousDestroyStart)
+			logger.Info("destroyed previous repo golden", "dataset", previousDataset, "duration_ms", previousDestroyDuration.Milliseconds())
 		}
 	}
 	return nil
