@@ -63,19 +63,12 @@ type keySpec struct {
 }
 
 var configKeys = []keySpec{
-	{Name: "agent.controller_addr", Path: []string{"agent", "controller_addr"}, Kind: kindString, EnvVar: "FORGE_METAL_CONTROLLER_ADDR"},
-	{Name: "agent.heartbeat_interval", Path: []string{"agent", "heartbeat_interval"}, Kind: kindString},
-	{Name: "agent.sandbox.max_concurrent_jobs", Path: []string{"agent", "sandbox", "max_concurrent_jobs"}, Kind: kindInt},
-	{Name: "agent.sandbox.runtime", Path: []string{"agent", "sandbox", "runtime"}, Kind: kindString},
 	{Name: "clickhouse.addr", Path: []string{"clickhouse", "addr"}, Kind: kindString},
 	{Name: "clickhouse.database", Path: []string{"clickhouse", "database"}, Kind: kindString},
 	{Name: "clickhouse.password", Path: []string{"clickhouse", "password"}, Kind: kindString, Secret: true, EnvVar: "FORGE_METAL_CLICKHOUSE_PASSWORD"},
 	{Name: "clickhouse.replication.cluster", Path: []string{"clickhouse", "replication", "cluster"}, Kind: kindString},
 	{Name: "clickhouse.replication.enabled", Path: []string{"clickhouse", "replication", "enabled"}, Kind: kindBool},
 	{Name: "clickhouse.username", Path: []string{"clickhouse", "username"}, Kind: kindString},
-	{Name: "controller.grpc_listen", Path: []string{"controller", "grpc_listen"}, Kind: kindString},
-	{Name: "controller.listen", Path: []string{"controller", "listen"}, Kind: kindString},
-	{Name: "controller.queue.db_path", Path: []string{"controller", "queue", "db_path"}, Kind: kindString},
 	{Name: "latitude.auth_token", Path: []string{"latitude", "auth_token"}, Kind: kindString, Secret: true, EnvVar: "LATITUDESH_AUTH_TOKEN"},
 	{Name: "latitude.billing", Path: []string{"latitude", "billing"}, Kind: kindString},
 	{Name: "latitude.operating_system", Path: []string{"latitude", "operating_system"}, Kind: kindString},

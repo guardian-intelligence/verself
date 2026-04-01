@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	_ "embed"
 
@@ -18,8 +17,6 @@ var defaultConfig []byte
 
 // Config is the top-level configuration for forge-metal.
 type Config struct {
-	Controller ControllerConfig `toml:"controller" json:"controller"`
-	Agent      AgentConfig      `toml:"agent" json:"agent"`
 	ClickHouse ClickHouseConfig `toml:"clickhouse" json:"clickhouse"`
 	ZFS        ZFSConfig        `toml:"zfs" json:"zfs"`
 	WireGuard  WireGuardConfig  `toml:"wireguard" json:"wireguard"`
@@ -49,40 +46,6 @@ type LatitudeSource struct {
 	Region    ValueSource `toml:"-" json:"-"`
 	Plan      ValueSource `toml:"-" json:"-"`
 	Project   ValueSource `toml:"-" json:"-"`
-}
-
-// ControllerConfig holds settings for the job scheduler.
-type ControllerConfig struct {
-	Listen     string      `toml:"listen" json:"listen"`
-	GRPCListen string      `toml:"grpc_listen" json:"grpc_listen"`
-	Queue      QueueConfig `toml:"queue" json:"queue"`
-}
-
-// QueueConfig holds settings for the SQLite-backed job queue.
-type QueueConfig struct {
-	DBPath string `toml:"db_path" json:"db_path"`
-}
-
-// AgentConfig holds settings for the worker agent.
-type AgentConfig struct {
-	HeartbeatInterval string        `toml:"heartbeat_interval" json:"heartbeat_interval"`
-	ControllerAddr    string        `toml:"controller_addr" json:"controller_addr"`
-	Sandbox           SandboxConfig `toml:"sandbox" json:"sandbox"`
-}
-
-// HeartbeatDuration parses the HeartbeatInterval string.
-func (a AgentConfig) HeartbeatDuration() time.Duration {
-	d, err := time.ParseDuration(a.HeartbeatInterval)
-	if err != nil {
-		return 5 * time.Second
-	}
-	return d
-}
-
-// SandboxConfig holds gVisor sandbox settings.
-type SandboxConfig struct {
-	Runtime           string `toml:"runtime" json:"runtime"`
-	MaxConcurrentJobs int    `toml:"max_concurrent_jobs" json:"max_concurrent_jobs"`
 }
 
 // ClickHouseConfig holds ClickHouse connection settings.
@@ -203,9 +166,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("FORGE_METAL_CLICKHOUSE_PASSWORD"); v != "" {
 		cfg.ClickHouse.Password = v
-	}
-	if v := os.Getenv("FORGE_METAL_CONTROLLER_ADDR"); v != "" {
-		cfg.Agent.ControllerAddr = v
 	}
 }
 
