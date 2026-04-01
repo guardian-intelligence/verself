@@ -132,6 +132,7 @@ func buildExecJobConfigJSON(input emitExecTelemetryInput) (string, error) {
 		"job_prepare_workdir":     input.Job.PrepareWorkDir,
 		"job_run_command":         input.Job.RunCommand,
 		"job_run_workdir":         input.Job.RunWorkDir,
+		"job_transport":           strings.TrimSpace(input.JobResult.ConfigTransport),
 		"job_services":            input.Job.Services,
 		"job_env_names":           sortedEnvKeys(input.Job.Env),
 	}

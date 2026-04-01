@@ -1,14 +1,16 @@
 // forgevm-init is the PID 1 init process for Firecracker CI VMs.
 //
 // It mounts the minimal Linux userspace, configures networking, starts
-// requested guest services, executes structured CI phases from /etc/ci/job.json,
+// requested guest services, fetches structured CI phases from Firecracker MMDS,
 // emits the final exit code marker, and reboots the VM cleanly.
 package main
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,6 +24,9 @@ const (
 	prSetChildSubreaper = 36
 	ipBin               = "/sbin/ip"
 	defaultWorkDir      = "/workspace"
+	defaultMMDSIPv4     = "169.254.169.254"
+	mmdsTokenTTLSeconds = "60"
+	jobConfigPath       = "/etc/ci/job.json"
 	postgresUID         = 70
 	postgresGID         = 70
 )
@@ -35,6 +40,15 @@ type jobConfig struct {
 	Env            map[string]string `json:"env"`
 }
 
+type mmdsDocument struct {
+	ForgeMetal mmdsForgeMetal `json:"forge_metal"`
+}
+
+type mmdsForgeMetal struct {
+	SchemaVersion int       `json:"schema_version"`
+	Job           jobConfig `json:"job"`
+}
+
 func main() {
 	bootStart := time.Now()
 
@@ -43,13 +57,15 @@ func main() {
 
 	configureNetwork()
 
-	cfg, err := readJobConfig()
+	cfg, transport, err := readJobConfig()
 	if err != nil {
 		fatal("read job config", err)
 	}
 	if len(cfg.RunCommand) == 0 {
 		fatal("job config", fmt.Errorf("run_command is empty"))
 	}
+	fmt.Fprintf(os.Stdout, "[init] job config transport: %s\n", transport)
+	fmt.Fprintf(os.Stdout, "FORGEVM_JOB_CONFIG_TRANSPORT=%s\n", transport)
 
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSetChildSubreaper, 1, 0); errno != 0 {
 		fmt.Fprintf(os.Stderr, "[init] warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", errno)
@@ -105,8 +121,111 @@ func mountVirtualFilesystems() {
 	mustMount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 }
 
-func readJobConfig() (*jobConfig, error) {
-	data, err := os.ReadFile("/etc/ci/job.json")
+func readJobConfig() (*jobConfig, string, error) {
+	cfg, err := readJobConfigFromMMDS()
+	if err == nil {
+		return cfg, "mmds", nil
+	}
+
+	fileCfg, fileErr := readJobConfigFromFile()
+	if fileErr == nil {
+		fmt.Fprintf(os.Stderr, "[init] warning: MMDS unavailable, using file fallback: %v\n", err)
+		return fileCfg, "file-fallback", nil
+	}
+
+	return nil, "", fmt.Errorf("read job config from MMDS: %w (file fallback: %v)", err, fileErr)
+}
+
+func readJobConfigFromMMDS() (*jobConfig, error) {
+	if err := configureMMDSRoute(defaultMMDSIPv4); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := deleteMMDSRoute(defaultMMDSIPv4); err != nil {
+			fmt.Fprintf(os.Stderr, "[init] warning: delete MMDS route: %v\n", err)
+		}
+	}()
+
+	return fetchMMDSJobConfig("http://"+defaultMMDSIPv4, &http.Client{Timeout: 2 * time.Second})
+}
+
+func fetchMMDSJobConfig(baseURL string, client *http.Client) (*jobConfig, error) {
+	token, err := requestMMDSToken(baseURL, client)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/forge_metal", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create MMDS data request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-metadata-token", token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request MMDS data: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read MMDS data response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("request MMDS data: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return decodeMMDSJobConfig(data)
+}
+
+func requestMMDSToken(baseURL string, client *http.Client) (string, error) {
+	req, err := http.NewRequest(http.MethodPut, strings.TrimRight(baseURL, "/")+"/latest/api/token", nil)
+	if err != nil {
+		return "", fmt.Errorf("create MMDS token request: %w", err)
+	}
+	req.Header.Set("X-metadata-token-ttl-seconds", mmdsTokenTTLSeconds)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request MMDS token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read MMDS token response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("request MMDS token: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("request MMDS token: empty response")
+	}
+	return token, nil
+}
+
+func decodeMMDSJobConfig(data []byte) (*jobConfig, error) {
+	var direct mmdsForgeMetal
+	if err := json.Unmarshal(data, &direct); err == nil && direct.SchemaVersion != 0 {
+		if direct.SchemaVersion != 1 {
+			return nil, fmt.Errorf("unsupported MMDS schema version %d", direct.SchemaVersion)
+		}
+		return &direct.Job, nil
+	}
+
+	var doc mmdsDocument
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("decode MMDS document: %w", err)
+	}
+	if doc.ForgeMetal.SchemaVersion != 1 {
+		return nil, fmt.Errorf("unsupported MMDS schema version %d", doc.ForgeMetal.SchemaVersion)
+	}
+	return &doc.ForgeMetal.Job, nil
+}
+
+func readJobConfigFromFile() (*jobConfig, error) {
+	data, err := os.ReadFile(jobConfigPath)
 	if err != nil {
 		return nil, err
 	}
@@ -426,6 +545,22 @@ func routeGateway() (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func configureMMDSRoute(ip string) error {
+	cmd := exec.Command(ipBin, "route", "replace", ip+"/32", "dev", "eth0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ip route replace %s/32 dev eth0: %s: %w", ip, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func deleteMMDSRoute(ip string) error {
+	cmd := exec.Command(ipBin, "route", "del", ip+"/32", "dev", "eth0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ip route del %s/32 dev eth0: %s: %w", ip, strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 func mustMount(source, target, fstype string, flags uintptr, data string) {

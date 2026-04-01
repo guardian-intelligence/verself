@@ -3,7 +3,6 @@ package firecracker
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -70,15 +69,16 @@ type JobConfig struct {
 
 // JobResult holds the outcome of a VM job execution.
 type JobResult struct {
-	ExitCode      int
-	Logs          string
-	Duration      time.Duration
-	CloneTime     time.Duration
-	JailSetupTime time.Duration
-	VMBootTime    time.Duration
-	CleanupTime   time.Duration
-	ZFSWritten    uint64
-	Metrics       *VMMetrics
+	ExitCode        int
+	Logs            string
+	ConfigTransport string
+	Duration        time.Duration
+	CloneTime       time.Duration
+	JailSetupTime   time.Duration
+	VMBootTime      time.Duration
+	CleanupTime     time.Duration
+	ZFSWritten      uint64
+	Metrics         *VMMetrics
 }
 
 // Orchestrator manages the full lifecycle of a Firecracker VM job.
@@ -191,20 +191,6 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	}
 
 	devPath := zvolDevicePath(dataset)
-	mountDir, mountErr := mountZvol(ctx, devPath)
-	if mountErr != nil {
-		return result, fmt.Errorf("mount zvol: %w", mountErr)
-	}
-
-	if writeErr := writeJobConfig(mountDir, job); writeErr != nil {
-		_ = unmount(ctx, mountDir)
-		return result, fmt.Errorf("write job config: %w", writeErr)
-	}
-
-	if umountErr := unmount(ctx, mountDir); umountErr != nil {
-		return result, fmt.Errorf("unmount zvol: %w", umountErr)
-	}
-	logger.Info("job config written to zvol")
 
 	jailStart := time.Now()
 	jailRoot := o.jailDir(job.JobID)
@@ -305,6 +291,8 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		{"network", func() error {
 			return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
+		{"mmds-config", func() error { return client.putMmdsConfig(ctx, []string{"eth0"}) }},
+		{"mmds", func() error { return client.putMmds(ctx, buildMMDSStore(job)) }},
 	}
 
 	for _, step := range apiSteps {
@@ -312,6 +300,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
 		}
 	}
+	logger.Info("job config published to mmds")
 
 	if startVMErr := client.startInstance(ctx); startVMErr != nil {
 		return result, fmt.Errorf("start VM: %w", startVMErr)
@@ -333,6 +322,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	logWg.Wait()
 	result.Logs = logBuf.String()
 	result.ExitCode = parseGuestExitCode(result.Logs)
+	result.ConfigTransport = parseGuestConfigTransport(result.Logs)
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
 	result.Metrics = parseMetricsFile(metricsPathHost)
@@ -444,24 +434,6 @@ func waitForSocket(ctx context.Context, path string) error {
 	}
 }
 
-func writeJobConfig(mountDir string, job JobConfig) error {
-	configDir := filepath.Join(mountDir, "etc", "ci")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", configDir, err)
-	}
-
-	data, err := json.MarshalIndent(job, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal job config: %w", err)
-	}
-
-	configPath := filepath.Join(configDir, "job.json")
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("write %s: %w", configPath, err)
-	}
-	return nil
-}
-
 func copyFile(src, dst string) error {
 	s, err := os.Open(src)
 	if err != nil {
@@ -495,4 +467,15 @@ func parseGuestExitCode(logs string) int {
 		}
 	}
 	return -1
+}
+
+func parseGuestConfigTransport(logs string) string {
+	const marker = "FORGEVM_JOB_CONFIG_TRANSPORT="
+	for _, line := range strings.Split(logs, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, marker) {
+			return strings.TrimSpace(line[len(marker):])
+		}
+	}
+	return ""
 }
