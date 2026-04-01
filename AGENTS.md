@@ -280,6 +280,11 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so its important to understand how everything connects.
 * You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM)
+* Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
+* You may be asked series of questions. Not all questions need to be answered individually. Consider the gestalt of the discussion and take a step back and address the core question underneath the questions.
+* You are not alone in this repo. Expect parallel changes in unrelated files by the user.
+* This repo is currently private and serves no customers or users. There is no backwards compatibility to maintain. This means: no compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover. 
+* Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
 
 ## Tool Use Contract
 
@@ -287,7 +292,10 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ## Output Contract
 
-* Act as a dispassionate CTO.
+* Base proposals in primary sources
+* When providing a recommendation, consider different plausible options and provide a differentiated recommendation.
+* Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
+* Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 
 ## License
 
