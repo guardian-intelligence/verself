@@ -71,14 +71,16 @@
   ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'CREATE DATABASE IF NOT EXISTS forge_metal'"
   changed_when: false
 
-- name: Apply ci_events migration
+- name: Apply ClickHouse migrations
   ansible.builtin.command: >
     {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
-    --queries-file /opt/forge-metal/migrations/001_ci_events.up.sql
-  changed_when: false
-
-- name: Apply firecracker_columns migration
-  ansible.builtin.command: >
-    {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
-    --queries-file /opt/forge-metal/migrations/002_firecracker_columns.up.sql
+    --queries-file /opt/forge-metal/migrations/{{ item }}
+  loop: >-
+    {{
+      query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
+      | map('basename')
+      | sort
+    }}
+  loop_control:
+    label: "{{ item }}"
   changed_when: false
