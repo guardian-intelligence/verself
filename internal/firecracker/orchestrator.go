@@ -398,7 +398,7 @@ func (o *Orchestrator) setupJail(ctx context.Context, jailRoot, zvolDevPath stri
 
 // startJailer builds the jailer exec.Cmd.
 //
-// No --new-pid-ns for the tracer bullet. The PID namespace adds a
+// No --new-pid-ns in the current runtime. The PID namespace adds a
 // fork that makes jailerCmd.Wait() ambiguous about which process
 // exited. Without it, the jailer execs Firecracker directly, so
 // Wait() returns exactly when the VM shuts down. PID namespace

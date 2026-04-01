@@ -1,8 +1,6 @@
 # Firecracker VM Networking
 
-Current Firecracker CI networking is a tracer bullet: one fixed `/30`, one guest IP, one TAP, one VM at a time. That forced the host-wide VM lock because concurrent jobs would collide on the same subnet and NAT rules.
-
-The v1 target keeps the current architecture but makes networking a host-managed allocator:
+Firecracker CI networking uses a host-managed allocator over a dedicated guest pool:
 
 - one configurable IPv4 guest pool, default `172.16.0.0/16`
 - one `/30` lease per VM

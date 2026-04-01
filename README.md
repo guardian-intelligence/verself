@@ -11,8 +11,6 @@ The CI path is built around repo-specific golden images:
 5. run CI inside an isolated Firecracker microVM
 6. emit wide events to ClickHouse for inspection in HyperDX
 
-This repo is no longer a benchmark harness. The active path is the real Forgejo + Firecracker + ZFS workflow exercised by `make e2e`.
-
 ## Current Scope
 
 Today the proven path is:
@@ -24,11 +22,11 @@ Today the proven path is:
 - optional `postgres` service
 - fixture E2E that seeds controlled repos into Forgejo and verifies the warm path
 
-That is intentionally narrower than "arbitrary CI for any repo". The cleanup work to remove remaining legacy assumptions is tracked in [docs/architecture/legacy-assumptions-audit.md](docs/architecture/legacy-assumptions-audit.md).
+That is intentionally narrower than "arbitrary CI for any repo". The current interface limits and remaining implementation assumptions are tracked in [docs/architecture/legacy-assumptions-audit.md](docs/architecture/legacy-assumptions-audit.md).
 
-## Minimal Workload Contract
+## Canonical Workload Contract
 
-The intended user-facing contract is small:
+The repo-owned workload contract is:
 
 ```toml
 version = 1
@@ -46,12 +44,10 @@ Meaning:
 
 - `run`: required CI command executed for the job
 - `workdir`: optional working directory relative to the repo root
-- `prepare`: optional command used when warming the repo golden
-- `services`: optional local services required inside the VM
-- `env`: optional environment variable names expected by the workload
-- `profile`: optional override when auto-detection is wrong
-
-This is the boundary we want to stabilize around.
+- `prepare`: optional command used when warming the repo golden; defaults to `run`
+- `services`: optional local services required inside the VM; currently only `postgres` is supported
+- `env`: optional environment variable names expected by the workload; values are copied from the runner environment and missing names fail fast
+- `profile`: optional execution-profile override; currently `auto` and `node` are supported, and `auto` resolves to the current Node runtime path
 
 ## What The Platform Should Derive
 
@@ -77,17 +73,11 @@ Fixture-only test metadata should be kept out of the runtime contract:
 
 Those are fixture orchestration concerns, not workload execution concerns.
 
-## Current Cleanup Direction
+## Runtime Notes
 
-The main technical direction is:
-
-1. keep one boring, generic execution substrate
-2. make repo-specific warming happen from the repo's default branch
-3. keep user config minimal
-4. derive toolchain and cache details where possible
-5. move fixture/E2E metadata out of the runtime manifest
-
-The detailed audit and cleanup order live in [docs/architecture/legacy-assumptions-audit.md](docs/architecture/legacy-assumptions-audit.md).
+- The runtime manifest is read from the checked-out ref, not from the warmed default-branch copy.
+- Fixture metadata for Forgejo E2E lives in the internal fixture layer, not in `.forge-metal/ci.toml`.
+- Toolchain detection is derived behavior behind the current Node profile; it is not part of the repo-owned config surface.
 
 ## Basic Commands
 

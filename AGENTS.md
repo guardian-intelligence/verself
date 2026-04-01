@@ -252,7 +252,7 @@ forge-metal/
 │   └── versions.json      # Pinned Alpine + Firecracker versions with SHA256
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
-├── config/default.toml    # Embedded defaults
+├── internal/config/default.toml # Embedded defaults
 └── flake.nix              # Dev shell + server profile (Nix is dev tooling only, not in VMs)
 ```
 
@@ -262,7 +262,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ### Current platform decisions
 
-- Retire the old benchmark-oriented control plane. `forge-metal` is the primary Go binary for real Forgejo + Firecracker CI execution.
+- `forge-metal` is the primary Go binary for Forgejo + Firecracker CI execution.
 - Keep the guest base image generic and boring: Node/Next.js-capable substrate only (Node, corepack, pnpm, Bun, git, certs, common service binaries). Do not create a distinct base image per repo or per package manager version.
 - Put the optimization boundary at the **repo golden image**, not the base image. For each repo, do one cold bootstrap on the default branch in the same Firecracker environment used for CI, then snapshot that warmed state as the golden image.
 - Use ZFS zvol clones + Firecracker as the only copy-on-write strategy. Do not add OverlayFS layering on top.
@@ -273,7 +273,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 - For database-backed projects, the warm path should snapshot default-branch database state and apply only branch deltas at job time. Do not hardcode a single app-specific seed path into infrastructure.
 - Keep git local. Use internal Forgejo and local mirrors/fetches for repeatable tests rather than pulling live upstream repos into the verification path.
 - Define "little to no custom glue" strictly: workflow file and minimal manifest are acceptable; patching app source, hardcoded repo branches in infra, inline app-specific env hacks, and explicit helper-script calls from project workflows are not.
-- Verification for this phase: seed two controlled Next.js monorepo fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
+- Verification for this phase: seed four controlled Next.js fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
 
 ## Assistant Contract
 

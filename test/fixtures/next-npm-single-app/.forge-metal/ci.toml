@@ -1,14 +1,2 @@
 version = 1
-repo_name = "next-npm-single-app"
-description = "single-package npm Next.js fixture with a multi-step CI script"
-default_branch = "main"
-workdir = "."
-services = []
-warm_command = ["npm", "run", "ci"]
-ci_command = ["npm", "run", "ci"]
-pr_branch = "test/forge-metal-warm-path"
-pr_title = "test: trigger forge-metal warm path"
-pr_commit_message = "test: trigger forge-metal warm path"
-pr_change_path = "app/page.js"
-pr_change_find = "Hello from npm single main"
-pr_change_replace = "Hello from npm single warm PR"
+run = ["npm", "run", "ci"]

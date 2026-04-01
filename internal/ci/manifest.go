@@ -4,27 +4,34 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
 
 const ManifestRelPath = ".forge-metal/ci.toml"
 
+type RuntimeProfile string
+
+const (
+	RuntimeProfileAuto RuntimeProfile = "auto"
+	RuntimeProfileNode RuntimeProfile = "node"
+)
+
+var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var supportedServices = map[string]struct{}{
+	"postgres": {},
+}
+
 type Manifest struct {
-	Version         int      `toml:"version"`
-	RepoName        string   `toml:"repo_name"`
-	Description     string   `toml:"description"`
-	DefaultBranch   string   `toml:"default_branch"`
-	WorkDir         string   `toml:"workdir"`
-	Services        []string `toml:"services"`
-	WarmCommand     []string `toml:"warm_command"`
-	CICommand       []string `toml:"ci_command"`
-	PRBranch        string   `toml:"pr_branch"`
-	PRTitle         string   `toml:"pr_title"`
-	PRCommitMessage string   `toml:"pr_commit_message"`
-	PRChangePath    string   `toml:"pr_change_path"`
-	PRChangeFind    string   `toml:"pr_change_find"`
-	PRChangeReplace string   `toml:"pr_change_replace"`
+	Version  int            `toml:"version"`
+	WorkDir  string         `toml:"workdir"`
+	Services []string       `toml:"services"`
+	Prepare  []string       `toml:"prepare"`
+	Run      []string       `toml:"run"`
+	Env      []string       `toml:"env"`
+	Profile  RuntimeProfile `toml:"profile"`
 }
 
 func LoadManifest(repoRoot string) (*Manifest, error) {
@@ -42,23 +49,16 @@ func LoadManifest(repoRoot string) (*Manifest, error) {
 	if m.Version == 0 {
 		m.Version = 1
 	}
-	if m.DefaultBranch == "" {
-		m.DefaultBranch = "main"
-	}
 	if m.WorkDir == "" {
 		m.WorkDir = "."
 	}
-	if len(m.WarmCommand) == 0 {
-		m.WarmCommand = append([]string(nil), m.CICommand...)
+	if m.Profile == "" {
+		m.Profile = RuntimeProfileAuto
 	}
-	if m.PRBranch == "" {
-		m.PRBranch = "test/forge-metal-warm-path"
-	}
-	if m.PRTitle == "" {
-		m.PRTitle = "test: trigger forge-metal warm path"
-	}
-	if m.PRCommitMessage == "" {
-		m.PRCommitMessage = "test: trigger forge-metal warm path"
+	m.Services = normalizeStringList(m.Services)
+	m.Env = normalizeStringList(m.Env)
+	if len(m.Prepare) == 0 {
+		m.Prepare = append([]string(nil), m.Run...)
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
@@ -71,20 +71,26 @@ func (m *Manifest) Validate() error {
 	if m.Version != 1 {
 		return fmt.Errorf("unsupported manifest version %d", m.Version)
 	}
-	if len(m.CICommand) == 0 {
-		return fmt.Errorf("manifest ci_command is required")
+	if len(m.Run) == 0 {
+		return fmt.Errorf("manifest run is required")
 	}
-	if len(m.WarmCommand) == 0 {
-		return fmt.Errorf("manifest warm_command is required")
+	if len(m.Prepare) == 0 {
+		return fmt.Errorf("manifest prepare is required")
 	}
-	if m.PRChangePath == "" {
-		return fmt.Errorf("manifest pr_change_path is required")
+	switch m.Profile {
+	case RuntimeProfileAuto, RuntimeProfileNode:
+	default:
+		return fmt.Errorf("unsupported manifest profile %q", m.Profile)
 	}
-	if m.PRChangeFind == "" {
-		return fmt.Errorf("manifest pr_change_find is required")
+	for _, service := range m.Services {
+		if !isSupportedService(service) {
+			return fmt.Errorf("unsupported service %q", service)
+		}
 	}
-	if m.PRChangeReplace == "" {
-		return fmt.Errorf("manifest pr_change_replace is required")
+	for _, name := range m.Env {
+		if !envNamePattern.MatchString(name) {
+			return fmt.Errorf("invalid env name %q", name)
+		}
 	}
 	return nil
 }
@@ -96,3 +102,34 @@ func (m *Manifest) RepoWorkDir() string {
 	return filepath.ToSlash(filepath.Join("/workspace", m.WorkDir))
 }
 
+func (m *Manifest) ResolvedPrepare() []string {
+	return append([]string(nil), m.Prepare...)
+}
+
+func normalizeStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isSupportedService(name string) bool {
+	_, ok := supportedServices[name]
+	return ok
+}

@@ -106,14 +106,19 @@ func gitHeadSHA(dir string) (string, error) {
 }
 
 func sortedEnvMap(vars map[string]string) []string {
-	keys := make([]string, 0, len(vars))
-	for key := range vars {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := sortedEnvKeys(vars)
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
 		out = append(out, key+"="+vars[key])
 	}
 	return out
+}
+
+func sortedEnvKeys(vars map[string]string) []string {
+	keys := make([]string, 0, len(vars))
+	for key := range vars {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

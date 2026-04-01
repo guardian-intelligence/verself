@@ -1,5 +1,5 @@
 -- Firecracker VM metrics columns for ci_events.
--- Added for tracer bullet: zvol->VM->ClickHouse pipeline.
+-- Added for the Firecracker CI runtime: zvol -> VM -> ClickHouse telemetry.
 --
 -- Compression codecs follow existing conventions:
 --   Byte counters: T64 + ZSTD(3)
