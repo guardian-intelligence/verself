@@ -92,3 +92,8 @@ make e2e
 
 - `make deploy`: normal idempotent deploy path
 - `make e2e`: deploy CI artifacts and run the real Forgejo fixture end-to-end validation
+
+
+--- A note on the future ---
+
+We will  want long-running VMs with developer tools installed for agents to work within with full unbounded permissions and access to  If they do something destructive to their sandbox we want to restore from a snapshots. If they attempt to exfiltrate secrets, we tightly controll egress and only provide encrypted secrets that must go through a layer for decryption (unless you can think of something better) If they attempt to perform a destructive action on production systems, we have a policy layer to prevent it.
