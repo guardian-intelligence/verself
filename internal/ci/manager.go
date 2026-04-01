@@ -107,12 +107,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		return err
 	}
 
-	job := firecracker.JobConfig{
-		JobID:   uuid.NewString(),
-		WorkDir: "/workspace",
-		Command: buildGuestCommand(manifest, toolchain, true, true),
-		Env:     jobEnv,
-	}
+	job := buildGuestJob(uuid.NewString(), manifest, toolchain, true, true, jobEnv)
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		return err
 	}
@@ -227,12 +222,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		return nil, err
 	}
 
-	job := firecracker.JobConfig{
-		JobID:   jobID,
-		WorkDir: "/workspace",
-		Command: buildGuestCommand(manifest, toolchain, installNeeded, false),
-		Env:     jobEnv,
-	}
+	job := buildGuestJob(jobID, manifest, toolchain, installNeeded, false, jobEnv)
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
 		return nil, err
@@ -303,31 +293,32 @@ func (m *Manager) writeActiveRepoGoldenDataset(repoKey, dataset string) error {
 	return os.WriteFile(m.repoGoldenStatePath(repoKey), []byte(dataset+"\n"), 0o644)
 }
 
-func buildGuestCommand(manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool) []string {
-	parts := make([]string, 0, 2)
+func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool, env map[string]string) firecracker.JobConfig {
 	repoRoot := "/workspace"
+
+	runCommand := manifest.Run
+	if warm {
+		runCommand = manifest.ResolvedPrepare()
+	}
+	if toolchain != nil {
+		runCommand = toolchain.ResolveCommand(runCommand)
+	}
+
+	job := firecracker.JobConfig{
+		JobID:      jobID,
+		RunCommand: cloneStringSlice(runCommand),
+		RunWorkDir: manifest.RepoWorkDir(),
+		Services:   cloneStringSlice(manifest.Services),
+		Env:        cloneStringMap(env),
+	}
 	switch resolvedProfile(manifest) {
 	case RuntimeProfileNode:
 		if installNeeded {
-			parts = append(parts, fmt.Sprintf("cd %s && %s", shellQuote(repoRoot), shellJoin(toolchain.InstallCommand())))
+			job.PrepareCommand = toolchain.InstallCommand()
+			job.PrepareWorkDir = repoRoot
 		}
 	}
-
-	command := manifest.Run
-	if warm {
-		command = manifest.ResolvedPrepare()
-	}
-	parts = append(parts, fmt.Sprintf("cd %s && %s", shellQuote(manifest.RepoWorkDir()), shellJoin(command)))
-
-	services := strings.Join(manifest.Services, ",")
-	return []string{
-		"/bin/sh",
-		"/usr/local/bin/forge-metal-ci-run",
-		"--services", services,
-		"--workdir", repoRoot,
-		"--",
-		"bash", "-lc", strings.Join(parts, " && "),
-	}
+	return job
 }
 
 func buildJobEnv(manifest *Manifest) (map[string]string, error) {
@@ -409,4 +400,22 @@ func replaceReadySnapshot(ctx context.Context, dataset string) error {
 
 func jsonMarshalIndent(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]string(nil), values...)
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }

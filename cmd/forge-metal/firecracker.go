@@ -35,8 +35,8 @@ func firecrackerTestCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "firecracker-test -- <command> [args...]",
-		Short: "Tracer bullet: zvol clone -> Firecracker VM -> command -> wide event",
-		Long: `Tracer bullet for the Firecracker CI pipeline.
+		Short: "Run a command in a Firecracker VM and print runtime metrics",
+		Long: `Standalone Firecracker runtime test.
 
 Clones a golden zvol, boots a Firecracker VM, runs the command inside it,
 captures output and metrics, and prints a wide event summary.
@@ -94,8 +94,9 @@ Examples:
 			jobID := uuid.New().String()
 
 			job := firecracker.JobConfig{
-				JobID:   jobID,
-				Command: args, // positional args after --
+				JobID:      jobID,
+				RunCommand: args, // positional args after --
+				RunWorkDir: "/workspace",
 				Env: map[string]string{
 					"CI":   "true",
 					"REPO": repo,
@@ -128,7 +129,7 @@ Examples:
 
 			// Print results.
 			fmt.Println()
-			fmt.Println("=== Firecracker Tracer Bullet Results ===")
+			fmt.Println("=== Firecracker Results ===")
 			fmt.Printf("Job ID:         %s\n", jobID)
 			fmt.Printf("Exit Code:      %d\n", result.ExitCode)
 			fmt.Printf("Total Duration: %s\n", result.Duration.Round(time.Millisecond))

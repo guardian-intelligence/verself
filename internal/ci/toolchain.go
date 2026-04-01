@@ -104,15 +104,32 @@ func DetectToolchain(repoRoot string) (*Toolchain, error) {
 func (tc *Toolchain) InstallCommand() []string {
 	switch tc.PackageManager {
 	case PackageManagerPNPM:
-		if tc.PackageManagerVersion != "" {
-			return []string{"bash", "-lc", fmt.Sprintf("npm install -g pnpm@%s && pnpm install --frozen-lockfile", tc.PackageManagerVersion)}
-		}
-		return []string{"bash", "-lc", "npm install -g pnpm && pnpm install --frozen-lockfile"}
+		return append(tc.pnpmLauncher(), "install", "--frozen-lockfile")
 	case PackageManagerBun:
-		return []string{"bash", "-lc", `HOST_GATEWAY="$(ip route show default | awk '/default/ {print $3; exit}')" && test -n "$HOST_GATEWAY" && bun install --frozen-lockfile --registry "http://${HOST_GATEWAY}:4873"`}
+		return []string{"bun", "install", "--frozen-lockfile"}
 	default:
 		return []string{"npm", "install"}
 	}
+}
+
+func (tc *Toolchain) ResolveCommand(argv []string) []string {
+	if len(argv) == 0 {
+		return nil
+	}
+	switch tc.PackageManager {
+	case PackageManagerPNPM:
+		if argv[0] == "pnpm" {
+			return append(tc.pnpmLauncher(), argv[1:]...)
+		}
+	}
+	return cloneArgs(argv)
+}
+
+func (tc *Toolchain) pnpmLauncher() []string {
+	if tc.PackageManagerVersion != "" {
+		return []string{"npx", "--yes", fmt.Sprintf("pnpm@%s", tc.PackageManagerVersion)}
+	}
+	return []string{"npx", "--yes", "pnpm"}
 }
 
 func (tc *Toolchain) LockfilePath(repoRoot string) string {
@@ -166,4 +183,11 @@ func readFirstLine(path string) (string, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func cloneArgs(argv []string) []string {
+	if len(argv) == 0 {
+		return nil
+	}
+	return append([]string(nil), argv...)
 }

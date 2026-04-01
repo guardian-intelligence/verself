@@ -59,10 +59,13 @@ func DefaultConfig() Config {
 
 // JobConfig describes the CI job to run inside the VM.
 type JobConfig struct {
-	JobID   string            `json:"job_id"`
-	Command []string          `json:"command"`
-	Env     map[string]string `json:"env"`
-	WorkDir string            `json:"work_dir"`
+	JobID          string            `json:"job_id"`
+	PrepareCommand []string          `json:"prepare_command,omitempty"`
+	PrepareWorkDir string            `json:"prepare_work_dir,omitempty"`
+	RunCommand     []string          `json:"run_command"`
+	RunWorkDir     string            `json:"run_work_dir,omitempty"`
+	Services       []string          `json:"services,omitempty"`
+	Env            map[string]string `json:"env"`
 }
 
 // JobResult holds the outcome of a VM job execution.
@@ -117,6 +120,10 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 		return
 	}
+	if len(job.RunCommand) == 0 {
+		err = fmt.Errorf("job run command is required")
+		return
+	}
 
 	// --- 1. Verify golden snapshot ---
 	exists, checkErr := zfsSnapshotExists(ctx, o.goldenSnapshot())
@@ -152,6 +159,9 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 func (o *Orchestrator) RunDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (JobResult, error) {
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
+	}
+	if len(job.RunCommand) == 0 {
+		return JobResult{}, fmt.Errorf("job run command is required")
 	}
 	return o.runDataset(ctx, job, dataset, destroyAfter)
 }

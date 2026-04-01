@@ -55,6 +55,7 @@
       --username {{ forgejo_admin_user }}
       --email {{ forgejo_admin_email }}
       --token {{ fixture_api_token.json.sha1 }}
+  become: true
   environment:
     PATH: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   no_log: true

@@ -3,11 +3,12 @@ package ci
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestBuildGuestCommand_InstallsFromRepoRootAndRunsFromWorkdir(t *testing.T) {
+func TestBuildGuestJob_NodeExecInstallsFromRepoRootAndRunsFromWorkdir(t *testing.T) {
 	root := filepath.Join("..", "..", "test", "fixtures", "next-bun-monorepo")
 	manifest, err := LoadManifest(root)
 	if err != nil {
@@ -18,30 +19,28 @@ func TestBuildGuestCommand_InstallsFromRepoRootAndRunsFromWorkdir(t *testing.T) 
 		t.Fatalf("DetectToolchain: %v", err)
 	}
 
-	cmd := buildGuestCommand(manifest, toolchain, true, false)
-	if len(cmd) != 10 {
-		t.Fatalf("unexpected command length: got %d", len(cmd))
+	job := buildGuestJob("job-1", manifest, toolchain, true, false, map[string]string{"CI": "true"})
+	if job.JobID != "job-1" {
+		t.Fatalf("job id: got %q", job.JobID)
 	}
-	if cmd[0] != "/bin/sh" || cmd[1] != "/usr/local/bin/forge-metal-ci-run" {
-		t.Fatalf("runner: got %q %q", cmd[0], cmd[1])
+	if !reflect.DeepEqual(job.PrepareCommand, []string{"bun", "install", "--frozen-lockfile"}) {
+		t.Fatalf("prepare command: got %+v", job.PrepareCommand)
 	}
-	if cmd[5] != "/workspace" {
-		t.Fatalf("wrapper workdir: got %q", cmd[5])
+	if job.PrepareWorkDir != "/workspace" {
+		t.Fatalf("prepare workdir: got %q", job.PrepareWorkDir)
 	}
-	if cmd[7] != "bash" || cmd[8] != "-lc" {
-		t.Fatalf("shell launcher: got %q %q", cmd[7], cmd[8])
+	if !reflect.DeepEqual(job.RunCommand, []string{"bun", "run", "ci"}) {
+		t.Fatalf("run command: got %+v", job.RunCommand)
 	}
-
-	script := cmd[9]
-	if !strings.Contains(script, `cd '/workspace' && 'bash' '-lc' 'HOST_GATEWAY="$(ip route show default | awk '"'"'/default/ {print $3; exit}'"'"')" && test -n "$HOST_GATEWAY" && bun install --frozen-lockfile --registry "http://${HOST_GATEWAY}:4873"'`) {
-		t.Fatalf("install script: got %q", script)
+	if job.RunWorkDir != "/workspace/apps/web" {
+		t.Fatalf("run workdir: got %q", job.RunWorkDir)
 	}
-	if !strings.Contains(script, "cd '/workspace/apps/web' && 'bun' 'run' 'ci'") {
-		t.Fatalf("run script: got %q", script)
+	if len(job.Services) != 0 {
+		t.Fatalf("services: got %+v", job.Services)
 	}
 }
 
-func TestBuildGuestCommand_UsesPrepareDuringWarm(t *testing.T) {
+func TestBuildGuestJob_WarmUsesManifestPrepareAsRunPhase(t *testing.T) {
 	manifest := &Manifest{
 		Version: 1,
 		WorkDir: ".",
@@ -51,12 +50,35 @@ func TestBuildGuestCommand_UsesPrepareDuringWarm(t *testing.T) {
 	}
 	toolchain := &Toolchain{PackageManager: PackageManagerNPM}
 
-	cmd := buildGuestCommand(manifest, toolchain, false, true)
-	if !strings.Contains(cmd[9], "cd '/workspace' && 'npm' 'run' 'warm'") {
-		t.Fatalf("warm script: got %q", cmd[9])
+	job := buildGuestJob("job-2", manifest, toolchain, false, true, map[string]string{"CI": "true"})
+	if len(job.PrepareCommand) != 0 {
+		t.Fatalf("unexpected prepare command: %+v", job.PrepareCommand)
 	}
-	if strings.Contains(cmd[9], "'npm' 'test'") {
-		t.Fatalf("warm script unexpectedly contains run command: %q", cmd[9])
+	if !reflect.DeepEqual(job.RunCommand, []string{"npm", "run", "warm"}) {
+		t.Fatalf("warm run command: got %+v", job.RunCommand)
+	}
+}
+
+func TestBuildGuestJob_PNPMUsesNPX(t *testing.T) {
+	manifest := &Manifest{
+		Version: 1,
+		WorkDir: ".",
+		Run:     []string{"pnpm", "run", "ci"},
+		Profile: RuntimeProfileNode,
+	}
+	toolchain := &Toolchain{
+		PackageManager:        PackageManagerPNPM,
+		PackageManagerVersion: "9.15.0",
+	}
+
+	job := buildGuestJob("job-3", manifest, toolchain, true, false, map[string]string{"CI": "true"})
+	want := []string{"npx", "--yes", "pnpm@9.15.0", "install", "--frozen-lockfile"}
+	if !reflect.DeepEqual(job.PrepareCommand, want) {
+		t.Fatalf("prepare command: got %+v want %+v", job.PrepareCommand, want)
+	}
+	runWant := []string{"npx", "--yes", "pnpm@9.15.0", "run", "ci"}
+	if !reflect.DeepEqual(job.RunCommand, runWant) {
+		t.Fatalf("run command: got %+v want %+v", job.RunCommand, runWant)
 	}
 }
 
