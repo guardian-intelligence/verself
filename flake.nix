@@ -62,6 +62,7 @@
             pkgs.jq
             pkgs.sqlite
             pkgs.python3           # Ansible requires Python on remote
+            self.packages.${system}.homestead-smelter-host
 
             # --- forge-metal binary ---
             self.packages.${system}.default
@@ -90,6 +91,7 @@
             # Tools
             pkgs.shellcheck
             pkgs.jq
+            pkgs.zig
             clickhouse-static
 
             # Secrets
@@ -116,6 +118,26 @@
         };
 
         packages = {
+          homestead-smelter-host = pkgs.stdenvNoCC.mkDerivation {
+            pname = "homestead-smelter-host";
+            version = "0.1.0";
+            src = pkgs.lib.cleanSource ./homestead-smelter;
+            nativeBuildInputs = [ pkgs.zig ];
+            dontConfigure = true;
+            buildPhase = ''
+              runHook preBuild
+              export HOME="$TMPDIR"
+              zig build -Doptimize=ReleaseSafe
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              install -D -m 0755 zig-out/bin/homestead-smelter-host \
+                "$out/bin/homestead-smelter-host"
+              runHook postInstall
+            '';
+          };
+
           default = pkgs.buildGoModule {
             pname = "forge-metal";
             version = "0.1.0";
@@ -154,6 +176,7 @@
               pkgs.protoc-gen-go-grpc
               pkgs.shellcheck
               pkgs.jq
+              pkgs.zig
               clickhouse-static
               pkgs.sops
               pkgs.age

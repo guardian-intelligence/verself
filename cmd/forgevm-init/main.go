@@ -9,18 +9,22 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	prSetChildSubreaper = 36
-	ipBin               = "/sbin/ip"
-	defaultWorkDir      = "/workspace"
-	postgresUID         = 70
-	postgresGID         = 70
+	prSetChildSubreaper  = 36
+	ipBin                = "/sbin/ip"
+	defaultWorkDir       = "/workspace"
+	postgresUID          = 70
+	postgresGID          = 70
+	homesteadSmelterBin  = "/usr/local/bin/homestead-smelter-guest"
+	homesteadSmelterPort = 10790
 )
 
 func main() {
@@ -39,6 +43,7 @@ func run() error {
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSetChildSubreaper, 1, 0); errno != 0 {
 		fmt.Fprintf(os.Stderr, "[init] warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", errno)
 	}
+	maybeStartHomesteadSmelter()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
@@ -228,4 +233,24 @@ func mustMkdir(path string, perm os.FileMode) {
 func fatal(msg string, err error) {
 	fmt.Fprintf(os.Stderr, "[init] FATAL: %s: %v\n", msg, err)
 	os.Exit(1)
+}
+
+func maybeStartHomesteadSmelter() {
+	if _, err := os.Stat(homesteadSmelterBin); err != nil {
+		return
+	}
+
+	cmd := exec.Command(homesteadSmelterBin, "--port", strconv.Itoa(homesteadSmelterPort))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "[init] warning: start homestead-smelter: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stdout, "[init] homestead-smelter started (pid=%d port=%d)\n", cmd.Process.Pid, homesteadSmelterPort)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			fmt.Fprintf(os.Stderr, "[init] warning: homestead-smelter exited: %v\n", err)
+		}
+	}()
 }
