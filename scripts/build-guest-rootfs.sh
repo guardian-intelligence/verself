@@ -13,7 +13,7 @@ set -euo pipefail
 #   Layer 2 (repo warm): repo checkout + prepare command + optional DB setup -> ZFS snapshot
 #
 # Requires: root, internet access, e2fsprogs. go only if no pre-built forgevm-init.
-# Produces: ci/output/rootfs.ext4, ci/output/sbom.txt
+# Produces: ci/output/rootfs.ext4, ci/output/sbom.txt, ci/output/guest-artifacts.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -40,6 +40,7 @@ fi
 
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not in PATH" >&2; exit 1; }
 command -v mke2fs >/dev/null 2>&1 || { echo "ERROR: mke2fs (e2fsprogs) not in PATH" >&2; exit 1; }
+command -v dumpe2fs >/dev/null 2>&1 || { echo "ERROR: dumpe2fs (e2fsprogs) not in PATH" >&2; exit 1; }
 # go is only required if no pre-built forgevm-init exists
 if [[ ! -f "$SCRIPT_DIR/forgevm-init" ]] && ! command -v go >/dev/null 2>&1; then
   echo "ERROR: no pre-built forgevm-init and go not in PATH" >&2; exit 1
@@ -48,7 +49,10 @@ fi
 # Read version pins
 ALPINE_URL=$(jq -r '.alpine.url' "$VERSIONS")
 ALPINE_SHA256=$(jq -r '.alpine.sha256' "$VERSIONS")
+ALPINE_VERSION=$(jq -r '.alpine.version' "$VERSIONS")
 ARCH=$(jq -r '.alpine.arch' "$VERSIONS")
+FIRECRACKER_VERSION=$(jq -r '.firecracker.version' "$VERSIONS")
+GUEST_KERNEL_VERSION=$(jq -r '.guest_kernel.version' "$VERSIONS")
 GUEST_KERNEL_ARCH=$(jq -r '.guest_kernel.arch' "$VERSIONS")
 GUEST_KERNEL_URL=$(jq -r '.guest_kernel.url' "$VERSIONS")
 GUEST_KERNEL_SHA256=$(jq -r '.guest_kernel.sha256' "$VERSIONS")
@@ -183,5 +187,68 @@ chroot "$ROOTFS" apk list --installed > "$OUTPUT_DIR/sbom.txt"
 echo "→ building ext4 image (4G)"
 mke2fs -F -t ext4 -d "$ROOTFS" -L ciroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" 4G
 
+# --- Emit guest artifact manifest ---
+echo "→ computing guest artifact metrics"
+ROOTFS_TREE_BYTES=$(du -sb "$ROOTFS" | awk '{print $1}')
+ROOTFS_APPARENT_BYTES=$(stat -c '%s' "$OUTPUT_DIR/rootfs.ext4")
+ROOTFS_ALLOCATED_BYTES=$(( $(stat -c '%b' "$OUTPUT_DIR/rootfs.ext4") * $(stat -c '%B' "$OUTPUT_DIR/rootfs.ext4") ))
+read -r ROOTFS_FILESYSTEM_BYTES ROOTFS_USED_BYTES ROOTFS_FREE_BYTES <<<"$(dumpe2fs -h "$OUTPUT_DIR/rootfs.ext4" 2>/dev/null | awk -F: '
+/Block count:/ {gsub(/^[ \t]+/, "", $2); block_count=$2}
+/Free blocks:/ {gsub(/^[ \t]+/, "", $2); free_blocks=$2}
+/Block size:/ {gsub(/^[ \t]+/, "", $2); block_size=$2}
+END {
+  total = block_count * block_size
+  free = free_blocks * block_size
+  used = total - free
+  printf "%.0f %.0f %.0f", total, used, free
+}')"
+ROOTFS_SHA256=$(sha256sum "$OUTPUT_DIR/rootfs.ext4" | awk '{print $1}')
+KERNEL_BYTES=$(stat -c '%s' "$OUTPUT_DIR/vmlinux")
+KERNEL_SHA256=$(sha256sum "$OUTPUT_DIR/vmlinux" | awk '{print $1}')
+SBOM_BYTES=$(stat -c '%s' "$OUTPUT_DIR/sbom.txt")
+SBOM_SHA256=$(sha256sum "$OUTPUT_DIR/sbom.txt" | awk '{print $1}')
+PACKAGE_COUNT=$(wc -l < "$OUTPUT_DIR/sbom.txt" | tr -d '[:space:]')
+INIT_BYTES=$(stat -c '%s' "$ROOTFS/sbin/init")
+
+jq -n \
+  --arg built_at_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg alpine_version "$ALPINE_VERSION" \
+  --arg firecracker_version "$FIRECRACKER_VERSION" \
+  --arg guest_kernel_version "$GUEST_KERNEL_VERSION" \
+  --arg rootfs_sha256 "$ROOTFS_SHA256" \
+  --arg kernel_sha256 "$KERNEL_SHA256" \
+  --arg sbom_sha256 "$SBOM_SHA256" \
+  --arg rootfs_tree_bytes "$ROOTFS_TREE_BYTES" \
+  --arg rootfs_apparent_bytes "$ROOTFS_APPARENT_BYTES" \
+  --arg rootfs_allocated_bytes "$ROOTFS_ALLOCATED_BYTES" \
+  --arg rootfs_filesystem_bytes "$ROOTFS_FILESYSTEM_BYTES" \
+  --arg rootfs_used_bytes "$ROOTFS_USED_BYTES" \
+  --arg rootfs_free_bytes "$ROOTFS_FREE_BYTES" \
+  --arg kernel_bytes "$KERNEL_BYTES" \
+  --arg sbom_bytes "$SBOM_BYTES" \
+  --arg package_count "$PACKAGE_COUNT" \
+  --arg init_bytes "$INIT_BYTES" \
+  '{
+    schema_version: 1,
+    built_at_utc: $built_at_utc,
+    alpine_version: $alpine_version,
+    firecracker_version: $firecracker_version,
+    guest_kernel_version: $guest_kernel_version,
+    rootfs_sha256: $rootfs_sha256,
+    rootfs_tree_bytes: ($rootfs_tree_bytes | tonumber),
+    rootfs_apparent_bytes: ($rootfs_apparent_bytes | tonumber),
+    rootfs_allocated_bytes: ($rootfs_allocated_bytes | tonumber),
+    rootfs_filesystem_bytes: ($rootfs_filesystem_bytes | tonumber),
+    rootfs_used_bytes: ($rootfs_used_bytes | tonumber),
+    rootfs_free_bytes: ($rootfs_free_bytes | tonumber),
+    kernel_sha256: $kernel_sha256,
+    kernel_bytes: ($kernel_bytes | tonumber),
+    sbom_sha256: $sbom_sha256,
+    sbom_bytes: ($sbom_bytes | tonumber),
+    package_count: ($package_count | tonumber),
+    init_bytes: ($init_bytes | tonumber)
+  }' > "$OUTPUT_DIR/guest-artifacts.json"
+
 echo "✓ rootfs built: $OUTPUT_DIR/rootfs.ext4"
 echo "✓ SBOM written: $OUTPUT_DIR/sbom.txt"
+echo "✓ guest artifact metrics written: $OUTPUT_DIR/guest-artifacts.json"

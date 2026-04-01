@@ -156,12 +156,17 @@
     path: "{{ fc_rootfs_path }}"
   register: ci_rootfs
 
+- name: Verify guest artifact manifest exists
+  ansible.builtin.stat:
+    path: "{{ fc_guest_artifact_manifest_path }}"
+  register: ci_guest_artifacts
+
 - name: Fail if CI artifacts are missing
   ansible.builtin.fail:
     msg: >
-      CI artifacts not found at {{ fc_kernel_path }} and/or {{ fc_rootfs_path }}.
-      Build with: sudo scripts/build-guest-rootfs.sh
-  when: not ci_kernel.stat.exists or not ci_rootfs.stat.exists
+      CI artifacts not found at {{ fc_kernel_path }}, {{ fc_rootfs_path }}, and/or {{ fc_guest_artifact_manifest_path }}.
+      Stage them with: make guest-rootfs && make deploy-ci-artifacts
+  when: not ci_kernel.stat.exists or not ci_rootfs.stat.exists or not ci_guest_artifacts.stat.exists
 
 # --- Golden zvol ---
 
