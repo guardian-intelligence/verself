@@ -3,9 +3,11 @@
 # No package installs — all software comes from the Nix server profile.
 # This role only handles system-level configuration that Nix doesn't manage.
 
-- name: Install ZFS utilities (kernel-dependent, must match running kernel)
+- name: Install ZFS and ext4 utilities
   ansible.builtin.apt:
-    name: zfsutils-linux
+    name:
+      - zfsutils-linux
+      - e2fsprogs
     state: present
     update_cache: true
 

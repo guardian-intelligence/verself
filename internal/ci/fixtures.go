@@ -178,6 +178,7 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 			Repo:          fmt.Sprintf("%s/%s", opts.Owner, fixture.Name),
 			RepoURL:       repoURL,
 			DefaultBranch: fixture.Metadata.DefaultBranch,
+			RunID:         runID,
 		}); err != nil {
 			return err
 		}

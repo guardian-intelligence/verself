@@ -82,11 +82,13 @@ type JobResult struct {
 	PrepareDuration      time.Duration
 	RunDuration          time.Duration
 	ServiceStartDuration time.Duration
+	VMExitWaitDuration   time.Duration
 	CleanupTime          time.Duration
 	ZFSWritten           uint64
 	StdoutBytes          uint64
 	StderrBytes          uint64
 	DroppedLogBytes      uint64
+	ForcedShutdown       bool
 	Metrics              *VMMetrics
 }
 
@@ -363,13 +365,19 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		}
 	}
 
+	shutdownWaitStart := time.Now()
 	select {
 	case waitErr := <-waitDone:
+		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
 		jailerExited.Store(true)
 		if waitErr != nil && controlRunErr == nil {
 			controlRunErr = fmt.Errorf("wait for VM exit: %w", waitErr)
 		}
+		logger.Info("VM process exited after guest shutdown", "wait_ms", result.VMExitWaitDuration.Milliseconds())
 	case <-time.After(15 * time.Second):
+		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
+		result.ForcedShutdown = true
+		logger.Warn("VM did not exit after guest shutdown; killing Firecracker", "wait_ms", result.VMExitWaitDuration.Milliseconds())
 		_ = jailerCmd.Process.Kill()
 		<-waitDone
 		jailerExited.Store(true)

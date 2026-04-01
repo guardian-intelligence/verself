@@ -146,6 +146,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 			if !ackedResult {
 				continue
 			}
+			session.sendLogString("system", "[init] shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
 			syscall.Sync()
 			return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 		case vmproto.TypeCancel:
