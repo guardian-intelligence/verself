@@ -127,7 +127,7 @@ GROUP
 
 echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
 cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
-# Registry is injected at runtime by /usr/local/bin/forge-metal-ci-run.
+# Registry is injected at runtime by forgevm-init.
 NPMRC
 
 # --- Create required directories ---
@@ -147,60 +147,6 @@ echo "listen_addresses = 'localhost'" >> "$ROOTFS/var/lib/postgresql/data/postgr
 echo "unix_socket_directories = '/run/postgresql'" >> "$ROOTFS/var/lib/postgresql/data/postgresql.conf"
 sed -i 's/^local.*all.*all.*trust/local all all trust/' "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
 echo "host all all 127.0.0.1/32 trust" >> "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
-
-# --- Write generic CI service runner ---
-cat > "$ROOTFS/usr/local/bin/forge-metal-ci-run" << 'WRAPPER'
-#!/bin/sh
-# Start requested services, switch to the requested workdir, and exec the CI command.
-set -e
-services=""
-workdir="/workspace"
-registry="${FORGE_METAL_NPM_REGISTRY:-}"
-
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --services)
-      services="$2"
-      shift 2
-      ;;
-    --workdir)
-      workdir="$2"
-      shift 2
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      echo "unknown argument: $1" >&2
-      exit 2
-      ;;
-  esac
-done
-
-if [ -z "$registry" ]; then
-  gateway="$(ip route show default | awk '/default/ {print $3; exit}')"
-  if [ -z "$gateway" ]; then
-    echo "unable to determine host gateway for registry access" >&2
-    exit 1
-  fi
-  registry="http://${gateway}:4873"
-fi
-
-export npm_config_registry="$registry"
-export NPM_CONFIG_REGISTRY="$registry"
-
-case ",$services," in
-  *,postgres,*)
-    mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
-    su postgres -c "pg_ctl start -D /var/lib/postgresql/data -l /tmp/pg.log -w"
-    ;;
-esac
-
-cd "$workdir"
-exec "$@"
-WRAPPER
-chmod +x "$ROOTFS/usr/local/bin/forge-metal-ci-run"
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"

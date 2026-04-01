@@ -128,8 +128,11 @@ func buildExecJobConfigJSON(input emitExecTelemetryInput) (string, error) {
 		"package_manager_version": input.Toolchain.PackageManagerVersion,
 		"node_version":            input.Toolchain.NodeVersion,
 		"install_needed":          input.InstallNeeded,
-		"job_workdir":             input.Job.WorkDir,
-		"job_command":             input.Job.Command,
+		"job_prepare_command":     input.Job.PrepareCommand,
+		"job_prepare_workdir":     input.Job.PrepareWorkDir,
+		"job_run_command":         input.Job.RunCommand,
+		"job_run_workdir":         input.Job.RunWorkDir,
+		"job_services":            input.Job.Services,
 		"job_env_names":           sortedEnvKeys(input.Job.Env),
 	}
 	if input.RunErr != nil {

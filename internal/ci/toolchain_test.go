@@ -3,6 +3,7 @@ package ci
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -96,5 +97,46 @@ func TestDetectToolchain_NPMFromPackageManagerField(t *testing.T) {
 	}
 	if tc.NodeVersion != "22.x" {
 		t.Fatalf("node version: got %q", tc.NodeVersion)
+	}
+}
+
+func TestInstallCommand_PNPMUsesDirectArgv(t *testing.T) {
+	tc := &Toolchain{
+		PackageManager:        PackageManagerPNPM,
+		PackageManagerVersion: "9.15.0",
+	}
+	want := []string{"npx", "--yes", "pnpm@9.15.0", "install", "--frozen-lockfile"}
+	if got := tc.InstallCommand(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("InstallCommand: got %+v want %+v", got, want)
+	}
+}
+
+func TestInstallCommand_BunUsesDirectArgv(t *testing.T) {
+	tc := &Toolchain{PackageManager: PackageManagerBun}
+	want := []string{"bun", "install", "--frozen-lockfile"}
+	if got := tc.InstallCommand(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("InstallCommand: got %+v want %+v", got, want)
+	}
+}
+
+func TestResolveCommand_PNPMUsesVersionedNPXLauncher(t *testing.T) {
+	tc := &Toolchain{
+		PackageManager:        PackageManagerPNPM,
+		PackageManagerVersion: "9.15.0",
+	}
+	want := []string{"npx", "--yes", "pnpm@9.15.0", "run", "ci"}
+	if got := tc.ResolveCommand([]string{"pnpm", "run", "ci"}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveCommand: got %+v want %+v", got, want)
+	}
+}
+
+func TestResolveCommand_PreservesExplicitShellCommands(t *testing.T) {
+	tc := &Toolchain{
+		PackageManager:        PackageManagerPNPM,
+		PackageManagerVersion: "9.15.0",
+	}
+	want := []string{"bash", "-lc", "pnpm run ci"}
+	if got := tc.ResolveCommand(want); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveCommand shell: got %+v want %+v", got, want)
 	}
 }

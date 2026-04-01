@@ -93,7 +93,6 @@ Current state:
 ### 3. Service support is intentionally narrow
 
 - `internal/ci/manifest.go`
-- `internal/ci/services.go`
 - `scripts/build-guest-rootfs.sh`
 
 Current state:
@@ -101,14 +100,15 @@ Current state:
 - supported services are validated explicitly
 - the only supported service is `postgres`
 
-### 4. Execution is still shell-driven inside the guest
+### 4. Execution is now structured, but still Node-profile-biased
 
 - `internal/ci/manager.go`
-- `scripts/build-guest-rootfs.sh`
+- `cmd/forgevm-init/main.go`
 
 Current state:
 
-- the wrapper still executes commands through `bash -lc`
+- the platform no longer generates `bash -lc`
+- prepare and run execute as direct argv phases inside the guest
 - the current Node profile still installs from repo root and then runs from the configured workdir
 
 ### 5. Forgejo fixture orchestration remains repo-local

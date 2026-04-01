@@ -37,8 +37,9 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 
 	for _, jobID := range jobIDs {
 		job := JobConfig{
-			JobID:   jobID,
-			Command: []string{"sh", "-lc", "echo parallel-start && sleep 3 && echo parallel-done"},
+			JobID:      jobID,
+			RunCommand: []string{"sh", "-lc", "echo parallel-start && sleep 3 && echo parallel-done"},
+			RunWorkDir: "/workspace",
 			Env: map[string]string{
 				"CI": "true",
 			},
