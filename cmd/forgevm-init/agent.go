@@ -379,12 +379,14 @@ func (s *agentSession) startServices(ctx context.Context, controlCh <-chan vmpro
 	if len(services) == 0 {
 		return 0, nil
 	}
+	phaseExitCode := 0
 	if err := s.sendControl(vmproto.TypePhaseStart, vmproto.PhaseStart{Name: "services"}); err != nil {
 		return 0, err
 	}
 	defer func() {
 		_ = s.sendControl(vmproto.TypePhaseEnd, vmproto.PhaseEnd{
 			Name:       "services",
+			ExitCode:   phaseExitCode,
 			DurationMS: time.Since(start).Milliseconds(),
 		})
 	}()
@@ -400,10 +402,21 @@ func (s *agentSession) startServices(ctx context.Context, controlCh <-chan vmpro
 
 		switch service {
 		case "postgres":
-			if _, _, err := s.runCommand(ctx, "service:postgres", postgresCommand(env), controlCh); err != nil {
+			if err := preparePostgresRuntime(); err != nil {
+				phaseExitCode = 1
 				return 0, err
 			}
+			_, exitCode, err := s.runCommand(ctx, "service:postgres", postgresCommand(env), controlCh)
+			if err != nil {
+				phaseExitCode = exitCode
+				return 0, err
+			}
+			if exitCode != 0 {
+				phaseExitCode = exitCode
+				return 0, fmt.Errorf("service postgres exited with code %d", exitCode)
+			}
 		default:
+			phaseExitCode = 1
 			return 0, fmt.Errorf("unsupported service %q", service)
 		}
 	}
@@ -455,6 +468,16 @@ func postgresCommand(env []string) commandSpec {
 			Gid: postgresGID,
 		},
 	}
+}
+
+func preparePostgresRuntime() error {
+	if err := os.MkdirAll("/run/postgresql", 0o775); err != nil {
+		return fmt.Errorf("mkdir /run/postgresql: %w", err)
+	}
+	if err := os.Chown("/run/postgresql", postgresUID, postgresGID); err != nil {
+		return fmt.Errorf("chown /run/postgresql: %w", err)
+	}
+	return nil
 }
 
 func mustResolveCommand(name string) string {
