@@ -19,4 +19,5 @@ fc_zfs_arc_max_bytes: 8589934592  # 8 GiB
 fc_guest_pool_cidr: 172.16.0.0/16
 fc_net_lease_dir: /var/lib/ci/net/leases
 fc_host_uplink_interface: ""
+fc_smelter_host_binary_path: /usr/local/bin/homestead-smelter-host
 fc_smelter_control_socket: /run/homestead-smelter/agent.sock

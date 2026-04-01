@@ -143,6 +143,35 @@
     state: started
     daemon_reload: true
 
+- name: Verify Zig is available on controller for homestead-smelter build
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command: zig version
+  changed_when: false
+
+- name: Build homestead-smelter host binary on controller
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - zig
+      - build
+      - -Doptimize=ReleaseSafe
+      - -Dtarget=x86_64-linux-musl
+    chdir: "{{ playbook_dir }}/../../homestead-smelter"
+  changed_when: false
+
+- name: Install homestead-smelter host binary
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../homestead-smelter/zig-out/bin/homestead-smelter-host"
+    dest: "{{ fc_smelter_host_binary_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: restart homestead smelter
+
 - name: Install homestead-smelter host service
   ansible.builtin.template:
     src: homestead-smelter-host.service.j2
@@ -157,9 +186,12 @@
     state: started
     daemon_reload: true
 
+- name: Flush homestead-smelter handlers
+  ansible.builtin.meta: flush_handlers
+
 - name: Verify homestead-smelter host service responds
   ansible.builtin.command: >
-    {{ fm_bin }}/homestead-smelter-host ping
+    {{ fc_smelter_host_binary_path }} ping
     --control-uds {{ fc_smelter_control_socket }}
   register: smelter_ping
   changed_when: false
