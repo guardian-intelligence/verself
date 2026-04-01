@@ -6,7 +6,17 @@
     "sha256": "460e7ea6d359b7ea6913326639cb88e5eef65292a09b63c89b4aecf048a90959"
   },
   "firecracker": {
-    "version": "1.14.2",
-    "note": "Static binaries at /usr/local/bin/ deployed separately"
+    "version": "1.15.0",
+    "arch": "x86_64",
+    "url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.0/firecracker-v1.15.0-x86_64.tgz",
+    "sha256": "00cadf7f21e709e939dc0c8d16e2d2ce7b975a62bec6c50f74b421cc8ab3cab4"
+  },
+  "guest_kernel": {
+    "version": "6.1.155",
+    "arch": "x86_64",
+    "url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155",
+    "sha256": "e20e46d0c36c55c0d1014eb20576171b3f3d922260d9f792017aeff53af3d4f2",
+    "config_url": "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.15/x86_64/vmlinux-6.1.155.config",
+    "config_sha256": "024b2aae62fe7131f9a9ab80f27619c882c0a37265dd105adae01d2867bef7c3"
   }
 }

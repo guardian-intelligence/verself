@@ -3,6 +3,58 @@
 # CI artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
 # and pre-staged to /var/lib/ci/ before this role runs.
 
+- name: Load CI version pins from repo
+  ansible.builtin.set_fact:
+    fc_version_pins: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../ci/versions.json') | from_json }}"
+
+- name: Set Firecracker release paths
+  ansible.builtin.set_fact:
+    fc_release_archive: "/tmp/firecracker-{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}.tgz"
+    fc_release_dir: "/tmp/firecracker-release-{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+
+- name: Download pinned Firecracker release archive
+  ansible.builtin.get_url:
+    url: "{{ fc_version_pins.firecracker.url }}"
+    dest: "{{ fc_release_archive }}"
+    checksum: "sha256:{{ fc_version_pins.firecracker.sha256 }}"
+    mode: "0644"
+
+- name: Create Firecracker extraction directory
+  ansible.builtin.file:
+    path: "{{ fc_release_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Extract Firecracker release archive
+  ansible.builtin.unarchive:
+    src: "{{ fc_release_archive }}"
+    dest: "{{ fc_release_dir }}"
+    remote_src: true
+
+- name: Install pinned Firecracker binary
+  ansible.builtin.copy:
+    src: "{{ fc_release_dir }}/release-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}/firecracker-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+    dest: /usr/local/bin/firecracker
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install pinned jailer binary
+  ansible.builtin.copy:
+    src: "{{ fc_release_dir }}/release-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}/jailer-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+    dest: /usr/local/bin/jailer
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verify installed Firecracker version
+  ansible.builtin.command: /usr/local/bin/firecracker --version
+  register: fc_installed_version
+  changed_when: false
+  failed_when: "'v' + fc_version_pins.firecracker.version not in fc_installed_version.stdout"
+
 # --- KVM ---
 
 - name: Ensure iptables is installed

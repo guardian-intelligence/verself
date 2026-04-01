@@ -48,9 +48,17 @@ fi
 # Read version pins
 ALPINE_URL=$(jq -r '.alpine.url' "$VERSIONS")
 ALPINE_SHA256=$(jq -r '.alpine.sha256' "$VERSIONS")
-FIRECRACKER_VERSION=$(jq -r '.firecracker.version' "$VERSIONS")
 ARCH=$(jq -r '.alpine.arch' "$VERSIONS")
-FC_CI_VERSION="${FIRECRACKER_VERSION%.*}"
+GUEST_KERNEL_ARCH=$(jq -r '.guest_kernel.arch' "$VERSIONS")
+GUEST_KERNEL_URL=$(jq -r '.guest_kernel.url' "$VERSIONS")
+GUEST_KERNEL_SHA256=$(jq -r '.guest_kernel.sha256' "$VERSIONS")
+GUEST_KERNEL_CONFIG_URL=$(jq -r '.guest_kernel.config_url // empty' "$VERSIONS")
+GUEST_KERNEL_CONFIG_SHA256=$(jq -r '.guest_kernel.config_sha256 // empty' "$VERSIONS")
+
+if [[ "$GUEST_KERNEL_ARCH" != "$ARCH" ]]; then
+  echo "ERROR: guest kernel arch ($GUEST_KERNEL_ARCH) does not match Alpine arch ($ARCH)" >&2
+  exit 1
+fi
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -71,17 +79,38 @@ echo "$ALPINE_SHA256  $TARBALL" | sha256sum -c - || {
 echo "→ extracting rootfs"
 tar -xzf "$TARBALL" -C "$ROOTFS"
 
-# --- Download Firecracker-compatible guest kernel ---
-echo "→ downloading guest kernel for Firecracker CI v${FC_CI_VERSION}"
-KERNEL_KEY=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/v${FC_CI_VERSION}/${ARCH}/vmlinux-&list-type=2" \
-  | grep -oE "firecracker-ci/v${FC_CI_VERSION}/${ARCH}/vmlinux-[0-9]+\.[0-9]+\.[0-9]{1,3}" \
-  | sort -V | tail -1)
-if [[ -z "$KERNEL_KEY" ]]; then
-  echo "ERROR: could not resolve Firecracker CI kernel for v${FC_CI_VERSION}/${ARCH}" >&2
-  exit 1
-fi
+# --- Download explicitly pinned guest kernel ---
+echo "→ downloading pinned guest kernel"
 mkdir -p "$OUTPUT_DIR"
-curl -fsSL -o "$OUTPUT_DIR/vmlinux" "https://s3.amazonaws.com/spec.ccfc.min/${KERNEL_KEY}"
+KERNEL_TMP="$WORKDIR/vmlinux"
+curl -fsSL -o "$KERNEL_TMP" "$GUEST_KERNEL_URL"
+echo "$GUEST_KERNEL_SHA256  $KERNEL_TMP" | sha256sum -c - || {
+  echo "ERROR: guest kernel SHA256 mismatch" >&2
+  exit 1
+}
+install -m 0644 "$KERNEL_TMP" "$OUTPUT_DIR/vmlinux"
+
+if [[ -n "$GUEST_KERNEL_CONFIG_URL" ]]; then
+  KERNEL_CONFIG_TMP="$WORKDIR/vmlinux.config"
+  curl -fsSL -o "$KERNEL_CONFIG_TMP" "$GUEST_KERNEL_CONFIG_URL"
+  if [[ -n "$GUEST_KERNEL_CONFIG_SHA256" ]]; then
+    echo "$GUEST_KERNEL_CONFIG_SHA256  $KERNEL_CONFIG_TMP" | sha256sum -c - || {
+      echo "ERROR: guest kernel config SHA256 mismatch" >&2
+      exit 1
+    }
+  fi
+
+  grep -q '^CONFIG_VIRTIO_VSOCKETS=y$' "$KERNEL_CONFIG_TMP" || {
+    echo "ERROR: guest kernel is missing CONFIG_VIRTIO_VSOCKETS=y" >&2
+    exit 1
+  }
+  grep -q '^CONFIG_HW_RANDOM_VIRTIO=y$' "$KERNEL_CONFIG_TMP" || {
+    echo "ERROR: guest kernel is missing CONFIG_HW_RANDOM_VIRTIO=y" >&2
+    exit 1
+  }
+
+  install -m 0644 "$KERNEL_CONFIG_TMP" "$OUTPUT_DIR/vmlinux.config"
+fi
 
 # --- Install packages via chroot ---
 echo "→ installing packages"
