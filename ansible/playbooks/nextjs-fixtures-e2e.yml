@@ -1,6 +1,6 @@
 ---
-# Deploy the Firecracker/Forgejo stack and validate it against two controlled
-# Next.js monorepo fixtures.
+# Deploy the Firecracker/Forgejo stack and validate it against the controlled
+# Next.js fixture repos.
 
 - name: Deploy forge-metal and validate Next.js fixtures
   hosts: all
