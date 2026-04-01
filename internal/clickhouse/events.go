@@ -65,11 +65,16 @@ type CIEvent struct {
 	VCPUExitCount   uint64 `ch:"vcpu_exit_count"`
 	VMExitCode      int32  `ch:"vm_exit_code"`
 	JobConfigJSON   string `ch:"job_config_json"`
+	BootToReadyNs   int64  `ch:"boot_to_ready_ns"`
+	ServiceStartNs  int64  `ch:"service_start_ns"`
+	StdoutBytes     uint64 `ch:"stdout_bytes"`
+	StderrBytes     uint64 `ch:"stderr_bytes"`
+	DroppedLogBytes uint64 `ch:"dropped_log_bytes"`
 
 	// Cache effectiveness
-	NPMCacheHit    uint8 `ch:"npm_cache_hit"`
-	NextCacheHit   uint8 `ch:"next_cache_hit"`
-	TSCCacheHit    uint8 `ch:"tsc_cache_hit"`
+	NPMCacheHit     uint8 `ch:"npm_cache_hit"`
+	NextCacheHit    uint8 `ch:"next_cache_hit"`
+	TSCCacheHit     uint8 `ch:"tsc_cache_hit"`
 	LockfileChanged uint8 `ch:"lockfile_changed"`
 
 	// Hardware

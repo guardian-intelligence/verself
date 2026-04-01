@@ -57,6 +57,11 @@ type networkInterfaceReq struct {
 	GuestMAC    string `json:"guest_mac"`
 }
 
+type vsockReq struct {
+	GuestCID uint32 `json:"guest_cid"`
+	UDSPath  string `json:"uds_path"`
+}
+
 type actionReq struct {
 	ActionType string `json:"action_type"`
 }
@@ -72,21 +77,34 @@ type metricsReq struct {
 	MetricsPath string `json:"metrics_path"`
 }
 
-const DefaultMMDSIPv4 = "169.254.169.254"
+type entropyReq struct{}
 
-type mmdsConfigReq struct {
-	Version           string   `json:"version,omitempty"`
-	NetworkInterfaces []string `json:"network_interfaces"`
-	IPv4Address       string   `json:"ipv4_address,omitempty"`
+type vmStateReq struct {
+	State string `json:"state"`
 }
 
-type mmdsStore struct {
-	ForgeMetal mmdsForgeMetal `json:"forge_metal"`
+type snapshotCreateReq struct {
+	MemFilePath  string `json:"mem_file_path"`
+	SnapshotPath string `json:"snapshot_path"`
+	SnapshotType string `json:"snapshot_type,omitempty"`
 }
 
-type mmdsForgeMetal struct {
-	SchemaVersion int       `json:"schema_version"`
-	Job           JobConfig `json:"job"`
+type memoryBackend struct {
+	BackendType string `json:"backend_type"`
+	BackendPath string `json:"backend_path"`
+}
+
+type networkOverride struct {
+	IfaceID     string `json:"iface_id"`
+	HostDevName string `json:"host_dev_name"`
+}
+
+type snapshotLoadReq struct {
+	SnapshotPath     string            `json:"snapshot_path"`
+	MemBackend       memoryBackend     `json:"mem_backend"`
+	ResumeVM         bool              `json:"resume_vm"`
+	TrackDirtyPages  bool              `json:"track_dirty_pages,omitempty"`
+	NetworkOverrides []networkOverride `json:"network_overrides,omitempty"`
 }
 
 // --- API methods ---
@@ -123,6 +141,13 @@ func (c *apiClient) putNetworkInterface(ctx context.Context, ifaceID, tapName, g
 	})
 }
 
+func (c *apiClient) putVsock(ctx context.Context, guestCID uint32, udsPath string) error {
+	return c.put(ctx, "/vsock", vsockReq{
+		GuestCID: guestCID,
+		UDSPath:  udsPath,
+	})
+}
+
 func (c *apiClient) putLogger(ctx context.Context, logPath string) error {
 	return c.put(ctx, "/logger", loggerReq{
 		LogPath:    logPath,
@@ -138,25 +163,33 @@ func (c *apiClient) putMetrics(ctx context.Context, metricsPath string) error {
 	})
 }
 
-func (c *apiClient) putMmdsConfig(ctx context.Context, ifaceIDs []string) error {
-	return c.put(ctx, "/mmds/config", mmdsConfigReq{
-		Version:           "V2",
-		NetworkInterfaces: ifaceIDs,
-		IPv4Address:       DefaultMMDSIPv4,
-	})
+func (c *apiClient) putEntropy(ctx context.Context) error {
+	return c.put(ctx, "/entropy", entropyReq{})
 }
 
-func (c *apiClient) putMmds(ctx context.Context, data any) error {
-	return c.put(ctx, "/mmds", data)
+func (c *apiClient) patchVMState(ctx context.Context, state string) error {
+	return c.patch(ctx, "/vm", vmStateReq{State: state})
 }
 
-func buildMMDSStore(job JobConfig) mmdsStore {
-	return mmdsStore{
-		ForgeMetal: mmdsForgeMetal{
-			SchemaVersion: 1,
-			Job:           job,
-		},
+func (c *apiClient) createSnapshot(ctx context.Context, snapshotPath, memFilePath, snapshotType string) error {
+	req := snapshotCreateReq{
+		MemFilePath:  memFilePath,
+		SnapshotPath: snapshotPath,
+		SnapshotType: snapshotType,
 	}
+	return c.put(ctx, "/snapshot/create", req)
+}
+
+func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath string, networkOverrides []networkOverride, resumeVM bool) error {
+	return c.put(ctx, "/snapshot/load", snapshotLoadReq{
+		SnapshotPath: snapshotPath,
+		MemBackend: memoryBackend{
+			BackendType: "File",
+			BackendPath: memFilePath,
+		},
+		ResumeVM:         resumeVM,
+		NetworkOverrides: networkOverrides,
+	})
 }
 
 func (c *apiClient) startInstance(ctx context.Context) error {
@@ -169,12 +202,20 @@ func (c *apiClient) flushMetrics(ctx context.Context) error {
 
 // put sends a PUT request with JSON body.
 func (c *apiClient) put(ctx context.Context, path string, body interface{}) error {
+	return c.doJSON(ctx, http.MethodPut, path, body)
+}
+
+func (c *apiClient) patch(ctx context.Context, path string, body interface{}) error {
+	return c.doJSON(ctx, http.MethodPatch, path, body)
+}
+
+func (c *apiClient) doJSON(ctx context.Context, method, path string, body interface{}) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("create request %s: %w", path, err)
 	}
@@ -182,13 +223,13 @@ func (c *apiClient) put(ctx context.Context, path string, body interface{}) erro
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("PUT %s: %w", path, err)
+		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("PUT %s: HTTP %d: %s", path, resp.StatusCode, string(respBody))
+		return fmt.Errorf("%s %s: HTTP %d: %s", method, path, resp.StatusCode, string(respBody))
 	}
 
 	return nil

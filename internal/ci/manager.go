@@ -118,7 +118,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) error {
 		return fmt.Errorf("warm run failed: %w", err)
 	}
 	if result.ExitCode != 0 {
-		logs := strings.TrimSpace(result.Logs)
+		logs := strings.TrimSpace(formatJobLogs(result))
 		if logs == "" {
 			return fmt.Errorf("warm run exited with code %d", result.ExitCode)
 		}
@@ -418,4 +418,19 @@ func cloneStringMap(values map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func formatJobLogs(result firecracker.JobResult) string {
+	guestLogs := strings.TrimSpace(result.Logs)
+	serialLogs := strings.TrimSpace(result.SerialLogs)
+	switch {
+	case guestLogs == "" && serialLogs == "":
+		return ""
+	case guestLogs == "":
+		return "[serial diagnostics]\n" + serialLogs
+	case serialLogs == "":
+		return guestLogs
+	default:
+		return guestLogs + "\n\n[serial diagnostics]\n" + serialLogs
+	}
 }

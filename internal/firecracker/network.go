@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/forge-metal/forge-metal/internal/vmproto"
 )
 
 const (
@@ -55,8 +57,7 @@ type Allocator struct {
 
 // networkSetup is the runtime network configuration passed into Firecracker.
 type networkSetup struct {
-	Lease     NetworkLease
-	BootIPArg string
+	Lease NetworkLease
 }
 
 func NewAllocator(cfg NetworkPoolConfig) *Allocator {
@@ -98,12 +99,17 @@ func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig) (*ne
 		_ = allocator.Release(context.Background(), jobID)
 	}
 
-	bootIPArg := fmt.Sprintf("ip=%s::%s:%s::eth0:off", lease.GuestIP, lease.GatewayIP, lease.Netmask)
-
 	return &networkSetup{
-		Lease:     lease,
-		BootIPArg: bootIPArg,
+		Lease: lease,
 	}, cleanup, nil
+}
+
+func (l NetworkLease) GuestNetworkConfig() vmproto.NetworkConfig {
+	return vmproto.NetworkConfig{
+		AddressCIDR: fmt.Sprintf("%s/30", l.GuestIP),
+		Gateway:     l.GatewayIP,
+		LinkName:    defaultIf,
+	}
 }
 
 // Acquire reserves a unique /30 slot for a Firecracker job.

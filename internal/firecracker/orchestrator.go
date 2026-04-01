@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/forge-metal/forge-metal/internal/vmproto"
 )
 
 // Config holds settings for the Firecracker orchestrator.
@@ -69,16 +71,23 @@ type JobConfig struct {
 
 // JobResult holds the outcome of a VM job execution.
 type JobResult struct {
-	ExitCode        int
-	Logs            string
-	ConfigTransport string
-	Duration        time.Duration
-	CloneTime       time.Duration
-	JailSetupTime   time.Duration
-	VMBootTime      time.Duration
-	CleanupTime     time.Duration
-	ZFSWritten      uint64
-	Metrics         *VMMetrics
+	ExitCode             int
+	Logs                 string
+	SerialLogs           string
+	Duration             time.Duration
+	CloneTime            time.Duration
+	JailSetupTime        time.Duration
+	VMBootTime           time.Duration
+	BootToReadyDuration  time.Duration
+	PrepareDuration      time.Duration
+	RunDuration          time.Duration
+	ServiceStartDuration time.Duration
+	CleanupTime          time.Duration
+	ZFSWritten           uint64
+	StdoutBytes          uint64
+	StderrBytes          uint64
+	DroppedLogBytes      uint64
+	Metrics              *VMMetrics
 }
 
 // Orchestrator manages the full lifecycle of a Firecracker VM job.
@@ -222,6 +231,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	)
 
 	apiSockHost := filepath.Join(jailRoot, "run", "firecracker.sock")
+	controlSockHost := filepath.Join(jailRoot, "run", "forge-control.sock")
 	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
 
 	jailerCmd, startErr := o.startJailer(job.JobID)
@@ -229,12 +239,16 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		return result, fmt.Errorf("start jailer: %w", startErr)
 	}
 
-	var logBuf strings.Builder
+	var serialBuf strings.Builder
 	var logWg sync.WaitGroup
 
 	stdout, pipeErr := jailerCmd.StdoutPipe()
 	if pipeErr != nil {
 		return result, fmt.Errorf("jailer stdout pipe: %w", pipeErr)
+	}
+	stderr, pipeErr := jailerCmd.StderrPipe()
+	if pipeErr != nil {
+		return result, fmt.Errorf("jailer stderr pipe: %w", pipeErr)
 	}
 
 	if execErr := jailerCmd.Start(); execErr != nil {
@@ -252,19 +266,9 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		}
 	})
 
-	logWg.Add(1)
-	go func() {
-		defer logWg.Done()
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if logBuf.Len() < 10*1024*1024 {
-				logBuf.WriteString(line)
-				logBuf.WriteByte('\n')
-			}
-		}
-	}()
+	logWg.Add(2)
+	go captureSerialOutput(stdout, &serialBuf, &logWg)
+	go captureSerialOutput(stderr, &serialBuf, &logWg)
 
 	logger.Info("jailer started", "pid", jailerCmd.Process.Pid)
 
@@ -275,10 +279,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
 
-	bootArgs := fmt.Sprintf(
-		"root=/dev/vda rw console=ttyS0 reboot=k panic=1 %s init=/sbin/init",
-		netSetup.BootIPArg,
-	)
+	bootArgs := "root=/dev/vda rw console=ttyS0 reboot=k panic=1 init=/sbin/init"
 
 	apiSteps := []struct {
 		name string
@@ -291,8 +292,8 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		{"network", func() error {
 			return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
-		{"mmds-config", func() error { return client.putMmdsConfig(ctx, []string{"eth0"}) }},
-		{"mmds", func() error { return client.putMmds(ctx, buildMMDSStore(job)) }},
+		{"vsock", func() error { return client.putVsock(ctx, vmproto.GuestCID, "/run/forge-control.sock") }},
+		{"entropy", func() error { return client.putEntropy(ctx) }},
 	}
 
 	for _, step := range apiSteps {
@@ -300,7 +301,6 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
 		}
 	}
-	logger.Info("job config published to mmds")
 
 	if startVMErr := client.startInstance(ctx); startVMErr != nil {
 		return result, fmt.Errorf("start VM: %w", startVMErr)
@@ -311,18 +311,84 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailerCmd.Wait() }()
 
-	select {
-	case <-waitDone:
-	case <-ctx.Done():
+	control, controlErr := connectGuestControl(ctx, controlSockHost, vmproto.GuestPort)
+	if controlErr != nil {
 		_ = jailerCmd.Process.Kill()
 		<-waitDone
+		jailerExited.Store(true)
+		logWg.Wait()
+		result.SerialLogs = serialBuf.String()
+		return result, fmt.Errorf("connect guest control: %w", controlErr)
 	}
-	jailerExited.Store(true)
+	defer control.close()
+
+	controlDone := make(chan struct {
+		result guestControlResult
+		err    error
+	}, 1)
+	go func() {
+		controlResult, err := control.run(job, netSetup.Lease, logger)
+		controlDone <- struct {
+			result guestControlResult
+			err    error
+		}{result: controlResult, err: err}
+	}()
+
+	var (
+		controlResult guestControlResult
+		controlRunErr error
+	)
+
+	select {
+	case outcome := <-controlDone:
+		controlResult = outcome.result
+		controlRunErr = outcome.err
+	case <-ctx.Done():
+		_ = control.send(vmproto.TypeCancel, vmproto.Cancel{Reason: ctx.Err().Error()})
+		select {
+		case outcome := <-controlDone:
+			controlResult = outcome.result
+			controlRunErr = ctx.Err()
+			if outcome.err != nil {
+				controlRunErr = outcome.err
+			}
+		case <-time.After(vmproto.CancelGracePeriod):
+			_ = jailerCmd.Process.Kill()
+			<-waitDone
+			jailerExited.Store(true)
+			logWg.Wait()
+			result.Logs = controlResult.logs
+			result.SerialLogs = serialBuf.String()
+			return result, ctx.Err()
+		}
+	}
+
+	select {
+	case waitErr := <-waitDone:
+		jailerExited.Store(true)
+		if waitErr != nil && controlRunErr == nil {
+			controlRunErr = fmt.Errorf("wait for VM exit: %w", waitErr)
+		}
+	case <-time.After(15 * time.Second):
+		_ = jailerCmd.Process.Kill()
+		<-waitDone
+		jailerExited.Store(true)
+		if controlRunErr == nil {
+			controlRunErr = fmt.Errorf("timed out waiting for VM exit after guest shutdown")
+		}
+	}
 
 	logWg.Wait()
-	result.Logs = logBuf.String()
-	result.ExitCode = parseGuestExitCode(result.Logs)
-	result.ConfigTransport = parseGuestConfigTransport(result.Logs)
+	result.Logs = controlResult.logs
+	result.SerialLogs = serialBuf.String()
+	result.ExitCode = controlResult.result.ExitCode
+	result.PrepareDuration = time.Duration(controlResult.result.PrepareDurationMS) * time.Millisecond
+	result.RunDuration = time.Duration(controlResult.result.RunDurationMS) * time.Millisecond
+	result.ServiceStartDuration = time.Duration(controlResult.result.ServiceStartDurationMS) * time.Millisecond
+	result.BootToReadyDuration = time.Duration(controlResult.hello.BootToReadyMS) * time.Millisecond
+	result.StdoutBytes = controlResult.result.StdoutBytes
+	result.StderrBytes = controlResult.result.StderrBytes
+	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
 	result.Metrics = parseMetricsFile(metricsPathHost)
@@ -340,7 +406,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		"zfs_written_mb", result.ZFSWritten/(1024*1024),
 	)
 
-	return result, nil
+	return result, controlRunErr
 }
 
 // setupJail creates the jail directory structure and places the
@@ -453,29 +519,15 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
-// parseGuestExitCode extracts the exit code from serial console output.
-// The guest init prints "FORGEVM_EXIT_CODE=N" before shutdown.
-// Falls back to -1 if the marker is not found (e.g., kernel panic).
-func parseGuestExitCode(logs string) int {
-	const marker = "FORGEVM_EXIT_CODE="
-	for _, line := range strings.Split(logs, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, marker) {
-			if code, err := strconv.Atoi(line[len(marker):]); err == nil {
-				return code
-			}
+func captureSerialOutput(reader io.Reader, dst *strings.Builder, wg *sync.WaitGroup) {
+	defer wg.Done()
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if dst.Len() < 10*1024*1024 {
+			dst.WriteString(line)
+			dst.WriteByte('\n')
 		}
 	}
-	return -1
-}
-
-func parseGuestConfigTransport(logs string) string {
-	const marker = "FORGEVM_JOB_CONFIG_TRANSPORT="
-	for _, line := range strings.Split(logs, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, marker) {
-			return strings.TrimSpace(line[len(marker):])
-		}
-	}
-	return ""
 }

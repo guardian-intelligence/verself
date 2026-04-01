@@ -6,7 +6,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -195,34 +194,25 @@ func TestAllocatorRecoverKeepsLivePID(t *testing.T) {
 	}
 }
 
-func TestBuildMMDSStoreWrapsJobConfig(t *testing.T) {
+func TestGuestNetworkConfig(t *testing.T) {
 	t.Parallel()
 
-	job := JobConfig{
-		JobID:          "job-1",
-		PrepareCommand: []string{"npm", "install"},
-		PrepareWorkDir: "/workspace",
-		RunCommand:     []string{"npm", "test"},
-		RunWorkDir:     "/workspace/apps/web",
-		Services:       []string{"postgres"},
-		Env:            map[string]string{"CI": "true"},
+	lease := NetworkLease{
+		JobID:     "job-1",
+		TapName:   "tap0",
+		GuestIP:   "172.16.0.6",
+		GatewayIP: "172.16.0.5",
 	}
 
-	store := buildMMDSStore(job)
-	if store.ForgeMetal.SchemaVersion != 1 {
-		t.Fatalf("schema version: got %d want 1", store.ForgeMetal.SchemaVersion)
+	cfg := lease.GuestNetworkConfig()
+	if cfg.LinkName != defaultIf {
+		t.Fatalf("link_name: got %q want %q", cfg.LinkName, defaultIf)
 	}
-	if !reflect.DeepEqual(store.ForgeMetal.Job, job) {
-		t.Fatalf("job payload: got %+v want %+v", store.ForgeMetal.Job, job)
+	if cfg.AddressCIDR != "172.16.0.6/30" {
+		t.Fatalf("address_cidr: got %q want %q", cfg.AddressCIDR, "172.16.0.6/30")
 	}
-}
-
-func TestParseGuestConfigTransport(t *testing.T) {
-	t.Parallel()
-
-	logs := "line one\nFORGEVM_JOB_CONFIG_TRANSPORT=mmds\nFORGEVM_EXIT_CODE=0\n"
-	if got := parseGuestConfigTransport(logs); got != "mmds" {
-		t.Fatalf("parseGuestConfigTransport: got %q want %q", got, "mmds")
+	if cfg.Gateway != "172.16.0.5" {
+		t.Fatalf("gateway: got %q want %q", cfg.Gateway, "172.16.0.5")
 	}
 }
 

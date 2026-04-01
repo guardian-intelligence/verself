@@ -1,20 +1,15 @@
 // forgevm-init is the PID 1 init process for Firecracker CI VMs.
 //
-// It mounts the minimal Linux userspace, configures networking, starts
-// requested guest services, fetches structured CI phases from Firecracker MMDS,
-// emits the final exit code marker, and reboots the VM cleanly.
+// It mounts a minimal Linux userspace, brings up loopback, waits for a host
+// vsock control connection, applies runtime network state from the host, runs
+// the requested CI workload, and reboots cleanly when told to shut down.
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -23,85 +18,46 @@ const (
 	prSetChildSubreaper = 36
 	ipBin               = "/sbin/ip"
 	defaultWorkDir      = "/workspace"
-	defaultMMDSIPv4     = "169.254.169.254"
-	mmdsTokenTTLSeconds = "60"
-	mmdsTotalTimeout    = 5 * time.Second
-	mmdsAttemptTimeout  = 500 * time.Millisecond
-	mmdsRetryInterval   = 100 * time.Millisecond
 	postgresUID         = 70
 	postgresGID         = 70
 )
 
-type jobConfig struct {
-	PrepareCommand []string          `json:"prepare_command"`
-	PrepareWorkDir string            `json:"prepare_work_dir"`
-	RunCommand     []string          `json:"run_command"`
-	RunWorkDir     string            `json:"run_work_dir"`
-	Services       []string          `json:"services"`
-	Env            map[string]string `json:"env"`
-}
-
-type mmdsForgeMetal struct {
-	SchemaVersion int       `json:"schema_version"`
-	Job           jobConfig `json:"job"`
-}
-
 func main() {
+	if err := run(); err != nil {
+		fatal("run agent", err)
+	}
+}
+
+func run() error {
 	bootStart := time.Now()
 
 	mountVirtualFilesystems()
-	fmt.Fprintf(os.Stdout, "[init] mounts complete (%dms)\n", time.Since(bootStart).Milliseconds())
-
-	configureNetwork()
-
-	cfg, transport, err := readJobConfig()
-	if err != nil {
-		fatal("read job config", err)
+	if err := configureLoopback(); err != nil {
+		return fmt.Errorf("configure loopback: %w", err)
 	}
-	if len(cfg.RunCommand) == 0 {
-		fatal("job config", fmt.Errorf("run_command is empty"))
-	}
-	fmt.Fprintf(os.Stdout, "[init] job config transport: %s\n", transport)
-	fmt.Fprintf(os.Stdout, "FORGEVM_JOB_CONFIG_TRANSPORT=%s\n", transport)
-
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSetChildSubreaper, 1, 0); errno != 0 {
 		fmt.Fprintf(os.Stderr, "[init] warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", errno)
 	}
 
-	env, err := buildRuntimeEnv(cfg.Env)
-	if err != nil {
-		fatal("build runtime env", err)
-	}
-
-	var activeChildPID atomic.Int64
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		if pid := int(activeChildPID.Load()); pid > 0 {
-			_ = syscall.Kill(pid, syscall.SIGTERM)
-		}
-	}()
 
-	if err := startServices(cfg.Services, env); err != nil {
-		fatal("start services", err)
+	listener, err := listenVsockListener()
+	if err != nil {
+		return fmt.Errorf("listen vsock: %w", err)
 	}
+	defer listener.Close()
 
-	exitCode := 0
-	if len(cfg.PrepareCommand) > 0 {
-		exitCode = runPhase("prepare", cfg.PrepareCommand, normalizeWorkDir(cfg.PrepareWorkDir), env, &activeChildPID)
+	readyAt := time.Now()
+	fmt.Fprintf(os.Stdout, "[init] vsock listener ready (%dms)\n", readyAt.Sub(bootStart).Milliseconds())
+
+	conn, err := listener.Accept()
+	if err != nil {
+		return fmt.Errorf("accept vsock connection: %w", err)
 	}
-	if exitCode == 0 {
-		exitCode = runPhase("run", cfg.RunCommand, normalizeWorkDir(cfg.RunWorkDir), env, &activeChildPID)
-	}
+	defer conn.Close()
 
-	drainZombies()
-
-	fmt.Fprintf(os.Stdout, "[init] job complete with code %d (%dms total)\n", exitCode, time.Since(bootStart).Milliseconds())
-	fmt.Fprintf(os.Stdout, "FORGEVM_EXIT_CODE=%d\n", exitCode)
-
-	syscall.Sync()
-	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+	return runAgent(conn, bootStart, readyAt, sigCh)
 }
 
 func mountVirtualFilesystems() {
@@ -109,115 +65,26 @@ func mountVirtualFilesystems() {
 	mustMount("sysfs", "/sys", "sysfs", 0, "")
 	mustMount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "")
 
-	mustMkdir("/dev/pts", 0755)
+	mustMkdir("/dev/pts", 0o755)
 	mustMount("devpts", "/dev/pts", "devpts", 0, "newinstance,ptmxmode=0666")
 
-	mustMkdir("/dev/shm", 01777)
+	mustMkdir("/dev/shm", 0o1777)
 	mustMount("tmpfs", "/dev/shm", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 	mustMount("tmpfs", "/run", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 	mustMount("tmpfs", "/tmp", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, "")
 }
 
-func readJobConfig() (*jobConfig, string, error) {
-	cfg, err := readJobConfigFromMMDS()
-	if err == nil {
-		return cfg, "mmds", nil
+func configureLoopback() error {
+	steps := [][]string{
+		{ipBin, "addr", "add", "127.0.0.1/8", "dev", "lo"},
+		{ipBin, "link", "set", "lo", "up"},
 	}
-	return nil, "", fmt.Errorf("read job config from MMDS: %w", err)
-}
-
-func readJobConfigFromMMDS() (*jobConfig, error) {
-	if err := configureMMDSRoute(defaultMMDSIPv4); err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := deleteMMDSRoute(defaultMMDSIPv4); err != nil {
-			fmt.Fprintf(os.Stderr, "[init] warning: delete MMDS route: %v\n", err)
+	for _, args := range steps {
+		if out, err := runCommandOutput(args[0], args[1:]...); err != nil {
+			return fmt.Errorf("%s: %s", strings.Join(args, " "), strings.TrimSpace(out))
 		}
-	}()
-
-	deadline := time.Now().Add(mmdsTotalTimeout)
-	var lastErr error
-	for {
-		client := &http.Client{Timeout: mmdsAttemptTimeout}
-		cfg, err := fetchMMDSJobConfig("http://"+defaultMMDSIPv4, client)
-		if err == nil {
-			return cfg, nil
-		}
-		lastErr = err
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(mmdsRetryInterval)
 	}
-	return nil, fmt.Errorf("timed out after %s: %w", mmdsTotalTimeout, lastErr)
-}
-
-func fetchMMDSJobConfig(baseURL string, client *http.Client) (*jobConfig, error) {
-	token, err := requestMMDSToken(baseURL, client)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/forge_metal", nil)
-	if err != nil {
-		return nil, fmt.Errorf("create MMDS data request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-metadata-token", token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request MMDS data: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read MMDS data response: %w", err)
-	}
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("request MMDS data: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	return decodeMMDSJobConfig(data)
-}
-
-func requestMMDSToken(baseURL string, client *http.Client) (string, error) {
-	req, err := http.NewRequest(http.MethodPut, strings.TrimRight(baseURL, "/")+"/latest/api/token", nil)
-	if err != nil {
-		return "", fmt.Errorf("create MMDS token request: %w", err)
-	}
-	req.Header.Set("X-metadata-token-ttl-seconds", mmdsTokenTTLSeconds)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request MMDS token: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read MMDS token response: %w", err)
-	}
-	if resp.StatusCode >= 300 {
-		return "", fmt.Errorf("request MMDS token: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", fmt.Errorf("request MMDS token: empty response")
-	}
-	return token, nil
-}
-
-func decodeMMDSJobConfig(data []byte) (*jobConfig, error) {
-	var payload mmdsForgeMetal
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("decode MMDS document: %w", err)
-	}
-	if payload.SchemaVersion != 1 {
-		return nil, fmt.Errorf("unsupported MMDS schema version %d", payload.SchemaVersion)
-	}
-	return &payload.Job, nil
+	return nil
 }
 
 func buildRuntimeEnv(overrides map[string]string) ([]string, error) {
@@ -271,13 +138,9 @@ func resolveRegistryURL(env map[string]string) (string, error) {
 		return value, nil
 	}
 
-	gateway := strings.TrimSpace(bootGateway())
-	if gateway == "" {
-		var err error
-		gateway, err = routeGateway()
-		if err != nil {
-			return "", err
-		}
+	gateway, err := routeGateway()
+	if err != nil {
+		return "", err
 	}
 	if gateway == "" {
 		return "", fmt.Errorf("unable to determine host gateway for registry access")
@@ -285,105 +148,18 @@ func resolveRegistryURL(env map[string]string) (string, error) {
 	return "http://" + gateway + ":4873", nil
 }
 
-func startServices(services []string, env []string) error {
-	for _, service := range services {
-		switch service {
-		case "postgres":
-			if err := startPostgres(env); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unsupported service %q", service)
-		}
-	}
-	return nil
-}
-
-func startPostgres(env []string) error {
-	mustMkdir("/run/postgresql", 0755)
-	if err := os.Chown("/run/postgresql", postgresUID, postgresGID); err != nil {
-		return fmt.Errorf("chown /run/postgresql: %w", err)
-	}
-
-	pgCtl, err := resolveCommand("pg_ctl")
+func routeGateway() (string, error) {
+	out, err := runCommandOutput(ipBin, "route", "show", "default")
 	if err != nil {
-		return err
+		return "", fmt.Errorf("ip route show default: %s", strings.TrimSpace(out))
 	}
-
-	cmd := exec.Command(pgCtl, "start", "-D", "/var/lib/postgresql/data", "-l", "/tmp/pg.log", "-w")
-	cmd.Dir = "/var/lib/postgresql"
-	cmd.Env = envWithHome(env, "/var/lib/postgresql")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{Uid: postgresUID, Gid: postgresGID},
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("start postgres: %w", err)
-	}
-	fmt.Fprintln(os.Stdout, "[init] service postgres ready")
-	return nil
-}
-
-func runPhase(label string, argv []string, workDir string, env []string, activeChild *atomic.Int64) int {
-	if len(argv) == 0 {
-		return 0
-	}
-	argv0, err := resolveCommand(argv[0])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[init] %s resolve command: %v\n", label, err)
-		return 127
-	}
-
-	fmt.Fprintf(os.Stdout, "[init] %s: cwd=%s argv=%s\n", label, workDir, strings.Join(argv, " "))
-
-	pid, err := syscall.ForkExec(argv0, argv, &syscall.ProcAttr{
-		Dir:   workDir,
-		Env:   env,
-		Files: []uintptr{0, 1, 2},
-		Sys:   &syscall.SysProcAttr{Setsid: true},
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[init] %s fork+exec: %v\n", label, err)
-		return 127
-	}
-
-	activeChild.Store(int64(pid))
-	exitCode := reapUntilChild(pid)
-	activeChild.Store(0)
-
-	fmt.Fprintf(os.Stdout, "[init] %s exited with code %d\n", label, exitCode)
-	return exitCode
-}
-
-func reapUntilChild(childPID int) int {
-	for {
-		var ws syscall.WaitStatus
-		pid, err := syscall.Wait4(-1, &ws, 0, nil)
-		if err != nil {
-			return 1
-		}
-		if pid != childPID {
-			continue
-		}
-		if ws.Exited() {
-			return ws.ExitStatus()
-		}
-		if ws.Signaled() {
-			return 128 + int(ws.Signal())
-		}
-		return 1
-	}
-}
-
-func drainZombies() {
-	for {
-		var ws syscall.WaitStatus
-		pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
-		if pid <= 0 || err != nil {
-			return
+	fields := strings.Fields(out)
+	for i := 0; i < len(fields)-1; i++ {
+		if fields[i] == "via" {
+			return strings.TrimSpace(fields[i+1]), nil
 		}
 	}
+	return "", nil
 }
 
 func resolveCommand(name string) (string, error) {
@@ -432,96 +208,8 @@ func envWithHome(env []string, home string) []string {
 	return out
 }
 
-// configureNetwork only prepares loopback. The kernel's ip= boot parameter
-// configures eth0 before init starts.
-func configureNetwork() {
-	loSteps := [][]string{
-		{ipBin, "addr", "add", "127.0.0.1/8", "dev", "lo"},
-		{ipBin, "link", "set", "lo", "up"},
-	}
-	for _, args := range loSteps {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.CombinedOutput()
-	}
-}
-
-func bootNetworkFields() (clientIP, gateway, netmask, device string, err error) {
-	cmdline, err := os.ReadFile("/proc/cmdline")
-	if err != nil {
-		return "", "", "", "", err
-	}
-	for _, param := range strings.Fields(string(cmdline)) {
-		if !strings.HasPrefix(param, "ip=") {
-			continue
-		}
-		parts := strings.Split(strings.TrimPrefix(param, "ip="), ":")
-		if len(parts) < 6 {
-			return "", "", "", "", fmt.Errorf("malformed ip parameter: %s", param)
-		}
-		return parts[0], parts[2], parts[3], parts[5], nil
-	}
-	return "", "", "", "", nil
-}
-
-func bootGateway() string {
-	_, gateway, _, _, err := bootNetworkFields()
-	if err != nil {
-		return ""
-	}
-	return gateway
-}
-
-func routeGateway() (string, error) {
-	out, err := exec.Command(ipBin, "route", "show", "default").CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("ip route show default: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	fields := strings.Fields(string(out))
-	for i := 0; i < len(fields)-1; i++ {
-		if fields[i] == "via" {
-			return strings.TrimSpace(fields[i+1]), nil
-		}
-	}
-	return "", nil
-}
-
-func configureMMDSRoute(ip string) error {
-	device, err := bootNetworkDevice()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(ipBin, "route", "replace", ip+"/32", "dev", device)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ip route replace %s/32 dev %s: %s: %w", ip, device, strings.TrimSpace(string(out)), err)
-	}
-	return nil
-}
-
-func deleteMMDSRoute(ip string) error {
-	device, err := bootNetworkDevice()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(ipBin, "route", "del", ip+"/32", "dev", device)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ip route del %s/32 dev %s: %s: %w", ip, device, strings.TrimSpace(string(out)), err)
-	}
-	return nil
-}
-
-func bootNetworkDevice() (string, error) {
-	_, _, _, device, err := bootNetworkFields()
-	if err != nil {
-		return "", fmt.Errorf("parse boot network device: %w", err)
-	}
-	if strings.TrimSpace(device) == "" {
-		return "", fmt.Errorf("boot network device is empty")
-	}
-	return device, nil
-}
-
 func mustMount(source, target, fstype string, flags uintptr, data string) {
-	mustMkdir(target, 0755)
+	mustMkdir(target, 0o755)
 	if err := syscall.Mount(source, target, fstype, flags, data); err != nil {
 		if err == syscall.EBUSY {
 			return
