@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -191,6 +192,37 @@ func TestAllocatorRecoverKeepsLivePID(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); err != nil {
 		t.Fatalf("expected live lease to remain, got err=%v", err)
+	}
+}
+
+func TestBuildMMDSStoreWrapsJobConfig(t *testing.T) {
+	t.Parallel()
+
+	job := JobConfig{
+		JobID:          "job-1",
+		PrepareCommand: []string{"npm", "install"},
+		PrepareWorkDir: "/workspace",
+		RunCommand:     []string{"npm", "test"},
+		RunWorkDir:     "/workspace/apps/web",
+		Services:       []string{"postgres"},
+		Env:            map[string]string{"CI": "true"},
+	}
+
+	store := buildMMDSStore(job)
+	if store.ForgeMetal.SchemaVersion != 1 {
+		t.Fatalf("schema version: got %d want 1", store.ForgeMetal.SchemaVersion)
+	}
+	if !reflect.DeepEqual(store.ForgeMetal.Job, job) {
+		t.Fatalf("job payload: got %+v want %+v", store.ForgeMetal.Job, job)
+	}
+}
+
+func TestParseGuestConfigTransport(t *testing.T) {
+	t.Parallel()
+
+	logs := "line one\nFORGEVM_JOB_CONFIG_TRANSPORT=mmds\nFORGEVM_EXIT_CODE=0\n"
+	if got := parseGuestConfigTransport(logs); got != "mmds" {
+		t.Fatalf("parseGuestConfigTransport: got %q want %q", got, "mmds")
 	}
 }
 

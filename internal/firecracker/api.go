@@ -31,7 +31,7 @@ func newAPIClient(socketPath string) *apiClient {
 }
 
 // --- API request/response types ---
-// Inline structs for the 6 endpoints we use. Not worth abstracting.
+// Inline structs for the small set of endpoints we use. Not worth abstracting.
 
 type bootSourceReq struct {
 	KernelImagePath string `json:"kernel_image_path"`
@@ -70,6 +70,23 @@ type loggerReq struct {
 
 type metricsReq struct {
 	MetricsPath string `json:"metrics_path"`
+}
+
+const DefaultMMDSIPv4 = "169.254.169.254"
+
+type mmdsConfigReq struct {
+	Version           string   `json:"version,omitempty"`
+	NetworkInterfaces []string `json:"network_interfaces"`
+	IPv4Address       string   `json:"ipv4_address,omitempty"`
+}
+
+type mmdsStore struct {
+	ForgeMetal mmdsForgeMetal `json:"forge_metal"`
+}
+
+type mmdsForgeMetal struct {
+	SchemaVersion int       `json:"schema_version"`
+	Job           JobConfig `json:"job"`
 }
 
 // --- API methods ---
@@ -119,6 +136,27 @@ func (c *apiClient) putMetrics(ctx context.Context, metricsPath string) error {
 	return c.put(ctx, "/metrics", metricsReq{
 		MetricsPath: metricsPath,
 	})
+}
+
+func (c *apiClient) putMmdsConfig(ctx context.Context, ifaceIDs []string) error {
+	return c.put(ctx, "/mmds/config", mmdsConfigReq{
+		Version:           "V2",
+		NetworkInterfaces: ifaceIDs,
+		IPv4Address:       DefaultMMDSIPv4,
+	})
+}
+
+func (c *apiClient) putMmds(ctx context.Context, data any) error {
+	return c.put(ctx, "/mmds", data)
+}
+
+func buildMMDSStore(job JobConfig) mmdsStore {
+	return mmdsStore{
+		ForgeMetal: mmdsForgeMetal{
+			SchemaVersion: 1,
+			Job:           job,
+		},
+	}
 }
 
 func (c *apiClient) startInstance(ctx context.Context) error {
