@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,7 +25,9 @@ const (
 	defaultWorkDir      = "/workspace"
 	defaultMMDSIPv4     = "169.254.169.254"
 	mmdsTokenTTLSeconds = "60"
-	jobConfigPath       = "/etc/ci/job.json"
+	mmdsTotalTimeout    = 5 * time.Second
+	mmdsAttemptTimeout  = 500 * time.Millisecond
+	mmdsRetryInterval   = 100 * time.Millisecond
 	postgresUID         = 70
 	postgresGID         = 70
 )
@@ -38,10 +39,6 @@ type jobConfig struct {
 	RunWorkDir     string            `json:"run_work_dir"`
 	Services       []string          `json:"services"`
 	Env            map[string]string `json:"env"`
-}
-
-type mmdsDocument struct {
-	ForgeMetal mmdsForgeMetal `json:"forge_metal"`
 }
 
 type mmdsForgeMetal struct {
@@ -126,14 +123,7 @@ func readJobConfig() (*jobConfig, string, error) {
 	if err == nil {
 		return cfg, "mmds", nil
 	}
-
-	fileCfg, fileErr := readJobConfigFromFile()
-	if fileErr == nil {
-		fmt.Fprintf(os.Stderr, "[init] warning: MMDS unavailable, using file fallback: %v\n", err)
-		return fileCfg, "file-fallback", nil
-	}
-
-	return nil, "", fmt.Errorf("read job config from MMDS: %w (file fallback: %v)", err, fileErr)
+	return nil, "", fmt.Errorf("read job config from MMDS: %w", err)
 }
 
 func readJobConfigFromMMDS() (*jobConfig, error) {
@@ -146,7 +136,21 @@ func readJobConfigFromMMDS() (*jobConfig, error) {
 		}
 	}()
 
-	return fetchMMDSJobConfig("http://"+defaultMMDSIPv4, &http.Client{Timeout: 2 * time.Second})
+	deadline := time.Now().Add(mmdsTotalTimeout)
+	var lastErr error
+	for {
+		client := &http.Client{Timeout: mmdsAttemptTimeout}
+		cfg, err := fetchMMDSJobConfig("http://"+defaultMMDSIPv4, client)
+		if err == nil {
+			return cfg, nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(mmdsRetryInterval)
+	}
+	return nil, fmt.Errorf("timed out after %s: %w", mmdsTotalTimeout, lastErr)
 }
 
 func fetchMMDSJobConfig(baseURL string, client *http.Client) (*jobConfig, error) {
@@ -206,35 +210,14 @@ func requestMMDSToken(baseURL string, client *http.Client) (string, error) {
 }
 
 func decodeMMDSJobConfig(data []byte) (*jobConfig, error) {
-	var direct mmdsForgeMetal
-	if err := json.Unmarshal(data, &direct); err == nil && direct.SchemaVersion != 0 {
-		if direct.SchemaVersion != 1 {
-			return nil, fmt.Errorf("unsupported MMDS schema version %d", direct.SchemaVersion)
-		}
-		return &direct.Job, nil
-	}
-
-	var doc mmdsDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
+	var payload mmdsForgeMetal
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fmt.Errorf("decode MMDS document: %w", err)
 	}
-	if doc.ForgeMetal.SchemaVersion != 1 {
-		return nil, fmt.Errorf("unsupported MMDS schema version %d", doc.ForgeMetal.SchemaVersion)
+	if payload.SchemaVersion != 1 {
+		return nil, fmt.Errorf("unsupported MMDS schema version %d", payload.SchemaVersion)
 	}
-	return &doc.ForgeMetal.Job, nil
-}
-
-func readJobConfigFromFile() (*jobConfig, error) {
-	data, err := os.ReadFile(jobConfigPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var cfg jobConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return &payload.Job, nil
 }
 
 func buildRuntimeEnv(overrides map[string]string) ([]string, error) {
@@ -449,8 +432,8 @@ func envWithHome(env []string, home string) []string {
 	return out
 }
 
-// configureNetwork parses the ip= kernel boot parameter from /proc/cmdline
-// and configures the network interface. Non-fatal: offline CI jobs still work.
+// configureNetwork only prepares loopback. The kernel's ip= boot parameter
+// configures eth0 before init starts.
 func configureNetwork() {
 	loSteps := [][]string{
 		{ipBin, "addr", "add", "127.0.0.1/8", "dev", "lo"},
@@ -460,51 +443,6 @@ func configureNetwork() {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.CombinedOutput()
 	}
-
-	clientIP, gateway, netmask, device, err := bootNetworkFields()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[init] warning: parse boot network: %v\n", err)
-		return
-	}
-	if clientIP == "" || device == "" {
-		return
-	}
-
-	prefixLen := 32
-	if netmask != "" {
-		mask := net.IPMask(net.ParseIP(netmask).To4())
-		if mask != nil {
-			ones, _ := mask.Size()
-			if ones > 0 {
-				prefixLen = ones
-			}
-		}
-	}
-
-	cidr := fmt.Sprintf("%s/%d", clientIP, prefixLen)
-	steps := []struct {
-		name string
-		args []string
-	}{
-		{"addr", []string{ipBin, "addr", "add", cidr, "dev", device}},
-		{"link", []string{ipBin, "link", "set", device, "up"}},
-	}
-	if gateway != "" {
-		steps = append(steps, struct {
-			name string
-			args []string
-		}{"route", []string{ipBin, "route", "add", "default", "via", gateway}})
-	}
-
-	for _, step := range steps {
-		cmd := exec.Command(step.args[0], step.args[1:]...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "[init] warning: network %s: %s: %v\n", step.name, strings.TrimSpace(string(out)), err)
-			return
-		}
-	}
-
-	fmt.Fprintf(os.Stdout, "[init] network: %s dev %s gw %s\n", cidr, device, gateway)
 }
 
 func bootNetworkFields() (clientIP, gateway, netmask, device string, err error) {
@@ -548,19 +486,38 @@ func routeGateway() (string, error) {
 }
 
 func configureMMDSRoute(ip string) error {
-	cmd := exec.Command(ipBin, "route", "replace", ip+"/32", "dev", "eth0")
+	device, err := bootNetworkDevice()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(ipBin, "route", "replace", ip+"/32", "dev", device)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ip route replace %s/32 dev eth0: %s: %w", ip, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("ip route replace %s/32 dev %s: %s: %w", ip, device, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
 
 func deleteMMDSRoute(ip string) error {
-	cmd := exec.Command(ipBin, "route", "del", ip+"/32", "dev", "eth0")
+	device, err := bootNetworkDevice()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(ipBin, "route", "del", ip+"/32", "dev", device)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ip route del %s/32 dev eth0: %s: %w", ip, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("ip route del %s/32 dev %s: %s: %w", ip, device, strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+func bootNetworkDevice() (string, error) {
+	_, _, _, device, err := bootNetworkFields()
+	if err != nil {
+		return "", fmt.Errorf("parse boot network device: %w", err)
+	}
+	if strings.TrimSpace(device) == "" {
+		return "", fmt.Errorf("boot network device is empty")
+	}
+	return device, nil
 }
 
 func mustMount(source, target, fstype string, flags uintptr, data string) {

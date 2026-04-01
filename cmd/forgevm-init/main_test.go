@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestFetchMMDSJobConfig(t *testing.T) {
@@ -58,18 +59,48 @@ func TestFetchMMDSJobConfig(t *testing.T) {
 func TestDecodeMMDSJobConfigRejectsUnsupportedSchema(t *testing.T) {
 	t.Parallel()
 
-	_, err := decodeMMDSJobConfig([]byte(`{"forge_metal":{"schema_version":2,"job":{"run_command":["npm","test"]}}}`))
+	_, err := decodeMMDSJobConfig([]byte(`{"schema_version":2,"job":{"run_command":["npm","test"]}}`))
 	if err == nil {
 		t.Fatal("expected decodeMMDSJobConfig to fail")
 	}
 }
 
-func TestDecodeMMDSJobConfigSupportsWrappedStore(t *testing.T) {
+func TestFetchMMDSJobConfigRetriesTransientFailures(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := decodeMMDSJobConfig([]byte(`{"forge_metal":{"schema_version":1,"job":{"run_command":["npm","test"],"run_work_dir":"/workspace"}}}`))
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		switch r.URL.Path {
+		case "/latest/api/token":
+			if attempts < 2 {
+				http.Error(w, "not ready", http.StatusServiceUnavailable)
+				return
+			}
+			fmt.Fprint(w, "token-123")
+		case "/forge_metal":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"schema_version":1,"job":{"run_command":["npm","test"],"run_work_dir":"/workspace"}}`)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	deadline := time.Now().Add(750 * time.Millisecond)
+	var (
+		cfg *jobConfig
+		err error
+	)
+	for {
+		cfg, err = fetchMMDSJobConfig(server.URL, &http.Client{Timeout: 100 * time.Millisecond})
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 	if err != nil {
-		t.Fatalf("decodeMMDSJobConfig: %v", err)
+		t.Fatalf("fetchMMDSJobConfig retry: %v", err)
 	}
 	if !reflect.DeepEqual(cfg.RunCommand, []string{"npm", "test"}) {
 		t.Fatalf("run command: got %+v", cfg.RunCommand)
