@@ -74,7 +74,7 @@ The following values are intentionally absent because they are derivable from th
 would duplicate boot-static data:
 
 - sample rate: fixed at `60Hz`
-- guest telemetry port: fixed by the host launch path
+- guest telemetry port: fixed at `10790`
 - guest network interface name
 - guest block device name
 
@@ -116,8 +116,20 @@ Each host packet is exactly `176` bytes: a `48`-byte host envelope plus a raw `1
 | --- | --- |
 | 0 | Packet was emitted as part of a snapshot replay rather than live tailing |
 
+### Disconnect Payload
+
+For `disconnect` packets, the first `u32` in the payload is a little-endian disconnect reason enum:
+
+| Value | Name | Contract |
+| ---: | --- | --- |
+| 0 | `bridge_closed` | The Firecracker bridge closed after a stream had been established. |
+| 1 | `connect_failed` | The host could not complete the Unix-socket bridge connect or handshake. |
+| 2 | `decode_failed` | The host rejected guest bytes as an invalid telemetry frame. |
+| 3 | `vm_gone` | Discovery removed the VM while a stream generation still existed. |
+
 ### Attach Semantics
 
 - A consumer connects once and sends a single fixed-size `attach` request.
 - The host replies with the current snapshot replay, then emits one `snapshot_end` packet.
 - After `snapshot_end`, the same socket tails live event packets until the consumer disconnects or falls behind retention.
+- If a consumer falls behind retention, the host MUST close the socket. The consumer MUST reconnect and send a fresh `attach` request to obtain a new snapshot and resume point.

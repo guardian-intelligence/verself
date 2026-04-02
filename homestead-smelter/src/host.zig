@@ -19,12 +19,13 @@ const discovery_period_ns: u64 = 250 * std.time.ns_per_ms;
 const event_ring_capacity: usize = 131072;
 const usage =
     \\Usage:
-    \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH] [--port PORT]
+    \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH]
     \\  homestead-smelter-host snapshot --control-uds PATH
     \\  homestead-smelter-host check-live --control-uds PATH --job-id UUID
     \\
     \\`serve` runs the long-lived host agent, discovers Firecracker VMs, opens one
-    \\binary telemetry stream per guest, and exposes a local AF_UNIX SEQPACKET socket.
+    \\binary telemetry stream per guest on the fixed vsock port 10790, and exposes
+    \\a local AF_UNIX SEQPACKET socket.
     \\`snapshot` attaches, prints the current binary host view in human-readable
     \\lines, and exits after `SNAPSHOT_END`.
     \\`check-live` succeeds when the named job has both hello and sample telemetry
@@ -34,7 +35,6 @@ const usage =
     \\  --listen-uds PATH   Host-agent control socket path
     \\  --control-uds PATH  Host-agent control socket path
     \\  --jailer-root PATH  Firecracker jail root to scan (default: /srv/jailer/firecracker)
-    \\  --port PORT         Guest vsock port (default: 10790)
     \\  --job-id UUID       CI job UUID for `check-live`
     \\  --help              Show this help text
     \\
@@ -50,7 +50,6 @@ const Config = struct {
     mode: Mode,
     control_uds: []const u8 = "",
     jailer_root: []const u8 = default_jailer_root,
-    port: u32 = hs.default_guest_port,
     job_id: []const u8 = "",
 };
 
@@ -122,7 +121,6 @@ const Consumer = struct {
 const Runtime = struct {
     control_uds: []const u8,
     jailer_root: []const u8,
-    guest_port: u32,
     epoll_fd: std.posix.fd_t,
     listener_fd: std.posix.fd_t,
     timer_fd: std.posix.fd_t,
@@ -131,7 +129,7 @@ const Runtime = struct {
     vms: [max_runtime_vms]RuntimeVm = [_]RuntimeVm{.{}} ** max_runtime_vms,
     consumers: [max_consumers]Consumer = [_]Consumer{.{}} ** max_consumers,
 
-    fn init(self: *Runtime, control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
+    fn init(self: *Runtime, control_uds: []const u8, jailer_root: []const u8) !void {
         const epoll_fd = try std.posix.epoll_create1(linux.EPOLL.CLOEXEC);
         errdefer std.posix.close(epoll_fd);
 
@@ -148,7 +146,6 @@ const Runtime = struct {
         self.* = .{
             .control_uds = control_uds,
             .jailer_root = jailer_root,
-            .guest_port = guest_port,
             .epoll_fd = epoll_fd,
             .listener_fd = listener_fd,
             .timer_fd = timer_fd,
@@ -320,7 +317,7 @@ const Runtime = struct {
         vm.cmd_sent = 0;
         vm.ack_len = 0;
         vm.stream_len = 0;
-        vm.cmd_len = (std.fmt.bufPrint(vm.cmd_buf[0..], "CONNECT {d}\n", .{self.guest_port}) catch unreachable).len;
+        vm.cmd_len = (std.fmt.bufPrint(vm.cmd_buf[0..], "CONNECT {d}\n", .{hs.default_guest_port}) catch unreachable).len;
         self.registerFd(fd, fdToken(.bridge, index), bridgeInterest(vm.stage)) catch |err| {
             _ = self.core.recordDisconnect(token, .connect_failed);
             std.log.err("epoll add failed for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
@@ -720,65 +717,6 @@ const Runtime = struct {
     }
 };
 
-pub const BenchmarkResult = struct {
-    stream_count: usize,
-    total_samples: usize,
-    elapsed_ns: u64,
-    samples_per_second: u64,
-};
-
-pub fn benchmarkIngest(_: std.mem.Allocator, stream_count: usize, samples_per_stream: usize) !BenchmarkResult {
-    if (stream_count == 0 or samples_per_stream == 0) return error.InvalidBenchmarkConfig;
-    if (stream_count > max_runtime_vms) return error.InvalidBenchmarkConfig;
-
-    var core: HostCore = .{};
-    var job_ids: [max_runtime_vms][36]u8 = undefined;
-    var tokens: [max_runtime_vms]HostCore.StreamToken = undefined;
-
-    for (0..stream_count) |index| {
-        _ = try std.fmt.bufPrint(job_ids[index][0..], "00000000-0000-0000-0000-{x:0>12}", .{index + 1});
-        const job_id = job_ids[index][0..36];
-        try core.discover(job_id, "/tmp/bench.sock");
-        tokens[index] = try core.beginStream(job_id);
-        _ = core.recordConnected(tokens[index]);
-        _ = core.recordHello(tokens[index], .{
-            .seq = 0,
-            .mono_ns = 1,
-            .wall_ns = 2,
-            .boot_id = benchmarkBootId(index),
-            .mem_total_kb = 516096,
-        });
-    }
-
-    const started_ns = try hs.monotonicNowNs();
-    for (0..samples_per_stream) |sample_index| {
-        for (0..stream_count) |stream_index| {
-            _ = core.recordSample(tokens[stream_index], .{
-                .seq = @intCast(sample_index + 1),
-                .mono_ns = @intCast(sample_index + 1),
-                .wall_ns = @intCast(sample_index + 2),
-                .cpu_user_ticks = @intCast(sample_index + 1),
-                .cpu_system_ticks = @intCast(sample_index + 2),
-                .cpu_idle_ticks = @intCast(sample_index + 3),
-                .mem_available_kb = 401232,
-                .io_read_bytes = @intCast(sample_index * 2),
-                .io_write_bytes = @intCast(sample_index * 3),
-                .net_rx_bytes = @intCast(sample_index * 4),
-                .net_tx_bytes = @intCast(sample_index * 5),
-            });
-        }
-    }
-    const ended_ns = try hs.monotonicNowNs();
-    const elapsed_ns = ended_ns - started_ns;
-    const total_samples = stream_count * samples_per_stream;
-    return .{
-        .stream_count = stream_count,
-        .total_samples = total_samples,
-        .elapsed_ns = elapsed_ns,
-        .samples_per_second = if (elapsed_ns == 0) 0 else @intCast((@as(u128, total_samples) * std.time.ns_per_s) / elapsed_ns),
-    };
-}
-
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const args = try std.process.argsAlloc(allocator);
@@ -793,7 +731,7 @@ pub fn main() !void {
     };
 
     switch (config.mode) {
-        .serve => try serve(config.control_uds, config.jailer_root, config.port),
+        .serve => try serve(config.control_uds, config.jailer_root),
         .snapshot => try snapshot(allocator, config.control_uds),
         .check_live => try checkLive(allocator, config.control_uds, config.job_id),
     }
@@ -820,12 +758,6 @@ fn parseArgs(args: []const []const u8) !Config {
             index += 1;
             if (index >= args.len) return error.MissingOptionValue;
             config.jailer_root = args[index];
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--port")) {
-            index += 1;
-            if (index >= args.len) return error.MissingOptionValue;
-            config.port = try hs.parsePort(args[index]);
             continue;
         }
         if (std.mem.eql(u8, arg, "--job-id")) {
@@ -862,11 +794,11 @@ fn switchMode(value: []const u8) ?Mode {
     return null;
 }
 
-fn serve(control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
+fn serve(control_uds: []const u8, jailer_root: []const u8) !void {
     const allocator = std.heap.page_allocator;
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root, guest_port);
+    try runtime.init(control_uds, jailer_root);
     defer runtime.deinit();
 
     std.log.info("homestead-smelter host agent listening on {s}", .{control_uds});
@@ -1191,13 +1123,6 @@ fn decodeToken(value: u64) DecodedToken {
     };
 }
 
-fn benchmarkBootId(stream_index: usize) [16]u8 {
-    var boot_id = [_]u8{0} ** 16;
-    const tail = @as(u64, @intCast(stream_index + 1));
-    std.mem.writeInt(u64, boot_id[8..16], tail, .big);
-    return boot_id;
-}
-
 // Minimal bridge peer used by the regression test: accept one client, read the
 // CONNECT line, then close without sending an ACK.
 fn acceptAndCloseBridgeServer(socket_path: []const u8) void {
@@ -1348,7 +1273,7 @@ test "runtime init and empty timer tick are stable" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    try runtime.init(control_uds, jailer_root);
     defer runtime.deinit();
 
     std.Thread.sleep(timer_tick_ns + (10 * std.time.ns_per_ms));
@@ -1371,7 +1296,7 @@ test "runtime serves empty snapshot over seqpacket attach" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    try runtime.init(control_uds, jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);
@@ -1409,7 +1334,7 @@ test "runtime epoll attach path is stable" {
 
     const runtime = try std.heap.page_allocator.create(Runtime);
     defer std.heap.page_allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    try runtime.init(control_uds, jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);
@@ -1456,7 +1381,7 @@ test "runtime handles consumer disconnect after snapshot" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    try runtime.init(control_uds, jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);

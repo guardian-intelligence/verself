@@ -1,14 +1,17 @@
 # homestead-smelter
 
-`homestead-smelter` is the new Zig workspace for Firecracker-specific guest and host agents.
+`homestead-smelter` is the Zig workspace for Firecracker-specific guest and host agents.
 
- guest agents -> homestead-smelter-host
-                            -> Effect live stream
-                            -> ClickHouse batch writer
+Current topology:
+
+ guest agents -> homestead-smelter-host -> local AF_UNIX `SOCK_SEQPACKET` attach socket
+
+Planned consumers attach to that local socket. The host daemon does not expose JSON and does not
+write to ClickHouse directly yet.
 
 Current protocol shape:
 
-- `homestead-smelter-guest` listens on a dedicated vsock port inside the guest
+- `homestead-smelter-guest` listens on the fixed vsock port `10790` inside the guest
 - each guest connection sends one fixed-size `hello` frame, then one fixed-size `sample` frame at a fixed `60Hz`
 - `homestead-smelter-host serve` runs as a long-lived daemon on the bare-metal worker
 - `homestead-smelter-host snapshot` attaches to the host socket, decodes the current binary host view into human-readable lines, and exits at `SNAPSHOT_END`
@@ -38,7 +41,7 @@ Artifacts land in `homestead-smelter/zig-out/bin/`.
 
 ## Run Against a Firecracker VM
 
-The guest binary is a required part of the Alpine rootfs. `make guest-rootfs` now requires `zig` and uploads a prebuilt `homestead-smelter-guest` so the VM image always contains it. `forgevm-init` still auto-starts it on boot while the guest cutover is in progress.
+The guest binary is a required part of the Alpine rootfs. `make guest-rootfs` requires `zig` and uploads a prebuilt `homestead-smelter-guest` so the VM image always contains it. The current guest boot path starts it from `forgevm-init`.
 
 Run the host daemon locally:
 
@@ -69,7 +72,7 @@ SAMPLE job_id=<job-id> stream_generation=1 host_seq=18 guest_seq=94 mem_availabl
 SNAPSHOT_END host_seq=19
 ```
 
-The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. The host control socket is `AF_UNIX` `SOCK_SEQPACKET`; another local process can attach once, receive a snapshot replay, then keep tailing the same binary stream without talking to guest bridges directly.
+The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. The host control socket is `AF_UNIX` `SOCK_SEQPACKET`; another local process can attach once, receive a snapshot replay, then keep tailing the same binary stream without talking to guest bridges directly. If a consumer falls behind event-ring retention, the daemon closes that socket and the consumer must reconnect and attach again.
 
 Check whether a specific VM is live:
 
