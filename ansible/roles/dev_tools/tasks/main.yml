@@ -8,7 +8,7 @@
 
 - name: Load dev tool pins from repo
   ansible.builtin.set_fact:
-    dev_tools: "{{ lookup('ansible.builtin.file', dev_tools_json) | from_json }}"
+    dev_tools_manifest: "{{ lookup('ansible.builtin.file', dev_tools_json) | from_json }}"
 
 # ============================================================================
 # Go (must be first — go install tools depend on it)
@@ -16,15 +16,15 @@
 
 - name: Check current Go version
   ansible.builtin.command: /usr/local/go/bin/go version
-  register: go_current
+  register: dev_tools_go_current
   changed_when: false
   failed_when: false
-  when: dev_tools.go is defined
+  when: dev_tools_manifest.go is defined
 
-- name: Install Go {{ dev_tools.go.version }}
+- name: Install Go {{ dev_tools_manifest.go.version }}
   when:
-    - dev_tools.go is defined
-    - go_current.rc != 0 or dev_tools.go.version not in (go_current.stdout | default(''))
+    - dev_tools_manifest.go is defined
+    - dev_tools_go_current.rc != 0 or dev_tools_manifest.go.version not in (dev_tools_go_current.stdout | default(''))
   block:
     - name: Remove stale Go installation
       ansible.builtin.file:
@@ -33,7 +33,7 @@
 
     - name: Download and extract Go
       ansible.builtin.unarchive:
-        src: "{{ dev_tools.go.url }}"
+        src: "{{ dev_tools_manifest.go.url }}"
         dest: /usr/local
         remote_src: true
 
@@ -43,14 +43,14 @@
       export PATH=/usr/local/go/bin:{{ dev_tools_gopath }}/bin:$PATH
     dest: /etc/profile.d/go.sh
     mode: "0644"
-  when: dev_tools.go is defined
+  when: dev_tools_manifest.go is defined
 
 - name: Verify Go version
   ansible.builtin.command: /usr/local/go/bin/go version
-  register: go_version_check
+  register: dev_tools_go_version_check
   changed_when: false
-  failed_when: "dev_tools.go.version not in go_version_check.stdout"
-  when: dev_tools.go is defined
+  failed_when: "dev_tools_manifest.go.version not in dev_tools_go_version_check.stdout"
+  when: dev_tools_manifest.go is defined
 
 # ============================================================================
 # Zig
@@ -61,23 +61,23 @@
     path: /usr/local/zig
     state: directory
     mode: "0755"
-  when: dev_tools.zig is defined
+  when: dev_tools_manifest.zig is defined
 
 - name: Check current Zig version
   ansible.builtin.command: /usr/local/zig/zig version
-  register: zig_current
+  register: dev_tools_zig_current
   changed_when: false
   failed_when: false
-  when: dev_tools.zig is defined
+  when: dev_tools_manifest.zig is defined
 
-- name: Install Zig {{ dev_tools.zig.version }}
+- name: Install Zig {{ dev_tools_manifest.zig.version }}
   when:
-    - dev_tools.zig is defined
-    - zig_current.rc != 0 or dev_tools.zig.version not in (zig_current.stdout | default(''))
+    - dev_tools_manifest.zig is defined
+    - dev_tools_zig_current.rc != 0 or dev_tools_manifest.zig.version not in (dev_tools_zig_current.stdout | default(''))
   block:
     - name: Download and extract Zig
       ansible.builtin.unarchive:
-        src: "{{ dev_tools.zig.url }}"
+        src: "{{ dev_tools_manifest.zig.url }}"
         dest: /usr/local/zig
         remote_src: true
         extra_opts: ["--strip-components=1"]
@@ -90,10 +90,10 @@
 
 - name: Verify Zig version
   ansible.builtin.command: /usr/local/zig/zig version
-  register: zig_version_check
+  register: dev_tools_zig_version_check
   changed_when: false
-  failed_when: "dev_tools.zig.version not in zig_version_check.stdout"
-  when: dev_tools.zig is defined
+  failed_when: "dev_tools_manifest.zig.version not in dev_tools_zig_version_check.stdout"
+  when: dev_tools_manifest.zig is defined
 
 # ============================================================================
 # OpenTofu (zip → single binary)
@@ -101,52 +101,52 @@
 
 - name: Check current OpenTofu version
   ansible.builtin.command: /usr/local/bin/tofu version -json
-  register: tofu_current
+  register: dev_tools_tofu_current
   changed_when: false
   failed_when: false
-  when: dev_tools.tofu is defined
+  when: dev_tools_manifest.tofu is defined
 
-- name: Install OpenTofu {{ dev_tools.tofu.version }}
+- name: Install OpenTofu {{ dev_tools_manifest.tofu.version }}
   when:
-    - dev_tools.tofu is defined
-    - tofu_current.rc != 0 or dev_tools.tofu.version not in (tofu_current.stdout | default(''))
+    - dev_tools_manifest.tofu is defined
+    - dev_tools_tofu_current.rc != 0 or dev_tools_manifest.tofu.version not in (dev_tools_tofu_current.stdout | default(''))
   block:
     - name: Create temp dir for OpenTofu
       ansible.builtin.tempfile:
         state: directory
-      register: tofu_tmp
+      register: dev_tools_tofu_tmp
 
     - name: Download OpenTofu zip
       ansible.builtin.get_url:
-        url: "{{ dev_tools.tofu.url }}"
-        dest: "{{ tofu_tmp.path }}/tofu.zip"
-        checksum: "sha256:{{ dev_tools.tofu.sha256 }}"
+        url: "{{ dev_tools_manifest.tofu.url }}"
+        dest: "{{ dev_tools_tofu_tmp.path }}/tofu.zip"
+        checksum: "sha256:{{ dev_tools_manifest.tofu.sha256 }}"
         mode: "0644"
 
     - name: Extract OpenTofu
       ansible.builtin.unarchive:
-        src: "{{ tofu_tmp.path }}/tofu.zip"
-        dest: "{{ tofu_tmp.path }}"
+        src: "{{ dev_tools_tofu_tmp.path }}/tofu.zip"
+        dest: "{{ dev_tools_tofu_tmp.path }}"
         remote_src: true
 
     - name: Install tofu binary
       ansible.builtin.copy:
-        src: "{{ tofu_tmp.path }}/tofu"
+        src: "{{ dev_tools_tofu_tmp.path }}/tofu"
         dest: /usr/local/bin/tofu
         remote_src: true
         mode: "0755"
 
     - name: Clean up temp dir
       ansible.builtin.file:
-        path: "{{ tofu_tmp.path }}"
+        path: "{{ dev_tools_tofu_tmp.path }}"
         state: absent
 
 - name: Verify OpenTofu version
   ansible.builtin.command: /usr/local/bin/tofu version -json
-  register: tofu_version_check
+  register: dev_tools_tofu_version_check
   changed_when: false
-  failed_when: "dev_tools.tofu.version not in tofu_version_check.stdout"
-  when: dev_tools.tofu is defined
+  failed_when: "dev_tools_manifest.tofu.version not in dev_tools_tofu_version_check.stdout"
+  when: dev_tools_manifest.tofu is defined
 
 # ============================================================================
 # protoc (zip → /usr/local/bin + /usr/local/include)
@@ -154,95 +154,95 @@
 
 - name: Check current protoc version
   ansible.builtin.command: /usr/local/bin/protoc --version
-  register: protoc_current
+  register: dev_tools_protoc_current
   changed_when: false
   failed_when: false
-  when: dev_tools.protoc is defined
+  when: dev_tools_manifest.protoc is defined
 
-- name: Install protoc {{ dev_tools.protoc.version }}
+- name: Install protoc {{ dev_tools_manifest.protoc.version }}
   when:
-    - dev_tools.protoc is defined
-    - protoc_current.rc != 0 or dev_tools.protoc.version not in (protoc_current.stdout | default(''))
+    - dev_tools_manifest.protoc is defined
+    - dev_tools_protoc_current.rc != 0 or dev_tools_manifest.protoc.version not in (dev_tools_protoc_current.stdout | default(''))
   block:
     - name: Create temp dir for protoc
       ansible.builtin.tempfile:
         state: directory
-      register: protoc_tmp
+      register: dev_tools_protoc_tmp
 
     - name: Download protoc zip
       ansible.builtin.get_url:
-        url: "{{ dev_tools.protoc.url }}"
-        dest: "{{ protoc_tmp.path }}/protoc.zip"
-        checksum: "sha256:{{ dev_tools.protoc.sha256 }}"
+        url: "{{ dev_tools_manifest.protoc.url }}"
+        dest: "{{ dev_tools_protoc_tmp.path }}/protoc.zip"
+        checksum: "sha256:{{ dev_tools_manifest.protoc.sha256 }}"
         mode: "0644"
 
     - name: Extract protoc
       ansible.builtin.unarchive:
-        src: "{{ protoc_tmp.path }}/protoc.zip"
+        src: "{{ dev_tools_protoc_tmp.path }}/protoc.zip"
         dest: /usr/local
         remote_src: true
 
     - name: Clean up temp dir
       ansible.builtin.file:
-        path: "{{ protoc_tmp.path }}"
+        path: "{{ dev_tools_protoc_tmp.path }}"
         state: absent
 
 - name: Verify protoc version
   ansible.builtin.command: /usr/local/bin/protoc --version
-  register: protoc_version_check
+  register: dev_tools_protoc_version_check
   changed_when: false
-  failed_when: "dev_tools.protoc.version not in protoc_version_check.stdout"
-  when: dev_tools.protoc is defined
+  failed_when: "dev_tools_manifest.protoc.version not in dev_tools_protoc_version_check.stdout"
+  when: dev_tools_manifest.protoc is defined
 
 # ============================================================================
 # Single-binary downloads: buf, jq, sops
 # get_url without force: skips download when dest exists and checksum matches.
 # ============================================================================
 
-- name: Install buf {{ dev_tools.buf.version }}
+- name: Install buf {{ dev_tools_manifest.buf.version }}
   ansible.builtin.get_url:
-    url: "{{ dev_tools.buf.url }}"
+    url: "{{ dev_tools_manifest.buf.url }}"
     dest: /usr/local/bin/buf
-    checksum: "sha256:{{ dev_tools.buf.sha256 }}"
+    checksum: "sha256:{{ dev_tools_manifest.buf.sha256 }}"
     mode: "0755"
-  when: dev_tools.buf is defined
+  when: dev_tools_manifest.buf is defined
 
 - name: Verify buf version
   ansible.builtin.command: /usr/local/bin/buf --version
-  register: buf_version_check
+  register: dev_tools_buf_version_check
   changed_when: false
-  failed_when: "dev_tools.buf.version not in buf_version_check.stdout"
-  when: dev_tools.buf is defined
+  failed_when: "dev_tools_manifest.buf.version not in dev_tools_buf_version_check.stdout"
+  when: dev_tools_manifest.buf is defined
 
-- name: Install jq {{ dev_tools.jq.version }}
+- name: Install jq {{ dev_tools_manifest.jq.version }}
   ansible.builtin.get_url:
-    url: "{{ dev_tools.jq.url }}"
+    url: "{{ dev_tools_manifest.jq.url }}"
     dest: /usr/local/bin/jq
-    checksum: "sha256:{{ dev_tools.jq.sha256 }}"
+    checksum: "sha256:{{ dev_tools_manifest.jq.sha256 }}"
     mode: "0755"
-  when: dev_tools.jq is defined
+  when: dev_tools_manifest.jq is defined
 
 - name: Verify jq version
   ansible.builtin.command: /usr/local/bin/jq --version
-  register: jq_version_check
+  register: dev_tools_jq_version_check
   changed_when: false
-  failed_when: "dev_tools.jq.version not in jq_version_check.stdout"
-  when: dev_tools.jq is defined
+  failed_when: "dev_tools_manifest.jq.version not in dev_tools_jq_version_check.stdout"
+  when: dev_tools_manifest.jq is defined
 
-- name: Install sops {{ dev_tools.sops.version }}
+- name: Install sops {{ dev_tools_manifest.sops.version }}
   ansible.builtin.get_url:
-    url: "{{ dev_tools.sops.url }}"
+    url: "{{ dev_tools_manifest.sops.url }}"
     dest: /usr/local/bin/sops
-    checksum: "sha256:{{ dev_tools.sops.sha256 }}"
+    checksum: "sha256:{{ dev_tools_manifest.sops.sha256 }}"
     mode: "0755"
-  when: dev_tools.sops is defined
+  when: dev_tools_manifest.sops is defined
 
 - name: Verify sops version
   ansible.builtin.command: /usr/local/bin/sops --version
-  register: sops_version_check
+  register: dev_tools_sops_version_check
   changed_when: false
-  failed_when: "dev_tools.sops.version not in sops_version_check.stdout"
-  when: dev_tools.sops is defined
+  failed_when: "dev_tools_manifest.sops.version not in dev_tools_sops_version_check.stdout"
+  when: dev_tools_manifest.sops is defined
 
 # ============================================================================
 # shellcheck (tarball → single binary)
@@ -250,52 +250,52 @@
 
 - name: Check current shellcheck version
   ansible.builtin.command: /usr/local/bin/shellcheck --version
-  register: sc_current
+  register: dev_tools_shellcheck_current
   changed_when: false
   failed_when: false
-  when: dev_tools.shellcheck is defined
+  when: dev_tools_manifest.shellcheck is defined
 
-- name: Install shellcheck {{ dev_tools.shellcheck.version }}
+- name: Install shellcheck {{ dev_tools_manifest.shellcheck.version }}
   when:
-    - dev_tools.shellcheck is defined
-    - sc_current.rc != 0 or dev_tools.shellcheck.version not in (sc_current.stdout | default(''))
+    - dev_tools_manifest.shellcheck is defined
+    - dev_tools_shellcheck_current.rc != 0 or dev_tools_manifest.shellcheck.version not in (dev_tools_shellcheck_current.stdout | default(''))
   block:
     - name: Create temp dir for shellcheck
       ansible.builtin.tempfile:
         state: directory
-      register: sc_tmp
+      register: dev_tools_shellcheck_tmp
 
     - name: Download shellcheck tarball
       ansible.builtin.get_url:
-        url: "{{ dev_tools.shellcheck.url }}"
-        dest: "{{ sc_tmp.path }}/shellcheck.tar.xz"
-        checksum: "sha256:{{ dev_tools.shellcheck.sha256 }}"
+        url: "{{ dev_tools_manifest.shellcheck.url }}"
+        dest: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck.tar.xz"
+        checksum: "sha256:{{ dev_tools_manifest.shellcheck.sha256 }}"
         mode: "0644"
 
     - name: Extract shellcheck
       ansible.builtin.unarchive:
-        src: "{{ sc_tmp.path }}/shellcheck.tar.xz"
-        dest: "{{ sc_tmp.path }}"
+        src: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck.tar.xz"
+        dest: "{{ dev_tools_shellcheck_tmp.path }}"
         remote_src: true
 
     - name: Install shellcheck binary
       ansible.builtin.copy:
-        src: "{{ sc_tmp.path }}/shellcheck-v{{ dev_tools.shellcheck.version }}/shellcheck"
+        src: "{{ dev_tools_shellcheck_tmp.path }}/shellcheck-v{{ dev_tools_manifest.shellcheck.version }}/shellcheck"
         dest: /usr/local/bin/shellcheck
         remote_src: true
         mode: "0755"
 
     - name: Clean up temp dir
       ansible.builtin.file:
-        path: "{{ sc_tmp.path }}"
+        path: "{{ dev_tools_shellcheck_tmp.path }}"
         state: absent
 
 - name: Verify shellcheck version
   ansible.builtin.command: /usr/local/bin/shellcheck --version
-  register: sc_version_check
+  register: dev_tools_shellcheck_version_check
   changed_when: false
-  failed_when: "dev_tools.shellcheck.version not in sc_version_check.stdout"
-  when: dev_tools.shellcheck is defined
+  failed_when: "dev_tools_manifest.shellcheck.version not in dev_tools_shellcheck_version_check.stdout"
+  when: dev_tools_manifest.shellcheck is defined
 
 # ============================================================================
 # age (tarball with two binaries: age, age-keygen)
@@ -303,37 +303,37 @@
 
 - name: Check current age version
   ansible.builtin.command: /usr/local/bin/age --version
-  register: age_current
+  register: dev_tools_age_current
   changed_when: false
   failed_when: false
-  when: dev_tools.age is defined
+  when: dev_tools_manifest.age is defined
 
-- name: Install age {{ dev_tools.age.version }}
+- name: Install age {{ dev_tools_manifest.age.version }}
   when:
-    - dev_tools.age is defined
-    - age_current.rc != 0 or dev_tools.age.version not in (age_current.stdout | default(''))
+    - dev_tools_manifest.age is defined
+    - dev_tools_age_current.rc != 0 or dev_tools_manifest.age.version not in (dev_tools_age_current.stdout | default(''))
   block:
     - name: Create temp dir for age
       ansible.builtin.tempfile:
         state: directory
-      register: age_tmp
+      register: dev_tools_age_tmp
 
     - name: Download age tarball
       ansible.builtin.get_url:
-        url: "{{ dev_tools.age.url }}"
-        dest: "{{ age_tmp.path }}/age.tar.gz"
-        checksum: "sha256:{{ dev_tools.age.sha256 }}"
+        url: "{{ dev_tools_manifest.age.url }}"
+        dest: "{{ dev_tools_age_tmp.path }}/age.tar.gz"
+        checksum: "sha256:{{ dev_tools_manifest.age.sha256 }}"
         mode: "0644"
 
     - name: Extract age
       ansible.builtin.unarchive:
-        src: "{{ age_tmp.path }}/age.tar.gz"
-        dest: "{{ age_tmp.path }}"
+        src: "{{ dev_tools_age_tmp.path }}/age.tar.gz"
+        dest: "{{ dev_tools_age_tmp.path }}"
         remote_src: true
 
     - name: Install age binaries
       ansible.builtin.copy:
-        src: "{{ age_tmp.path }}/age/{{ item }}"
+        src: "{{ dev_tools_age_tmp.path }}/age/{{ item }}"
         dest: "/usr/local/bin/{{ item }}"
         remote_src: true
         mode: "0755"
@@ -343,15 +343,15 @@
 
     - name: Clean up temp dir
       ansible.builtin.file:
-        path: "{{ age_tmp.path }}"
+        path: "{{ dev_tools_age_tmp.path }}"
         state: absent
 
 - name: Verify age version
   ansible.builtin.command: /usr/local/bin/age --version
-  register: age_version_check
+  register: dev_tools_age_version_check
   changed_when: false
-  failed_when: "dev_tools.age.version not in age_version_check.stdout"
-  when: dev_tools.age is defined
+  failed_when: "dev_tools_manifest.age.version not in dev_tools_age_version_check.stdout"
+  when: dev_tools_manifest.age is defined
 
 # ============================================================================
 # ClickHouse (tarball → single multi-tool binary + symlinks)
@@ -359,37 +359,37 @@
 
 - name: Check current ClickHouse version
   ansible.builtin.command: /usr/local/bin/clickhouse client --version
-  register: ch_current
+  register: dev_tools_clickhouse_current
   changed_when: false
   failed_when: false
-  when: dev_tools.clickhouse is defined
+  when: dev_tools_manifest.clickhouse is defined
 
-- name: Install ClickHouse {{ dev_tools.clickhouse.version }}
+- name: Install ClickHouse {{ dev_tools_manifest.clickhouse.version }}
   when:
-    - dev_tools.clickhouse is defined
-    - ch_current.rc != 0 or dev_tools.clickhouse.version not in (ch_current.stdout | default(''))
+    - dev_tools_manifest.clickhouse is defined
+    - dev_tools_clickhouse_current.rc != 0 or dev_tools_manifest.clickhouse.version not in (dev_tools_clickhouse_current.stdout | default(''))
   block:
     - name: Create temp dir for ClickHouse
       ansible.builtin.tempfile:
         state: directory
-      register: ch_tmp
+      register: dev_tools_clickhouse_tmp
 
     - name: Download ClickHouse tarball
       ansible.builtin.get_url:
-        url: "{{ dev_tools.clickhouse.url }}"
-        dest: "{{ ch_tmp.path }}/clickhouse.tgz"
-        checksum: "sha256:{{ dev_tools.clickhouse.sha256 }}"
+        url: "{{ dev_tools_manifest.clickhouse.url }}"
+        dest: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse.tgz"
+        checksum: "sha256:{{ dev_tools_manifest.clickhouse.sha256 }}"
         mode: "0644"
 
     - name: Extract ClickHouse
       ansible.builtin.unarchive:
-        src: "{{ ch_tmp.path }}/clickhouse.tgz"
-        dest: "{{ ch_tmp.path }}"
+        src: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse.tgz"
+        dest: "{{ dev_tools_clickhouse_tmp.path }}"
         remote_src: true
 
     - name: Install ClickHouse binary
       ansible.builtin.copy:
-        src: "{{ ch_tmp.path }}/clickhouse-common-static-{{ dev_tools.clickhouse.version }}/usr/bin/clickhouse"
+        src: "{{ dev_tools_clickhouse_tmp.path }}/clickhouse-common-static-{{ dev_tools_manifest.clickhouse.version }}/usr/bin/clickhouse"
         dest: /usr/local/bin/clickhouse
         remote_src: true
         mode: "0755"
@@ -408,15 +408,15 @@
 
     - name: Clean up temp dir
       ansible.builtin.file:
-        path: "{{ ch_tmp.path }}"
+        path: "{{ dev_tools_clickhouse_tmp.path }}"
         state: absent
 
 - name: Verify ClickHouse version
   ansible.builtin.command: /usr/local/bin/clickhouse client --version
-  register: ch_version_check
+  register: dev_tools_clickhouse_version_check
   changed_when: false
-  failed_when: "dev_tools.clickhouse.version not in ch_version_check.stdout"
-  when: dev_tools.clickhouse is defined
+  failed_when: "dev_tools_manifest.clickhouse.version not in dev_tools_clickhouse_version_check.stdout"
+  when: dev_tools_manifest.clickhouse is defined
 
 # ============================================================================
 # go install tools (requires Go already installed above)
@@ -432,71 +432,78 @@
 
 - name: Check golangci-lint version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/golangci-lint --version"
-  register: golangci_current
+  register: dev_tools_golangci_current
   changed_when: false
   failed_when: false
-  when: dev_tools['golangci-lint'] is defined
+  when: dev_tools_manifest['golangci-lint'] is defined
 
 - name: Install golangci-lint via go install
   ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools['golangci-lint'].go_package }}@v{{ dev_tools['golangci-lint'].version }}"
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['golangci-lint'].go_package }}@v{{ dev_tools_manifest['golangci-lint'].version }}"
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
   when:
-    - dev_tools['golangci-lint'] is defined
-    - golangci_current.rc != 0 or dev_tools['golangci-lint'].version not in (golangci_current.stdout | default(''))
+    - dev_tools_manifest['golangci-lint'] is defined
+    - dev_tools_golangci_current.rc != 0 or dev_tools_manifest['golangci-lint'].version not in (dev_tools_golangci_current.stdout | default(''))
 
 - name: Check gofumpt version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/gofumpt --version"
-  register: gofumpt_current
+  register: dev_tools_gofumpt_current
   changed_when: false
   failed_when: false
-  when: dev_tools.gofumpt is defined
+  when: dev_tools_manifest.gofumpt is defined
 
 - name: Install gofumpt via go install
   ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools.gofumpt.go_package }}@v{{ dev_tools.gofumpt.version }}"
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.gofumpt.go_package }}@v{{ dev_tools_manifest.gofumpt.version }}"
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
   when:
-    - dev_tools.gofumpt is defined
-    - gofumpt_current.rc != 0 or dev_tools.gofumpt.version not in (gofumpt_current.stdout | default(''))
+    - dev_tools_manifest.gofumpt is defined
+    - dev_tools_gofumpt_current.rc != 0 or dev_tools_manifest.gofumpt.version not in (dev_tools_gofumpt_current.stdout | default(''))
 
 - name: Check protoc-gen-go version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go --version"
-  register: protocgengo_current
+  register: dev_tools_protoc_gen_go_current
   changed_when: false
   failed_when: false
-  when: dev_tools['protoc-gen-go'] is defined
+  when: dev_tools_manifest['protoc-gen-go'] is defined
 
 - name: Install protoc-gen-go via go install
   ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools['protoc-gen-go'].go_package }}@v{{ dev_tools['protoc-gen-go'].version }}"
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['protoc-gen-go'].go_package }}@v{{ dev_tools_manifest['protoc-gen-go'].version }}"
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
   when:
-    - dev_tools['protoc-gen-go'] is defined
-    - protocgengo_current.rc != 0 or dev_tools['protoc-gen-go'].version not in (protocgengo_current.stdout | default(''))
+    - dev_tools_manifest['protoc-gen-go'] is defined
+    - dev_tools_protoc_gen_go_current.rc != 0 or dev_tools_manifest['protoc-gen-go'].version not in (dev_tools_protoc_gen_go_current.stdout | default(''))
 
 - name: Check protoc-gen-go-grpc version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go-grpc --version"
-  register: protocgengogrpc_current
+  register: dev_tools_protoc_gen_go_grpc_current
   changed_when: false
   failed_when: false
-  when: dev_tools['protoc-gen-go-grpc'] is defined
+  when: dev_tools_manifest['protoc-gen-go-grpc'] is defined
 
 - name: Install protoc-gen-go-grpc via go install
   ansible.builtin.command:
-    cmd: "/usr/local/go/bin/go install {{ dev_tools['protoc-gen-go-grpc'].go_package }}@v{{ dev_tools['protoc-gen-go-grpc'].version }}"
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest['protoc-gen-go-grpc'].go_package }}@v{{ dev_tools_manifest['protoc-gen-go-grpc'].version }}"
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
   when:
-    - dev_tools['protoc-gen-go-grpc'] is defined
-    - protocgengogrpc_current.rc != 0 or dev_tools['protoc-gen-go-grpc'].version not in (protocgengogrpc_current.stdout | default(''))
+    - dev_tools_manifest['protoc-gen-go-grpc'] is defined
+    - >-
+      dev_tools_protoc_gen_go_grpc_current.rc != 0 or
+      dev_tools_manifest['protoc-gen-go-grpc'].version not in
+      (dev_tools_protoc_gen_go_grpc_current.stdout | default(''))
 
 # ============================================================================
 # pipx: ansible
@@ -507,35 +514,67 @@
     name: pipx
     state: present
 
-- name: Install ansible-core {{ dev_tools.ansible.version }} via pipx
+- name: Install ansible-core via pipx
   ansible.builtin.command:
-    cmd: "pipx install ansible-core=={{ dev_tools.ansible.version }}"
+    cmd: "pipx install ansible-core=={{ dev_tools_manifest.ansible.version }}"
   environment:
     PIPX_HOME: /opt/pipx
     PIPX_BIN_DIR: /usr/local/bin
-  register: pipx_ansible
-  changed_when: "'installed package' in pipx_ansible.stdout"
+  register: dev_tools_pipx_ansible
+  changed_when: "'installed package' in dev_tools_pipx_ansible.stdout"
   failed_when:
-    - pipx_ansible.rc != 0
-    - "'already seems to be installed' not in (pipx_ansible.stdout + pipx_ansible.stderr)"
-  when: dev_tools.ansible is defined
+    - dev_tools_pipx_ansible.rc != 0
+    - "'already seems to be installed' not in (dev_tools_pipx_ansible.stdout + dev_tools_pipx_ansible.stderr)"
+  when: dev_tools_manifest.ansible is defined
 
 - name: Verify Ansible version
   ansible.builtin.command: /usr/local/bin/ansible --version
-  register: ansible_version_check
+  register: dev_tools_ansible_version_check
   changed_when: false
-  failed_when: "dev_tools.ansible.version not in ansible_version_check.stdout"
-  when: dev_tools.ansible is defined
+  failed_when: "dev_tools_manifest.ansible.version not in dev_tools_ansible_version_check.stdout"
+  when: dev_tools_manifest.ansible is defined
+
+- name: Check ansible-lint version
+  ansible.builtin.command: /usr/local/bin/ansible-lint --version
+  register: dev_tools_ansible_lint_current
+  changed_when: false
+  failed_when: false
+  when:
+    - dev_tools_manifest.ansible is defined
+    - dev_tools_manifest['ansible-lint'] is defined
+
+- name: Install ansible-lint into the ansible-core pipx environment
+  ansible.builtin.command:
+    cmd: >-
+      pipx inject --include-apps ansible-core
+      ansible-lint=={{ dev_tools_manifest['ansible-lint'].version }}
+  environment:
+    PIPX_HOME: /opt/pipx
+    PIPX_BIN_DIR: /usr/local/bin
+  changed_when: true
+  when:
+    - dev_tools_manifest.ansible is defined
+    - dev_tools_manifest['ansible-lint'] is defined
+    - dev_tools_ansible_lint_current.rc != 0
+      or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
+
+- name: Verify ansible-lint version
+  ansible.builtin.command: /usr/local/bin/ansible-lint --version
+  register: dev_tools_ansible_lint_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest['ansible-lint'].version not in dev_tools_ansible_lint_version_check.stdout"
+  when:
+    - dev_tools_manifest.ansible is defined
+    - dev_tools_manifest['ansible-lint'] is defined
 
 - name: Install required Ansible collections
   ansible.builtin.command:
-    cmd: "/usr/local/bin/ansible-galaxy collection install {{ item }}"
-  loop:
-    - ansible.posix
-    - community.general
-  register: galaxy_result
-  changed_when: "'was installed' in galaxy_result.stdout"
-  when: dev_tools.ansible is defined
+    cmd: "/usr/local/bin/ansible-galaxy collection install -r {{ playbook_dir }}/../requirements.yml"
+  register: dev_tools_galaxy_result
+  changed_when: >-
+    'Installing' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
+    or 'Downloading' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
+  when: dev_tools_manifest.ansible is defined
 
 # ============================================================================
 # apt: crun, debootstrap

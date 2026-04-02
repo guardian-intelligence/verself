@@ -43,7 +43,7 @@
       scopes:
         - "all"
     status_code: [201]
-  register: fixture_api_token
+  register: ci_fixtures_api_token
   no_log: true
 
 - name: Run fixture end-to-end validation
@@ -54,8 +54,9 @@
       --owner {{ forgejo_admin_user }}
       --username {{ forgejo_admin_user }}
       --email {{ forgejo_admin_email }}
-      --token {{ fixture_api_token.json.sha1 }}
+      --token {{ ci_fixtures_api_token.json.sha1 }}
   become: true
   environment:
     PATH: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  changed_when: true
   no_log: true

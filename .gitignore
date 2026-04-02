@@ -14,6 +14,7 @@ terraform/*.tfvars.json
 
 # Ansible
 ansible/*.retry
+ansible/.cache/
 ansible/inventory/hosts.ini
 ansible/group_vars/all/secrets.yml
 ansible/group_vars/all/credentials.auto.yml

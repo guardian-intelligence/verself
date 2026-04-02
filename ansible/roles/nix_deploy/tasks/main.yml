@@ -8,10 +8,10 @@
 - name: Check if Nix is installed
   ansible.builtin.stat:
     path: /nix/var/nix/profiles/default/bin/nix
-  register: nix_binary
+  register: nix_deploy_binary
 
 - name: Install Nix (multi-user daemon mode)
-  when: not nix_binary.stat.exists
+  when: not nix_deploy_binary.stat.exists
   block:
     - name: Download Nix installer
       ansible.builtin.get_url:
@@ -23,6 +23,7 @@
       ansible.builtin.command: /tmp/nix-install.sh --daemon --yes
       environment:
         NIX_INSTALLER_YES: "1"
+      changed_when: true
 
     - name: Enable and start nix-daemon
       ansible.builtin.systemd:

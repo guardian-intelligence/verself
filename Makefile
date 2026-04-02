@@ -1,4 +1,4 @@
-.PHONY: build clean test test-integration lint fmt vet tidy \
+.PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        doctor setup-dev setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
        guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build smelter-dev
@@ -35,6 +35,9 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 
 lint:
 	golangci-lint run ./...
+
+lint-ansible:
+	cd ansible && ansible-lint playbooks roles
 
 fmt:
 	gofumpt -w .

@@ -15,9 +15,9 @@
   community.general.cloudflare_dns:
     zone: "{{ forge_metal_domain }}"
     record: "{{ item }}.{{ forge_metal_domain }}"
-    type: "{{ cloudflare_record_type }}"
+    type: "{{ cloudflare_dns_record_type }}"
     value: "{{ ansible_host }}"
-    ttl: "{{ cloudflare_ttl }}"
+    ttl: "{{ cloudflare_dns_ttl }}"
     proxied: "{{ cloudflare_proxied | default(false) }}"
     solo: true
     api_token: "{{ cloudflare_api_token }}"

@@ -25,7 +25,8 @@
     regexp: '^\s*GSSAPIAuthentication'
     line: "    # GSSAPIAuthentication yes  # disabled — not supported by this SSH build"
     backrefs: false
-  ignore_errors: true
+  register: base_ssh_gssapi_update
+  failed_when: false
 
 - name: Allow bench-ci to execute forge-metal CI runs as root
   ansible.builtin.copy:

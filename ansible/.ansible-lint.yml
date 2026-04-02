@@ -1,0 +1,13 @@
+---
+profile: production
+use_default_rules: true
+
+exclude_paths:
+  - .cache/
+
+warn_list:
+  - experimental
+  - jinja[spacing]
+  - fqcn[deep]
+
+offline: true

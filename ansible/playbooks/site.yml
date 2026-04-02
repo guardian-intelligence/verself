@@ -5,6 +5,95 @@
 # Usage: ansible-playbook -i inventory/hosts.ini playbooks/site.yml \
 #          -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 
+# ── Preflight (~2s) ──────────────────────────────────────────────────────────
+# Catch missing prerequisites before the slow work starts.
+
+- name: "Preflight: controller prerequisites"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: nix_server_profile_path must be set
+      ansible.builtin.assert:
+        that: nix_server_profile_path | default('') | length > 0
+        fail_msg: >-
+          nix_server_profile_path required — run:
+          nix build .#server-profile --no-link --print-out-paths
+
+    - name: nix_server_profile_path must exist on disk
+      ansible.builtin.stat:
+        path: "{{ nix_server_profile_path }}"
+      register: preflight_nix_profile
+      failed_when: not preflight_nix_profile.stat.exists
+
+    - name: Zig must be available (needed by firecracker role)
+      ansible.builtin.command: zig version
+      changed_when: false
+
+    - name: Ansible collection community.general must be installed
+      ansible.builtin.command: ansible-galaxy collection list community.general
+      changed_when: false
+      register: preflight_cg
+      failed_when: "'community.general' not in preflight_cg.stdout"
+
+    - name: Ansible collection ansible.posix must be installed
+      ansible.builtin.command: ansible-galaxy collection list ansible.posix
+      changed_when: false
+      register: preflight_ap
+      failed_when: "'ansible.posix' not in preflight_ap.stdout"
+
+- name: "Preflight: remote prerequisites"
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Cloudflare token must be set when domain is configured
+      ansible.builtin.fail:
+        msg: >-
+          forge_metal_domain is "{{ forge_metal_domain }}" but cloudflare_api_token is empty.
+          Run: make setup-domain
+      when:
+        - forge_metal_domain | default('', true) | length > 0
+        - cloudflare_api_token | default('', true) | length == 0
+
+- name: "Preflight: worker prerequisites"
+  hosts: workers
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Check ZFS pool exists
+      ansible.builtin.command: "zpool status benchpool"
+      changed_when: false
+      failed_when: false
+      register: preflight_zpool
+
+    - name: Check CI kernel exists
+      ansible.builtin.stat:
+        path: /var/lib/ci/vmlinux
+      register: preflight_ci_kernel
+
+    - name: Check CI rootfs exists
+      ansible.builtin.stat:
+        path: /var/lib/ci/rootfs.ext4
+      register: preflight_ci_rootfs
+
+    - name: Warn if ZFS pool is missing
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: ZFS pool 'benchpool' not found on {{ inventory_hostname }}.
+          The zfs role will create it, but only if a suitable disk is available.
+      when: preflight_zpool.rc != 0
+
+    - name: Fail if CI artifacts are missing
+      ansible.builtin.fail:
+        msg: >-
+          CI artifacts not staged on {{ inventory_hostname }}. The firecracker role
+          requires vmlinux and rootfs.ext4 at /var/lib/ci/.
+          Run: make guest-rootfs && make deploy-ci-artifacts
+      when: not preflight_ci_kernel.stat.exists or not preflight_ci_rootfs.stat.exists
+
+# ── Deploy ───────────────────────────────────────────────────────────────────
+
 - name: Deploy Nix closure to all nodes
   hosts: all
   become: true

@@ -5,35 +5,46 @@
 
 - name: Load CI version pins from repo
   ansible.builtin.set_fact:
-    fc_version_pins: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../ci/versions.json') | from_json }}"
+    firecracker_version_pins: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../ci/versions.json') | from_json }}"
 
 - name: Set Firecracker release paths
   ansible.builtin.set_fact:
-    fc_release_archive: "/tmp/firecracker-{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}.tgz"
-    fc_release_dir: "/tmp/firecracker-release-{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+    firecracker_release_archive: "/tmp/firecracker-{{ firecracker_version_pins.firecracker.version }}-{{ firecracker_version_pins.firecracker.arch }}.tgz"
+    firecracker_release_dir: "/tmp/firecracker-release-{{ firecracker_version_pins.firecracker.version }}-{{ firecracker_version_pins.firecracker.arch }}"
 
 - name: Download pinned Firecracker release archive
   ansible.builtin.get_url:
-    url: "{{ fc_version_pins.firecracker.url }}"
-    dest: "{{ fc_release_archive }}"
-    checksum: "sha256:{{ fc_version_pins.firecracker.sha256 }}"
+    url: "{{ firecracker_version_pins.firecracker.url }}"
+    dest: "{{ firecracker_release_archive }}"
+    checksum: "sha256:{{ firecracker_version_pins.firecracker.sha256 }}"
     mode: "0644"
 
 - name: Create Firecracker extraction directory
   ansible.builtin.file:
-    path: "{{ fc_release_dir }}"
+    path: "{{ firecracker_release_dir }}"
     state: directory
     mode: "0755"
 
 - name: Extract Firecracker release archive
   ansible.builtin.unarchive:
-    src: "{{ fc_release_archive }}"
-    dest: "{{ fc_release_dir }}"
+    src: "{{ firecracker_release_archive }}"
+    dest: "{{ firecracker_release_dir }}"
     remote_src: true
 
 - name: Install pinned Firecracker binary
   ansible.builtin.copy:
-    src: "{{ fc_release_dir }}/release-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}/firecracker-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+    src: >-
+      {{
+        firecracker_release_dir
+        ~ '/release-v'
+        ~ firecracker_version_pins.firecracker.version
+        ~ '-'
+        ~ firecracker_version_pins.firecracker.arch
+        ~ '/firecracker-v'
+        ~ firecracker_version_pins.firecracker.version
+        ~ '-'
+        ~ firecracker_version_pins.firecracker.arch
+      }}
     dest: /usr/local/bin/firecracker
     remote_src: true
     owner: root
@@ -42,7 +53,18 @@
 
 - name: Install pinned jailer binary
   ansible.builtin.copy:
-    src: "{{ fc_release_dir }}/release-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}/jailer-v{{ fc_version_pins.firecracker.version }}-{{ fc_version_pins.firecracker.arch }}"
+    src: >-
+      {{
+        firecracker_release_dir
+        ~ '/release-v'
+        ~ firecracker_version_pins.firecracker.version
+        ~ '-'
+        ~ firecracker_version_pins.firecracker.arch
+        ~ '/jailer-v'
+        ~ firecracker_version_pins.firecracker.version
+        ~ '-'
+        ~ firecracker_version_pins.firecracker.arch
+      }}
     dest: /usr/local/bin/jailer
     remote_src: true
     owner: root
@@ -51,9 +73,9 @@
 
 - name: Verify installed Firecracker version
   ansible.builtin.command: /usr/local/bin/firecracker --version
-  register: fc_installed_version
+  register: firecracker_installed_version
   changed_when: false
-  failed_when: "'v' + fc_version_pins.firecracker.version not in fc_installed_version.stdout"
+  failed_when: "'v' + firecracker_version_pins.firecracker.version not in firecracker_installed_version.stdout"
 
 # --- KVM ---
 
@@ -72,12 +94,12 @@
 - name: Verify /dev/kvm exists
   ansible.builtin.stat:
     path: /dev/kvm
-  register: dev_kvm
+  register: firecracker_dev_kvm
 
 - name: Fail if KVM is not available
   ansible.builtin.fail:
     msg: "/dev/kvm does not exist. Ensure KVM is enabled in BIOS and kvm_amd/kvm_intel is loaded."
-  when: not dev_kvm.stat.exists
+  when: not firecracker_dev_kvm.stat.exists
 
 # --- ZFS ARC tuning ---
 
@@ -193,7 +215,7 @@
   ansible.builtin.command: >
     {{ fc_smelter_host_binary_path }} snapshot
     --control-uds {{ fc_smelter_control_socket }}
-  register: smelter_snapshot
+  register: firecracker_smelter_snapshot
   changed_when: false
 
 # --- Guest artifact verification ---
@@ -202,30 +224,30 @@
 - name: Verify CI kernel exists
   ansible.builtin.stat:
     path: "{{ fc_kernel_path }}"
-  register: ci_kernel
+  register: firecracker_ci_kernel
 
 - name: Verify CI rootfs exists
   ansible.builtin.stat:
     path: "{{ fc_rootfs_path }}"
-  register: ci_rootfs
+  register: firecracker_ci_rootfs
 
 - name: Verify guest artifact manifest exists
   ansible.builtin.stat:
     path: "{{ fc_guest_artifact_manifest_path }}"
-  register: ci_guest_artifacts
+  register: firecracker_ci_guest_artifacts
 
 - name: Fail if CI artifacts are missing
   ansible.builtin.fail:
     msg: >
       CI artifacts not found at {{ fc_kernel_path }}, {{ fc_rootfs_path }}, and/or {{ fc_guest_artifact_manifest_path }}.
       Stage them with: make guest-rootfs && make deploy-ci-artifacts
-  when: not ci_kernel.stat.exists or not ci_rootfs.stat.exists or not ci_guest_artifacts.stat.exists
+  when: not firecracker_ci_kernel.stat.exists or not firecracker_ci_rootfs.stat.exists or not firecracker_ci_guest_artifacts.stat.exists
 
 # --- Golden zvol ---
 
 - name: Check if golden zvol exists
   ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}"
-  register: golden_zvol_check
+  register: firecracker_golden_zvol_check
   changed_when: false
   failed_when: false
 
@@ -235,51 +257,52 @@
     -o volblocksize=16K
     -o compression=lz4
     {{ fc_zfs_pool }}/{{ fc_golden_zvol }}
-  when: golden_zvol_check.rc != 0
+  when: firecracker_golden_zvol_check.rc != 0
+  changed_when: true
 
 - name: Wait for zvol device node
   ansible.builtin.wait_for:
     path: "/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}"
     state: present
     timeout: 10
-  when: golden_zvol_check.rc != 0
+  when: firecracker_golden_zvol_check.rc != 0
 
 - name: Check if golden snapshot exists
   ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
-  register: golden_snap_check
+  register: firecracker_golden_snapshot_check
   changed_when: false
   failed_when: false
 
 - name: Compute CI rootfs checksum
   ansible.builtin.command: "sha256sum {{ fc_rootfs_path }}"
-  register: ci_rootfs_sha256
+  register: firecracker_ci_rootfs_sha256
   changed_when: false
 
 - name: Check recorded golden rootfs checksum
   ansible.builtin.stat:
     path: "{{ fc_rootfs_hash_record }}"
-  register: golden_rootfs_hash_stat
+  register: firecracker_golden_rootfs_hash_stat
 
 - name: Read recorded golden rootfs checksum
   ansible.builtin.slurp:
     src: "{{ fc_rootfs_hash_record }}"
-  register: golden_rootfs_hash
-  when: golden_rootfs_hash_stat.stat.exists
+  register: firecracker_golden_rootfs_hash
+  when: firecracker_golden_rootfs_hash_stat.stat.exists
 
 - name: Decide whether the base golden needs refresh
   ansible.builtin.set_fact:
-    fc_refresh_base_golden_needed: >-
+    firecracker_refresh_base_golden_needed: >-
       {{
         fc_refresh_base_golden
-        or golden_zvol_check.rc != 0
-        or golden_snap_check.rc != 0
-        or not golden_rootfs_hash_stat.stat.exists
-        or ((golden_rootfs_hash.content | default('') | b64decode | trim) != (ci_rootfs_sha256.stdout.split()[0] | trim))
+        or firecracker_golden_zvol_check.rc != 0
+        or firecracker_golden_snapshot_check.rc != 0
+        or not firecracker_golden_rootfs_hash_stat.stat.exists
+        or ((firecracker_golden_rootfs_hash.content | default('') | b64decode | trim) != (firecracker_ci_rootfs_sha256.stdout.split()[0] | trim))
       }}
 
 - name: Prune repo goldens before base golden refresh
   ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/repo-goldens"
-  when: fc_refresh_base_golden_needed
+  when: firecracker_refresh_base_golden_needed
   failed_when: false
   changed_when: true
 
@@ -289,32 +312,35 @@
     zfs list -H -o name -r {{ fc_zfs_pool }}/{{ fc_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -r
   args:
     executable: /bin/bash
-  when: fc_refresh_base_golden_needed
+  when: firecracker_refresh_base_golden_needed
   changed_when: true
 
 - name: Destroy old golden snapshot before refresh
   ansible.builtin.command: "zfs destroy {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
   when:
-    - fc_refresh_base_golden_needed
-    - golden_snap_check.rc == 0
+    - firecracker_refresh_base_golden_needed
+    - firecracker_golden_snapshot_check.rc == 0
+  changed_when: true
 
 - name: Write ext4 rootfs to golden zvol
   ansible.builtin.command: >
     dd if={{ fc_rootfs_path }}
     of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
     bs=1M conv=fsync status=progress
-  when: fc_refresh_base_golden_needed
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
 
 - name: Create golden snapshot
   ansible.builtin.command: "zfs snapshot {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
-  when: fc_refresh_base_golden_needed
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
 
 - name: Record golden rootfs checksum
   ansible.builtin.copy:
-    content: "{{ ci_rootfs_sha256.stdout.split()[0] }}\n"
+    content: "{{ firecracker_ci_rootfs_sha256.stdout.split()[0] }}\n"
     dest: "{{ fc_rootfs_hash_record }}"
     mode: "0644"
-  when: fc_refresh_base_golden_needed
+  when: firecracker_refresh_base_golden_needed
 
 # --- CI dataset for job clones ---
 
