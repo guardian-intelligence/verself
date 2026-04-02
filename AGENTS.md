@@ -219,6 +219,65 @@ Compression codecs per column type:
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
 | `make deploy-ci-artifacts` | Deploy rootfs to /var/lib/ci/ on the server |
+| `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
+| `make smelter-dev` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
+
+## Developing homestead-smelter
+
+`make smelter-dev` is the best way to test homestead-smelter guest changes. It provides a ~10 second edit-test loop by hot-swapping the Zig binary into a dev golden zvol, bypassing the full rootfs rebuild (~90s).
+
+### What it does
+
+1. Builds `homestead-smelter-guest` locally via `zig build` (~2s)
+2. SCPs the binary to the server (~1s)
+3. Runs `ansible/playbooks/smelter-dev.yml` which:
+   - Clones `benchpool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
+   - Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
+   - Snapshots as `smelter-dev-zvol@ready`
+   - Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
+   - Waits for the VM's vsock bridge socket to appear
+   - Probes the smelter guest on vsock port 10790 using `homestead-smelter-host probe-guest`
+   - Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
+
+### Prerequisites
+
+The server must have been deployed at least once with a valid golden image:
+
+```bash
+make guest-rootfs && make deploy-ci-artifacts && make deploy
+```
+
+### Usage
+
+```bash
+# Edit homestead-smelter/src/guest.zig, then:
+make smelter-dev
+```
+
+Expected output on success:
+
+```
+→ building homestead-smelter guest (zig)
+→ uploading guest binary and dev script
+→ running smelter dev test on <host>
+→ preparing dev golden zvol
+→ dev golden ready: benchpool/smelter-dev-zvol@ready
+→ booting Firecracker VM
+→ probing smelter guest via vsock port 10790
+
+hello from homestead-smelter guest on port 10790: received "smelter-dev probe 1743523200"
+
+PASS: smelter guest responded
+→ tearing down
+```
+
+### How it compares to other targets
+
+| Path | Time | When to use |
+|------|------|-------------|
+| `make smelter-dev` | ~10s | Iterating on guest Zig code |
+| `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
+| `make e2e` | ~5min | Full Forgejo + fixture validation after rootfs changes |
 
 ## Project Structure
 
