@@ -1,4 +1,5 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
+       hooks-install \
        doctor setup-dev setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
        guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build smelter-dev
@@ -38,6 +39,13 @@ lint:
 
 lint-ansible:
 	cd ansible && ansible-lint playbooks roles
+
+hooks-install:
+	@hooks_path=$$(git config --get core.hooksPath || true); \
+	if [ "$$hooks_path" = "$(CURDIR)/.git/hooks" ] || [ "$$hooks_path" = ".git/hooks" ]; then \
+		git config --unset-all core.hooksPath; \
+	fi
+	pre-commit install
 
 fmt:
 	gofumpt -w .

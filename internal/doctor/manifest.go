@@ -41,8 +41,8 @@ func loadManifestFrom(path string) ([]ToolSpec, error) {
 	// Stable iteration order: use a fixed ordering so doctor output is deterministic.
 	// The order matches the tool categories in the plan: tarballs, go install, pip, apt.
 	order := []string{
-		"go", "zig", "tofu", "ansible", "protoc", "buf",
-		"shellcheck", "jq", "sops", "age", "clickhouse",
+		"go", "zig", "tofu", "ansible", "ansible-lint", "pre-commit",
+		"protoc", "buf", "shellcheck", "jq", "sops", "age", "clickhouse",
 		"golangci-lint", "gofumpt", "protoc-gen-go", "protoc-gen-go-grpc",
 		"crun", "debootstrap",
 	}

@@ -1,0 +1,4 @@
+---
+# base: provides zfsutils-linux (apt) and e2fsprogs.
+dependencies:
+  - role: base

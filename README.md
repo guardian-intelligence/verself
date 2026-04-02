@@ -85,11 +85,13 @@ Those are fixture orchestration concerns, not workload execution concerns.
 
 ```bash
 make setup-dev   # one-time: install pinned dev tools
+make hooks-install
 make provision
 make deploy
 make e2e
 ```
 
+- `make hooks-install`: install the repo's git pre-commit hooks
 - `make deploy`: normal idempotent deploy path
 - `make e2e`: deploy CI artifacts and run the real Forgejo fixture end-to-end validation
 

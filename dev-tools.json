@@ -41,6 +41,12 @@
     "inject_package": "ansible-lint",
     "version_cmd": "ansible-lint --version"
   },
+  "pre-commit": {
+    "version": "4.5.1",
+    "strategy": "pipx",
+    "pipx_package": "pre-commit",
+    "version_cmd": "pre-commit --version"
+  },
   "protoc": {
     "version": "34.0",
     "strategy": "zip",

@@ -1,0 +1,4 @@
+---
+# nix_deploy: provides npm binary at fm_bin.
+dependencies:
+  - role: nix_deploy
