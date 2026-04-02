@@ -300,13 +300,55 @@
         or ((firecracker_golden_rootfs_hash.content | default('') | b64decode | trim) != (firecracker_ci_rootfs_sha256.stdout.split()[0] | trim))
       }}
 
-- name: Prune repo goldens before base golden refresh
+# --- Atomic golden zvol refresh ---
+# Write to a staging zvol first. Only tear down the old golden after the
+# staging write + snapshot succeed, so a failed dd never leaves the pool
+# without a usable golden.
+
+- name: Destroy leftover staging zvol from previous failed run
+  ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging"
+  when: firecracker_refresh_base_golden_needed
+  failed_when: false
+  changed_when: true
+
+- name: Create staging zvol
+  ansible.builtin.command: >
+    zfs create -V {{ fc_golden_zvol_size }}
+    -o volblocksize=16K
+    -o compression=lz4
+    {{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
+
+- name: Wait for staging zvol device node
+  ansible.builtin.wait_for:
+    path: "/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging"
+    state: present
+    timeout: 10
+  when: firecracker_refresh_base_golden_needed
+
+- name: Write ext4 rootfs to staging zvol
+  ansible.builtin.command: >
+    dd if={{ fc_rootfs_path }}
+    of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging
+    bs=1M conv=fsync status=progress
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
+
+- name: Snapshot staging zvol
+  ansible.builtin.command: "zfs snapshot {{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging@ready"
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
+
+# Staging is proven good — now tear down the old golden and its dependents.
+
+- name: Prune repo goldens derived from old golden
   ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/repo-goldens"
   when: firecracker_refresh_base_golden_needed
   failed_when: false
   changed_when: true
 
-- name: Prune CI job clones before base golden refresh
+- name: Prune CI job clones derived from old golden
   ansible.builtin.shell: |
     set -euo pipefail
     zfs list -H -o name -r {{ fc_zfs_pool }}/{{ fc_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -r
@@ -315,23 +357,18 @@
   when: firecracker_refresh_base_golden_needed
   changed_when: true
 
-- name: Destroy old golden snapshot before refresh
-  ansible.builtin.command: "zfs destroy {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+- name: Destroy old golden zvol (cascade removes @ready snapshot)
+  ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/{{ fc_golden_zvol }}"
   when:
     - firecracker_refresh_base_golden_needed
-    - firecracker_golden_snapshot_check.rc == 0
+    - firecracker_golden_zvol_check.rc == 0
   changed_when: true
 
-- name: Write ext4 rootfs to golden zvol
+- name: Promote staging zvol to golden
   ansible.builtin.command: >
-    dd if={{ fc_rootfs_path }}
-    of=/dev/zvol/{{ fc_zfs_pool }}/{{ fc_golden_zvol }}
-    bs=1M conv=fsync status=progress
-  when: firecracker_refresh_base_golden_needed
-  changed_when: true
-
-- name: Create golden snapshot
-  ansible.builtin.command: "zfs snapshot {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+    zfs rename
+    {{ fc_zfs_pool }}/{{ fc_golden_zvol }}-staging
+    {{ fc_zfs_pool }}/{{ fc_golden_zvol }}
   when: firecracker_refresh_base_golden_needed
   changed_when: true
 
