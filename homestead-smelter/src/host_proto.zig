@@ -13,15 +13,13 @@ pub const packet_payload_size: usize = hs.frame_size;
 pub const packet_flag_snapshot: u32 = 1 << 0;
 
 pub const RequestKind = enum(u16) {
-    ping = 1,
-    snapshot = 2,
+    snapshot = 1,
 };
 
 pub const PacketKind = enum(u16) {
-    pong = 1,
-    hello = 2,
-    sample = 3,
-    snapshot_end = 4,
+    hello = 1,
+    sample = 2,
+    snapshot_end = 3,
 };
 
 pub const Request = struct {
@@ -176,7 +174,7 @@ test "packet round-trips hello payload" {
 }
 
 test "decodeRequest rejects invalid magic" {
-    var encoded = encodeRequest(.{ .kind = .ping });
+    var encoded = encodeRequest(.{ .kind = .snapshot });
     writeInt(u32, &encoded, request_magic_offset, request_magic ^ 0xffff);
     try std.testing.expectError(error.InvalidMagic, decodeRequest(&encoded));
 }
@@ -184,7 +182,7 @@ test "decodeRequest rejects invalid magic" {
 test "decodePacket rejects invalid kind" {
     var encoded = encodePacket(.{
         .header = .{
-            .kind = .pong,
+            .kind = .hello,
         },
     });
     writeInt(u16, &encoded, packet_kind_offset, std.math.maxInt(u16));

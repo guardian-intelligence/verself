@@ -91,7 +91,7 @@ Each request is exactly `32` bytes.
 | --- | ---: | --- | --- | --- | --- |
 | 0 | 4 | `magic` | `u32` | none | MUST equal `0x48534d00`. |
 | 4 | 2 | `version` | `u16` | none | MUST equal `1`. |
-| 6 | 2 | `kind` | `u16` | none | MUST be `1` (`ping`) or `2` (`snapshot`). |
+| 6 | 2 | `kind` | `u16` | none | MUST be `1` (`snapshot`). |
 | 8 | 24 | `reserved` | bytes | none | MUST be zero on send and ignored on receive. |
 
 ### Packet Record
@@ -102,11 +102,11 @@ Each host packet is exactly `176` bytes: a `48`-byte host envelope plus a raw `1
 | --- | ---: | --- | --- | --- | --- |
 | 0 | 4 | `magic` | `u32` | none | MUST equal `0x48534d01`. |
 | 4 | 2 | `version` | `u16` | none | MUST equal `1`. |
-| 6 | 2 | `kind` | `u16` | none | `1`=`pong`, `2`=`hello`, `3`=`sample`, `4`=`snapshot_end`. |
+| 6 | 2 | `kind` | `u16` | none | `1`=`hello`, `2`=`sample`, `3`=`snapshot_end`. |
 | 8 | 8 | `host_seq` | `u64` | packets | Monotonic host-assigned sequence. |
 | 16 | 8 | `observed_wall_ns` | `u64` | ns | Host realtime clock at packet emit time. |
-| 24 | 16 | `job_id` | `[16]u8` | UUID bytes | CI job identity. Zero for `pong` and `snapshot_end`. |
-| 40 | 4 | `stream_generation` | `u32` | none | Host reconnect generation for the VM stream. Zero for `pong` and `snapshot_end`. |
+| 24 | 16 | `job_id` | `[16]u8` | UUID bytes | CI job identity. Zero for `snapshot_end`. |
+| 40 | 4 | `stream_generation` | `u32` | none | Host reconnect generation for the VM stream. Zero for `snapshot_end`. |
 | 44 | 4 | `flags` | `u32` | bitset | Host packet flags. |
 | 48 | 128 | `payload` | bytes | guest frame | Raw guest `hello` or `sample` frame for those packet kinds. Zero otherwise. |
 
