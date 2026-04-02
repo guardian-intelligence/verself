@@ -1,0 +1,100 @@
+{
+  "name": "Host Process Metrics",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "Process Memory (RSS)",
+      "x": 0, "y": 0, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "{{ _hdx_metric_source_id }}",
+        "select": [
+          {
+            "aggFn": "avg",
+            "valueExpression": "Value",
+            "metricName": "process.memory.usage",
+            "metricType": "sum"
+          }
+        ],
+        "groupBy": "ResourceAttributes['process.executable.name']",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "Process CPU Time (rate)",
+      "x": 6, "y": 0, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "{{ _hdx_metric_source_id }}",
+        "select": [
+          {
+            "aggFn": "sum",
+            "valueExpression": "Value",
+            "metricName": "process.cpu.time",
+            "metricType": "sum",
+            "periodAggFn": "delta"
+          }
+        ],
+        "groupBy": "ResourceAttributes['process.executable.name']",
+        "fillNulls": true,
+        "numberFormat": {"output": "time"}
+      }
+    },
+    {
+      "name": "System Load Averages",
+      "x": 0, "y": 3, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "{{ _hdx_metric_source_id }}",
+        "select": [
+          {
+            "aggFn": "avg",
+            "valueExpression": "Value",
+            "metricName": "system.cpu.load_average.1m",
+            "metricType": "gauge"
+          }
+        ],
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "System Memory by State",
+      "x": 6, "y": 3, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "{{ _hdx_metric_source_id }}",
+        "select": [
+          {
+            "aggFn": "avg",
+            "valueExpression": "Value",
+            "metricName": "system.memory.usage",
+            "metricType": "sum"
+          }
+        ],
+        "groupBy": "Attributes['state']",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "Current Process Memory",
+      "x": 0, "y": 6, "w": 12, "h": 3,
+      "config": {
+        "displayType": "table",
+        "sourceId": "{{ _hdx_metric_source_id }}",
+        "select": [
+          {
+            "aggFn": "last_value",
+            "valueExpression": "Value",
+            "metricName": "process.memory.usage",
+            "metricType": "sum"
+          }
+        ],
+        "groupBy": "ResourceAttributes['process.executable.name']",
+        "orderBy": "last_value desc",
+        "numberFormat": {"output": "byte"}
+      }
+    }
+  ]
+}
