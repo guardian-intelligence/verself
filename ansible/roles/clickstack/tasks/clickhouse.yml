@@ -61,26 +61,55 @@
   until: clickstack_clickhouse_ready.rc == 0
   changed_when: false
 
-- name: Upload migrations
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../migrations/"
-    dest: /opt/forge-metal/migrations/
-    mode: "0644"
-
-- name: Create forge_metal database
-  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'CREATE DATABASE IF NOT EXISTS forge_metal'"
+- name: Compute local migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../migrations"
+    executable: /bin/bash
+  register: clickstack_migrations_local_hash
   changed_when: false
+
+- name: Read remote migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/migrations/.applied-hash
+  register: clickstack_migrations_remote_hash
+  failed_when: false
 
 - name: Apply ClickHouse migrations
-  ansible.builtin.command: >
-    {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
-    --queries-file /opt/forge-metal/migrations/{{ item }}
-  loop: >-
-    {{
-      query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
-      | map('basename')
-      | sort
-    }}
-  loop_control:
-    label: "{{ item }}"
-  changed_when: false
+  when: >-
+    clickstack_migrations_remote_hash is failed
+    or (clickstack_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (clickstack_migrations_local_hash.stdout.split()[0] | trim)
+  block:
+    - name: Upload migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../migrations/"
+        dest: /opt/forge-metal/migrations/
+        mode: "0644"
+
+    - name: Create forge_metal database
+      ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'CREATE DATABASE IF NOT EXISTS forge_metal'"
+      changed_when: false
+
+    - name: Apply migration files
+      ansible.builtin.command: >
+        {{ fm_bin }}/clickhouse-client --database forge_metal --multiquery
+        --queries-file /opt/forge-metal/migrations/{{ item }}
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+
+    - name: Record migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ clickstack_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/migrations/.applied-hash
+        mode: "0644"
