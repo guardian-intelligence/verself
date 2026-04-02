@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 
 pub const default_guest_port: u32 = 10790;
@@ -66,41 +67,191 @@ pub const FrameError = error{
     InvalidKind,
 };
 
+const HeaderWire = extern struct {
+    magic: u32,
+    version: u16,
+    kind: u16,
+    seq: u32,
+    flags: u32,
+    mono_ns: u64,
+    wall_ns: u64,
+
+    fn init(kind: FrameKind, seq: u32, flags: u32, mono_ns: u64, wall_ns: u64) HeaderWire {
+        std.debug.assert(mono_ns > 0);
+        std.debug.assert(wall_ns > 0);
+
+        return .{
+            .magic = frame_magic,
+            .version = frame_version,
+            .kind = @intFromEnum(kind),
+            .seq = seq,
+            .flags = flags,
+            .mono_ns = mono_ns,
+            .wall_ns = wall_ns,
+        };
+    }
+
+    fn decode(buf: *const [frame_size]u8) FrameError!HeaderWire {
+        const bytes: [@sizeOf(HeaderWire)]u8 = buf[0..@sizeOf(HeaderWire)].*;
+        const header: HeaderWire = @bitCast(bytes);
+        if (header.magic != frame_magic) return error.InvalidMagic;
+        if (header.version != frame_version) return error.InvalidVersion;
+        _ = std.meta.intToEnum(FrameKind, header.kind) catch return error.InvalidKind;
+        return header;
+    }
+
+    fn validateKind(self: HeaderWire, expected_kind: FrameKind) FrameError!void {
+        if (self.kind != @intFromEnum(expected_kind)) return error.InvalidKind;
+    }
+};
+
+const HelloWire = extern struct {
+    header: HeaderWire,
+    sample_period_ms: u32,
+    guest_port: u32,
+    boot_id: [36]u8,
+    net_iface: [16]u8,
+    block_dev: [16]u8,
+    reserved: [20]u8 = [_]u8{0} ** 20,
+
+    fn fromFrame(frame: HelloFrame) HelloWire {
+        return .{
+            .header = HeaderWire.init(.hello, frame.seq, frame.flags, frame.mono_ns, frame.wall_ns),
+            .sample_period_ms = frame.sample_period_ms,
+            .guest_port = frame.guest_port,
+            .boot_id = frame.boot_id,
+            .net_iface = frame.net_iface,
+            .block_dev = frame.block_dev,
+        };
+    }
+
+    fn toFrame(self: HelloWire) HelloFrame {
+        return .{
+            .seq = self.header.seq,
+            .flags = self.header.flags,
+            .mono_ns = self.header.mono_ns,
+            .wall_ns = self.header.wall_ns,
+            .sample_period_ms = self.sample_period_ms,
+            .guest_port = self.guest_port,
+            .boot_id = self.boot_id,
+            .net_iface = self.net_iface,
+            .block_dev = self.block_dev,
+        };
+    }
+
+    fn encode(self: HelloWire) [frame_size]u8 {
+        return @bitCast(self);
+    }
+
+    fn decode(buf: *const [frame_size]u8) FrameError!HelloWire {
+        const wire: HelloWire = @bitCast(buf.*);
+        const header = try HeaderWire.decode(buf);
+        try header.validateKind(.hello);
+        return wire;
+    }
+};
+
+const SampleWire = extern struct {
+    header: HeaderWire,
+    cpu_user_ticks: u64,
+    cpu_system_ticks: u64,
+    cpu_idle_ticks: u64,
+    load1_centis: u32,
+    load5_centis: u32,
+    load15_centis: u32,
+    procs_running: u16,
+    procs_blocked: u16,
+    mem_total_kb: u64,
+    mem_available_kb: u64,
+    io_read_bytes: u64,
+    io_write_bytes: u64,
+    net_rx_bytes: u64,
+    net_tx_bytes: u64,
+    psi_cpu_pct100: u16,
+    psi_mem_pct100: u16,
+    psi_io_pct100: u16,
+    reserved: u16 = 0,
+
+    fn fromFrame(frame: SampleFrame) SampleWire {
+        return .{
+            .header = HeaderWire.init(.sample, frame.seq, frame.flags, frame.mono_ns, frame.wall_ns),
+            .cpu_user_ticks = frame.cpu_user_ticks,
+            .cpu_system_ticks = frame.cpu_system_ticks,
+            .cpu_idle_ticks = frame.cpu_idle_ticks,
+            .load1_centis = frame.load1_centis,
+            .load5_centis = frame.load5_centis,
+            .load15_centis = frame.load15_centis,
+            .procs_running = frame.procs_running,
+            .procs_blocked = frame.procs_blocked,
+            .mem_total_kb = frame.mem_total_kb,
+            .mem_available_kb = frame.mem_available_kb,
+            .io_read_bytes = frame.io_read_bytes,
+            .io_write_bytes = frame.io_write_bytes,
+            .net_rx_bytes = frame.net_rx_bytes,
+            .net_tx_bytes = frame.net_tx_bytes,
+            .psi_cpu_pct100 = frame.psi_cpu_pct100,
+            .psi_mem_pct100 = frame.psi_mem_pct100,
+            .psi_io_pct100 = frame.psi_io_pct100,
+        };
+    }
+
+    fn toFrame(self: SampleWire) SampleFrame {
+        return .{
+            .seq = self.header.seq,
+            .flags = self.header.flags,
+            .mono_ns = self.header.mono_ns,
+            .wall_ns = self.header.wall_ns,
+            .cpu_user_ticks = self.cpu_user_ticks,
+            .cpu_system_ticks = self.cpu_system_ticks,
+            .cpu_idle_ticks = self.cpu_idle_ticks,
+            .load1_centis = self.load1_centis,
+            .load5_centis = self.load5_centis,
+            .load15_centis = self.load15_centis,
+            .procs_running = self.procs_running,
+            .procs_blocked = self.procs_blocked,
+            .mem_total_kb = self.mem_total_kb,
+            .mem_available_kb = self.mem_available_kb,
+            .io_read_bytes = self.io_read_bytes,
+            .io_write_bytes = self.io_write_bytes,
+            .net_rx_bytes = self.net_rx_bytes,
+            .net_tx_bytes = self.net_tx_bytes,
+            .psi_cpu_pct100 = self.psi_cpu_pct100,
+            .psi_mem_pct100 = self.psi_mem_pct100,
+            .psi_io_pct100 = self.psi_io_pct100,
+        };
+    }
+
+    fn encode(self: SampleWire) [frame_size]u8 {
+        return @bitCast(self);
+    }
+
+    fn decode(buf: *const [frame_size]u8) FrameError!SampleWire {
+        const wire: SampleWire = @bitCast(buf.*);
+        const header = try HeaderWire.decode(buf);
+        try header.validateKind(.sample);
+        return wire;
+    }
+};
+
 comptime {
+    std.debug.assert(builtin.cpu.arch.endian() == .little);
     std.debug.assert(frame_size == 128);
     std.debug.assert(default_guest_port >= 1024);
     std.debug.assert(default_sample_period_ms > 0);
     std.debug.assert(max_snapshot_bytes >= max_line_bytes);
-    std.debug.assert(108 <= frame_size);
-    std.debug.assert(126 <= frame_size);
+    std.debug.assert(@sizeOf(HeaderWire) == 32);
+    std.debug.assert(@sizeOf(HelloWire) == frame_size);
+    std.debug.assert(@sizeOf(SampleWire) == frame_size);
+    std.debug.assert(@offsetOf(HelloWire, "sample_period_ms") == 32);
+    std.debug.assert(@offsetOf(HelloWire, "boot_id") == 40);
+    std.debug.assert(@offsetOf(SampleWire, "cpu_user_ticks") == 32);
+    std.debug.assert(@offsetOf(SampleWire, "psi_cpu_pct100") == 120);
 }
 
 pub fn writeLine(stream: std.net.Stream, line: []const u8) !void {
     std.debug.assert(line.len <= max_snapshot_bytes);
     try stream.writeAll(line);
     try stream.writeAll("\n");
-}
-
-pub fn readLineAlloc(allocator: std.mem.Allocator, stream: std.net.Stream, limit: usize) ![]u8 {
-    var bytes = try std.ArrayList(u8).initCapacity(allocator, 64);
-    defer bytes.deinit(allocator);
-
-    var one: [1]u8 = undefined;
-    while (true) {
-        const n = try stream.read(one[0..]);
-        if (n == 0) break;
-        switch (one[0]) {
-            '\n' => break,
-            '\r' => continue,
-            else => {},
-        }
-        if (bytes.items.len >= limit) {
-            return error.LineTooLong;
-        }
-        try bytes.append(allocator, one[0]);
-    }
-
-    return bytes.toOwnedSlice(allocator);
 }
 
 pub fn readLineInto(stream: std.net.Stream, buf: []u8) ![]u8 {
@@ -142,87 +293,24 @@ pub fn setPaddedString(dest: []u8, value: []const u8) void {
 pub fn encodeHelloFrame(frame: HelloFrame) [frame_size]u8 {
     std.debug.assert(frame.sample_period_ms > 0);
     std.debug.assert(frame.guest_port > 0);
-
-    var buf = [_]u8{0} ** frame_size;
-    encodeHeader(&buf, .hello, frame.seq, frame.flags, frame.mono_ns, frame.wall_ns);
-    writeU32(&buf, 32, frame.sample_period_ms);
-    writeU32(&buf, 36, frame.guest_port);
-    @memcpy(buf[40..76], frame.boot_id[0..]);
-    @memcpy(buf[76..92], frame.net_iface[0..]);
-    @memcpy(buf[92..108], frame.block_dev[0..]);
-    return buf;
+    return HelloWire.fromFrame(frame).encode();
 }
 
 pub fn decodeHelloFrame(buf: *const [frame_size]u8) FrameError!HelloFrame {
-    try validateHeader(buf, .hello);
-    var frame = HelloFrame{
-        .seq = readU32(buf, 8),
-        .flags = readU32(buf, 12),
-        .mono_ns = readU64(buf, 16),
-        .wall_ns = readU64(buf, 24),
-        .sample_period_ms = readU32(buf, 32),
-        .guest_port = readU32(buf, 36),
-    };
-    @memcpy(frame.boot_id[0..], buf[40..76]);
-    @memcpy(frame.net_iface[0..], buf[76..92]);
-    @memcpy(frame.block_dev[0..], buf[92..108]);
-    return frame;
+    return (try HelloWire.decode(buf)).toFrame();
 }
 
 pub fn encodeSampleFrame(frame: SampleFrame) [frame_size]u8 {
-    var buf = [_]u8{0} ** frame_size;
-    encodeHeader(&buf, .sample, frame.seq, frame.flags, frame.mono_ns, frame.wall_ns);
-    writeU64(&buf, 32, frame.cpu_user_ticks);
-    writeU64(&buf, 40, frame.cpu_system_ticks);
-    writeU64(&buf, 48, frame.cpu_idle_ticks);
-    writeU32(&buf, 56, frame.load1_centis);
-    writeU32(&buf, 60, frame.load5_centis);
-    writeU32(&buf, 64, frame.load15_centis);
-    writeU16(&buf, 68, frame.procs_running);
-    writeU16(&buf, 70, frame.procs_blocked);
-    writeU64(&buf, 72, frame.mem_total_kb);
-    writeU64(&buf, 80, frame.mem_available_kb);
-    writeU64(&buf, 88, frame.io_read_bytes);
-    writeU64(&buf, 96, frame.io_write_bytes);
-    writeU64(&buf, 104, frame.net_rx_bytes);
-    writeU64(&buf, 112, frame.net_tx_bytes);
-    writeU16(&buf, 120, frame.psi_cpu_pct100);
-    writeU16(&buf, 122, frame.psi_mem_pct100);
-    writeU16(&buf, 124, frame.psi_io_pct100);
-    return buf;
+    return SampleWire.fromFrame(frame).encode();
 }
 
 pub fn decodeSampleFrame(buf: *const [frame_size]u8) FrameError!SampleFrame {
-    try validateHeader(buf, .sample);
-    return SampleFrame{
-        .seq = readU32(buf, 8),
-        .flags = readU32(buf, 12),
-        .mono_ns = readU64(buf, 16),
-        .wall_ns = readU64(buf, 24),
-        .cpu_user_ticks = readU64(buf, 32),
-        .cpu_system_ticks = readU64(buf, 40),
-        .cpu_idle_ticks = readU64(buf, 48),
-        .load1_centis = readU32(buf, 56),
-        .load5_centis = readU32(buf, 60),
-        .load15_centis = readU32(buf, 64),
-        .procs_running = readU16(buf, 68),
-        .procs_blocked = readU16(buf, 70),
-        .mem_total_kb = readU64(buf, 72),
-        .mem_available_kb = readU64(buf, 80),
-        .io_read_bytes = readU64(buf, 88),
-        .io_write_bytes = readU64(buf, 96),
-        .net_rx_bytes = readU64(buf, 104),
-        .net_tx_bytes = readU64(buf, 112),
-        .psi_cpu_pct100 = readU16(buf, 120),
-        .psi_mem_pct100 = readU16(buf, 122),
-        .psi_io_pct100 = readU16(buf, 124),
-    };
+    return (try SampleWire.decode(buf)).toFrame();
 }
 
 pub fn decodeFrameKind(buf: *const [frame_size]u8) FrameError!FrameKind {
-    if (readU32(buf, 0) != frame_magic) return error.InvalidMagic;
-    if (readU16(buf, 4) != frame_version) return error.InvalidVersion;
-    return std.meta.intToEnum(FrameKind, readU16(buf, 6)) catch error.InvalidKind;
+    const header = try HeaderWire.decode(buf);
+    return std.meta.intToEnum(FrameKind, header.kind) catch error.InvalidKind;
 }
 
 pub fn monotonicNowNs() !u64 {
@@ -239,49 +327,6 @@ pub fn sleepToNextTick(loop_started_ns: u64) !void {
     const elapsed_ns = now_ns - loop_started_ns;
     if (elapsed_ns >= sample_period_ns) return;
     std.Thread.sleep(sample_period_ns - elapsed_ns);
-}
-
-fn encodeHeader(buf: *[frame_size]u8, kind: FrameKind, seq: u32, flags: u32, mono_ns: u64, wall_ns: u64) void {
-    std.debug.assert(mono_ns > 0);
-    std.debug.assert(wall_ns > 0);
-
-    writeU32(buf, 0, frame_magic);
-    writeU16(buf, 4, frame_version);
-    writeU16(buf, 6, @intFromEnum(kind));
-    writeU32(buf, 8, seq);
-    writeU32(buf, 12, flags);
-    writeU64(buf, 16, mono_ns);
-    writeU64(buf, 24, wall_ns);
-}
-
-fn validateHeader(buf: *const [frame_size]u8, expected_kind: FrameKind) FrameError!void {
-    if (readU32(buf, 0) != frame_magic) return error.InvalidMagic;
-    if (readU16(buf, 4) != frame_version) return error.InvalidVersion;
-    if (readU16(buf, 6) != @intFromEnum(expected_kind)) return error.InvalidKind;
-}
-
-fn writeU16(buf: *[frame_size]u8, offset: usize, value: u16) void {
-    std.mem.writeInt(u16, buf[offset..][0..2], value, .little);
-}
-
-fn writeU32(buf: *[frame_size]u8, offset: usize, value: u32) void {
-    std.mem.writeInt(u32, buf[offset..][0..4], value, .little);
-}
-
-fn writeU64(buf: *[frame_size]u8, offset: usize, value: u64) void {
-    std.mem.writeInt(u64, buf[offset..][0..8], value, .little);
-}
-
-fn readU16(buf: *const [frame_size]u8, offset: usize) u16 {
-    return std.mem.readInt(u16, buf[offset..][0..2], .little);
-}
-
-fn readU32(buf: *const [frame_size]u8, offset: usize) u32 {
-    return std.mem.readInt(u32, buf[offset..][0..4], .little);
-}
-
-fn readU64(buf: *const [frame_size]u8, offset: usize) u64 {
-    return std.mem.readInt(u64, buf[offset..][0..8], .little);
 }
 
 fn timespecToNs(ts: std.posix.timespec) u64 {
@@ -349,8 +394,9 @@ test "decodeFrameKind rejects invalid magic" {
         .mono_ns = 11,
         .wall_ns = 22,
     };
-    var encoded = encodeSampleFrame(frame);
-    writeU32(&encoded, 0, frame_magic ^ 0xffff);
+    var wire: SampleWire = @bitCast(encodeSampleFrame(frame));
+    wire.header.magic = frame_magic ^ 0xffff;
+    const encoded: [frame_size]u8 = @bitCast(wire);
     try std.testing.expectError(error.InvalidMagic, decodeFrameKind(&encoded));
 }
 
@@ -360,8 +406,9 @@ test "decodeFrameKind rejects invalid version" {
         .mono_ns = 11,
         .wall_ns = 22,
     };
-    var encoded = encodeSampleFrame(frame);
-    writeU16(&encoded, 4, frame_version + 1);
+    var wire: SampleWire = @bitCast(encodeSampleFrame(frame));
+    wire.header.version = frame_version + 1;
+    const encoded: [frame_size]u8 = @bitCast(wire);
     try std.testing.expectError(error.InvalidVersion, decodeFrameKind(&encoded));
 }
 
@@ -371,8 +418,9 @@ test "decodeFrameKind rejects unknown kind" {
         .mono_ns = 11,
         .wall_ns = 22,
     };
-    var encoded = encodeSampleFrame(frame);
-    writeU16(&encoded, 6, std.math.maxInt(u16));
+    var wire: SampleWire = @bitCast(encodeSampleFrame(frame));
+    wire.header.kind = std.math.maxInt(u16);
+    const encoded: [frame_size]u8 = @bitCast(wire);
     try std.testing.expectError(error.InvalidKind, decodeFrameKind(&encoded));
 }
 
