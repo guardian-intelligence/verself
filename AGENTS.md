@@ -15,6 +15,10 @@ Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required (not implemented) - Email Delivery (Resend only in the future)
 
+## Context
+
+- homestead-smelter is a guest agent + host Firecracker mVM agent written in Zig. The guest agent collects heartbeat health diagnostics and runs on each Firecracker VM, streaming data up continuously to the host agent, which then writes data to a socket for consumers.
+
 ## CI Architecture (Target)
 
 The optimization stack is, at a high level:
@@ -296,6 +300,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * When providing a recommendation, consider different plausible options and provide a differentiated recommendation.
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
+* The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 
 ## License
 
