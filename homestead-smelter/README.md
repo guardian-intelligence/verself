@@ -18,8 +18,8 @@ Current protocol shape:
 ## Bridge Startup Policy
 
 - discovery treats `root/run/forge-control.sock` as VM presence, not bridge readiness
-- `ECONNABORTED` from `connect()` is retried only during the first `8` aborted connects or `5000ms` after first discovery or bridge-path change
-- after either bound is crossed, the VM is marked `bridge_connect_unhealthy`, `last_error` stays `ConnectionAborted`, a warning is emitted, and retries continue until a successful connect clears the state
+- each discovered VM gets one long-lived worker thread owned by the discovery loop; completed workers are joined explicitly before respawn
+- ordinary connect and stream errors are recorded in `last_error` and retried with a fixed `200ms` backoff until the VM disappears or a connection succeeds
 
 The existing Go control plane stays in place on port `10789`. `homestead-smelter` uses port `10790`.
 
@@ -69,7 +69,7 @@ homestead-smelter/zig-out/bin/homestead-smelter-host snapshot \
 Expected output shape:
 
 ```json
-{"schema_version":3,"jailer_root":"/srv/jailer/firecracker","observed_at_unix_ms":0,"vms":[]}
+{"schema_version":4,"jailer_root":"/srv/jailer/firecracker","observed_at_unix_ms":0,"vms":[]}
 ```
 
 Once a VM is running, `snapshot` includes the latest `hello` metadata and the most recent fixed-size `sample` frame per VM. A typical VM entry looks like this:
@@ -79,7 +79,6 @@ Once a VM is running, `snapshot` includes the latest `hello` metadata and the mo
   "job_id": "<job-id>",
   "worker_active": true,
   "connected": true,
-  "bridge_connect_unhealthy": false,
   "last_update_unix_ms": 1710000000000,
   "last_error": null,
   "hello": {
@@ -98,7 +97,6 @@ Once a VM is running, `snapshot` includes the latest `hello` metadata and the mo
 }
 ```
 
-The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. `bridge_connect_unhealthy` flips to `true` only after the bounded startup grace is exhausted. Another local process can poll `snapshot` or attach to a future RPC/feed server without talking to guest bridges directly.
+The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. Another local process can poll `snapshot` or attach to a future RPC/feed server without talking to guest bridges directly.
 
 Read @homestead-smelter/docs/TIGER_STYLE.md for coding guidance.
-
