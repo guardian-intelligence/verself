@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const default_guest_port: u32 = 10790;
 pub const max_line_bytes: usize = 4096;
+pub const max_snapshot_bytes: usize = 1024 * 1024;
 
 pub const LineError = error{
     LineTooLong,

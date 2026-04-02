@@ -7,6 +7,7 @@ This first cut is intentionally small:
 - `homestead-smelter-guest` listens on a dedicated vsock port inside the guest
 - `homestead-smelter-host serve` runs as a long-lived daemon on the bare-metal worker
 - `homestead-smelter-host ping` verifies the daemon over a local Unix socket
+- `homestead-smelter-host snapshot` returns the current view of live Firecracker guests as JSON
 - `homestead-smelter-host probe-guest` connects through Firecracker's Unix-domain vsock bridge
 - the host daemon is intended to become the collection point for VM telemetry
 
@@ -25,13 +26,14 @@ Artifacts land in `homestead-smelter/zig-out/bin/`.
 
 ## Run Against a Firecracker VM
 
-The guest binary is installed into the Alpine rootfs when `make guest-rootfs` is run with `zig` available in `PATH`. `forgevm-init` auto-starts it on boot if `/usr/local/bin/homestead-smelter-guest` exists.
+The guest binary is a required part of the Alpine rootfs. `make guest-rootfs` now requires `zig` and uploads a prebuilt `homestead-smelter-guest` so the VM image always contains it. `forgevm-init` still auto-starts it on boot while the guest cutover is in progress.
 
 Run the host daemon locally:
 
 ```bash
 homestead-smelter/zig-out/bin/homestead-smelter-host serve \
-  --listen-uds /tmp/homestead-smelter.sock
+  --listen-uds /tmp/homestead-smelter.sock \
+  --jailer-root /srv/jailer/firecracker
 ```
 
 In another shell, verify it:
@@ -45,6 +47,19 @@ Expected output:
 
 ```text
 PONG homestead-smelter-host
+```
+
+Ask the daemon for its current guest view:
+
+```bash
+homestead-smelter/zig-out/bin/homestead-smelter-host snapshot \
+  --control-uds /tmp/homestead-smelter.sock
+```
+
+Expected output shape:
+
+```json
+{"schema_version":1,"jailer_root":"/srv/jailer/firecracker","guest_port":10790,"observed_at_unix_ms":0,"vms":[]}
 ```
 
 Once a VM is running, point the guest probe at the jail's vsock bridge:
