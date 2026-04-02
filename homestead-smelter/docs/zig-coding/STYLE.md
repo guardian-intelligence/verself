@@ -13,6 +13,11 @@ jazz. This is what we've learned along the way. The best is yet to come.
 _This guide is adapted from [TigerBeetle's TIGER_STYLE.md](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md),
 the most rigorous Zig coding standard in existence. Where we diverge, we note it._
 
+_A full shallow clone of the TigerBeetle repo lives at `docs/references/tigerbeetle/`. When
+working on homestead-smelter, grep through that codebase (`rg -t zig <pattern> docs/references/tigerbeetle/src/`)
+to understand how a production, high-performance, security-critical Zig project structures its code —
+allocation patterns, assertion discipline, error handling, comptime usage, and module boundaries._
+
 ## Why Have Style?
 
 Another word for style is design.
@@ -101,7 +106,11 @@ Code](https://spinroot.com/gerard/pdf/P10.pdf) will change the way you code fore
   principle so that violations are detected sooner rather than later. Where a loop cannot terminate
   (e.g. an event loop), this must be asserted.
 
-- Use explicitly-sized types like `u32` for everything, avoid architecture-specific `usize`.
+- Use explicitly-sized types (`u32`, `u64`, `u16`) for all **wire-format fields** — struct fields
+  that are serialized to the binary protocol, written to disk, or sent over vsock. This guarantees
+  identical layout across architectures. Use `usize` freely for slice lengths, buffer positions,
+  loop indices, and other values that are internal to the process and never cross a trust boundary.
+  The wire protocol structs in `root.zig` (`HelloFrame`, `SampleFrame`) must never contain `usize`.
 
 - **Assertions detect programmer errors. Unlike operating errors, which are expected and which must
   be handled, assertion failures are unexpected. The only correct way to handle corrupt code is to
@@ -156,6 +165,19 @@ Code](https://spinroot.com/gerard/pdf/P10.pdf) will change the way you code fore
   experience that this also makes for more efficient, simpler designs that are more performant and
   easier to maintain and reason about, compared to designs that do not consider all possible memory
   usage patterns upfront as part of the design.
+
+  _Divergence from TigerBeetle:_ TigerBeetle enforces this absolutely via a `StaticAllocator` that
+  crashes on any allocation after startup (see `docs/references/tigerbeetle/src/static_allocator.zig`).
+  homestead-smelter has two trust domains with different constraints:
+
+  - **Guest agent** (runs inside untrusted Firecracker VM): Must be zero-allocation after init. The
+    guest collects fixed-schema metrics from procfs into a fixed-size frame buffer. There is no reason
+    to allocate after startup. Any allocation here is a bug.
+
+  - **Host agent** (runs on trusted bare metal): May use bounded dynamic allocation for VM discovery,
+    because the number of VMs is not known at compile time. Use `ArenaAllocator` per logical unit of
+    work (discovery cycle, snapshot serialization) so that all temporaries are bulk-freed. Never use
+    `GeneralPurposeAllocator` in the host agent's steady state.
 
 - Declare variables at the **smallest possible scope**, and **minimize the number of variables in
   scope**, to reduce the probability that variables are misused.
@@ -219,6 +241,59 @@ Beyond these rules:
 
 > “Specifically, we found that almost all (92%) of the catastrophic system failures are the result
 > of incorrect handling of non-fatal errors explicitly signaled in software.”
+
+### Wire Format
+
+homestead-smelter communicates over vsock using fixed-size binary frames. The wire format is the most
+security-relevant surface in the codebase — a malformed frame from a compromised guest must never
+cause undefined behavior on the host.
+
+- **All wire-format integers are little-endian.** Use `std.mem.writeInt(T, buf, value, .little)` and
+  `std.mem.readInt(T, buf, .little)` exclusively. Never use `@bitCast` or direct memory
+  reinterpretation for wire data.
+
+- **Frame structs must have compile-time size and padding assertions.** For every struct that appears
+  on the wire, add:
+
+  ```zig
+  comptime {
+      std.debug.assert(@sizeOf(SampleFrame) == expected_size);
+      // Verify no implicit padding between fields.
+      std.debug.assert(@bitSizeOf(SampleFrame) == @sizeOf(SampleFrame) * 8);
+  }
+  ```
+
+  See TigerBeetle's pattern: `assert(@sizeOf(TransferPending) == 16); assert(stdx.no_padding(TransferPending));`
+  in `docs/references/tigerbeetle/src/state_machine.zig`.
+
+- **Pair assertions on encode and decode.** Every field written during `encodeHelloFrame` should have
+  a symmetric read in `decodeHelloFrame`. Assert that the decoded values satisfy the same invariants
+  as the pre-encode values. This catches serialization bugs at both boundaries rather than one.
+
+- **Validate all fields from untrusted input.** The host must validate every field of a frame
+  received from a guest before using it. Do not trust `flags`, `seq`, timestamps, or string fields.
+  Return `FrameError` for invalid data — never `unreachable` or `@panic` on guest-supplied bytes.
+
+### Threading
+
+The host agent is multi-threaded: one thread per VM connection, plus a main thread for discovery and
+control socket handling. Shared state is protected by `std.Thread.Mutex`.
+
+- **Minimize critical section scope.** Hold the mutex only while reading or writing shared state.
+  Never perform I/O, allocation, or blocking operations while holding the lock. Copy what you need
+  out of the shared state, release the lock, then operate on the copy.
+
+- **Single mutex, flat hierarchy.** The host agent uses one mutex for `AgentState`. Do not introduce
+  a second mutex unless the contention is measured and proven. Multiple mutexes invite deadlock.
+  If a second lock becomes necessary, document the lock ordering.
+
+- **Threads must not outlive their data.** When a VM is removed from discovery, the reader thread
+  for that VM must be signaled to exit and joined before the VM's state is freed. Use
+  `std.Thread.join()` — do not detach threads.
+
+- **No atomics unless the mutex is a measured bottleneck.** `std.Thread.Mutex` is correct and
+  auditable. Lock-free code is subtle and difficult to assert against. The host agent's thread count
+  (one per VM, typically <100) does not warrant lock-free data structures.
 
 - **Always motivate, always say why**. Never forget to say why. Because if you explain the rationale
   for a decision, it not only increases the hearer's understanding, and makes them more likely to
@@ -475,7 +550,8 @@ Beyond these rules:
 
 ### Dependencies
 
-We maintain **a “zero dependencies” policy**, apart from the Zig toolchain. Dependencies, in
+We maintain **a “zero Zig dependencies” policy** — no third-party Zig packages beyond the standard
+library and toolchain. Dependencies, in
 general, inevitably lead to supply chain attacks, safety and performance risk, and slow install
 times. For foundational infrastructure in particular, the cost of any dependency is further
 amplified throughout the rest of the stack.
@@ -503,8 +579,8 @@ makes for more velocity for the team in the long term.
 
 ## Code Review: DON'T / DO Examples
 
-Each example below is a compilable, testable Zig program in `docs/examples/`. Run them with
-`zig test docs/examples/<file>.zig`.
+Each example below is a compilable, testable Zig program in `docs/zig-coding/examples/`. Run them
+with `zig test docs/zig-coding/examples/<file>.zig` from the `homestead-smelter/` directory.
 
 ### 1. Allocator Discipline
 
@@ -617,7 +693,9 @@ serialization function.
 
 ```zig
 fn buildSnapshotJSON(allocator: Allocator, ...) ![]u8 {
-    var out = try std.ArrayList(u8).initCapacity(allocator, 512);
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(allocator);
+    try out.ensureTotalCapacity(allocator, 512);
     try out.appendSlice(allocator, "{\"schema_version\":1,\"jailer_root\":");
     try appendJSONString(&out, allocator, jailer_root);
     try out.appendSlice(allocator, ",\"guest_port\":");

@@ -15,7 +15,9 @@ const std = @import("std");
 // ---------------------------------------------------------------------------
 //
 //   fn buildSnapshotJSON(allocator: Allocator, ...) ![]u8 {
-//       var out = try std.ArrayList(u8).initCapacity(allocator, 512);
+//       var out: std.ArrayList(u8) = .{};
+//       defer out.deinit(allocator);
+//       try out.ensureTotalCapacity(allocator, 512);
 //       try out.appendSlice(allocator, "{\"schema_version\":1,\"jailer_root\":");
 //       try appendJSONString(&out, allocator, jailer_root);
 //       try out.appendSlice(allocator, ",\"guest_port\":");
