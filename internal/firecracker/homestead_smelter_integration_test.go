@@ -29,11 +29,13 @@ const (
 	smelterPacketSize               = 176
 	smelterPacketPayloadSize        = 128
 
-	smelterRequestSnapshot uint16 = 1
+	smelterRequestAttach uint16 = 1
 
 	smelterPacketHello       uint16 = 1
 	smelterPacketSample      uint16 = 2
-	smelterPacketSnapshotEnd uint16 = 3
+	smelterPacketDisconnect  uint16 = 3
+	smelterPacketVMGone      uint16 = 4
+	smelterPacketSnapshotEnd uint16 = 5
 
 	smelterFrameMagic   uint32 = 0x46505600
 	smelterFrameVersion uint16 = 1
@@ -257,13 +259,13 @@ func waitForSmelterJobs(t *testing.T, ctx context.Context, controlSock string, j
 }
 
 func smelterSnapshotRequest(controlSock string) (smelterSnapshot, error) {
-	conn, err := net.DialTimeout("unix", controlSock, 500*time.Millisecond)
+	conn, err := net.DialTimeout("unixpacket", controlSock, 500*time.Millisecond)
 	if err != nil {
 		return smelterSnapshot{}, err
 	}
 	defer conn.Close()
 
-	if err := smelterWriteRequest(conn, smelterRequestSnapshot); err != nil {
+	if err := smelterWriteRequest(conn, smelterRequestAttach); err != nil {
 		return smelterSnapshot{}, err
 	}
 
@@ -291,6 +293,8 @@ func smelterSnapshotRequest(controlSock string) (smelterSnapshot, error) {
 			vm := snapshot.ensureVM(packet.JobID.String())
 			vm.StreamGeneration = packet.StreamGeneration
 			vm.Sample = &sample
+		case smelterPacketDisconnect, smelterPacketVMGone:
+			continue
 		case smelterPacketSnapshotEnd:
 			return snapshot, nil
 		default:

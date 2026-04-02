@@ -1,0 +1,6 @@
+---
+- name: Deploy firecracker host components only
+  hosts: all
+  become: true
+  roles:
+    - firecracker
