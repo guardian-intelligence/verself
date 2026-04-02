@@ -5,6 +5,18 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  hostmetrics:
+    collection_interval: 1s
+    scrapers:
+      process:
+        include:
+          match_type: regexp
+          names: ["caddy", "clickhouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal"]
+        mute_process_exe_error: true
+        mute_process_io_error: true
+      cpu: {}
+      memory: {}
+      load: {}
 
 processors:
   batch:
@@ -35,6 +47,6 @@ service:
       processors: [batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, hostmetrics]
       processors: [batch]
       exporters: [clickhouse]

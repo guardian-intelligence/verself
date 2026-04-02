@@ -1,29 +1,35 @@
 ---
-- name: reload systemd
+- name: Reload systemd
+  listen: reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: restart clickhouse
+- name: Restart ClickHouse
+  listen: restart clickhouse
   ansible.builtin.systemd:
     name: clickhouse-server
     state: restarted
 
-- name: restart otelcol
+- name: Restart OTel Collector
+  listen: restart otelcol
   ansible.builtin.systemd:
     name: otelcol
     state: restarted
 
-- name: restart hyperdx-api
+- name: Restart HyperDX API
+  listen: restart hyperdx-api
   ansible.builtin.systemd:
     name: hyperdx-api
     state: restarted
 
-- name: restart hyperdx-app
+- name: Restart HyperDX App
+  listen: restart hyperdx-app
   ansible.builtin.systemd:
     name: hyperdx-app
     state: restarted
 
-- name: restart caddy
+- name: Restart Caddy
+  listen: restart caddy
   ansible.builtin.systemd:
     name: caddy
     state: restarted

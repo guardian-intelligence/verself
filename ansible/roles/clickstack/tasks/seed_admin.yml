@@ -19,8 +19,25 @@
 
 - name: Generate admin credentials (if not provided)
   ansible.builtin.set_fact:
-    clickstack_admin_email: "{{ clickstack_admin_email | default('admin+' ~ lookup('password', '/dev/null length=6 chars=ascii_lowercase,digits') ~ '@forge-metal.local', true) }}"
-    clickstack_admin_password: "{{ clickstack_admin_password | default(lookup('password', '/dev/null length=24 chars=ascii_letters,digits') ~ '#@F1', true) }}"
+    clickstack_admin_email: >-
+      {{
+        clickstack_admin_email
+        | default(
+            'admin+'
+            ~ lookup('password', '/dev/null length=6 chars=ascii_lowercase,digits')
+            ~ '@forge-metal.local',
+            true
+          )
+      }}
+    clickstack_admin_password: >-
+      {{
+        clickstack_admin_password
+        | default(
+            lookup('password', '/dev/null length=24 chars=ascii_letters,digits')
+            ~ '#@F1',
+            true
+          )
+      }}
   when: _clickstack_needs_seed | bool
   no_log: true
 

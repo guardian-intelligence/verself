@@ -41,10 +41,15 @@ argument_specs:
         default: "https://github.com/hyperdxio/hyperdx.git"
         description: "HyperDX git repository URL."
 
-      hyperdx_version:
+      hyperdx_branch:
         type: str
         default: main
-        description: "Git ref to clone (branch, tag, or commit SHA)."
+        description: "Git branch to fetch from."
+
+      hyperdx_version:
+        type: str
+        default: "676e4f4bc91f7b67448b3be6d9bc5cbc3a004964"
+        description: "Pinned commit SHA to checkout."
 
       hyperdx_api_port:
         type: int

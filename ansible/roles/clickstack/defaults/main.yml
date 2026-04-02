@@ -12,7 +12,8 @@ mongodb_version: "7.0"
 
 # HyperDX
 hyperdx_repo: "https://github.com/hyperdxio/hyperdx.git"
-hyperdx_version: "main"  # branch to clone; override with a tag like "hyperdx@1.9.0" for pinning
+hyperdx_branch: "main"
+hyperdx_version: "676e4f4bc91f7b67448b3be6d9bc5cbc3a004964"  # main @ 2026-04-02
 hyperdx_api_port: 8000
 hyperdx_app_port: 8080
 hyperdx_opamp_port: 4320
@@ -23,12 +24,18 @@ otelcol_version: "0.120.0"
 
 # Caddy
 caddy_version: "2.*"  # pin to 2.x series
+caddy_waf_mode: "DetectionOnly"  # DetectionOnly (log only) or On (block)
 
 # Subdomain prefix for the ClickStack dashboard.
 clickstack_subdomain: admin
 
 # Full domain: auto-derived as <subdomain>.<forge_metal_domain>, or bare IP if no domain set.
-clickstack_domain: "{{ (clickstack_subdomain ~ '.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
+clickstack_domain: >-
+  {{
+    (clickstack_subdomain ~ '.' ~ forge_metal_domain)
+    if (forge_metal_domain | default('', true) | length > 0)
+    else ansible_default_ipv4.address
+  }}
 
 # Admin user (seeded on first run via registration API)
 # Email and password generated at deploy time if not set.
