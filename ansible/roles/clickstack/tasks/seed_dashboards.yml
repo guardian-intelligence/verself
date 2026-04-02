@@ -73,6 +73,7 @@
       - hyperdx
   when: "'OTel Metrics' not in _hdx_source_names"
   register: _hdx_metric_source_created
+  changed_when: true
 
 # Re-fetch sources to pick up the metric source ID.
 - name: Refresh sources

@@ -1,9 +1,6 @@
 # Baseline existing ansible-lint debt so pre-commit can block regressions
 # without forcing a full cleanup before every Ansible change.
-playbooks/dev-single-node.yml name[casing]
-playbooks/site.yml name[casing]
 roles/clickstack/defaults/main.yml var-naming[no-role-prefix]
-roles/clickstack/tasks/seed_dashboards.yml no-changed-when
 roles/clickstack/tasks/seed_dashboards.yml var-naming[no-role-prefix]
 roles/firecracker/defaults/main.yml var-naming[no-role-prefix]
 roles/firecracker/tasks/main.yml var-naming[no-role-prefix]
