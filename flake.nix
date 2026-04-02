@@ -70,52 +70,6 @@
         };
       in
       {
-        devShells.default = pkgs.mkShell {
-          buildInputs = [
-            # Go
-            pkgs.go_1_25
-            pkgs.golangci-lint
-            pkgs.gofumpt
-
-            # Infrastructure
-            pkgs.opentofu
-            pkgs.ansible
-
-            # Protobuf
-            pkgs.protobuf
-            pkgs.buf
-            pkgs.protoc-gen-go
-            pkgs.protoc-gen-go-grpc
-
-            # Tools
-            pkgs.shellcheck
-            pkgs.jq
-            pkgs.zig
-            clickhouse-static
-
-            # Secrets
-            pkgs.sops
-            pkgs.age
-
-            # Nix
-            pkgs.nil
-
-            # Test runtime (ZFS integration tests)
-            pkgs.crun
-            pkgs.debootstrap
-          ];
-
-          shellHook = ''
-            echo "forge-metal dev shell"
-            echo "  go:         $(go version | cut -d' ' -f3)"
-            echo "  tofu:       $(tofu version -json | jq -r .terraform_version)"
-            echo "  ansible:    $(ansible --version | head -1)"
-            echo "  buf:        $(buf --version)"
-            echo ""
-            echo "Run: make build"
-          '';
-        };
-
         packages = {
           default = pkgs.buildGoModule {
             pname = "forge-metal";
@@ -135,35 +89,6 @@
               "-s" "-w"
               "-X main.version=${self.shortRev or "dev"}"
             ];
-          };
-
-          # Dev tools, installable to user profile:
-          #   nix profile install .#dev-tools
-          # Same packages as devShell, but in PATH permanently. No shell hook latency.
-          dev-tools = pkgs.buildEnv {
-            name = "forge-metal-dev-tools";
-            ignoreCollisions = true;
-            paths = [
-              pkgs.go_1_25
-              pkgs.golangci-lint
-              pkgs.gofumpt
-              pkgs.opentofu
-              pkgs.ansible
-              pkgs.protobuf
-              pkgs.buf
-              pkgs.protoc-gen-go
-              pkgs.protoc-gen-go-grpc
-              pkgs.shellcheck
-              pkgs.jq
-              pkgs.zig
-              clickhouse-static
-              pkgs.sops
-              pkgs.age
-              pkgs.nil
-              pkgs.crun
-              pkgs.debootstrap
-            ];
-            pathsToLink = [ "/bin" ];
           };
 
           # The golden image closure. Push to bare metal with:

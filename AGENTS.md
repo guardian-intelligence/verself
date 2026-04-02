@@ -91,10 +91,10 @@ This project makes heavy use of ZFS. Research notes are in `docs/research/`.
 
 ## Quick Start
 
-### 1. Clone and enter dev shell
+### 1. Install dev tools
 
 ```bash
-nix develop  # gives you Go, Terraform, Ansible, protoc, clickhouse-client, etc.
+make setup-dev  # installs Go, OpenTofu, Ansible, protoc, clickhouse-client, etc.
 ```
 
 ### 2. Provision bare metal
@@ -210,6 +210,7 @@ Compression codecs per column type:
 
 | Target | Description |
 |--------|-------------|
+| `make setup-dev` | Install pinned dev tools from dev-tools.json via Ansible |
 | `make provision` | Provision bare metal via OpenTofu, generate Ansible inventory |
 | `make deprovision` | Destroy all bare metal infrastructure |
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
@@ -314,7 +315,8 @@ forge-metal/
 ├── terraform/             # Latitude.sh provisioning
 ├── migrations/            # ClickHouse schema (MergeTree + Replicated)
 ├── internal/config/default.toml # Embedded defaults
-└── flake.nix              # Dev shell + server profile (Nix is dev tooling only, not in VMs)
+├── dev-tools.json         # Pinned dev tool versions, URLs, SHA256 (read by Ansible + doctor)
+└── flake.nix              # Server profile only (Nix builds deployed to bare metal, not for dev)
 ```
 
 ## Firecracker CI Status
@@ -350,7 +352,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 ## Tool Use Contract
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
-* Prefix commands with nix develop.
+* Dev tools are system-installed via `make setup-dev`. No `nix develop` prefix needed.
 
 ## Output Contract
 

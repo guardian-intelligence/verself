@@ -1,0 +1,12 @@
+---
+# Install pinned dev tools from dev-tools.json.
+# Run with: make setup-dev
+- name: Set up forge-metal development environment
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    # Use system Python, not Nix Python, so pip/apt modules work correctly.
+    ansible_python_interpreter: /usr/bin/python3
+  roles:
+    - dev_tools

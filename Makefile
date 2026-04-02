@@ -1,5 +1,5 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
-       doctor setup-sops edit-secrets setup-domain \
+       doctor setup-dev setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
        guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build smelter-dev
 
@@ -47,6 +47,9 @@ tidy:
 
 doctor: build ## Check that all required dev tools are present and at the right version
 	./$(BINARY) doctor
+
+setup-dev: ## Install pinned dev tools from dev-tools.json via Ansible
+	cd ansible && ansible-playbook playbooks/setup-dev.yml
 
 setup-sops: ## Generate age key, encrypt initial secrets, install sops collection
 	./scripts/setup-sops.sh

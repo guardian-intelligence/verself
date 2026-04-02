@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"fmt"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -12,18 +11,15 @@ import (
 type Status int
 
 const (
-	OK          Status = iota // in PATH, version matches
-	Missing                   // not in PATH, not in nix store
-	Installable               // not in PATH, available in nix store
-	Upgradable                // in PATH, wrong version, nix-managed
-	Conflict                  // in PATH, wrong version, system-managed
+	OK              Status = iota // in PATH, version matches
+	Missing                       // not in PATH
+	VersionMismatch               // in PATH, wrong version
 )
 
 type ToolSpec struct {
 	Name       string // binary name: "sops"
 	VersionCmd string // shell command: "sops --version"
 	Expected   string // pinned version: "3.12.2"
-	NixAttr    string // flake attr: "pkgs.sops"
 }
 
 type CheckResult struct {
@@ -34,52 +30,38 @@ type CheckResult struct {
 }
 
 type Summary struct {
-	OK          int
-	Missing     int
-	Installable int
-	Upgradable  int
-	Conflict    int
+	OK              int
+	Missing         int
+	VersionMismatch int
 }
 
-// Resolver abstracts exec/nix lookups so tests can mock them.
+// Resolver abstracts exec lookups so tests can mock them.
 type Resolver interface {
 	Which(binary string) string
 	Version(cmd string) string
-	NixStorePath(attr string) string
-	IsNixProfile(path string) bool
 }
 
 // Check evaluates a single tool against the resolver.
 func Check(spec ToolSpec, r Resolver) CheckResult {
 	binPath := r.Which(spec.Name)
 	if binPath == "" {
-		// Not in PATH — check nix store
-		storePath := r.NixStorePath(spec.NixAttr)
-		if storePath != "" {
-			return CheckResult{Spec: spec, Status: Installable}
-		}
 		return CheckResult{Spec: spec, Status: Missing}
 	}
 
-	// In PATH — check version
 	actual := r.Version(spec.VersionCmd)
 	if actual == spec.Expected {
 		return CheckResult{Spec: spec, Status: OK, ActualVer: actual, BinPath: binPath}
 	}
 
-	// Wrong version — nix-managed or system?
-	if r.IsNixProfile(binPath) {
-		return CheckResult{Spec: spec, Status: Upgradable, ActualVer: actual, BinPath: binPath}
-	}
-	return CheckResult{Spec: spec, Status: Conflict, ActualVer: actual, BinPath: binPath}
+	return CheckResult{Spec: spec, Status: VersionMismatch, ActualVer: actual, BinPath: binPath}
 }
 
 // CheckAll runs the full manifest concurrently, returns results in manifest order.
-func CheckAll(r Resolver) ([]CheckResult, Summary) {
-	results := make([]CheckResult, len(Manifest))
+func CheckAll(manifest []ToolSpec, r Resolver) ([]CheckResult, Summary) {
+	results := make([]CheckResult, len(manifest))
 	var wg sync.WaitGroup
-	wg.Add(len(Manifest))
-	for i, spec := range Manifest {
+	wg.Add(len(manifest))
+	for i, spec := range manifest {
 		go func(i int, spec ToolSpec) {
 			defer wg.Done()
 			results[i] = Check(spec, r)
@@ -94,64 +76,30 @@ func CheckAll(r Resolver) ([]CheckResult, Summary) {
 			s.OK++
 		case Missing:
 			s.Missing++
-		case Installable:
-			s.Installable++
-		case Upgradable:
-			s.Upgradable++
-		case Conflict:
-			s.Conflict++
+		case VersionMismatch:
+			s.VersionMismatch++
 		}
 	}
 	return results, s
 }
 
-// Fix attempts auto-remediation for Installable and Upgradable results
-// by installing the project's dev-tools flake package.
-func Fix(results []CheckResult) (fixed []string, errs []error) {
-	var fixable []CheckResult
-	for _, r := range results {
-		if r.Status == Missing || r.Status == Installable || r.Status == Upgradable {
-			fixable = append(fixable, r)
-		}
-	}
-	if len(fixable) == 0 {
-		return
-	}
+// SystemResolver implements Resolver using real exec lookups.
+type SystemResolver struct{}
 
-	// Remove any stale dev-tools entry so re-running --fix is idempotent.
-	// Ignore errors — the entry may not exist yet.
-	exec.Command("nix", "profile", "remove", "dev-tools").Run()
-
-	// Install with elevated priority (4 < default 5) so dev-tools binaries
-	// win over any individually-installed nix packages (e.g. a user's
-	// standalone jq or opentofu) without requiring them to be removed first.
-	cmd := exec.Command("nix", "profile", "install", ".#dev-tools", "--priority", "4")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		errs = append(errs, fmt.Errorf("nix profile install .#dev-tools: %s", strings.TrimSpace(string(out))))
-		return
-	}
-
-	for _, r := range fixable {
-		fixed = append(fixed, r.Spec.Name)
-	}
-	return
-}
-
-// SystemResolver implements Resolver using real exec and nix lookups.
-type SystemResolver struct {
-	nixOnce   sync.Once
-	nixResult string
-}
-
-var semverRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
+// Matches version numbers with 2+ components: "1.26", "3.12.2", "26.3.2.3".
+var semverRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)*`)
 
 func (s *SystemResolver) Which(binary string) string {
 	path, err := exec.LookPath(binary)
 	if err != nil {
 		return ""
 	}
-	return path
+	// Resolve symlinks to get the real path.
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return resolved
 }
 
 func (s *SystemResolver) Version(cmd string) string {
@@ -165,29 +113,4 @@ func (s *SystemResolver) Version(cmd string) string {
 	}
 	match := semverRe.FindString(string(out))
 	return match
-}
-
-func (s *SystemResolver) NixStorePath(attr string) string {
-	s.nixOnce.Do(func() {
-		out, err := exec.Command("nix", "path-info", ".#dev-tools").CombinedOutput()
-		if err != nil {
-			return
-		}
-		path := strings.TrimSpace(string(out))
-		if path != "" {
-			s.nixResult = strings.SplitN(path, "\n", 2)[0]
-		}
-	})
-	return s.nixResult
-}
-
-func (s *SystemResolver) IsNixProfile(path string) bool {
-	if strings.HasPrefix(path, "/nix/store/") {
-		return true
-	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return false
-	}
-	return strings.HasPrefix(resolved, "/nix/store/")
 }
