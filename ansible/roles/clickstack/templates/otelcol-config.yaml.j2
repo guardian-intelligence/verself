@@ -5,13 +5,55 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  filelog/caddy:
+    include: [/var/log/caddy/access.log]
+    storage: file_storage
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.ts
+          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+        severity:
+          parse_from: attributes.status
+          mapping:
+            info: [200, 201, 204, 301, 302, 304]
+            warn: [400, 401, 403, 404, 405, 429]
+            error: [500, 502, 503, 504]
+      - type: move
+        from: attributes.request.remote_ip
+        to: attributes.client_ip
+      - type: move
+        from: attributes.request.method
+        to: attributes.http_method
+      - type: move
+        from: attributes.request.host
+        to: attributes.http_host
+      - type: move
+        from: attributes.request.uri
+        to: attributes.http_uri
+      - type: move
+        from: attributes.request.proto
+        to: attributes.http_proto
+      - type: move
+        from: attributes.status
+        to: attributes.http_status
+      - type: move
+        from: attributes.size
+        to: attributes.resp_size_bytes
+      - type: remove
+        field: attributes.request
+      - type: remove
+        field: attributes.resp_headers
+      - type: add
+        field: resource.service.name
+        value: caddy
   hostmetrics:
     collection_interval: 1s
     scrapers:
       process:
         include:
           match_type: regexp
-          names: ["caddy", "clickhouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal"]
+          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -34,12 +76,14 @@ exporters:
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  file_storage:
+    directory: /var/lib/otelcol/storage
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp]
+      receivers: [otlp, filelog/caddy]
       processors: [batch]
       exporters: [clickhouse]
     traces:
