@@ -61,6 +61,10 @@
   until: clickstack_clickhouse_ready.rc == 0
   changed_when: false
 
+- name: Flush system logs (creates query_log table if query logging just enabled)
+  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SYSTEM FLUSH LOGS'"
+  changed_when: false
+
 - name: Compute local migrations fingerprint
   delegate_to: localhost
   become: false
