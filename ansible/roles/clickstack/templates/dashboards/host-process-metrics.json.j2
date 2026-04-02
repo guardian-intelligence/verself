@@ -4,7 +4,7 @@
   "tiles": [
     {
       "name": "Process Memory (RSS)",
-      "x": 0, "y": 0, "w": 6, "h": 3,
+      "x": 0, "y": 0, "w": 6, "h": 9,
       "config": {
         "displayType": "line",
         "sourceId": "{{ _hdx_metric_source_id }}",
@@ -23,7 +23,7 @@
     },
     {
       "name": "Process CPU Time (rate)",
-      "x": 6, "y": 0, "w": 6, "h": 3,
+      "x": 6, "y": 0, "w": 6, "h": 9,
       "config": {
         "displayType": "line",
         "sourceId": "{{ _hdx_metric_source_id }}",
@@ -43,7 +43,7 @@
     },
     {
       "name": "System Load Averages",
-      "x": 0, "y": 3, "w": 6, "h": 3,
+      "x": 0, "y": 9, "w": 6, "h": 9,
       "config": {
         "displayType": "line",
         "sourceId": "{{ _hdx_metric_source_id }}",
@@ -60,7 +60,7 @@
     },
     {
       "name": "System Memory by State",
-      "x": 6, "y": 3, "w": 6, "h": 3,
+      "x": 6, "y": 9, "w": 6, "h": 9,
       "config": {
         "displayType": "line",
         "sourceId": "{{ _hdx_metric_source_id }}",
@@ -78,22 +78,13 @@
       }
     },
     {
-      "name": "Current Process Memory",
-      "x": 0, "y": 6, "w": 12, "h": 3,
+      "name": "Current Process Memory (live snapshot)",
+      "x": 0, "y": 18, "w": 12, "h": 9,
       "config": {
+        "configType": "sql",
         "displayType": "table",
-        "sourceId": "{{ _hdx_metric_source_id }}",
-        "select": [
-          {
-            "aggFn": "last_value",
-            "valueExpression": "Value",
-            "metricName": "process.memory.usage",
-            "metricType": "sum"
-          }
-        ],
-        "groupBy": "ResourceAttributes['process.executable.name']",
-        "orderBy": "last_value desc",
-        "numberFormat": {"output": "byte"}
+        "connectionId": "{{ _hdx_connection_id }}",
+        "sqlTemplate": "SELECT ResourceAttributes['process.executable.name'] as process, ResourceAttributes['process.pid'] as pid, ResourceAttributes['process.command'] as command, formatReadableSize(argMax(Value, TimeUnix)) as mem, round(argMax(Value, TimeUnix) / 1048576, 1) as mem_mb FROM default.otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 5 SECOND AND MetricName = 'process.memory.usage' GROUP BY process, pid, command ORDER BY mem_mb DESC"
       }
     }
   ]

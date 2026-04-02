@@ -8,6 +8,13 @@
     state: directory
     mode: "0755"
 
+- name: Create Caddy log directory
+  ansible.builtin.file:
+    path: /var/log/caddy
+    state: directory
+    owner: root
+    mode: "0755"
+
 - name: Deploy Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2
