@@ -80,8 +80,8 @@ would duplicate boot-static data:
 
 ## Host Control Protocol
 
-The host control socket is an AF_UNIX stream carrying fixed-size binary records. There is no JSON path in
-the daemon.
+The host control socket is an `AF_UNIX` `SOCK_SEQPACKET` socket carrying fixed-size binary records. There
+is no JSON path in the daemon.
 
 ### Request Record
 
@@ -91,7 +91,7 @@ Each request is exactly `32` bytes.
 | --- | ---: | --- | --- | --- | --- |
 | 0 | 4 | `magic` | `u32` | none | MUST equal `0x48534d00`. |
 | 4 | 2 | `version` | `u16` | none | MUST equal `1`. |
-| 6 | 2 | `kind` | `u16` | none | MUST be `1` (`snapshot`). |
+| 6 | 2 | `kind` | `u16` | none | MUST be `1` (`attach`). |
 | 8 | 24 | `reserved` | bytes | none | MUST be zero on send and ignored on receive. |
 
 ### Packet Record
@@ -102,16 +102,22 @@ Each host packet is exactly `176` bytes: a `48`-byte host envelope plus a raw `1
 | --- | ---: | --- | --- | --- | --- |
 | 0 | 4 | `magic` | `u32` | none | MUST equal `0x48534d01`. |
 | 4 | 2 | `version` | `u16` | none | MUST equal `1`. |
-| 6 | 2 | `kind` | `u16` | none | `1`=`hello`, `2`=`sample`, `3`=`snapshot_end`. |
-| 8 | 8 | `host_seq` | `u64` | packets | Monotonic host-assigned sequence. |
+| 6 | 2 | `kind` | `u16` | none | `1`=`hello`, `2`=`sample`, `3`=`disconnect`, `4`=`vm_gone`, `5`=`snapshot_end`. |
+| 8 | 8 | `host_seq` | `u64` | events | For event packets, MUST equal the underlying `host_core` event sequence. For `snapshot_end`, MUST equal the next resume sequence. |
 | 16 | 8 | `observed_wall_ns` | `u64` | ns | Host realtime clock at packet emit time. |
 | 24 | 16 | `job_id` | `[16]u8` | UUID bytes | CI job identity. Zero for `snapshot_end`. |
 | 40 | 4 | `stream_generation` | `u32` | none | Host reconnect generation for the VM stream. Zero for `snapshot_end`. |
 | 44 | 4 | `flags` | `u32` | bitset | Host packet flags. |
-| 48 | 128 | `payload` | bytes | guest frame | Raw guest `hello` or `sample` frame for those packet kinds. Zero otherwise. |
+| 48 | 128 | `payload` | bytes | packet payload | Raw guest frame for `hello` and `sample`; disconnect reason enum in the first `u32` for `disconnect`; zero for `vm_gone` and `snapshot_end`. |
 
 ### Host Packet Flags
 
 | Bit | Meaning |
 | --- | --- |
 | 0 | Packet was emitted as part of a snapshot replay rather than live tailing |
+
+### Attach Semantics
+
+- A consumer connects once and sends a single fixed-size `attach` request.
+- The host replies with the current snapshot replay, then emits one `snapshot_end` packet.
+- After `snapshot_end`, the same socket tails live event packets until the consumer disconnects or falls behind retention.

@@ -1,5 +1,6 @@
 const std = @import("std");
 const hs = @import("homestead_smelter");
+const hostc = @import("host_core.zig");
 
 pub const request_magic: u32 = 0x48534d00;
 pub const request_version: u16 = 1;
@@ -13,13 +14,15 @@ pub const packet_payload_size: usize = hs.frame_size;
 pub const packet_flag_snapshot: u32 = 1 << 0;
 
 pub const RequestKind = enum(u16) {
-    snapshot = 1,
+    attach = 1,
 };
 
 pub const PacketKind = enum(u16) {
     hello = 1,
     sample = 2,
-    snapshot_end = 3,
+    disconnect = 3,
+    vm_gone = 4,
+    snapshot_end = 5,
 };
 
 pub const Request = struct {
@@ -127,6 +130,17 @@ pub fn zeroPayload() [packet_payload_size]u8 {
     return [_]u8{0} ** packet_payload_size;
 }
 
+pub fn encodeDisconnectPayload(reason: hostc.DisconnectReason) [packet_payload_size]u8 {
+    var payload = zeroPayload();
+    writeInt(u32, &payload, 0, @intFromEnum(reason));
+    return payload;
+}
+
+pub fn decodeDisconnectPayload(payload: *const [packet_payload_size]u8) Error!hostc.DisconnectReason {
+    const reason_int = readInt(u32, payload, 0);
+    return std.meta.intToEnum(hostc.DisconnectReason, reason_int) catch error.InvalidKind;
+}
+
 fn writeInt(comptime T: type, buf: anytype, comptime offset: usize, value: T) void {
     comptime std.debug.assert(offset + @sizeOf(T) <= @typeInfo(@TypeOf(buf.*)).array.len);
     std.mem.writeInt(T, buf[offset .. offset + @sizeOf(T)], value, .little);
@@ -142,9 +156,9 @@ comptime {
 }
 
 test "request round-trips" {
-    const encoded = encodeRequest(.{ .kind = .snapshot });
+    const encoded = encodeRequest(.{ .kind = .attach });
     const decoded = try decodeRequest(&encoded);
-    try std.testing.expectEqual(.snapshot, decoded.kind);
+    try std.testing.expectEqual(.attach, decoded.kind);
 }
 
 test "packet round-trips hello payload" {
@@ -174,7 +188,7 @@ test "packet round-trips hello payload" {
 }
 
 test "decodeRequest rejects invalid magic" {
-    var encoded = encodeRequest(.{ .kind = .snapshot });
+    var encoded = encodeRequest(.{ .kind = .attach });
     writeInt(u32, &encoded, request_magic_offset, request_magic ^ 0xffff);
     try std.testing.expectError(error.InvalidMagic, decodeRequest(&encoded));
 }
@@ -187,4 +201,9 @@ test "decodePacket rejects invalid kind" {
     });
     writeInt(u16, &encoded, packet_kind_offset, std.math.maxInt(u16));
     try std.testing.expectError(error.InvalidKind, decodePacket(&encoded));
+}
+
+test "disconnect payload round-trips" {
+    const payload = encodeDisconnectPayload(.decode_failed);
+    try std.testing.expectEqual(.decode_failed, try decodeDisconnectPayload(&payload));
 }

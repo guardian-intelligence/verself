@@ -100,6 +100,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/host_core.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "homestead_smelter", .module = mod },
+            },
         }),
     });
     const run_host_core_tests = b.addRunArtifact(host_core_tests);

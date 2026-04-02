@@ -1,11 +1,22 @@
 const std = @import("std");
+const linux = std.os.linux;
 const hs = @import("homestead_smelter");
+const hostc = @import("host_core.zig");
 const hostp = @import("host_proto.zig");
 
 const default_jailer_root = "/srv/jailer/firecracker";
-const discovery_period_ms: u64 = 250;
-const reconnect_backoff_ms: u64 = 200;
-const max_bridge_line_bytes: usize = 128;
+const bridge_ack_buffer_bytes: usize = 256;
+const bridge_stream_buffer_bytes: usize = hs.frame_size * 2;
+const consumer_batch_size: usize = 64;
+const consumer_request_buffer_bytes: usize = hostp.request_size;
+const epoll_max_events: usize = 64;
+const max_bridge_cmd_bytes: usize = 32;
+const max_consumers: usize = 16;
+const max_runtime_vms: usize = 256;
+const reconnect_backoff_ns: u64 = 200 * std.time.ns_per_ms;
+const timer_tick_ns: u64 = 100 * std.time.ns_per_ms;
+const discovery_period_ns: u64 = 250 * std.time.ns_per_ms;
+const event_ring_capacity: usize = 131072;
 const usage =
     \\Usage:
     \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH] [--port PORT]
@@ -13,10 +24,11 @@ const usage =
     \\  homestead-smelter-host check-live --control-uds PATH --job-id UUID
     \\
     \\`serve` runs the long-lived host agent, discovers Firecracker VMs, opens one
-    \\binary telemetry stream per guest, and exposes a local Unix socket.
-    \\`snapshot` prints the current binary host view in a human-readable format and
-    \\also serves as the daemon liveness check.
-    \\`check-live` succeeds when the named job has both hello and sample telemetry.
+    \\binary telemetry stream per guest, and exposes a local AF_UNIX SEQPACKET socket.
+    \\`snapshot` attaches, prints the current binary host view in human-readable
+    \\lines, and exits after `SNAPSHOT_END`.
+    \\`check-live` succeeds when the named job has both hello and sample telemetry
+    \\in the current snapshot.
     \\
     \\Options:
     \\  --listen-uds PATH   Host-agent control socket path
@@ -42,303 +54,669 @@ const Config = struct {
     job_id: []const u8 = "",
 };
 
-const DiscoveredVM = struct {
-    job_id: []const u8,
-    uds_path: []const u8,
+const HostCore = hostc.HostCoreType(max_runtime_vms, event_ring_capacity);
+
+const FdKind = enum(u8) {
+    listener = 1,
+    timer = 2,
+    bridge = 3,
+    consumer = 4,
 };
 
-const VMState = struct {
-    uds_path: []const u8,
-    present: bool = false,
-    worker_active: bool = false,
-    worker_done: bool = false,
-    worker_thread: ?std.Thread = null,
-    connected: bool = false,
-    stream_generation: u32 = 0,
-    hello: ?hs.HelloFrame = null,
-    sample: ?hs.SampleFrame = null,
-    last_error_len: usize = 0,
-    last_error: [192]u8 = [_]u8{0} ** 192,
-
-    fn setError(self: *VMState, message: []const u8) void {
-        @memset(self.last_error[0..], 0);
-        self.last_error_len = @min(message.len, self.last_error.len);
-        @memcpy(self.last_error[0..self.last_error_len], message[0..self.last_error_len]);
-    }
-
-    fn clearError(self: *VMState) void {
-        self.last_error_len = 0;
-        @memset(self.last_error[0..], 0);
-    }
-
-    fn lastError(self: *const VMState) ?[]const u8 {
-        if (self.last_error_len == 0) return null;
-        return self.last_error[0..self.last_error_len];
-    }
+const BridgeStage = enum {
+    connecting,
+    handshaking,
+    streaming,
 };
 
-const AgentState = struct {
-    allocator: std.mem.Allocator,
+const ConsumerStage = enum {
+    waiting_request,
+    snapshot,
+    live,
+};
+
+const SnapshotCursorPhase = enum {
+    hello,
+    sample,
+    disconnect,
+    end,
+};
+
+const RuntimeVm = struct {
+    used: bool = false,
+    seen_in_scan: bool = false,
+    job_id: hostc.JobId = .{},
+    uds_path: hostc.UdsPath = .{},
+    fd: ?std.posix.fd_t = null,
+    stage: BridgeStage = .connecting,
+    token: ?HostCore.StreamToken = null,
+    retry_due_ns: u64 = 0,
+    cmd_len: usize = 0,
+    cmd_sent: usize = 0,
+    cmd_buf: [max_bridge_cmd_bytes]u8 = [_]u8{0} ** max_bridge_cmd_bytes,
+    ack_len: usize = 0,
+    ack_buf: [bridge_ack_buffer_bytes]u8 = [_]u8{0} ** bridge_ack_buffer_bytes,
+    stream_len: usize = 0,
+    stream_buf: [bridge_stream_buffer_bytes]u8 = [_]u8{0} ** bridge_stream_buffer_bytes,
+};
+
+const Consumer = struct {
+    used: bool = false,
+    fd: ?std.posix.fd_t = null,
+    stage: ConsumerStage = .waiting_request,
+    wants_write: bool = false,
+    request_len: usize = 0,
+    request_buf: [consumer_request_buffer_bytes]u8 = [_]u8{0} ** consumer_request_buffer_bytes,
+    snapshot_vms: [max_runtime_vms]HostCore.SnapshotVm = [_]HostCore.SnapshotVm{.{}} ** max_runtime_vms,
+    snapshot_count: usize = 0,
+    snapshot_index: usize = 0,
+    snapshot_phase: SnapshotCursorPhase = .hello,
+    snapshot_next_event_seq: u64 = 1,
+    live_cursor: HostCore.Cursor = .{},
+    event_buf: [consumer_batch_size]HostCore.EventRecord = undefined,
+    event_count: usize = 0,
+    event_index: usize = 0,
+    pending_packet: ?hostp.Packet = null,
+};
+
+const Runtime = struct {
+    control_uds: []const u8,
     jailer_root: []const u8,
     guest_port: u32,
-    next_packet_seq: u64 = 1,
-    vms: std.StringHashMap(VMState),
-    mutex: std.Thread.Mutex = .{},
+    epoll_fd: std.posix.fd_t,
+    listener_fd: std.posix.fd_t,
+    timer_fd: std.posix.fd_t,
+    next_discovery_ns: u64 = 0,
+    core: HostCore = .{},
+    vms: [max_runtime_vms]RuntimeVm = [_]RuntimeVm{.{}} ** max_runtime_vms,
+    consumers: [max_consumers]Consumer = [_]Consumer{.{}} ** max_consumers,
 
-    fn init(allocator: std.mem.Allocator, jailer_root: []const u8, guest_port: u32) AgentState {
-        return .{
-            .allocator = allocator,
+    fn init(self: *Runtime, control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
+        const epoll_fd = try std.posix.epoll_create1(linux.EPOLL.CLOEXEC);
+        errdefer std.posix.close(epoll_fd);
+
+        const listener_fd = try bindListener(control_uds);
+        errdefer std.posix.close(listener_fd);
+
+        const timer_fd = try std.posix.timerfd_create(.MONOTONIC, .{
+            .CLOEXEC = true,
+            .NONBLOCK = true,
+        });
+        errdefer std.posix.close(timer_fd);
+        try armPeriodicTimer(timer_fd, timer_tick_ns);
+
+        self.* = .{
+            .control_uds = control_uds,
             .jailer_root = jailer_root,
             .guest_port = guest_port,
-            .vms = std.StringHashMap(VMState).init(allocator),
+            .epoll_fd = epoll_fd,
+            .listener_fd = listener_fd,
+            .timer_fd = timer_fd,
+            .next_discovery_ns = 0,
         };
+        try self.registerFd(listener_fd, fdToken(.listener, 0), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP);
+        try self.registerFd(timer_fd, fdToken(.timer, 0), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP);
     }
 
-    fn deinit(self: *AgentState) void {
-        var it = self.vms.iterator();
-        while (it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.uds_path);
-        }
-        self.vms.deinit();
+    fn deinit(self: *Runtime) void {
+        for (&self.vms) |*vm| self.closeBridge(vm);
+        for (&self.consumers) |*consumer| self.closeConsumer(consumer);
+        std.posix.close(self.timer_fd);
+        std.posix.close(self.listener_fd);
+        std.posix.close(self.epoll_fd);
+        std.fs.deleteFileAbsolute(self.control_uds) catch {};
     }
 
-    fn commitDiscovery(self: *AgentState, temp_allocator: std.mem.Allocator, found: []const DiscoveredVM) ![]const []const u8 {
-        var spawns = try std.ArrayList([]const u8).initCapacity(temp_allocator, found.len);
+    fn run(self: *Runtime) !void {
+        var events: [epoll_max_events]linux.epoll_event = undefined;
+        while (true) {
+            const count = std.posix.epoll_wait(self.epoll_fd, events[0..], -1);
+            var core_changed = false;
 
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        var it = self.vms.iterator();
-        while (it.next()) |entry| {
-            entry.value_ptr.present = false;
-        }
-
-        for (found) |item| {
-            if (self.vms.getKey(item.job_id)) |canonical_job_id| {
-                const vm = self.vms.getPtr(item.job_id).?;
-                const was_present = vm.present;
-                const path_changed = !std.mem.eql(u8, vm.uds_path, item.uds_path);
-                vm.present = true;
-                if (path_changed) {
-                    const owned_uds_path = try self.allocator.dupe(u8, item.uds_path);
-                    self.allocator.free(vm.uds_path);
-                    vm.uds_path = owned_uds_path;
+            for (events[0..count]) |event| {
+                const decoded = decodeToken(event.data.u64);
+                switch (decoded.kind) {
+                    .listener => try self.acceptConsumers(),
+                    .timer => core_changed = (try self.handleTimer()) or core_changed,
+                    .bridge => core_changed = (try self.handleBridgeEvent(decoded.index, event.events)) or core_changed,
+                    .consumer => self.handleConsumerEvent(decoded.index, event.events),
                 }
-                if (path_changed or !was_present or !vm.worker_active) vm.clearError();
-                if (!vm.worker_active) {
-                    vm.worker_active = true;
-                    try spawns.append(temp_allocator, canonical_job_id);
-                }
-                continue;
             }
 
-            const owned_job_id = try self.allocator.dupe(u8, item.job_id);
-            errdefer self.allocator.free(owned_job_id);
-            const owned_uds_path = try self.allocator.dupe(u8, item.uds_path);
-            errdefer self.allocator.free(owned_uds_path);
+            if (core_changed) self.flushConsumers();
+        }
+    }
 
-            const vm = VMState{
-                .uds_path = owned_uds_path,
-                .present = true,
-                .worker_active = true,
-            };
-            try self.vms.put(owned_job_id, vm);
-            try spawns.append(temp_allocator, owned_job_id);
+    fn handleTimer(self: *Runtime) !bool {
+        var ticks: [8]u8 = undefined;
+        _ = try std.posix.read(self.timer_fd, ticks[0..]);
+
+        const now_ns = try hs.monotonicNowNs();
+        var core_changed = false;
+        if (now_ns >= self.next_discovery_ns) {
+            core_changed = (try self.runDiscovery()) or core_changed;
+            self.next_discovery_ns = now_ns + discovery_period_ns;
+        }
+        self.startDueBridgeConnections(now_ns);
+        return core_changed;
+    }
+
+    fn runDiscovery(self: *Runtime) !bool {
+        for (&self.vms) |*vm| {
+            if (!vm.used) continue;
+            vm.seen_in_scan = false;
         }
 
-        return spawns.toOwnedSlice(temp_allocator);
-    }
-
-    fn copyCurrentTarget(self: *AgentState, job_id: []const u8, target_buf: []u8) !?[]const u8 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return null;
-        if (!vm.present) return null;
-        if (vm.uds_path.len > target_buf.len) return error.PathTooLong;
-        @memcpy(target_buf[0..vm.uds_path.len], vm.uds_path);
-        return target_buf[0..vm.uds_path.len];
-    }
-
-    fn beginStream(self: *AgentState, job_id: []const u8) ?u32 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return null;
-        vm.connected = false;
-        vm.hello = null;
-        vm.sample = null;
-        vm.clearError();
-        if (vm.stream_generation < std.math.maxInt(u32)) {
-            vm.stream_generation += 1;
-        }
-        return vm.stream_generation;
-    }
-
-    fn recordConnected(self: *AgentState, job_id: []const u8, generation: u32) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        if (generation < vm.stream_generation) return;
-        vm.stream_generation = generation;
-        vm.connected = true;
-        vm.clearError();
-    }
-
-    fn recordHello(self: *AgentState, job_id: []const u8, generation: u32, hello: hs.HelloFrame) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        if (generation < vm.stream_generation) return;
-        vm.stream_generation = generation;
-        vm.connected = true;
-        vm.hello = hello;
-        vm.clearError();
-    }
-
-    fn recordSample(self: *AgentState, job_id: []const u8, generation: u32, sample: hs.SampleFrame) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        if (generation < vm.stream_generation) return;
-        vm.stream_generation = generation;
-        vm.connected = true;
-        vm.sample = sample;
-        vm.clearError();
-    }
-
-    fn recordDisconnect(self: *AgentState, job_id: []const u8, generation: u32, message: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        if (generation < vm.stream_generation) return;
-        vm.stream_generation = generation;
-        vm.connected = false;
-        vm.setError(message);
-    }
-
-    fn recordWorkerThread(self: *AgentState, job_id: []const u8, thread: std.Thread) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        vm.worker_thread = thread;
-    }
-
-    fn takeCompletedWorkers(self: *AgentState, temp_allocator: std.mem.Allocator) ![]const std.Thread {
-        var completed = try std.ArrayList(std.Thread).initCapacity(temp_allocator, self.vms.count());
-
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        var it = self.vms.iterator();
-        while (it.next()) |entry| {
-            const vm = entry.value_ptr;
-            if (!vm.worker_done) continue;
-            vm.worker_done = false;
-            if (vm.worker_thread) |thread| {
-                vm.worker_thread = null;
-                try completed.append(temp_allocator, thread);
-            }
-        }
-
-        return completed.toOwnedSlice(temp_allocator);
-    }
-
-    fn takeCompletedWorker(self: *AgentState, job_id: []const u8) ?std.Thread {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return null;
-        if (!vm.worker_done) return null;
-
-        vm.worker_done = false;
-        if (vm.worker_thread) |thread| {
-            vm.worker_thread = null;
-            return thread;
-        }
-        return null;
-    }
-
-    fn markWorkerStopped(self: *AgentState, job_id: []const u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        const vm = self.vms.getPtr(job_id) orelse return;
-        vm.worker_active = false;
-        vm.worker_done = true;
-        vm.connected = false;
-    }
-
-    fn snapshotPackets(self: *AgentState, allocator: std.mem.Allocator) ![]hostp.Packet {
-        var packets = try std.ArrayList(hostp.Packet).initCapacity(allocator, self.vms.count() * 2 + 1);
-        errdefer packets.deinit(allocator);
-
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        var it = self.vms.iterator();
-        while (it.next()) |entry| {
-            const vm = entry.value_ptr.*;
-            if (!vm.present or !vm.connected) continue;
-
-            const job_id = try hs.parseUuid(entry.key_ptr.*);
-            if (vm.hello) |hello| {
-                try packets.append(allocator, self.makePacketLocked(
-                    .hello,
-                    job_id,
-                    vm.stream_generation,
-                    hostp.packet_flag_snapshot,
-                    hs.encodeHelloFrame(hello),
-                ));
-            }
-            if (vm.sample) |sample| {
-                try packets.append(allocator, self.makePacketLocked(
-                    .sample,
-                    job_id,
-                    vm.stream_generation,
-                    hostp.packet_flag_snapshot,
-                    hs.encodeSampleFrame(sample),
-                ));
-            }
-        }
-
-        try packets.append(allocator, self.makePacketLocked(
-            .snapshot_end,
-            [_]u8{0} ** 16,
-            0,
-            0,
-            hostp.zeroPayload(),
-        ));
-        return packets.toOwnedSlice(allocator);
-    }
-
-    fn makePacketLocked(
-        self: *AgentState,
-        kind: hostp.PacketKind,
-        job_id: [16]u8,
-        stream_generation: u32,
-        flags: u32,
-        payload: [hs.frame_size]u8,
-    ) hostp.Packet {
-        const packet = hostp.Packet{
-            .header = .{
-                .kind = kind,
-                .host_seq = self.next_packet_seq,
-                .observed_wall_ns = hs.realtimeNowNs() catch 0,
-                .job_id = job_id,
-                .stream_generation = stream_generation,
-                .flags = flags,
+        var root_dir = std.fs.openDirAbsolute(self.jailer_root, .{ .iterate = true }) catch |err| switch (err) {
+            error.FileNotFound => {
+                return try self.finalizeDiscovery();
             },
-            .payload = payload,
+            else => return err,
         };
-        self.next_packet_seq += 1;
-        return packet;
+        defer root_dir.close();
+
+        var it = root_dir.iterate();
+        while (try it.next()) |entry| {
+            if (entry.kind != .directory) continue;
+
+            var uds_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const uds_path = try std.fmt.bufPrint(
+                uds_buf[0..],
+                "{s}/{s}/root/run/forge-control.sock",
+                .{ self.jailer_root, entry.name },
+            );
+            std.fs.accessAbsolute(uds_path, .{}) catch |err| switch (err) {
+                error.FileNotFound => continue,
+                else => return err,
+            };
+
+            try self.upsertDiscoveredVm(entry.name, uds_path);
+        }
+
+        return try self.finalizeDiscovery();
+    }
+
+    fn upsertDiscoveredVm(self: *Runtime, job_id: []const u8, uds_path: []const u8) !void {
+        const now_ns = try hs.monotonicNowNs();
+        const index = try self.findOrAllocVm(job_id);
+        const vm = &self.vms[index];
+        const path_changed = !vm.used or !vm.uds_path.eql(uds_path);
+        const was_present = vm.used and vm.seen_in_scan;
+
+        if (!vm.used) {
+            vm.used = true;
+            try vm.job_id.set(job_id);
+        }
+        vm.seen_in_scan = true;
+
+        if (path_changed) {
+            try vm.uds_path.set(uds_path);
+            self.closeBridge(vm);
+        }
+
+        try self.core.discover(job_id, uds_path);
+
+        if (path_changed or !was_present) {
+            vm.retry_due_ns = now_ns;
+        }
+    }
+
+    fn finalizeDiscovery(self: *Runtime) !bool {
+        var core_changed = false;
+        for (&self.vms) |*vm| {
+            if (!vm.used or vm.seen_in_scan) continue;
+            self.closeBridge(vm);
+            try self.core.markGone(vm.job_id.slice());
+            vm.* = .{};
+            core_changed = true;
+        }
+        return core_changed;
+    }
+
+    fn startDueBridgeConnections(self: *Runtime, now_ns: u64) void {
+        for (0..self.vms.len) |index| {
+            const vm = &self.vms[index];
+            if (!vm.used) continue;
+            if (vm.fd != null) continue;
+            if (vm.retry_due_ns > now_ns) continue;
+            self.startBridgeConnection(index, now_ns);
+        }
+    }
+
+    fn startBridgeConnection(self: *Runtime, index: usize, now_ns: u64) void {
+        var vm = &self.vms[index];
+        const token = self.core.beginStream(vm.job_id.slice()) catch |err| {
+            std.log.err("beginStream failed for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
+            vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+            return;
+        };
+
+        var address = std.net.Address.initUnix(vm.uds_path.slice()) catch |err| {
+            _ = self.core.recordDisconnect(token, .connect_failed);
+            std.log.err("invalid bridge path for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
+            vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+            return;
+        };
+
+        const fd = std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC | std.posix.SOCK.NONBLOCK, 0) catch |err| {
+            _ = self.core.recordDisconnect(token, .connect_failed);
+            std.log.err("socket failed for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
+            vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+            return;
+        };
+        errdefer std.posix.close(fd);
+
+        const state = connectNonblocking(fd, &address) catch |err| {
+            _ = self.core.recordDisconnect(token, .connect_failed);
+            std.log.err("connect failed for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
+            vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+            return;
+        };
+
+        vm.fd = fd;
+        vm.token = token;
+        vm.stage = if (state == .connected) .handshaking else .connecting;
+        vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+        vm.cmd_sent = 0;
+        vm.ack_len = 0;
+        vm.stream_len = 0;
+        vm.cmd_len = (std.fmt.bufPrint(vm.cmd_buf[0..], "CONNECT {d}\n", .{self.guest_port}) catch unreachable).len;
+        self.registerFd(fd, fdToken(.bridge, index), bridgeInterest(vm.stage)) catch |err| {
+            _ = self.core.recordDisconnect(token, .connect_failed);
+            std.log.err("epoll add failed for {s}: {s}", .{ vm.job_id.slice(), @errorName(err) });
+            self.closeBridge(vm);
+            vm.retry_due_ns = now_ns + reconnect_backoff_ns;
+            return;
+        };
+    }
+
+    fn acceptConsumers(self: *Runtime) !void {
+        while (true) {
+            const fd = std.posix.accept(self.listener_fd, null, null, std.posix.SOCK.CLOEXEC | std.posix.SOCK.NONBLOCK) catch |err| switch (err) {
+                error.WouldBlock => return,
+                else => return err,
+            };
+            errdefer std.posix.close(fd);
+
+            const index = self.allocConsumer() catch {
+                std.posix.close(fd);
+                continue;
+            };
+            const consumer = &self.consumers[index];
+            consumer.* = .{
+                .used = true,
+                .fd = fd,
+            };
+            try self.registerFd(fd, fdToken(.consumer, index), consumerInterest(consumer));
+        }
+    }
+
+    fn handleBridgeEvent(self: *Runtime, index: usize, events: u32) !bool {
+        if (index >= self.vms.len) return false;
+        const vm = &self.vms[index];
+        if (!vm.used or vm.fd == null) return false;
+
+        var core_changed = false;
+        if ((events & linux.EPOLL.OUT) != 0) {
+            core_changed = (try self.handleBridgeWritable(index)) or core_changed;
+        }
+        if ((events & linux.EPOLL.IN) != 0) {
+            core_changed = (try self.handleBridgeReadable(index)) or core_changed;
+        }
+        if ((events & (linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP)) != 0 and vm.fd != null) {
+            self.failBridge(index, .bridge_closed);
+            core_changed = true;
+        }
+        return core_changed;
+    }
+
+    fn handleBridgeWritable(self: *Runtime, index: usize) !bool {
+        var vm = &self.vms[index];
+        const fd = vm.fd orelse return false;
+
+        switch (vm.stage) {
+            .connecting => {
+                std.posix.getsockoptError(fd) catch {
+                    self.failBridge(index, .connect_failed);
+                    return true;
+                };
+                vm.stage = .handshaking;
+                try self.modifyFd(fd, fdToken(.bridge, index), bridgeInterest(vm.stage));
+                return false;
+            },
+            .handshaking => {
+                while (vm.cmd_sent < vm.cmd_len) {
+                    const sent = std.posix.write(fd, vm.cmd_buf[vm.cmd_sent..vm.cmd_len]) catch |err| switch (err) {
+                        error.WouldBlock => return false,
+                        else => {
+                            self.failBridge(index, .connect_failed);
+                            return true;
+                        },
+                    };
+                    if (sent == 0) {
+                        self.failBridge(index, .connect_failed);
+                        return true;
+                    }
+                    vm.cmd_sent += sent;
+                }
+                try self.modifyFd(fd, fdToken(.bridge, index), bridgeInterest(vm.stage));
+                return false;
+            },
+            .streaming => return false,
+        }
+    }
+
+    fn handleBridgeReadable(self: *Runtime, index: usize) !bool {
+        var vm = &self.vms[index];
+        const fd = vm.fd orelse return false;
+
+        switch (vm.stage) {
+            .connecting => return false,
+            .handshaking => {
+                const n = std.posix.read(fd, vm.ack_buf[vm.ack_len..]) catch |err| switch (err) {
+                    error.WouldBlock => return false,
+                    else => {
+                        self.failBridge(index, .connect_failed);
+                        return true;
+                    },
+                };
+                if (n == 0) {
+                    self.failBridge(index, .bridge_closed);
+                    return true;
+                }
+                vm.ack_len += n;
+                if (vm.ack_len == vm.ack_buf.len and std.mem.indexOfScalar(u8, vm.ack_buf[0..vm.ack_len], '\n') == null) {
+                    self.failBridge(index, .connect_failed);
+                    return true;
+                }
+
+                const newline_index = std.mem.indexOfScalar(u8, vm.ack_buf[0..vm.ack_len], '\n') orelse return false;
+                const line_raw = vm.ack_buf[0..newline_index];
+                const line = std.mem.trimRight(u8, line_raw, "\r");
+                if (!std.mem.startsWith(u8, line, "OK ")) {
+                    self.failBridge(index, .connect_failed);
+                    return true;
+                }
+
+                const remaining_start = newline_index + 1;
+                if (remaining_start < vm.ack_len) {
+                    const remaining = vm.ack_len - remaining_start;
+                    if (remaining > vm.stream_buf.len) {
+                        self.failBridge(index, .decode_failed);
+                        return true;
+                    }
+                    @memcpy(vm.stream_buf[0..remaining], vm.ack_buf[remaining_start..vm.ack_len]);
+                    vm.stream_len = remaining;
+                } else {
+                    vm.stream_len = 0;
+                }
+                vm.ack_len = 0;
+                vm.stage = .streaming;
+                if (vm.token) |token| _ = self.core.recordConnected(token);
+                try self.modifyFd(fd, fdToken(.bridge, index), bridgeInterest(vm.stage));
+                return self.processBridgeFrames(vm);
+            },
+            .streaming => {
+                const n = std.posix.read(fd, vm.stream_buf[vm.stream_len..]) catch |err| switch (err) {
+                    error.WouldBlock => return false,
+                    else => {
+                        self.failBridge(index, .decode_failed);
+                        return true;
+                    },
+                };
+                if (n == 0) {
+                    self.failBridge(index, .bridge_closed);
+                    return true;
+                }
+                vm.stream_len += n;
+                return self.processBridgeFrames(vm);
+            },
+        }
+    }
+
+    fn processBridgeFrames(self: *Runtime, vm: *RuntimeVm) bool {
+        var core_changed = false;
+        while (vm.stream_len >= hs.frame_size) {
+            var frame_buf: [hs.frame_size]u8 = undefined;
+            @memcpy(frame_buf[0..], vm.stream_buf[0..hs.frame_size]);
+            const kind = hs.decodeFrameKind(&frame_buf) catch {
+                if (vm.token) |_| self.failBridgeByVm(vm, .decode_failed);
+                return true;
+            };
+            switch (kind) {
+                .hello => {
+                    if (vm.token) |token| {
+                        const hello = hs.decodeHelloFrame(&frame_buf) catch {
+                            self.failBridgeByVm(vm, .decode_failed);
+                            return true;
+                        };
+                        _ = self.core.recordHello(token, hello);
+                        core_changed = true;
+                    }
+                },
+                .sample => {
+                    if (vm.token) |token| {
+                        const sample = hs.decodeSampleFrame(&frame_buf) catch {
+                            self.failBridgeByVm(vm, .decode_failed);
+                            return true;
+                        };
+                        _ = self.core.recordSample(token, sample);
+                        core_changed = true;
+                    }
+                },
+            }
+            const remaining = vm.stream_len - hs.frame_size;
+            if (remaining > 0) {
+                std.mem.copyForwards(u8, vm.stream_buf[0..remaining], vm.stream_buf[hs.frame_size..vm.stream_len]);
+            }
+            vm.stream_len = remaining;
+        }
+        return core_changed;
+    }
+
+    fn failBridge(self: *Runtime, index: usize, reason: hostc.DisconnectReason) void {
+        const vm = &self.vms[index];
+        self.failBridgeByVm(vm, reason);
+    }
+
+    fn failBridgeByVm(self: *Runtime, vm: *RuntimeVm, reason: hostc.DisconnectReason) void {
+        if (vm.token) |token| _ = self.core.recordDisconnect(token, reason);
+        self.closeBridge(vm);
+        vm.retry_due_ns = (hs.monotonicNowNs() catch 0) + reconnect_backoff_ns;
+    }
+
+    fn handleConsumerEvent(self: *Runtime, index: usize, events: u32) void {
+        if (index >= self.consumers.len) return;
+        const consumer = &self.consumers[index];
+        if (!consumer.used or consumer.fd == null) return;
+
+        if ((events & (linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP)) != 0) {
+            self.closeConsumer(consumer);
+            return;
+        }
+        if ((events & linux.EPOLL.IN) != 0) {
+            self.readConsumerRequest(index);
+        }
+        if ((events & linux.EPOLL.OUT) != 0) {
+            self.flushConsumer(index);
+        }
+    }
+
+    fn readConsumerRequest(self: *Runtime, index: usize) void {
+        var consumer = &self.consumers[index];
+        const fd = consumer.fd orelse return;
+        if (consumer.stage != .waiting_request) {
+            self.closeConsumer(consumer);
+            return;
+        }
+
+        const n = std.posix.recv(fd, consumer.request_buf[consumer.request_len..], 0) catch |err| switch (err) {
+            error.WouldBlock => return,
+            else => {
+                self.closeConsumer(consumer);
+                return;
+            },
+        };
+        if (n == 0) {
+            self.closeConsumer(consumer);
+            return;
+        }
+        consumer.request_len += n;
+        if (consumer.request_len < hostp.request_size) return;
+        if (consumer.request_len != hostp.request_size) {
+            self.closeConsumer(consumer);
+            return;
+        }
+
+        const request = hostp.decodeRequest(@ptrCast(&consumer.request_buf)) catch {
+            self.closeConsumer(consumer);
+            return;
+        };
+        if (request.kind != .attach) {
+            self.closeConsumer(consumer);
+            return;
+        }
+
+        const current_snapshot = self.core.snapshot(consumer.snapshot_vms[0..]);
+        consumer.snapshot_count = current_snapshot.vms.len;
+        consumer.snapshot_index = 0;
+        consumer.snapshot_phase = .hello;
+        consumer.snapshot_next_event_seq = current_snapshot.next_event_seq;
+        consumer.live_cursor = self.core.cursorFromSeq(current_snapshot.next_event_seq);
+        consumer.event_count = 0;
+        consumer.event_index = 0;
+        consumer.pending_packet = null;
+        consumer.stage = .snapshot;
+        consumer.wants_write = true;
+        self.flushConsumer(index);
+    }
+
+    fn flushConsumers(self: *Runtime) void {
+        for (0..self.consumers.len) |index| {
+            if (!self.consumers[index].used) continue;
+            self.flushConsumer(index);
+        }
+    }
+
+    fn flushConsumer(self: *Runtime, index: usize) void {
+        var consumer = &self.consumers[index];
+        const fd = consumer.fd orelse return;
+
+        while (true) {
+            if (consumer.pending_packet == null) {
+                consumer.pending_packet = self.nextConsumerPacket(consumer) catch {
+                    self.closeConsumer(consumer);
+                    return;
+                };
+                if (consumer.pending_packet == null) break;
+            }
+
+            const encoded = hostp.encodePacket(consumer.pending_packet.?);
+            const sent = std.posix.send(fd, encoded[0..], 0) catch |err| switch (err) {
+                error.WouldBlock => {
+                    consumer.wants_write = true;
+                    self.updateConsumerInterest(index) catch self.closeConsumer(consumer);
+                    return;
+                },
+                else => {
+                    self.closeConsumer(consumer);
+                    return;
+                },
+            };
+            if (sent != hostp.packet_size) {
+                self.closeConsumer(consumer);
+                return;
+            }
+            consumer.pending_packet = null;
+        }
+
+        consumer.wants_write = false;
+        self.updateConsumerInterest(index) catch self.closeConsumer(consumer);
+    }
+
+    fn nextConsumerPacket(self: *Runtime, consumer: *Consumer) !?hostp.Packet {
+        switch (consumer.stage) {
+            .waiting_request => return null,
+            .snapshot => {
+                if (try nextSnapshotPacket(consumer)) |packet| return packet;
+                consumer.stage = .live;
+                return self.nextConsumerPacket(consumer);
+            },
+            .live => {
+                while (true) {
+                    if (consumer.event_index >= consumer.event_count) {
+                        const drained = self.core.drain(&consumer.live_cursor, consumer.event_buf[0..]);
+                        if (drained.status == .overflow) return error.ConsumerLagged;
+                        consumer.event_count = drained.count;
+                        consumer.event_index = 0;
+                        if (drained.count == 0) return null;
+                    }
+                    const record = consumer.event_buf[consumer.event_index];
+                    consumer.event_index += 1;
+                    if (try packetFromEvent(record)) |packet| return packet;
+                }
+            },
+        }
+    }
+
+    fn findOrAllocVm(self: *Runtime, job_id: []const u8) !usize {
+        for (self.vms, 0..) |vm, index| {
+            if (!vm.used) continue;
+            if (vm.job_id.eql(job_id)) return index;
+        }
+        for (&self.vms, 0..) |*vm, index| {
+            if (vm.used) continue;
+            return index;
+        }
+        return error.FleetFull;
+    }
+
+    fn allocConsumer(self: *Runtime) !usize {
+        for (&self.consumers, 0..) |*consumer, index| {
+            if (consumer.used) continue;
+            return index;
+        }
+        return error.ConsumerCapacityExceeded;
+    }
+
+    fn closeBridge(self: *Runtime, vm: *RuntimeVm) void {
+        _ = self;
+        if (vm.fd) |fd| std.posix.close(fd);
+        vm.fd = null;
+        vm.token = null;
+        vm.cmd_len = 0;
+        vm.cmd_sent = 0;
+        vm.ack_len = 0;
+        vm.stream_len = 0;
+        vm.stage = .connecting;
+    }
+
+    fn closeConsumer(self: *Runtime, consumer: *Consumer) void {
+        _ = self;
+        if (consumer.fd) |fd| std.posix.close(fd);
+        consumer.* = .{};
+    }
+
+    fn registerFd(self: *Runtime, fd: std.posix.fd_t, token: u64, events: u32) !void {
+        var event = linux.epoll_event{
+            .events = events,
+            .data = .{ .u64 = token },
+        };
+        try std.posix.epoll_ctl(self.epoll_fd, linux.EPOLL.CTL_ADD, fd, &event);
+    }
+
+    fn modifyFd(self: *Runtime, fd: std.posix.fd_t, token: u64, events: u32) !void {
+        var event = linux.epoll_event{
+            .events = events,
+            .data = .{ .u64 = token },
+        };
+        try std.posix.epoll_ctl(self.epoll_fd, linux.EPOLL.CTL_MOD, fd, &event);
+    }
+
+    fn updateConsumerInterest(self: *Runtime, index: usize) !void {
+        const consumer = &self.consumers[index];
+        const fd = consumer.fd orelse return;
+        try self.modifyFd(fd, fdToken(.consumer, index), consumerInterest(consumer));
     }
 };
 
@@ -349,74 +727,49 @@ pub const BenchmarkResult = struct {
     samples_per_second: u64,
 };
 
-const BenchmarkReaderArgs = struct {
-    state: *AgentState,
-    job_id: []const u8,
-    generation: u32,
-    stream: std.net.Stream,
-};
-
-const BenchmarkWriterArgs = struct {
-    stream: std.net.Stream,
-    stream_index: usize,
-    samples_per_stream: usize,
-};
-
-pub fn benchmarkIngest(allocator: std.mem.Allocator, stream_count: usize, samples_per_stream: usize) !BenchmarkResult {
+pub fn benchmarkIngest(_: std.mem.Allocator, stream_count: usize, samples_per_stream: usize) !BenchmarkResult {
     if (stream_count == 0 or samples_per_stream == 0) return error.InvalidBenchmarkConfig;
+    if (stream_count > max_runtime_vms) return error.InvalidBenchmarkConfig;
 
-    var state = AgentState.init(allocator, default_jailer_root, hs.default_guest_port);
-    defer state.deinit();
-
-    var found = try std.ArrayList(DiscoveredVM).initCapacity(allocator, stream_count);
-    defer {
-        for (found.items) |item| {
-            allocator.free(item.job_id);
-            allocator.free(item.uds_path);
-        }
-        found.deinit(allocator);
-    }
+    var core: HostCore = .{};
+    var job_ids: [max_runtime_vms][36]u8 = undefined;
+    var tokens: [max_runtime_vms]HostCore.StreamToken = undefined;
 
     for (0..stream_count) |index| {
-        const job_id = try std.fmt.allocPrint(allocator, "00000000-0000-0000-0000-{x:0>12}", .{index + 1});
-        const uds_path = try std.fmt.allocPrint(allocator, "/tmp/bench-{d}.sock", .{index + 1});
-        try found.append(allocator, .{
-            .job_id = job_id,
-            .uds_path = uds_path,
+        _ = try std.fmt.bufPrint(job_ids[index][0..], "00000000-0000-0000-0000-{x:0>12}", .{index + 1});
+        const job_id = job_ids[index][0..36];
+        try core.discover(job_id, "/tmp/bench.sock");
+        tokens[index] = try core.beginStream(job_id);
+        _ = core.recordConnected(tokens[index]);
+        _ = core.recordHello(tokens[index], .{
+            .seq = 0,
+            .mono_ns = 1,
+            .wall_ns = 2,
+            .boot_id = benchmarkBootId(index),
+            .mem_total_kb = 516096,
         });
     }
 
-    const spawns = try state.commitDiscovery(allocator, found.items);
-    defer allocator.free(spawns);
-    if (spawns.len != stream_count) return error.InvalidBenchmarkState;
-
-    const reader_threads = try allocator.alloc(std.Thread, stream_count);
-    defer allocator.free(reader_threads);
-    const writer_threads = try allocator.alloc(std.Thread, stream_count);
-    defer allocator.free(writer_threads);
-
-    var timer = try std.time.Timer.start();
-
-    for (spawns, 0..) |job_id, index| {
-        const generation = state.beginStream(job_id) orelse return error.InvalidBenchmarkState;
-        const fds = try benchmarkSocketPair();
-        reader_threads[index] = try std.Thread.spawn(.{}, benchmarkReaderMain, .{BenchmarkReaderArgs{
-            .state = &state,
-            .job_id = job_id,
-            .generation = generation,
-            .stream = .{ .handle = fds[0] },
-        }});
-        writer_threads[index] = try std.Thread.spawn(.{}, benchmarkWriterMain, .{BenchmarkWriterArgs{
-            .stream = .{ .handle = fds[1] },
-            .stream_index = index,
-            .samples_per_stream = samples_per_stream,
-        }});
+    const started_ns = try hs.monotonicNowNs();
+    for (0..samples_per_stream) |sample_index| {
+        for (0..stream_count) |stream_index| {
+            _ = core.recordSample(tokens[stream_index], .{
+                .seq = @intCast(sample_index + 1),
+                .mono_ns = @intCast(sample_index + 1),
+                .wall_ns = @intCast(sample_index + 2),
+                .cpu_user_ticks = @intCast(sample_index + 1),
+                .cpu_system_ticks = @intCast(sample_index + 2),
+                .cpu_idle_ticks = @intCast(sample_index + 3),
+                .mem_available_kb = 401232,
+                .io_read_bytes = @intCast(sample_index * 2),
+                .io_write_bytes = @intCast(sample_index * 3),
+                .net_rx_bytes = @intCast(sample_index * 4),
+                .net_tx_bytes = @intCast(sample_index * 5),
+            });
+        }
     }
-
-    for (writer_threads) |thread| thread.join();
-    for (reader_threads) |thread| thread.join();
-
-    const elapsed_ns = timer.read();
+    const ended_ns = try hs.monotonicNowNs();
+    const elapsed_ns = ended_ns - started_ns;
     const total_samples = stream_count * samples_per_stream;
     return .{
         .stream_count = stream_count,
@@ -440,7 +793,7 @@ pub fn main() !void {
     };
 
     switch (config.mode) {
-        .serve => try serve(allocator, config.control_uds, config.jailer_root, config.port),
+        .serve => try serve(config.control_uds, config.jailer_root, config.port),
         .snapshot => try snapshot(allocator, config.control_uds),
         .check_live => try checkLive(allocator, config.control_uds, config.job_id),
     }
@@ -456,16 +809,8 @@ fn parseArgs(args: []const []const u8) !Config {
     var index: usize = 2;
     while (index < args.len) : (index += 1) {
         const arg = args[index];
-        if (std.mem.eql(u8, arg, "--help")) {
-            return error.ShowUsage;
-        }
-        if (std.mem.eql(u8, arg, "--listen-uds")) {
-            index += 1;
-            if (index >= args.len) return error.MissingOptionValue;
-            config.control_uds = args[index];
-            continue;
-        }
-        if (std.mem.eql(u8, arg, "--control-uds")) {
+        if (std.mem.eql(u8, arg, "--help")) return error.ShowUsage;
+        if (std.mem.eql(u8, arg, "--listen-uds") or std.mem.eql(u8, arg, "--control-uds")) {
             index += 1;
             if (index >= args.len) return error.MissingOptionValue;
             config.control_uds = args[index];
@@ -517,62 +862,19 @@ fn switchMode(value: []const u8) ?Mode {
     return null;
 }
 
-fn serve(allocator: std.mem.Allocator, control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
-    var state = AgentState.init(allocator, jailer_root, guest_port);
-    defer state.deinit();
-
-    if (std.fs.path.dirname(control_uds)) |parent| {
-        try std.fs.cwd().makePath(parent);
-    }
-
-    std.fs.deleteFileAbsolute(control_uds) catch |err| switch (err) {
-        error.FileNotFound => {},
-        else => return err,
-    };
-
-    var address = try std.net.Address.initUnix(control_uds);
-    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
-    errdefer std.posix.close(fd);
-    try std.posix.bind(fd, &address.any, address.getOsSockLen());
-    try std.posix.listen(fd, 16);
+fn serve(control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
+    const allocator = std.heap.page_allocator;
+    const runtime = try allocator.create(Runtime);
+    defer allocator.destroy(runtime);
+    try runtime.init(control_uds, jailer_root, guest_port);
+    defer runtime.deinit();
 
     std.log.info("homestead-smelter host agent listening on {s}", .{control_uds});
-
-    const discovery_thread = try std.Thread.spawn(.{}, discoveryLoop, .{&state});
-    discovery_thread.detach();
-
-    while (true) {
-        const conn_fd = std.posix.accept(fd, null, null, std.posix.SOCK.CLOEXEC) catch |err| {
-            std.log.err("control accept failed: {s}", .{@errorName(err)});
-            continue;
-        };
-        const stream = std.net.Stream{ .handle = conn_fd };
-        handleControlConnection(allocator, stream, &state) catch |err| {
-            std.log.err("control connection failed: {s}", .{@errorName(err)});
-        };
-    }
-}
-
-fn handleControlConnection(allocator: std.mem.Allocator, stream: std.net.Stream, state: *AgentState) !void {
-    defer stream.close();
-
-    var request_buf: [hostp.request_size]u8 = undefined;
-    try readExact(stream, request_buf[0..]);
-    const request = try hostp.decodeRequest(&request_buf);
-
-    switch (request.kind) {
-        .snapshot => {
-            const packets = try state.snapshotPackets(allocator);
-            defer allocator.free(packets);
-            for (packets) |packet| {
-                try writePacket(stream, packet);
-            }
-        },
-    }
+    try runtime.run();
 }
 
 fn snapshot(allocator: std.mem.Allocator, control_uds: []const u8) !void {
-    const packets = try requestSnapshotPackets(allocator, control_uds);
+    const packets = try requestAttachPackets(allocator, control_uds);
     defer allocator.free(packets);
 
     for (packets) |packet| {
@@ -582,7 +884,7 @@ fn snapshot(allocator: std.mem.Allocator, control_uds: []const u8) !void {
 
 fn checkLive(allocator: std.mem.Allocator, control_uds: []const u8, job_id_text: []const u8) !void {
     const job_id = try hs.parseUuid(job_id_text);
-    const packets = try requestSnapshotPackets(allocator, control_uds);
+    const packets = try requestAttachPackets(allocator, control_uds);
     defer allocator.free(packets);
 
     var saw_hello = false;
@@ -602,55 +904,36 @@ fn checkLive(allocator: std.mem.Allocator, control_uds: []const u8, job_id_text:
     try std.fs.File.stdout().writeAll(line);
 }
 
-fn openControlStream(control_uds: []const u8) !std.net.Stream {
+fn openControlFd(control_uds: []const u8) !std.posix.fd_t {
     var address = try std.net.Address.initUnix(control_uds);
-    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
+    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.SEQPACKET | std.posix.SOCK.CLOEXEC, 0);
     errdefer std.posix.close(fd);
     try std.posix.connect(fd, &address.any, address.getOsSockLen());
-    return .{ .handle = fd };
+    return fd;
 }
 
-fn requestSnapshotPackets(allocator: std.mem.Allocator, control_uds: []const u8) ![]hostp.Packet {
-    var stream = try openControlStream(control_uds);
-    defer stream.close();
+fn requestAttachPackets(allocator: std.mem.Allocator, control_uds: []const u8) ![]hostp.Packet {
+    const fd = try openControlFd(control_uds);
+    defer std.posix.close(fd);
 
-    try writeRequest(stream, .snapshot);
+    const request = hostp.encodeRequest(.{ .kind = .attach });
+    const sent = try std.posix.send(fd, request[0..], 0);
+    if (sent != hostp.request_size) return error.ShortWrite;
 
     var packets = try std.ArrayList(hostp.Packet).initCapacity(allocator, 8);
     defer packets.deinit(allocator);
 
     while (true) {
-        const packet = try readPacket(stream);
+        var buf: [hostp.packet_size]u8 = undefined;
+        const n = try std.posix.recv(fd, buf[0..], 0);
+        if (n == 0) return error.EndOfStream;
+        if (n != hostp.packet_size) return error.ShortRead;
+        const packet = try hostp.decodePacket(&buf);
         try packets.append(allocator, packet);
         if (packet.header.kind == .snapshot_end) break;
     }
 
     return packets.toOwnedSlice(allocator);
-}
-
-fn writeRequest(stream: std.net.Stream, kind: hostp.RequestKind) !void {
-    const request = hostp.encodeRequest(.{ .kind = kind });
-    try stream.writeAll(request[0..]);
-}
-
-fn writePacket(stream: std.net.Stream, packet: hostp.Packet) !void {
-    const encoded = hostp.encodePacket(packet);
-    try stream.writeAll(encoded[0..]);
-}
-
-fn readPacket(stream: std.net.Stream) !hostp.Packet {
-    var buf: [hostp.packet_size]u8 = undefined;
-    try readExact(stream, buf[0..]);
-    return try hostp.decodePacket(&buf);
-}
-
-fn readExact(stream: std.net.Stream, buf: []u8) !void {
-    var read_count: usize = 0;
-    while (read_count < buf.len) {
-        const n = try stream.read(buf[read_count..]);
-        if (n == 0) return error.EndOfStream;
-        read_count += n;
-    }
 }
 
 fn writeSnapshotLine(packet: hostp.Packet) !void {
@@ -675,6 +958,23 @@ fn writeSnapshotLine(packet: hostp.Packet) !void {
             );
             try std.fs.File.stdout().writeAll(line);
         },
+        .disconnect => {
+            const job_id = hs.formatUuid(packet.header.job_id);
+            const reason = try hostp.decodeDisconnectPayload(&packet.payload);
+            const line = try std.fmt.bufPrint(&line_buf,
+                "DISCONNECT job_id={s} stream_generation={d} host_seq={d} reason={s}\n",
+                .{ job_id[0..], packet.header.stream_generation, packet.header.host_seq, hostc.disconnectReasonText(reason) },
+            );
+            try std.fs.File.stdout().writeAll(line);
+        },
+        .vm_gone => {
+            const job_id = hs.formatUuid(packet.header.job_id);
+            const line = try std.fmt.bufPrint(&line_buf,
+                "VM_GONE job_id={s} host_seq={d}\n",
+                .{ job_id[0..], packet.header.host_seq },
+            );
+            try std.fs.File.stdout().writeAll(line);
+        },
         .snapshot_end => {
             const line = try std.fmt.bufPrint(&line_buf, "SNAPSHOT_END host_seq={d}\n", .{packet.header.host_seq});
             try std.fs.File.stdout().writeAll(line);
@@ -682,189 +982,213 @@ fn writeSnapshotLine(packet: hostp.Packet) !void {
     }
 }
 
-fn discoveryLoop(state: *AgentState) void {
-    while (true) {
-        discoverOnce(state) catch |err| {
-            std.log.err("discovery loop failed: {s}", .{@errorName(err)});
-        };
-        std.Thread.sleep(discovery_period_ms * std.time.ns_per_ms);
+fn bindListener(control_uds: []const u8) !std.posix.fd_t {
+    if (std.fs.path.dirname(control_uds)) |parent| {
+        try std.fs.cwd().makePath(parent);
     }
-}
-
-fn discoverOnce(state: *AgentState) !void {
-    var arena_state = std.heap.ArenaAllocator.init(state.allocator);
-    defer arena_state.deinit();
-    const allocator = arena_state.allocator();
-
-    const completed_workers = try state.takeCompletedWorkers(allocator);
-    for (completed_workers) |worker| {
-        worker.join();
-    }
-
-    var found = try std.ArrayList(DiscoveredVM).initCapacity(allocator, 4);
-
-    var root_dir = std.fs.openDirAbsolute(state.jailer_root, .{ .iterate = true }) catch |err| switch (err) {
-        error.FileNotFound => {
-            _ = try state.commitDiscovery(allocator, found.items);
-            return;
-        },
+    std.fs.deleteFileAbsolute(control_uds) catch |err| switch (err) {
+        error.FileNotFound => {},
         else => return err,
     };
-    defer root_dir.close();
 
-    var it = root_dir.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind != .directory) continue;
-
-        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const uds_path = try std.fmt.bufPrint(
-            path_buf[0..],
-            "{s}/{s}/root/run/forge-control.sock",
-            .{ state.jailer_root, entry.name },
-        );
-
-        std.fs.accessAbsolute(uds_path, .{}) catch |err| switch (err) {
-            error.FileNotFound => continue,
-            else => return err,
-        };
-
-        try found.append(allocator, .{
-            .job_id = try allocator.dupe(u8, entry.name),
-            .uds_path = try allocator.dupe(u8, uds_path),
-        });
-    }
-
-    const spawns = try state.commitDiscovery(allocator, found.items);
-    for (spawns) |job_id| {
-        try spawnWorker(state, job_id);
-    }
+    var address = try std.net.Address.initUnix(control_uds);
+    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.SEQPACKET | std.posix.SOCK.CLOEXEC | std.posix.SOCK.NONBLOCK, 0);
+    errdefer std.posix.close(fd);
+    try std.posix.bind(fd, &address.any, address.getOsSockLen());
+    try std.posix.listen(fd, 16);
+    return fd;
 }
 
-fn spawnWorker(state: *AgentState, job_id: []const u8) !void {
-    if (state.takeCompletedWorker(job_id)) |worker| {
-        worker.join();
-    }
-
-    const worker = std.Thread.spawn(.{}, vmWorkerMain, .{ state, job_id }) catch |err| {
-        state.markWorkerStopped(job_id);
-        return err;
+fn armPeriodicTimer(fd: std.posix.fd_t, interval_ns: u64) !void {
+    var spec = linux.itimerspec{
+        .it_interval = nsToLinuxTimespec(interval_ns),
+        .it_value = nsToLinuxTimespec(interval_ns),
     };
-    state.recordWorkerThread(job_id, worker);
+    try std.posix.timerfd_settime(fd, .{}, &spec, null);
 }
 
-fn vmWorkerMain(state: *AgentState, job_id: []const u8) void {
-    defer state.markWorkerStopped(job_id);
+fn nsToLinuxTimespec(ns: u64) linux.timespec {
+    return .{
+        .sec = @intCast(ns / std.time.ns_per_s),
+        .nsec = @intCast(ns % std.time.ns_per_s),
+    };
+}
 
-    var uds_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    while (true) {
-        const uds_path = state.copyCurrentTarget(job_id, uds_path_buf[0..]) catch |err| {
-            const generation = state.beginStream(job_id) orelse return;
-            state.recordDisconnect(job_id, generation, @errorName(err));
-            std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
-            continue;
-        } orelse return;
+const ConnectState = enum {
+    connected,
+    pending,
+};
 
-        const generation = state.beginStream(job_id) orelse return;
-        const stream = connectGuestBridge(uds_path, state.guest_port) catch |err| {
-            state.recordDisconnect(job_id, generation, @errorName(err));
-            std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
-            continue;
-        };
-
-        state.recordConnected(job_id, generation);
-        readTelemetryStream(state, job_id, generation, stream) catch |err| {
-            state.recordDisconnect(job_id, generation, @errorName(err));
-            std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
-            continue;
-        };
-
-        state.recordDisconnect(job_id, generation, "bridge_closed");
-        std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
+fn connectNonblocking(fd: std.posix.fd_t, address: *const std.net.Address) !ConnectState {
+    const rc = std.posix.system.connect(fd, &address.any, address.getOsSockLen());
+    switch (std.posix.errno(rc)) {
+        .SUCCESS => return .connected,
+        .INPROGRESS, .ALREADY => return .pending,
+        .AGAIN => return error.SystemResources,
+        .ACCES => return error.AccessDenied,
+        .PERM => return error.PermissionDenied,
+        .ADDRINUSE => return error.AddressInUse,
+        .ADDRNOTAVAIL => return error.AddressNotAvailable,
+        .AFNOSUPPORT => return error.AddressFamilyNotSupported,
+        .CONNREFUSED => return error.ConnectionRefused,
+        .HOSTUNREACH, .NETUNREACH => return error.NetworkUnreachable,
+        .NOENT => return error.FileNotFound,
+        else => |err| return std.posix.unexpectedErrno(err),
     }
 }
 
-fn connectGuestBridge(uds_path: []const u8, guest_port: u32) !std.net.Stream {
-    var address = try std.net.Address.initUnix(uds_path);
-    const stream = blk: {
-        const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
-        errdefer std.posix.close(fd);
-        try std.posix.connect(fd, &address.any, address.getOsSockLen());
-        break :blk std.net.Stream{ .handle = fd };
+fn bridgeInterest(stage: BridgeStage) u32 {
+    return switch (stage) {
+        .connecting => linux.EPOLL.OUT | linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP,
+        .handshaking => linux.EPOLL.IN | linux.EPOLL.OUT | linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP,
+        .streaming => linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP,
     };
-    errdefer stream.close();
-
-    var cmd_buf: [32]u8 = undefined;
-    const cmd = try std.fmt.bufPrint(cmd_buf[0..], "CONNECT {d}\n", .{guest_port});
-    try stream.writeAll(cmd);
-
-    var ack_buf: [max_bridge_line_bytes]u8 = undefined;
-    const ack = try hs.readLineInto(stream, ack_buf[0..]);
-    if (!std.mem.startsWith(u8, ack, "OK ")) return error.InvalidBridgeReply;
-
-    return stream;
 }
 
-fn readTelemetryStream(state: *AgentState, job_id: []const u8, generation: u32, stream: std.net.Stream) !void {
-    defer stream.close();
+fn consumerInterest(consumer: *const Consumer) u32 {
+    var events: u32 = linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP | linux.EPOLL.RDHUP;
+    if (consumer.wants_write) events |= linux.EPOLL.OUT;
+    return events;
+}
 
-    var buf: [hs.frame_size]u8 = undefined;
+fn nextSnapshotPacket(consumer: *Consumer) !?hostp.Packet {
     while (true) {
-        try readExact(stream, buf[0..]);
-        switch (try hs.decodeFrameKind(&buf)) {
-            .hello => state.recordHello(job_id, generation, try hs.decodeHelloFrame(&buf)),
-            .sample => state.recordSample(job_id, generation, try hs.decodeSampleFrame(&buf)),
+        if (consumer.snapshot_index >= consumer.snapshot_count) {
+            if (consumer.snapshot_phase == .end) return null;
+            consumer.snapshot_phase = .end;
+            return hostp.Packet{
+                .header = .{
+                    .kind = .snapshot_end,
+                    .host_seq = consumer.snapshot_next_event_seq,
+                    .observed_wall_ns = try hs.realtimeNowNs(),
+                },
+                .payload = hostp.zeroPayload(),
+            };
+        }
+
+        const vm = consumer.snapshot_vms[consumer.snapshot_index];
+        switch (consumer.snapshot_phase) {
+            .hello => {
+                consumer.snapshot_phase = .sample;
+                if (vm.hello) |hello| {
+                    return .{
+                        .header = .{
+                            .kind = .hello,
+                            .host_seq = vm.hello_event_seq,
+                            .observed_wall_ns = try hs.realtimeNowNs(),
+                            .job_id = try hs.parseUuid(vm.job_id.slice()),
+                            .stream_generation = vm.stream_generation,
+                            .flags = hostp.packet_flag_snapshot,
+                        },
+                        .payload = hs.encodeHelloFrame(hello),
+                    };
+                }
+            },
+            .sample => {
+                consumer.snapshot_phase = .disconnect;
+                if (vm.sample) |sample| {
+                    return .{
+                        .header = .{
+                            .kind = .sample,
+                            .host_seq = vm.sample_event_seq,
+                            .observed_wall_ns = try hs.realtimeNowNs(),
+                            .job_id = try hs.parseUuid(vm.job_id.slice()),
+                            .stream_generation = vm.stream_generation,
+                            .flags = hostp.packet_flag_snapshot,
+                        },
+                        .payload = hs.encodeSampleFrame(sample),
+                    };
+                }
+            },
+            .disconnect => {
+                consumer.snapshot_phase = .hello;
+                consumer.snapshot_index += 1;
+                if (vm.disconnect_reason) |reason| {
+                    return .{
+                        .header = .{
+                            .kind = .disconnect,
+                            .host_seq = vm.disconnect_event_seq,
+                            .observed_wall_ns = try hs.realtimeNowNs(),
+                            .job_id = try hs.parseUuid(vm.job_id.slice()),
+                            .stream_generation = vm.stream_generation,
+                            .flags = hostp.packet_flag_snapshot,
+                        },
+                        .payload = hostp.encodeDisconnectPayload(reason),
+                    };
+                }
+            },
+            .end => unreachable,
         }
     }
 }
 
-fn benchmarkReaderMain(args: BenchmarkReaderArgs) void {
-    args.state.recordConnected(args.job_id, args.generation);
-    readTelemetryStream(args.state, args.job_id, args.generation, args.stream) catch |err| switch (err) {
-        error.EndOfStream => {},
-        else => std.debug.panic("benchmark reader failed: {s}", .{@errorName(err)}),
-    };
-}
-
-fn benchmarkWriterMain(args: BenchmarkWriterArgs) void {
-    defer args.stream.close();
-
-    const hello = hs.encodeHelloFrame(.{
-        .seq = 0,
-        .mono_ns = 1,
-        .wall_ns = 2,
-        .boot_id = benchmarkBootId(args.stream_index),
-        .mem_total_kb = 516096,
-    });
-    args.stream.writeAll(hello[0..]) catch |err| {
-        std.debug.panic("benchmark writer failed to write hello: {s}", .{@errorName(err)});
-    };
-
-    for (0..args.samples_per_stream) |index| {
-        const sample = hs.encodeSampleFrame(.{
-            .seq = @intCast(index + 1),
-            .mono_ns = @as(u64, index + 1),
-            .wall_ns = @as(u64, index + 2),
-            .cpu_user_ticks = @intCast(index + 1),
-            .cpu_system_ticks = @intCast(index + 2),
-            .cpu_idle_ticks = @intCast(index + 3),
-            .mem_available_kb = 401232,
-            .io_read_bytes = @intCast(index * 2),
-            .io_write_bytes = @intCast(index * 3),
-            .net_rx_bytes = @intCast(index * 4),
-            .net_tx_bytes = @intCast(index * 5),
-        });
-        args.stream.writeAll(sample[0..]) catch |err| {
-            std.debug.panic("benchmark writer failed to write sample: {s}", .{@errorName(err)});
-        };
+fn packetFromEvent(record: HostCore.EventRecord) !?hostp.Packet {
+    switch (record.event) {
+        .hello => |payload| {
+            return .{
+                .header = .{
+                    .kind = .hello,
+                    .host_seq = record.seq,
+                    .observed_wall_ns = try hs.realtimeNowNs(),
+                    .job_id = try hs.parseUuid(payload.job_id.slice()),
+                    .stream_generation = payload.stream_generation,
+                },
+                .payload = hs.encodeHelloFrame(payload.frame),
+            };
+        },
+        .sample => |payload| {
+            return .{
+                .header = .{
+                    .kind = .sample,
+                    .host_seq = record.seq,
+                    .observed_wall_ns = try hs.realtimeNowNs(),
+                    .job_id = try hs.parseUuid(payload.job_id.slice()),
+                    .stream_generation = payload.stream_generation,
+                },
+                .payload = hs.encodeSampleFrame(payload.frame),
+            };
+        },
+        .stream_disconnected => |payload| {
+            return .{
+                .header = .{
+                    .kind = .disconnect,
+                    .host_seq = record.seq,
+                    .observed_wall_ns = try hs.realtimeNowNs(),
+                    .job_id = try hs.parseUuid(payload.job_id.slice()),
+                    .stream_generation = payload.stream_generation,
+                },
+                .payload = hostp.encodeDisconnectPayload(payload.reason),
+            };
+        },
+        .vm_gone => |payload| {
+            return .{
+                .header = .{
+                    .kind = .vm_gone,
+                    .host_seq = record.seq,
+                    .observed_wall_ns = try hs.realtimeNowNs(),
+                    .job_id = try hs.parseUuid(payload.job_id.slice()),
+                },
+                .payload = hostp.zeroPayload(),
+            };
+        },
+        else => return null,
     }
 }
 
-fn benchmarkSocketPair() ![2]std.posix.fd_t {
-    var fds: [2]std.posix.fd_t = undefined;
-    switch (std.posix.errno(std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0, &fds))) {
-        .SUCCESS => return fds,
-        else => |err| return std.posix.unexpectedErrno(err),
-    }
+const DecodedToken = struct {
+    kind: FdKind,
+    index: usize,
+};
+
+fn fdToken(kind: FdKind, index: usize) u64 {
+    return (@as(u64, @intFromEnum(kind)) << 32) | @as(u64, @intCast(index));
+}
+
+fn decodeToken(value: u64) DecodedToken {
+    return .{
+        .kind = @enumFromInt(@as(u8, @truncate(value >> 32))),
+        .index = @intCast(value & 0xffff_ffff),
+    };
 }
 
 fn benchmarkBootId(stream_index: usize) [16]u8 {
@@ -897,425 +1221,269 @@ fn acceptAndCloseBridgeServerMain(socket_path: []const u8) !void {
     const conn_fd = try std.posix.accept(fd, null, null, std.posix.SOCK.CLOEXEC);
     defer std.posix.close(conn_fd);
 
-    const stream = std.net.Stream{ .handle = conn_fd };
-    var cmd_buf: [max_bridge_line_bytes]u8 = undefined;
-    _ = try hs.readLineInto(stream, cmd_buf[0..]);
+    var cmd_buf: [bridge_ack_buffer_bytes]u8 = undefined;
+    _ = try std.posix.read(conn_fd, cmd_buf[0..]);
 }
 
-// These tests cover the current thread-per-VM daemon in host.zig. The
-// deterministic single-owner aggregator semantics live in host_core.zig and are
-// the source of truth for the next cutover.
-test "commitDiscovery registers first discovery and spawns workers" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
+fn connectGuestBridge(uds_path: []const u8, guest_port: u32) !std.net.Stream {
+    var address = try std.net.Address.initUnix(uds_path);
+    const stream = blk: {
+        const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
+        errdefer std.posix.close(fd);
+        try std.posix.connect(fd, &address.any, address.getOsSockLen());
+        break :blk std.net.Stream{ .handle = fd };
     };
+    errdefer stream.close();
 
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
+    var cmd_buf: [max_bridge_cmd_bytes]u8 = undefined;
+    const cmd = try std.fmt.bufPrint(cmd_buf[0..], "CONNECT {d}\n", .{guest_port});
+    try stream.writeAll(cmd);
 
-    try std.testing.expectEqual(@as(usize, 2), spawns.len);
-    try std.testing.expectEqualStrings("job-a", spawns[0]);
-    try std.testing.expectEqualStrings("job-b", spawns[1]);
-
-    const vm_a = state.vms.get("job-a").?;
-    const vm_b = state.vms.get("job-b").?;
-    try std.testing.expect(vm_a.present);
-    try std.testing.expect(vm_a.worker_active);
-    try std.testing.expect(vm_b.present);
-    try std.testing.expect(vm_b.worker_active);
+    var ack_buf: [bridge_ack_buffer_bytes]u8 = undefined;
+    const ack = try hs.readLineInto(stream, ack_buf[0..]);
+    if (!std.mem.startsWith(u8, ack, "OK ")) return error.InvalidBridgeReply;
+    return stream;
 }
 
-test "commitDiscovery is idempotent for already active workers" {
+test "connectGuestBridge closes cleanly on handshake error path" {
     const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns_first);
-    const spawns_second = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
-}
-
-test "commitDiscovery marks missing VMs absent without respawn" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const first = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
-    };
-    const second = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &first);
-    defer allocator.free(spawns_first);
-    const spawns_second = try state.commitDiscovery(allocator, &second);
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
-    try std.testing.expect(state.vms.get("job-a").?.present);
-    try std.testing.expect(!state.vms.get("job-b").?.present);
-    try std.testing.expect(state.vms.get("job-b").?.worker_active);
-}
-
-test "commitDiscovery respawns a VM after worker stops" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns_first);
-    state.markWorkerStopped("job-a");
-
-    const spawns_second = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 1), spawns_second.len);
-    try std.testing.expectEqualStrings("job-a", spawns_second[0]);
-    try std.testing.expect(state.vms.get("job-a").?.worker_active);
-}
-
-test "commitDiscovery updates uds_path without leaking previous path" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const first = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/old/path.sock" },
-    };
-    const second = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/new/path.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &first);
-    defer allocator.free(spawns_first);
-    const spawns_second = try state.commitDiscovery(allocator, &second);
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
-    try std.testing.expectEqualStrings("/new/path.sock", state.vms.get("job-a").?.uds_path);
-}
-
-test "commitDiscovery handles empty discovery on populated state" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
-        .{ .job_id = "job-c", .uds_path = "/run/job-c.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns_first);
-    const spawns_second = try state.commitDiscovery(allocator, &.{});
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
-    try std.testing.expect(!state.vms.get("job-a").?.present);
-    try std.testing.expect(!state.vms.get("job-b").?.present);
-    try std.testing.expect(!state.vms.get("job-c").?.present);
-}
-
-test "recordHello clears stale disconnect error" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
-
-    const generation = state.beginStream("job-a").?;
-    state.recordDisconnect("job-a", generation, "ConnectionRefused");
-    state.recordHello("job-a", generation, .{
-        .seq = 0,
-        .mono_ns = 11,
-        .wall_ns = 22,
-        .boot_id = [_]u8{0} ** 16,
-        .mem_total_kb = 1024,
-    });
-
-    const vm = state.vms.get("job-a").?;
-    try std.testing.expect(vm.connected);
-    try std.testing.expect(vm.hello != null);
-    try std.testing.expect(vm.lastError() == null);
-}
-
-test "connectGuestBridge returns EndOfStream without double-closing fd" {
-    const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const dir_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const dir_path = try std.testing.tmpDir(.{}).dir.realpathAlloc(allocator, ".");
     defer allocator.free(dir_path);
+
     const socket_path = try std.fs.path.join(allocator, &.{ dir_path, "bridge.sock" });
     defer allocator.free(socket_path);
 
-    const server = try std.Thread.spawn(.{}, acceptAndCloseBridgeServer, .{socket_path});
-    defer server.join();
+    const server_thread = try std.Thread.spawn(.{}, acceptAndCloseBridgeServer, .{socket_path});
+    defer server_thread.join();
 
-    var ready_tries: u32 = 0;
-    while (ready_tries < 100) : (ready_tries += 1) {
-        std.fs.accessAbsolute(socket_path, .{}) catch |err| switch (err) {
-            error.FileNotFound => {
-                std.Thread.sleep(10 * std.time.ns_per_ms);
-                continue;
-            },
-            else => return err,
+    var tries: usize = 0;
+    while (tries < 50) : (tries += 1) {
+        std.fs.accessAbsolute(socket_path, .{}) catch {
+            std.Thread.sleep(10 * std.time.ns_per_ms);
+            continue;
         };
         break;
     }
 
-    try std.testing.expectError(error.InvalidBridgeReply, connectGuestBridge(socket_path, hs.default_guest_port));
+    const err = connectGuestBridge(socket_path, hs.default_guest_port);
+    try std.testing.expectError(error.InvalidBridgeReply, err);
 }
 
-fn noopWorkerThread() void {}
-
-test "takeCompletedWorkers joins completed worker handles" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+test "snapshot packet builder emits disconnect state and terminator" {
+    const job_id = "00000000-0000-0000-0000-000000000001";
+    var consumer = Consumer{
+        .used = true,
+        .stage = .snapshot,
+        .snapshot_count = 1,
+        .snapshot_next_event_seq = 23,
     };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
+    consumer.snapshot_vms[0] = .{
+        .job_id = try hostc.JobId.init(job_id),
+        .uds_path = try hostc.UdsPath.init("/run/job.sock"),
+        .present = true,
+        .connected = false,
+        .stream_generation = 7,
+        .disconnect_reason = .bridge_closed,
+        .hello_event_seq = 11,
+        .sample_event_seq = 12,
+        .disconnect_event_seq = 13,
+        .hello = .{
+            .seq = 0,
+            .mono_ns = 1,
+            .wall_ns = 2,
+            .boot_id = try hs.parseUuid("5691d566-f1a6-4342-8604-205e83785b21"),
+            .mem_total_kb = 516096,
+        },
+        .sample = .{
+            .seq = 9,
+            .mono_ns = 3,
+            .wall_ns = 4,
+            .mem_available_kb = 401232,
+        },
+    };
 
-    const worker = try std.Thread.spawn(.{}, noopWorkerThread, .{});
-    state.recordWorkerThread("job-a", worker);
-    state.markWorkerStopped("job-a");
+    const hello = (try nextSnapshotPacket(&consumer)).?;
+    try std.testing.expectEqual(hostp.PacketKind.hello, hello.header.kind);
+    try std.testing.expectEqual(@as(u64, 11), hello.header.host_seq);
 
-    const completed = try state.takeCompletedWorkers(allocator);
-    defer allocator.free(completed);
+    const sample = (try nextSnapshotPacket(&consumer)).?;
+    try std.testing.expectEqual(hostp.PacketKind.sample, sample.header.kind);
+    try std.testing.expectEqual(@as(u64, 12), sample.header.host_seq);
 
-    try std.testing.expectEqual(@as(usize, 1), completed.len);
-    completed[0].join();
+    const disconnect = (try nextSnapshotPacket(&consumer)).?;
+    try std.testing.expectEqual(hostp.PacketKind.disconnect, disconnect.header.kind);
+    try std.testing.expectEqual(hostc.DisconnectReason.bridge_closed, try hostp.decodeDisconnectPayload(&disconnect.payload));
 
-    const vm = state.vms.get("job-a").?;
-    try std.testing.expect(!vm.worker_active);
-    try std.testing.expect(!vm.worker_done);
-    try std.testing.expect(vm.worker_thread == null);
+    const end = (try nextSnapshotPacket(&consumer)).?;
+    try std.testing.expectEqual(hostp.PacketKind.snapshot_end, end.header.kind);
+    try std.testing.expectEqual(@as(u64, 23), end.header.host_seq);
 }
 
-test "commitDiscovery clears stale disconnect error on path change" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const first = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const second = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a-new.sock" },
-    };
-
-    const spawns_first = try state.commitDiscovery(allocator, &first);
-    defer allocator.free(spawns_first);
-    const generation = state.beginStream("job-a").?;
-    state.recordDisconnect("job-a", generation, "ConnectionRefused");
-
-    const spawns_second = try state.commitDiscovery(allocator, &second);
-    defer allocator.free(spawns_second);
-
-    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
-    const vm = state.vms.get("job-a").?;
-    try std.testing.expectEqualStrings("/run/job-a-new.sock", vm.uds_path);
-    try std.testing.expect(vm.lastError() == null);
-}
-
-test "recordSample preserves hello metadata" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
-
-    const generation = state.beginStream("job-a").?;
-    state.recordHello("job-a", generation, .{
-        .seq = 0,
-        .mono_ns = 11,
-        .wall_ns = 22,
-        .boot_id = [_]u8{0} ** 16,
-        .mem_total_kb = 1024,
-    });
-    state.recordSample("job-a", generation, .{
-        .seq = 2,
-        .mono_ns = 33,
-        .wall_ns = 44,
-        .mem_available_kb = 512,
-    });
-
-    const vm = state.vms.get("job-a").?;
-    try std.testing.expect(vm.hello != null);
-    try std.testing.expect(vm.sample != null);
-    try std.testing.expectEqual(@as(u32, 0), vm.hello.?.seq);
-    try std.testing.expectEqual(@as(u32, 2), vm.sample.?.seq);
-}
-
-test "recordDisconnect truncates long error messages" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
-
-    const long_error = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-    state.recordDisconnect("job-a", state.beginStream("job-a").?, long_error);
-
-    const vm = state.vms.get("job-a").?;
-    try std.testing.expect(!vm.connected);
-    try std.testing.expectEqual(@as(usize, vm.last_error.len), vm.last_error_len);
-}
-
-test "record operations ignore unknown jobs" {
-    const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
-
-    state.recordConnected("missing", 1);
-    state.recordHello("missing", 1, .{
-        .seq = 0,
-        .mono_ns = 1,
-        .wall_ns = 1,
-        .boot_id = [_]u8{0} ** 16,
-        .mem_total_kb = 1,
-    });
-    state.recordSample("missing", 1, .{
+test "packetFromEvent ignores non-consumer lifecycle noise" {
+    const packet = try packetFromEvent(.{
         .seq = 1,
-        .mono_ns = 1,
-        .wall_ns = 1,
+        .event = .{
+            .stream_started = .{
+                .job_id = try hostc.JobId.init("00000000-0000-0000-0000-000000000001"),
+                .stream_generation = 1,
+            },
+        },
     });
-    state.recordDisconnect("missing", 1, "boom");
-    state.markWorkerStopped("missing");
-
-    try std.testing.expectEqual(@as(usize, 0), state.vms.count());
+    try std.testing.expect(packet == null);
 }
 
-test "copyCurrentTarget copies the live uds_path into caller storage" {
+test "runtime init and empty timer tick are stable" {
     const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
+    var dir = std.testing.tmpDir(.{});
+    defer dir.cleanup();
 
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
+    const root_path = try dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
 
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const target = (try state.copyCurrentTarget("job-a", buf[0..])).?;
-    try std.testing.expectEqualStrings("/run/job-a.sock", target);
+    const control_uds = try std.fs.path.join(allocator, &.{ root_path, "smelter.sock" });
+    defer allocator.free(control_uds);
+    const jailer_root = try std.fs.path.join(allocator, &.{ root_path, "jailer" });
+    defer allocator.free(jailer_root);
+    try std.fs.cwd().makePath(jailer_root);
+
+    const runtime = try allocator.create(Runtime);
+    defer allocator.destroy(runtime);
+    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    defer runtime.deinit();
+
+    std.Thread.sleep(timer_tick_ns + (10 * std.time.ns_per_ms));
+    _ = try runtime.handleTimer();
 }
 
-test "copyCurrentTarget returns null for missing or absent jobs" {
+test "runtime serves empty snapshot over seqpacket attach" {
     const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
+    var dir = std.testing.tmpDir(.{});
+    defer dir.cleanup();
 
-    var buf: [std.fs.max_path_bytes]u8 = undefined;
-    try std.testing.expect((try state.copyCurrentTarget("missing", buf[0..])) == null);
+    const root_path = try dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
 
-    const found = [_]DiscoveredVM{
-        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
-    const empty_spawns = try state.commitDiscovery(allocator, &.{});
-    defer allocator.free(empty_spawns);
+    const control_uds = try std.fs.path.join(allocator, &.{ root_path, "smelter.sock" });
+    defer allocator.free(control_uds);
+    const jailer_root = try std.fs.path.join(allocator, &.{ root_path, "jailer" });
+    defer allocator.free(jailer_root);
+    try std.fs.cwd().makePath(jailer_root);
 
-    try std.testing.expect((try state.copyCurrentTarget("job-a", buf[0..])) == null);
+    const runtime = try allocator.create(Runtime);
+    defer allocator.destroy(runtime);
+    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    defer runtime.deinit();
+
+    const client_fd = try openControlFd(control_uds);
+    defer std.posix.close(client_fd);
+
+    try runtime.acceptConsumers();
+
+    const request = hostp.encodeRequest(.{ .kind = .attach });
+    try std.testing.expectEqual(@as(usize, hostp.request_size), try std.posix.send(client_fd, request[0..], 0));
+
+    runtime.handleConsumerEvent(0, linux.EPOLL.IN);
+
+    var buf: [hostp.packet_size]u8 = undefined;
+    const n = try std.posix.recv(client_fd, buf[0..], 0);
+    try std.testing.expectEqual(@as(usize, hostp.packet_size), n);
+
+    const packet = try hostp.decodePacket(&buf);
+    try std.testing.expectEqual(hostp.PacketKind.snapshot_end, packet.header.kind);
+    try std.testing.expectEqual(@as(u64, 1), packet.header.host_seq);
 }
 
-test "snapshotPackets emits snapshot end for empty state" {
+test "runtime epoll attach path is stable" {
     const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
+    var dir = std.testing.tmpDir(.{});
+    defer dir.cleanup();
 
-    const packets = try state.snapshotPackets(allocator);
-    defer allocator.free(packets);
+    const root_path = try dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
 
-    try std.testing.expectEqual(@as(usize, 1), packets.len);
-    try std.testing.expectEqual(hostp.PacketKind.snapshot_end, packets[0].header.kind);
-    try std.testing.expectEqual(@as(u64, 1), packets[0].header.host_seq);
+    const control_uds = try std.fs.path.join(allocator, &.{ root_path, "smelter.sock" });
+    defer allocator.free(control_uds);
+    const jailer_root = try std.fs.path.join(allocator, &.{ root_path, "jailer" });
+    defer allocator.free(jailer_root);
+    try std.fs.cwd().makePath(jailer_root);
+
+    const runtime = try std.heap.page_allocator.create(Runtime);
+    defer std.heap.page_allocator.destroy(runtime);
+    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    defer runtime.deinit();
+
+    const client_fd = try openControlFd(control_uds);
+    defer std.posix.close(client_fd);
+
+    var events: [8]linux.epoll_event = undefined;
+    var count = std.posix.epoll_wait(runtime.epoll_fd, events[0..], 1000);
+    try std.testing.expectEqual(@as(usize, 1), count);
+    try std.testing.expectEqual(FdKind.listener, decodeToken(events[0].data.u64).kind);
+    try runtime.acceptConsumers();
+
+    const request = hostp.encodeRequest(.{ .kind = .attach });
+    try std.testing.expectEqual(@as(usize, hostp.request_size), try std.posix.send(client_fd, request[0..], 0));
+
+    count = std.posix.epoll_wait(runtime.epoll_fd, events[0..], 1000);
+    try std.testing.expect(count >= 1);
+    for (events[0..count]) |event| {
+        const decoded = decodeToken(event.data.u64);
+        if (decoded.kind != .consumer) continue;
+        runtime.handleConsumerEvent(decoded.index, event.events);
+    }
+
+    var buf: [hostp.packet_size]u8 = undefined;
+    const n = try std.posix.recv(client_fd, buf[0..], 0);
+    try std.testing.expectEqual(@as(usize, hostp.packet_size), n);
+
+    const packet = try hostp.decodePacket(&buf);
+    try std.testing.expectEqual(hostp.PacketKind.snapshot_end, packet.header.kind);
 }
 
-test "snapshotPackets round-trips a connected VM" {
+test "runtime handles consumer disconnect after snapshot" {
     const allocator = std.testing.allocator;
-    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
-    defer state.deinit();
+    var dir = std.testing.tmpDir(.{});
+    defer dir.cleanup();
 
-    const job_id = "00000000-0000-0000-0000-00000000000a";
-    const found = [_]DiscoveredVM{
-        .{ .job_id = job_id, .uds_path = "/run/job-a.sock" },
-    };
-    const spawns = try state.commitDiscovery(allocator, &found);
-    defer allocator.free(spawns);
+    const root_path = try dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
 
-    const generation = state.beginStream(job_id).?;
-    state.recordConnected(job_id, generation);
-    state.recordHello(job_id, generation, .{
-        .seq = 0,
-        .flags = 7,
-        .mono_ns = 11,
-        .wall_ns = 22,
-        .boot_id = try hs.parseUuid("5691d566-f1a6-4342-8604-205e83785b21"),
-        .mem_total_kb = 2048,
-    });
-    state.recordSample(job_id, generation, .{
-        .seq = 2,
-        .flags = hs.flag_net_missing,
-        .mono_ns = 33,
-        .wall_ns = 44,
-        .mem_available_kb = 1024,
-    });
+    const control_uds = try std.fs.path.join(allocator, &.{ root_path, "smelter.sock" });
+    defer allocator.free(control_uds);
+    const jailer_root = try std.fs.path.join(allocator, &.{ root_path, "jailer" });
+    defer allocator.free(jailer_root);
+    try std.fs.cwd().makePath(jailer_root);
 
-    const packets = try state.snapshotPackets(allocator);
-    defer allocator.free(packets);
+    const runtime = try allocator.create(Runtime);
+    defer allocator.destroy(runtime);
+    try runtime.init(control_uds, jailer_root, hs.default_guest_port);
+    defer runtime.deinit();
 
-    try std.testing.expectEqual(@as(usize, 3), packets.len);
-    try std.testing.expectEqual(hostp.PacketKind.hello, packets[0].header.kind);
-    try std.testing.expectEqual(hostp.PacketKind.sample, packets[1].header.kind);
-    try std.testing.expectEqual(hostp.PacketKind.snapshot_end, packets[2].header.kind);
-    try std.testing.expectEqual(@as(u32, generation), packets[0].header.stream_generation);
-    try std.testing.expectEqual(@as(u32, generation), packets[1].header.stream_generation);
-    try std.testing.expectEqual(hostp.packet_flag_snapshot, packets[0].header.flags);
-    try std.testing.expectEqual(hostp.packet_flag_snapshot, packets[1].header.flags);
+    const client_fd = try openControlFd(control_uds);
 
-    const hello = try hs.decodeHelloFrame(&packets[0].payload);
-    const sample = try hs.decodeSampleFrame(&packets[1].payload);
-    try std.testing.expectEqual(@as(u64, 2048), hello.mem_total_kb);
-    try std.testing.expectEqualDeep(try hs.parseUuid(job_id), packets[0].header.job_id);
-    try std.testing.expectEqualDeep(try hs.parseUuid("5691d566-f1a6-4342-8604-205e83785b21"), hello.boot_id);
-    try std.testing.expectEqual(@as(u64, 1024), sample.mem_available_kb);
+    var events: [8]linux.epoll_event = undefined;
+    var count = std.posix.epoll_wait(runtime.epoll_fd, events[0..], 1000);
+    try std.testing.expectEqual(@as(usize, 1), count);
+    try runtime.acceptConsumers();
+
+    const request = hostp.encodeRequest(.{ .kind = .attach });
+    try std.testing.expectEqual(@as(usize, hostp.request_size), try std.posix.send(client_fd, request[0..], 0));
+
+    count = std.posix.epoll_wait(runtime.epoll_fd, events[0..], 1000);
+    for (events[0..count]) |event| {
+        const decoded = decodeToken(event.data.u64);
+        if (decoded.kind != .consumer) continue;
+        runtime.handleConsumerEvent(decoded.index, event.events);
+    }
+
+    var buf: [hostp.packet_size]u8 = undefined;
+    _ = try std.posix.recv(client_fd, buf[0..], 0);
+    std.posix.close(client_fd);
+
+    count = std.posix.epoll_wait(runtime.epoll_fd, events[0..], 1000);
+    for (events[0..count]) |event| {
+        const decoded = decodeToken(event.data.u64);
+        if (decoded.kind != .consumer) continue;
+        runtime.handleConsumerEvent(decoded.index, event.events);
+    }
 }

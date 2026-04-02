@@ -11,15 +11,17 @@ Current protocol shape:
 - `homestead-smelter-guest` listens on a dedicated vsock port inside the guest
 - each guest connection sends one fixed-size `hello` frame, then one fixed-size `sample` frame at a fixed `60Hz`
 - `homestead-smelter-host serve` runs as a long-lived daemon on the bare-metal worker
-- `homestead-smelter-host snapshot` verifies the daemon and decodes the current binary host view into human-readable lines for debugging
+- `homestead-smelter-host snapshot` attaches to the host socket, decodes the current binary host view into human-readable lines, and exits at `SNAPSHOT_END`
 - `homestead-smelter-host check-live` succeeds when a given job UUID has both hello and sample telemetry
 - the host daemon owns the long-lived guest streams and is the collection point for VM telemetry
 
-## Bridge Startup Policy
+## Host Runtime
 
+- `host_core.zig` is the only fleet-state implementation
+- `host.zig` is a thin Linux runtime shell around `host_core`
+- one `epoll` loop owns the control listener, timerfd, guest bridge sockets, and attached consumers
 - discovery treats `root/run/forge-control.sock` as VM presence, not bridge readiness
-- each discovered VM gets one long-lived worker thread owned by the discovery loop; completed workers are joined explicitly before respawn
-- ordinary connect and stream errors are recorded in `last_error` and retried with a fixed `200ms` backoff until the VM disappears or a connection succeeds
+- ordinary connect and stream errors are recorded as typed disconnect reasons and retried with a fixed `200ms` backoff until the VM disappears or a connection succeeds
 
 The existing Go control plane stays in place on port `10789`. `homestead-smelter` uses port `10790`.
 
@@ -67,7 +69,7 @@ SAMPLE job_id=<job-id> stream_generation=1 host_seq=18 guest_seq=94 mem_availabl
 SNAPSHOT_END host_seq=19
 ```
 
-The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. Another local process can attach to the host control socket and consume fixed-size binary packets without talking to guest bridges directly.
+The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. The host control socket is `AF_UNIX` `SOCK_SEQPACKET`; another local process can attach once, receive a snapshot replay, then keep tailing the same binary stream without talking to guest bridges directly.
 
 Check whether a specific VM is live:
 

@@ -1,9 +1,8 @@
 const std = @import("std");
-const hs = @import("root.zig");
+const hs = @import("homestead_smelter");
 
 pub const max_job_id_bytes: usize = 63;
 pub const max_uds_path_bytes: usize = 191;
-pub const max_error_bytes: usize = 96;
 
 pub const DisconnectReason = enum(u8) {
     bridge_closed,
@@ -19,13 +18,13 @@ fn InlineBytes(comptime max_len: usize) type {
 
         const Self = @This();
 
-        fn init(value: []const u8) !Self {
+        pub fn init(value: []const u8) !Self {
             var out = Self{};
             try out.set(value);
             return out;
         }
 
-        fn set(self: *Self, value: []const u8) !void {
+        pub fn set(self: *Self, value: []const u8) !void {
             if (value.len > max_len) return error.ValueTooLong;
             self.clear();
             self.len = @intCast(value.len);
@@ -37,11 +36,11 @@ fn InlineBytes(comptime max_len: usize) type {
             @memset(self.bytes[0..], 0);
         }
 
-        fn slice(self: *const Self) []const u8 {
+        pub fn slice(self: *const Self) []const u8 {
             return self.bytes[0..self.len];
         }
 
-        fn eql(self: *const Self, value: []const u8) bool {
+        pub fn eql(self: *const Self, value: []const u8) bool {
             return std.mem.eql(u8, self.slice(), value);
         }
 
@@ -53,9 +52,8 @@ fn InlineBytes(comptime max_len: usize) type {
 
 pub const JobId = InlineBytes(max_job_id_bytes);
 pub const UdsPath = InlineBytes(max_uds_path_bytes);
-pub const ErrorText = InlineBytes(max_error_bytes);
 
-fn disconnectReasonText(reason: DisconnectReason) []const u8 {
+pub fn disconnectReasonText(reason: DisconnectReason) []const u8 {
     return switch (reason) {
         .bridge_closed => "bridge_closed",
         .connect_failed => "connect_failed",
@@ -143,14 +141,12 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             present: bool = false,
             connected: bool = false,
             stream_generation: u32 = 0,
-            last_error: ErrorText = .{},
+            disconnect_reason: ?DisconnectReason = null,
+            hello_event_seq: u64 = 0,
+            sample_event_seq: u64 = 0,
+            disconnect_event_seq: u64 = 0,
             hello: ?hs.HelloFrame = null,
             sample: ?hs.SampleFrame = null,
-
-            pub fn lastError(self: *const SnapshotVm) ?[]const u8 {
-                if (self.last_error.empty()) return null;
-                return self.last_error.slice();
-            }
         };
 
         pub const Snapshot = struct {
@@ -167,7 +163,10 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             stream_generation: u32 = 0,
             job_id: JobId = .{},
             uds_path: UdsPath = .{},
-            last_error: ErrorText = .{},
+            disconnect_reason: ?DisconnectReason = null,
+            hello_event_seq: u64 = 0,
+            sample_event_seq: u64 = 0,
+            disconnect_event_seq: u64 = 0,
             hello: ?hs.HelloFrame = null,
             sample: ?hs.SampleFrame = null,
 
@@ -178,7 +177,10 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
                     .present = self.present,
                     .connected = self.connected,
                     .stream_generation = self.stream_generation,
-                    .last_error = self.last_error,
+                    .disconnect_reason = self.disconnect_reason,
+                    .hello_event_seq = self.hello_event_seq,
+                    .sample_event_seq = self.sample_event_seq,
+                    .disconnect_event_seq = self.disconnect_event_seq,
                     .hello = self.hello,
                     .sample = self.sample,
                 };
@@ -195,7 +197,7 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
                 return self.start_seq;
             }
 
-            fn append(self: *Ring, event: Event) void {
+            fn append(self: *Ring, event: Event) u64 {
                 const seq = self.next_seq;
                 const slot = @as(usize, @intCast((seq - 1) % ring_capacity));
                 self.items[slot] = .{
@@ -209,6 +211,7 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
                 } else {
                     self.start_seq += 1;
                 }
+                return seq;
             }
 
             fn cursor(self: *const Ring, start: CursorStart) Cursor {
@@ -270,8 +273,11 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
                     slot.connected = false;
                     slot.hello = null;
                     slot.sample = null;
-                    slot.last_error.clear();
-                    self.ring.append(.{
+                    slot.disconnect_reason = null;
+                    slot.hello_event_seq = 0;
+                    slot.sample_event_seq = 0;
+                    slot.disconnect_event_seq = 0;
+                    _ = self.ring.append(.{
                         .vm_discovered = .{
                             .job_id = slot.job_id,
                             .uds_path = slot.uds_path,
@@ -288,11 +294,14 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             try slot.uds_path.set(uds_path);
             slot.connected = false;
             slot.stream_generation = 0;
-            slot.last_error.clear();
+            slot.disconnect_reason = null;
+            slot.hello_event_seq = 0;
+            slot.sample_event_seq = 0;
+            slot.disconnect_event_seq = 0;
             slot.hello = null;
             slot.sample = null;
 
-            self.ring.append(.{
+            _ = self.ring.append(.{
                 .vm_discovered = .{
                     .job_id = slot.job_id,
                     .uds_path = slot.uds_path,
@@ -304,9 +313,10 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             const slot = self.findPresentSlot(job_id) orelse return error.VmNotPresent;
             try self.bumpGeneration(slot);
             slot.connected = false;
-            slot.last_error.clear();
+            slot.disconnect_reason = null;
+            slot.disconnect_event_seq = 0;
 
-            self.ring.append(.{
+            _ = self.ring.append(.{
                 .stream_started = .{
                     .job_id = slot.job_id,
                     .stream_generation = slot.stream_generation,
@@ -322,8 +332,9 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
         pub fn recordConnected(self: *Self, token: StreamToken) bool {
             const slot = self.currentSlot(token) orelse return false;
             slot.connected = true;
-            slot.last_error.clear();
-            self.ring.append(.{
+            slot.disconnect_reason = null;
+            slot.disconnect_event_seq = 0;
+            _ = self.ring.append(.{
                 .stream_connected = .{
                     .job_id = slot.job_id,
                     .stream_generation = token.stream_generation,
@@ -336,8 +347,9 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             const slot = self.currentSlot(token) orelse return false;
             slot.connected = true;
             slot.hello = frame;
-            slot.last_error.clear();
-            self.ring.append(.{
+            slot.disconnect_reason = null;
+            slot.disconnect_event_seq = 0;
+            slot.hello_event_seq = self.ring.append(.{
                 .hello = .{
                     .job_id = slot.job_id,
                     .stream_generation = token.stream_generation,
@@ -351,8 +363,9 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             const slot = self.currentSlot(token) orelse return false;
             slot.connected = true;
             slot.sample = frame;
-            slot.last_error.clear();
-            self.ring.append(.{
+            slot.disconnect_reason = null;
+            slot.disconnect_event_seq = 0;
+            slot.sample_event_seq = self.ring.append(.{
                 .sample = .{
                     .job_id = slot.job_id,
                     .stream_generation = token.stream_generation,
@@ -365,8 +378,8 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
         pub fn recordDisconnect(self: *Self, token: StreamToken, reason: DisconnectReason) bool {
             const slot = self.currentSlot(token) orelse return false;
             slot.connected = false;
-            slot.last_error.set(disconnectReasonText(reason)) catch unreachable;
-            self.ring.append(.{
+            slot.disconnect_reason = reason;
+            slot.disconnect_event_seq = self.ring.append(.{
                 .stream_disconnected = .{
                     .job_id = slot.job_id,
                     .stream_generation = token.stream_generation,
@@ -383,8 +396,8 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
             try self.bumpGeneration(slot);
             slot.present = false;
             slot.connected = false;
-            slot.last_error.set(disconnectReasonText(.vm_gone)) catch unreachable;
-            self.ring.append(.{
+            slot.disconnect_reason = .vm_gone;
+            slot.disconnect_event_seq = self.ring.append(.{
                 .vm_gone = .{
                     .job_id = slot.job_id,
                 },
@@ -421,6 +434,11 @@ pub fn HostCoreType(comptime max_vms: usize, comptime ring_capacity: usize) type
         fn allocSlot(self: *Self) !usize {
             for (&self.slots, 0..) |*slot, index| {
                 if (slot.used) continue;
+                return index;
+            }
+            for (&self.slots, 0..) |*slot, index| {
+                if (slot.present) continue;
+                slot.* = .{};
                 return index;
             }
             return error.FleetFull;
@@ -543,7 +561,7 @@ const ModelVm = struct {
     connected: bool = false,
     stream_generation: u32 = 0,
     path_variant: u1 = 0,
-    last_error: ?DisconnectReason = null,
+    disconnect_reason: ?DisconnectReason = null,
     hello: ?hs.HelloFrame = null,
     sample: ?hs.SampleFrame = null,
 };
@@ -571,7 +589,7 @@ const Model = struct {
         vm.present = true;
         vm.connected = false;
         vm.path_variant = path_variant;
-        vm.last_error = null;
+        vm.disconnect_reason = null;
         vm.hello = null;
         vm.sample = null;
     }
@@ -582,7 +600,7 @@ const Model = struct {
         if (vm.stream_generation == std.math.maxInt(u32)) return error.StreamGenerationOverflow;
         vm.stream_generation += 1;
         vm.connected = false;
-        vm.last_error = null;
+        vm.disconnect_reason = null;
         return vm.stream_generation;
     }
 
@@ -591,7 +609,7 @@ const Model = struct {
         if (!vm.present) return false;
         if (vm.stream_generation != generation) return false;
         vm.connected = true;
-        vm.last_error = null;
+        vm.disconnect_reason = null;
         return true;
     }
 
@@ -600,7 +618,7 @@ const Model = struct {
         if (!vm.present) return false;
         if (vm.stream_generation != generation) return false;
         vm.connected = true;
-        vm.last_error = null;
+        vm.disconnect_reason = null;
         vm.hello = frame;
         return true;
     }
@@ -610,7 +628,7 @@ const Model = struct {
         if (!vm.present) return false;
         if (vm.stream_generation != generation) return false;
         vm.connected = true;
-        vm.last_error = null;
+        vm.disconnect_reason = null;
         vm.sample = frame;
         return true;
     }
@@ -620,7 +638,7 @@ const Model = struct {
         if (!vm.present) return false;
         if (vm.stream_generation != generation) return false;
         vm.connected = false;
-        vm.last_error = reason;
+        vm.disconnect_reason = reason;
         return true;
     }
 
@@ -631,7 +649,7 @@ const Model = struct {
         vm.stream_generation += 1;
         vm.present = false;
         vm.connected = false;
-        vm.last_error = .vm_gone;
+        vm.disconnect_reason = .vm_gone;
     }
 
     fn initFromSnapshot(snapshot: TestCore.Snapshot) Model {
@@ -644,7 +662,7 @@ const Model = struct {
             state.connected = vm.connected;
             state.stream_generation = vm.stream_generation;
             state.path_variant = parsePathVariant(job, vm.uds_path.slice());
-            state.last_error = if (vm.lastError()) |value| parseDisconnectReason(value) else null;
+            state.disconnect_reason = vm.disconnect_reason;
             state.hello = vm.hello;
             state.sample = vm.sample;
         }
@@ -703,10 +721,10 @@ const Model = struct {
                 try std.testing.expectEqualStrings(testPath(job, expected.path_variant), vm.uds_path.slice());
                 try std.testing.expectEqualDeep(expected.hello, vm.hello);
                 try std.testing.expectEqualDeep(expected.sample, vm.sample);
-                if (expected.last_error) |reason| {
-                    try std.testing.expectEqualStrings(disconnectReasonText(reason), vm.lastError().?);
+                if (expected.disconnect_reason) |reason| {
+                    try std.testing.expectEqual(reason, vm.disconnect_reason.?);
                 } else {
-                    try std.testing.expect(vm.lastError() == null);
+                    try std.testing.expect(vm.disconnect_reason == null);
                 }
             } else {
                 try std.testing.expect(actual == null);
@@ -942,6 +960,20 @@ test "snapshot plus drained events reconstructs live state" {
     }
 
     try mirror.expectMatchesCore(&core);
+}
+
+test "core reuses non-present slots for new jobs" {
+    const SmallCore = HostCoreType(1, 16);
+
+    var core = SmallCore{};
+    try core.discover("job-a", "/run/job-a.sock");
+    try core.markGone("job-a");
+    try core.discover("job-b", "/run/job-b.sock");
+
+    var snapshot_buf: [1]SmallCore.SnapshotVm = undefined;
+    const snapshot = core.snapshot(snapshot_buf[0..]);
+    try std.testing.expectEqual(@as(usize, 1), snapshot.vms.len);
+    try std.testing.expect(snapshot.vms[0].job_id.eql("job-b"));
 }
 
 test "seeded swarm simulation preserves fleet state invariants" {
