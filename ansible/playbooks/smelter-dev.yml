@@ -20,9 +20,9 @@
     smelter_dev_snapshot: "{{ smelter_dev_zvol }}@ready"
     smelter_dev_mnt: /tmp/smelter-dev-mnt
     smelter_guest_upload: /tmp/homestead-smelter-guest
-    smelter_vm_sleep: 15
+    smelter_vm_sleep: 8
     boot_timeout: 20
-    probe_settle_seconds: 3
+    probe_settle_seconds: 2
   tasks:
 
     # ── Preflight ──────────────────────────────────────────────────────────
