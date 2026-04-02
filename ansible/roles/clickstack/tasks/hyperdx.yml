@@ -85,6 +85,7 @@
   become: false
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
+    NX_DAEMON: "false"
 
 - name: Build API (tsc)
   ansible.builtin.command: npx tsc

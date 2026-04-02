@@ -8,17 +8,14 @@ receivers:
   filelog/caddy:
     include: [/var/log/caddy/access.log]
     storage: file_storage
+    resource:
+      service.name: caddy
     operators:
       - type: json_parser
         timestamp:
           parse_from: attributes.ts
-          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
-        severity:
-          parse_from: attributes.status
-          mapping:
-            info: [200, 201, 204, 301, 302, 304]
-            warn: [400, 401, 403, 404, 405, 429]
-            error: [500, 502, 503, 504]
+          layout_type: epoch
+          layout: s.ns
       - type: move
         from: attributes.request.remote_ip
         to: attributes.client_ip
@@ -44,9 +41,38 @@ receivers:
         field: attributes.request
       - type: remove
         field: attributes.resp_headers
-      - type: add
-        field: resource.service.name
-        value: caddy
+      # Severity from HTTP status code (range-based)
+      - type: router
+        routes:
+          - expr: 'attributes.http_status >= 500'
+            output: set_severity_error
+          - expr: 'attributes.http_status >= 400'
+            output: set_severity_warn
+        default: set_severity_info
+      - id: set_severity_error
+        type: add
+        field: attributes._severity
+        value: ERROR
+        output: parse_severity
+      - id: set_severity_warn
+        type: add
+        field: attributes._severity
+        value: WARN
+        output: parse_severity
+      - id: set_severity_info
+        type: add
+        field: attributes._severity
+        value: INFO
+        output: parse_severity
+      - id: parse_severity
+        type: severity_parser
+        parse_from: attributes._severity
+      - type: remove
+        field: attributes._severity
+  journald/caddy:
+    units: [caddy]
+    resource:
+      service.name: caddy
   hostmetrics:
     collection_interval: 1s
     scrapers:
@@ -59,6 +85,11 @@ receivers:
       cpu: {}
       memory: {}
       load: {}
+      filesystem:
+        include_fs_types:
+          match_type: strict
+          fs_types: [ext4, zfs]
+      disk: {}
 
 processors:
   batch:
@@ -83,7 +114,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy]
+      receivers: [otlp, filelog/caddy, journald/caddy]
       processors: [batch]
       exporters: [clickhouse]
     traces:
