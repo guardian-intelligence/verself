@@ -276,24 +276,23 @@ cause undefined behavior on the host.
 
 ### Threading
 
-The host agent is multi-threaded: one thread per VM connection, plus a main thread for discovery and
-control socket handling. Shared state is protected by `std.Thread.Mutex`.
+The host agent is a single-threaded Linux reactor. One `epoll` loop owns discovery, the `timerfd`,
+all guest bridge sockets, all attached consumer sockets, and all mutation of fleet state through
+`host_core`.
 
-- **Minimize critical section scope.** Hold the mutex only while reading or writing shared state.
-  Never perform I/O, allocation, or blocking operations while holding the lock. Copy what you need
-  out of the shared state, release the lock, then operate on the copy.
+- **One owner for fleet state.** Guest discovery, connect, decode, disconnect, snapshot replay, and
+  live tailing all feed the same `host_core` instance. Do not add a second mutable VM registry.
 
-- **Single mutex, flat hierarchy.** The host agent uses one mutex for `AgentState`. Do not introduce
-  a second mutex unless the contention is measured and proven. Multiple mutexes invite deadlock.
-  If a second lock becomes necessary, document the lock ordering.
+- **No shared-state synchronization in the hot path.** The reactor is the synchronization strategy.
+  If you introduce a helper thread for tests or tooling, it MUST communicate by socket, file, or
+  one-way handoff. It MUST NOT mutate `host_core` directly.
 
-- **Threads must not outlive their data.** When a VM is removed from discovery, the reader thread
-  for that VM must be signaled to exit and joined before the VM's state is freed. Use
-  `std.Thread.join()` — do not detach threads.
+- **Treat OS resources and protocol state separately.** The runtime shell owns file descriptors,
+  buffers, and readiness registration. `host_core` owns job identity, stream generation, hello/sample
+  state, disconnect reasons, and the event ring.
 
-- **No atomics unless the mutex is a measured bottleneck.** `std.Thread.Mutex` is correct and
-  auditable. Lock-free code is subtle and difficult to assert against. The host agent's thread count
-  (one per VM, typically <100) does not warrant lock-free data structures.
+- **Backpressure closes lagging consumers.** If a consumer falls behind event-ring retention, close
+  its socket and force a fresh attach. Do not block guest ingestion to preserve one slow listener.
 
 - **Always motivate, always say why**. Never forget to say why. Because if you explain the rationale
   for a decision, it not only increases the hearer's understanding, and makes them more likely to
@@ -746,22 +745,15 @@ fn serializeSnapshot(allocator: std.mem.Allocator, snapshot: Snapshot) ![]u8 {
 
 **File:** [`docs/examples/04_protocol_types.zig`](examples/04_protocol_types.zig)
 
-**DON'T:** Dispatch on raw strings with chained `if`/`else`. Adding a new command requires updating
-the dispatch, the argument parser, and the handler — with no compiler assistance if you forget one.
+**DON'T:** Dispatch on ad hoc protocol values with chained `if`/`else`. Adding a new request or
+packet kind then requires updating multiple decode and dispatch sites, with no compiler assistance if
+you forget one.
 
 ```zig
-fn handleControlConnection(stream: Stream) !void {
-    const line = try readLine(stream);
-    if (std.mem.eql(u8, line, "PING")) {
-        try writeLine(stream, "PONG homestead-smelter-host");
-        return;
-    }
-    if (std.mem.eql(u8, line, "SNAPSHOT")) {
-        try writeSnapshotResponse(stream);
-        return;
-    }
-    // Forgot to handle "STATUS"? No compiler error. Silent bug.
-    try writeLine(stream, "ERR unsupported command");
+fn decodeRequestKind(kind: u16) !RequestKind {
+    if (kind == 1) return .attach;
+    if (kind == 2) return .status;
+    return error.InvalidRequestKind;
 }
 ```
 
@@ -770,31 +762,26 @@ you add a variant, every `switch` must handle it or the build fails.
 
 ```zig
 const Command = union(enum) {
-    ping,
-    snapshot,
-    probe: ProbeParams,
-
-    const ProbeParams = struct { job_id: []const u8 };
-
-    fn parse(line: []const u8) ?Command {
-        if (std.mem.eql(u8, line, "PING")) return .ping;
-        if (std.mem.eql(u8, line, "SNAPSHOT")) return .snapshot;
-        if (std.mem.startsWith(u8, line, "PROBE ")) {
-            const job_id = line["PROBE ".len..];
-            if (job_id.len == 0) return null;
-            return .{ .probe = .{ .job_id = job_id } };
-        }
-        return null;
-    }
+    attach,
+    status,
 };
 
-// Exhaustive switch — add a variant, get a compile error here.
-fn dispatch(command: Command) Response {
-    return switch (command) {
-        .ping => .pong,
-        .snapshot => .{ .snapshot = "{\"schema_version\":1}" },
-        .probe => |params| .{ .probe_result = .{ .job_id = params.job_id, ... } },
-    };
+const Packet = union(enum) {
+    hello: HelloPayload,
+    sample: SamplePayload,
+    disconnect: DisconnectReason,
+    vm_gone,
+    snapshot_end: SnapshotEnd,
+};
+
+fn route(packet: Packet) void {
+    switch (packet) {
+        .hello => |payload| useHello(payload),
+        .sample => |payload| useSample(payload),
+        .disconnect => |reason| useDisconnect(reason),
+        .vm_gone => markGone(),
+        .snapshot_end => |end| setResumeSeq(end.host_seq),
+    }
 }
 ```
 

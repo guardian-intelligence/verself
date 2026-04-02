@@ -237,7 +237,8 @@ Compression codecs per column type:
    - Snapshots as `smelter-dev-zvol@ready`
    - Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
    - Waits for the VM's vsock bridge socket to appear
-   - Probes the smelter guest on vsock port 10790 using `homestead-smelter-host probe-guest`
+   - Waits for `homestead-smelter-host check-live` to observe the VM
+   - Prints `homestead-smelter-host snapshot` output for the live VM
    - Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
 
 ### Prerequisites
@@ -259,17 +260,13 @@ Expected output on success:
 
 ```
 → building homestead-smelter guest (zig)
-→ uploading guest binary and dev script
-→ running smelter dev test on <host>
-→ preparing dev golden zvol
+→ uploading guest binary
+→ running smelter dev playbook
 → dev golden ready: benchpool/smelter-dev-zvol@ready
-→ booting Firecracker VM
-→ probing smelter guest via vsock port 10790
-
-hello from homestead-smelter guest on port 10790: received "smelter-dev probe 1743523200"
-
-PASS: smelter guest responded
-→ tearing down
+HELLO job_id=<job-id> stream_generation=3 host_seq=8 guest_seq=0 boot_id=<boot-id> mem_total_kb=2039556
+SAMPLE job_id=<job-id> stream_generation=3 host_seq=100 guest_seq=92 mem_available_kb=1935768 cpu_user_ticks=0
+SNAPSHOT_END host_seq=101
+PASS: host agent observed live guest telemetry
 ```
 
 ### How it compares to other targets

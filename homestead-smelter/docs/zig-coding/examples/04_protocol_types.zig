@@ -1,8 +1,8 @@
 // 04_protocol_types.zig
 //
-// DONT: Dispatch on raw strings with chained if/else.
-// Adding a new command requires updating the dispatch, the argument parser,
-// and the handler — with no compiler assistance if you forget one.
+// DONT: Dispatch on ad hoc protocol values with chained if/else.
+// Adding a new request or packet kind then requires updating multiple
+// decode and dispatch sites, with no compiler assistance if you forget one.
 //
 // DO: Model the wire protocol as a tagged union.
 // The compiler enforces exhaustive switches — if you add a variant,
@@ -11,101 +11,74 @@
 const std = @import("std");
 
 // ---------------------------------------------------------------------------
-// DONT: String-based dispatch
+// DONT: Numeric dispatch without typed protocol values
 // ---------------------------------------------------------------------------
 //
-//   fn handleControlConnection(stream: Stream) !void {
-//       const line = try readLine(stream);
-//
-//       if (std.mem.eql(u8, line, "PING")) {
-//           try writeLine(stream, "PONG homestead-smelter-host");
-//           return;
-//       }
-//       if (std.mem.eql(u8, line, "SNAPSHOT")) {
-//           try writeSnapshotResponse(stream);
-//           return;
-//       }
-//       // Forgot to handle "STATUS"? No compiler error. Silent bug.
-//
-//       try writeLine(stream, "ERR unsupported command");
+//   fn decodeRequestKind(kind: u16) !RequestKind {
+//       if (kind == 1) return .attach;
+//       if (kind == 2) return .status;
+//       // Forgot to handle "tail"? No compiler error. Silent bug.
+//       return error.InvalidRequestKind;
 //   }
 
 // ---------------------------------------------------------------------------
-// DO: Tagged union for the command set
+// DO: Tagged union for protocol records
 // ---------------------------------------------------------------------------
 
-/// Every command the host agent can receive over its control socket.
+/// Every request the host agent can receive over its control socket.
 /// Adding a variant here forces every switch to handle it — compile error
 /// if you forget.
-const Command = union(enum) {
-    ping,
-    snapshot,
-    probe: ProbeParams,
+const Request = union(enum) {
+    attach,
+    status,
 
-    const ProbeParams = struct {
-        job_id: []const u8,
-    };
-
-    /// Parse a raw line into a typed command.
-    /// Returns null for unrecognized commands — the caller decides
-    /// whether to send an error or drop the connection.
-    fn parse(line: []const u8) ?Command {
-        if (std.mem.eql(u8, line, "PING")) return .ping;
-        if (std.mem.eql(u8, line, "SNAPSHOT")) return .snapshot;
-
-        if (std.mem.startsWith(u8, line, "PROBE ")) {
-            const job_id = line["PROBE ".len..];
-            if (job_id.len == 0) return null;
-            return .{ .probe = .{ .job_id = job_id } };
-        }
-
-        return null;
-    }
-};
-
-/// Every response the host agent can send.
-const Response = union(enum) {
-    pong,
-    snapshot: []const u8,
-    probe_result: ProbeResult,
-    err: []const u8,
-
-    const ProbeResult = struct {
-        job_id: []const u8,
-        status: Status,
-        message: []const u8,
-    };
-
-    const Status = enum { ok, @"error" };
-
-    /// Format a response for the wire.
-    /// Exhaustive switch: the compiler guarantees every variant is handled.
-    fn format(self: Response, buf: []u8) ![]u8 {
-        return switch (self) {
-            .pong => try std.fmt.bufPrint(buf, "PONG homestead-smelter-host", .{}),
-            .snapshot => |payload| try std.fmt.bufPrint(buf, "{s}", .{payload}),
-            .probe_result => |result| try std.fmt.bufPrint(
-                buf,
-                "PROBE {s} {s}: {s}",
-                .{ result.job_id, @tagName(result.status), result.message },
-            ),
-            .err => |message| try std.fmt.bufPrint(buf, "ERR {s}", .{message}),
+    fn decode(kind: u16) !Request {
+        return switch (kind) {
+            1 => .attach,
+            2 => .status,
+            else => error.InvalidRequestKind,
         };
     }
 };
 
-/// Handle a control connection. The exhaustive switch means every command
-/// variant must be handled — if you add Command.status, this function
-/// will not compile until you add the handler.
-fn dispatch(command: Command) Response {
-    return switch (command) {
-        .ping => .pong,
-        .snapshot => .{ .snapshot = "{\"schema_version\":1,\"vms\":[]}" },
-        .probe => |params| .{ .probe_result = .{
-            .job_id = params.job_id,
-            .status = .ok,
-            .message = "guest alive",
-        } },
+const HelloPayload = struct {
+    job_id: []const u8,
+};
+
+const SamplePayload = struct {
+    mem_available_kb: u64,
+};
+
+const SnapshotEnd = struct {
+    host_seq: u64,
+};
+
+const DisconnectReason = enum {
+    bridge_closed,
+    connect_failed,
+    decode_failed,
+    vm_gone,
+};
+
+/// Every packet the host agent can emit on the attach socket.
+const Packet = union(enum) {
+    hello: HelloPayload,
+    sample: SamplePayload,
+    disconnect: DisconnectReason,
+    vm_gone,
+    snapshot_end: SnapshotEnd,
+};
+
+/// Route a typed packet. The exhaustive switch means every packet kind must be
+/// handled — if you add Packet.tail_gap, this function will not compile until
+/// you add the handler.
+fn route(packet: Packet) []const u8 {
+    return switch (packet) {
+        .hello => "hello",
+        .sample => "sample",
+        .disconnect => "disconnect",
+        .vm_gone => "vm_gone",
+        .snapshot_end => "snapshot_end",
     };
 }
 
@@ -113,64 +86,26 @@ fn dispatch(command: Command) Response {
 // Tests
 // ---------------------------------------------------------------------------
 
-test "parse — recognizes PING" {
-    const cmd = Command.parse("PING");
-    try std.testing.expect(cmd != null);
-    try std.testing.expect(cmd.? == .ping);
+test "decode — recognizes attach" {
+    const request = try Request.decode(1);
+    try std.testing.expect(request == .attach);
 }
 
-test "parse — recognizes SNAPSHOT" {
-    const cmd = Command.parse("SNAPSHOT");
-    try std.testing.expect(cmd != null);
-    try std.testing.expect(cmd.? == .snapshot);
+test "decode — recognizes status" {
+    const request = try Request.decode(2);
+    try std.testing.expect(request == .status);
 }
 
-test "parse — parses PROBE with job ID" {
-    const cmd = Command.parse("PROBE job-abc-123");
-    try std.testing.expect(cmd != null);
-
-    switch (cmd.?) {
-        .probe => |params| {
-            try std.testing.expectEqualStrings("job-abc-123", params.job_id);
-        },
-        else => return error.TestUnexpectedResult,
-    }
+test "decode — rejects unknown request kinds" {
+    try std.testing.expectError(error.InvalidRequestKind, Request.decode(99));
 }
 
-test "parse — returns null for unknown commands" {
-    try std.testing.expect(Command.parse("UNKNOWN") == null);
-    try std.testing.expect(Command.parse("") == null);
+test "route — sample packet is exhaustively handled" {
+    const kind = route(.{ .sample = .{ .mem_available_kb = 401232 } });
+    try std.testing.expectEqualStrings("sample", kind);
 }
 
-test "parse — rejects PROBE without job ID" {
-    try std.testing.expect(Command.parse("PROBE ") == null);
-}
-
-test "dispatch — ping returns pong" {
-    const response = dispatch(.ping);
-    try std.testing.expect(response == .pong);
-}
-
-test "dispatch — probe returns result with job ID" {
-    const response = dispatch(.{ .probe = .{ .job_id = "job-xyz" } });
-
-    switch (response) {
-        .probe_result => |result| {
-            try std.testing.expectEqualStrings("job-xyz", result.job_id);
-            try std.testing.expect(result.status == .ok);
-        },
-        else => return error.TestUnexpectedResult,
-    }
-}
-
-test "response format — pong" {
-    var buf: [256]u8 = undefined;
-    const line = try (Response{ .pong = {} }).format(&buf);
-    try std.testing.expectEqualStrings("PONG homestead-smelter-host", line);
-}
-
-test "response format — error" {
-    var buf: [256]u8 = undefined;
-    const line = try (Response{ .err = "unsupported command" }).format(&buf);
-    try std.testing.expectEqualStrings("ERR unsupported command", line);
+test "route — snapshot_end packet is exhaustively handled" {
+    const kind = route(.{ .snapshot_end = .{ .host_seq = 17 } });
+    try std.testing.expectEqualStrings("snapshot_end", kind);
 }

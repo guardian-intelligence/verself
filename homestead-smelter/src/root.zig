@@ -124,11 +124,6 @@ const sample_psi_cpu_offset: usize = payload_offset + 80;
 const sample_psi_mem_offset: usize = payload_offset + 82;
 const sample_psi_io_offset: usize = payload_offset + 84;
 
-pub fn writeLine(stream: std.net.Stream, line: []const u8) !void {
-    try stream.writeAll(line);
-    try stream.writeAll("\n");
-}
-
 pub fn readLineInto(stream: std.net.Stream, buf: []u8) ![]u8 {
     std.debug.assert(buf.len > 0);
 
@@ -147,10 +142,6 @@ pub fn readLineInto(stream: std.net.Stream, buf: []u8) ![]u8 {
         used += 1;
     }
     return buf[0..used];
-}
-
-pub fn parsePort(value: []const u8) !u32 {
-    return std.fmt.parseInt(u32, value, 10);
 }
 
 pub fn encodeHelloFrame(frame: HelloFrame) [frame_size]u8 {
@@ -363,10 +354,6 @@ comptime {
     std.debug.assert(sample_psi_io_offset + @sizeOf(u16) <= frame_size);
     std.debug.assert(default_guest_port >= 1024);
     std.debug.assert(guest_sample_rate_hz == 60);
-}
-
-test "parsePort parses decimal port strings" {
-    try std.testing.expectEqual(@as(u32, 10790), try parsePort("10790"));
 }
 
 test "uuid parses and formats canonically" {

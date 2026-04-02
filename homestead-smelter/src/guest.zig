@@ -7,13 +7,12 @@ const guest_net_iface = "eth0";
 const guest_block_dev = "vda";
 
 const usage =
-    \\Usage: homestead-smelter-guest [--port PORT]
+    \\Usage: homestead-smelter-guest
     \\
     \\Listen on an AF_VSOCK port inside a Firecracker guest and stream fixed-size
     \\diagnostic frames to the host over Firecracker's Unix-domain vsock bridge.
     \\
     \\Options:
-    \\  --port PORT   Guest vsock port (default: 10790)
     \\  --help        Show this help text
     \\
 ;
@@ -35,7 +34,7 @@ const VsockAddress = struct {
 };
 
 pub fn main() !void {
-    const port = parseArgs(std.heap.page_allocator) catch |err| switch (err) {
+    parseArgs(std.heap.page_allocator) catch |err| switch (err) {
         error.ShowUsage => {
             try std.fs.File.stdout().writeAll(usage);
             return;
@@ -47,13 +46,13 @@ pub fn main() !void {
     defer std.posix.close(fd);
 
     const address = VsockAddress{
-        .port = port,
+        .port = hs.default_guest_port,
         .cid = vmaddr_cid_any,
     };
     try address.bind(fd);
     try std.posix.listen(fd, 8);
 
-    std.log.info("homestead-smelter guest listening on vsock port {d}", .{port});
+    std.log.info("homestead-smelter guest listening on vsock port {d}", .{hs.default_guest_port});
 
     while (true) {
         const conn_fd = std.posix.accept(fd, null, null, std.posix.SOCK.CLOEXEC) catch |err| {
@@ -61,15 +60,14 @@ pub fn main() !void {
             continue;
         };
         const stream = std.net.Stream{ .handle = conn_fd };
-        handleConnection(stream, port) catch |err| {
+        handleConnection(stream) catch |err| {
             std.log.err("guest stream failed: {s}", .{@errorName(err)});
         };
     }
 }
 
-fn handleConnection(stream: std.net.Stream, port: u32) !void {
+fn handleConnection(stream: std.net.Stream) !void {
     defer stream.close();
-    std.debug.assert(port > 0);
 
     const hello = try collectHelloFrame();
     var hello_bytes = hs.encodeHelloFrame(hello);
@@ -86,11 +84,9 @@ fn handleConnection(stream: std.net.Stream, port: u32) !void {
     }
 }
 
-fn parseArgs(allocator: std.mem.Allocator) !u32 {
+fn parseArgs(allocator: std.mem.Allocator) !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
-
-    var port = hs.default_guest_port;
 
     var index: usize = 1;
     while (index < args.len) : (index += 1) {
@@ -98,18 +94,19 @@ fn parseArgs(allocator: std.mem.Allocator) !u32 {
         if (std.mem.eql(u8, arg, "--help")) {
             return error.ShowUsage;
         }
+        // The current guest boot shim still passes `--port 10790`. Accept only
+        // the fixed protocol port; there is no runtime port override anymore.
         if (std.mem.eql(u8, arg, "--port")) {
             index += 1;
             if (index >= args.len) return error.MissingOptionValue;
-            port = try hs.parsePort(args[index]);
+            const port = try std.fmt.parseInt(u32, args[index], 10);
+            if (port != hs.default_guest_port) return error.ShowUsage;
             continue;
         }
 
         std.log.err("unknown argument: {s}", .{arg});
         return error.ShowUsage;
     }
-
-    return port;
 }
 
 fn collectHelloFrame() !hs.HelloFrame {
