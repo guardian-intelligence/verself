@@ -55,10 +55,10 @@
 
 - name: Wait for ClickHouse
   ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --query 'SELECT 1'"
-  register: ch_ready
+  register: clickstack_clickhouse_ready
   retries: 10
   delay: 3
-  until: ch_ready.rc == 0
+  until: clickstack_clickhouse_ready.rc == 0
   changed_when: false
 
 - name: Upload migrations

@@ -10,7 +10,9 @@
 
 - name: Add MongoDB repository (jammy for noble compat)
   ansible.builtin.apt_repository:
-    repo: "deb [ signed-by=/usr/share/keyrings/mongodb-server-{{ mongodb_version }}.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/{{ mongodb_version }} multiverse"
+    repo: >-
+      deb [ signed-by=/usr/share/keyrings/mongodb-server-{{ mongodb_version }}.gpg ]
+      https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/{{ mongodb_version }} multiverse
     state: present
 
 - name: Install MongoDB

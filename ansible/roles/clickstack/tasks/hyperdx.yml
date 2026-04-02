@@ -32,9 +32,20 @@
     dest: "{{ hyperdx_install_dir }}"
     depth: 1
     version: "{{ hyperdx_version }}"
+    refspec: "+refs/heads/{{ hyperdx_branch }}:refs/remotes/origin/{{ hyperdx_branch }}"
     force: true
   become: false
-  register: hyperdx_clone
+  register: clickstack_hyperdx_clone
+
+- name: Record whether the HyperDX source changed
+  ansible.builtin.set_fact:
+    clickstack_hyperdx_source_changed: >-
+      {{
+        (clickstack_hyperdx_clone.before | default(''))
+        !=
+        (clickstack_hyperdx_clone.after | default(''))
+      }}
+  changed_when: false
 
 - name: Clean stale build artifacts on source change
   ansible.builtin.file:
@@ -44,7 +55,8 @@
     - "{{ hyperdx_install_dir }}/packages/api/build"
     - "{{ hyperdx_install_dir }}/packages/app/.next"
     - "{{ hyperdx_install_dir }}/packages/common-utils/dist"
-  when: hyperdx_clone.changed
+    - "{{ hyperdx_install_dir }}/.nx"
+  when: clickstack_hyperdx_source_changed
 
 - name: Install HyperDX dependencies
   ansible.builtin.command: yarn install
@@ -53,7 +65,8 @@
   become: false
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
-  when: hyperdx_clone.changed
+  when: clickstack_hyperdx_source_changed
+  changed_when: true
 
 - name: Install HyperDX dependencies (first run)
   ansible.builtin.command: yarn install
@@ -115,22 +128,32 @@
 - name: Check for existing session secret
   ansible.builtin.stat:
     path: /opt/clickstack/session_secret
-  register: secret_file
+  register: clickstack_session_secret_file
 
-- name: Generate session secret (first run only)
-  ansible.builtin.shell: openssl rand -hex 32 > /opt/clickstack/session_secret && chmod 600 /opt/clickstack/session_secret
-  when: not secret_file.stat.exists
+- name: Generate session secret value (first run only)
+  ansible.builtin.command: openssl rand -hex 32
+  when: not clickstack_session_secret_file.stat.exists
+  register: clickstack_session_secret_value
+  changed_when: true
+  no_log: true
+
+- name: Persist session secret (first run only)
+  ansible.builtin.copy:
+    content: "{{ clickstack_session_secret_value.stdout }}\n"
+    dest: /opt/clickstack/session_secret
+    mode: "0600"
+  when: not clickstack_session_secret_file.stat.exists
   no_log: true
 
 - name: Read session secret
   ansible.builtin.slurp:
     src: /opt/clickstack/session_secret
-  register: session_secret_b64
+  register: clickstack_session_secret_b64
   no_log: true
 
 - name: Set session secret fact
   ansible.builtin.set_fact:
-    session_secret: "{{ session_secret_b64.content | b64decode | trim }}"
+    clickstack_session_secret: "{{ clickstack_session_secret_b64.content | b64decode | trim }}"
   no_log: true
 
 - name: Deploy HyperDX environment file

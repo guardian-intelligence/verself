@@ -1,7 +1,26 @@
+{
+	order coraza_waf first
+}
+
+(waf) {
+	coraza_waf {
+		load_owasp_crs
+		directives `
+			Include @coraza.conf-recommended
+			Include @crs-setup.conf.example
+			Include @owasp_crs/*.conf
+			SecRuleEngine {{ caddy_waf_mode }}
+			SecResponseBodyAccess Off
+		`
+	}
+}
+
 {{ clickstack_domain }} {
+	import waf
 	reverse_proxy localhost:{{ hyperdx_app_port }}
 }
 
 {{ forgejo_domain | default(ansible_default_ipv4.address) }} {
+	import waf
 	reverse_proxy localhost:{{ forgejo_port | default('3000') }}
 }
