@@ -1,7 +1,7 @@
 .PHONY: build clean test test-integration lint fmt vet tidy \
        doctor setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy e2e \
-       guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build
+       guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build smelter-dev
 
 BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -108,6 +108,17 @@ fixtures-e2e: ## Deploy Forgejo + Firecracker and validate controlled Next.js fi
 	$(MAKE) deploy-ci-artifacts
 	cd ansible && ansible-playbook playbooks/nextjs-fixtures-e2e.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
+
+smelter-dev: ## Hot-swap smelter guest into dev golden, boot + probe in Firecracker VM (~10s)
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	@command -v zig >/dev/null 2>&1 || { echo "ERROR: zig is required to build homestead-smelter-guest"; exit 1; }
+	@echo "→ building homestead-smelter guest (zig)"
+	cd homestead-smelter && zig build -Doptimize=ReleaseSafe
+	@echo "→ uploading guest binary"
+	scp $(SSH_OPTS) homestead-smelter/zig-out/bin/homestead-smelter-guest \
+		$(REMOTE_USER)@$(REMOTE_HOST):/tmp/homestead-smelter-guest
+	@echo "→ running smelter dev playbook"
+	cd ansible && ansible-playbook playbooks/smelter-dev.yml
 
 # PATH for sudo on the remote — includes Nix profile where node lives.
 REMOTE_PATH := /home/$(REMOTE_USER)/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
