@@ -85,9 +85,13 @@
     state: present
     update_cache: true
 
-- name: Ensure KVM module is loaded
+- name: Detect KVM module for CPU vendor
+  ansible.builtin.set_fact:
+    fc_kvm_module: "{{ 'kvm_amd' if 'AuthenticAMD' in ansible_processor else 'kvm_intel' }}"
+
+- name: Ensure KVM module is loaded ({{ fc_kvm_module }})
   community.general.modprobe:
-    name: kvm_amd
+    name: "{{ fc_kvm_module }}"
     state: present
   failed_when: false
 
@@ -98,7 +102,9 @@
 
 - name: Fail if KVM is not available
   ansible.builtin.fail:
-    msg: "/dev/kvm does not exist. Ensure KVM is enabled in BIOS and kvm_amd/kvm_intel is loaded."
+    msg: >-
+      /dev/kvm does not exist. Detected CPU vendor → {{ fc_kvm_module }}.
+      Ensure KVM is enabled in BIOS and the correct module is loadable.
   when: not firecracker_dev_kvm.stat.exists
 
 # --- ZFS ARC tuning ---
