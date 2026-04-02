@@ -7,8 +7,6 @@
   become: true
   vars:
     fc_refresh_base_golden: true
-    fc_prune_repo_goldens_on_refresh: true
-    fc_prune_ci_children_on_refresh: true
   roles:
     - nix_deploy
     - base

@@ -279,9 +279,7 @@
 
 - name: Prune repo goldens before base golden refresh
   ansible.builtin.command: "zfs destroy -r {{ fc_zfs_pool }}/repo-goldens"
-  when:
-    - fc_refresh_base_golden_needed
-    - fc_prune_repo_goldens_on_refresh
+  when: fc_refresh_base_golden_needed
   failed_when: false
   changed_when: true
 
@@ -291,9 +289,7 @@
     zfs list -H -o name -r {{ fc_zfs_pool }}/{{ fc_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -r
   args:
     executable: /bin/bash
-  when:
-    - fc_refresh_base_golden_needed
-    - fc_prune_ci_children_on_refresh
+  when: fc_refresh_base_golden_needed
   changed_when: true
 
 - name: Destroy old golden snapshot before refresh
