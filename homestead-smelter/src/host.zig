@@ -4,9 +4,17 @@ const hs = @import("homestead_smelter");
 const default_jailer_root = "/srv/jailer/firecracker";
 const discovery_period_ms: u64 = 250;
 const reconnect_backoff_ms: u64 = 200;
-const schema_version: u32 = 2;
+const schema_version: u32 = 3;
 const max_bridge_line_bytes: usize = 128;
-
+const connect_aborted_grace_ms: i64 = 5_000;
+const connect_aborted_grace_limit: u32 = 8;
+const connect_aborted_rewarn_every: u32 = 16;
+const UnixConnectError = std.posix.ConnectError || error{
+    ConnectionAborted,
+};
+const UnixConnectStepError = UnixConnectError || error{
+    Interrupted,
+};
 const usage =
     \\Usage:
     \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH] [--port PORT]
@@ -64,6 +72,9 @@ const VMState = struct {
     last_update_unix_ms: i64 = 0,
     hello: ?hs.HelloFrame = null,
     sample: ?hs.SampleFrame = null,
+    connect_aborted_since_unix_ms: i64 = 0,
+    connect_aborted_count: u32 = 0,
+    bridge_connect_unhealthy: bool = false,
     last_error_len: usize = 0,
     last_error: [192]u8 = [_]u8{0} ** 192,
 
@@ -82,8 +93,28 @@ const VMState = struct {
         if (self.last_error_len == 0) return null;
         return self.last_error[0..self.last_error_len];
     }
+
+    fn beginBridgeStartup(self: *VMState, now_ms: i64) void {
+        self.connect_aborted_since_unix_ms = now_ms;
+        self.connect_aborted_count = 0;
+        self.bridge_connect_unhealthy = false;
+        self.connected = false;
+        self.clearError();
+    }
+
+    fn clearBridgeStartup(self: *VMState) void {
+        self.connect_aborted_since_unix_ms = 0;
+        self.connect_aborted_count = 0;
+        self.bridge_connect_unhealthy = false;
+    }
 };
 
+const BridgeConnectAbortStatus = struct {
+    count: u32,
+    age_ms: i64,
+    unhealthy: bool,
+    should_warn: bool,
+};
 const AgentState = struct {
     allocator: std.mem.Allocator,
     jailer_root: []const u8,
@@ -126,11 +157,16 @@ const AgentState = struct {
         for (found) |item| {
             if (self.vms.getKey(item.job_id)) |canonical_job_id| {
                 const vm = self.vms.getPtr(item.job_id).?;
+                const was_present = vm.present;
+                const path_changed = !std.mem.eql(u8, vm.uds_path, item.uds_path);
                 vm.present = true;
-                if (!std.mem.eql(u8, vm.uds_path, item.uds_path)) {
+                if (path_changed) {
                     const owned_uds_path = try self.allocator.dupe(u8, item.uds_path);
                     self.allocator.free(vm.uds_path);
                     vm.uds_path = owned_uds_path;
+                }
+                if (path_changed or !was_present or !vm.worker_active) {
+                    vm.beginBridgeStartup(self.observed_at_unix_ms);
                 }
                 if (!vm.worker_active) {
                     vm.worker_active = true;
@@ -144,17 +180,18 @@ const AgentState = struct {
             const owned_uds_path = try self.allocator.dupe(u8, item.uds_path);
             errdefer self.allocator.free(owned_uds_path);
 
-            try self.vms.put(owned_job_id, .{
+            var vm = VMState{
                 .uds_path = owned_uds_path,
                 .present = true,
                 .worker_active = true,
-            });
+            };
+            vm.beginBridgeStartup(self.observed_at_unix_ms);
+            try self.vms.put(owned_job_id, vm);
             try spawns.append(temp_allocator, owned_job_id);
         }
 
         return spawns.toOwnedSlice(temp_allocator);
     }
-
     fn copyCurrentTarget(self: *AgentState, job_id: []const u8, target_buf: []u8) !?[]const u8 {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -173,9 +210,9 @@ const AgentState = struct {
         const vm = self.vms.getPtr(job_id) orelse return;
         vm.connected = true;
         vm.last_update_unix_ms = std.time.milliTimestamp();
+        vm.clearBridgeStartup();
         vm.clearError();
     }
-
     fn recordHello(self: *AgentState, job_id: []const u8, hello: hs.HelloFrame) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -184,9 +221,9 @@ const AgentState = struct {
         vm.connected = true;
         vm.hello = hello;
         vm.last_update_unix_ms = std.time.milliTimestamp();
+        vm.clearBridgeStartup();
         vm.clearError();
     }
-
     fn recordSample(self: *AgentState, job_id: []const u8, sample: hs.SampleFrame) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -195,9 +232,9 @@ const AgentState = struct {
         vm.connected = true;
         vm.sample = sample;
         vm.last_update_unix_ms = std.time.milliTimestamp();
+        vm.clearBridgeStartup();
         vm.clearError();
     }
-
     fn recordDisconnect(self: *AgentState, job_id: []const u8, message: []const u8) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -208,6 +245,38 @@ const AgentState = struct {
         vm.setError(message);
     }
 
+    fn noteBridgeConnectAborted(self: *AgentState, job_id: []const u8) ?BridgeConnectAbortStatus {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const vm = self.vms.getPtr(job_id) orelse return null;
+        const now_ms = std.time.milliTimestamp();
+        if (vm.connect_aborted_since_unix_ms == 0) {
+            vm.connect_aborted_since_unix_ms = now_ms;
+        }
+
+        vm.connect_aborted_count += 1;
+        vm.connected = false;
+        vm.last_update_unix_ms = now_ms;
+        vm.setError("ConnectionAborted");
+
+        const age_ms = now_ms - vm.connect_aborted_since_unix_ms;
+        const over_grace = vm.connect_aborted_count >= connect_aborted_grace_limit or age_ms >= connect_aborted_grace_ms;
+        var should_warn = false;
+        if (over_grace and !vm.bridge_connect_unhealthy) {
+            vm.bridge_connect_unhealthy = true;
+            should_warn = true;
+        } else if (vm.bridge_connect_unhealthy and vm.connect_aborted_count % connect_aborted_rewarn_every == 0) {
+            should_warn = true;
+        }
+
+        return .{
+            .count = vm.connect_aborted_count,
+            .age_ms = age_ms,
+            .unhealthy = vm.bridge_connect_unhealthy,
+            .should_warn = should_warn,
+        };
+    }
     fn markWorkerStopped(self: *AgentState, job_id: []const u8) void {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -299,6 +368,43 @@ fn switchMode(value: []const u8) ?Mode {
     return null;
 }
 
+fn connectUnixSocket(fd: std.posix.socket_t, sock_addr: *const std.posix.sockaddr, len: std.posix.socklen_t) UnixConnectError!void {
+    while (true) {
+        mapUnixConnectErrno(std.posix.errno(std.posix.system.connect(fd, sock_addr, len))) catch |err| switch (err) {
+            error.Interrupted => continue,
+            else => |connect_err| return @errorCast(connect_err),
+        };
+        return;
+    }
+}
+
+fn mapUnixConnectErrno(err: std.posix.E) UnixConnectStepError!void {
+    switch (err) {
+        .SUCCESS => return,
+        .ACCES => return error.AccessDenied,
+        .PERM => return error.PermissionDenied,
+        .ADDRINUSE => return error.AddressInUse,
+        .ADDRNOTAVAIL => return error.AddressNotAvailable,
+        .AFNOSUPPORT => return error.AddressFamilyNotSupported,
+        .AGAIN, .INPROGRESS => return error.WouldBlock,
+        .ALREADY => return error.ConnectionPending,
+        .BADF => unreachable,
+        .CONNREFUSED => return error.ConnectionRefused,
+        .CONNRESET => return error.ConnectionResetByPeer,
+        .FAULT => unreachable,
+        .INTR => return error.Interrupted,
+        .ISCONN => unreachable,
+        .HOSTUNREACH, .NETUNREACH => return error.NetworkUnreachable,
+        .NOTSOCK => unreachable,
+        .PROTOTYPE => unreachable,
+        .TIMEDOUT => return error.ConnectionTimedOut,
+        .NOENT => return error.FileNotFound,
+        // AF_UNIX listeners can legitimately report ECONNABORTED during startup.
+        .CONNABORTED => return error.ConnectionAborted,
+        else => |unexpected| return std.posix.unexpectedErrno(unexpected),
+    }
+}
+
 fn serve(allocator: std.mem.Allocator, control_uds: []const u8, jailer_root: []const u8, guest_port: u32) !void {
     var state = AgentState.init(allocator, jailer_root, guest_port);
     defer state.deinit();
@@ -351,18 +457,9 @@ fn handleControlConnection(base_allocator: std.mem.Allocator, stream: std.net.St
     }
 }
 
-fn ping(gpa: std.mem.Allocator, control_uds: []const u8) !void {
-    var address = try std.net.Address.initUnix(control_uds);
-    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
-    errdefer std.posix.close(fd);
-    try std.posix.connect(fd, &address.any, address.getOsSockLen());
-
-    const stream = std.net.Stream{ .handle = fd };
-    defer stream.close();
-
-    try hs.writeLine(stream, "PING");
-    const response = try hs.readLineAlloc(gpa, stream, hs.max_line_bytes);
-    defer gpa.free(response);
+fn ping(allocator: std.mem.Allocator, control_uds: []const u8) !void {
+    const response = try controlRequest(allocator, control_uds, "PING", hs.max_line_bytes);
+    defer allocator.free(response);
 
     if (!std.mem.eql(u8, response, "PONG homestead-smelter-host")) {
         std.log.err("unexpected host-agent reply: {s}", .{response});
@@ -373,21 +470,54 @@ fn ping(gpa: std.mem.Allocator, control_uds: []const u8) !void {
     try std.fs.File.stdout().writeAll("\n");
 }
 
-fn snapshot(gpa: std.mem.Allocator, control_uds: []const u8) !void {
+fn snapshot(allocator: std.mem.Allocator, control_uds: []const u8) !void {
+    const response = try controlRequest(allocator, control_uds, "SNAPSHOT", hs.max_snapshot_bytes);
+    defer allocator.free(response);
+
+    try std.fs.File.stdout().writeAll(response);
+    try std.fs.File.stdout().writeAll("\n");
+}
+
+fn controlRequest(
+    allocator: std.mem.Allocator,
+    control_uds: []const u8,
+    command: []const u8,
+    limit: usize,
+) ![]u8 {
     var address = try std.net.Address.initUnix(control_uds);
     const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
     errdefer std.posix.close(fd);
-    try std.posix.connect(fd, &address.any, address.getOsSockLen());
+    try connectUnixSocket(fd, &address.any, address.getOsSockLen());
 
     const stream = std.net.Stream{ .handle = fd };
     defer stream.close();
 
-    try hs.writeLine(stream, "SNAPSHOT");
-    const response = try hs.readLineAlloc(gpa, stream, hs.max_snapshot_bytes);
-    defer gpa.free(response);
+    try hs.writeLine(stream, command);
+    return try readControlResponse(allocator, stream, limit);
+}
 
-    try std.fs.File.stdout().writeAll(response);
-    try std.fs.File.stdout().writeAll("\n");
+fn readControlResponse(allocator: std.mem.Allocator, stream: std.net.Stream, limit: usize) ![]u8 {
+    std.debug.assert(limit > 0);
+
+    var out = try std.ArrayList(u8).initCapacity(allocator, @min(limit, @as(usize, 256)));
+    defer out.deinit(allocator);
+
+    var chunk_buf: [512]u8 = undefined;
+    while (true) {
+        const n = try stream.read(chunk_buf[0..]);
+        if (n == 0) break;
+
+        const chunk = chunk_buf[0..n];
+        const newline_index = std.mem.indexOfScalar(u8, chunk, '\n') orelse chunk.len;
+        for (chunk[0..newline_index]) |byte| {
+            if (byte == '\r') continue;
+            if (out.items.len >= limit) return error.LineTooLong;
+            try out.append(allocator, byte);
+        }
+        if (newline_index != chunk.len) break;
+    }
+
+    return out.toOwnedSlice(allocator);
 }
 
 fn discoveryLoop(state: *AgentState) void {
@@ -455,7 +585,18 @@ fn vmWorkerMain(state: *AgentState, job_id: []const u8) void {
             continue;
         } orelse return;
         const stream = connectGuestBridge(uds_path, state.guest_port) catch |err| {
-            state.recordDisconnect(job_id, @errorName(err));
+            if (err == error.ConnectionAborted) {
+                if (state.noteBridgeConnectAborted(job_id)) |status| {
+                    if (status.should_warn) {
+                        std.log.warn(
+                            "bridge connect retries exceeded startup grace: job_id={s} uds_path={s} count={d} age_ms={d} grace_limit={d} grace_ms={d}",
+                            .{ job_id, uds_path, status.count, status.age_ms, connect_aborted_grace_limit, connect_aborted_grace_ms },
+                        );
+                    }
+                }
+            } else {
+                state.recordDisconnect(job_id, @errorName(err));
+            }
             std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
             continue;
         };
@@ -471,12 +612,11 @@ fn vmWorkerMain(state: *AgentState, job_id: []const u8) void {
         std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
     }
 }
-
 fn connectGuestBridge(uds_path: []const u8, guest_port: u32) !std.net.Stream {
     var address = try std.net.Address.initUnix(uds_path);
     const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, 0);
     errdefer std.posix.close(fd);
-    try std.posix.connect(fd, &address.any, address.getOsSockLen());
+    try connectUnixSocket(fd, &address.any, address.getOsSockLen());
 
     const stream = std.net.Stream{ .handle = fd };
     errdefer stream.close();
@@ -532,17 +672,14 @@ fn writeSnapshotResponse(allocator: std.mem.Allocator, stream: std.net.Stream, s
 const SnapshotView = struct {
     schema_version: u32,
     jailer_root: []const u8,
-    guest_port: u32,
-    sample_period_ms: u32,
     observed_at_unix_ms: i64,
     vms: []const VM,
 
     const VM = struct {
         job_id: []const u8,
-        uds_path: []const u8,
-        present: bool,
         worker_active: bool,
         connected: bool,
+        bridge_connect_unhealthy: bool,
         last_update_unix_ms: i64,
         last_error: ?[]const u8,
         hello: ?Hello,
@@ -550,12 +687,8 @@ const SnapshotView = struct {
     };
 
     const Hello = struct {
-        seq: u32,
-        flags: u32,
         mono_ns: u64,
         wall_ns: u64,
-        sample_period_ms: u32,
-        guest_port: u32,
         boot_id: []const u8,
         net_iface: []const u8,
         block_dev: []const u8,
@@ -563,7 +696,6 @@ const SnapshotView = struct {
 
     const Sample = hs.SampleFrame;
 };
-
 fn buildSnapshotJSON(allocator: std.mem.Allocator, state: *AgentState) ![]u8 {
     var vms = try std.ArrayList(SnapshotView.VM).initCapacity(allocator, state.vms.count());
     defer vms.deinit(allocator);
@@ -578,19 +710,14 @@ fn buildSnapshotJSON(allocator: std.mem.Allocator, state: *AgentState) ![]u8 {
 
         try vms.append(allocator, .{
             .job_id = entry.key_ptr.*,
-            .uds_path = vm.uds_path,
-            .present = true,
             .worker_active = vm.worker_active,
             .connected = vm.connected,
+            .bridge_connect_unhealthy = vm.bridge_connect_unhealthy,
             .last_update_unix_ms = vm.last_update_unix_ms,
             .last_error = vm.lastError(),
             .hello = if (vm.hello) |hello| .{
-                .seq = hello.seq,
-                .flags = hello.flags,
                 .mono_ns = hello.mono_ns,
                 .wall_ns = hello.wall_ns,
-                .sample_period_ms = hello.sample_period_ms,
-                .guest_port = hello.guest_port,
                 .boot_id = hs.trimPaddedString(hello.boot_id[0..]),
                 .net_iface = hs.trimPaddedString(hello.net_iface[0..]),
                 .block_dev = hs.trimPaddedString(hello.block_dev[0..]),
@@ -602,8 +729,6 @@ fn buildSnapshotJSON(allocator: std.mem.Allocator, state: *AgentState) ![]u8 {
     const view = SnapshotView{
         .schema_version = schema_version,
         .jailer_root = state.jailer_root,
-        .guest_port = state.guest_port,
-        .sample_period_ms = hs.default_sample_period_ms,
         .observed_at_unix_ms = state.observed_at_unix_ms,
         .vms = vms.items,
     };
@@ -767,6 +892,77 @@ test "recordHello clears stale disconnect error" {
     try std.testing.expect(vm.lastError() == null);
 }
 
+test "mapUnixConnectErrno treats connaborted as recoverable" {
+    try mapUnixConnectErrno(.SUCCESS);
+    try std.testing.expectError(error.ConnectionAborted, mapUnixConnectErrno(.CONNABORTED));
+    try std.testing.expectError(error.ConnectionRefused, mapUnixConnectErrno(.CONNREFUSED));
+    try std.testing.expectError(error.Interrupted, mapUnixConnectErrno(.INTR));
+}
+
+test "noteBridgeConnectAborted escalates after grace limit and clears on connect" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    var status = state.noteBridgeConnectAborted("job-a").?;
+    try std.testing.expectEqual(@as(u32, 1), status.count);
+    try std.testing.expect(!status.unhealthy);
+    try std.testing.expect(!status.should_warn);
+
+    var i: u32 = 1;
+    while (i < connect_aborted_grace_limit) : (i += 1) {
+        status = state.noteBridgeConnectAborted("job-a").?;
+    }
+
+    try std.testing.expectEqual(connect_aborted_grace_limit, status.count);
+    try std.testing.expect(status.unhealthy);
+    try std.testing.expect(status.should_warn);
+
+    state.recordConnected("job-a");
+    const vm = state.vms.get("job-a").?;
+    try std.testing.expect(!vm.bridge_connect_unhealthy);
+    try std.testing.expectEqual(@as(u32, 0), vm.connect_aborted_count);
+    try std.testing.expectEqual(@as(i64, 0), vm.connect_aborted_since_unix_ms);
+    try std.testing.expect(vm.lastError() == null);
+}
+
+test "commitDiscovery resets bridge startup state on path change" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const first = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const second = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a-new.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &first);
+    defer allocator.free(spawns_first);
+    var i: u32 = 0;
+    while (i < connect_aborted_grace_limit) : (i += 1) {
+        _ = state.noteBridgeConnectAborted("job-a");
+    }
+
+    const spawns_second = try state.commitDiscovery(allocator, &second);
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
+    const vm = state.vms.get("job-a").?;
+    try std.testing.expectEqualStrings("/run/job-a-new.sock", vm.uds_path);
+    try std.testing.expect(!vm.bridge_connect_unhealthy);
+    try std.testing.expectEqual(@as(u32, 0), vm.connect_aborted_count);
+    try std.testing.expect(vm.connect_aborted_since_unix_ms != 0);
+    try std.testing.expect(vm.lastError() == null);
+}
+
 test "recordSample preserves hello metadata" {
     const allocator = std.testing.allocator;
     var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
@@ -794,6 +990,7 @@ test "recordSample preserves hello metadata" {
     });
 
     const vm = state.vms.get("job-a").?;
+    try std.testing.expect(!vm.bridge_connect_unhealthy);
     try std.testing.expect(vm.hello != null);
     try std.testing.expect(vm.sample != null);
     try std.testing.expectEqual(@as(u32, 1), vm.hello.?.seq);
@@ -891,8 +1088,6 @@ test "buildSnapshotJSON emits valid JSON for empty state" {
 
     try std.testing.expectEqual(schema_version, parsed.value.schema_version);
     try std.testing.expectEqualStrings("/srv/jailer/firecracker", parsed.value.jailer_root);
-    try std.testing.expectEqual(hs.default_guest_port, parsed.value.guest_port);
-    try std.testing.expectEqual(hs.default_sample_period_ms, parsed.value.sample_period_ms);
     try std.testing.expectEqual(@as(usize, 0), parsed.value.vms.len);
 }
 
@@ -939,15 +1134,46 @@ test "buildSnapshotJSON round-trips a connected VM" {
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), parsed.value.vms.len);
-    try std.testing.expectEqualStrings("job-a", parsed.value.vms[0].job_id);
-    try std.testing.expect(parsed.value.vms[0].connected);
-    try std.testing.expect(parsed.value.vms[0].hello != null);
-    try std.testing.expect(parsed.value.vms[0].sample != null);
-    try std.testing.expectEqualStrings("boot-id", parsed.value.vms[0].hello.?.boot_id);
-    try std.testing.expectEqualStrings("eth0", parsed.value.vms[0].hello.?.net_iface);
-    try std.testing.expectEqualStrings("vda", parsed.value.vms[0].hello.?.block_dev);
-    try std.testing.expectEqual(@as(u64, 2048), parsed.value.vms[0].sample.?.mem_total_kb);
-    try std.testing.expectEqual(@as(u64, 1024), parsed.value.vms[0].sample.?.mem_available_kb);
+    const vm = parsed.value.vms[0];
+    try std.testing.expectEqualStrings("job-a", vm.job_id);
+    try std.testing.expect(vm.connected);
+    try std.testing.expect(vm.hello != null);
+    try std.testing.expect(vm.sample != null);
+    try std.testing.expectEqualStrings("boot-id", vm.hello.?.boot_id);
+    try std.testing.expectEqualStrings("eth0", vm.hello.?.net_iface);
+    try std.testing.expectEqualStrings("vda", vm.hello.?.block_dev);
+    try std.testing.expectEqual(@as(u64, 11), vm.hello.?.mono_ns);
+    try std.testing.expectEqual(@as(u64, 22), vm.hello.?.wall_ns);
+    try std.testing.expectEqual(@as(u64, 2048), vm.sample.?.mem_total_kb);
+    try std.testing.expectEqual(@as(u64, 1024), vm.sample.?.mem_available_kb);
+}
+
+test "buildSnapshotJSON exposes bridge_connect_unhealthy" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    var i: u32 = 0;
+    while (i < connect_aborted_grace_limit) : (i += 1) {
+        _ = state.noteBridgeConnectAborted("job-a");
+    }
+
+    const payload = try buildSnapshotJSON(allocator, &state);
+    defer allocator.free(payload);
+
+    const parsed = try std.json.parseFromSlice(SnapshotView, allocator, payload, .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), parsed.value.vms.len);
+    const vm = parsed.value.vms[0];
+    try std.testing.expect(vm.bridge_connect_unhealthy);
+    try std.testing.expectEqualStrings("ConnectionAborted", vm.last_error.?);
 }
 
 test "buildSnapshotJSON escapes quoted error messages" {
@@ -970,7 +1196,9 @@ test "buildSnapshotJSON escapes quoted error messages" {
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), parsed.value.vms.len);
-    try std.testing.expectEqualStrings("bad \"quote\"", parsed.value.vms[0].last_error.?);
-    try std.testing.expect(parsed.value.vms[0].hello == null);
-    try std.testing.expect(parsed.value.vms[0].sample == null);
+    const vm = parsed.value.vms[0];
+    try std.testing.expectEqualStrings("bad \"quote\"", vm.last_error.?);
+    try std.testing.expect(!vm.bridge_connect_unhealthy);
+    try std.testing.expect(vm.hello == null);
+    try std.testing.expect(vm.sample == null);
 }
