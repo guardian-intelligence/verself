@@ -6,7 +6,7 @@ Performance-first CI on bare metal. ZFS golden image clones (~1.7ms), Firecracke
 
 The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB.
 
-Hard requirement: everything must be self-hosted.
+Hard product design requirement: everything must be self-hosted.
 
 Exceptions:
 
@@ -352,6 +352,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 ## Tool Use Contract
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
+* Prefix commands with nix develop.
 
 ## Output Contract
 
@@ -360,6 +361,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
+* When writing design documents, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
 
 ## License
 
