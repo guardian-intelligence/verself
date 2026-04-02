@@ -632,6 +632,7 @@ const SnapshotView = struct {
     const Hello = struct {
         mono_ns: u64,
         wall_ns: u64,
+        sample_rate_hz: u32,
         boot_id: []const u8,
         net_iface: []const u8,
         block_dev: []const u8,
@@ -660,6 +661,7 @@ fn buildSnapshotJSON(allocator: std.mem.Allocator, state: *AgentState) ![]u8 {
             .hello = if (vm.hello) |hello| .{
                 .mono_ns = hello.mono_ns,
                 .wall_ns = hello.wall_ns,
+                .sample_rate_hz = hello.sample_rate_hz,
                 .boot_id = hs.trimPaddedString(hello.boot_id[0..]),
                 .net_iface = hs.trimPaddedString(hello.net_iface[0..]),
                 .block_dev = hs.trimPaddedString(hello.block_dev[0..]),
@@ -705,6 +707,9 @@ fn acceptAndCloseBridgeServerMain(socket_path: []const u8) !void {
     _ = try hs.readLineInto(stream, cmd_buf[0..]);
 }
 
+// These tests cover the current thread-per-VM daemon in host.zig. The
+// deterministic single-owner aggregator semantics live in host_core.zig and are
+// the source of truth for the next cutover.
 test "commitDiscovery registers first discovery and spawns workers" {
     const allocator = std.testing.allocator;
     var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
@@ -852,7 +857,7 @@ test "recordHello clears stale disconnect error" {
         .seq = 1,
         .mono_ns = 11,
         .wall_ns = 22,
-        .sample_period_ms = hs.default_sample_period_ms,
+        .sample_rate_hz = hs.default_sample_rate_hz,
         .guest_port = hs.default_guest_port,
     });
 
@@ -967,7 +972,7 @@ test "recordSample preserves hello metadata" {
         .seq = 1,
         .mono_ns = 11,
         .wall_ns = 22,
-        .sample_period_ms = hs.default_sample_period_ms,
+        .sample_rate_hz = hs.default_sample_rate_hz,
         .guest_port = hs.default_guest_port,
     });
     state.recordSample("job-a", .{
@@ -1014,7 +1019,7 @@ test "record operations ignore unknown jobs" {
         .seq = 1,
         .mono_ns = 1,
         .wall_ns = 1,
-        .sample_period_ms = hs.default_sample_period_ms,
+        .sample_rate_hz = hs.default_sample_rate_hz,
         .guest_port = hs.default_guest_port,
     });
     state.recordSample("missing", .{
@@ -1095,7 +1100,7 @@ test "buildSnapshotJSON round-trips a connected VM" {
         .flags = 7,
         .mono_ns = 11,
         .wall_ns = 22,
-        .sample_period_ms = hs.default_sample_period_ms,
+        .sample_rate_hz = hs.default_sample_rate_hz,
         .guest_port = hs.default_guest_port,
         .boot_id = [_]u8{0} ** 36,
         .net_iface = [_]u8{0} ** 16,
@@ -1132,6 +1137,7 @@ test "buildSnapshotJSON round-trips a connected VM" {
     try std.testing.expectEqualStrings("vda", vm.hello.?.block_dev);
     try std.testing.expectEqual(@as(u64, 11), vm.hello.?.mono_ns);
     try std.testing.expectEqual(@as(u64, 22), vm.hello.?.wall_ns);
+    try std.testing.expectEqual(hs.default_sample_rate_hz, vm.hello.?.sample_rate_hz);
     try std.testing.expectEqual(@as(u64, 2048), vm.sample.?.mem_total_kb);
     try std.testing.expectEqual(@as(u64, 1024), vm.sample.?.mem_available_kb);
 }
