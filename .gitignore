@@ -1,5 +1,6 @@
-# Binary (root only, not cmd/bmci/)
+# Binaries
 /bmci
+/forge-metal
 
 # Config (contains credentials)
 forge-metal.toml
