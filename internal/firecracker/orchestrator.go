@@ -202,6 +202,9 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	}
 
 	devPath := zvolDevicePath(dataset)
+	if deviceErr := waitForDevice(ctx, devPath); deviceErr != nil {
+		return result, fmt.Errorf("wait for zvol device %s: %w", devPath, deviceErr)
+	}
 
 	jailStart := time.Now()
 	jailRoot := o.jailDir(job.JobID)

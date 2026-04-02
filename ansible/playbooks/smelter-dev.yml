@@ -1,0 +1,180 @@
+---
+# Hot-swap homestead-smelter-guest into a dev golden zvol, boot a Firecracker
+# VM, verify the host agent is streaming guest telemetry, then tear down.
+#
+# This is the fastest way to iterate on homestead-smelter guest code (~10s).
+# Requires a valid golden-zvol@ready (run make guest-rootfs && make deploy-ci-artifacts
+# && make deploy at least once first).
+#
+# Usage:
+#   make smelter-dev          (preferred — builds Zig + uploads binary first)
+#   ansible-playbook playbooks/smelter-dev.yml
+
+- name: Hot-swap smelter guest and probe in Firecracker VM
+  hosts: all
+  become: true
+  vars_files:
+    - ../roles/firecracker/defaults/main.yml
+  vars:
+    smelter_dev_zvol: "{{ fc_zfs_pool }}/smelter-dev-zvol"
+    smelter_dev_snapshot: "{{ smelter_dev_zvol }}@ready"
+    smelter_dev_mnt: /tmp/smelter-dev-mnt
+    smelter_guest_upload: /tmp/homestead-smelter-guest
+    smelter_vm_sleep: 15
+    boot_timeout: 20
+    probe_settle_seconds: 3
+  tasks:
+
+    # ── Preflight ──────────────────────────────────────────────────────────
+
+    - name: Verify uploaded guest binary exists
+      ansible.builtin.stat:
+        path: "{{ smelter_guest_upload }}"
+      register: guest_bin
+      failed_when: not guest_bin.stat.exists
+
+    - name: Verify base golden snapshot exists
+      ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+      changed_when: false
+
+    - name: Verify forge-metal is available
+      ansible.builtin.command: "{{ fm_bin }}/forge-metal --version"
+      changed_when: false
+
+    - name: Verify homestead-smelter-host is available
+      ansible.builtin.stat:
+        path: "{{ fc_smelter_host_binary_path }}"
+      register: smelter_host_bin
+      failed_when: not smelter_host_bin.stat.exists
+
+    # ── Hot-swap binary into dev golden ───────────────────────────────────
+
+    - name: Destroy old dev zvol if present
+      ansible.builtin.command: "zfs destroy -r {{ smelter_dev_zvol }}"
+      failed_when: false
+      changed_when: true
+
+    - name: Clone base golden to dev zvol
+      ansible.builtin.command: >
+        zfs clone
+        {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready
+        {{ smelter_dev_zvol }}
+
+    - name: Wait for dev zvol device node
+      ansible.builtin.command: udevadm settle
+      changed_when: false
+
+    - name: Create dev mount point
+      ansible.builtin.file:
+        path: "{{ smelter_dev_mnt }}"
+        state: directory
+        mode: "0755"
+
+    - name: Mount dev zvol
+      ansible.posix.mount:
+        src: "/dev/zvol/{{ smelter_dev_zvol }}"
+        path: "{{ smelter_dev_mnt }}"
+        fstype: ext4
+        state: ephemeral
+
+    - name: Copy guest binary into dev rootfs
+      ansible.builtin.copy:
+        src: "{{ smelter_guest_upload }}"
+        dest: "{{ smelter_dev_mnt }}/usr/local/bin/homestead-smelter-guest"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Unmount dev zvol
+      ansible.posix.mount:
+        path: "{{ smelter_dev_mnt }}"
+        state: unmounted
+
+    - name: Snapshot dev zvol
+      ansible.builtin.command: "zfs snapshot {{ smelter_dev_snapshot }}"
+
+    - name: Dev golden ready
+      ansible.builtin.debug:
+        msg: "dev golden ready: {{ smelter_dev_snapshot }}"
+
+    # ── Boot VM, probe, teardown ──────────────────────────────────────────
+
+    - block:
+        - name: Boot Firecracker VM from dev golden (background)
+          ansible.builtin.command: >
+            {{ fm_bin }}/forge-metal firecracker-test
+            --golden-zvol smelter-dev-zvol
+            --timeout 60s
+            -- sleep {{ smelter_vm_sleep }}
+          async: 60
+          poll: 0
+          register: fc_job
+
+        - name: Wait for vsock bridge socket
+          ansible.builtin.find:
+            paths: "{{ fc_jailer_root }}/firecracker"
+            patterns: "forge-control.sock"
+            recurse: true
+            file_type: any
+          register: bridge_search
+          until: bridge_search.files | length > 0
+          retries: "{{ boot_timeout }}"
+          delay: 1
+
+        - name: Record bridge socket path
+          ansible.builtin.set_fact:
+            bridge_socket: "{{ bridge_search.files[0].path }}"
+            smelter_job_id: "{{ bridge_search.files[0].path | regex_replace('^.*/firecracker/([^/]+)/root/run/forge-control\\.sock$', '\\1') }}"
+
+        - name: Wait for smelter guest to start
+          ansible.builtin.pause:
+            seconds: "{{ probe_settle_seconds }}"
+
+        - name: Verify host agent answers ping
+          ansible.builtin.command: >
+            {{ fc_smelter_host_binary_path }} ping
+            --control-uds {{ fc_smelter_control_socket }}
+          changed_when: false
+
+        - name: Wait for host agent snapshot to show live telemetry
+          ansible.builtin.command: >
+            {{ fc_smelter_host_binary_path }} snapshot
+            --control-uds {{ fc_smelter_control_socket }}
+          register: smelter_snapshot_result
+          changed_when: false
+          until: >-
+            (
+              smelter_snapshot_result.stdout | from_json
+            ).vms
+            | selectattr('job_id', 'equalto', smelter_job_id)
+            | selectattr('connected', 'equalto', true)
+            | selectattr('hello', 'ne', none)
+            | selectattr('sample', 'ne', none)
+            | list | length > 0
+          retries: 20
+          delay: 1
+
+        - name: Show host snapshot
+          ansible.builtin.debug:
+            msg: "{{ smelter_snapshot_result.stdout }}"
+
+        - name: Host telemetry path passed
+          ansible.builtin.debug:
+            msg: "PASS: host agent observed live guest telemetry"
+
+      always:
+        - name: Wait for Firecracker VM to exit
+          ansible.builtin.async_status:
+            jid: "{{ fc_job.ansible_job_id }}"
+          register: fc_result
+          until: fc_result.finished
+          retries: 30
+          delay: 2
+          failed_when: false
+          when: fc_job is defined
+
+        - name: Destroy dev zvol
+          ansible.builtin.command: "zfs destroy -r {{ smelter_dev_zvol }}"
+          failed_when: false
+          changed_when: true
