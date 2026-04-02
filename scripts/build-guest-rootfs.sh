@@ -143,14 +143,26 @@ else
   exit 1
 fi
 
-# --- Install homestead-smelter guest agent when present ---
-# This is optional for now. The host-side hello-world can connect to it over the
-# existing Firecracker vsock bridge on a separate port from the Go control plane.
-if [[ -f "$SCRIPT_DIR/homestead-smelter-guest" ]]; then
-  echo "→ installing homestead-smelter-guest"
-  install -D -m 0755 "$SCRIPT_DIR/homestead-smelter-guest" \
-    "$ROOTFS/usr/local/bin/homestead-smelter-guest"
+# --- Install homestead-smelter guest agent ---
+# The Zig guest agent is a required part of the Firecracker image. Prefer a
+# pre-built binary staged beside the script; fall back to building from source
+# only when the repo checkout and Zig are available on the build host.
+SMELTER_GUEST_SRC="$SCRIPT_DIR/homestead-smelter-guest"
+if [[ ! -f "$SMELTER_GUEST_SRC" ]]; then
+  if command -v zig >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/homestead-smelter/build.zig" ]]; then
+    echo "→ building homestead-smelter-guest from source"
+    (
+      cd "$PROJECT_ROOT/homestead-smelter"
+      zig build -Doptimize=ReleaseSafe
+    )
+    SMELTER_GUEST_SRC="$PROJECT_ROOT/homestead-smelter/zig-out/bin/homestead-smelter-guest"
+  else
+    echo "ERROR: missing homestead-smelter-guest binary" >&2
+    exit 1
+  fi
 fi
+echo "→ installing homestead-smelter-guest"
+install -D -m 0755 "$SMELTER_GUEST_SRC" "$ROOTFS/usr/local/bin/homestead-smelter-guest"
 
 # --- Essential config ---
 cat > "$ROOTFS/etc/passwd" <<'PASSWD'
@@ -190,7 +202,30 @@ echo "host all all 127.0.0.1/32 trust" >> "$ROOTFS/var/lib/postgresql/data/pg_hb
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"
-chroot "$ROOTFS" apk list --installed > "$OUTPUT_DIR/sbom.txt"
+APK_INSTALLED_TMP="$WORKDIR/apk-installed.txt"
+chroot "$ROOTFS" apk list --installed > "$APK_INSTALLED_TMP"
+PACKAGE_COUNT=$(wc -l < "$APK_INSTALLED_TMP" | tr -d '[:space:]')
+cp "$APK_INSTALLED_TMP" "$OUTPUT_DIR/sbom.txt"
+
+INIT_SHA256=$(sha256sum "$ROOTFS/sbin/init" | awk '{print $1}')
+INIT_BYTES=$(stat -c '%s' "$ROOTFS/sbin/init")
+SMELTER_GUEST_PRESENT=false
+SMELTER_GUEST_SHA256=""
+SMELTER_GUEST_BYTES=0
+if [[ -f "$ROOTFS/usr/local/bin/homestead-smelter-guest" ]]; then
+  SMELTER_GUEST_PRESENT=true
+  SMELTER_GUEST_SHA256=$(sha256sum "$ROOTFS/usr/local/bin/homestead-smelter-guest" | awk '{print $1}')
+  SMELTER_GUEST_BYTES=$(stat -c '%s' "$ROOTFS/usr/local/bin/homestead-smelter-guest")
+fi
+
+{
+  echo
+  echo "# custom_components"
+  echo "file path=/sbin/init component=forgevm-init sha256=$INIT_SHA256 bytes=$INIT_BYTES"
+  if [[ "$SMELTER_GUEST_PRESENT" == "true" ]]; then
+    echo "file path=/usr/local/bin/homestead-smelter-guest component=homestead-smelter-guest sha256=$SMELTER_GUEST_SHA256 bytes=$SMELTER_GUEST_BYTES"
+  fi
+} >> "$OUTPUT_DIR/sbom.txt"
 
 # --- Build ext4 image ---
 echo "→ building ext4 image (4G)"
@@ -216,8 +251,6 @@ KERNEL_BYTES=$(stat -c '%s' "$OUTPUT_DIR/vmlinux")
 KERNEL_SHA256=$(sha256sum "$OUTPUT_DIR/vmlinux" | awk '{print $1}')
 SBOM_BYTES=$(stat -c '%s' "$OUTPUT_DIR/sbom.txt")
 SBOM_SHA256=$(sha256sum "$OUTPUT_DIR/sbom.txt" | awk '{print $1}')
-PACKAGE_COUNT=$(wc -l < "$OUTPUT_DIR/sbom.txt" | tr -d '[:space:]')
-INIT_BYTES=$(stat -c '%s' "$ROOTFS/sbin/init")
 
 jq -n \
   --arg built_at_utc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -236,7 +269,11 @@ jq -n \
   --arg kernel_bytes "$KERNEL_BYTES" \
   --arg sbom_bytes "$SBOM_BYTES" \
   --arg package_count "$PACKAGE_COUNT" \
+  --arg init_sha256 "$INIT_SHA256" \
   --arg init_bytes "$INIT_BYTES" \
+  --arg homestead_smelter_guest_present "$SMELTER_GUEST_PRESENT" \
+  --arg homestead_smelter_guest_sha256 "$SMELTER_GUEST_SHA256" \
+  --arg homestead_smelter_guest_bytes "$SMELTER_GUEST_BYTES" \
   '{
     schema_version: 1,
     built_at_utc: $built_at_utc,
@@ -255,7 +292,11 @@ jq -n \
     sbom_sha256: $sbom_sha256,
     sbom_bytes: ($sbom_bytes | tonumber),
     package_count: ($package_count | tonumber),
-    init_bytes: ($init_bytes | tonumber)
+    init_sha256: $init_sha256,
+    init_bytes: ($init_bytes | tonumber),
+    homestead_smelter_guest_present: ($homestead_smelter_guest_present == "true"),
+    homestead_smelter_guest_sha256: (if $homestead_smelter_guest_sha256 == "" then null else $homestead_smelter_guest_sha256 end),
+    homestead_smelter_guest_bytes: (if $homestead_smelter_guest_present == "true" then ($homestead_smelter_guest_bytes | tonumber) else null end)
   }' > "$OUTPUT_DIR/guest-artifacts.json"
 
 echo "✓ rootfs built: $OUTPUT_DIR/rootfs.ext4"

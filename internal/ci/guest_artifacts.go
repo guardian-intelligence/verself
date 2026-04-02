@@ -31,7 +31,11 @@ type GuestArtifactManifest struct {
 	SBOMSHA256            string `json:"sbom_sha256,omitempty"`
 	SBOMBytes             uint64 `json:"sbom_bytes,omitempty"`
 	PackageCount          uint32 `json:"package_count,omitempty"`
+	InitSHA256            string `json:"init_sha256,omitempty"`
 	InitBytes             uint64 `json:"init_bytes,omitempty"`
+	SmelterGuestPresent   bool   `json:"homestead_smelter_guest_present,omitempty"`
+	SmelterGuestSHA256    string `json:"homestead_smelter_guest_sha256,omitempty"`
+	SmelterGuestBytes     uint64 `json:"homestead_smelter_guest_bytes,omitempty"`
 }
 
 func guestArtifactManifestPath(cfg firecracker.Config) string {
