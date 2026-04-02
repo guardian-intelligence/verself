@@ -2,6 +2,9 @@
 # Dev tools installation from dev-tools.json.
 # Follows the established firecracker/containerd role pattern:
 # get_url + checksum + version verify.
+#
+# Idempotent: every tool checks its current version before downloading.
+# A no-op re-run should complete in <5s.
 
 - name: Load dev tool pins from repo
   ansible.builtin.set_fact:
@@ -11,18 +14,28 @@
 # Go (must be first — go install tools depend on it)
 # ============================================================================
 
-- name: Remove stale Go installation
-  ansible.builtin.file:
-    path: /usr/local/go
-    state: absent
+- name: Check current Go version
+  ansible.builtin.command: /usr/local/go/bin/go version
+  register: go_current
+  changed_when: false
+  failed_when: false
   when: dev_tools.go is defined
 
 - name: Install Go {{ dev_tools.go.version }}
-  ansible.builtin.unarchive:
-    src: "{{ dev_tools.go.url }}"
-    dest: /usr/local
-    remote_src: true
-  when: dev_tools.go is defined
+  when:
+    - dev_tools.go is defined
+    - go_current.rc != 0 or dev_tools.go.version not in (go_current.stdout | default(''))
+  block:
+    - name: Remove stale Go installation
+      ansible.builtin.file:
+        path: /usr/local/go
+        state: absent
+
+    - name: Download and extract Go
+      ansible.builtin.unarchive:
+        src: "{{ dev_tools.go.url }}"
+        dest: /usr/local
+        remote_src: true
 
 - name: Ensure Go and go-install tools are in system PATH
   ansible.builtin.copy:
@@ -182,7 +195,8 @@
   when: dev_tools.protoc is defined
 
 # ============================================================================
-# Single-binary downloads: buf, shellcheck, jq, sops
+# Single-binary downloads: buf, jq, sops
+# get_url without force: skips download when dest exists and checksum matches.
 # ============================================================================
 
 - name: Install buf {{ dev_tools.buf.version }}
@@ -191,7 +205,6 @@
     dest: /usr/local/bin/buf
     checksum: "sha256:{{ dev_tools.buf.sha256 }}"
     mode: "0755"
-    force: true
   when: dev_tools.buf is defined
 
 - name: Verify buf version
@@ -200,6 +213,40 @@
   changed_when: false
   failed_when: "dev_tools.buf.version not in buf_version_check.stdout"
   when: dev_tools.buf is defined
+
+- name: Install jq {{ dev_tools.jq.version }}
+  ansible.builtin.get_url:
+    url: "{{ dev_tools.jq.url }}"
+    dest: /usr/local/bin/jq
+    checksum: "sha256:{{ dev_tools.jq.sha256 }}"
+    mode: "0755"
+  when: dev_tools.jq is defined
+
+- name: Verify jq version
+  ansible.builtin.command: /usr/local/bin/jq --version
+  register: jq_version_check
+  changed_when: false
+  failed_when: "dev_tools.jq.version not in jq_version_check.stdout"
+  when: dev_tools.jq is defined
+
+- name: Install sops {{ dev_tools.sops.version }}
+  ansible.builtin.get_url:
+    url: "{{ dev_tools.sops.url }}"
+    dest: /usr/local/bin/sops
+    checksum: "sha256:{{ dev_tools.sops.sha256 }}"
+    mode: "0755"
+  when: dev_tools.sops is defined
+
+- name: Verify sops version
+  ansible.builtin.command: /usr/local/bin/sops --version
+  register: sops_version_check
+  changed_when: false
+  failed_when: "dev_tools.sops.version not in sops_version_check.stdout"
+  when: dev_tools.sops is defined
+
+# ============================================================================
+# shellcheck (tarball → single binary)
+# ============================================================================
 
 - name: Check current shellcheck version
   ansible.builtin.command: /usr/local/bin/shellcheck --version
@@ -249,38 +296,6 @@
   changed_when: false
   failed_when: "dev_tools.shellcheck.version not in sc_version_check.stdout"
   when: dev_tools.shellcheck is defined
-
-- name: Install jq {{ dev_tools.jq.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools.jq.url }}"
-    dest: /usr/local/bin/jq
-    checksum: "sha256:{{ dev_tools.jq.sha256 }}"
-    mode: "0755"
-    force: true
-  when: dev_tools.jq is defined
-
-- name: Verify jq version
-  ansible.builtin.command: /usr/local/bin/jq --version
-  register: jq_version_check
-  changed_when: false
-  failed_when: "dev_tools.jq.version not in jq_version_check.stdout"
-  when: dev_tools.jq is defined
-
-- name: Install sops {{ dev_tools.sops.version }}
-  ansible.builtin.get_url:
-    url: "{{ dev_tools.sops.url }}"
-    dest: /usr/local/bin/sops
-    checksum: "sha256:{{ dev_tools.sops.sha256 }}"
-    mode: "0755"
-    force: true
-  when: dev_tools.sops is defined
-
-- name: Verify sops version
-  ansible.builtin.command: /usr/local/bin/sops --version
-  register: sops_version_check
-  changed_when: false
-  failed_when: "dev_tools.sops.version not in sops_version_check.stdout"
-  when: dev_tools.sops is defined
 
 # ============================================================================
 # age (tarball with two binaries: age, age-keygen)
@@ -405,6 +420,8 @@
 
 # ============================================================================
 # go install tools (requires Go already installed above)
+# Check version before running go install — go install is a no-op when the
+# binary exists and matches, but the module download still takes seconds.
 # ============================================================================
 
 - name: Ensure GOPATH bin directory exists
@@ -413,14 +430,29 @@
     state: directory
     mode: "0755"
 
+- name: Check golangci-lint version
+  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/golangci-lint --version"
+  register: golangci_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools['golangci-lint'] is defined
+
 - name: Install golangci-lint via go install
   ansible.builtin.command:
     cmd: "/usr/local/go/bin/go install {{ dev_tools['golangci-lint'].go_package }}@v{{ dev_tools['golangci-lint'].version }}"
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
-  when: dev_tools['golangci-lint'] is defined
-  changed_when: true
+  when:
+    - dev_tools['golangci-lint'] is defined
+    - golangci_current.rc != 0 or dev_tools['golangci-lint'].version not in (golangci_current.stdout | default(''))
+
+- name: Check gofumpt version
+  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/gofumpt --version"
+  register: gofumpt_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools.gofumpt is defined
 
 - name: Install gofumpt via go install
   ansible.builtin.command:
@@ -428,8 +460,16 @@
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
-  when: dev_tools.gofumpt is defined
-  changed_when: true
+  when:
+    - dev_tools.gofumpt is defined
+    - gofumpt_current.rc != 0 or dev_tools.gofumpt.version not in (gofumpt_current.stdout | default(''))
+
+- name: Check protoc-gen-go version
+  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go --version"
+  register: protocgengo_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools['protoc-gen-go'] is defined
 
 - name: Install protoc-gen-go via go install
   ansible.builtin.command:
@@ -437,8 +477,16 @@
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
-  when: dev_tools['protoc-gen-go'] is defined
-  changed_when: true
+  when:
+    - dev_tools['protoc-gen-go'] is defined
+    - protocgengo_current.rc != 0 or dev_tools['protoc-gen-go'].version not in (protocgengo_current.stdout | default(''))
+
+- name: Check protoc-gen-go-grpc version
+  ansible.builtin.command: "{{ dev_tools_gopath }}/bin/protoc-gen-go-grpc --version"
+  register: protocgengogrpc_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools['protoc-gen-go-grpc'] is defined
 
 - name: Install protoc-gen-go-grpc via go install
   ansible.builtin.command:
@@ -446,8 +494,9 @@
   environment:
     GOPATH: "{{ dev_tools_gopath }}"
     GOBIN: "{{ dev_tools_gopath }}/bin"
-  when: dev_tools['protoc-gen-go-grpc'] is defined
-  changed_when: true
+  when:
+    - dev_tools['protoc-gen-go-grpc'] is defined
+    - protocgengogrpc_current.rc != 0 or dev_tools['protoc-gen-go-grpc'].version not in (protocgengogrpc_current.stdout | default(''))
 
 # ============================================================================
 # pipx: ansible
@@ -457,7 +506,6 @@
   ansible.builtin.apt:
     name: pipx
     state: present
-    update_cache: true
 
 - name: Install ansible-core {{ dev_tools.ansible.version }} via pipx
   ansible.builtin.command:
@@ -499,4 +547,3 @@
       - crun
       - debootstrap
     state: present
-    update_cache: true
