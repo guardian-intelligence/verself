@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{ fc_smelter_host_binary_path }} serve --listen-uds {{ fc_smelter_control_socket }}
+ExecStart={{ fc_smelter_host_binary_path }} serve --listen-uds {{ fc_smelter_control_socket }} --jailer-root {{ fc_jailer_root }}/firecracker
 Restart=always
 RestartSec=2
 RuntimeDirectory=homestead-smelter

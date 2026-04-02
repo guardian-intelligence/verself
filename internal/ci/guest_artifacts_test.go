@@ -33,7 +33,11 @@ func TestLoadGuestArtifactManifest(t *testing.T) {
   "rootfs_tree_bytes": 1234,
   "rootfs_used_bytes": 2345,
   "kernel_bytes": 3456,
-  "package_count": 42
+  "package_count": 42,
+  "init_sha256": "init-sha",
+  "homestead_smelter_guest_present": true,
+  "homestead_smelter_guest_sha256": "smelter-sha",
+  "homestead_smelter_guest_bytes": 7890
 }`), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -47,6 +51,9 @@ func TestLoadGuestArtifactManifest(t *testing.T) {
 	}
 	if manifest.RootfsTreeBytes != 1234 || manifest.RootfsUsedBytes != 2345 || manifest.KernelBytes != 3456 || manifest.PackageCount != 42 {
 		t.Fatalf("unexpected manifest: %+v", manifest)
+	}
+	if manifest.InitSHA256 != "init-sha" || !manifest.SmelterGuestPresent || manifest.SmelterGuestSHA256 != "smelter-sha" || manifest.SmelterGuestBytes != 7890 {
+		t.Fatalf("unexpected manifest metadata: %+v", manifest)
 	}
 }
 

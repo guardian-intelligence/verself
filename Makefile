@@ -82,22 +82,15 @@ e2e: fixtures-e2e ## Deploy Forgejo + Firecracker and validate fixture repos
 guest-rootfs: ## Build Alpine guest rootfs on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
 	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
-	@if command -v zig >/dev/null 2>&1; then \
-		echo "→ building homestead-smelter guest (zig)"; \
-		cd homestead-smelter && zig build -Doptimize=ReleaseSafe; \
-		cp homestead-smelter/zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest 2>/dev/null || \
-		cp zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest; \
-	else \
-		echo "→ skipping homestead-smelter guest (zig not in PATH)"; \
-		rm -f /tmp/homestead-smelter-guest; \
-	fi
+	@command -v zig >/dev/null 2>&1 || { echo "ERROR: zig is required to build homestead-smelter-guest"; exit 1; }
+	@echo "→ building homestead-smelter guest (zig)"
+	cd homestead-smelter && zig build -Doptimize=ReleaseSafe
+	cp homestead-smelter/zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest 2>/dev/null || \
+	cp zig-out/bin/homestead-smelter-guest /tmp/homestead-smelter-guest
 	@echo "→ building forgevm-init (static, linux/amd64)"
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o /tmp/forgevm-init ./cmd/forgevm-init
 	@echo "→ uploading build script, version pins, and forgevm-init"
-	@UPLOADS="scripts/build-guest-rootfs.sh ci/versions.json /tmp/forgevm-init"; \
-	if [ -f /tmp/homestead-smelter-guest ]; then \
-		UPLOADS="$$UPLOADS /tmp/homestead-smelter-guest"; \
-	fi; \
+	@UPLOADS="scripts/build-guest-rootfs.sh ci/versions.json /tmp/forgevm-init /tmp/homestead-smelter-guest"; \
 	scp $(SSH_OPTS) $$UPLOADS $(REMOTE_USER)@$(REMOTE_HOST):/tmp/
 	@echo "→ building guest rootfs on $(REMOTE_HOST)"
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
