@@ -9,14 +9,13 @@ const max_bridge_line_bytes: usize = 128;
 const usage =
     \\Usage:
     \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH] [--port PORT]
-    \\  homestead-smelter-host ping --control-uds PATH
     \\  homestead-smelter-host snapshot --control-uds PATH
     \\  homestead-smelter-host check-live --control-uds PATH --job-id UUID
     \\
     \\`serve` runs the long-lived host agent, discovers Firecracker VMs, opens one
     \\binary telemetry stream per guest, and exposes a local Unix socket.
-    \\`ping` checks that the host agent is running.
-    \\`snapshot` prints the current binary host view in a human-readable format.
+    \\`snapshot` prints the current binary host view in a human-readable format and
+    \\also serves as the daemon liveness check.
     \\`check-live` succeeds when the named job has both hello and sample telemetry.
     \\
     \\Options:
@@ -31,7 +30,6 @@ const usage =
 
 const Mode = enum {
     serve,
-    ping,
     snapshot,
     check_live,
 };
@@ -320,13 +318,6 @@ const AgentState = struct {
         return packets.toOwnedSlice(allocator);
     }
 
-    fn pongPacket(self: *AgentState) hostp.Packet {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        return self.makePacketLocked(.pong, [_]u8{0} ** 16, 0, 0, hostp.zeroPayload());
-    }
-
     fn makePacketLocked(
         self: *AgentState,
         kind: hostp.PacketKind,
@@ -450,7 +441,6 @@ pub fn main() !void {
 
     switch (config.mode) {
         .serve => try serve(allocator, config.control_uds, config.jailer_root, config.port),
-        .ping => try ping(config.control_uds),
         .snapshot => try snapshot(allocator, config.control_uds),
         .check_live => try checkLive(allocator, config.control_uds, config.job_id),
     }
@@ -505,7 +495,7 @@ fn parseArgs(args: []const []const u8) !Config {
     }
 
     switch (config.mode) {
-        .serve, .ping, .snapshot, .check_live => {
+        .serve, .snapshot, .check_live => {
             if (config.control_uds.len == 0) {
                 std.log.err("--listen-uds/--control-uds is required", .{});
                 return error.ShowUsage;
@@ -522,7 +512,6 @@ fn parseArgs(args: []const []const u8) !Config {
 
 fn switchMode(value: []const u8) ?Mode {
     if (std.mem.eql(u8, value, "serve")) return .serve;
-    if (std.mem.eql(u8, value, "ping")) return .ping;
     if (std.mem.eql(u8, value, "snapshot")) return .snapshot;
     if (std.mem.eql(u8, value, "check-live")) return .check_live;
     return null;
@@ -572,7 +561,6 @@ fn handleControlConnection(allocator: std.mem.Allocator, stream: std.net.Stream,
     const request = try hostp.decodeRequest(&request_buf);
 
     switch (request.kind) {
-        .ping => try writePacket(stream, state.pongPacket()),
         .snapshot => {
             const packets = try state.snapshotPackets(allocator);
             defer allocator.free(packets);
@@ -581,17 +569,6 @@ fn handleControlConnection(allocator: std.mem.Allocator, stream: std.net.Stream,
             }
         },
     }
-}
-
-fn ping(control_uds: []const u8) !void {
-    var stream = try openControlStream(control_uds);
-    defer stream.close();
-
-    try writeRequest(stream, .ping);
-    const packet = try readPacket(stream);
-    if (packet.header.kind != .pong) return error.InvalidHostReply;
-
-    try std.fs.File.stdout().writeAll("PONG homestead-smelter-host\n");
 }
 
 fn snapshot(allocator: std.mem.Allocator, control_uds: []const u8) !void {
@@ -679,10 +656,6 @@ fn readExact(stream: std.net.Stream, buf: []u8) !void {
 fn writeSnapshotLine(packet: hostp.Packet) !void {
     var line_buf: [512]u8 = undefined;
     switch (packet.header.kind) {
-        .pong => {
-            const line = try std.fmt.bufPrint(&line_buf, "PONG host_seq={d}\n", .{packet.header.host_seq});
-            try std.fs.File.stdout().writeAll(line);
-        },
         .hello => {
             const hello = try hs.decodeHelloFrame(&packet.payload);
             const job_id = hs.formatUuid(packet.header.job_id);

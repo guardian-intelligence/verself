@@ -29,13 +29,11 @@ const (
 	smelterPacketSize               = 176
 	smelterPacketPayloadSize        = 128
 
-	smelterRequestPing     uint16 = 1
-	smelterRequestSnapshot uint16 = 2
+	smelterRequestSnapshot uint16 = 1
 
-	smelterPacketPong        uint16 = 1
-	smelterPacketHello       uint16 = 2
-	smelterPacketSample      uint16 = 3
-	smelterPacketSnapshotEnd uint16 = 4
+	smelterPacketHello       uint16 = 1
+	smelterPacketSample      uint16 = 2
+	smelterPacketSnapshotEnd uint16 = 3
 
 	smelterFrameMagic   uint32 = 0x46505600
 	smelterFrameVersion uint16 = 1
@@ -128,7 +126,7 @@ func TestHomesteadSmelterReportsRunningVMs(t *testing.T) {
 	}
 	defer stopProcess(t, smelterCmd)
 
-	waitForSmelterPing(t, controlSock, 10*time.Second, &hostLogs)
+	waitForSmelterSnapshot(t, controlSock, 10*time.Second, &hostLogs)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	orch := New(cfg, logger)
@@ -224,36 +222,18 @@ func stopProcess(t *testing.T, cmd *exec.Cmd) {
 	_, _ = cmd.Process.Wait()
 }
 
-func waitForSmelterPing(t *testing.T, controlSock string, timeout time.Duration, hostLogs *bytes.Buffer) {
+func waitForSmelterSnapshot(t *testing.T, controlSock string, timeout time.Duration, hostLogs *bytes.Buffer) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("unix", controlSock, 250*time.Millisecond)
-		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		if err := smelterWriteRequest(conn, smelterRequestPing); err != nil {
-			conn.Close()
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		packet, err := smelterReadPacket(conn)
-		conn.Close()
-		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		if packet.Kind == smelterPacketPong {
+		if _, err := smelterSnapshotRequest(controlSock); err == nil {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	t.Fatalf("homestead-smelter host did not answer ping\nhost logs:\n%s", hostLogs.String())
+	t.Fatalf("homestead-smelter host did not answer snapshot request\nhost logs:\n%s", hostLogs.String())
 }
 
 func waitForSmelterJobs(t *testing.T, ctx context.Context, controlSock string, jobIDs []string, hostLogs *bytes.Buffer) smelterSnapshot {

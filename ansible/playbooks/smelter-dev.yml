@@ -131,12 +131,6 @@
           ansible.builtin.pause:
             seconds: "{{ probe_settle_seconds }}"
 
-        - name: Verify host agent answers ping
-          ansible.builtin.command: >
-            {{ fc_smelter_host_binary_path }} ping
-            --control-uds {{ fc_smelter_control_socket }}
-          changed_when: false
-
         - name: Wait for host agent to report live telemetry for the VM
           ansible.builtin.command: >
             {{ fc_smelter_host_binary_path }} check-live

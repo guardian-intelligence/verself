@@ -11,8 +11,7 @@ Current protocol shape:
 - `homestead-smelter-guest` listens on a dedicated vsock port inside the guest
 - each guest connection sends one fixed-size `hello` frame, then one fixed-size `sample` frame at a fixed `60Hz`
 - `homestead-smelter-host serve` runs as a long-lived daemon on the bare-metal worker
-- `homestead-smelter-host ping` verifies the daemon over a local Unix socket using a fixed-size binary request/response
-- `homestead-smelter-host snapshot` decodes the current binary host view into human-readable lines for debugging
+- `homestead-smelter-host snapshot` verifies the daemon and decodes the current binary host view into human-readable lines for debugging
 - `homestead-smelter-host check-live` succeeds when a given job UUID has both hello and sample telemetry
 - the host daemon owns the long-lived guest streams and is the collection point for VM telemetry
 
@@ -47,27 +46,14 @@ homestead-smelter/zig-out/bin/homestead-smelter-host serve \
   --jailer-root /srv/jailer/firecracker
 ```
 
-In another shell, verify it:
-
-```bash
-homestead-smelter/zig-out/bin/homestead-smelter-host ping \
-  --control-uds /tmp/homestead-smelter.sock
-```
-
-Expected output:
-
-```text
-PONG homestead-smelter-host
-```
-
-Ask the daemon for its current guest view:
+In another shell, verify it and inspect its current guest view:
 
 ```bash
 homestead-smelter/zig-out/bin/homestead-smelter-host snapshot \
   --control-uds /tmp/homestead-smelter.sock
 ```
 
-Expected output shape:
+Expected output shape when no VMs are live:
 
 ```text
 SNAPSHOT_END host_seq=1
@@ -93,4 +79,4 @@ homestead-smelter/zig-out/bin/homestead-smelter-host check-live \
 
 The wire contract is documented in [docs/protocol.md](docs/protocol.md).
 
-Read @homestead-smelter/docs/TIGER_STYLE.md for coding guidance.
+Read @homestead-smelter/docs/zig-coding/STYLE.md for coding guidance.

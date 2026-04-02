@@ -191,9 +191,9 @@
 
 - name: Verify homestead-smelter host service responds
   ansible.builtin.command: >
-    {{ fc_smelter_host_binary_path }} ping
+    {{ fc_smelter_host_binary_path }} snapshot
     --control-uds {{ fc_smelter_control_socket }}
-  register: smelter_ping
+  register: smelter_snapshot
   changed_when: false
 
 # --- Guest artifact verification ---
