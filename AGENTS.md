@@ -18,6 +18,7 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 ## Context
 
 - homestead-smelter is a guest agent + host Firecracker mVM agent written in Zig. The guest agent collects heartbeat health diagnostics and runs on each Firecracker VM, streaming data up continuously to the host agent, which then writes data to a socket for consumers.
+- Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
 
 ## CI Architecture (Target)
 
@@ -361,7 +362,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
-* When writing design documents, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
+* When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
 
 ## License
 

@@ -45,6 +45,9 @@ result-*
 homestead-smelter/.zig-cache/
 homestead-smelter/zig-out/
 
+# Reference repos (cloned for grep, not committed)
+docs/references/
+
 # CI build artifacts
 ci/output/rootfs.ext4
 ci/output/sbom.txt
