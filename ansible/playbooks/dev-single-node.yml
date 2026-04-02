@@ -14,14 +14,14 @@
   connection: local
   gather_facts: false
   tasks:
-    - name: nix_server_profile_path must be set
+    - name: Require nix_server_profile_path
       ansible.builtin.assert:
         that: nix_server_profile_path | default('') | length > 0
         fail_msg: >-
           nix_server_profile_path required — run:
           nix build .#server-profile --no-link --print-out-paths
 
-    - name: nix_server_profile_path must exist on disk
+    - name: Verify nix_server_profile_path exists on disk
       ansible.builtin.stat:
         path: "{{ nix_server_profile_path }}"
       register: preflight_nix_profile
@@ -48,13 +48,13 @@
   gather_facts: false
   become: true
   tasks:
-    - name: forge_metal_domain must be set
+    - name: Require forge_metal_domain
       ansible.builtin.assert:
         that: forge_metal_domain | default('', true) | length > 0
         fail_msg: >-
           forge_metal_domain is required. Run: make setup-domain
 
-    - name: cloudflare_api_token must be set
+    - name: Require cloudflare_api_token
       ansible.builtin.assert:
         that: cloudflare_api_token | default('', true) | length > 0
         fail_msg: >-
@@ -95,6 +95,7 @@
 - name: Deploy forge-metal (single node, idempotent)
   hosts: all
   become: true
+  force_handlers: true
   roles:
     - nix_deploy
     - base
