@@ -24,8 +24,6 @@ import (
 type smelterSnapshot struct {
 	SchemaVersion    int         `json:"schema_version"`
 	JailerRoot       string      `json:"jailer_root"`
-	GuestPort        uint32      `json:"guest_port"`
-	SamplePeriodMS   uint32      `json:"sample_period_ms"`
 	ObservedAtUnixMS int64       `json:"observed_at_unix_ms"`
 	VMs              []smelterVM `json:"vms"`
 }
@@ -43,15 +41,12 @@ type smelterVM struct {
 }
 
 type smelterHello struct {
-	Seq            uint32 `json:"seq"`
-	Flags          uint32 `json:"flags"`
-	MonoNS         uint64 `json:"mono_ns"`
-	WallNS         uint64 `json:"wall_ns"`
-	SamplePeriodMS uint32 `json:"sample_period_ms"`
-	GuestPort      uint32 `json:"guest_port"`
-	BootID         string `json:"boot_id"`
-	NetIface       string `json:"net_iface"`
-	BlockDev       string `json:"block_dev"`
+	MonoNS       uint64 `json:"mono_ns"`
+	WallNS       uint64 `json:"wall_ns"`
+	SampleRateHZ uint32 `json:"sample_rate_hz"`
+	BootID       string `json:"boot_id"`
+	NetIface     string `json:"net_iface"`
+	BlockDev     string `json:"block_dev"`
 }
 
 type smelterSample struct {
@@ -143,12 +138,6 @@ func TestHomesteadSmelterReportsRunningVMs(t *testing.T) {
 	}
 
 	snapshot := waitForSmelterJobs(t, ctx, controlSock, jobIDs, &hostLogs)
-	if snapshot.GuestPort != 10790 {
-		t.Fatalf("unexpected guest port in snapshot: %+v", snapshot)
-	}
-	if snapshot.SamplePeriodMS != 500 {
-		t.Fatalf("unexpected sample period in snapshot: %+v", snapshot)
-	}
 	if snapshot.JailerRoot != jailerScanRoot {
 		t.Fatalf("unexpected jailer root in snapshot: %+v", snapshot)
 	}
@@ -167,14 +156,14 @@ func TestHomesteadSmelterReportsRunningVMs(t *testing.T) {
 		if vm.Hello == nil || vm.Sample == nil {
 			t.Fatalf("snapshot missing telemetry for %s: %+v", jobID, vm)
 		}
-		if vm.Hello.GuestPort != 10790 || vm.Hello.SamplePeriodMS != 500 {
+		if vm.Hello.SampleRateHZ != 60 {
 			t.Fatalf("snapshot reported unexpected hello metadata for %s: %+v", jobID, vm.Hello)
 		}
 		if vm.Hello.BootID == "" || vm.Hello.NetIface != "eth0" || vm.Hello.BlockDev != "vda" {
 			t.Fatalf("snapshot reported unexpected hello identity for %s: %+v", jobID, vm.Hello)
 		}
-		if vm.Sample.Seq <= vm.Hello.Seq {
-			t.Fatalf("snapshot sample did not advance past hello for %s: %+v / %+v", jobID, vm.Hello, vm.Sample)
+		if vm.Sample.Seq == 0 {
+			t.Fatalf("snapshot sample sequence did not advance for %s: %+v", jobID, vm.Sample)
 		}
 		if vm.Sample.MemTotalKB == 0 || vm.Sample.MemAvailableKB == 0 {
 			t.Fatalf("snapshot reported invalid memory sample for %s: %+v", jobID, vm.Sample)

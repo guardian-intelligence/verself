@@ -117,7 +117,7 @@ fn collectHelloFrame(port: u32) !hs.HelloFrame {
         .seq = 0,
         .mono_ns = try hs.monotonicNowNs(),
         .wall_ns = try hs.realtimeNowNs(),
-        .sample_period_ms = hs.default_sample_period_ms,
+        .sample_rate_hz = hs.default_sample_rate_hz,
         .guest_port = port,
     };
 

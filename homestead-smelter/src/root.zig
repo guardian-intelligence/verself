@@ -5,8 +5,8 @@ pub const default_guest_port: u32 = 10790;
 pub const frame_magic: u32 = 0x46505600;
 pub const frame_version: u16 = 1;
 pub const frame_size: usize = 128;
-pub const default_sample_period_ms: u32 = 500;
-pub const sample_period_ns: u64 = default_sample_period_ms * std.time.ns_per_ms;
+pub const default_sample_rate_hz: u32 = 60;
+pub const sample_period_ns: u64 = std.time.ns_per_s / default_sample_rate_hz;
 pub const max_line_bytes: usize = 4096;
 pub const max_snapshot_bytes: usize = 1024 * 1024;
 
@@ -26,7 +26,7 @@ pub const HelloFrame = struct {
     flags: u32 = 0,
     mono_ns: u64 = 0,
     wall_ns: u64 = 0,
-    sample_period_ms: u32 = default_sample_period_ms,
+    sample_rate_hz: u32 = default_sample_rate_hz,
     guest_port: u32 = default_guest_port,
     boot_id: [36]u8 = [_]u8{0} ** 36,
     net_iface: [16]u8 = [_]u8{0} ** 16,
@@ -107,7 +107,7 @@ const HeaderWire = extern struct {
 
 const HelloWire = extern struct {
     header: HeaderWire,
-    sample_period_ms: u32,
+    sample_rate_hz: u32,
     guest_port: u32,
     boot_id: [36]u8,
     net_iface: [16]u8,
@@ -117,7 +117,7 @@ const HelloWire = extern struct {
     fn fromFrame(frame: HelloFrame) HelloWire {
         return .{
             .header = HeaderWire.init(.hello, frame.seq, frame.flags, frame.mono_ns, frame.wall_ns),
-            .sample_period_ms = frame.sample_period_ms,
+            .sample_rate_hz = frame.sample_rate_hz,
             .guest_port = frame.guest_port,
             .boot_id = frame.boot_id,
             .net_iface = frame.net_iface,
@@ -131,7 +131,7 @@ const HelloWire = extern struct {
             .flags = self.header.flags,
             .mono_ns = self.header.mono_ns,
             .wall_ns = self.header.wall_ns,
-            .sample_period_ms = self.sample_period_ms,
+            .sample_rate_hz = self.sample_rate_hz,
             .guest_port = self.guest_port,
             .boot_id = self.boot_id,
             .net_iface = self.net_iface,
@@ -237,12 +237,12 @@ comptime {
     std.debug.assert(builtin.cpu.arch.endian() == .little);
     std.debug.assert(frame_size == 128);
     std.debug.assert(default_guest_port >= 1024);
-    std.debug.assert(default_sample_period_ms > 0);
+    std.debug.assert(default_sample_rate_hz > 0);
     std.debug.assert(max_snapshot_bytes >= max_line_bytes);
     std.debug.assert(@sizeOf(HeaderWire) == 32);
     std.debug.assert(@sizeOf(HelloWire) == frame_size);
     std.debug.assert(@sizeOf(SampleWire) == frame_size);
-    std.debug.assert(@offsetOf(HelloWire, "sample_period_ms") == 32);
+    std.debug.assert(@offsetOf(HelloWire, "sample_rate_hz") == 32);
     std.debug.assert(@offsetOf(HelloWire, "boot_id") == 40);
     std.debug.assert(@offsetOf(SampleWire, "cpu_user_ticks") == 32);
     std.debug.assert(@offsetOf(SampleWire, "psi_cpu_pct100") == 120);
@@ -291,7 +291,7 @@ pub fn setPaddedString(dest: []u8, value: []const u8) void {
 }
 
 pub fn encodeHelloFrame(frame: HelloFrame) [frame_size]u8 {
-    std.debug.assert(frame.sample_period_ms > 0);
+    std.debug.assert(frame.sample_rate_hz > 0);
     std.debug.assert(frame.guest_port > 0);
     return HelloWire.fromFrame(frame).encode();
 }
@@ -374,7 +374,7 @@ test "hello frame round-trips" {
         .flags = 2,
         .mono_ns = 3,
         .wall_ns = 4,
-        .sample_period_ms = default_sample_period_ms,
+        .sample_rate_hz = default_sample_rate_hz,
         .guest_port = default_guest_port,
     };
     setPaddedString(frame.boot_id[0..], "boot-id");
@@ -439,7 +439,7 @@ test "decodeSampleFrame rejects hello frame kind" {
         .seq = 1,
         .mono_ns = 3,
         .wall_ns = 4,
-        .sample_period_ms = default_sample_period_ms,
+        .sample_rate_hz = default_sample_rate_hz,
         .guest_port = default_guest_port,
     };
     const encoded = encodeHelloFrame(frame);
