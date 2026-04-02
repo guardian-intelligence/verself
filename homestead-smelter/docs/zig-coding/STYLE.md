@@ -517,6 +517,25 @@ control socket handling. Shared state is protected by `std.Thread.Mutex`.
 - Use newlines to **group resource allocation and deallocation**, i.e. before the resource
   allocation and after the corresponding `defer` statement, to make leaks easier to spot.
 
+- Be explicit about **resource ownership transfer**. If a raw file descriptor is wrapped in a
+  higher-level owner such as `std.net.Stream`, the raw-fd `defer`/`errdefer` must end at the
+  transfer boundary. Do not keep both cleanup paths alive across the same fallible code, or a
+  handshake failure will turn into a deterministic double-close and trip Zig's safety checks.
+
+  ```zig
+  const stream = blk: {
+      const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0);
+      errdefer std.posix.close(fd); // valid only before ownership transfer
+      try std.posix.connect(fd, &address.any, address.getOsSockLen());
+      break :blk std.net.Stream{ .handle = fd };
+  };
+  errdefer stream.close(); // sole owner after wrapping
+  ```
+
+- When a `ReleaseSafe` crash lands in Zig stdlib `unreachable`, reproduce with `-Doptimize=Debug`
+  before committing to a root-cause theory. Optimized builds often collapse the local frame that
+  actually violated ownership or lifetime rules.
+
 ### Off-By-One Errors
 
 - **The usual suspects for off-by-one errors are casual interactions between an `index`, a `count`
