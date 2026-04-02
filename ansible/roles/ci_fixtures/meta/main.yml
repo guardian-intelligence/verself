@@ -1,0 +1,4 @@
+---
+# forgejo: Forgejo must be running with admin seeded before fixture seeding.
+dependencies:
+  - role: forgejo

@@ -1,0 +1,4 @@
+---
+# nix_deploy: provides forgejo and forgejo-runner binaries at fm_bin.
+dependencies:
+  - role: nix_deploy

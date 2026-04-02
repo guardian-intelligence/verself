@@ -567,6 +567,36 @@
     - dev_tools_manifest.ansible is defined
     - dev_tools_manifest['ansible-lint'] is defined
 
+- name: Check pre-commit version
+  ansible.builtin.command: /usr/local/bin/pre-commit --version
+  register: dev_tools_pre_commit_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest['pre-commit'] is defined
+
+- name: Install pre-commit via pipx
+  ansible.builtin.command:
+    cmd: "pipx install pre-commit=={{ dev_tools_manifest['pre-commit'].version }}"
+  environment:
+    PIPX_HOME: /opt/pipx
+    PIPX_BIN_DIR: /usr/local/bin
+  register: dev_tools_pre_commit_install
+  changed_when: "'installed package' in dev_tools_pre_commit_install.stdout"
+  failed_when:
+    - dev_tools_pre_commit_install.rc != 0
+    - "'already seems to be installed' not in (dev_tools_pre_commit_install.stdout + dev_tools_pre_commit_install.stderr)"
+  when:
+    - dev_tools_manifest['pre-commit'] is defined
+    - dev_tools_pre_commit_current.rc != 0
+      or dev_tools_manifest['pre-commit'].version not in (dev_tools_pre_commit_current.stdout | default(''))
+
+- name: Verify pre-commit version
+  ansible.builtin.command: /usr/local/bin/pre-commit --version
+  register: dev_tools_pre_commit_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest['pre-commit'].version not in dev_tools_pre_commit_version_check.stdout"
+  when: dev_tools_manifest['pre-commit'] is defined
+
 - name: Install required Ansible collections
   ansible.builtin.command:
     cmd: "/usr/local/bin/ansible-galaxy collection install -r {{ playbook_dir }}/../requirements.yml"

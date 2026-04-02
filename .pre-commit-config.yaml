@@ -1,0 +1,10 @@
+minimum_pre_commit_version: "4.5.1"
+repos:
+  - repo: local
+    hooks:
+      - id: ansible-lint
+        name: ansible-lint
+        entry: bash -lc 'cd ansible && ansible-lint playbooks roles'
+        language: system
+        files: ^ansible/
+        pass_filenames: false
