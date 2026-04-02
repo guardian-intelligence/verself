@@ -13,8 +13,6 @@ fc_rootfs_path: /var/lib/ci/rootfs.ext4
 fc_guest_artifact_manifest_path: /var/lib/ci/guest-artifacts.json
 fc_rootfs_hash_record: /var/lib/ci/golden-zvol.rootfs.sha256
 fc_refresh_base_golden: false
-fc_prune_repo_goldens_on_refresh: false
-fc_prune_ci_children_on_refresh: false
 fc_zfs_arc_max_bytes: 8589934592  # 8 GiB
 fc_guest_pool_cidr: 172.16.0.0/16
 fc_net_lease_dir: /var/lib/ci/net/leases
