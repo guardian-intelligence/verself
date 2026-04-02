@@ -27,6 +27,15 @@
 
     # ── Preflight ──────────────────────────────────────────────────────────
 
+    - name: Ansible collection ansible.posix must be installed
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: ansible-galaxy collection list ansible.posix
+      changed_when: false
+      register: preflight_ap
+      failed_when: "'ansible.posix' not in preflight_ap.stdout"
+
     - name: Verify uploaded guest binary exists
       ansible.builtin.stat:
         path: "{{ smelter_guest_upload }}"
@@ -59,6 +68,7 @@
         zfs clone
         {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready
         {{ smelter_dev_zvol }}
+      changed_when: true
 
     - name: Wait for dev zvol device node
       ansible.builtin.command: udevadm settle
@@ -93,6 +103,7 @@
 
     - name: Snapshot dev zvol
       ansible.builtin.command: "zfs snapshot {{ smelter_dev_snapshot }}"
+      changed_when: true
 
     - name: Dev golden ready
       ansible.builtin.debug:
@@ -100,7 +111,8 @@
 
     # ── Boot VM, probe, teardown ──────────────────────────────────────────
 
-    - block:
+    - name: Boot VM, probe, and tear down dev Firecracker instance
+      block:
         - name: Boot Firecracker VM from dev golden (background)
           ansible.builtin.command: >
             {{ fm_bin }}/forge-metal firecracker-test

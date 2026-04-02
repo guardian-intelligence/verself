@@ -5,7 +5,7 @@
 - name: Check if runner is already registered
   ansible.builtin.stat:
     path: /var/lib/bench-ci/.runner
-  register: runner_file_stat
+  register: forgejo_runner_file_stat
 
 - name: Ensure /etc/forgejo is traversable by bench-ci
   ansible.builtin.file:
@@ -40,23 +40,23 @@
 - name: Generate default runner config
   ansible.builtin.command: >
     {{ fm_bin }}/forgejo-runner generate-config
-  register: runner_default_config
+  register: forgejo_runner_default_config
   changed_when: false
 
 - name: Assert generated runner config exposes capacity
   ansible.builtin.assert:
     that:
-      - runner_default_config.stdout is search('(?m)^\\s*capacity:')
+      - forgejo_runner_default_config.stdout is search('(?m)^\\s*capacity:')
     fail_msg: "forgejo-runner generate-config no longer emits a capacity field; update register_runner.yml."
 
 - name: Write runner config with explicit capacity
   ansible.builtin.copy:
-    content: "{{ runner_default_config.stdout }}"
+    content: "{{ forgejo_runner_default_config.stdout }}"
     dest: /etc/forgejo/runner-config.yaml
     owner: bench-ci
     group: bench-ci
     mode: "0640"
-  register: runner_config_file
+  register: forgejo_runner_config_file
 
 - name: Set runner capacity explicitly
   ansible.builtin.lineinfile:
@@ -64,10 +64,10 @@
     regexp: '^(\s*)capacity:\s*.*$'
     line: '  capacity: {{ forgejo_runner_capacity_effective }}'
     backrefs: false
-  register: runner_capacity_line
+  register: forgejo_runner_capacity_line
 
 - name: Runner registration block
-  when: not runner_file_stat.stat.exists
+  when: not forgejo_runner_file_stat.stat.exists
   block:
     - name: Get runner registration token via CLI
       ansible.builtin.command: >
@@ -77,25 +77,31 @@
       become_user: forgejo
       environment:
         FORGEJO_WORK_DIR: /var/lib/forgejo
-      register: runner_reg_token
+      register: forgejo_runner_registration_token
       changed_when: false
 
     - name: Register runner with Forgejo
-      ansible.builtin.shell: >
-        cd /var/lib/bench-ci &&
-        {{ fm_bin }}/forgejo-runner register
-          --no-interactive
-          --instance http://127.0.0.1:{{ forgejo_port }}
-          --token {{ runner_reg_token.stdout | trim }}
-          --name forge-metal-runner
-          --labels ubuntu-latest:host
-          --config /etc/forgejo/runner-config.yaml
-      args:
-        executable: /bin/bash
+      ansible.builtin.command:
+        argv:
+          - "{{ fm_bin }}/forgejo-runner"
+          - register
+          - --no-interactive
+          - --instance
+          - "http://127.0.0.1:{{ forgejo_port }}"
+          - --token
+          - "{{ forgejo_runner_registration_token.stdout | trim }}"
+          - --name
+          - forge-metal-runner
+          - --labels
+          - ubuntu-latest:host
+          - --config
+          - /etc/forgejo/runner-config.yaml
+        chdir: /var/lib/bench-ci
       become: true
       become_user: bench-ci
       environment:
         HOME: /var/lib/bench-ci
+      changed_when: true
 
 - name: Ensure forgejo-runner is enabled and started
   ansible.builtin.systemd:
@@ -108,9 +114,9 @@
     name: forgejo-runner
     state: restarted
     daemon_reload: true
-  when: runner_config_file.changed or runner_capacity_line.changed or not runner_file_stat.stat.exists
+  when: forgejo_runner_config_file.changed or forgejo_runner_capacity_line.changed or not forgejo_runner_file_stat.stat.exists
 
 - name: Wait for runner to connect
   ansible.builtin.pause:
     seconds: 3
-  when: not runner_file_stat.stat.exists
+  when: not forgejo_runner_file_stat.stat.exists

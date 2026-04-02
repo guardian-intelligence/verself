@@ -5,7 +5,12 @@
 forgejo_subdomain: git
 
 # Full domain: auto-derived as <subdomain>.<forge_metal_domain>, or bare IP if no domain set.
-forgejo_domain: "{{ (forgejo_subdomain ~ '.' ~ forge_metal_domain) if (forge_metal_domain | default('', true) | length > 0) else ansible_default_ipv4.address }}"
+forgejo_domain: >-
+  {{
+    (forgejo_subdomain ~ '.' ~ forge_metal_domain)
+    if (forge_metal_domain | default('', true) | length > 0)
+    else ansible_default_ipv4.address
+  }}
 
 # Forgejo listens on this port (reverse-proxied by Caddy).
 forgejo_port: 3000

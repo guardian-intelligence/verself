@@ -1,0 +1,4 @@
+# Temporary work-around while role variable names are being reconciled with
+# in-flight argument_specs changes. Remove after that cutover lands.
+roles/clickstack/defaults/main.yml var-naming[no-role-prefix] skip
+roles/firecracker/defaults/main.yml var-naming[no-role-prefix] skip

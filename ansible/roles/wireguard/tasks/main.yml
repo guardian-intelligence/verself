@@ -10,23 +10,43 @@
     mode: "0700"
 
 - name: Generate WireGuard private key
-  ansible.builtin.shell: "{{ fm_bin }}/wg genkey"
-  register: wg_private_key
+  ansible.builtin.command: "{{ fm_bin }}/wg genkey"
+  register: wireguard_private_key
   args:
     creates: /etc/wireguard/private.key
   no_log: true
 
 - name: Save private key
   ansible.builtin.copy:
-    content: "{{ wg_private_key.stdout }}"
+    content: "{{ wireguard_private_key.stdout }}"
     dest: /etc/wireguard/private.key
     mode: "0600"
-  when: wg_private_key.changed
+  when: wireguard_private_key.stdout | length > 0
+  no_log: true
+
+- name: Read WireGuard private key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/private.key
+  register: wireguard_private_key_file
+  no_log: true
+
+- name: Set WireGuard private key fact
+  ansible.builtin.set_fact:
+    wireguard_private_key_material: >-
+      {{
+        (wireguard_private_key.stdout | trim)
+        if (wireguard_private_key.stdout | length > 0)
+        else (wireguard_private_key_file.content | b64decode | trim)
+      }}
   no_log: true
 
 - name: Generate WireGuard public key
-  ansible.builtin.shell: "cat /etc/wireguard/private.key | {{ fm_bin }}/wg pubkey"
-  register: wg_public_key
+  ansible.builtin.shell: |
+    set -o pipefail
+    cat /etc/wireguard/private.key | {{ fm_bin }}/wg pubkey
+  register: wireguard_public_key
+  args:
+    executable: /bin/bash
   changed_when: false
   no_log: true
 

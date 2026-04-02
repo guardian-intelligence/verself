@@ -34,6 +34,13 @@
     "pipx_package": "ansible-core",
     "version_cmd": "ansible --version"
   },
+  "ansible-lint": {
+    "version": "26.4.0",
+    "strategy": "pipx_inject",
+    "pipx_package": "ansible-core",
+    "inject_package": "ansible-lint",
+    "version_cmd": "ansible-lint --version"
+  },
   "protoc": {
     "version": "34.0",
     "strategy": "zip",

@@ -5,22 +5,26 @@
 
 - name: Detect available disks for ZFS pool (skip root disk)
   ansible.builtin.shell: |
+    set -o pipefail
     root_disk=$(lsblk -npo PKNAME $(findmnt -no SOURCE /) 2>/dev/null | head -1)
     lsblk -dnpo NAME,TYPE | awk -v root="$root_disk" '$2 == "disk" && $1 != root {print $1}' | head -1
   register: zfs_disk
+  args:
+    executable: /bin/bash
   changed_when: false
 
 - name: Check if ZFS pool exists
   ansible.builtin.command: zpool status {{ zfs_pool }}
-  register: zpool_status
+  register: zfs_pool_status
   changed_when: false
   failed_when: false
 
 - name: Wipe old filesystem signatures on target disk
   ansible.builtin.command: wipefs -a {{ zfs_disk.stdout }}
   when:
-    - zpool_status.rc != 0
+    - zfs_pool_status.rc != 0
     - zfs_disk.stdout | length > 0
+  changed_when: true
 
 - name: Create ZFS pool
   ansible.builtin.command: >
@@ -30,8 +34,9 @@
     -O xattr=sa
     {{ zfs_pool }} {{ zfs_disk.stdout }}
   when:
-    - zpool_status.rc != 0
+    - zfs_pool_status.rc != 0
     - zfs_disk.stdout | length > 0
+  changed_when: true
 
 - name: Create golden dataset
   community.general.zfs:

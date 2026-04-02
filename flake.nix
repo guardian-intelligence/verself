@@ -42,7 +42,10 @@
             # --- Observability stack ---
             clickhouse-static      # Wide event storage (official static binary)
             # MongoDB excluded -- installed via apt (SSPL license, no binary cache, 30min+ source build)
-            pkgs.caddy             # Reverse proxy, auto-TLS
+            (pkgs.caddy.withPlugins {  # Reverse proxy, auto-TLS + Coraza WAF
+              plugins = [ "github.com/corazawaf/coraza-caddy/v2@v2.4.0" ];
+              hash = "sha256-sDTek0V9sUpCks8eH987Q1I30nBMlHOVUxMh58PczN4=";
+            })
             pkgs.opentelemetry-collector-contrib  # OTLP ingestion
 
             # --- CI runtime ---

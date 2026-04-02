@@ -1,5 +1,5 @@
 [Interface]
-PrivateKey = {{ wg_private_key.stdout | default(lookup('file', '/etc/wireguard/private.key')) }}
+PrivateKey = {{ wireguard_private_key_material }}
 Address = {{ wireguard_address }}/16
 ListenPort = {{ wireguard_port }}
 
