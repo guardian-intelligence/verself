@@ -84,7 +84,7 @@ Those are fixture orchestration concerns, not workload execution concerns.
 ## Basic Commands
 
 ```bash
-nix develop
+make setup-dev   # one-time: install pinned dev tools
 make provision
 make deploy
 make e2e

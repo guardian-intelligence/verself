@@ -1,0 +1,3 @@
+---
+dev_tools_json: "{{ playbook_dir }}/../../dev-tools.json"
+dev_tools_gopath: /usr/local/go-tools
