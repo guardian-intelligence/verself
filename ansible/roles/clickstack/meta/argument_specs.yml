@@ -1,0 +1,116 @@
+---
+argument_specs:
+  main:
+    short_description: "ClickStack observability: ClickHouse, HyperDX, OTel, Caddy, MongoDB"
+    description:
+      - "Deploys the full observability stack. ClickHouse for wide events,"
+      - "HyperDX for UI/API, OTel Collector for OTLP ingestion, Caddy for"
+      - "reverse proxy with auto-TLS, MongoDB for HyperDX app state."
+      - "Seeds admin credentials on first run and persists them."
+    options:
+      # -- ClickHouse --
+      clickhouse_version:
+        type: str
+        default: "26.3.2.3"
+        description: "ClickHouse version. Used in systemd unit and version verification."
+
+      clickhouse_http_port:
+        type: int
+        default: 8123
+        description: "ClickHouse HTTP interface port."
+
+      clickhouse_native_port:
+        type: int
+        default: 9000
+        description: "ClickHouse native TCP protocol port."
+
+      clickhouse_data_path:
+        type: path
+        default: /var/lib/clickhouse
+        description: "ClickHouse data directory."
+
+      # -- MongoDB --
+      mongodb_version:
+        type: str
+        default: "7.0"
+        description: "MongoDB major version for apt repo setup."
+
+      # -- HyperDX --
+      hyperdx_repo:
+        type: str
+        default: "https://github.com/hyperdxio/hyperdx.git"
+        description: "HyperDX git repository URL."
+
+      hyperdx_version:
+        type: str
+        default: main
+        description: "Git ref to clone (branch, tag, or commit SHA)."
+
+      hyperdx_api_port:
+        type: int
+        default: 8000
+        description: "HyperDX API server port."
+
+      hyperdx_app_port:
+        type: int
+        default: 8080
+        description: "HyperDX frontend (Next.js) port."
+
+      hyperdx_opamp_port:
+        type: int
+        default: 4320
+        description: "HyperDX OpAMP port for OTel agent management."
+
+      hyperdx_install_dir:
+        type: path
+        default: /opt/clickstack/hyperdx
+        description: "HyperDX installation directory."
+
+      # -- OTel Collector --
+      otelcol_version:
+        type: str
+        default: "0.120.0"
+        description: "OpenTelemetry Collector Contrib version."
+
+      # -- Caddy --
+      caddy_version:
+        type: str
+        default: "2.*"
+        description: "Caddy version constraint for apt. Pin to 2.x series."
+
+      # -- Domain --
+      clickstack_subdomain:
+        type: str
+        default: admin
+        description: "Subdomain prefix for the ClickStack dashboard."
+
+      clickstack_domain:
+        type: str
+        description: >-
+          Full domain for the dashboard. Auto-derived as
+          <clickstack_subdomain>.<forge_metal_domain>, or bare IP
+          if forge_metal_domain is unset.
+
+      # -- Admin credentials (generated on first run if unset) --
+      clickstack_admin_email:
+        type: str
+        required: false
+        description: >-
+          Admin email for HyperDX. Generated and persisted to
+          credentials.auto.yml on first deploy if not provided.
+
+      clickstack_admin_password:
+        type: str
+        required: false
+        description: >-
+          Admin password for HyperDX. Generated and persisted to
+          credentials.auto.yml on first deploy if not provided.
+
+      # -- External dependency (from group_vars/all) --
+      fm_bin:
+        type: path
+        required: true
+        description: >-
+          Path to the Nix server profile bin directory. Provides
+          node, caddy, clickhouse, otelcol binaries. Set in
+          group_vars/all/main.yml.
