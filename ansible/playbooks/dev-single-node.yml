@@ -48,14 +48,17 @@
   gather_facts: false
   become: true
   tasks:
-    - name: Cloudflare token must be set when domain is configured
-      ansible.builtin.fail:
-        msg: >-
-          forge_metal_domain is "{{ forge_metal_domain }}" but cloudflare_api_token is empty.
-          Run: make setup-domain
-      when:
-        - forge_metal_domain | default('', true) | length > 0
-        - cloudflare_api_token | default('', true) | length == 0
+    - name: forge_metal_domain must be set
+      ansible.builtin.assert:
+        that: forge_metal_domain | default('', true) | length > 0
+        fail_msg: >-
+          forge_metal_domain is required. Run: make setup-domain
+
+    - name: cloudflare_api_token must be set
+      ansible.builtin.assert:
+        that: cloudflare_api_token | default('', true) | length > 0
+        fail_msg: >-
+          cloudflare_api_token is empty. Run: make setup-domain
 
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status benchpool"

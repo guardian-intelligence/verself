@@ -1,8 +1,7 @@
 ---
 # cloudflare_dns defaults.
 
-# Root domain (inherited from group_vars). Also used as the Cloudflare zone.
-# forge_metal_domain: ""
+# Root domain (required, inherited from group_vars). Also used as the Cloudflare zone.
 
 # Service subdomains to create A records for.
 # Each role defines its own subdomain (e.g. clickstack_subdomain: admin).
