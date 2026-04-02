@@ -342,3 +342,100 @@ test "hello frame round-trips" {
     try std.testing.expectEqualStrings("eth0", trimPaddedString(decoded.net_iface[0..]));
     try std.testing.expectEqualStrings("vda", trimPaddedString(decoded.block_dev[0..]));
 }
+
+test "decodeFrameKind rejects invalid magic" {
+    const frame = SampleFrame{
+        .seq = 7,
+        .mono_ns = 11,
+        .wall_ns = 22,
+    };
+    var encoded = encodeSampleFrame(frame);
+    writeU32(&encoded, 0, frame_magic ^ 0xffff);
+    try std.testing.expectError(error.InvalidMagic, decodeFrameKind(&encoded));
+}
+
+test "decodeFrameKind rejects invalid version" {
+    const frame = SampleFrame{
+        .seq = 7,
+        .mono_ns = 11,
+        .wall_ns = 22,
+    };
+    var encoded = encodeSampleFrame(frame);
+    writeU16(&encoded, 4, frame_version + 1);
+    try std.testing.expectError(error.InvalidVersion, decodeFrameKind(&encoded));
+}
+
+test "decodeFrameKind rejects unknown kind" {
+    const frame = SampleFrame{
+        .seq = 7,
+        .mono_ns = 11,
+        .wall_ns = 22,
+    };
+    var encoded = encodeSampleFrame(frame);
+    writeU16(&encoded, 6, std.math.maxInt(u16));
+    try std.testing.expectError(error.InvalidKind, decodeFrameKind(&encoded));
+}
+
+test "decodeHelloFrame rejects sample frame kind" {
+    const frame = SampleFrame{
+        .seq = 7,
+        .mono_ns = 11,
+        .wall_ns = 22,
+    };
+    const encoded = encodeSampleFrame(frame);
+    try std.testing.expectError(error.InvalidKind, decodeHelloFrame(&encoded));
+}
+
+test "decodeSampleFrame rejects hello frame kind" {
+    const frame = HelloFrame{
+        .seq = 1,
+        .mono_ns = 3,
+        .wall_ns = 4,
+        .sample_period_ms = default_sample_period_ms,
+        .guest_port = default_guest_port,
+    };
+    const encoded = encodeHelloFrame(frame);
+    try std.testing.expectError(error.InvalidKind, decodeSampleFrame(&encoded));
+}
+
+test "sample frame boundary values round-trip" {
+    const frame = SampleFrame{
+        .seq = std.math.maxInt(u32),
+        .flags = std.math.maxInt(u32),
+        .mono_ns = std.math.maxInt(u64),
+        .wall_ns = std.math.maxInt(u64),
+        .cpu_user_ticks = std.math.maxInt(u64),
+        .cpu_system_ticks = std.math.maxInt(u64),
+        .cpu_idle_ticks = std.math.maxInt(u64),
+        .load1_centis = std.math.maxInt(u32),
+        .load5_centis = std.math.maxInt(u32),
+        .load15_centis = std.math.maxInt(u32),
+        .procs_running = std.math.maxInt(u16),
+        .procs_blocked = std.math.maxInt(u16),
+        .mem_total_kb = std.math.maxInt(u64),
+        .mem_available_kb = std.math.maxInt(u64),
+        .io_read_bytes = std.math.maxInt(u64),
+        .io_write_bytes = std.math.maxInt(u64),
+        .net_rx_bytes = std.math.maxInt(u64),
+        .net_tx_bytes = std.math.maxInt(u64),
+        .psi_cpu_pct100 = std.math.maxInt(u16),
+        .psi_mem_pct100 = std.math.maxInt(u16),
+        .psi_io_pct100 = std.math.maxInt(u16),
+    };
+    const encoded = encodeSampleFrame(frame);
+    const decoded = try decodeSampleFrame(&encoded);
+    try std.testing.expectEqualDeep(frame, decoded);
+}
+
+test "setPaddedString truncates long input" {
+    var dest = [_]u8{0xaa} ** 8;
+    setPaddedString(dest[0..], "123456789");
+    try std.testing.expectEqualStrings("12345678", dest[0..]);
+}
+
+test "setPaddedString and trimPaddedString are symmetric" {
+    var dest = [_]u8{0xaa} ** 16;
+    setPaddedString(dest[0..], "eth0");
+    try std.testing.expectEqualStrings("eth0", trimPaddedString(dest[0..]));
+    try std.testing.expectEqual(@as(u8, 0), dest[4]);
+}

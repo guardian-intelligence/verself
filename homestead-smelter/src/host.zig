@@ -124,11 +124,13 @@ const AgentState = struct {
         }
 
         for (found) |item| {
-            if (self.findCanonicalJobIDLocked(item.job_id)) |canonical_job_id| {
-                const vm = self.vms.getPtr(canonical_job_id).?;
+            if (self.vms.getKey(item.job_id)) |canonical_job_id| {
+                const vm = self.vms.getPtr(item.job_id).?;
                 vm.present = true;
                 if (!std.mem.eql(u8, vm.uds_path, item.uds_path)) {
-                    vm.uds_path = try self.allocator.dupe(u8, item.uds_path);
+                    const owned_uds_path = try self.allocator.dupe(u8, item.uds_path);
+                    self.allocator.free(vm.uds_path);
+                    vm.uds_path = owned_uds_path;
                 }
                 if (!vm.worker_active) {
                     vm.worker_active = true;
@@ -153,13 +155,15 @@ const AgentState = struct {
         return spawns.toOwnedSlice(temp_allocator);
     }
 
-    fn currentTarget(self: *AgentState, job_id: []const u8) ?[]const u8 {
+    fn copyCurrentTarget(self: *AgentState, job_id: []const u8, target_buf: []u8) !?[]const u8 {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const vm = self.vms.getPtr(job_id) orelse return null;
         if (!vm.present) return null;
-        return vm.uds_path;
+        if (vm.uds_path.len > target_buf.len) return error.PathTooLong;
+        @memcpy(target_buf[0..vm.uds_path.len], vm.uds_path);
+        return target_buf[0..vm.uds_path.len];
     }
 
     fn recordConnected(self: *AgentState, job_id: []const u8) void {
@@ -211,16 +215,6 @@ const AgentState = struct {
         const vm = self.vms.getPtr(job_id) orelse return;
         vm.worker_active = false;
         vm.connected = false;
-    }
-
-    fn findCanonicalJobIDLocked(self: *AgentState, job_id: []const u8) ?[]const u8 {
-        var it = self.vms.iterator();
-        while (it.next()) |entry| {
-            if (std.mem.eql(u8, entry.key_ptr.*, job_id)) {
-                return entry.key_ptr.*;
-            }
-        }
-        return null;
     }
 };
 
@@ -453,8 +447,13 @@ fn discoverOnce(state: *AgentState) !void {
 fn vmWorkerMain(state: *AgentState, job_id: []const u8) void {
     defer state.markWorkerStopped(job_id);
 
+    var uds_path_buf: [std.fs.max_path_bytes]u8 = undefined;
     while (true) {
-        const uds_path = state.currentTarget(job_id) orelse return;
+        const uds_path = state.copyCurrentTarget(job_id, uds_path_buf[0..]) catch |err| {
+            state.recordDisconnect(job_id, @errorName(err));
+            std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
+            continue;
+        } orelse return;
         const stream = connectGuestBridge(uds_path, state.guest_port) catch |err| {
             state.recordDisconnect(job_id, @errorName(err));
             std.Thread.sleep(reconnect_backoff_ms * std.time.ns_per_ms);
@@ -530,166 +529,448 @@ fn writeSnapshotResponse(allocator: std.mem.Allocator, stream: std.net.Stream, s
     try hs.writeLine(stream, payload);
 }
 
+const SnapshotView = struct {
+    schema_version: u32,
+    jailer_root: []const u8,
+    guest_port: u32,
+    sample_period_ms: u32,
+    observed_at_unix_ms: i64,
+    vms: []const VM,
+
+    const VM = struct {
+        job_id: []const u8,
+        uds_path: []const u8,
+        present: bool,
+        worker_active: bool,
+        connected: bool,
+        last_update_unix_ms: i64,
+        last_error: ?[]const u8,
+        hello: ?Hello,
+        sample: ?Sample,
+    };
+
+    const Hello = struct {
+        seq: u32,
+        flags: u32,
+        mono_ns: u64,
+        wall_ns: u64,
+        sample_period_ms: u32,
+        guest_port: u32,
+        boot_id: []const u8,
+        net_iface: []const u8,
+        block_dev: []const u8,
+    };
+
+    const Sample = hs.SampleFrame;
+};
+
 fn buildSnapshotJSON(allocator: std.mem.Allocator, state: *AgentState) ![]u8 {
-    var out = try std.ArrayList(u8).initCapacity(allocator, 1024);
+    var vms = try std.ArrayList(SnapshotView.VM).initCapacity(allocator, state.vms.count());
+    defer vms.deinit(allocator);
 
     state.mutex.lock();
     defer state.mutex.unlock();
 
-    try out.appendSlice(allocator, "{\"schema_version\":");
-    try appendInt(&out, allocator, schema_version);
-    try out.appendSlice(allocator, ",\"jailer_root\":");
-    try appendJSONString(&out, allocator, state.jailer_root);
-    try out.appendSlice(allocator, ",\"guest_port\":");
-    try appendInt(&out, allocator, state.guest_port);
-    try out.appendSlice(allocator, ",\"sample_period_ms\":");
-    try appendInt(&out, allocator, hs.default_sample_period_ms);
-    try out.appendSlice(allocator, ",\"observed_at_unix_ms\":");
-    try appendInt(&out, allocator, state.observed_at_unix_ms);
-    try out.appendSlice(allocator, ",\"vms\":[");
-
-    var first = true;
     var it = state.vms.iterator();
     while (it.next()) |entry| {
         const vm = entry.value_ptr.*;
         if (!vm.present) continue;
 
-        if (!first) try out.appendSlice(allocator, ",");
-        first = false;
-
-        try out.appendSlice(allocator, "{\"job_id\":");
-        try appendJSONString(&out, allocator, entry.key_ptr.*);
-        try out.appendSlice(allocator, ",\"uds_path\":");
-        try appendJSONString(&out, allocator, vm.uds_path);
-        try out.appendSlice(allocator, ",\"present\":true");
-        try out.appendSlice(allocator, ",\"worker_active\":");
-        try appendBool(&out, allocator, vm.worker_active);
-        try out.appendSlice(allocator, ",\"connected\":");
-        try appendBool(&out, allocator, vm.connected);
-        try out.appendSlice(allocator, ",\"last_update_unix_ms\":");
-        try appendInt(&out, allocator, vm.last_update_unix_ms);
-        try out.appendSlice(allocator, ",\"last_error\":");
-        if (vm.lastError()) |message| {
-            try appendJSONString(&out, allocator, message);
-        } else {
-            try out.appendSlice(allocator, "null");
-        }
-        try out.appendSlice(allocator, ",\"hello\":");
-        if (vm.hello) |hello| {
-            try appendHelloJSON(&out, allocator, hello);
-        } else {
-            try out.appendSlice(allocator, "null");
-        }
-        try out.appendSlice(allocator, ",\"sample\":");
-        if (vm.sample) |sample| {
-            try appendSampleJSON(&out, allocator, sample);
-        } else {
-            try out.appendSlice(allocator, "null");
-        }
-        try out.appendSlice(allocator, "}");
+        try vms.append(allocator, .{
+            .job_id = entry.key_ptr.*,
+            .uds_path = vm.uds_path,
+            .present = true,
+            .worker_active = vm.worker_active,
+            .connected = vm.connected,
+            .last_update_unix_ms = vm.last_update_unix_ms,
+            .last_error = vm.lastError(),
+            .hello = if (vm.hello) |hello| .{
+                .seq = hello.seq,
+                .flags = hello.flags,
+                .mono_ns = hello.mono_ns,
+                .wall_ns = hello.wall_ns,
+                .sample_period_ms = hello.sample_period_ms,
+                .guest_port = hello.guest_port,
+                .boot_id = hs.trimPaddedString(hello.boot_id[0..]),
+                .net_iface = hs.trimPaddedString(hello.net_iface[0..]),
+                .block_dev = hs.trimPaddedString(hello.block_dev[0..]),
+            } else null,
+            .sample = vm.sample,
+        });
     }
 
-    try out.appendSlice(allocator, "]}");
-    return out.toOwnedSlice(allocator);
+    const view = SnapshotView{
+        .schema_version = schema_version,
+        .jailer_root = state.jailer_root,
+        .guest_port = state.guest_port,
+        .sample_period_ms = hs.default_sample_period_ms,
+        .observed_at_unix_ms = state.observed_at_unix_ms,
+        .vms = vms.items,
+    };
+    return std.json.Stringify.valueAlloc(allocator, view, .{});
 }
 
-fn appendHelloJSON(out: *std.ArrayList(u8), allocator: std.mem.Allocator, hello: hs.HelloFrame) !void {
-    try out.appendSlice(allocator, "{\"seq\":");
-    try appendInt(out, allocator, hello.seq);
-    try out.appendSlice(allocator, ",\"flags\":");
-    try appendInt(out, allocator, hello.flags);
-    try out.appendSlice(allocator, ",\"mono_ns\":");
-    try appendInt(out, allocator, hello.mono_ns);
-    try out.appendSlice(allocator, ",\"wall_ns\":");
-    try appendInt(out, allocator, hello.wall_ns);
-    try out.appendSlice(allocator, ",\"sample_period_ms\":");
-    try appendInt(out, allocator, hello.sample_period_ms);
-    try out.appendSlice(allocator, ",\"guest_port\":");
-    try appendInt(out, allocator, hello.guest_port);
-    try out.appendSlice(allocator, ",\"boot_id\":");
-    try appendJSONString(out, allocator, hs.trimPaddedString(hello.boot_id[0..]));
-    try out.appendSlice(allocator, ",\"net_iface\":");
-    try appendJSONString(out, allocator, hs.trimPaddedString(hello.net_iface[0..]));
-    try out.appendSlice(allocator, ",\"block_dev\":");
-    try appendJSONString(out, allocator, hs.trimPaddedString(hello.block_dev[0..]));
-    try out.appendSlice(allocator, "}");
+test "commitDiscovery registers first discovery and spawns workers" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
+    };
+
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    try std.testing.expectEqual(@as(usize, 2), spawns.len);
+    try std.testing.expectEqualStrings("job-a", spawns[0]);
+    try std.testing.expectEqualStrings("job-b", spawns[1]);
+
+    const vm_a = state.vms.get("job-a").?;
+    const vm_b = state.vms.get("job-b").?;
+    try std.testing.expect(vm_a.present);
+    try std.testing.expect(vm_a.worker_active);
+    try std.testing.expect(vm_b.present);
+    try std.testing.expect(vm_b.worker_active);
 }
 
-fn appendSampleJSON(out: *std.ArrayList(u8), allocator: std.mem.Allocator, sample: hs.SampleFrame) !void {
-    try out.appendSlice(allocator, "{\"seq\":");
-    try appendInt(out, allocator, sample.seq);
-    try out.appendSlice(allocator, ",\"flags\":");
-    try appendInt(out, allocator, sample.flags);
-    try out.appendSlice(allocator, ",\"mono_ns\":");
-    try appendInt(out, allocator, sample.mono_ns);
-    try out.appendSlice(allocator, ",\"wall_ns\":");
-    try appendInt(out, allocator, sample.wall_ns);
-    try out.appendSlice(allocator, ",\"cpu_user_ticks\":");
-    try appendInt(out, allocator, sample.cpu_user_ticks);
-    try out.appendSlice(allocator, ",\"cpu_system_ticks\":");
-    try appendInt(out, allocator, sample.cpu_system_ticks);
-    try out.appendSlice(allocator, ",\"cpu_idle_ticks\":");
-    try appendInt(out, allocator, sample.cpu_idle_ticks);
-    try out.appendSlice(allocator, ",\"load1_centis\":");
-    try appendInt(out, allocator, sample.load1_centis);
-    try out.appendSlice(allocator, ",\"load5_centis\":");
-    try appendInt(out, allocator, sample.load5_centis);
-    try out.appendSlice(allocator, ",\"load15_centis\":");
-    try appendInt(out, allocator, sample.load15_centis);
-    try out.appendSlice(allocator, ",\"procs_running\":");
-    try appendInt(out, allocator, sample.procs_running);
-    try out.appendSlice(allocator, ",\"procs_blocked\":");
-    try appendInt(out, allocator, sample.procs_blocked);
-    try out.appendSlice(allocator, ",\"mem_total_kb\":");
-    try appendInt(out, allocator, sample.mem_total_kb);
-    try out.appendSlice(allocator, ",\"mem_available_kb\":");
-    try appendInt(out, allocator, sample.mem_available_kb);
-    try out.appendSlice(allocator, ",\"io_read_bytes\":");
-    try appendInt(out, allocator, sample.io_read_bytes);
-    try out.appendSlice(allocator, ",\"io_write_bytes\":");
-    try appendInt(out, allocator, sample.io_write_bytes);
-    try out.appendSlice(allocator, ",\"net_rx_bytes\":");
-    try appendInt(out, allocator, sample.net_rx_bytes);
-    try out.appendSlice(allocator, ",\"net_tx_bytes\":");
-    try appendInt(out, allocator, sample.net_tx_bytes);
-    try out.appendSlice(allocator, ",\"psi_cpu_pct100\":");
-    try appendInt(out, allocator, sample.psi_cpu_pct100);
-    try out.appendSlice(allocator, ",\"psi_mem_pct100\":");
-    try appendInt(out, allocator, sample.psi_mem_pct100);
-    try out.appendSlice(allocator, ",\"psi_io_pct100\":");
-    try appendInt(out, allocator, sample.psi_io_pct100);
-    try out.appendSlice(allocator, "}");
+test "commitDiscovery is idempotent for already active workers" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns_first);
+    const spawns_second = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
 }
 
-fn appendBool(out: *std.ArrayList(u8), allocator: std.mem.Allocator, value: bool) !void {
-    try out.appendSlice(allocator, if (value) "true" else "false");
+test "commitDiscovery marks missing VMs absent without respawn" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const first = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
+    };
+    const second = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &first);
+    defer allocator.free(spawns_first);
+    const spawns_second = try state.commitDiscovery(allocator, &second);
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
+    try std.testing.expect(state.vms.get("job-a").?.present);
+    try std.testing.expect(!state.vms.get("job-b").?.present);
+    try std.testing.expect(state.vms.get("job-b").?.worker_active);
 }
 
-fn appendInt(out: *std.ArrayList(u8), allocator: std.mem.Allocator, value: anytype) !void {
-    var buf: [32]u8 = undefined;
-    const text = try std.fmt.bufPrint(&buf, "{d}", .{value});
-    try out.appendSlice(allocator, text);
+test "commitDiscovery respawns a VM after worker stops" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns_first);
+    state.markWorkerStopped("job-a");
+
+    const spawns_second = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 1), spawns_second.len);
+    try std.testing.expectEqualStrings("job-a", spawns_second[0]);
+    try std.testing.expect(state.vms.get("job-a").?.worker_active);
 }
 
-fn appendJSONString(out: *std.ArrayList(u8), allocator: std.mem.Allocator, value: []const u8) !void {
-    try out.append(allocator, '"');
-    for (value) |byte| {
-        switch (byte) {
-            '"' => try out.appendSlice(allocator, "\\\""),
-            '\\' => try out.appendSlice(allocator, "\\\\"),
-            '\n' => try out.appendSlice(allocator, "\\n"),
-            '\r' => try out.appendSlice(allocator, "\\r"),
-            '\t' => try out.appendSlice(allocator, "\\t"),
-            else => {
-                if (byte < 0x20) {
-                    var buf: [6]u8 = undefined;
-                    const escaped = try std.fmt.bufPrint(&buf, "\\u{x:0>4}", .{@as(u16, byte)});
-                    try out.appendSlice(allocator, escaped);
-                } else {
-                    try out.append(allocator, byte);
-                }
-            },
-        }
-    }
-    try out.append(allocator, '"');
+test "commitDiscovery updates uds_path without leaking previous path" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const first = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/old/path.sock" },
+    };
+    const second = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/new/path.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &first);
+    defer allocator.free(spawns_first);
+    const spawns_second = try state.commitDiscovery(allocator, &second);
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
+    try std.testing.expectEqualStrings("/new/path.sock", state.vms.get("job-a").?.uds_path);
+}
+
+test "commitDiscovery handles empty discovery on populated state" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+        .{ .job_id = "job-b", .uds_path = "/run/job-b.sock" },
+        .{ .job_id = "job-c", .uds_path = "/run/job-c.sock" },
+    };
+
+    const spawns_first = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns_first);
+    const spawns_second = try state.commitDiscovery(allocator, &.{});
+    defer allocator.free(spawns_second);
+
+    try std.testing.expectEqual(@as(usize, 0), spawns_second.len);
+    try std.testing.expect(!state.vms.get("job-a").?.present);
+    try std.testing.expect(!state.vms.get("job-b").?.present);
+    try std.testing.expect(!state.vms.get("job-c").?.present);
+}
+
+test "recordHello clears stale disconnect error" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    state.recordDisconnect("job-a", "ConnectionRefused");
+    state.recordHello("job-a", .{
+        .seq = 1,
+        .mono_ns = 11,
+        .wall_ns = 22,
+        .sample_period_ms = hs.default_sample_period_ms,
+        .guest_port = hs.default_guest_port,
+    });
+
+    const vm = state.vms.get("job-a").?;
+    try std.testing.expect(vm.connected);
+    try std.testing.expect(vm.hello != null);
+    try std.testing.expect(vm.lastError() == null);
+}
+
+test "recordSample preserves hello metadata" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    state.recordHello("job-a", .{
+        .seq = 1,
+        .mono_ns = 11,
+        .wall_ns = 22,
+        .sample_period_ms = hs.default_sample_period_ms,
+        .guest_port = hs.default_guest_port,
+    });
+    state.recordSample("job-a", .{
+        .seq = 2,
+        .mono_ns = 33,
+        .wall_ns = 44,
+        .mem_total_kb = 1024,
+        .mem_available_kb = 512,
+    });
+
+    const vm = state.vms.get("job-a").?;
+    try std.testing.expect(vm.hello != null);
+    try std.testing.expect(vm.sample != null);
+    try std.testing.expectEqual(@as(u32, 1), vm.hello.?.seq);
+    try std.testing.expectEqual(@as(u32, 2), vm.sample.?.seq);
+}
+
+test "recordDisconnect truncates long error messages" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    const long_error = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    state.recordDisconnect("job-a", long_error);
+
+    const vm = state.vms.get("job-a").?;
+    try std.testing.expect(!vm.connected);
+    try std.testing.expectEqual(@as(usize, vm.last_error.len), vm.last_error_len);
+}
+
+test "record operations ignore unknown jobs" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    state.recordConnected("missing");
+    state.recordHello("missing", .{
+        .seq = 1,
+        .mono_ns = 1,
+        .wall_ns = 1,
+        .sample_period_ms = hs.default_sample_period_ms,
+        .guest_port = hs.default_guest_port,
+    });
+    state.recordSample("missing", .{
+        .seq = 1,
+        .mono_ns = 1,
+        .wall_ns = 1,
+    });
+    state.recordDisconnect("missing", "boom");
+    state.markWorkerStopped("missing");
+
+    try std.testing.expectEqual(@as(usize, 0), state.vms.count());
+}
+
+test "copyCurrentTarget copies the live uds_path into caller storage" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const target = (try state.copyCurrentTarget("job-a", buf[0..])).?;
+    try std.testing.expectEqualStrings("/run/job-a.sock", target);
+}
+
+test "copyCurrentTarget returns null for missing or absent jobs" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    try std.testing.expect((try state.copyCurrentTarget("missing", buf[0..])) == null);
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+    const empty_spawns = try state.commitDiscovery(allocator, &.{});
+    defer allocator.free(empty_spawns);
+
+    try std.testing.expect((try state.copyCurrentTarget("job-a", buf[0..])) == null);
+}
+
+test "buildSnapshotJSON emits valid JSON for empty state" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const payload = try buildSnapshotJSON(allocator, &state);
+    defer allocator.free(payload);
+
+    const parsed = try std.json.parseFromSlice(SnapshotView, allocator, payload, .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(schema_version, parsed.value.schema_version);
+    try std.testing.expectEqualStrings("/srv/jailer/firecracker", parsed.value.jailer_root);
+    try std.testing.expectEqual(hs.default_guest_port, parsed.value.guest_port);
+    try std.testing.expectEqual(hs.default_sample_period_ms, parsed.value.sample_period_ms);
+    try std.testing.expectEqual(@as(usize, 0), parsed.value.vms.len);
+}
+
+test "buildSnapshotJSON round-trips a connected VM" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    state.recordHello("job-a", .{
+        .seq = 1,
+        .flags = 7,
+        .mono_ns = 11,
+        .wall_ns = 22,
+        .sample_period_ms = hs.default_sample_period_ms,
+        .guest_port = hs.default_guest_port,
+        .boot_id = [_]u8{0} ** 36,
+        .net_iface = [_]u8{0} ** 16,
+        .block_dev = [_]u8{0} ** 16,
+    });
+    state.recordSample("job-a", .{
+        .seq = 2,
+        .flags = hs.flag_net_missing,
+        .mono_ns = 33,
+        .wall_ns = 44,
+        .mem_total_kb = 2048,
+        .mem_available_kb = 1024,
+    });
+
+    const vm_mut = state.vms.getPtr("job-a").?;
+    hs.setPaddedString(vm_mut.hello.?.boot_id[0..], "boot-id");
+    hs.setPaddedString(vm_mut.hello.?.net_iface[0..], "eth0");
+    hs.setPaddedString(vm_mut.hello.?.block_dev[0..], "vda");
+
+    const payload = try buildSnapshotJSON(allocator, &state);
+    defer allocator.free(payload);
+
+    const parsed = try std.json.parseFromSlice(SnapshotView, allocator, payload, .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), parsed.value.vms.len);
+    try std.testing.expectEqualStrings("job-a", parsed.value.vms[0].job_id);
+    try std.testing.expect(parsed.value.vms[0].connected);
+    try std.testing.expect(parsed.value.vms[0].hello != null);
+    try std.testing.expect(parsed.value.vms[0].sample != null);
+    try std.testing.expectEqualStrings("boot-id", parsed.value.vms[0].hello.?.boot_id);
+    try std.testing.expectEqualStrings("eth0", parsed.value.vms[0].hello.?.net_iface);
+    try std.testing.expectEqualStrings("vda", parsed.value.vms[0].hello.?.block_dev);
+    try std.testing.expectEqual(@as(u64, 2048), parsed.value.vms[0].sample.?.mem_total_kb);
+    try std.testing.expectEqual(@as(u64, 1024), parsed.value.vms[0].sample.?.mem_available_kb);
+}
+
+test "buildSnapshotJSON escapes quoted error messages" {
+    const allocator = std.testing.allocator;
+    var state = AgentState.init(allocator, "/srv/jailer/firecracker", hs.default_guest_port);
+    defer state.deinit();
+
+    const found = [_]DiscoveredVM{
+        .{ .job_id = "job-a", .uds_path = "/run/job-a.sock" },
+    };
+    const spawns = try state.commitDiscovery(allocator, &found);
+    defer allocator.free(spawns);
+
+    state.recordDisconnect("job-a", "bad \"quote\"");
+
+    const payload = try buildSnapshotJSON(allocator, &state);
+    defer allocator.free(payload);
+
+    const parsed = try std.json.parseFromSlice(SnapshotView, allocator, payload, .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), parsed.value.vms.len);
+    try std.testing.expectEqualStrings("bad \"quote\"", parsed.value.vms[0].last_error.?);
+    try std.testing.expect(parsed.value.vms[0].hello == null);
+    try std.testing.expect(parsed.value.vms[0].sample == null);
 }
