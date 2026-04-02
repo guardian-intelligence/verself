@@ -93,8 +93,7 @@ argument_specs:
         type: str
         description: >-
           Full domain for the dashboard. Auto-derived as
-          <clickstack_subdomain>.<forge_metal_domain>, or bare IP
-          if forge_metal_domain is unset.
+          <clickstack_subdomain>.<forge_metal_domain>.
 
       # -- Admin credentials (generated on first run if unset) --
       clickstack_admin_email:

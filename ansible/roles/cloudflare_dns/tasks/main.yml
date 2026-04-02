@@ -1,15 +1,11 @@
 ---
 # Manage Cloudflare DNS records for service subdomains.
-# Skipped entirely when forge_metal_domain is empty (bare-IP deploys).
 
 - name: Validate Cloudflare API token is configured
   ansible.builtin.fail:
     msg: >-
-      forge_metal_domain is set to "{{ forge_metal_domain }}" but cloudflare_api_token is empty.
-      Run: make setup-domain
-  when:
-    - forge_metal_domain | default('', true) | length > 0
-    - cloudflare_api_token | default('', true) | length == 0
+      cloudflare_api_token is empty. Run: make setup-domain
+  when: cloudflare_api_token | default('', true) | length == 0
 
 - name: Create or update DNS records
   community.general.cloudflare_dns:
@@ -22,6 +18,5 @@
     solo: true
     api_token: "{{ cloudflare_api_token }}"
   loop: "{{ cloudflare_dns_records }}"
-  when: forge_metal_domain | default('', true) | length > 0
   delegate_to: localhost
   become: false
