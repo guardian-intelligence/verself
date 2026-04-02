@@ -476,8 +476,13 @@ fn makeHelloFrame(seq: u32) hs.HelloFrame {
         .flags = 0,
         .mono_ns = 1000 + seq,
         .wall_ns = 2000 + seq,
-        .sample_rate_hz = hs.default_sample_rate_hz,
-        .guest_port = hs.default_guest_port,
+        .boot_id = [_]u8{
+            0, 1, 2, 3,
+            4, 5, 6, 7,
+            8, 9, 10, 11,
+            12, 13, 14, @intCast(seq % 256),
+        },
+        .mem_total_kb = 1024 + seq,
     };
 }
 
@@ -495,7 +500,6 @@ fn makeSampleFrame(seq: u32) hs.SampleFrame {
         .load15_centis = seq + 2,
         .procs_running = @intCast(seq % 5),
         .procs_blocked = @intCast(seq % 3),
-        .mem_total_kb = 1024 + seq,
         .mem_available_kb = 512 + seq,
         .io_read_bytes = seq * 100,
         .io_write_bytes = seq * 200,

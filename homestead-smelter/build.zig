@@ -40,11 +40,30 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(guest);
 
+    const bench = b.addExecutable(.{
+        .name = "homestead-smelter-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/host_bench.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "homestead_smelter", .module = mod },
+            },
+        }),
+    });
+    bench.linkLibC();
+    b.installArtifact(bench);
+
     const host_step = b.step("host", "Build the host binary");
     host_step.dependOn(&host.step);
 
     const guest_step = b.step("guest", "Build the guest binary");
     guest_step.dependOn(&guest.step);
+
+    const bench_step = b.step("bench", "Run the host ingest benchmark");
+    const run_bench = b.addRunArtifact(bench);
+    bench_step.dependOn(&run_bench.step);
+    run_bench.step.dependOn(b.getInstallStep());
 
     const run_host_step = b.step("run-host", "Run the host binary");
     const run_host = b.addRunArtifact(host);
@@ -64,6 +83,18 @@ pub fn build(b: *std.Build) void {
     });
     const run_host_tests = b.addRunArtifact(host_tests);
 
+    const host_proto_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/host_proto.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "homestead_smelter", .module = mod },
+            },
+        }),
+    });
+    const run_host_proto_tests = b.addRunArtifact(host_proto_tests);
+
     const host_core_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/host_core.zig"),
@@ -81,6 +112,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run homestead-smelter tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_host_tests.step);
+    test_step.dependOn(&run_host_proto_tests.step);
     test_step.dependOn(&run_host_core_tests.step);
     test_step.dependOn(&run_guest_tests.step);
 }
