@@ -71,7 +71,7 @@ fn handleConnection(stream: std.net.Stream, port: u32) !void {
     defer stream.close();
     std.debug.assert(port > 0);
 
-    const hello = try collectHelloFrame(port);
+    const hello = try collectHelloFrame();
     var hello_bytes = hs.encodeHelloFrame(hello);
     try stream.writeAll(hello_bytes[0..]);
 
@@ -112,20 +112,14 @@ fn parseArgs(allocator: std.mem.Allocator) !u32 {
     return port;
 }
 
-fn collectHelloFrame(port: u32) !hs.HelloFrame {
-    var frame = hs.HelloFrame{
+fn collectHelloFrame() !hs.HelloFrame {
+    return .{
         .seq = 0,
         .mono_ns = try hs.monotonicNowNs(),
         .wall_ns = try hs.realtimeNowNs(),
-        .sample_rate_hz = hs.default_sample_rate_hz,
-        .guest_port = port,
+        .boot_id = try readBootID(),
+        .mem_total_kb = try readMemTotalKb(),
     };
-
-    const boot_id = try readBootID();
-    hs.setPaddedString(frame.boot_id[0..], boot_id);
-    hs.setPaddedString(frame.net_iface[0..], guest_net_iface);
-    hs.setPaddedString(frame.block_dev[0..], guest_block_dev);
-    return frame;
 }
 
 fn collectSampleFrame(seq: u32) !hs.SampleFrame {
@@ -174,10 +168,16 @@ fn collectSampleFrame(seq: u32) !hs.SampleFrame {
     return frame;
 }
 
-fn readBootID() ![]const u8 {
+fn readBootID() ![16]u8 {
     var buf: [64]u8 = undefined;
     const contents = try readFile("/proc/sys/kernel/random/boot_id", buf[0..]);
     return parseBootIDContents(contents);
+}
+
+fn readMemTotalKb() !u64 {
+    var buf: [4096]u8 = undefined;
+    const contents = try readFile("/proc/meminfo", buf[0..]);
+    return parseMemTotalKbContents(contents);
 }
 
 fn parseProcStat(frame: *hs.SampleFrame) !void {
@@ -248,25 +248,28 @@ fn parseProcMeminfo(frame: *hs.SampleFrame) !void {
 }
 
 fn parseProcMeminfoContents(frame: *hs.SampleFrame, contents: []const u8) !void {
-    var found_total = false;
     var found_available = false;
 
     var lines = std.mem.tokenizeScalar(u8, contents, '\n');
     while (lines.next()) |line| {
-        if (std.mem.startsWith(u8, line, "MemTotal:")) {
-            frame.mem_total_kb = try parseMeminfoValue(line);
-            found_total = true;
-            continue;
-        }
         if (std.mem.startsWith(u8, line, "MemAvailable:")) {
             frame.mem_available_kb = try parseMeminfoValue(line);
             found_available = true;
         }
     }
 
-    if (!found_total or !found_available) {
+    if (!found_available) {
         return error.InvalidMeminfo;
     }
+}
+
+fn parseMemTotalKbContents(contents: []const u8) !u64 {
+    var lines = std.mem.tokenizeScalar(u8, contents, '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "MemTotal:")) continue;
+        return parseMeminfoValue(line);
+    }
+    return error.InvalidMeminfo;
 }
 
 fn parseProcDiskstats(frame: *hs.SampleFrame) !void {
@@ -348,8 +351,8 @@ fn parsePressurePct100Contents(contents: []const u8) !u16 {
     return error.InvalidPressureFile;
 }
 
-fn parseBootIDContents(contents: []const u8) []const u8 {
-    return std.mem.trim(u8, contents, " \n\r\t");
+fn parseBootIDContents(contents: []const u8) ![16]u8 {
+    return hs.parseUuid(std.mem.trim(u8, contents, " \n\r\t"));
 }
 
 fn parseMeminfoValue(line: []const u8) !u64 {
@@ -395,10 +398,9 @@ fn saturatingCastU16(value: anytype) u16 {
 }
 
 test "parseBootIDContents trims whitespace" {
-    try std.testing.expectEqualStrings(
-        "7a3153b0-66fb-4e87-96fa-2adadf20a74f",
-        parseBootIDContents(" 7a3153b0-66fb-4e87-96fa-2adadf20a74f\n"),
-    );
+    const parsed = try parseBootIDContents(" 7a3153b0-66fb-4e87-96fa-2adadf20a74f\n");
+    const formatted = hs.formatUuid(parsed);
+    try std.testing.expectEqualStrings("7a3153b0-66fb-4e87-96fa-2adadf20a74f", formatted[0..]);
 }
 
 test "parseProcStatContents parses cpu ticks and process counts" {
@@ -446,7 +448,19 @@ test "parseProcLoadavgContents parses scaled load averages" {
     try std.testing.expectEqual(@as(u32, 8), frame.load15_centis);
 }
 
-test "parseProcMeminfoContents parses total and available memory" {
+test "parseMemTotalKbContents parses total memory" {
+    const fixture =
+        \\MemTotal:        2000000 kB
+        \\MemFree:          120000 kB
+        \\MemAvailable:     800000 kB
+        \\Buffers:           64000 kB
+        \\Cached:           256000 kB
+    ;
+
+    try std.testing.expectEqual(@as(u64, 2000000), try parseMemTotalKbContents(fixture));
+}
+
+test "parseProcMeminfoContents parses available memory" {
     const fixture =
         \\MemTotal:        2000000 kB
         \\MemFree:          120000 kB
@@ -457,7 +471,6 @@ test "parseProcMeminfoContents parses total and available memory" {
 
     var frame = hs.SampleFrame{};
     try parseProcMeminfoContents(&frame, fixture);
-    try std.testing.expectEqual(@as(u64, 2000000), frame.mem_total_kb);
     try std.testing.expectEqual(@as(u64, 800000), frame.mem_available_kb);
 }
 

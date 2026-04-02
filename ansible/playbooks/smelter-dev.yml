@@ -137,25 +137,25 @@
             --control-uds {{ fc_smelter_control_socket }}
           changed_when: false
 
-        - name: Wait for host agent snapshot to show live telemetry
+        - name: Wait for host agent to report live telemetry for the VM
+          ansible.builtin.command: >
+            {{ fc_smelter_host_binary_path }} check-live
+            --control-uds {{ fc_smelter_control_socket }}
+            --job-id {{ smelter_job_id }}
+          register: smelter_live_result
+          changed_when: false
+          until: smelter_live_result.rc == 0
+          retries: 20
+          delay: 1
+
+        - name: Show host snapshot
           ansible.builtin.command: >
             {{ fc_smelter_host_binary_path }} snapshot
             --control-uds {{ fc_smelter_control_socket }}
           register: smelter_snapshot_result
           changed_when: false
-          until: >-
-            (
-              smelter_snapshot_result.stdout | from_json
-            ).vms
-            | selectattr('job_id', 'equalto', smelter_job_id)
-            | selectattr('connected', 'equalto', true)
-            | selectattr('hello', 'ne', none)
-            | selectattr('sample', 'ne', none)
-            | list | length > 0
-          retries: 20
-          delay: 1
 
-        - name: Show host snapshot
+        - name: Show host snapshot output
           ansible.builtin.debug:
             msg: "{{ smelter_snapshot_result.stdout }}"
 
