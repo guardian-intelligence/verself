@@ -101,11 +101,11 @@ day-to-day operations.
 
 | Credential | Current (SOPS + flat files) | With OpenBao |
 |------------|---------------------------|--------------|
-| Forgejo admin password | Not automated (gap) | KV v2, operator-only policy |
-| ClickStack admin password | `/etc/clickstack/admin-credentials.txt` (0600) | KV v2, operator-only policy |
+| Forgejo admin credentials | `ansible/.credentials/forgejo_admin_*` on control node | KV v2, operator-only policy |
+| HyperDX admin credentials | `ansible/.credentials/hyperdx_admin_*` on control node | KV v2, operator-only policy |
 | Cloudflare API token | `secrets.sops.yml` | KV v2, deploy-time policy |
 | Latitude.sh API token | Environment variable (not persisted) | KV v2, operator-only policy |
-| HyperDX session secret | `/opt/clickstack/session_secret` (0600) | KV v2, service-read policy |
+| HyperDX runtime secrets | `/etc/hyperdx/hyperdx.env` (0640) | KV v2, service-read policy |
 | CI job secrets | N/A (not implemented) | KV v2, per-job scoped via AppRole |
 
 The key improvement: access control moves from "whoever has root on the box" to fine-grained

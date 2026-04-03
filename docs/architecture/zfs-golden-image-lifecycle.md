@@ -55,7 +55,7 @@ flowchart TD
     style D fill:#fbb,stroke:#333
 ```
 
-Trigger: rootfs hash mismatch, missing zvol/snapshot, or `fc_refresh_base_golden: true`.
+Trigger: rootfs hash mismatch, missing zvol/snapshot, or `firecracker_refresh_base_golden: true`.
 
 ## Warm path (`ci warm`)
 
