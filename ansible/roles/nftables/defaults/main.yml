@@ -14,6 +14,11 @@ nftables_trusted_interfaces:
   - lo
   - "{{ wireguard_interface | default('wg0') }}"
 
+# Firecracker guests reach selected host-local services via the host gateway.
+nftables_firecracker_guest_cidr: "{{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}"
+nftables_firecracker_guest_tcp_ports:
+  - "{{ verdaccio_port | default(4873) }}"
+
 # Allow SSH (port 22) from the public internet with per-source-IP rate limiting.
 # Set to false to restrict SSH to trusted interfaces only (WireGuard).
 nftables_ssh_public: true

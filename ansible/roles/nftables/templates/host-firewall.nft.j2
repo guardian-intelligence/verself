@@ -18,6 +18,11 @@ table inet forge_metal_host {
         iifname "{{ iface }}" accept
 {% endfor %}
 
+{% if nftables_firecracker_guest_tcp_ports | length > 0 %}
+        # Firecracker guests may reach selected host-local services via the host gateway.
+        ip saddr {{ nftables_firecracker_guest_cidr }} tcp dport { {{ nftables_firecracker_guest_tcp_ports | join(', ') }} } accept
+{% endif %}
+
         # ICMP / ICMPv6 (ping, PMTUD, neighbor discovery)
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
