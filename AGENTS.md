@@ -121,7 +121,7 @@ make deploy  # idempotent, no wipe — this is the normal workflow
 
 This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
 
-> **`make e2e` runs the live Firecracker + Forgejo fixture validation path.** It builds guest artifacts, stages them on the worker, and runs the controlled Next.js fixture suite. Use `make deploy` for normal iteration when you do not need a full CI validation pass.
+> **`make ci-fixtures-pass` runs the lightweight positive fixture suite against the current host state.** Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
 
 ### 4. Log in
 
@@ -217,7 +217,10 @@ Compression codecs per column type:
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
 | `make server-profile` | Build Nix server profile (golden image closure) |
 | `make deploy` | Deploy to all nodes (idempotent, no wipe) — **use this normally** |
-| `make e2e` | Run the live Firecracker + Forgejo fixture validation path |
+| `make deploy-dashboards` | Sync HyperDX dashboards and sources without a full platform redeploy |
+| `make ci-fixtures-refresh` | Rebuild and stage CI guest artifacts on the existing host |
+| `make ci-fixtures-pass` | Run the positive CI fixture suite against the existing host |
+| `make ci-fixtures-full` | Refresh CI artifacts, then run the configured fixture suite set |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
@@ -277,13 +280,14 @@ PASS: host agent observed live guest telemetry
 |------|------|-------------|
 | `make smelter-dev` | ~10s | Iterating on guest Zig code |
 | `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
-| `make e2e` | ~5min | Full Forgejo + fixture validation after rootfs changes |
+| `make ci-fixtures-pass` | ~3-5min | Re-run the positive fixture suite against the current host |
+| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the configured fixture suite set |
 
 ## Project Structure
 
 ```
 forge-metal/
-├── cmd/forge-metal/       # CLI entry point (doctor, setup-domain, Firecracker CI, fixtures e2e)
+├── cmd/forge-metal/       # CLI entry point (doctor, setup-domain, Firecracker CI, fixture suites)
 ├── cmd/forgevm-init/      # PID 1 inside Firecracker VMs (mounts, network, fork+exec)
 ├── internal/
 │   ├── clickhouse/        # ClickHouse client, wide event struct
@@ -305,6 +309,7 @@ forge-metal/
 │       ├── clickhouse/    # ClickHouse config + schema bootstrap
 │       ├── otelcol/       # OTLP ingestion and export to ClickHouse
 │       ├── hyperdx/       # HyperDX UI/API plus MongoDB-backed app state
+│       ├── hyperdx_dashboards/ # HyperDX sources and dashboard synchronization
 │       ├── caddy/         # Edge proxy and TLS
 │       ├── zfs/           # Pool creation, golden/ci datasets
 │       ├── firecracker/   # KVM, jailer user, golden zvol, CI dataset
@@ -340,7 +345,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 - For database-backed projects, the warm path should snapshot default-branch database state and apply only branch deltas at job time. Do not hardcode a single app-specific seed path into infrastructure.
 - Keep git local. Use internal Forgejo and local mirrors/fetches for repeatable tests rather than pulling live upstream repos into the verification path.
 - Define "little to no custom glue" strictly: workflow file and minimal manifest are acceptable; patching app source, hardcoded repo branches in infra, inline app-specific env hacks, and explicit helper-script calls from project workflows are not.
-- Verification for this phase: seed four controlled Next.js fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
+- Verification for this phase: seed four controlled fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
 
 ## Assistant Contract
 

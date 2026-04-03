@@ -88,12 +88,14 @@ make setup-dev   # one-time: install pinned dev tools
 make hooks-install
 make provision
 make deploy
-make e2e
+make ci-fixtures-pass
 ```
 
 - `make hooks-install`: install the repo's git pre-commit hooks
 - `make deploy`: normal idempotent deploy path
-- `make e2e`: deploy CI artifacts and run the real Forgejo fixture end-to-end validation
+- `make ci-fixtures-pass`: run the positive CI fixture suite against the current host
+- `make ci-fixtures-refresh`: rebuild and restage guest artifacts without a full redeploy
+- `make ci-fixtures-full`: run the configured CI fixture suite set after refresh
 
 
 --- A note on the future ---
