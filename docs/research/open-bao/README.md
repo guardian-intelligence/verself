@@ -6,7 +6,7 @@ management system on Latitude.sh bare metal.
 
 ## Goal
 
-Replace flat-file credential storage (`/etc/clickstack/admin-credentials.txt`, mode 0600) and
+Replace control-node credential storage under `ansible/.credentials/` and
 SOPS-encrypted Ansible secrets with a proper secrets management server. The human operator is
 the only entity with access to Forgejo admin credentials.
 

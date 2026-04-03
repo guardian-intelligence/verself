@@ -168,10 +168,10 @@ path "secret/data/forgejo/admin" {
     capabilities = ["deny"]
 }
 
-path "secret/data/clickstack/admin" {
+path "secret/data/hyperdx/admin" {
     capabilities = ["deny"]
 }
 ```
 
-This ensures CI jobs can read CI-scoped secrets but cannot access Forgejo or ClickStack admin
+This ensures CI jobs can read CI-scoped secrets but cannot access Forgejo or HyperDX admin
 credentials, which are reserved for the human operator.
