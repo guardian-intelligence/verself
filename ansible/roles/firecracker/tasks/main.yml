@@ -381,6 +381,20 @@
   changed_when: true
 
 # Staging is proven good — now tear down the old golden and its dependents.
+# Unmount stale ext4-over-zvol VFS mounts first: ZFS destroy -f only
+# force-unmounts ZFS-native mounts, not regular VFS mounts on /dev/zvol/*
+# block devices, so without this step the destroy fails silently.
+
+- name: Unmount stale VFS mounts on zvol block devices
+  ansible.builtin.shell: |
+    set -euo pipefail
+    awk '$1 ~ "^/dev/zvol/{{ firecracker_zfs_pool }}/" { print $2 }' /proc/mounts \
+      | xargs -r -n1 umount -l
+  args:
+    executable: /bin/bash
+  when: firecracker_refresh_base_golden_needed
+  changed_when: true
+  failed_when: false
 
 - name: Prune repo goldens derived from old golden
   ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/repo-goldens"
@@ -391,7 +405,7 @@
 - name: Prune CI job clones derived from old golden
   ansible.builtin.shell: |
     set -euo pipefail
-    zfs list -H -o name -r {{ firecracker_zfs_pool }}/{{ firecracker_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -r
+    zfs list -H -o name -r {{ firecracker_zfs_pool }}/{{ firecracker_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -R
   args:
     executable: /bin/bash
   when: firecracker_refresh_base_golden_needed
