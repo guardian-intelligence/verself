@@ -126,8 +126,9 @@ This builds the Nix server profile, pushes it over SSH, and configures services 
 ### 4. Log in
 
 ```bash
-# Admin credentials (generated on first deploy)
-ssh ubuntu@<ip> 'sudo cat /etc/clickstack/admin-credentials.txt'
+# HyperDX admin credentials are generated on first deploy in ansible/.credentials/
+printf 'admin+%s@forge-metal.local\n' "$(cat ansible/.credentials/hyperdx_admin_email_slug)"
+printf '%s#@F1\n' "$(cat ansible/.credentials/hyperdx_admin_password)"
 ```
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
@@ -301,7 +302,10 @@ forge-metal/
 │       ├── nix_deploy/    # Install Nix + push server profile closure
 │       ├── base/          # System config (ZFS, users, npm registry, sudoers)
 │       ├── cloudflare_dns/ # Cloudflare DNS A record management
-│       ├── clickstack/    # ClickHouse, HyperDX, OTel, Caddy, MongoDB (config only)
+│       ├── clickhouse/    # ClickHouse config + schema bootstrap
+│       ├── otelcol/       # OTLP ingestion and export to ClickHouse
+│       ├── hyperdx/       # HyperDX UI/API plus MongoDB-backed app state
+│       ├── caddy/         # Edge proxy and TLS
 │       ├── zfs/           # Pool creation, golden/ci datasets
 │       ├── firecracker/   # KVM, jailer user, golden zvol, CI dataset
 │       ├── containerd/    # containerd + gVisor runsc (config only)
@@ -325,7 +329,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ### Current platform decisions
 
-- `forge-metal` is the primary Go binary for Forgejo + Firecracker CI execution.
+- `forge-metal` is the current primary, and soon to be replaced, Go binary for Forgejo + Firecracker CI execution.
 - Keep the guest base image generic and boring: Node/Next.js-capable substrate only (Node, corepack, pnpm, Bun, git, certs, common service binaries). Do not create a distinct base image per repo or per package manager version.
 - Put the optimization boundary at the **repo golden image**, not the base image. For each repo, do one cold bootstrap on the default branch in the same Firecracker environment used for CI, then snapshot that warmed state as the golden image.
 - Use ZFS zvol clones + Firecracker as the only copy-on-write strategy. Do not add OverlayFS layering on top.
@@ -340,7 +344,8 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ## Assistant Contract
 
-* When proposing solutions, think from the perspective of the user of the system. The user is a sole operator of a single-person software company.
+* Ground proposals, plans, API references, and all technical discussion in primary sources.
+* When proposing solutions, think from the perspective of the user of the system. The users of this repo will be sole operators of a single-person software company operating all services off a single bare metal box.
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so its important to understand how everything connects.
 * You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM)
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
@@ -356,12 +361,16 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ## Output Contract
 
-* Base proposals in primary sources
 * When providing a recommendation, consider different plausible options and provide a differentiated recommendation.
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
+
+## Coding Contract
+
+* Prefer Ansible over shell scripts, except in extreme bootstrap cases.
+* ANsible playbook files must not have a newline at the end. This will be caught by `ansible-lint`.
 
 ## License
 

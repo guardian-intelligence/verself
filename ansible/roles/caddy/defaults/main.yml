@@ -1,0 +1,3 @@
+---
+# Caddy defaults.
+caddy_waf_mode: "DetectionOnly"  # DetectionOnly (log only) or On (block)

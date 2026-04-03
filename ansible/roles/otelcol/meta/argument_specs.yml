@@ -1,0 +1,18 @@
+---
+argument_specs:
+  main:
+    short_description: "OpenTelemetry Collector exporting directly to ClickHouse"
+    description:
+      - "Deploys otelcol-contrib from the Nix profile, configures OTLP"
+      - "receivers plus host and Caddy scraping, and exports logs, traces,"
+      - "and metrics into ClickHouse."
+    options:
+      clickhouse_native_port:
+        type: int
+        required: true
+        description: "ClickHouse native TCP protocol port used by the exporter."
+
+      fm_bin:
+        type: path
+        required: true
+        description: "Path to the Nix server profile bin directory."

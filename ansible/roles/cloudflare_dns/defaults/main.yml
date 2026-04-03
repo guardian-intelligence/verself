@@ -4,10 +4,10 @@
 # Root domain (required, inherited from group_vars). Also used as the Cloudflare zone.
 
 # Service subdomains to create A records for.
-# Each role defines its own subdomain (e.g. clickstack_subdomain: admin).
+# Each role defines its own subdomain (e.g. hyperdx_subdomain: admin).
 # This list is the union of all subdomains that need DNS records.
 cloudflare_dns_records:
-  - "{{ clickstack_subdomain | default('admin') }}"
+  - "{{ hyperdx_subdomain | default('admin') }}"
   - "{{ forgejo_subdomain | default('git') }}"
 
 # DNS record type. Override to AAAA for IPv6-only hosts.

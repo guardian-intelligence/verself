@@ -7,99 +7,99 @@ argument_specs:
       - "creates the jailer user/group, sets up the golden zvol lifecycle,"
       - "builds and deploys homestead-smelter-host, and verifies guest artifacts."
     options:
-      fc_zfs_pool:
+      firecracker_zfs_pool:
         type: str
         default: benchpool
         description: "ZFS pool for golden zvols and CI job clones."
 
-      fc_golden_zvol:
+      firecracker_golden_zvol:
         type: str
         default: golden-zvol
-        description: "Name of the golden zvol within fc_zfs_pool."
+        description: "Name of the golden zvol within firecracker_zfs_pool."
 
-      fc_golden_zvol_size:
+      firecracker_golden_zvol_size:
         type: str
         default: "4G"
         description: "Size of the golden zvol. Must include unit (e.g. 2G, 4G)."
 
-      fc_ci_dataset:
+      firecracker_ci_dataset:
         type: str
         default: ci
-        description: "ZFS dataset under fc_zfs_pool for ephemeral CI job clones."
+        description: "ZFS dataset under firecracker_zfs_pool for ephemeral CI job clones."
 
-      fc_jailer_root:
+      firecracker_jailer_root:
         type: path
         default: /srv/jailer
         description: "Root directory for Firecracker jailer chroots."
 
-      fc_jailer_uid:
+      firecracker_jailer_uid:
         type: int
         default: 10000
         description: "UID for the jailer system user. Must be a positive integer."
 
-      fc_jailer_gid:
+      firecracker_jailer_gid:
         type: int
         default: 10000
         description: "GID for the jailer system group. Must be a positive integer."
 
-      fc_jailer_user:
+      firecracker_jailer_user:
         type: str
         default: firecracker
         description: "System username for the jailer process."
 
-      fc_kernel_path:
+      firecracker_kernel_path:
         type: path
         default: /var/lib/ci/vmlinux
         description: "Path to the guest kernel. Pre-staged by build-guest-rootfs.sh."
 
-      fc_rootfs_path:
+      firecracker_rootfs_path:
         type: path
         default: /var/lib/ci/rootfs.ext4
         description: "Path to the guest ext4 rootfs. Pre-staged by build-guest-rootfs.sh."
 
-      fc_guest_artifact_manifest_path:
+      firecracker_guest_artifact_manifest_path:
         type: path
         default: /var/lib/ci/guest-artifacts.json
         description: "Path to the guest artifact manifest JSON."
 
-      fc_rootfs_hash_record:
+      firecracker_rootfs_hash_record:
         type: path
         default: /var/lib/ci/golden-zvol.rootfs.sha256
         description: "File recording the SHA256 of the rootfs written to the golden zvol."
 
-      fc_refresh_base_golden:
+      firecracker_refresh_base_golden:
         type: bool
         default: false
         description: >-
           Force golden zvol refresh even if the rootfs hash matches.
           WARNING: destroys all repo goldens and CI job clones.
 
-      fc_zfs_arc_max_bytes:
+      firecracker_zfs_arc_max_bytes:
         type: int
         default: 8589934592
         description: "ZFS ARC max size in bytes (default 8 GiB). Prevents VM OOM."
 
-      fc_guest_pool_cidr:
+      firecracker_guest_pool_cidr:
         type: str
         default: "172.16.0.0/16"
         description: "CIDR block for guest VM IP allocation."
 
-      fc_net_lease_dir:
+      firecracker_net_lease_dir:
         type: path
         default: /var/lib/ci/net/leases
         description: "Directory for DHCP lease files for guest VMs."
 
-      fc_host_uplink_interface:
+      firecracker_host_uplink_interface:
         type: str
         default: ""
         description: "Host network interface for guest NAT. Auto-detected if empty."
 
-      fc_smelter_host_binary_path:
+      firecracker_smelter_host_binary_path:
         type: path
         default: /usr/local/bin/homestead-smelter-host
         description: "Install path for the homestead-smelter host agent binary."
 
-      fc_smelter_control_socket:
+      firecracker_smelter_control_socket:
         type: path
         default: /run/homestead-smelter/agent.sock
         description: "Unix domain socket for homestead-smelter host control."

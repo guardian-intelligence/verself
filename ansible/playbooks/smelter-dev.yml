@@ -16,7 +16,7 @@
   vars_files:
     - ../roles/firecracker/defaults/main.yml
   vars:
-    smelter_dev_zvol: "{{ fc_zfs_pool }}/smelter-dev-zvol"
+    smelter_dev_zvol: "{{ firecracker_zfs_pool }}/smelter-dev-zvol"
     smelter_dev_snapshot: "{{ smelter_dev_zvol }}@ready"
     smelter_dev_mnt: /tmp/smelter-dev-mnt
     smelter_guest_upload: /tmp/homestead-smelter-guest
@@ -43,7 +43,7 @@
       failed_when: not guest_bin.stat.exists
 
     - name: Verify base golden snapshot exists
-      ansible.builtin.command: "zfs list -H {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready"
+      ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready"
       changed_when: false
 
     - name: Verify forge-metal is available
@@ -52,7 +52,7 @@
 
     - name: Verify homestead-smelter-host is available
       ansible.builtin.stat:
-        path: "{{ fc_smelter_host_binary_path }}"
+        path: "{{ firecracker_smelter_host_binary_path }}"
       register: smelter_host_bin
       failed_when: not smelter_host_bin.stat.exists
 
@@ -66,7 +66,7 @@
     - name: Clone base golden to dev zvol
       ansible.builtin.command: >
         zfs clone
-        {{ fc_zfs_pool }}/{{ fc_golden_zvol }}@ready
+        {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready
         {{ smelter_dev_zvol }}
       changed_when: true
 
@@ -121,11 +121,11 @@
             -- sleep {{ smelter_vm_sleep }}
           async: 60
           poll: 0
-          register: fc_job
+          register: firecracker_job
 
         - name: Wait for vsock bridge socket
           ansible.builtin.find:
-            paths: "{{ fc_jailer_root }}/firecracker"
+            paths: "{{ firecracker_jailer_root }}/firecracker"
             patterns: "forge-control.sock"
             recurse: true
             file_type: any
@@ -145,8 +145,8 @@
 
         - name: Wait for host agent to report live telemetry for the VM
           ansible.builtin.command: >
-            {{ fc_smelter_host_binary_path }} check-live
-            --control-uds {{ fc_smelter_control_socket }}
+            {{ firecracker_smelter_host_binary_path }} check-live
+            --control-uds {{ firecracker_smelter_control_socket }}
             --job-id {{ smelter_job_id }}
           register: smelter_live_result
           changed_when: false
@@ -156,8 +156,8 @@
 
         - name: Show host snapshot
           ansible.builtin.command: >
-            {{ fc_smelter_host_binary_path }} snapshot
-            --control-uds {{ fc_smelter_control_socket }}
+            {{ firecracker_smelter_host_binary_path }} snapshot
+            --control-uds {{ firecracker_smelter_control_socket }}
           register: smelter_snapshot_result
           changed_when: false
 
@@ -172,13 +172,13 @@
       always:
         - name: Wait for Firecracker VM to exit
           ansible.builtin.async_status:
-            jid: "{{ fc_job.ansible_job_id }}"
-          register: fc_result
-          until: fc_result.finished
+            jid: "{{ firecracker_job.ansible_job_id }}"
+          register: firecracker_result
+          until: firecracker_result.finished
           retries: 30
           delay: 2
           failed_when: false
-          when: fc_job is defined
+          when: firecracker_job is defined
 
         - name: Destroy dev zvol
           ansible.builtin.command: "zfs destroy -r {{ smelter_dev_zvol }}"

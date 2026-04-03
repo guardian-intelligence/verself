@@ -1,0 +1,216 @@
+---
+# Provision HyperDX metric source and dashboards.
+#
+# Idempotent: creates the metric source if missing, looks up each dashboard by
+# name and creates or updates accordingly. Connection and source IDs are
+# resolved at runtime since they are assigned by MongoDB on first boot.
+
+# --------------------------------------------------------------------------- #
+# Auth + connection resolution                                                 #
+# --------------------------------------------------------------------------- #
+
+- name: Get HyperDX user access key
+  ansible.builtin.command: >
+    mongosh --quiet --eval "db.users.findOne({}, {accessKey: 1, _id: 0}).accessKey" hyperdx
+  register: hyperdx_access_key_result
+  changed_when: false
+
+- name: Set access key fact
+  ansible.builtin.set_fact:
+    hyperdx_access_key: "{{ hyperdx_access_key_result.stdout | trim | regex_replace(\"^'|'$\", '') }}"
+
+- name: Get sources and connection ID
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/sources"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+    return_content: true
+  register: hyperdx_sources_result
+
+- name: Set connection ID fact
+  ansible.builtin.set_fact:
+    hyperdx_connection_id: "{{ hyperdx_sources_result.json.data[0].connection }}"
+
+# --------------------------------------------------------------------------- #
+# Metric source (created via MongoDB — the v2 sources API is read-only)        #
+# --------------------------------------------------------------------------- #
+
+- name: Index existing sources by name
+  ansible.builtin.set_fact:
+    hyperdx_source_names: "{{ hyperdx_sources_result.json.data | map(attribute='name') | list }}"
+
+- name: Get team ID
+  ansible.builtin.command: >
+    mongosh --quiet --eval "db.teams.findOne({}, {_id: 1})._id.toString()" hyperdx
+  register: hyperdx_team_id_result
+  changed_when: false
+  when: "'OTel Metrics' not in hyperdx_source_names"
+
+- name: Create OTel Metrics source
+  ansible.builtin.command:
+    argv:
+      - mongosh
+      - --quiet
+      - --eval
+      - >-
+          db.sources.insertOne({
+            name: "OTel Metrics",
+            kind: "metric",
+            team: ObjectId("{{ hyperdx_team_id_result.stdout | trim | regex_replace("^'|'$", '') }}"),
+            connection: ObjectId("{{ hyperdx_connection_id }}"),
+            from: { databaseName: "default", tableName: "" },
+            metricTables: {
+              gauge: "otel_metrics_gauge",
+              sum: "otel_metrics_sum",
+              histogram: "otel_metrics_histogram"
+            },
+            timestampValueExpression: "TimeUnix",
+            resourceAttributesExpression: "ResourceAttributes",
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+      - hyperdx
+  when: "'OTel Metrics' not in hyperdx_source_names"
+  register: hyperdx_metric_source_created
+  changed_when: true
+
+# Re-fetch sources to pick up the metric source ID.
+- name: Refresh sources
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/sources"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+    return_content: true
+  register: hyperdx_sources_result
+
+# --------------------------------------------------------------------------- #
+# Dashboards                                                                   #
+# --------------------------------------------------------------------------- #
+
+- name: List existing dashboards
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/dashboards"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+    return_content: true
+  register: hyperdx_dashboards_result
+
+# Build a name→id lookup so we can update in place.
+- name: Index existing dashboards by name
+  ansible.builtin.set_fact:
+    hyperdx_dashboard_ids: >-
+      {{
+        hyperdx_dashboards_result.json.data
+        | items2dict(key_name='name', value_name='id')
+      }}
+
+# --- Host Process Metrics ---------------------------------------------------
+
+- name: Render Host Process Metrics dashboard
+  ansible.builtin.set_fact:
+    hyperdx_host_metrics_body: "{{ lookup('template', 'dashboards/host-process-metrics.json.j2') }}"
+
+- name: Create Host Process Metrics dashboard
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_host_metrics_body }}"
+    status_code: [200]
+  when: "'Host Process Metrics' not in hyperdx_dashboard_ids"
+
+- name: Update Host Process Metrics dashboard
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/dashboards/{{ hyperdx_dashboard_ids['Host Process Metrics'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_host_metrics_body }}"
+    status_code: [200]
+  when: "'Host Process Metrics' in hyperdx_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Validate every tile renders data                                             #
+# --------------------------------------------------------------------------- #
+
+- name: Parse rendered dashboard
+  ansible.builtin.set_fact:
+    hyperdx_rendered_tiles: "{{ (hyperdx_host_metrics_body | from_json).tiles }}"
+
+# --- Builder (metric) tiles — validated via charts/series API ----------------
+
+- name: Collect builder tiles
+  ansible.builtin.set_fact:
+    hyperdx_builder_tiles: >-
+      {{ hyperdx_rendered_tiles | selectattr('config.sourceId', 'defined') | list }}
+
+- name: Validate builder tiles return data
+  ansible.builtin.uri:
+    url: "http://localhost:{{ hyperdx_api_port }}/api/v2/charts/series"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      series:
+        - sourceId: "{{ item.config.sourceId }}"
+          aggFn: "{{ item.config.select[0].aggFn }}"
+          field: "{{ item.config.select[0].valueExpression | default('') }}"
+          metricName: "{{ item.config.select[0].metricName }}"
+          metricDataType: "{{ item.config.select[0].metricType }}"
+          where: ""
+          groupBy: []
+      startTime: "{{ ((ansible_date_time.epoch | int) - 300) * 1000 }}"
+      endTime: "{{ (ansible_date_time.epoch | int) * 1000 }}"
+      granularity: "1m"
+    status_code: [200]
+    return_content: true
+  loop: "{{ hyperdx_builder_tiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: hyperdx_builder_validation
+  failed_when: >-
+    hyperdx_builder_validation is failed
+    or (hyperdx_builder_validation.json.data | default([]) | length) == 0
+
+# --- Raw SQL tiles — validated via ClickHouse directly -----------------------
+
+- name: Collect raw SQL tiles
+  ansible.builtin.set_fact:
+    hyperdx_sql_tiles: >-
+      {{ hyperdx_rendered_tiles | selectattr('config.configType', 'defined') | list }}
+
+- name: Validate raw SQL tiles return data
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/clickhouse-client"
+      - --user
+      - default
+      - --password
+      - "{{ clickhouse_password }}"
+      - --query
+      - >-
+          SELECT count() FROM (
+            {{ item.config.sqlTemplate
+               | regex_replace('\$__timeFilter_ms\((\w+)\)', '\1 >= now() - INTERVAL 5 MINUTE')
+               | regex_replace('\$__timeInterval\((\w+)\)', 'toStartOfInterval(\1, INTERVAL 1 minute)')
+            }}
+          )
+  loop: "{{ hyperdx_sql_tiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: hyperdx_sql_validation
+  failed_when: >-
+    hyperdx_sql_validation.rc != 0
+    or (hyperdx_sql_validation.stdout | trim | int) == 0
+  changed_when: false
+  no_log: true

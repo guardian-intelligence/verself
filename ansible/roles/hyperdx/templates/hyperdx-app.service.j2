@@ -1,0 +1,16 @@
+[Unit]
+Description=HyperDX Frontend (Next.js)
+After=network.target hyperdx-api.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ hyperdx_install_dir }}/packages/app
+EnvironmentFile={{ hyperdx_env_file }}
+ExecStart={{ fm_bin }}/npx next start -p {{ hyperdx_app_port }}
+Restart=on-failure
+RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target

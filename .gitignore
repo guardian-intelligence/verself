@@ -16,8 +16,8 @@ terraform/*.tfvars.json
 ansible/*.retry
 ansible/.cache/
 ansible/inventory/hosts.ini
+ansible/.credentials/
 ansible/group_vars/all/secrets.yml
-ansible/group_vars/all/credentials.auto.yml
 
 # Age private keys (NEVER commit)
 **/keys.txt

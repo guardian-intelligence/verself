@@ -1,0 +1,134 @@
+---
+# ClickHouse configuration.
+# Binary provided by the Nix server profile.
+
+- name: Generate ClickHouse default user password
+  ansible.builtin.set_fact:
+    clickhouse_password: "{{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: Create ClickHouse directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/clickhouse-server/config.d
+    - "{{ clickhouse_data_path }}"
+    - /var/log/clickhouse-server
+
+- name: Deploy ClickHouse server config
+  ansible.builtin.template:
+    src: clickhouse-config.xml.j2
+    dest: /etc/clickhouse-server/config.d/forge-metal.xml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart clickhouse
+
+- name: Apply ClickHouse config changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Deploy ClickHouse systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=ClickHouse Server
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart={{ fm_bin }}/clickhouse-server --config-file /etc/clickhouse-server/config.d/forge-metal.xml
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=500000
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/clickhouse-server.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart clickhouse
+
+- name: Enable and start ClickHouse
+  ansible.builtin.systemd:
+    name: clickhouse-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for ClickHouse
+  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }} --query 'SELECT 1'"
+  register: clickhouse_ready
+  retries: 10
+  delay: 3
+  until: clickhouse_ready.rc == 0
+  changed_when: false
+  no_log: true
+
+- name: Flush system logs (creates query_log table if query logging just enabled)
+  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }} --query 'SYSTEM FLUSH LOGS'"
+  changed_when: false
+  no_log: true
+
+- name: Compute local migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../migrations"
+    executable: /bin/bash
+  register: clickhouse_migrations_local_hash
+  changed_when: false
+
+- name: Read remote migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/migrations/.applied-hash
+  register: clickhouse_migrations_remote_hash
+  failed_when: false
+
+- name: Apply ClickHouse migrations
+  when: >-
+    clickhouse_migrations_remote_hash is failed
+    or (clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (clickhouse_migrations_local_hash.stdout.split()[0] | trim)
+  block:
+    - name: Upload migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../migrations/"
+        dest: /opt/forge-metal/migrations/
+        mode: "0644"
+
+    - name: Create forge_metal database
+      ansible.builtin.command: >
+        {{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }}
+        --query 'CREATE DATABASE IF NOT EXISTS forge_metal'
+      changed_when: false
+      no_log: true
+
+    - name: Apply migration files
+      ansible.builtin.command: >
+        {{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }}
+        --database forge_metal --multiquery
+        --queries-file /opt/forge-metal/migrations/{{ item }}
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ clickhouse_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/migrations/.applied-hash
+        mode: "0644"

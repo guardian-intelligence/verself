@@ -21,9 +21,7 @@
           if forgejo_runner_capacity is not none
           else (
             ansible_facts.processor_vcpus
-            | default(ansible_processor_vcpus)
             | default(ansible_facts.processor_nproc)
-            | default(ansible_processor_nproc)
             | default(1)
           )
         ) | int
