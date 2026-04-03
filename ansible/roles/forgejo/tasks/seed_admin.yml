@@ -17,7 +17,7 @@
   ansible.builtin.set_fact:
     _forgejo_needs_seed: "{{ forgejo_users.stdout_lines | length <= 1 }}"
 
-- name: Set admin credentials from password lookup
+- name: Resolve admin credentials from password lookup
   ansible.builtin.set_fact:
     forgejo_admin_user: >-
       {{ forgejo_admin_user | default(
@@ -34,7 +34,6 @@
            lookup('password', credentials_dir ~ '/forgejo_admin_password length=24 chars=ascii_letters,digits') ~ '#@F1',
            true
          ) }}
-  when: _forgejo_needs_seed | bool
   no_log: true
 
 - name: Seed Forgejo admin user

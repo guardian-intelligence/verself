@@ -17,7 +17,16 @@ type Fixture struct {
 	Metadata FixtureMetadata
 }
 
+type FixtureSuite string
+
+const (
+	FixtureSuitePass FixtureSuite = "pass"
+	FixtureSuiteFail FixtureSuite = "fail"
+)
+
 type FixtureMetadata struct {
+	Suite           FixtureSuite
+	ExpectedResult  string
 	Description     string
 	DefaultBranch   string
 	PRBranchBase    string
@@ -30,6 +39,8 @@ type FixtureMetadata struct {
 
 var fixtureMetadataByName = map[string]FixtureMetadata{
 	"next-bun-monorepo": {
+		Suite:           FixtureSuitePass,
+		ExpectedResult:  "success",
 		Description:     "bun workspace Next.js fixture without external services",
 		DefaultBranch:   "main",
 		PRBranchBase:    "test/forge-metal-warm-path",
@@ -40,6 +51,8 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 		PRChangeReplace: "Hello from Bun warm PR",
 	},
 	"next-npm-single-app": {
+		Suite:           FixtureSuitePass,
+		ExpectedResult:  "success",
 		Description:     "single-package npm Next.js fixture with a multi-step CI script",
 		DefaultBranch:   "main",
 		PRBranchBase:    "test/forge-metal-warm-path",
@@ -50,6 +63,8 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 		PRChangeReplace: "Hello from npm single warm PR",
 	},
 	"next-npm-workspaces": {
+		Suite:           FixtureSuitePass,
+		ExpectedResult:  "success",
 		Description:     "npm workspaces monorepo fixture with a root-level CI entrypoint",
 		DefaultBranch:   "main",
 		PRBranchBase:    "test/forge-metal-warm-path",
@@ -60,6 +75,8 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 		PRChangeReplace: "Hello from npm workspace warm PR",
 	},
 	"next-pnpm-postgres": {
+		Suite:           FixtureSuitePass,
+		ExpectedResult:  "success",
 		Description:     "pnpm + Turborepo Next.js fixture with a Postgres service requirement",
 		DefaultBranch:   "main",
 		PRBranchBase:    "test/forge-metal-warm-path",
@@ -71,8 +88,9 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 	},
 }
 
-type E2EOptions struct {
+type FixtureRunOptions struct {
 	FixturesRoot string
+	Suites       []string
 	ForgejoURL   string
 	Owner        string
 	Token        string
@@ -132,7 +150,7 @@ func lookupFixtureMetadata(name string) (FixtureMetadata, error) {
 	return metadata, nil
 }
 
-func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, client *ForgejoClient, opts E2EOptions) error {
+func RunFixtureSuites(ctx context.Context, logger *slog.Logger, mgr *Manager, client *ForgejoClient, opts FixtureRunOptions) error {
 	if opts.Owner == "" {
 		return fmt.Errorf("owner is required")
 	}
@@ -147,8 +165,12 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 	if err != nil {
 		return err
 	}
+	fixtures, suiteNames, err := selectFixturesBySuite(fixtures, opts.Suites)
+	if err != nil {
+		return err
+	}
 	runStamp := time.Now().UTC().Format("20060102-150405")
-	runID := "fixtures-e2e-" + runStamp
+	runID := "fixtures-" + strings.Join(suiteNames, "-") + "-" + runStamp
 
 	prepared := make([]preparedFixture, 0, len(fixtures))
 	for i := range fixtures {
@@ -212,7 +234,7 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 
 	for _, item := range triggered {
 		logger.Info("waiting for CI run", "repo", item.Prepared.Fixture.Name, "run_id", runID)
-		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA); err != nil {
+		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA, item.Prepared.Fixture.Metadata.ExpectedResult); err != nil {
 			return err
 		}
 	}
@@ -224,6 +246,52 @@ func RunFixturesE2E(ctx context.Context, logger *slog.Logger, mgr *Manager, clie
 	}
 
 	return nil
+}
+
+func selectFixturesBySuite(fixtures []Fixture, suites []string) ([]Fixture, []string, error) {
+	if len(fixtures) == 0 {
+		return nil, nil, fmt.Errorf("fixtures list must not be empty")
+	}
+
+	if len(suites) == 0 {
+		suites = []string{string(FixtureSuitePass)}
+	}
+
+	normalizedSuites := make([]string, 0, len(suites))
+	allowedSuites := make(map[FixtureSuite]struct{}, len(suites))
+	for _, suiteName := range suites {
+		suiteName = strings.ToLower(strings.TrimSpace(suiteName))
+		if suiteName == "" {
+			continue
+		}
+		suite := FixtureSuite(suiteName)
+		switch suite {
+		case FixtureSuitePass, FixtureSuiteFail:
+		default:
+			return nil, nil, fmt.Errorf("unknown fixture suite %q", suiteName)
+		}
+		if _, exists := allowedSuites[suite]; exists {
+			continue
+		}
+		allowedSuites[suite] = struct{}{}
+		normalizedSuites = append(normalizedSuites, suiteName)
+	}
+
+	if len(normalizedSuites) == 0 {
+		normalizedSuites = []string{string(FixtureSuitePass)}
+		allowedSuites[FixtureSuitePass] = struct{}{}
+	}
+
+	selected := make([]Fixture, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		if _, ok := allowedSuites[fixture.Metadata.Suite]; ok {
+			selected = append(selected, fixture)
+		}
+	}
+	if len(selected) == 0 {
+		return nil, nil, fmt.Errorf("no fixtures matched suites %s", strings.Join(normalizedSuites, ", "))
+	}
+	return selected, normalizedSuites, nil
 }
 
 func pushFixtureMain(fixture Fixture, pushURL, username, email string) error {
@@ -243,7 +311,7 @@ func pushFixtureMain(fixture Fixture, pushURL, username, email string) error {
 	return initializeAndPushRepo(tmp, pushURL, username, email, fmt.Sprintf("feat: seed %s fixture", fixture.Name), fixture.Metadata.DefaultBranch)
 }
 
-func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL, runID string) error {
+func addWorkflowToMain(opts FixtureRunOptions, fixture Fixture, pushURL, runID string) error {
 	tmp, err := os.MkdirTemp("", "forge-metal-fixture-workflow-*")
 	if err != nil {
 		return err
@@ -263,7 +331,7 @@ func addWorkflowToMain(opts E2EOptions, fixture Fixture, pushURL, runID string) 
 	return runGit(tmp, []string{"GIT_TERMINAL_PROMPT=0"}, "push", "origin", "HEAD:"+fixture.Metadata.DefaultBranch)
 }
 
-func createTriggerPR(ctx context.Context, client *ForgejoClient, opts E2EOptions, fixture Fixture, pushURL, repoURL string) (string, error) {
+func createTriggerPR(ctx context.Context, client *ForgejoClient, opts FixtureRunOptions, fixture Fixture, pushURL, repoURL string) (string, error) {
 	tmp, err := os.MkdirTemp("", "forge-metal-fixture-pr-*")
 	if err != nil {
 		return "", err
@@ -308,7 +376,7 @@ func createTriggerPR(ctx context.Context, client *ForgejoClient, opts E2EOptions
 	return commitSHA, nil
 }
 
-func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, commitSHA string) error {
+func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, commitSHA, expectedResult string) error {
 	deadline := time.Now().Add(10 * time.Minute)
 	for {
 		runs, err := client.ListWorkflowRuns(ctx, owner, repo)
@@ -319,21 +387,49 @@ func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, c
 			if run.CommitSHA != commitSHA {
 				continue
 			}
-			if run.Status == "success" || run.Conclusion == "success" {
+			if !workflowRunFinished(run) {
+				continue
+			}
+			if workflowRunMatchesExpectation(run, expectedResult) {
 				return nil
 			}
-			if run.Status == "failure" || run.Conclusion == "failure" {
-				return fmt.Errorf("workflow run %d for %s/%s failed", run.ID, owner, repo)
-			}
-			if run.Status == "completed" && run.Conclusion != "" && run.Conclusion != "success" {
-				return fmt.Errorf("workflow run %d for %s/%s completed with %s", run.ID, owner, repo, run.Conclusion)
-			}
+			actualResult := firstNonEmpty(run.Conclusion, run.Status, "unknown")
+			return fmt.Errorf("workflow run %d for %s/%s completed with %s, expected %s", run.ID, owner, repo, actualResult, expectedResult)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for workflow run on %s/%s commit %s", owner, repo, commitSHA)
 		}
 		time.Sleep(15 * time.Second)
 	}
+}
+
+func workflowRunFinished(run WorkflowRun) bool {
+	status := strings.ToLower(strings.TrimSpace(run.Status))
+	conclusion := strings.ToLower(strings.TrimSpace(run.Conclusion))
+
+	switch status {
+	case "success", "failure":
+		return true
+	case "completed":
+		return true
+	}
+
+	return conclusion != ""
+}
+
+func workflowRunMatchesExpectation(run WorkflowRun, expectedResult string) bool {
+	expectedResult = strings.ToLower(strings.TrimSpace(expectedResult))
+	actualResult := strings.ToLower(strings.TrimSpace(firstNonEmpty(run.Conclusion, run.Status)))
+	return expectedResult != "" && actualResult == expectedResult
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func uniquePRBranch(base, repoName, stamp string) string {

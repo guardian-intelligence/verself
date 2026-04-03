@@ -103,6 +103,7 @@
     - clickhouse
     - otelcol
     - hyperdx
+    - hyperdx_dashboards
     - verdaccio
     - forgejo
     - firecracker

@@ -5,7 +5,7 @@ argument_specs:
     description:
       - "Installs MongoDB for HyperDX application state, builds HyperDX from"
       - "source, writes the runtime environment, and seeds the initial admin"
-      - "account and dashboards."
+      - "account."
     options:
       hyperdx_mongodb_version:
         type: str
@@ -79,11 +79,6 @@ argument_specs:
         type: int
         required: true
         description: "ClickHouse HTTP interface port for the default HyperDX connection."
-
-      clickhouse_native_port:
-        type: int
-        required: true
-        description: "ClickHouse native port used by dashboard validation."
 
       fm_bin:
         type: path

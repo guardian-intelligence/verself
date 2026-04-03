@@ -1,8 +1,9 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install \
        doctor setup-dev setup-sops edit-secrets setup-domain \
-       server-profile provision deprovision deploy e2e \
-       guest-rootfs deploy-ci-artifacts fixtures-e2e smelter-build smelter-dev
+       server-profile provision deprovision deploy deploy-dashboards \
+       ci-fixtures-refresh ci-fixtures-pass ci-fixtures-full \
+       guest-rootfs deploy-ci-artifacts smelter-build smelter-dev
 
 BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -91,7 +92,26 @@ deploy: ## Deploy to all nodes (idempotent, no wipe)
 	cd ansible && ansible-playbook playbooks/dev-single-node.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
 
-e2e: fixtures-e2e ## Deploy Forgejo + Firecracker and validate fixture repos
+deploy-dashboards: ## Sync HyperDX dashboards and sources without a full redeploy
+	cd ansible && ansible-playbook playbooks/hyperdx-dashboards.yml
+
+ci-fixtures-refresh: ## Rebuild and stage CI guest artifacts on the existing host
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	$(MAKE) guest-rootfs
+	$(MAKE) deploy-ci-artifacts
+
+ci-fixtures-pass: ## Run the positive CI fixture suite against the existing host
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	cd ansible && ansible-playbook playbooks/ci-fixtures.yml \
+		-e nix_server_profile_path=$(NIX_PROFILE) \
+		-e '{"ci_fixtures_suites":["pass"]}'
+
+CI_FIXTURE_FULL_TARGETS := ci-fixtures-pass
+
+ci-fixtures-full: ci-fixtures-refresh ## Refresh artifacts, then run all configured CI fixture suites
+	@for target in $(CI_FIXTURE_FULL_TARGETS); do \
+		$(MAKE) $$target || exit $$?; \
+	done
 
 guest-rootfs: ## Build Alpine guest rootfs on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
@@ -115,13 +135,6 @@ deploy-ci-artifacts: ## Deploy rootfs to /var/lib/ci/ on the server
 	@test -n "$(REMOTE_HOST)" || { echo "ERROR: no ansible_host found in $(INVENTORY)"; exit 1; }
 	ssh $(SSH_OPTS) -t $(REMOTE_USER)@$(REMOTE_HOST) \
 		'sudo cp /tmp/ci/output/rootfs.ext4 /var/lib/ci/rootfs.ext4 && sudo cp /tmp/ci/output/vmlinux /var/lib/ci/vmlinux && sudo cp /tmp/ci/output/sbom.txt /var/lib/ci/sbom.txt && sudo cp /tmp/ci/output/guest-artifacts.json /var/lib/ci/guest-artifacts.json'
-
-fixtures-e2e: ## Deploy Forgejo + Firecracker and validate controlled Next.js fixtures
-	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
-	$(MAKE) guest-rootfs
-	$(MAKE) deploy-ci-artifacts
-	cd ansible && ansible-playbook playbooks/nextjs-fixtures-e2e.yml \
-		-e nix_server_profile_path=$(NIX_PROFILE)
 
 smelter-dev: ## Hot-swap smelter guest into dev golden, boot + probe in Firecracker VM (~10s)
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }

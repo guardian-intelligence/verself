@@ -1,0 +1,18 @@
+---
+argument_specs:
+  main:
+    short_description: "Controlled Forgejo fixture suites for CI validation"
+    description:
+      - "Stages the local fixture repositories on the worker and runs the"
+      - "selected fixture suites against the already-deployed Forgejo and"
+      - "Firecracker stack."
+    options:
+      ci_fixtures_suites:
+        type: list
+        elements: str
+        default:
+          - pass
+        description:
+          - "Ordered list of fixture suites to run."
+          - "Current suites: pass. Future suites can be added without"
+          - "changing the orchestration surface."
