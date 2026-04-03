@@ -46,6 +46,19 @@ pub fn build(b: *std.Build) void {
     const guest_step = b.step("guest", "Build the guest binary");
     guest_step.dependOn(&guest.step);
 
+    const gen_vectors = b.addExecutable(.{
+        .name = "generate-vectors",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/generate_vectors.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "homestead_smelter", .module = mod },
+            },
+        }),
+    });
+    b.installArtifact(gen_vectors);
+
     const run_host_step = b.step("run-host", "Run the host binary");
     const run_host = b.addRunArtifact(host);
     run_host_step.dependOn(&run_host.step);
@@ -53,6 +66,10 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_host.addArgs(args);
     }
+
+    const run_gen_vectors_step = b.step("run-generate-vectors", "Regenerate protocol/vectors.json from canonical encoder");
+    const run_gen_vectors = b.addRunArtifact(gen_vectors);
+    run_gen_vectors_step.dependOn(&run_gen_vectors.step);
 
     const mod_tests = b.addTest(.{
         .root_module = mod,
@@ -93,10 +110,23 @@ pub fn build(b: *std.Build) void {
     });
     const run_guest_tests = b.addRunArtifact(guest_tests);
 
+    const vectors_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/generate_vectors.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "homestead_smelter", .module = mod },
+            },
+        }),
+    });
+    const run_vectors_tests = b.addRunArtifact(vectors_tests);
+
     const test_step = b.step("test", "Run homestead-smelter tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_host_tests.step);
     test_step.dependOn(&run_host_proto_tests.step);
     test_step.dependOn(&run_host_core_tests.step);
     test_step.dependOn(&run_guest_tests.step);
+    test_step.dependOn(&run_vectors_tests.step);
 }

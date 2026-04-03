@@ -2,21 +2,12 @@
 
 `homestead-smelter` is the Zig workspace for Firecracker-specific guest and host agents.
 
-Current topology:
+```
+guest agents ──vsock──▶ homestead-smelter-host ──AF_UNIX SEQPACKET──▶ consumers
+```
 
- guest agents -> homestead-smelter-host -> local AF_UNIX `SOCK_SEQPACKET` attach socket
-
-Planned consumers attach to that local socket. The host daemon does not expose JSON and does not
-write to ClickHouse directly yet.
-
-Current protocol shape:
-
-- `homestead-smelter-guest` listens on the fixed vsock port `10790` inside the guest
-- each guest connection sends one fixed-size `hello` frame, then one fixed-size `sample` frame at a fixed `60Hz`
-- `homestead-smelter-host serve` runs as a long-lived daemon on the bare-metal worker
-- `homestead-smelter-host snapshot` attaches to the host socket, decodes the current binary host view into human-readable lines, and exits at `SNAPSHOT_END`
-- `homestead-smelter-host check-live` succeeds when a given job UUID has both hello and sample telemetry
-- the host daemon owns the long-lived guest streams and is the collection point for VM telemetry
+Consumers attach to the host control socket. The host daemon does not expose JSON and does not
+write to ClickHouse directly. Wire format details are in [docs/protocol.md](docs/protocol.md).
 
 ## Host Runtime
 
@@ -72,8 +63,6 @@ SAMPLE job_id=<job-id> stream_generation=1 host_seq=18 guest_seq=94 mem_availabl
 SNAPSHOT_END host_seq=19
 ```
 
-The host daemon discovers guests from the Firecracker jail tree, opens the existing Unix-domain vsock bridge once per VM, then continuously reads exact `128`-byte frames. The host control socket is `AF_UNIX` `SOCK_SEQPACKET`; another local process can attach once, receive a snapshot replay, then keep tailing the same binary stream without talking to guest bridges directly. If a consumer falls behind event-ring retention, the daemon closes that socket and the consumer must reconnect and attach again.
-
 Check whether a specific VM is live:
 
 ```bash
@@ -82,6 +71,18 @@ homestead-smelter/zig-out/bin/homestead-smelter-host check-live \
   --job-id 00000000-0000-0000-0000-000000000001
 ```
 
-The wire contract is documented in [docs/protocol.md](docs/protocol.md).
+## Cross-Language Conformance
+
+`protocol/vectors.json` contains golden test vectors generated from the Zig reference encoder. Each vector pairs hex-encoded wire bytes with expected decoded field values. TypeScript or Go consumers validate their decoders against these vectors.
+
+Regenerate after changing the binary protocol layout:
+
+```bash
+cd homestead-smelter
+zig build run-generate-vectors > protocol/vectors.json
+zig build test  # staleness test verifies the checked-in file matches
+```
+
+See [docs/protocol.md](docs/protocol.md) for the vector file format and conformance testing model.
 
 Read @homestead-smelter/docs/zig-coding/STYLE.md for coding guidance.
