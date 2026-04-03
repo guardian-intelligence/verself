@@ -40,16 +40,16 @@ The OTel tables live in `default`, not in an `otel` database.
 
 Use `make ci-fixtures-pass` for the common operator loop: seed the controlled example repositories, warm their goldens if needed, open PRs, and verify that the positive fixture suite succeeds on the already-deployed host.
 
-Use `make ci-fixtures-fail` for deterministic negative-path verification against the same deployed host state once fail fixtures exist. It runs the fixture runner only; it does not reapply the broader platform roles.
+Use `make ci-fixtures-fail` for deterministic negative-path verification against the same deployed host state. It runs the fixture runner only; it does not reapply the broader platform roles.
 
 Use `make ci-fixtures-refresh` when the guest kernel, rootfs, or staged CI artifacts changed. It rebuilds and restages the Firecracker guest artifacts without touching the rest of the platform.
 
-Use `make ci-fixtures-full` when you want the composed rehearsal: refresh guest artifacts first, then run the configured fixture target set from `CI_FIXTURE_FULL_TARGETS`. Today that defaults to `ci-fixtures-pass`. The orchestration is suite-based so additional suites such as `fail` can be added without changing the operator entrypoints.
+Use `make ci-fixtures-full` when you want the composed rehearsal: refresh guest artifacts first, then run the configured fixture target set from `CI_FIXTURE_FULL_TARGETS`. It now defaults to `ci-fixtures-pass ci-fixtures-fail`. The orchestration is suite-based so additional suites can be added without changing the operator entrypoints.
 
 ## Suite Model
 
 The current suite is `pass`. It contains the positive example repositories that are expected to complete with a successful Forgejo Actions result.
 
-`fail` is the negative-path suite name. The runner and playbook surface are in place; add fixtures to it when you want deterministic CI failures to count as a passing rehearsal outcome.
+`fail` is the negative-path suite name. The first fixture exercises a deterministic run-phase test failure and asserts the exact failure signature from exec telemetry.
 
 `full` is not a suite itself; it is the orchestration target that refreshes artifacts and then runs the configured target list.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -50,6 +51,9 @@ func fixturesRunCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if owner == "" {
 				return fmt.Errorf("owner is required")
+			}
+			if token == "" {
+				token = strings.TrimSpace(os.Getenv("FORGE_METAL_FIXTURES_TOKEN"))
 			}
 			cfg, err := ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin, vcpus, memoryMiB, hostInterface, guestPoolCIDR, networkLeaseDir)
 			if err != nil {
@@ -99,7 +103,7 @@ func fixturesRunCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&suites, "suite", []string{"pass"}, "Fixture suite(s) to run")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	cmd.Flags().StringVar(&owner, "owner", "", "Forgejo owner/user that should own the fixture repos")
-	cmd.Flags().StringVar(&token, "token", "", "Forgejo API token")
+	cmd.Flags().StringVar(&token, "token", "", "Forgejo API token (or FORGE_METAL_FIXTURES_TOKEN)")
 	cmd.Flags().StringVar(&username, "username", "", "Forgejo username for token creation and git pushes")
 	cmd.Flags().StringVar(&password, "password", "", "Forgejo password for token creation")
 	cmd.Flags().StringVar(&email, "email", "forge-metal-fixtures@local", "Git author email for seeded commits")

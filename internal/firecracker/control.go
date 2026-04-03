@@ -20,6 +20,7 @@ type guestControlResult struct {
 	hello  vmproto.Hello
 	result vmproto.Result
 	logs   string
+	phases []PhaseResult
 }
 
 type guestControl struct {
@@ -103,10 +104,19 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 
 func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logger) (guestControlResult, error) {
 	var (
-		logBuf   strings.Builder
-		hello    vmproto.Hello
-		gotHello bool
+		logBuf       strings.Builder
+		hello        vmproto.Hello
+		gotHello     bool
+		phaseResults []PhaseResult
 	)
+
+	resultWithLogs := func() guestControlResult {
+		return guestControlResult{
+			hello:  hello,
+			logs:   logBuf.String(),
+			phases: append([]PhaseResult(nil), phaseResults...),
+		}
+	}
 
 	env, err := c.recv()
 	if err != nil {
@@ -140,10 +150,7 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 		env, err := c.recv()
 		if err != nil {
 			if gotHello {
-				return guestControlResult{
-					hello: hello,
-					logs:  logBuf.String(),
-				}, fmt.Errorf("read guest control stream: %w", err)
+				return resultWithLogs(), fmt.Errorf("read guest control stream: %w", err)
 			}
 			return guestControlResult{}, fmt.Errorf("read guest control stream: %w", err)
 		}
@@ -152,7 +159,7 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 		case vmproto.TypeLogChunk:
 			msg, err := vmproto.DecodePayload[vmproto.LogChunk](env)
 			if err != nil {
-				return guestControlResult{hello: hello, logs: logBuf.String()}, err
+				return resultWithLogs(), err
 			}
 			appendLogChunk(&logBuf, msg.Data)
 		case vmproto.TypeHeartbeat:
@@ -163,38 +170,47 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 				}
 			}
 		case vmproto.TypePhaseEnd:
+			msg, err := vmproto.DecodePayload[vmproto.PhaseEnd](env)
+			if err != nil {
+				return resultWithLogs(), err
+			}
+			phaseResults = append(phaseResults, PhaseResult{
+				Name:       msg.Name,
+				ExitCode:   msg.ExitCode,
+				DurationMS: msg.DurationMS,
+			})
 			if logger != nil {
-				if msg, err := vmproto.DecodePayload[vmproto.PhaseEnd](env); err == nil {
-					logger.Info("guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "job_id", job.JobID)
-				}
+				logger.Info("guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "job_id", job.JobID)
 			}
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
 			if decodeErr != nil {
-				return guestControlResult{hello: hello, logs: logBuf.String()}, decodeErr
+				return resultWithLogs(), decodeErr
 			}
-			return guestControlResult{hello: hello, logs: logBuf.String()}, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+			return resultWithLogs(), fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
 		case vmproto.TypeResult:
 			msg, err := vmproto.DecodePayload[vmproto.Result](env)
 			if err != nil {
-				return guestControlResult{hello: hello, logs: logBuf.String()}, err
+				return resultWithLogs(), err
 			}
 			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeResult, ForSeq: env.Seq}); err != nil {
-				return guestControlResult{hello: hello, logs: logBuf.String(), result: msg}, fmt.Errorf("ack guest result: %w", err)
+				outcome := resultWithLogs()
+				outcome.result = msg
+				return outcome, fmt.Errorf("ack guest result: %w", err)
 			}
 			if logger != nil {
 				logger.Info("guest result received; requesting graceful guest reboot", "job_id", job.JobID, "exit_code", msg.ExitCode)
 			}
 			if err := c.send(vmproto.TypeShutdown, vmproto.Shutdown{}); err != nil {
-				return guestControlResult{hello: hello, logs: logBuf.String(), result: msg}, fmt.Errorf("send guest shutdown: %w", err)
+				outcome := resultWithLogs()
+				outcome.result = msg
+				return outcome, fmt.Errorf("send guest shutdown: %w", err)
 			}
-			return guestControlResult{
-				hello:  hello,
-				result: msg,
-				logs:   logBuf.String(),
-			}, nil
+			outcome := resultWithLogs()
+			outcome.result = msg
+			return outcome, nil
 		default:
-			return guestControlResult{hello: hello, logs: logBuf.String()}, fmt.Errorf("unexpected guest message type %s", env.Type)
+			return resultWithLogs(), fmt.Errorf("unexpected guest message type %s", env.Type)
 		}
 	}
 }

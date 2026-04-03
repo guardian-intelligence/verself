@@ -69,6 +69,12 @@ type JobConfig struct {
 	Env            map[string]string `json:"env"`
 }
 
+type PhaseResult struct {
+	Name       string
+	ExitCode   int
+	DurationMS int64
+}
+
 // JobResult holds the outcome of a VM job execution.
 type JobResult struct {
 	ExitCode             int
@@ -89,6 +95,8 @@ type JobResult struct {
 	StderrBytes          uint64
 	DroppedLogBytes      uint64
 	ForcedShutdown       bool
+	PhaseResults         []PhaseResult
+	FailurePhase         string
 	Metrics              *VMMetrics
 }
 
@@ -400,6 +408,8 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	result.StdoutBytes = controlResult.result.StdoutBytes
 	result.StderrBytes = controlResult.result.StderrBytes
 	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
+	result.PhaseResults = append([]PhaseResult(nil), controlResult.phases...)
+	result.FailurePhase = firstFailedPhase(controlResult.phases)
 	logger.Info("VM exited", "exit_code", result.ExitCode)
 
 	result.Metrics = parseMetricsFile(metricsPathHost)
@@ -418,6 +428,15 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	)
 
 	return result, controlRunErr
+}
+
+func firstFailedPhase(phases []PhaseResult) string {
+	for _, phase := range phases {
+		if phase.ExitCode != 0 {
+			return phase.Name
+		}
+	}
+	return ""
 }
 
 // setupJail creates the jail directory structure and places the

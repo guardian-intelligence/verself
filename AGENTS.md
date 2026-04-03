@@ -121,7 +121,7 @@ make deploy  # idempotent, no wipe — this is the normal workflow
 
 This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
 
-> **`make ci-fixtures-pass` runs the lightweight positive fixture suite against the current host state.** `make ci-fixtures-fail` is scaffolded on the same runner-only path and becomes useful once fail fixtures exist. Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
+> **`make ci-fixtures-pass` and `make ci-fixtures-fail` run lightweight fixture suites against the current host state.** Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
 
 ### 4. Log in
 
@@ -246,7 +246,7 @@ Compression codecs per column type:
 | `make deploy-dashboards` | Sync HyperDX dashboards and sources without a full platform redeploy |
 | `make ci-fixtures-refresh` | Rebuild and stage CI guest artifacts on the existing host |
 | `make ci-fixtures-pass` | Run the positive CI fixture suite against the existing host |
-| `make ci-fixtures-fail` | Run the scaffolded negative CI fixture suite once fail fixtures exist |
+| `make ci-fixtures-fail` | Run the negative CI fixture suite against the existing host |
 | `make ci-fixtures-full` | Refresh CI artifacts, then run the configured fixture target set |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
@@ -308,7 +308,7 @@ PASS: host agent observed live guest telemetry
 | `make smelter-dev` | ~10s | Iterating on guest Zig code |
 | `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
 | `make ci-fixtures-pass` | ~3-5min | Re-run the positive fixture suite against the current host |
-| `make ci-fixtures-fail` | ~3-5min | Re-run the negative fixture suite once fail fixtures exist |
+| `make ci-fixtures-fail` | ~3-5min | Re-run the negative fixture suite against the current host |
 | `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the configured fixture target set |
 
 ## Project Structure

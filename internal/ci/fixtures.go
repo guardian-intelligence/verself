@@ -2,12 +2,16 @@ package ci
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
+	"github.com/forge-metal/forge-metal/internal/config"
 )
 
 type Fixture struct {
@@ -25,16 +29,20 @@ const (
 )
 
 type FixtureMetadata struct {
-	Suite           FixtureSuite
-	ExpectedResult  string
-	Description     string
-	DefaultBranch   string
-	PRBranchBase    string
-	PRTitle         string
-	PRCommitMessage string
-	PRChangePath    string
-	PRChangeFind    string
-	PRChangeReplace string
+	Suite                          FixtureSuite
+	ExpectedResult                 string
+	ExpectedFailurePhase           string
+	ExpectedFailureExitCode        int
+	ExpectedFailureMessageContains string
+	ExpectedRunErrorContains       string
+	Description                    string
+	DefaultBranch                  string
+	PRBranchBase                   string
+	PRTitle                        string
+	PRCommitMessage                string
+	PRChangePath                   string
+	PRChangeFind                   string
+	PRChangeReplace                string
 }
 
 var fixtureMetadataByName = map[string]FixtureMetadata{
@@ -61,6 +69,21 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 		PRChangePath:    "app/page.js",
 		PRChangeFind:    "Hello from npm single main",
 		PRChangeReplace: "Hello from npm single warm PR",
+	},
+	"next-npm-single-app-fail": {
+		Suite:                          FixtureSuiteFail,
+		ExpectedResult:                 "failure",
+		ExpectedFailurePhase:           "run",
+		ExpectedFailureExitCode:        1,
+		ExpectedFailureMessageContains: "FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE",
+		Description:                    "single-package npm Next.js fixture with a deterministic run-phase failure",
+		DefaultBranch:                  "main",
+		PRBranchBase:                   "test/forge-metal-expected-failure",
+		PRTitle:                        "test: trigger expected fixture failure",
+		PRCommitMessage:                "test: trigger expected fixture failure",
+		PRChangePath:                   "scripts/assert-build.mjs",
+		PRChangeFind:                   "console.log(\"build artifact ok\");",
+		PRChangeReplace:                "throw new Error(\"FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE\");",
 	},
 	"next-npm-workspaces": {
 		Suite:           FixtureSuitePass,
@@ -107,6 +130,13 @@ type preparedFixture struct {
 type triggeredFixture struct {
 	Prepared  preparedFixture
 	CommitSHA string
+}
+
+type fixtureExecOutcome struct {
+	FailurePhase    string
+	FailureExitCode int
+	GuestLogTail    string
+	RunError        string
 }
 
 func LoadFixtures(root string) ([]Fixture, error) {
@@ -235,6 +265,9 @@ func RunFixtureSuites(ctx context.Context, logger *slog.Logger, mgr *Manager, cl
 	for _, item := range triggered {
 		logger.Info("waiting for CI run", "repo", item.Prepared.Fixture.Name, "run_id", runID)
 		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA, item.Prepared.Fixture.Metadata.ExpectedResult); err != nil {
+			return err
+		}
+		if err := waitForExpectedExecOutcome(ctx, item.Prepared.Fixture, runID, fmt.Sprintf("%s/%s", opts.Owner, item.Prepared.Fixture.Name), item.CommitSHA); err != nil {
 			return err
 		}
 	}
@@ -403,6 +436,116 @@ func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, c
 	}
 }
 
+func waitForExpectedExecOutcome(ctx context.Context, fixture Fixture, runID, repo, commitSHA string) error {
+	if !fixtureHasExpectedExecOutcome(fixture.Metadata) {
+		return nil
+	}
+
+	cfg, err := config.Load("")
+	if err != nil {
+		return fmt.Errorf("load config for fixture exec verification: %w", err)
+	}
+	client, err := ch.New(cfg.ClickHouse)
+	if err != nil {
+		return fmt.Errorf("connect clickhouse for fixture exec verification: %w", err)
+	}
+	defer client.Close()
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		outcome, found, err := lookupFixtureExecOutcome(ctx, client, cfg.ClickHouse.Database, runID, repo, commitSHA)
+		if err != nil {
+			return err
+		}
+		if found {
+			return assertFixtureExecOutcome(fixture.Metadata, outcome)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for exec telemetry for %s commit %s", repo, commitSHA)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func lookupFixtureExecOutcome(ctx context.Context, client *ch.Client, database, runID, repo, commitSHA string) (fixtureExecOutcome, bool, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := client.QueryRows(
+		queryCtx,
+		fmt.Sprintf(
+			"SELECT job_config_json FROM %s.ci_events WHERE event_kind = 'exec' AND run_id = ? AND repo = ? AND toString(commit_sha) = ? ORDER BY created_at DESC LIMIT 1",
+			database,
+		),
+		runID,
+		repo,
+		commitSHA,
+	)
+	if err != nil {
+		return fixtureExecOutcome{}, false, fmt.Errorf("query fixture exec telemetry: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fixtureExecOutcome{}, false, fmt.Errorf("iterate fixture exec telemetry rows: %w", err)
+		}
+		return fixtureExecOutcome{}, false, nil
+	}
+
+	var jobConfigJSON string
+	if err := rows.Scan(&jobConfigJSON); err != nil {
+		return fixtureExecOutcome{}, false, fmt.Errorf("scan fixture exec telemetry row: %w", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(jobConfigJSON), &payload); err != nil {
+		return fixtureExecOutcome{}, false, fmt.Errorf("decode fixture exec telemetry payload: %w", err)
+	}
+
+	return fixtureExecOutcome{
+		FailurePhase:    stringValue(payload["failure_phase"]),
+		FailureExitCode: intValue(payload["failure_exit_code"]),
+		GuestLogTail:    stringValue(payload["guest_log_tail"]),
+		RunError:        stringValue(payload["run_error"]),
+	}, true, nil
+}
+
+func assertFixtureExecOutcome(metadata FixtureMetadata, outcome fixtureExecOutcome) error {
+	if metadata.ExpectedFailurePhase != "" && outcome.FailurePhase != metadata.ExpectedFailurePhase {
+		return fmt.Errorf("fixture exec failure phase mismatch: got %q want %q", outcome.FailurePhase, metadata.ExpectedFailurePhase)
+	}
+	if metadata.ExpectedFailureExitCode != 0 && outcome.FailureExitCode != metadata.ExpectedFailureExitCode {
+		return fmt.Errorf("fixture exec failure exit code mismatch: got %d want %d", outcome.FailureExitCode, metadata.ExpectedFailureExitCode)
+	}
+	if needle := strings.TrimSpace(metadata.ExpectedFailureMessageContains); needle != "" {
+		if !strings.Contains(outcome.GuestLogTail, needle) && !strings.Contains(outcome.RunError, needle) {
+			return fmt.Errorf("fixture exec failure message missing %q", needle)
+		}
+	}
+	if needle := strings.TrimSpace(metadata.ExpectedRunErrorContains); needle != "" {
+		if !strings.Contains(outcome.RunError, needle) {
+			return fmt.Errorf("fixture exec run_error mismatch: got %q want substring %q", outcome.RunError, needle)
+		}
+		return nil
+	}
+	if strings.TrimSpace(outcome.RunError) != "" {
+		return fmt.Errorf("fixture exec run_error was unexpectedly set: %s", outcome.RunError)
+	}
+	return nil
+}
+
+func fixtureHasExpectedExecOutcome(metadata FixtureMetadata) bool {
+	return metadata.ExpectedFailurePhase != "" ||
+		metadata.ExpectedFailureExitCode != 0 ||
+		metadata.ExpectedFailureMessageContains != "" ||
+		metadata.ExpectedRunErrorContains != ""
+}
+
 func workflowRunFinished(run WorkflowRun) bool {
 	status := strings.ToLower(strings.TrimSpace(run.Status))
 	conclusion := strings.ToLower(strings.TrimSpace(run.Conclusion))
@@ -421,6 +564,29 @@ func workflowRunMatchesExpectation(run WorkflowRun, expectedResult string) bool 
 	expectedResult = strings.ToLower(strings.TrimSpace(expectedResult))
 	actualResult := strings.ToLower(strings.TrimSpace(firstNonEmpty(run.Conclusion, run.Status)))
 	return expectedResult != "" && actualResult == expectedResult
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed)
+		}
+	}
+	return 0
+}
+
+func stringValue(value any) string {
+	if typed, ok := value.(string); ok {
+		return typed
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {

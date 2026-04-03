@@ -21,6 +21,7 @@ func TestLoadFixtures_FixtureMatrix(t *testing.T) {
 	want := []string{
 		"next-bun-monorepo",
 		"next-npm-single-app",
+		"next-npm-single-app-fail",
 		"next-npm-workspaces",
 		"next-pnpm-postgres",
 	}
@@ -38,6 +39,26 @@ func TestLoadFixtures_FixtureMatrix(t *testing.T) {
 	}
 	if fixtures[0].Metadata.ExpectedResult != "success" {
 		t.Fatalf("fixture expected result: got %q want success", fixtures[0].Metadata.ExpectedResult)
+	}
+
+	var failFixture Fixture
+	for _, fixture := range fixtures {
+		if fixture.Name == "next-npm-single-app-fail" {
+			failFixture = fixture
+			break
+		}
+	}
+	if failFixture.Name == "" {
+		t.Fatal("next-npm-single-app-fail fixture missing from matrix")
+	}
+	if failFixture.Metadata.ExpectedFailurePhase != "run" {
+		t.Fatalf("fail fixture phase: got %q want run", failFixture.Metadata.ExpectedFailurePhase)
+	}
+	if failFixture.Metadata.ExpectedFailureExitCode != 1 {
+		t.Fatalf("fail fixture exit code: got %d want 1", failFixture.Metadata.ExpectedFailureExitCode)
+	}
+	if failFixture.Metadata.ExpectedFailureMessageContains == "" {
+		t.Fatal("fail fixture expected failure message is empty")
 	}
 }
 
@@ -68,5 +89,21 @@ func TestSelectFixturesBySuite(t *testing.T) {
 	}
 	if len(selected) != 1 || selected[0].Name != "pass-fixture" {
 		t.Fatalf("selected fixtures: got %#v", selected)
+	}
+}
+
+func TestAssertFixtureExecOutcome(t *testing.T) {
+	metadata := FixtureMetadata{
+		ExpectedFailurePhase:           "run",
+		ExpectedFailureExitCode:        1,
+		ExpectedFailureMessageContains: "FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE",
+	}
+	outcome := fixtureExecOutcome{
+		FailurePhase:    "run",
+		FailureExitCode: 1,
+		GuestLogTail:    "Error: FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE",
+	}
+	if err := assertFixtureExecOutcome(metadata, outcome); err != nil {
+		t.Fatalf("assertFixtureExecOutcome: %v", err)
 	}
 }

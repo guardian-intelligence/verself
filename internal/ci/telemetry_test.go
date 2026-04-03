@@ -2,6 +2,7 @@ package ci
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,8 +43,14 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			PrepareDuration:      2 * time.Second,
 			RunDuration:          11 * time.Second,
 			VMExitWaitDuration:   320 * time.Millisecond,
+			Logs:                 "build ok\nError: FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE\n",
 			StdoutBytes:          876,
 			StderrBytes:          13,
+			PhaseResults: []firecracker.PhaseResult{
+				{Name: "prepare", ExitCode: 0, DurationMS: 2000},
+				{Name: "run", ExitCode: 1, DurationMS: 11000},
+			},
+			FailurePhase: "run",
 		},
 		CommitSHA: "367befa8562f50dfac64b5589e842a215598b90a",
 		PRNumber:  82,
@@ -92,6 +99,15 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 	}
 	if payload["vm_exit_forced"] != false {
 		t.Fatalf("vm_exit_forced: got %v", payload["vm_exit_forced"])
+	}
+	if payload["failure_phase"] != "run" {
+		t.Fatalf("failure_phase: got %v", payload["failure_phase"])
+	}
+	if payload["failure_exit_code"] != float64(1) {
+		t.Fatalf("failure_exit_code: got %v", payload["failure_exit_code"])
+	}
+	if !strings.Contains(payload["guest_log_tail"].(string), "FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE") {
+		t.Fatalf("guest_log_tail missing expected sentinel: %v", payload["guest_log_tail"])
 	}
 	if payload["guest_artifact_manifest_present"] != true {
 		t.Fatalf("guest_artifact_manifest_present: got %v", payload["guest_artifact_manifest_present"])

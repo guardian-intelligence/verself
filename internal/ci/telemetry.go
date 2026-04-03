@@ -268,6 +268,7 @@ func emitWarmTelemetry(logger *slog.Logger, input emitWarmTelemetryInput) error 
 }
 
 func buildExecJobConfigJSON(input emitExecTelemetryInput, manifestPath string, guestArtifacts *GuestArtifactManifest, guestArtifactErr error) (string, error) {
+	failurePhase := strings.TrimSpace(input.JobResult.FailurePhase)
 	payload := map[string]any{
 		"event_kind":                      "exec",
 		"run_id":                          input.RunID,
@@ -301,6 +302,11 @@ func buildExecJobConfigJSON(input emitExecTelemetryInput, manifestPath string, g
 		"stdout_bytes":                    input.JobResult.StdoutBytes,
 		"stderr_bytes":                    input.JobResult.StderrBytes,
 		"dropped_log_bytes":               input.JobResult.DroppedLogBytes,
+		"phase_exit_codes":                phaseExitCodes(input.JobResult.PhaseResults),
+		"failure_phase":                   failurePhase,
+		"failure_exit_code":               phaseExitCode(input.JobResult.PhaseResults, failurePhase),
+		"guest_log_tail":                  tailString(input.JobResult.Logs, 4096),
+		"serial_log_tail":                 tailString(input.JobResult.SerialLogs, 2048),
 		"guest_artifact_manifest_path":    manifestPath,
 		"guest_artifact_manifest_present": guestArtifacts != nil,
 	}
@@ -362,6 +368,40 @@ func buildWarmJobConfigJSON(input emitWarmTelemetryInput, manifestPath string, g
 		return "", fmt.Errorf("marshal warm telemetry payload: %w", err)
 	}
 	return string(data), nil
+}
+
+func phaseExitCodes(phases []firecracker.PhaseResult) map[string]int {
+	if len(phases) == 0 {
+		return nil
+	}
+	codes := make(map[string]int, len(phases))
+	for _, phase := range phases {
+		codes[phase.Name] = phase.ExitCode
+	}
+	return codes
+}
+
+func phaseExitCode(phases []firecracker.PhaseResult, phaseName string) int {
+	phaseName = strings.TrimSpace(phaseName)
+	if phaseName == "" {
+		return 0
+	}
+	for _, phase := range phases {
+		if phase.Name == phaseName {
+			return phase.ExitCode
+		}
+	}
+	return 0
+}
+
+func tailString(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if len(value) <= limit {
+		return value
+	}
+	return value[len(value)-limit:]
 }
 
 func addGuestArtifactPayload(payload map[string]any, manifestPath string, guestArtifacts *GuestArtifactManifest, guestArtifactErr error) {

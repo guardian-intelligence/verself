@@ -101,7 +101,7 @@ ci-fixtures-refresh: ## Rebuild and stage CI guest artifacts on the existing hos
 	$(MAKE) deploy-ci-artifacts
 
 CI_FIXTURES_PLAYBOOK ?= playbooks/ci-fixtures.yml
-CI_FIXTURE_FULL_TARGETS ?= ci-fixtures-pass
+CI_FIXTURE_FULL_TARGETS ?= ci-fixtures-pass ci-fixtures-fail
 
 ci-fixtures-run: ## Run the selected CI fixture playbook against the existing host
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
