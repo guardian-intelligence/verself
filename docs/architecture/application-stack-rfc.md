@@ -14,11 +14,320 @@ Both are Next.js applications. Both authenticate against the same identity provi
 
 ### Identity: Zitadel
 
-Single Go binary. Multi-tenant organizations are first-class (not bolted on like Keycloak 25+ Organizations). ~200 MB RAM vs Keycloak's 1.5-2 GB JVM footprint.
+Event-sourced identity provider. Single Go binary, PostgreSQL-backed. Every mutation is an immutable event appended to an event store — the audit trail is not a bolted-on log table but the database itself. Multi-tenant organizations are the central architectural primitive, not a feature added in v25 like Keycloak's Organizations.
 
 Each customer org maps to a Zitadel organization. Both applications use OIDC with Zitadel as the IdP. Org membership and roles are managed in Zitadel; application-specific authorization (e.g., sandbox quotas, storefront purchase history) stays in each app's database.
 
-Deployment: Nix closure, systemd unit, Caddy route at `auth.<domain>`. PostgreSQL database `zitadel`.
+License: AGPL-3.0 since v3. Acceptable for this deployment — Zitadel runs as infrastructure, not distributed as part of a product.
+
+#### Why Zitadel
+
+Three properties drove the decision over Keycloak, Authentik, and Ory:
+
+1. **Event-sourced audit trail.** Every state change (user created, role assigned, token issued, password checked) is an immutable event with a monotonic sequence number. No `DELETE` or `UPDATE` touches the event store. This is architecturally unique among self-hosted identity providers — Keycloak stores mutable rows with optional event listeners, Authentik uses standard Django ORM. For a financial platform, an immutable identity audit trail is a compliance requirement, not a nice-to-have.
+
+2. **Resource footprint.** ~512 MB RAM for Zitadel + shared PostgreSQL. Keycloak's JVM baseline is ~1.25 GB (300 MB non-heap + 70% heap from container limit). Authentik requires ~4 GB (Python server + worker processes). Ory requires three separate binaries (Kratos + Hydra + Keto) plus building your own login UI.
+
+3. **Multi-org as core primitive.** Organizations, project grants, and cross-org role assignments are first-class API objects with dedicated gRPC endpoints. Keycloak added Organizations in v26 (GA) but the feature is younger and less battle-tested. Authentik has soft multi-tenancy via brands/domains but no first-class org model or org-admin delegation.
+
+#### Data model
+
+Zitadel's hierarchy: Instance → Organizations → Projects → Applications. Users belong to exactly one organization. Cross-org access is modeled via Project Grants and Role Assignments, not by duplicating user accounts.
+
+```
+Instance (auth.<domain>)
+├── Platform Org
+│     ├── Project: "Sandbox"
+│     │     ├── Roles: [sandbox:admin, sandbox:user]
+│     │     └── Application: "Sandbox Web" (OIDC confidential client)
+│     ├── Project: "Storefront"
+│     │     ├── Roles: [store:admin, store:customer]
+│     │     └── Application: "Storefront Web" (OIDC confidential client)
+│     ├── Machine User: "orchestrator" (JWT Profile auth)
+│     ├── Machine User: "reconciliation-cron" (PAT auth)
+│     └── Machine User: "stripe-webhook-worker" (PAT auth)
+│
+├── Customer Org: "AcmeCorp"
+│     ├── Human users (managed by AcmeCorp's ORG_OWNER)
+│     ├── Project Grant: Sandbox [sandbox:admin, sandbox:user]
+│     ├── Project Grant: Storefront [store:admin, store:customer]
+│     └── Custom branding (logo, colors, fonts)
+│
+└── Customer Org: "StartupXYZ"
+      ├── Human users
+      └── Project Grant: Sandbox [sandbox:user]  ← sandbox-only customer
+```
+
+Two separate projects (not one project with two apps) because the role models diverge — a sandbox admin and a storefront admin are different authorization domains. Both projects live in the Platform Org. Customer orgs receive Project Grants that delegate a subset of roles.
+
+A Project Grant lets the receiving org's `ORG_OWNER` create Role Assignments for their own users, limited to the granted role subset. The receiving org cannot modify the project itself — only the Platform Org can add roles or change application configuration.
+
+#### Role model
+
+Platform administration uses Zitadel's built-in role hierarchy:
+
+| Role | Scope | Capabilities |
+|------|-------|-------------|
+| `IAM_OWNER` | Instance | Create orgs, manage all instance settings, view all events |
+| `ORG_OWNER` | Organization | Full self-service within their org (see below) |
+| `PROJECT_OWNER` | Project | Manage project roles, apps, and grants |
+| `PROJECT_GRANT_OWNER` | Granted project | Manage role assignments within a specific grant |
+
+An `ORG_OWNER` can self-service without platform admin intervention:
+
+- Create and manage users (invite, deactivate, reset credentials)
+- Configure identity providers for their org (SAML, OIDC federation)
+- Customize branding (logo, colors, fonts for login and emails)
+- Set MFA policy, password complexity, lockout rules, session lifetimes
+- Assign roles to their users within granted projects
+- Verify custom domains
+
+Application-level roles are defined per project:
+
+| Project | Role Key | Meaning |
+|---------|----------|---------|
+| Sandbox | `sandbox:admin` | Manage API keys, view usage, configure org settings in Sandbox app |
+| Sandbox | `sandbox:user` | Launch VMs, view own usage |
+| Storefront | `store:admin` | Manage orders, view inventory, configure org settings in Storefront app |
+| Storefront | `store:customer` | Browse catalog, place orders |
+
+#### Token architecture
+
+The critical claim is `urn:zitadel:iam:user:resourceowner:id` — this is the Zitadel organization ID that becomes the tenant key across every system: `org_id` in PostgreSQL, TigerBeetle account ID prefix, `org_id` column in ClickHouse metering.
+
+When a user from AcmeCorp authenticates via the Sandbox app:
+
+```json
+{
+  "sub": "287401958304129025",
+  "iss": "https://auth.example.com",
+  "aud": ["287401958304129025@sandbox"],
+  "urn:zitadel:iam:user:resourceowner:id": "180025476050993153",
+  "urn:zitadel:iam:user:resourceowner:name": "AcmeCorp",
+  "urn:zitadel:iam:user:resourceowner:primary_domain": "acme.auth.example.com",
+  "urn:zitadel:iam:org:project:roles": {
+    "sandbox:user": {
+      "180025476050993153": "acme.auth.example.com"
+    }
+  }
+}
+```
+
+The role claim is a nested structure: `{role_key: {granting_org_id: granting_org_domain}}`. For most applications, a flat array is easier to consume. An Actions V1 script flattens it:
+
+```javascript
+function flattenRoles(ctx, api) {
+  var roles = [];
+  if (ctx.v1.claims['urn:zitadel:iam:org:project:roles']) {
+    var projectRoles = ctx.v1.claims['urn:zitadel:iam:org:project:roles'];
+    for (var key in projectRoles) {
+      roles.push(key);
+    }
+  }
+  api.v1.claims.setClaim('roles', roles);
+}
+```
+
+Attached to the "Pre Access Token Creation" trigger, this produces `"roles": ["sandbox:user"]` alongside the original nested claim.
+
+Scopes requested at auth time to populate these claims:
+
+| Scope | Effect |
+|-------|--------|
+| `openid profile email` | Standard OIDC claims |
+| `urn:zitadel:iam:user:resourceowner` | Includes org ID, name, and primary domain |
+| `urn:zitadel:iam:org:project:role:sandbox:admin` | Request specific role claim |
+| `urn:zitadel:iam:org:projects:roles` | Request roles for all projects |
+| `urn:zitadel:iam:org:id:{org_id}` | Restrict login to a specific org + apply its branding |
+| `offline_access` | Include refresh token |
+
+#### OIDC integration pattern
+
+Two OIDC confidential clients — one per Next.js application. Both use Authorization Code + PKCE. The org scope in the auth request restricts login to the user's org and triggers per-org branding on the login page.
+
+```
+User visits sandbox.example.com
+  → Next.js middleware: no session
+  → Redirect to auth.example.com/oauth/v2/authorize
+      ?client_id=sandbox_client_id
+      &scope=openid profile email
+             urn:zitadel:iam:user:resourceowner
+             urn:zitadel:iam:org:projects:roles
+             offline_access
+      &response_type=code
+      &code_challenge=...
+      &redirect_uri=https://sandbox.example.com/api/auth/callback
+  → User authenticates (Zitadel login page, per-org branding)
+  → Callback with authorization code
+  → Token exchange: code → access_token + id_token + refresh_token
+  → Next.js extracts from token:
+      org_id = claims["urn:zitadel:iam:user:resourceowner:id"]
+      roles  = claims["roles"]  (flattened by Action)
+  → org_id becomes the tenant context for all downstream calls:
+      PostgreSQL: WHERE org_id = $1
+      TigerBeetle: account lookup by org-prefixed ID
+      ClickHouse: org_id column in metering rows
+```
+
+The org ID is the single tenant key that threads through the entire billing pipeline. It is never derived from application-layer state — it comes exclusively from the identity token.
+
+#### Machine-to-machine auth
+
+Three machine users in the Platform Org for backend services:
+
+| Machine User | Auth Method | Purpose |
+|-------------|-------------|---------|
+| `orchestrator` | JWT Profile (key pair) | VM billing: create/post/void TigerBeetle transfers, read org pricing from PostgreSQL |
+| `reconciliation-cron` | PAT | Hourly consistency check: query ClickHouse metering, compare against TigerBeetle, push to Stripe |
+| `stripe-webhook-worker` | PAT | Process Stripe webhooks: credit org accounts in TigerBeetle, update order state in PostgreSQL |
+
+JWT Profile is the most secure method for the orchestrator — a private key signs a JWT assertion exchanged at the token endpoint. No client secret transmitted over the wire. PATs are simpler (pre-generated Bearer tokens, no OAuth dance) and acceptable for internal cron jobs and webhook workers that run on localhost.
+
+Machine users receive role assignments like human users. The orchestrator gets `sandbox:admin` on the Sandbox project. The webhook worker gets a custom `billing:writer` role that authorizes TigerBeetle operations without granting application-level admin access.
+
+#### Deployment model
+
+PostgreSQL requirements: v14-18. No special extensions. Zitadel creates three schemas in its database (`eventstore`, `projections`, `system`) via the `zitadel init` command using a PostgreSQL admin connection.
+
+Three-phase lifecycle:
+
+```bash
+# Phase 1: Create database, user, schemas (requires PG admin credentials)
+zitadel init --config /etc/zitadel/config.yaml
+
+# Phase 2: Run migrations, create first instance + default org + admin user
+zitadel setup --masterkey "$(cat /etc/zitadel/masterkey)" --config /etc/zitadel/config.yaml
+
+# Phase 3: Start the server (steady-state systemd service)
+zitadel start --masterkey "$(cat /etc/zitadel/masterkey)" --config /etc/zitadel/config.yaml
+```
+
+`start-from-init` combines all three phases idempotently — suitable for the Ansible role's first-run path.
+
+Key configuration (`/etc/zitadel/config.yaml`):
+
+```yaml
+Port: 8080
+ExternalDomain: auth.example.com
+ExternalPort: 443
+ExternalSecure: true
+
+TLS:
+  Enabled: false  # Caddy handles TLS termination
+
+Database:
+  postgres:
+    Host: localhost
+    Port: 5432
+    Database: zitadel
+    User:
+      Username: zitadel
+      Password: "${ZITADEL_DB_PASSWORD}"
+      SSL:
+        Mode: disable  # localhost, no TLS needed
+    Admin:
+      Username: postgres
+      Password: "${PG_ADMIN_PASSWORD}"
+    MaxOpenConns: 10
+    MaxIdleConns: 5
+    MaxConnLifetime: 30m
+
+Instrumentation:
+  Trace:
+    Exporter:
+      Type: grpc
+      Endpoint: localhost:4317
+      Insecure: true
+  Metrics:
+    Enabled: true
+```
+
+`ExternalDomain`, `ExternalPort`, and `ExternalSecure` must match the actual public URL. Mismatches cause redirect loops or broken OIDC flows — this is the #1 self-hosting configuration error. Changing these values after initialization requires rerunning `zitadel setup`.
+
+**Masterkey**: A 32-character string used for AES-256 encryption of secrets at rest (IdP client secrets, TOTP seeds, SMTP passwords, signing keys). Generated once, stored in `/etc/zitadel/masterkey`. **Cannot be rotated** — losing it means losing access to all encrypted data. User passwords and client secrets are hashed (bcrypt/argon2), not encrypted, so those survive masterkey loss.
+
+Systemd unit:
+
+```ini
+[Unit]
+Description=Zitadel Identity Provider
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=zitadel
+Group=zitadel
+ExecStart=/opt/forge-metal/profile/bin/zitadel start \
+  --masterkey "${MASTERKEY}" \
+  --config /etc/zitadel/config.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Caddy route — `h2c` (HTTP/2 cleartext) is required because Zitadel serves gRPC and HTTP on the same port:
+
+```
+auth.example.com {
+  reverse_proxy h2c://localhost:8080
+}
+```
+
+Without `h2c`, gRPC calls fail silently. Standard `http://` proxying breaks the Management, Admin, and System APIs.
+
+Default port: 8080.
+
+#### Resource requirements
+
+| Resource | Minimum | This deployment |
+|----------|---------|-----------------|
+| Memory | 512 MB (docs recommend 4 GB per CPU core) | ~512 MB (single-node, low request volume) |
+| CPU | 1 core per 100 req/s | Shared, minimal at launch scale |
+| Disk | Minimal (state lives in PostgreSQL) | Shared PostgreSQL instance on NVMe |
+| Network | HTTP/2-capable reverse proxy | Caddy with h2c upstream |
+
+Password hashing (argon2/bcrypt) can spike to 4 CPU cores during authentication bursts. At launch scale this is negligible.
+
+#### Observability
+
+Zitadel exports telemetry natively via OpenTelemetry — no sidecar or StatsD bridge needed (unlike TigerBeetle):
+
+- **Traces**: gRPC export to the existing OTel Collector on `:4317`. Every OIDC flow, API call, and event store write produces spans.
+- **Metrics**: Prometheus endpoint at `/debug/metrics`. Request latency, active sessions, event store lag.
+- **Logs**: Structured JSON to stdout, captured by journald. Includes request ID correlation with OTel trace IDs.
+- **Audit trail**: The event store itself. Every identity mutation is queryable via the Events API with filters by event type, aggregate ID, and time range. Retention is indefinite — events are never deleted.
+
+The OTel Collector already forwards to ClickHouse. Zitadel traces and metrics flow into the existing `otel_traces` and `otel_metrics_*` tables without additional configuration beyond the `Instrumentation` block in Zitadel's config.
+
+#### Security model
+
+Zitadel has no built-in authentication between callers and its API — security depends on network binding and the reverse proxy layer.
+
+For this deployment: Zitadel listens on `127.0.0.1:8080`. Caddy terminates TLS and proxies public traffic to Zitadel. The Management Console (admin UI) is accessible at `auth.<domain>/ui/console` — restrict access via Caddy IP allowlisting or HTTP basic auth if the console should not be public-facing.
+
+SMTP is required for email verification, password reset, and user invitations. Without a configured SMTP provider, these flows fail silently. Resend is the planned provider (deferred — not yet implemented). Until SMTP is configured, use pre-verified users and manual password setup.
+
+#### Backup strategy
+
+1. **PostgreSQL ZFS snapshots** of the data directory. Crash-consistent because the event store is append-only — a snapshot at any point captures a valid prefix of the event log. Projections (materialized views) are derived from events and can be rebuilt by replaying the event store.
+2. **Masterkey backup.** The masterkey file must be backed up separately from the database — it is not stored in PostgreSQL. Without it, encrypted secrets (IdP configs, TOTP seeds, signing keys) are unrecoverable. Store alongside other credentials in the existing `ansible/.credentials/` directory, included in the ZFS snapshot path.
+
+The event store is the single source of truth. If projections become corrupted, Zitadel rebuilds them on startup from the event log. A bare restore requires only the PostgreSQL data directory and the masterkey file.
+
+#### Known caveats
+
+- **Masterkey is non-rotatable.** Once set at `init` time, it cannot be changed without losing access to encrypted data. Analogous to TigerBeetle's immutable replica count — plan for it, don't plan to change it.
+- **SCIM not production-ready.** Enterprise directory sync (Azure AD, Okta) requires manual user provisioning or API automation until SCIM ships. Keycloak and Authentik are ahead here.
+- **Actions V1 → V2 migration.** Actions V1 (inline JavaScript via `goja` engine) is disabled in Zitadel v5. Actions V2 replaces inline JS with external HTTP webhooks — requires running a separate service for custom token logic. Start on V1 for the current v4 deployment; plan migration when upgrading to v5.
+- **CVE tracking required.** Five significant CVEs in 2025 (one critical, CVSS 9.3). Patches span v2.x, v3.x, and v4.x branches. Single binary replacement + systemd restart makes patching fast, but it must be tracked.
+- **ExternalDomain/ExternalPort/ExternalSecure must be correct from day one.** Changing these post-initialization requires rerunning `zitadel setup` and may invalidate existing OIDC sessions and passkey registrations.
+- **Passkeys are domain-bound.** WebAuthn credentials are tied to `ExternalDomain`. Changing the domain after users register passkeys invalidates those credentials. Pick the final domain before onboarding users.
+- **AGPL-3.0 license.** Network use triggers copyleft. Acceptable for internal infrastructure use; would require evaluation if Zitadel were modified and exposed as a service to third parties.
+- **No built-in caching layer.** Redis caching exists but is beta (standalone only, no Sentinel/Cluster). At single-node scale, PostgreSQL query performance is sufficient.
 
 ### Database: PostgreSQL (single instance, multiple databases)
 
@@ -32,6 +341,125 @@ PostgreSQL
 One PostgreSQL instance. Databases are isolated — no cross-database queries, no shared schemas. The tenant linkage between apps is the Zitadel organization ID stored as a column in each app's tables.
 
 Application state lives here. Financial state does not — that's TigerBeetle. Pricing configuration (per-org rates, plan tier) lives in PostgreSQL; balance enforcement lives in TigerBeetle.
+
+#### Sandbox database schema
+
+```sql
+-- Org registration. Created lazily on first authenticated request (JIT provisioning
+-- from the token's urn:zitadel:iam:user:resourceowner:id claim).
+CREATE TABLE orgs (
+    org_id              TEXT PRIMARY KEY,   -- Zitadel organization ID (string, not UUID)
+    display_name        TEXT NOT NULL,
+    plan_tier           TEXT NOT NULL DEFAULT 'free',
+    stripe_customer_id  TEXT UNIQUE,        -- set on first Stripe Checkout session
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Per-org pricing overrides. NULL columns fall back to platform default rates.
+CREATE TABLE org_pricing (
+    org_id       TEXT PRIMARY KEY REFERENCES orgs(org_id),
+    vcpu_rate    BIGINT,             -- ledger units per vCPU-second (NULL = default)
+    mem_rate     BIGINT,             -- ledger units per GiB-second (NULL = default)
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- API keys for programmatic VM launch. Keys are bcrypt-hashed; the plaintext
+-- is shown once at creation and never stored.
+CREATE TABLE api_keys (
+    key_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id       TEXT NOT NULL REFERENCES orgs(org_id),
+    key_hash     TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    scopes       TEXT[] NOT NULL DEFAULT '{}',
+    created_by   TEXT NOT NULL,      -- Zitadel user ID of the creator
+    expires_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Job metadata. One row per Firecracker VM execution. Financial settlement
+-- is in TigerBeetle; this table tracks lifecycle state.
+-- BIGINT (not UUID) because the job_id is packed into TigerBeetle transfer IDs
+-- via injective bit packing. See "Deterministic ID derivation" section.
+CREATE TABLE jobs (
+    job_id       BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    org_id       TEXT NOT NULL REFERENCES orgs(org_id),
+    status       TEXT NOT NULL DEFAULT 'pending',
+    vcpus        SMALLINT NOT NULL,
+    mem_mib      INTEGER NOT NULL,
+    started_at   TIMESTAMPTZ,
+    ended_at     TIMESTAMPTZ,
+    exit_reason  TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- SKIP LOCKED task queue. BIGINT PK for TigerBeetle transfer ID derivation.
+-- stripe_pi_id UNIQUE is the idempotency anchor for Stripe webhook deduplication.
+CREATE TABLE tasks (
+    task_id      BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    task_type    TEXT NOT NULL,
+    payload      JSONB NOT NULL DEFAULT '{}',
+    status       TEXT NOT NULL DEFAULT 'pending',
+    stripe_pi_id TEXT UNIQUE,            -- one task per Stripe payment intent
+    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at   TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_tasks_pending ON tasks (scheduled_at) WHERE status = 'pending';
+```
+
+#### Storefront database schema
+
+```sql
+CREATE TABLE orgs (
+    org_id              TEXT PRIMARY KEY,
+    display_name        TEXT NOT NULL,
+    billing_email       TEXT,
+    stripe_customer_id  TEXT UNIQUE,        -- set on first Stripe Checkout session
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE inventory (
+    server_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider     TEXT NOT NULL DEFAULT 'latitude',
+    spec_slug    TEXT NOT NULL,
+    cpu_cores    SMALLINT NOT NULL,
+    ram_gb       SMALLINT NOT NULL,
+    disk_gb      INTEGER NOT NULL,
+    location     TEXT NOT NULL,
+    price_cents  INTEGER NOT NULL,   -- monthly, our markup price
+    cost_cents   INTEGER NOT NULL,   -- monthly, upstream cost
+    status       TEXT NOT NULL DEFAULT 'available',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE orders (
+    order_id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id                   TEXT NOT NULL REFERENCES orgs(org_id),
+    server_id                UUID NOT NULL REFERENCES inventory(server_id),
+    status                   TEXT NOT NULL DEFAULT 'pending_payment',
+    stripe_payment_intent_id TEXT,
+    stripe_subscription_id   TEXT,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE tasks (
+    task_id      BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    task_type    TEXT NOT NULL,
+    payload      JSONB NOT NULL DEFAULT '{}',
+    status       TEXT NOT NULL DEFAULT 'pending',
+    stripe_pi_id TEXT UNIQUE,            -- one task per Stripe payment intent
+    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    started_at   TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_tasks_pending ON tasks (scheduled_at) WHERE status = 'pending';
+```
+
+`org_id` is `TEXT` in both databases because Zitadel organization IDs are string identifiers (numeric strings like `"180025476050993153"`), not UUIDs. The `orgs` row is created lazily on first authenticated request — the Next.js API layer reads `urn:zitadel:iam:user:resourceowner:id` from the token, upserts into `orgs`, and uses the resulting `org_id` as the tenant context for all queries in the request.
 
 ### Financial Ledger: TigerBeetle
 
@@ -88,31 +516,33 @@ Budget 1-2 GiB, not 50 MB.
 Every billing concept maps to TigerBeetle accounts and transfers. No special-cased application logic for discounts, credits, or free tier — they're all transfers between accounts.
 
 ```
-Per org:
-├── {org}/free-tier       # monthly allowance, reset on the 1st
-├── {org}/credit          # prepaid balance (Stripe purchases + subscription deposits)
+Per org (account IDs derived via OrgAccountID):
+├── OrgAccountID(orgID, FreeTier)   # monthly allowance, reset on the 1st
+├── OrgAccountID(orgID, Credit)     # prepaid balance (Stripe + subscriptions)
 
-Operator:
-├── operator/revenue         # realized revenue from posted usage
-├── operator/free-tier-pool  # funds monthly free tier grants
-├── operator/stripe-holding  # Stripe payments land here before crediting org
-└── operator/promo-pool      # funds promotional credits
+Operator (account IDs derived via OperatorAccountID, org_id=0):
+├── OperatorAccountID(Revenue)          # realized revenue from paid usage only
+├── OperatorAccountID(FreeTierExpense)  # cost of free-tier compute given away
+├── OperatorAccountID(FreeTierPool)     # funds monthly free tier grants
+├── OperatorAccountID(StripeHolding)    # Stripe payments land here before crediting org
+└── OperatorAccountID(PromoPool)        # funds promotional credits
 ```
 
-Three ways for an org to have balance: free tier (automatic monthly), prepaid credits (Stripe ACH/card), and subscription deposits (recurring Stripe). All three fund the same draw-down chain. From TigerBeetle's perspective, every VM launch is the same operation: "does this org have enough balance to run?"
+Three ways for an org to have balance: free tier (automatic monthly), prepaid credits (Stripe ACH/card), and subscription deposits (recurring Stripe). All three fund the same draw-down chain. From TigerBeetle's perspective, every VM launch is the same operation: "does this org have enough balance to run?" The difference is where the credit side lands: free-tier consumption credits FreeTierExpense (marketing cost), paid consumption credits Revenue (earned income).
 
 #### Account flags
 
 TigerBeetle accounts have flags that constrain what transfers are permitted. These are set at account creation and cannot be changed.
 
-| Account | Flag | Effect |
-|---------|------|--------|
-| `{org}/free-tier` | `debits_must_not_exceed_credits` | Monthly allowance — usage reservations fail when allowance exhausted. |
-| `{org}/credit` | `debits_must_not_exceed_credits` | Prepaid balance — cannot go negative. Funds come from Stripe purchases or subscription deposits. |
-| `operator/revenue` | `credits_must_not_exceed_debits` | Revenue only flows in. Prevents accidental reversal without an explicit refund transfer. |
-| `operator/free-tier-pool` | `debits_must_not_exceed_credits` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
-| `operator/stripe-holding` | (none) | Contra account. Intentionally unflagged — allows negative balances. Stripe payments credit it; org deposits debit it. A negative balance represents settled Stripe funds that have been deposited into org accounts (correct double-entry: the debit to stripe-holding and credit to {org}/credit are balanced). |
-| `operator/promo-pool` | `debits_must_not_exceed_credits` | Promotional credits draw from a funded pool. |
+| Account | Code | Flag | Effect |
+|---------|------|------|--------|
+| `OrgAccountID(orgID, FreeTier)` | 1 | `debits_must_not_exceed_credits` | Monthly allowance — usage reservations fail when allowance exhausted. |
+| `OrgAccountID(orgID, Credit)` | 2 | `debits_must_not_exceed_credits` | Prepaid balance — cannot go negative. Funds come from Stripe purchases or subscription deposits. |
+| `OperatorAccountID(Revenue)` | 3 | `debits_must_not_exceed_credits` | Earned revenue from paid usage only. Credit-normal — paid VM charges credit it, refunds debit it. Flag prevents refunding more than earned. (`credits_must_not_exceed_debits` would reject the first charge — tested against live TigerBeetle.) |
+| `OperatorAccountID(FreeTierExpense)` | 7 | (none) | Cost of free-tier compute given away. Credit-normal — free-tier VM charges credit it. Unflagged because the expense is bounded by FreeTierPool, not by this account's balance. |
+| `OperatorAccountID(FreeTierPool)` | 4 | `debits_must_not_exceed_credits` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
+| `OperatorAccountID(StripeHolding)` | 5 | (none) | Contra account. Intentionally unflagged — allows negative balance growth. Each Stripe deposit is a single transfer that debits StripeHolding and credits the org (no separate "receipt" entry). The running negative balance represents total Stripe funds disbursed to org accounts — the contra-entry for real money sitting in Stripe's bank. |
+| `OperatorAccountID(PromoPool)` | 6 | `debits_must_not_exceed_credits` | Promotional credits draw from a funded pool. |
 
 #### Transfer flags
 
@@ -134,20 +564,27 @@ The core billing mechanism is two-phase transfers tied to the VM lifecycle, not 
 2. Orchestrator estimates cost for RESERVATION_WINDOW (e.g., 300 seconds):
      reservation = (vcpus × vcpu_rate + mem_gib × mem_rate) × 300
 3. Orchestrator reserves funds (two round trips, not one):
-     a. Post PENDING transfer: debit {org}/free-tier, credit operator/revenue
-        (balancing_debit — clamps to available free-tier balance)
+     a. Post PENDING transfer:
+        id:     VMTransferID(jobID, windowSeq=0, LegFreeTier, KindReservation)
+        debit:  OrgAccountID(orgID, FreeTier)
+        credit: OperatorAccountID(FreeTierExpense)
+        flags:  pending | balancing_debit (clamps to available free-tier balance)
      b. Read back transfer 3a's result to learn the clamped amount
      c. Compute remainder = reservation - clamped_amount
-     d. If remainder > 0: post PENDING transfer: debit {org}/credit,
-        credit operator/revenue, amount = remainder
+     d. If remainder > 0: post PENDING transfer:
+        id:     VMTransferID(jobID, windowSeq=0, LegCredit, KindReservation)
+        debit:  OrgAccountID(orgID, Credit)
+        credit: OperatorAccountID(Revenue)
+        flags:  pending
      e. If 3d fails (insufficient credit balance): void 3a, reject launch
      → If both succeed: funds reserved across two pending transfers, VM boots
 4. VM runs
 5. Every RESERVATION_WINDOW (300s) while VM is alive:
-     a. POST current pending transfers (both 3a and 3d) for actual seconds used,
-        splitting proportionally between the free-tier and credit portions
-     b. Create NEW pending transfers for the next window (same two-step flow)
-     c. If new reservation fails → signal VM to shut down (out of funds)
+     a. POST current pending transfers for actual seconds used:
+        VMTransferID(jobID, windowSeq, leg, KindSettlement)
+        with pending_id referencing the original reservation
+     b. Create NEW pending transfers for the next window (windowSeq increments)
+     c. If new reservation fails → signal VM to shut down (funds_exhausted)
 6. VM exits:
      a. POST final pending transfers for actual seconds consumed
      b. Excess reservation released automatically (partial post)
@@ -159,7 +596,7 @@ The reservation window is tunable: 60 seconds for aggressive enforcement, 300 se
 
 #### Idempotency
 
-Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically from `(org_id, job_id, window_sequence)`, making retries after orchestrator crashes inherently safe.
+Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically via injective bit packing (see "Deterministic ID derivation" section): `VMTransferID(job_id, window_seq, leg, kind)` for billing transfers, `FreeTierResetID(org_id, year, month)` for monthly resets, `StripeDepositID(task_id, kind)` for payment credits. The derivation is a pure function of application-layer identifiers — no mapping table, no sequence generator, no external state. Retries after orchestrator crashes resubmit the same IDs by construction.
 
 #### Go client
 
@@ -208,7 +645,7 @@ New table: `forge_metal.sandbox_metering`
 ```sql
 CREATE TABLE forge_metal.sandbox_metering (
     org_id          LowCardinality(String)  CODEC(ZSTD(3)),
-    job_id          UUID,
+    job_id          Int64                   CODEC(Delta(8), ZSTD(3)),
     started_at      DateTime64(6)           CODEC(DoubleDelta, ZSTD(3)),
     ended_at        DateTime64(6)           CODEC(DoubleDelta, ZSTD(3)),
     wall_clock_us   Int64                   CODEC(Delta(8), ZSTD(3)),
@@ -217,15 +654,17 @@ CREATE TABLE forge_metal.sandbox_metering (
     mem_peak_kb     Int64                   CODEC(T64, ZSTD(3)),
     vcpus           UInt8                   CODEC(ZSTD(3)),
     mem_mib         UInt16                  CODEC(T64, ZSTD(3)),
-    charge_units    UInt64                  CODEC(T64, ZSTD(3)),
-    exit_reason     LowCardinality(String)  CODEC(ZSTD(3))
+    charge_units        UInt64                  CODEC(T64, ZSTD(3)),
+    free_tier_units     UInt64                  CODEC(T64, ZSTD(3)),
+    paid_units          UInt64                  CODEC(T64, ZSTD(3)),
+    exit_reason         LowCardinality(String)  CODEC(ZSTD(3))
 ) ENGINE = MergeTree()
 ORDER BY (org_id, started_at)
 ```
 
 Billing is per-second with per-invocation rounding: `billed_seconds = ceil(wall_clock_us / 1_000_000)`. Charges are computed as `(vcpus × vcpu_rate + mem_gib × mem_rate) × billed_seconds`, matching the E2B/Modal model of separate vCPU and memory dimensions.
 
-`charge_units` records the total ledger units charged via TigerBeetle for this job. `exit_reason` distinguishes normal completion, timeout, and balance exhaustion (`funds_exhausted`).
+`charge_units` records the total ledger units charged via TigerBeetle for this job. `free_tier_units` and `paid_units` break this down by funding source (free-tier consumption → FreeTierExpense vs paid consumption → Revenue). `charge_units = free_tier_units + paid_units` is an invariant enforced by the orchestrator at write time, not a ClickHouse materialized column. `exit_reason` distinguishes normal completion, timeout, and balance exhaustion (`funds_exhausted`).
 
 No `billed` / `billed_at` mutation columns. ClickHouse MergeTree is append-only — `ALTER TABLE UPDATE` triggers asynchronous mutations that rewrite entire data parts. The row is written once at VM exit with the final billing outcome already resolved by the orchestrator.
 
@@ -242,7 +681,7 @@ VM launch request
     ↓
 Orchestrator: estimate cost for reservation window
     ↓
-TigerBeetle: pending transfer (free-tier + credit, linked)
+TigerBeetle: pending transfers (free-tier → expense, credit → revenue)
     ↓ success                    ↓ failure
 VM boots                    Reject: insufficient balance
     ↓
@@ -266,7 +705,7 @@ A Go binary runs hourly via systemd timer. Its job is not to compute charges (th
 
 1. **Query ClickHouse** for all unreconciled metering rows using a high-water mark, not a sliding time window. The cron persists the last-reconciled `started_at` timestamp in PostgreSQL and queries forward from it.
    ```sql
-   SELECT org_id, job_id, charge_units, billed_seconds, started_at
+   SELECT org_id, job_id, charge_units, free_tier_units, paid_units, billed_seconds, started_at
    FROM sandbox_metering
    WHERE started_at > :last_reconciled_at
      AND started_at <= now() - INTERVAL 5 MINUTE  -- grace period for late writes
@@ -278,7 +717,7 @@ A Go binary runs hourly via systemd timer. Its job is not to compute charges (th
 
 3. **Compare.** Flag discrepancies — a metering row without a corresponding posted transfer, or vice versa. Alert on mismatch.
 
-4. **Push usage records to Stripe.** Stripe Usage Records API with `action: 'set'` and the window timestamp. Idempotent — setting the same timestamp twice overwrites rather than accumulates.
+4. **Push paid usage records to Stripe.** Only `paid_units` are synced — free-tier consumption is not billable and is not reported to Stripe. Stripe Usage Records API with `action: 'set'` and the window timestamp. Idempotent — setting the same timestamp twice overwrites rather than accumulates.
 
 5. **Log reconciliation result to ClickHouse** as a wide event for observability.
 
@@ -294,6 +733,406 @@ The real-time path is crash-safe because TigerBeetle transfers are idempotent by
 
 The reconciliation cron is not on the critical path — if it fails, billing enforcement continues via the orchestrator. Stripe sync is delayed but catches up on the next successful run.
 
+### Identity–Ledger Integration
+
+The Zitadel and TigerBeetle sections above describe each system independently. This section documents the seams where identity state must coordinate with financial state — the integration points where bugs live.
+
+#### org_id as universal tenant key
+
+A single identifier threads through every system in a billing request: the Zitadel organization ID. It is never derived from application-layer state — it originates exclusively from the identity token and propagates unchanged.
+
+```
+Zitadel token                    Next.js middleware               PostgreSQL
+urn:...:resourceowner:id  ────→  extracts org_id (string)  ────→  WHERE org_id = $1
+  "180025476050993153"                    │
+                                          ├──→  TigerBeetle
+                                          │     account lookup by packed u128
+                                          │
+                                          └──→  ClickHouse
+                                                org_id column in metering row
+```
+
+The org_id is `TEXT` in PostgreSQL, `LowCardinality(String)` in ClickHouse, and a packed component of a `u128` in TigerBeetle. The type boundary between string and u128 is where the derivation scheme below operates.
+
+#### Deterministic ID derivation
+
+TigerBeetle uses 128-bit unsigned integers for all account and transfer IDs. There are no string-keyed lookups — every operation requires a numeric ID known in advance. The standard approach is a mapping table in an external database, queried on every billing operation. This deployment eliminates that lookup by deriving TigerBeetle IDs deterministically from application-layer identifiers using injective bit packing.
+
+##### The injectivity requirement
+
+A function `f: A → B` is injective if distinct inputs always produce distinct outputs. For financial IDs, injectivity is not optional — a collision means two accounts or two transfers sharing an ID, and TigerBeetle silently deduplicates (by design, for idempotency). A collision in account IDs means an org's free-tier account overlaps with another org's credit account. A collision in transfer IDs means a legitimate transfer is silently dropped as a duplicate.
+
+A cryptographic hash (blake3, SHA-256) provides probabilistic collision resistance. An injective packing function provides a mathematical guarantee — zero collision probability, proven by construction. The choice between them depends on whether the input space fits in the output space (128 bits):
+
+| Entity | Input fields | Input bits | Fits in 128? |
+|--------|-------------|-----------|:------------:|
+| Account | org_id(64) + account_type(16) | 80 | Yes |
+| VM transfer | job_id(64) + window_seq(32) + leg(8) + phase(8) | 112 | Yes |
+| Free-tier reset transfer | org_id(64) + year_month(16) | 80 | Yes |
+| Stripe deposit transfer | task_id(64) + kind(8) | 72 | Yes |
+
+Every input space is ≤ 128 bits. No hashing is required anywhere in the system.
+
+This depends on a schema choice: `job_id` and `task_id` in PostgreSQL are `BIGINT` (64 bits), not `UUID` (128 bits). A UUID `job_id` would push the VM transfer input to 192 bits, forcing a hash and surrendering both reversibility and guaranteed uniqueness. On a single PostgreSQL instance, `GENERATED ALWAYS AS IDENTITY` produces monotonically increasing integers without coordination overhead — UUIDs solve a distributed systems problem this deployment doesn't have.
+
+The properties of injective packing vs. hashing:
+
+| Property | Injective packing | Cryptographic hash |
+|----------|:-:|:-:|
+| Zero collision probability | Yes (proven) | No (probabilistic) |
+| Deterministic | Yes | Yes |
+| Reversible (extract original fields from ID) | Yes | No |
+| LSM-friendly (monotonically increasing) | Yes (if high bits are time-ordered) | No (pseudo-random output) |
+| Requires external mapping table | No | No |
+| External dependencies | None | Hash library |
+
+##### Byte ordering and LSM performance
+
+TigerBeetle's LSM tree achieves higher throughput with monotonically increasing IDs. The `ID()` helper in every client library generates ULID-style identifiers: `u128 = (timestamp << 80) | random`, placing the timestamp in the most-significant bits so IDs increase over time.
+
+The Go client stores `Uint128` as 16 little-endian bytes. `BytesToUint128` maps `bytes[0:8]` to the low u64 and `bytes[8:16]` to the high u64. Numeric comparison treats the high u64 as the primary sort key. The design rule: **place the temporally-increasing field in bytes [8:16]** (the high u64) so the packed ID's sort order aligns with creation order.
+
+##### Account ID layout
+
+```
+128-bit Account ID (16 bytes, little-endian)
+┌──────────────────────────────────────┬──────────────────────────────────────┐
+│         bytes [0:7] (low u64)        │        bytes [8:15] (high u64)       │
+├────────────┬─────────────────────────┼──────────────────────────────────────┤
+│ type (u16) │     reserved (48 bits)  │             org_id (u64)             │
+└────────────┴─────────────────────────┴──────────────────────────────────────┘
+
+Numeric value: org_id × 2⁶⁴ + account_type
+Sort order:    by org (time-ordered snowflake), then by type within org
+```
+
+Zitadel organization IDs are 63-bit snowflake-style integers — they encode a millisecond timestamp in the upper bits, so orgs created later have higher IDs. Placing org_id in the high u64 means account IDs increase monotonically as orgs are onboarded, and all accounts for a given org are contiguous in the LSM (they differ only in the low bits).
+
+Operator accounts (no org) use `org_id = 0`. Zitadel snowflake IDs are always large positive numbers, so zero is an unambiguous sentinel. Operator account IDs are small numbers that sort before all org accounts — natural, since they're created once at system initialization.
+
+Account type enum (also stored in TigerBeetle's `code` field):
+
+| Value | Name | Owner | TigerBeetle flags |
+|-------|------|-------|-------------------|
+| 1 | free-tier | per org | `debits_must_not_exceed_credits` |
+| 2 | credit | per org | `debits_must_not_exceed_credits` |
+| 3 | revenue | operator (org_id=0) | `debits_must_not_exceed_credits` |
+| 4 | free-tier-pool | operator | `debits_must_not_exceed_credits` |
+| 5 | stripe-holding | operator | (none — contra account) |
+| 6 | promo-pool | operator | `debits_must_not_exceed_credits` |
+| 7 | free-tier-expense | operator | (none — expense accumulator) |
+
+The type is encoded in two places: in the account ID (for deterministic derivation without a lookup) and in the `code` field (for `QueryFilter` operations). The `user_data_64` field stores the raw `org_id` for reverse lookups — `QueryFilter{UserData64: orgID}` returns all accounts for an org without decomposing the packed ID.
+
+##### Transfer ID layout
+
+Transfers have different natural keys depending on their kind, but the bit layout is uniform — only the interpretation of the high u64 changes.
+
+```
+128-bit Transfer ID (16 bytes, little-endian)
+┌──────────────────────────────────────┬──────────────────────────────────────┐
+│         bytes [0:7] (low u64)        │        bytes [8:15] (high u64)       │
+├───────────┬────────┬────────┬────────┼──────────────────────────────────────┤
+│  seq (32) │leg (8) │kind (8)│rsv (16)│           source_id (u64)            │
+└───────────┴────────┴────────┴────────┴──────────────────────────────────────┘
+
+Numeric value: source_id × 2⁶⁴ + (reserved << 48) + (kind << 40) + (leg << 32) + seq
+```
+
+**source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For free-tier resets: `org_id`. For Stripe deposits: `task_id` (from `tasks.task_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
+
+**seq** (u32): Sequence number within the source. VM transfers: reservation window number (0 = initial, 1 = first renewal, ...). Free-tier resets: `year × 12 + month` (fits in u16, giving ~5,400 years). Stripe deposits: 0 (one transfer per task).
+
+**leg** (u8): Which leg of a multi-transfer operation. The two-phase billing flow creates two transfers per reservation window: leg 0 = free-tier debit, leg 1 = credit debit. Single-leg transfers (resets, deposits) use leg 0.
+
+**kind** (u8): Transfer kind enum. Distinguishes reservation from settlement from void — critical because the same `(job_id, window_seq, leg)` triple appears in both the pending transfer and its post/void, and they must have different IDs.
+
+Transfer kind enum (also stored in TigerBeetle's `code` field):
+
+| Value | Name | source_id | TigerBeetle flags |
+|-------|------|-----------|-------------------|
+| 1 | vm_reservation | job_id | `pending` + `balancing_debit` (free-tier leg → FreeTierExpense) or `pending` (credit leg → Revenue) |
+| 2 | vm_settlement | job_id | `post_pending_transfer` |
+| 3 | vm_void | job_id | `void_pending_transfer` |
+| 4 | free_tier_reset | org_id | `balancing_credit` |
+| 5 | stripe_deposit | task_id | (single-phase) |
+| 6 | subscription_deposit | task_id | (single-phase) |
+| 7 | promo_credit | task_id | (single-phase) |
+
+##### Transfer idempotency by construction
+
+Each transfer kind has a distinct idempotency domain — the set of fields that uniquely identify "has this already been done?"
+
+| Kind | Idempotency key | Guarantee |
+|------|----------------|-----------|
+| vm_reservation | (job_id, window_seq, leg) | One pending reservation per (job, window, leg). Orchestrator crash + retry resubmits the same ID. |
+| vm_settlement | (job_id, window_seq, leg) | One settlement per pending. Different `kind` byte prevents collision with the pending. |
+| vm_void | (job_id, window_seq, leg) | One void per pending. Mutually exclusive with settlement (enforced by TigerBeetle — pending resolves at most once). |
+| free_tier_reset | (org_id, year_month) | One reset per (org, month). Re-running the monthly cron produces the same transfer IDs — TigerBeetle returns `exists`. |
+| stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(stripe_pi_id)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
+
+Two layers of idempotency for Stripe deposits: PostgreSQL `UNIQUE` prevents duplicate tasks, TigerBeetle's ID-based deduplication prevents duplicate transfers. Either layer alone is sufficient; both together handle every crash/retry/webhook-replay scenario.
+
+##### Go type system
+
+The packing functions are the only way to construct IDs. Distinct Go types prevent category errors at compile time:
+
+```go
+type OrgID  uint64
+type JobID  int64   // BIGINT GENERATED ALWAYS AS IDENTITY
+type TaskID int64
+
+type AccountID  struct{ raw tb.Uint128 }  // cannot be used as TransferID
+type TransferID struct{ raw tb.Uint128 }  // cannot be used as AccountID
+
+func OrgAccountID(org OrgID, t OrgAcctType) AccountID {
+    var id [16]byte
+    binary.LittleEndian.PutUint16(id[0:2], uint16(t))
+    binary.LittleEndian.PutUint64(id[8:16], uint64(org))
+    return AccountID{tb.BytesToUint128(id)}
+}
+
+func OperatorAccountID(t OperatorAcctType) AccountID {
+    var id [16]byte
+    binary.LittleEndian.PutUint16(id[0:2], uint16(t))
+    // bytes [8:16] = 0 (operator sentinel)
+    return AccountID{tb.BytesToUint128(id)}
+}
+
+func VMTransferID(job JobID, seq uint32, leg Leg, kind XferKind) TransferID {
+    var id [16]byte
+    binary.LittleEndian.PutUint32(id[0:4], seq)
+    id[4] = uint8(leg)
+    id[5] = uint8(kind)
+    binary.LittleEndian.PutUint64(id[8:16], uint64(job))
+    return TransferID{tb.BytesToUint128(id)}
+}
+
+func FreeTierResetID(org OrgID, year uint16, month uint8) TransferID {
+    var id [16]byte
+    binary.LittleEndian.PutUint32(id[0:4], uint32(year)*12+uint32(month))
+    id[5] = uint8(KindFreeTierReset)
+    binary.LittleEndian.PutUint64(id[8:16], uint64(org))
+    return TransferID{tb.BytesToUint128(id)}
+}
+
+func StripeDepositID(task TaskID, kind XferKind) TransferID {
+    var id [16]byte
+    id[5] = uint8(kind)
+    binary.LittleEndian.PutUint64(id[8:16], uint64(task))
+    return TransferID{tb.BytesToUint128(id)}
+}
+```
+
+Reverse functions exist for debugging — given any TigerBeetle ID from logs or the REPL, extract the original fields without a mapping table:
+
+```go
+func (a AccountID) Parse() (org OrgID, acctType uint16) {
+    b := a.raw.Bytes()
+    acctType = binary.LittleEndian.Uint16(b[0:2])
+    org = OrgID(binary.LittleEndian.Uint64(b[8:16]))
+    return
+}
+
+func (t TransferID) Parse() (sourceID uint64, seq uint32, leg uint8, kind uint8) {
+    b := t.raw.Bytes()
+    seq = binary.LittleEndian.Uint32(b[0:4])
+    leg = b[4]
+    kind = b[5]
+    sourceID = binary.LittleEndian.Uint64(b[8:16])
+    return
+}
+```
+
+##### user_data fields
+
+TigerBeetle indexes `user_data_128`, `user_data_64`, and `user_data_32` for `QueryFilter` operations. The packed ID handles derivation; the `user_data` fields handle queries.
+
+| Field | Accounts | Transfers |
+|-------|----------|-----------|
+| `user_data_64` | `org_id` — find all accounts for an org | `org_id` — find all transfers for an org |
+| `user_data_32` | 0 (unused) | `window_seq` — find transfers for a specific reservation window |
+| `user_data_128` | 0 (unused) | 0 (reserved for future use) |
+
+##### Asset scale
+
+All TigerBeetle amounts use a fixed-point scale of `10⁷` (7 decimal places). USD has 2 decimal places, but sub-cent pricing for vCPU-seconds requires more precision. `10⁷` gives 5 digits below the cent, handling rates like `$0.0000325/vCPU-second` without rounding until the final invoice.
+
+`$1.00 = 10,000,000 ledger units`. All accounts use the same `ledger` value (1). Multi-currency would use a second ledger value with its own scale.
+
+##### Debugging: reading a raw u128
+
+When inspecting TigerBeetle state via the REPL or logs, every ID is self-describing. No mapping table to consult, no hash to reverse.
+
+Account ID example (`0x027f4e8a5c0100000100000000000000` in hex):
+```
+bytes [8:16] → org_id = 180025476050993153  (decimal)
+bytes [0:2]  → type = 1                     (free-tier)
+→ This is org 180025476050993153's free-tier account.
+```
+
+Transfer ID example:
+```
+bytes [8:16] → source_id = 4217   (job_id)
+bytes [0:4]  → seq = 3            (window 3)
+byte  [4]    → leg = 1            (credit leg)
+byte  [5]    → kind = 2           (vm_settlement)
+→ This is the settlement of job 4217, window 3, credit leg.
+```
+
+#### Org provisioning sequence
+
+When a new customer org appears for the first time, three systems need state: Zitadel (org already exists — created during onboarding or self-service signup), PostgreSQL (orgs row), and TigerBeetle (free-tier + credit accounts). These cannot be provisioned atomically across three systems.
+
+```
+User's first authenticated request
+  │
+  ├─ 1. Zitadel: org exists (created out-of-band)
+  │     Token carries org_id in urn:...:resourceowner:id
+  │
+  ├─ 2. Next.js middleware: extract org_id from token
+  │
+  ├─ 3. PostgreSQL: INSERT INTO orgs ... ON CONFLICT DO NOTHING
+  │     (idempotent — concurrent first-requests from same org are safe)
+  │
+  ├─ 4. TigerBeetle: create_accounts([
+  │       OrgAccountID(orgID, FreeTier),
+  │       OrgAccountID(orgID, Credit)
+  │     ])
+  │     (idempotent — duplicate account IDs return `exists`, not error)
+  │
+  └─ 5. Return response (org context ready)
+```
+
+Both PostgreSQL (`ON CONFLICT DO NOTHING`) and TigerBeetle (`create_accounts` returns `exists` for duplicate IDs) handle concurrent provisioning without locking. Two requests from the same org arriving simultaneously both succeed — the second is a no-op in both systems.
+
+Failure matrix:
+
+| Failure point | State | Recovery |
+|--------------|-------|----------|
+| After step 3, before step 4 | PostgreSQL has orgs row, TigerBeetle has no accounts | Next request retries step 4. Deterministic ID derivation ensures the same account IDs are submitted. |
+| Step 4 partial (free-tier created, credit fails) | One account exists | `create_accounts` is a batch — TigerBeetle creates both or neither per batch. If the batch is split across calls, the retry recreates both; the existing one returns `exists`. |
+| Zitadel org deleted after provisioning | PostgreSQL and TigerBeetle have orphaned state | No automatic cleanup. The reconciliation cron can detect orgs in PostgreSQL with no corresponding Zitadel org and flag them. TigerBeetle accounts with zero balance are inert. |
+
+Provisioning is lazy (triggered by first authenticated request), not eager (triggered by org creation in Zitadel). Lazy provisioning is simpler — no Zitadel webhook or action needed — and the idempotent retry paths make it robust. An org that exists in Zitadel but has never authenticated has no PostgreSQL row and no TigerBeetle accounts, which is correct (no free tier, no billing state for an unused org).
+
+#### VM launch: authorization gate → balance gate
+
+The VM launch request passes through two sequential gates. The authorization gate (Zitadel) is a local JWT validation. The balance gate (TigerBeetle) is a network call.
+
+```
+Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
+  │
+  ├─ 1. JWT validation (in-process, ~0ms)
+  │     Extract org_id, roles from token claims
+  │     └─ Invalid token → 401 Unauthorized
+  │
+  ├─ 2. Role check: roles includes "sandbox:user" or "sandbox:admin"
+  │     └─ Missing role → 403 Forbidden
+  │
+  ├─ 3. Org provisioning (idempotent, skip if exists)
+  │     PostgreSQL upsert + TigerBeetle create_accounts
+  │
+  ├─ 4. Pricing lookup: read org_pricing from PostgreSQL (~1ms)
+  │     Compute reservation = (vcpus × vcpu_rate + mem_gib × mem_rate) × WINDOW
+  │
+  ├─ 5. TigerBeetle reservation (two round trips, ~2ms)
+  │     a. Pending transfer: debit {org}/free-tier → credit operator/free-tier-expense
+  │        (balancing_debit — clamps to available free-tier balance)
+  │     b. Read back clamped amount, compute remainder
+  │     c. If remainder > 0: pending transfer: debit {org}/credit → credit operator/revenue
+  │     └─ Insufficient funds → 402 Payment Required
+  │     └─ TigerBeetle unavailable → 503 Service Unavailable
+  │
+  ├─ 6. Firecracker VM boot (~125ms from snapshot)
+  │     └─ Boot failure → void pending transfers, 500 Internal Server Error
+  │
+  └─ 7. Return {job_id, status: "running"}
+```
+
+**Fail-closed policy**: If TigerBeetle is unavailable, no VMs launch (503). Fail-open on a billing gate means giving away free compute with no ledger record. The orchestrator does not maintain a local balance cache or "grace period" — TigerBeetle is the single source of truth for balance enforcement.
+
+**Latency budget**: JWT validation is in-process (~0ms). PostgreSQL pricing lookup is ~1ms. TigerBeetle reservation is ~2ms (two round trips at ~1ms each). Total gate overhead is ~3ms, negligible against Firecracker's ~125ms snapshot boot.
+
+**Void-on-boot-failure**: If Firecracker fails to start after funds are reserved, the orchestrator immediately voids the pending transfers. The transfer IDs for the void are deterministic — `VMTransferID(jobID, 0, leg, KindVoid)` — so a crash between the failed boot and the void is recovered on restart by resubmitting the same void.
+
+#### Machine user auth boundaries
+
+The orchestrator, reconciliation cron, and Stripe webhook worker are Zitadel machine users. TigerBeetle has no authentication — any process on `127.0.0.1:3000` has full read-write access. The Zitadel identity serves two purposes: accessing Zitadel's own Management API (e.g., listing orgs), and providing audit trail metadata (which service performed which operation).
+
+```
+                         Zitadel-authenticated      Direct (localhost, no auth)
+orchestrator             Zitadel API (list orgs)    TigerBeetle :3000 (Go client)
+                         PostgreSQL (pricing)        ClickHouse (metering writes)
+
+reconciliation-cron      —                          TigerBeetle :3000 (Go client)
+                                                     ClickHouse (metering reads)
+                                                     PostgreSQL (watermark)
+
+stripe-webhook-worker    Next.js API (webhook)      TigerBeetle :3000 (Go client)
+                         PostgreSQL (task queue)
+```
+
+The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads TigerBeetle for balance display only (current balance = `credits_posted - debits_posted` on the org's credit account plus `credits_posted - debits_posted` on the free-tier account).
+
+The machine user identity is stored in TigerBeetle's `user_data` fields on transfers for audit. It is not used for access control — network binding (`127.0.0.1:3000`) is the only access control mechanism.
+
+#### Free tier reset flow
+
+Monthly cron (1st of each month) resets every org's free-tier account. The org list comes from PostgreSQL's `orgs` table — it contains exactly the set of orgs that have been provisioned (have TigerBeetle accounts), avoiding lookups for Zitadel orgs that have never authenticated.
+
+```
+Cron (1st of month, systemd timer)
+  │
+  ├─ 1. Query PostgreSQL: SELECT org_id FROM orgs
+  │
+  ├─ 2. For each org:
+  │     ├─ Derive transfer ID: FreeTierResetID(orgID, year, month)
+  │     ├─ Derive account IDs:
+  │     │   debit:  OperatorAccountID(FreeTierPool)
+  │     │   credit: OrgAccountID(orgID, FreeTier)
+  │     ├─ Submit transfer with flags: balancing_credit
+  │     └─ TigerBeetle returns `created` or `exists` (idempotent)
+  │
+  └─ 3. Log summary to ClickHouse
+```
+
+Idempotency: The transfer ID encodes `(org_id, year, month)`. Re-running the cron (after a crash, or manually) submits the same IDs — TigerBeetle returns `exists` for already-processed orgs. No partial-reset corruption is possible.
+
+Edge case — org created mid-reset: If a new org is provisioned after the cron reads the org list but before it finishes, the new org misses this month's reset. Acceptable — they get their free tier on next month's run, or on a manual re-trigger.
+
+#### Stripe payment → org credit: identity resolution
+
+Stripe webhooks contain a Stripe customer ID, not a Zitadel org ID. The mapping is stored in PostgreSQL.
+
+```
+Stripe webhook (payment_intent.succeeded)
+  │
+  ├─ 1. Payload: {customer_id, amount, payment_intent_id}
+  │
+  ├─ 2. PostgreSQL: SELECT org_id FROM orgs WHERE stripe_customer_id = $1
+  │     (mapping created when the org first initiates a Stripe Checkout session)
+  │
+  ├─ 3. PostgreSQL: INSERT INTO tasks (task_type, payload, stripe_pi_id)
+  │     VALUES ('credit_org', {...}, payment_intent_id)
+  │     ON CONFLICT (stripe_pi_id) DO NOTHING
+  │     RETURNING task_id
+  │     (UNIQUE constraint = first idempotency layer)
+  │
+  ├─ 4. Worker picks up task via SKIP LOCKED:
+  │     ├─ Derive transfer ID: StripeDepositID(taskID, KindStripeDeposit)
+  │     ├─ Derive account IDs:
+  │     │   debit:  OperatorAccountID(StripeHolding)
+  │     │   credit: OrgAccountID(orgID, Credit)
+  │     ├─ Submit transfer
+  │     │   (TigerBeetle deduplication = second idempotency layer)
+  │     └─ Mark task completed
+  │
+  └─ 5. If transfer fails → task stays pending, retried on next poll
+```
+
+The `stripe_customer_id` column on the `orgs` table is set when the org first creates a Stripe Checkout session (before payment). Both the sandbox and storefront databases have this column — each app creates its own Stripe customer for the org. A shared billing database was considered and rejected: two columns across two databases is less complexity than a third database for marginal deduplication.
+
 ### Payments: Stripe (external)
 
 Accepted external dependency. Three funding sources feed into TigerBeetle accounts:
@@ -305,12 +1144,13 @@ Customer buys credits via Stripe Checkout (card or ACH). No subscription, no com
 ```
 Stripe Checkout session completes
   → payment_intent.succeeded webhook
-  → PostgreSQL task row
+  → PostgreSQL task row (stripe_pi_id UNIQUE = idempotency anchor)
+  → Worker derives transfer ID: StripeDepositID(task_id, KindStripeDeposit)
   → Worker posts TigerBeetle transfer:
-      debit:  operator/stripe-holding
-      credit: {org}/credit
+      debit:  OperatorAccountID(StripeHolding)
+      credit: OrgAccountID(orgID, Credit)
       amount: purchased_amount_in_ledger_units
-      user_data_128: stripe_payment_intent_id
+      user_data_64: org_id
 ```
 
 #### Monthly plan (subscription with included credits)
@@ -319,12 +1159,13 @@ Customer subscribes to a plan ($X/month or $X×10/year). Each billing period, in
 
 ```
 Stripe invoice.paid webhook
-  → PostgreSQL task row
+  → PostgreSQL task row (stripe_pi_id UNIQUE = idempotency anchor)
+  → Worker derives transfer ID: StripeDepositID(task_id, KindSubscriptionDeposit)
   → Worker posts TigerBeetle transfer:
-      debit:  operator/stripe-holding
-      credit: {org}/credit
+      debit:  OperatorAccountID(StripeHolding)
+      credit: OrgAccountID(orgID, Credit)
       amount: plan_included_credits
-      user_data_128: stripe_invoice_id
+      user_data_64: org_id
 ```
 
 Annual billing is identical — Stripe handles the billing cadence, TigerBeetle just sees credit deposits. Overage beyond included credits draws from any existing prepaid balance. If both are exhausted, VMs stop launching.
@@ -335,12 +1176,14 @@ Every org gets a monthly allowance of compute. No credit card required. Resets o
 
 ```
 Monthly cron (1st of month):
-  For each org:
+  For each org (from PostgreSQL orgs table):
     Transfer {
-      debit:  operator/free-tier-pool
-      credit: {org}/free-tier
+      id:     FreeTierResetID(orgID, year, month)   ← deterministic, idempotent
+      debit:  OperatorAccountID(FreeTierPool)
+      credit: OrgAccountID(orgID, FreeTier)
       amount: MONTHLY_ALLOWANCE
       flags:  balancing_credit  ← caps at allowance, doesn't stack
+      user_data_64: org_id
     }
 ```
 
@@ -380,7 +1223,8 @@ No NATS, no Kafka, no Redis pub/sub. Current architecture has no fan-out pattern
 | NATS JetStream | Good technology, no current need. PostgreSQL SKIP LOCKED covers task queue patterns. First candidate when multi-node or fan-out arrives. |
 | Lago | AGPL license (copyleft, incompatible with distribution). Overlaps with TigerBeetle on credit management. Ruby/Rails + Redis + Sidekiq adds ~1 GB RAM for billing UI we don't need. |
 | OpenMeter | Requires Kafka. Overlaps with existing ClickHouse metering pipeline. |
-| Keycloak | 1.5-2 GB JVM footprint. Multi-tenant orgs bolted on in v25, not native. Zitadel covers the same OIDC/SAML surface in ~200 MB. |
+| Keycloak | 1.5-2 GB JVM footprint. Multi-tenant orgs bolted on in v25, not native. Zitadel covers the same OIDC/SAML surface in ~512 MB. |
+| Authentik | ~4 GB RAM (Python server + worker). Soft multi-tenancy via brands/domains — no first-class org model or org-admin delegation. |
 | Separate metering service | ClickHouse already ingests microsecond-resolution events from smelter. Adding a metering service creates a redundant event store. |
 
 ## Resource Budget
@@ -395,13 +1239,13 @@ Estimated memory footprint of new components alongside existing services:
 | OTel Collector | ~200 MB | existing |
 | Forgejo | ~300 MB | existing |
 | Firecracker VMs (per job) | ~256 MB each | existing |
-| **Zitadel** | **~200 MB** | **new** |
+| **Zitadel** | **~512 MB** | **new** |
 | **PostgreSQL** | **~500 MB** | **new** |
 | **TigerBeetle** | **~1-2 GB** | **new** |
 | **Sandbox app (Next.js)** | **~200 MB** | **new** |
 | **Storefront app (Next.js)** | **~200 MB** | **new** |
 
-New components add ~2.1-3.1 GB. Total platform footprint ~6-7 GB, well within a 64 GB bare-metal box. The TigerBeetle figure reflects the actual runtime working set (grid cache locked into memory), not the binary size.
+New components add ~2.4-3.4 GB. Total platform footprint ~6.3-7.3 GB, well within a 64 GB bare-metal box. The TigerBeetle figure reflects the actual runtime working set (grid cache locked into memory), not the binary size. The Zitadel figure reflects production PostgreSQL caching overhead, not the binary size (~50 MB).
 
 ## Deployment Model
 
@@ -422,7 +1266,7 @@ Ansible roles (new):
 └── storefront_app/  # Next.js process, env, systemd
 
 Caddy routes (additions):
-├── auth.<domain>    → Zitadel :8080
+├── auth.<domain>    → Zitadel :8080 (h2c — required for gRPC)
 ├── sandbox.<domain> → Sandbox app :3001
 └── store.<domain>   → Storefront app :3002
 ```
