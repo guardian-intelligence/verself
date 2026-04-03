@@ -41,6 +41,7 @@
           paths = [
             # --- Observability stack ---
             clickhouse-static      # Wide event storage (official static binary)
+            pkgs.tigerbeetle       # Financial ledger (double-entry accounting)
             # MongoDB excluded -- installed via apt (SSPL license, no binary cache, 30min+ source build)
             (pkgs.caddy.withPlugins {  # Reverse proxy, auto-TLS + Coraza WAF
               plugins = [ "github.com/corazawaf/coraza-caddy/v2@v2.4.0" ];

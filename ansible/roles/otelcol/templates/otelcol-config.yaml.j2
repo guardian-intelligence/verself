@@ -85,7 +85,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*"]
+          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -97,6 +97,9 @@ receivers:
           fs_types: [ext4, zfs]
       disk: {}
       network: {}
+  statsd:
+    endpoint: "{{ services.tigerbeetle.host }}:{{ services.tigerbeetle.statsd_port }}"
+    aggregation_interval: 10s
 
 processors:
   batch:
@@ -129,6 +132,6 @@ service:
       processors: [batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics]
+      receivers: [otlp, hostmetrics, statsd]
       processors: [batch]
       exporters: [clickhouse]

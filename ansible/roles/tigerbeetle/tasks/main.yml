@@ -1,0 +1,151 @@
+---
+# TigerBeetle financial ledger.
+# Binary provided by the Nix server profile.
+
+# --- Binary presence ---
+
+- name: Verify TigerBeetle binary exists in Nix profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/tigerbeetle"
+  register: tigerbeetle_binary
+  failed_when: not tigerbeetle_binary.stat.exists
+
+# --- Version pin ---
+
+- name: Capture TigerBeetle version
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/tigerbeetle version"
+  register: tigerbeetle_version_output
+  changed_when: false
+
+- name: Assert TigerBeetle version matches expected
+  ansible.builtin.assert:
+    that: "'0.16.' in tigerbeetle_version_output.stdout"
+    fail_msg: >-
+      Expected TigerBeetle 0.16.x, got: {{ tigerbeetle_version_output.stdout }}.
+      Update flake.lock or adjust the version assertion.
+
+# --- Data directory ---
+
+- name: Create TigerBeetle data directory
+  ansible.builtin.file:
+    path: "{{ tigerbeetle_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# --- Idempotent format ---
+
+- name: Check if TigerBeetle data file exists
+  ansible.builtin.stat:
+    path: "{{ tigerbeetle_data_file }}"
+  register: tigerbeetle_data_stat
+
+- name: Format TigerBeetle data file
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/tigerbeetle format
+      --cluster={{ tigerbeetle_cluster_id }}
+      --replica={{ tigerbeetle_replica_id }}
+      --replica-count={{ tigerbeetle_replica_count }}
+      {{ tigerbeetle_data_file }}
+  changed_when: true
+  when: not tigerbeetle_data_stat.stat.exists
+
+# --- systemd unit ---
+
+- name: Deploy TigerBeetle systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=TigerBeetle
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=root
+      ExecStart={{ fm_bin }}/tigerbeetle start \
+        --addresses={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }} \
+        --experimental \
+        --statsd={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.statsd_port }} \
+        {{ tigerbeetle_data_file }}
+      Restart=on-failure
+      RestartSec=5
+      AmbientCapabilities=CAP_IPC_LOCK
+      LimitMEMLOCK=infinity
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/tigerbeetle.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart tigerbeetle
+
+- name: Apply TigerBeetle unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Enable and start ---
+
+- name: Enable and start TigerBeetle
+  ansible.builtin.systemd:
+    name: tigerbeetle
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Readiness gate ---
+
+- name: Wait for TigerBeetle to be ready
+  ansible.builtin.wait_for:
+    port: "{{ services.tigerbeetle.port }}"
+    host: "{{ services.tigerbeetle.host }}"
+    timeout: 30
+
+# --- Connection smoke test ---
+# The REPL requires a full TTY, so we verify client-level connectivity
+# via a Python PTY wrapper that spawns the REPL and checks for the
+# successful connection log line.
+
+- name: Deploy TigerBeetle connection test script
+  ansible.builtin.copy:
+    content: |
+      #!/usr/bin/env python3
+      import subprocess, pty, os, time, select, sys
+      master, slave = pty.openpty()
+      proc = subprocess.Popen(
+          [sys.argv[1], "repl",
+           "--cluster=" + sys.argv[2],
+           "--addresses=" + sys.argv[3]],
+          stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+      os.close(slave)
+      output = b""
+      deadline = time.time() + 8
+      while time.time() < deadline:
+          if select.select([master], [], [], 0.2)[0]:
+              output += os.read(master, 4096)
+          if b"on_connect: connected" in output:
+              break
+      proc.terminate()
+      proc.wait()
+      os.close(master)
+      if b"on_connect: connected" in output:
+          print("OK: REPL client connected to TigerBeetle server")
+          sys.exit(0)
+      print("FAIL: REPL client did not connect within 8s")
+      print(output.decode("utf-8", errors="replace"))
+      sys.exit(1)
+    dest: /opt/forge-metal/tigerbeetle-health.py
+    mode: "0755"
+
+- name: Verify REPL client can connect to TigerBeetle server
+  ansible.builtin.command:
+    cmd: >-
+      python3 /opt/forge-metal/tigerbeetle-health.py
+      {{ fm_bin }}/tigerbeetle
+      {{ tigerbeetle_cluster_id }}
+      {{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+  register: tigerbeetle_connection_test
+  changed_when: false
+  failed_when: tigerbeetle_connection_test.rc != 0

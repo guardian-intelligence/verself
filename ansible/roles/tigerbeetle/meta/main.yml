@@ -1,0 +1,4 @@
+---
+# nix_deploy: provides tigerbeetle binary at fm_bin.
+dependencies:
+  - role: nix_deploy

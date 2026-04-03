@@ -218,12 +218,45 @@
   when: "'Host Process Metrics' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
+# TigerBeetle dashboard                                                        #
+# --------------------------------------------------------------------------- #
+
+- name: Render TigerBeetle dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_tigerbeetle_body: "{{ lookup('template', 'dashboards/tigerbeetle.json.j2') }}"
+
+- name: Create TigerBeetle dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_tigerbeetle_body }}"
+    status_code: [200]
+  when: "'TigerBeetle' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update TigerBeetle dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['TigerBeetle'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_tigerbeetle_body }}"
+    status_code: [200]
+  when: "'TigerBeetle' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
 # Validate every tile renders data                                             #
 # --------------------------------------------------------------------------- #
 
-- name: Parse rendered dashboard
+- name: Parse rendered dashboard tiles for validation
   ansible.builtin.set_fact:
-    hyperdx_dashboards_rendered_tiles: "{{ (hyperdx_dashboards_host_metrics_body | from_json).tiles }}"
+    hyperdx_dashboards_rendered_tiles: >-
+      {{ (hyperdx_dashboards_host_metrics_body | from_json).tiles }}
 
 - name: Collect builder tiles
   ansible.builtin.set_fact:

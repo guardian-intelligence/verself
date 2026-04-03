@@ -1,0 +1,39 @@
+---
+argument_specs:
+  main:
+    short_description: "TigerBeetle financial ledger service"
+    description:
+      - "Deploys TigerBeetle from the Nix profile. Formats the data file"
+      - "(idempotent), configures the systemd unit with CAP_IPC_LOCK,"
+      - "and verifies health via a transaction smoke test."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
+    options:
+      tigerbeetle_data_dir:
+        type: path
+        default: /var/lib/tigerbeetle
+        description: "TigerBeetle data directory."
+
+      tigerbeetle_data_file:
+        type: path
+        default: /var/lib/tigerbeetle/data.tigerbeetle
+        description: "TigerBeetle data file path."
+
+      tigerbeetle_cluster_id:
+        type: int
+        default: 0
+        description: "TigerBeetle cluster ID."
+
+      tigerbeetle_replica_id:
+        type: int
+        default: 0
+        description: "TigerBeetle replica ID (0-indexed)."
+
+      tigerbeetle_replica_count:
+        type: int
+        default: 1
+        description: "Total replica count. Immutable after format."
+
+      fm_bin:
+        type: path
+        required: true
+        description: "Path to the Nix server profile bin directory."
