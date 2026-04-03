@@ -1,0 +1,30 @@
+#!/usr/sbin/nft -f
+# Firecracker guest networking: NAT + forwarding for {{ firecracker_guest_pool_cidr }}.
+# Managed by Ansible — do not edit manually.
+
+# Atomic replace: create (no-op if exists), delete, recreate.
+table ip forge_metal_firecracker
+delete table ip forge_metal_firecracker
+
+table ip forge_metal_firecracker {
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+
+        # Block guest-to-guest lateral movement
+        ip saddr {{ firecracker_guest_pool_cidr }} ip daddr {{ firecracker_guest_pool_cidr }} drop
+
+        # Guest outbound to internet via uplink
+        ip saddr {{ firecracker_guest_pool_cidr }} oifname "{{ firecracker_resolved_uplink }}" accept
+
+        # Return traffic from internet to guests (stateful)
+        ip daddr {{ firecracker_guest_pool_cidr }} iifname "{{ firecracker_resolved_uplink }}" ct state established,related accept
+
+        # Drop all other inbound to guest pool
+        ip daddr {{ firecracker_guest_pool_cidr }} drop
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr {{ firecracker_guest_pool_cidr }} oifname "{{ firecracker_resolved_uplink }}" masquerade
+    }
+}

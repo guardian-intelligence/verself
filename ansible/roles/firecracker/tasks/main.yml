@@ -79,9 +79,9 @@
 
 # --- KVM ---
 
-- name: Ensure iptables is installed
+- name: Ensure nftables is installed
   ansible.builtin.apt:
-    name: iptables
+    name: nftables
     state: present
     update_cache: true
 
@@ -154,6 +154,35 @@
     - /var/lib/ci
     - /var/lib/ci/net
     - "{{ firecracker_net_lease_dir }}"
+
+# --- Host networking (native nftables) ---
+
+- name: Resolve uplink interface for Firecracker NAT
+  ansible.builtin.set_fact:
+    firecracker_resolved_uplink: >-
+      {{ firecracker_host_uplink_interface
+         if firecracker_host_uplink_interface != ''
+         else ansible_default_ipv4.interface }}
+
+- name: Persist IP forwarding via sysctl
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-forge-metal.conf
+    reload: true
+
+- name: Create nftables config directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy Firecracker nftables ruleset
+  ansible.builtin.template:
+    src: firecracker-network.nft.j2
+    dest: /etc/nftables.d/firecracker.nft
+    mode: "0644"
+  notify: restart firecracker networking
 
 - name: Install Firecracker host networking setup script
   ansible.builtin.template:
@@ -354,7 +383,7 @@
 # Staging is proven good — now tear down the old golden and its dependents.
 
 - name: Prune repo goldens derived from old golden
-  ansible.builtin.command: "zfs destroy -r {{ firecracker_zfs_pool }}/repo-goldens"
+  ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/repo-goldens"
   when: firecracker_refresh_base_golden_needed
   failed_when: false
   changed_when: true
@@ -369,7 +398,7 @@
   changed_when: true
 
 - name: Destroy old golden zvol (cascade removes @ready snapshot)
-  ansible.builtin.command: "zfs destroy -r {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}"
+  ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}"
   when:
     - firecracker_refresh_base_golden_needed
     - firecracker_golden_zvol_check.rc == 0
