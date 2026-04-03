@@ -133,3 +133,60 @@ For `disconnect` packets, the first `u32` in the payload is a little-endian disc
 - The host replies with the current snapshot replay, then emits one `snapshot_end` packet.
 - After `snapshot_end`, the same socket tails live event packets until the consumer disconnects or falls behind retention.
 - If a consumer falls behind retention, the host MUST close the socket. The consumer MUST reconnect and send a fresh `attach` request to obtain a new snapshot and resume point.
+
+## Cross-Language Conformance
+
+The Zig encoder is the canonical reference implementation. `protocol/vectors.json` contains
+golden test vectors: hex-encoded wire bytes paired with the expected decoded field values. Any
+language implementing a decoder (TypeScript, Go, etc.) validates against these vectors.
+
+### Vector file structure
+
+```jsonc
+{
+  "schema_version": 1,         // bump on breaking vector format changes
+  "u64_encoding": "decimal-string",  // u64 fields are JSON strings to avoid precision loss
+  "vectors": {
+    "<name>": {
+      "layer": "guest" | "host",
+      "type": "hello" | "sample" | "request" | "packet",
+      "hex": "<lowercase hex of the full wire record>",
+      "fields": { /* expected decoded values */ },
+      // host packets include nested payload:
+      "payload_type": "guest_hello" | "disconnect",
+      "payload_fields": { /* expected decoded payload values */ }
+    }
+  }
+}
+```
+
+Field encoding rules:
+
+| Wire type | JSON encoding | Rationale |
+| --- | --- | --- |
+| `u16`, `u32` | number | Fits in IEEE 754 double |
+| `u64` | decimal string | Exceeds `Number.MAX_SAFE_INTEGER` for realistic wall-clock values |
+| `[16]u8` (UUID) | hyphenated string | `"5691d566-f1a6-4342-8604-205e83785b21"` |
+| `enum` | number (raw wire value) | Consumer maps to name via protocol spec |
+
+### Regenerating vectors
+
+```bash
+cd homestead-smelter
+zig build run-generate-vectors > protocol/vectors.json
+```
+
+The staleness test in `zig build test` asserts the checked-in file matches the canonical encoder
+output. If the encoder changes, the test fails until the vectors are regenerated.
+
+### Conformance triangle
+
+The three checks that together guarantee cross-language correctness:
+
+1. **Zig round-trip tests** (`root.zig`, `host_proto.zig`): encode a struct, decode it, assert
+   field equality. Validates the Zig encoder and decoder agree.
+2. **Staleness test** (`generate_vectors.zig`): re-generates vectors from the canonical encoder
+   and asserts the output matches the checked-in `protocol/vectors.json`. Detects encoder drift.
+3. **Consumer decode tests** (TypeScript, Go): load `protocol/vectors.json`, hex-decode the wire
+   bytes, decode with the consumer's implementation, assert field values match. Detects consumer
+   decoder drift against the Zig reference.
