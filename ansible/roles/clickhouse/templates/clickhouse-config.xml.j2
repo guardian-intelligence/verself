@@ -1,0 +1,57 @@
+<clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+    <http_port>{{ clickhouse_http_port }}</http_port>
+    <tcp_port>{{ clickhouse_native_port }}</tcp_port>
+
+    <path>{{ clickhouse_data_path }}/</path>
+    <tmp_path>{{ clickhouse_data_path }}/tmp/</tmp_path>
+    <user_files_path>{{ clickhouse_data_path }}/user_files/</user_files_path>
+    <format_schema_path>{{ clickhouse_data_path }}/format_schemas/</format_schema_path>
+
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+
+    <!-- Default profiles and users (required when running standalone without /etc/clickhouse-server/users.xml) -->
+    <profiles>
+        <default/>
+    </profiles>
+
+    <users>
+        <default>
+            <password_sha256_hex>{{ clickhouse_password | hash('sha256') }}</password_sha256_hex>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+
+    <!-- Query logging: populates system.query_log for east/west traffic visibility -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_time)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+
+    <quotas>
+        <default>
+            <interval>
+                <duration>3600</duration>
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
+</clickhouse>

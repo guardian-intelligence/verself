@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-POOL_CIDR="{{ fc_guest_pool_cidr }}"
-UPLINK_IF="{{ fc_host_uplink_interface }}"
+POOL_CIDR="{{ firecracker_guest_pool_cidr }}"
+UPLINK_IF="{{ firecracker_host_uplink_interface }}"
 NAT_CHAIN="FORGE_METAL_FC_NAT"
 FWD_CHAIN="FORGE_METAL_FC_FWD"
 

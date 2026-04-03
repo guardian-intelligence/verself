@@ -6,7 +6,7 @@
   hosts: all
   become: true
   vars:
-    fc_refresh_base_golden: true
+    firecracker_refresh_base_golden: true
   roles:
     - nix_deploy
     - base

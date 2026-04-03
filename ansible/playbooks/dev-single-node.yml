@@ -100,7 +100,10 @@
     - nix_deploy
     - base
     - cloudflare_dns
-    - clickstack
+    - clickhouse
+    - otelcol
+    - hyperdx
     - verdaccio
     - forgejo
     - firecracker
+    - caddy

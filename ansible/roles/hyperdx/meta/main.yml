@@ -1,0 +1,4 @@
+---
+# nix_deploy: provides node and supporting build tools at fm_bin.
+dependencies:
+  - role: nix_deploy

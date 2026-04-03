@@ -1,0 +1,28 @@
+---
+argument_specs:
+  main:
+    short_description: "ClickHouse service and forge-metal schema migrations"
+    description:
+      - "Deploys ClickHouse from the Nix profile, configures the standalone"
+      - "service unit, and applies forge-metal migrations to the forge_metal"
+      - "database when the local migration fingerprint changes."
+    options:
+      clickhouse_http_port:
+        type: int
+        default: 8123
+        description: "ClickHouse HTTP interface port."
+
+      clickhouse_native_port:
+        type: int
+        default: 9000
+        description: "ClickHouse native TCP protocol port."
+
+      clickhouse_data_path:
+        type: path
+        default: /var/lib/clickhouse
+        description: "ClickHouse data directory."
+
+      fm_bin:
+        type: path
+        required: true
+        description: "Path to the Nix server profile bin directory."

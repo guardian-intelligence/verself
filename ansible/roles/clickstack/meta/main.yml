@@ -1,4 +1,0 @@
----
-# nix_deploy: provides node, caddy, clickhouse, otelcol binaries at fm_bin.
-dependencies:
-  - role: nix_deploy

@@ -1,0 +1,5 @@
+---
+# ClickHouse defaults.
+clickhouse_http_port: 8123
+clickhouse_native_port: 9000
+clickhouse_data_path: /var/lib/clickhouse

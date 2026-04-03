@@ -1,0 +1,50 @@
+---
+# OpenTelemetry Collector configuration.
+# Binary provided by the Nix server profile (otelcol-contrib).
+
+- name: Create OTel Collector config directory
+  ansible.builtin.file:
+    path: /etc/otelcol
+    state: directory
+    mode: "0755"
+
+- name: Create OTel Collector storage directory
+  ansible.builtin.file:
+    path: /var/lib/otelcol/storage
+    state: directory
+    mode: "0755"
+
+- name: Deploy OTel Collector config
+  ansible.builtin.template:
+    src: otelcol-config.yaml.j2
+    dest: /etc/otelcol/config.yaml
+    mode: "0600"
+  notify: restart otelcol
+
+- name: Deploy OTel Collector systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=OpenTelemetry Collector
+      After=network.target clickhouse-server.service
+
+      [Service]
+      Type=simple
+      ExecStart={{ fm_bin }}/otelcol-contrib --config /etc/otelcol/config.yaml
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/otelcol.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart otelcol
+
+- name: Enable and start OTel Collector
+  ansible.builtin.systemd:
+    name: otelcol
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,21 +1,21 @@
 ---
 # Firecracker host setup defaults.
-fc_zfs_pool: benchpool
-fc_golden_zvol: golden-zvol
-fc_golden_zvol_size: 4G
-fc_ci_dataset: ci
-fc_jailer_root: /srv/jailer
-fc_jailer_uid: 10000
-fc_jailer_gid: 10000
-fc_jailer_user: firecracker
-fc_kernel_path: /var/lib/ci/vmlinux
-fc_rootfs_path: /var/lib/ci/rootfs.ext4
-fc_guest_artifact_manifest_path: /var/lib/ci/guest-artifacts.json
-fc_rootfs_hash_record: /var/lib/ci/golden-zvol.rootfs.sha256
-fc_refresh_base_golden: false
-fc_zfs_arc_max_bytes: 8589934592  # 8 GiB
-fc_guest_pool_cidr: 172.16.0.0/16
-fc_net_lease_dir: /var/lib/ci/net/leases
-fc_host_uplink_interface: ""
-fc_smelter_host_binary_path: /usr/local/bin/homestead-smelter-host
-fc_smelter_control_socket: /run/homestead-smelter/agent.sock
+firecracker_zfs_pool: benchpool
+firecracker_golden_zvol: golden-zvol
+firecracker_golden_zvol_size: 4G
+firecracker_ci_dataset: ci
+firecracker_jailer_root: /srv/jailer
+firecracker_jailer_uid: 10000
+firecracker_jailer_gid: 10000
+firecracker_jailer_user: firecracker
+firecracker_kernel_path: /var/lib/ci/vmlinux
+firecracker_rootfs_path: /var/lib/ci/rootfs.ext4
+firecracker_guest_artifact_manifest_path: /var/lib/ci/guest-artifacts.json
+firecracker_rootfs_hash_record: /var/lib/ci/golden-zvol.rootfs.sha256
+firecracker_refresh_base_golden: false
+firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
+firecracker_guest_pool_cidr: 172.16.0.0/16
+firecracker_net_lease_dir: /var/lib/ci/net/leases
+firecracker_host_uplink_interface: ""
+firecracker_smelter_host_binary_path: /usr/local/bin/homestead-smelter-host
+firecracker_smelter_control_socket: /run/homestead-smelter/agent.sock

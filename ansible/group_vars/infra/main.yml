@@ -2,7 +2,6 @@
 # Variables specific to infrastructure nodes.
 
 # ClickHouse
-clickhouse_version: "26.3.2.3"  # pinned — must match role default
 clickhouse_http_port: 8123
 clickhouse_native_port: 9000
 clickhouse_keeper_port: 9181

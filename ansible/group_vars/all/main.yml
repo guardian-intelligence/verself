@@ -11,6 +11,10 @@ fm_bin: "/opt/forge-metal/profile/bin"
 #   git.<domain>    → Forgejo
 forge_metal_domain: "anveio.com"
 
+# Local credentials directory (control node).
+# The Ansible `password` lookup writes generated secrets here.
+credentials_dir: "{{ playbook_dir }}/../.credentials"
+
 # WireGuard
 wireguard_interface: wg0
 wireguard_port: 51820
