@@ -79,12 +79,6 @@
 
 # --- KVM ---
 
-- name: Ensure nftables is installed
-  ansible.builtin.apt:
-    name: nftables
-    state: present
-    update_cache: true
-
 - name: Detect KVM module for CPU vendor
   ansible.builtin.set_fact:
     firecracker_kvm_module: >-
@@ -170,12 +164,6 @@
     value: "1"
     sysctl_file: /etc/sysctl.d/99-forge-metal.conf
     reload: true
-
-- name: Create nftables config directory
-  ansible.builtin.file:
-    path: /etc/nftables.d
-    state: directory
-    mode: "0755"
 
 - name: Deploy Firecracker nftables ruleset
   ansible.builtin.template:

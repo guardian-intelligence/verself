@@ -103,6 +103,7 @@
   roles:
     - nix_deploy
     - base
+    - nftables
     - zfs
 
 - name: Configure worker nodes
