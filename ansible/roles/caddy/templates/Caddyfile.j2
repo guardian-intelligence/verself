@@ -28,11 +28,11 @@
 {{ hyperdx_domain }} {
 	import access_log
 	import waf
-	reverse_proxy localhost:{{ hyperdx_app_port }}
+	reverse_proxy {{ services.hyperdx.host }}:{{ services.hyperdx.app_port }}
 }
 
 {{ forgejo_domain }} {
 	import access_log
 	import waf
-	reverse_proxy localhost:{{ forgejo_port | default('3000') }}
+	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
 }

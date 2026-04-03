@@ -26,7 +26,7 @@
 
 - name: Get sources and connection ID
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/sources"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/sources"
     method: GET
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
@@ -161,7 +161,7 @@
 
 - name: Refresh sources
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/sources"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/sources"
     method: GET
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
@@ -174,7 +174,7 @@
 
 - name: List existing dashboards
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/dashboards"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
     method: GET
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
@@ -195,7 +195,7 @@
 
 - name: Create Host Process Metrics dashboard
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/dashboards"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
     method: POST
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
@@ -207,7 +207,7 @@
 
 - name: Update Host Process Metrics dashboard
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Host Process Metrics'] }}"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Host Process Metrics'] }}"
     method: PUT
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
@@ -232,7 +232,7 @@
 
 - name: Validate builder tiles return data
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_dashboards_api_port }}/api/v2/charts/series"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/charts/series"
     method: POST
     headers:
       Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"

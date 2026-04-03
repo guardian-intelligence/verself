@@ -6,12 +6,8 @@ argument_specs:
       - "Deploys otelcol-contrib from the Nix profile, configures OTLP"
       - "receivers plus host and Caddy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
-      clickhouse_native_port:
-        type: int
-        required: true
-        description: "ClickHouse native TCP protocol port used by the exporter."
-
       fm_bin:
         type: path
         required: true

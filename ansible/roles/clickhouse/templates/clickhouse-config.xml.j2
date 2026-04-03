@@ -1,7 +1,7 @@
 <clickhouse>
-    <listen_host>127.0.0.1</listen_host>
-    <http_port>{{ clickhouse_http_port }}</http_port>
-    <tcp_port>{{ clickhouse_native_port }}</tcp_port>
+    <listen_host>{{ services.clickhouse.host }}</listen_host>
+    <http_port>{{ services.clickhouse.http_port }}</http_port>
+    <tcp_port>{{ services.clickhouse.native_port }}</tcp_port>
 
     <path>{{ clickhouse_data_path }}/</path>
     <tmp_path>{{ clickhouse_data_path }}/tmp/</tmp_path>

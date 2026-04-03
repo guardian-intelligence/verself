@@ -6,6 +6,7 @@ argument_specs:
       - "Installs MongoDB for HyperDX application state, builds HyperDX from"
       - "source, writes the runtime environment, and seeds the initial admin"
       - "account."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
       hyperdx_mongodb_version:
         type: str
@@ -26,21 +27,6 @@ argument_specs:
         type: str
         default: "676e4f4bc91f7b67448b3be6d9bc5cbc3a004964"
         description: "Pinned commit SHA to checkout."
-
-      hyperdx_api_port:
-        type: int
-        default: 8000
-        description: "HyperDX API server port."
-
-      hyperdx_app_port:
-        type: int
-        default: 8080
-        description: "HyperDX frontend port."
-
-      hyperdx_opamp_port:
-        type: int
-        default: 4320
-        description: "HyperDX OpAMP port for OTel agent management."
 
       hyperdx_install_dir:
         type: path
@@ -74,11 +60,6 @@ argument_specs:
         type: str
         required: false
         description: "Admin password for HyperDX."
-
-      clickhouse_http_port:
-        type: int
-        required: true
-        description: "ClickHouse HTTP interface port for the default HyperDX connection."
 
       fm_bin:
         type: path

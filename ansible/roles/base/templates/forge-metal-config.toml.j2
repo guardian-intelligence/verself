@@ -1,5 +1,5 @@
 [clickhouse]
-addr = "127.0.0.1:{{ clickhouse_native_port | default(9000) }}"
+addr = "{{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}"
 database = "forge_metal"
 username = "default"
 password = "{{ base_clickhouse_password }}"

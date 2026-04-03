@@ -6,17 +6,8 @@ argument_specs:
       - "Deploys ClickHouse from the Nix profile, configures the standalone"
       - "service unit, and applies forge-metal migrations to the forge_metal"
       - "database when the local migration fingerprint changes."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
-      clickhouse_http_port:
-        type: int
-        default: 8123
-        description: "ClickHouse HTTP interface port."
-
-      clickhouse_native_port:
-        type: int
-        default: 9000
-        description: "ClickHouse native TCP protocol port."
-
       clickhouse_data_path:
         type: path
         default: /var/lib/clickhouse

@@ -1,0 +1,33 @@
+---
+# Service registry — single source of truth for all service endpoints.
+# Templates and tasks reference services.X.host / services.X.port instead of
+# hardcoding localhost and scattering port numbers across role defaults.
+#
+# This is a static topology for single-node deployment. To move a service
+# off-box, change its host here — no template rewrites needed.
+
+services:
+  clickhouse:
+    host: "127.0.0.1"
+    http_port: 8123
+    native_port: 9000
+    keeper_port: 9181
+  otelcol:
+    host: "127.0.0.1"
+    grpc_port: 4317
+    http_port: 4318
+  mongodb:
+    host: "127.0.0.1"
+    port: 27017
+  forgejo:
+    host: "127.0.0.1"
+    port: 3000
+    ssh_port: 2222
+  hyperdx:
+    host: "127.0.0.1"
+    app_port: 8080
+    api_port: 8000
+    opamp_port: 4320
+  verdaccio:
+    host: "127.0.0.1"
+    port: 4873

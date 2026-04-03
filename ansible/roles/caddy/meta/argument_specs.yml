@@ -5,6 +5,7 @@ argument_specs:
     description:
       - "Deploys Caddy from the Nix profile and renders the edge config that"
       - "fronts HyperDX and Forgejo with the shared WAF and access logging."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
       caddy_waf_mode:
         type: str
@@ -16,20 +17,10 @@ argument_specs:
         required: true
         description: "Public domain for the HyperDX dashboard."
 
-      hyperdx_app_port:
-        type: int
-        required: true
-        description: "Local HyperDX frontend port proxied by Caddy."
-
       forgejo_domain:
         type: str
         required: true
         description: "Public domain for Forgejo."
-
-      forgejo_port:
-        type: int
-        required: true
-        description: "Local Forgejo HTTP port proxied by Caddy."
 
       fm_bin:
         type: path

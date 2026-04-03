@@ -1,9 +1,14 @@
 ---
 profile: production
 use_default_rules: true
+rulesdir:
+  - rules/
 
 exclude_paths:
   - .cache/
+
+enable_list:
+  - no-default-ports
 
 warn_list:
   - experimental

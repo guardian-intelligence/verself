@@ -2,9 +2,9 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: 0.0.0.0:{{ services.otelcol.grpc_port }}
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: 0.0.0.0:{{ services.otelcol.http_port }}
   filelog/caddy:
     include: [/var/log/caddy/access.log]
     storage: file_storage
@@ -105,7 +105,7 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://localhost:{{ clickhouse_native_port }}?dial_timeout=10s&username=default&password={{ clickhouse_password | urlencode }}
+    endpoint: tcp://{{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}?dial_timeout=10s&username=default&password={{ clickhouse_password | urlencode }}
     database: default
     logs_table_name: otel_logs
     traces_table_name: otel_traces
@@ -113,7 +113,7 @@ exporters:
 
 extensions:
   health_check:
-    endpoint: 0.0.0.0:13133
+    endpoint: 0.0.0.0:13133  # not in service registry — no cross-service consumers
   file_storage:
     directory: /var/lib/otelcol/storage
 
