@@ -1,9 +1,10 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install \
-       doctor setup-dev setup-sops edit-secrets setup-domain \
-       server-profile provision deprovision deploy deploy-dashboards \
-       ci-fixtures-refresh ci-fixtures-run ci-fixtures-pass ci-fixtures-fail ci-fixtures-full \
-       guest-rootfs deploy-ci-artifacts smelter-build smelter-dev
+	       hooks-install \
+	       doctor setup-dev setup-sops edit-secrets setup-domain \
+	       server-profile provision deprovision deploy deploy-dashboards \
+	       clickhouse-shell clickhouse-query \
+	       ci-fixtures-refresh ci-fixtures-run ci-fixtures-pass ci-fixtures-fail ci-fixtures-full \
+	       guest-rootfs deploy-ci-artifacts smelter-build smelter-dev
 
 BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -94,6 +95,13 @@ deploy: ## Deploy to all nodes (idempotent, no wipe)
 
 deploy-dashboards: ## Sync HyperDX dashboards and sources without a full redeploy
 	cd ansible && ansible-playbook playbooks/hyperdx-dashboards.yml
+
+clickhouse-shell: ## Open an interactive clickhouse-client session on the worker
+	./scripts/clickhouse.sh
+
+clickhouse-query: ## Run a ClickHouse query on the worker: make clickhouse-query QUERY='SHOW TABLES' [DATABASE=forge_metal]
+	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
+	./scripts/clickhouse.sh $(if $(DATABASE),--database $(DATABASE),) --query "$(QUERY)"
 
 ci-fixtures-refresh: ## Rebuild and stage CI guest artifacts on the existing host
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }

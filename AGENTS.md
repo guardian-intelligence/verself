@@ -135,16 +135,12 @@ Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let
 
 ### 5. Query ClickHouse
 
-The ClickHouse password is stored on the controller in `ansible/.credentials/clickhouse_password`. The stable client path on the worker is `/opt/forge-metal/profile/bin/clickhouse-client`; do not assume `clickhouse-client` is on the default SSH `PATH`, and do not hardcode a `/nix/store/...` path.
+Use the repo wrapper instead of typing the SSH and password prefix by hand. It resolves the worker from `ansible/inventory/hosts.ini`, reads `ansible/.credentials/clickhouse_password`, and invokes the stable worker path `/opt/forge-metal/profile/bin/clickhouse-client`.
 
 ```bash
-CLICKHOUSE_PASSWORD=$(cat ansible/.credentials/clickhouse_password)
-ssh ubuntu@64.34.84.75 \
-  "sudo /opt/forge-metal/profile/bin/clickhouse-client \
-    --user default \
-    --password '$CLICKHOUSE_PASSWORD' \
-    --database forge_metal \
-    --query 'SHOW TABLES'"
+make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
+make clickhouse-shell
+./scripts/clickhouse.sh --query 'SELECT count() FROM otel_logs'
 ```
 
 Current table locations:

@@ -88,11 +88,13 @@ make setup-dev   # one-time: install pinned dev tools
 make hooks-install
 make provision
 make deploy
+make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
 make ci-fixtures-pass
 ```
 
 - `make hooks-install`: install the repo's git pre-commit hooks
 - `make deploy`: normal idempotent deploy path
+- `make clickhouse-query`: run a ClickHouse query on the current worker without retyping SSH or credentials
 - `make ci-fixtures-pass`: run the positive CI fixture suite against the current host
 - `make ci-fixtures-fail`: run the negative CI fixture suite against the current host
 - `make ci-fixtures-refresh`: rebuild and restage guest artifacts without a full redeploy
