@@ -26,6 +26,7 @@ func fixturesRunCmd() *cobra.Command {
 	var (
 		fixturesRoot    string
 		suites          []string
+		parallelism     int
 		forgejoURL      string
 		owner           string
 		token           string
@@ -90,6 +91,7 @@ func fixturesRunCmd() *cobra.Command {
 			return ci.RunFixtureSuites(ctx, logger, manager, client, ci.FixtureRunOptions{
 				FixturesRoot: fixturesRoot,
 				Suites:       suites,
+				Parallelism:  parallelism,
 				ForgejoURL:   forgejoURL,
 				Owner:        owner,
 				Token:        token,
@@ -101,6 +103,7 @@ func fixturesRunCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&fixturesRoot, "fixtures-root", "test/fixtures", "Local fixture repository root")
 	cmd.Flags().StringSliceVar(&suites, "suite", []string{"pass"}, "Fixture suite(s) to run")
+	cmd.Flags().IntVar(&parallelism, "parallelism", 0, "Fixture preparation/verification parallelism (0 = auto)")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	cmd.Flags().StringVar(&owner, "owner", "", "Forgejo owner/user that should own the fixture repos")
 	cmd.Flags().StringVar(&token, "token", "", "Forgejo API token (or FORGE_METAL_FIXTURES_TOKEN)")

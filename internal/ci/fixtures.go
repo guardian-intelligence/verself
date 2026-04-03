@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
@@ -114,6 +116,7 @@ var fixtureMetadataByName = map[string]FixtureMetadata{
 type FixtureRunOptions struct {
 	FixturesRoot string
 	Suites       []string
+	Parallelism  int
 	ForgejoURL   string
 	Owner        string
 	Token        string
@@ -201,78 +204,39 @@ func RunFixtureSuites(ctx context.Context, logger *slog.Logger, mgr *Manager, cl
 	}
 	runStamp := time.Now().UTC().Format("20060102-150405")
 	runID := "fixtures-" + strings.Join(suiteNames, "-") + "-" + runStamp
+	parallelism := resolveFixtureParallelism(opts.Parallelism, len(fixtures))
+	logger.Info("running fixture suites", "run_id", runID, "suites", strings.Join(suiteNames, ","), "fixtures", len(fixtures), "parallelism", parallelism)
 
-	prepared := make([]preparedFixture, 0, len(fixtures))
-	for i := range fixtures {
-		metadataCopy := fixtures[i].Metadata
-		metadataCopy.PRBranchBase = uniquePRBranch(metadataCopy.PRBranchBase, fixtures[i].Name, runStamp)
-		fixtures[i].Metadata = metadataCopy
-		fixture := fixtures[i]
-
-		repo := Repository{
-			Name:        fixture.Name,
-			Description: fixture.Metadata.Description,
-			Private:     false,
-		}
-		if err := client.EnsureRepository(ctx, opts.Owner, repo); err != nil {
-			return err
-		}
-		repoURL := forgejoRepoURL(opts.ForgejoURL, opts.Owner, fixture.Name)
-		pushURL := forgejoAuthenticatedPushURL(opts.ForgejoURL, opts.Username, opts.Token, opts.Owner, fixture.Name)
-
-		logger.Info("seeding fixture main branch", "repo", fixture.Name, "run_id", runID)
-		if err := pushFixtureMain(fixture, pushURL, opts.Username, opts.Email); err != nil {
-			return err
-		}
-
-		logger.Info("warming repo golden", "repo", fixture.Name, "run_id", runID)
-		if err := mgr.Warm(ctx, WarmRequest{
-			Repo:          fmt.Sprintf("%s/%s", opts.Owner, fixture.Name),
-			RepoURL:       repoURL,
-			DefaultBranch: fixture.Metadata.DefaultBranch,
-			RunID:         runID,
-		}); err != nil {
-			return err
-		}
-
-		logger.Info("installing workflow on main", "repo", fixture.Name, "run_id", runID)
-		if err := addWorkflowToMain(opts, fixture, pushURL, runID); err != nil {
-			return err
-		}
-
-		prepared = append(prepared, preparedFixture{
-			Fixture: fixture,
-			RepoURL: repoURL,
-			PushURL: pushURL,
-		})
+	prepareStartedAt := time.Now()
+	prepared, err := prepareFixtures(ctx, logger, mgr, client, opts, fixtures, runID, runStamp, parallelism)
+	if err != nil {
+		return err
 	}
+	logger.Info("fixture preparation finished", "run_id", runID, "fixtures", len(prepared), "duration_ms", time.Since(prepareStartedAt).Milliseconds())
 
 	witness := startLeaseWitness(mgr.firecrackerConfig.NetworkLeaseDir)
+	witnessActive := true
+	defer func() {
+		if witnessActive {
+			witness.Stop()
+		}
+	}()
 
-	triggered := make([]triggeredFixture, 0, len(prepared))
-	for _, item := range prepared {
-		logger.Info("creating PR trigger branch", "repo", item.Fixture.Name, "run_id", runID)
-		commitSHA, err := createTriggerPR(ctx, client, opts, item.Fixture, item.PushURL, item.RepoURL)
-		if err != nil {
-			return err
-		}
-		triggered = append(triggered, triggeredFixture{
-			Prepared:  item,
-			CommitSHA: commitSHA,
-		})
+	triggerStartedAt := time.Now()
+	triggered, err := triggerFixtures(ctx, logger, client, opts, prepared, runID, parallelism)
+	if err != nil {
+		return err
 	}
+	logger.Info("fixture PR creation finished", "run_id", runID, "fixtures", len(triggered), "duration_ms", time.Since(triggerStartedAt).Milliseconds())
 
-	for _, item := range triggered {
-		logger.Info("waiting for CI run", "repo", item.Prepared.Fixture.Name, "run_id", runID)
-		if err := waitForCommitRun(ctx, client, opts.Owner, item.Prepared.Fixture.Name, item.CommitSHA, item.Prepared.Fixture.Metadata.ExpectedResult); err != nil {
-			return err
-		}
-		if err := waitForExpectedExecOutcome(ctx, item.Prepared.Fixture, runID, fmt.Sprintf("%s/%s", opts.Owner, item.Prepared.Fixture.Name), item.CommitSHA); err != nil {
-			return err
-		}
+	waitStartedAt := time.Now()
+	if err := waitForTriggeredFixtures(ctx, logger, client, opts.Owner, triggered, runID, parallelism); err != nil {
+		return err
 	}
+	logger.Info("fixture verification finished", "run_id", runID, "fixtures", len(triggered), "duration_ms", time.Since(waitStartedAt).Milliseconds())
 
 	summary := witness.Stop()
+	witnessActive = false
 	logLeaseWitnessSummary(logger, runID, summary)
 	if err := validateLeaseWitnessSummary(summary, len(triggered)); err != nil {
 		return fmt.Errorf("fixture runtime overlap check failed: %w", err)
@@ -325,6 +289,83 @@ func selectFixturesBySuite(fixtures []Fixture, suites []string) ([]Fixture, []st
 		return nil, nil, fmt.Errorf("no fixtures matched suites %s", strings.Join(normalizedSuites, ", "))
 	}
 	return selected, normalizedSuites, nil
+}
+
+func prepareFixtures(ctx context.Context, logger *slog.Logger, mgr *Manager, client *ForgejoClient, opts FixtureRunOptions, fixtures []Fixture, runID, runStamp string, parallelism int) ([]preparedFixture, error) {
+	return parallelMapOrdered(ctx, parallelism, fixtures, func(ctx context.Context, idx int, fixture Fixture) (preparedFixture, error) {
+		return prepareFixture(ctx, logger, mgr, client, opts, fixture, runID, runStamp)
+	})
+}
+
+func prepareFixture(ctx context.Context, logger *slog.Logger, mgr *Manager, client *ForgejoClient, opts FixtureRunOptions, fixture Fixture, runID, runStamp string) (preparedFixture, error) {
+	metadataCopy := fixture.Metadata
+	metadataCopy.PRBranchBase = uniquePRBranch(metadataCopy.PRBranchBase, fixture.Name, runStamp)
+	fixture.Metadata = metadataCopy
+
+	repo := Repository{
+		Name:        fixture.Name,
+		Description: fixture.Metadata.Description,
+		Private:     false,
+	}
+	if err := client.EnsureRepository(ctx, opts.Owner, repo); err != nil {
+		return preparedFixture{}, fmt.Errorf("%s: ensure repository: %w", fixture.Name, err)
+	}
+	repoURL := forgejoRepoURL(opts.ForgejoURL, opts.Owner, fixture.Name)
+	pushURL := forgejoAuthenticatedPushURL(opts.ForgejoURL, opts.Username, opts.Token, opts.Owner, fixture.Name)
+
+	logger.Info("seeding fixture main branch", "repo", fixture.Name, "run_id", runID)
+	if err := pushFixtureMain(fixture, pushURL, opts.Username, opts.Email); err != nil {
+		return preparedFixture{}, fmt.Errorf("%s: seed main branch: %w", fixture.Name, err)
+	}
+
+	logger.Info("warming repo golden", "repo", fixture.Name, "run_id", runID)
+	if err := mgr.Warm(ctx, WarmRequest{
+		Repo:          fmt.Sprintf("%s/%s", opts.Owner, fixture.Name),
+		RepoURL:       repoURL,
+		DefaultBranch: fixture.Metadata.DefaultBranch,
+		RunID:         runID,
+	}); err != nil {
+		return preparedFixture{}, fmt.Errorf("%s: warm repo golden: %w", fixture.Name, err)
+	}
+
+	logger.Info("installing workflow on main", "repo", fixture.Name, "run_id", runID)
+	if err := addWorkflowToMain(opts, fixture, pushURL, runID); err != nil {
+		return preparedFixture{}, fmt.Errorf("%s: install workflow: %w", fixture.Name, err)
+	}
+
+	return preparedFixture{
+		Fixture: fixture,
+		RepoURL: repoURL,
+		PushURL: pushURL,
+	}, nil
+}
+
+func triggerFixtures(ctx context.Context, logger *slog.Logger, client *ForgejoClient, opts FixtureRunOptions, prepared []preparedFixture, runID string, parallelism int) ([]triggeredFixture, error) {
+	return parallelMapOrdered(ctx, parallelism, prepared, func(ctx context.Context, idx int, item preparedFixture) (triggeredFixture, error) {
+		logger.Info("creating PR trigger branch", "repo", item.Fixture.Name, "run_id", runID)
+		commitSHA, err := createTriggerPR(ctx, client, opts, item.Fixture, item.PushURL, item.RepoURL)
+		if err != nil {
+			return triggeredFixture{}, fmt.Errorf("%s: create trigger PR: %w", item.Fixture.Name, err)
+		}
+		return triggeredFixture{
+			Prepared:  item,
+			CommitSHA: commitSHA,
+		}, nil
+	})
+}
+
+func waitForTriggeredFixtures(ctx context.Context, logger *slog.Logger, client *ForgejoClient, owner string, triggered []triggeredFixture, runID string, parallelism int) error {
+	_, err := parallelMapOrdered(ctx, parallelism, triggered, func(ctx context.Context, idx int, item triggeredFixture) (struct{}, error) {
+		logger.Info("waiting for CI run", "repo", item.Prepared.Fixture.Name, "run_id", runID)
+		if err := waitForCommitRun(ctx, client, owner, item.Prepared.Fixture.Name, item.CommitSHA, item.Prepared.Fixture.Metadata.ExpectedResult); err != nil {
+			return struct{}{}, fmt.Errorf("%s: wait for workflow run: %w", item.Prepared.Fixture.Name, err)
+		}
+		if err := waitForExpectedExecOutcome(ctx, item.Prepared.Fixture, runID, fmt.Sprintf("%s/%s", owner, item.Prepared.Fixture.Name), item.CommitSHA); err != nil {
+			return struct{}{}, fmt.Errorf("%s: verify exec telemetry: %w", item.Prepared.Fixture.Name, err)
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
 func pushFixtureMain(fixture Fixture, pushURL, username, email string) error {
@@ -412,6 +453,11 @@ func createTriggerPR(ctx context.Context, client *ForgejoClient, opts FixtureRun
 func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, commitSHA, expectedResult string) error {
 	deadline := time.Now().Add(10 * time.Minute)
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		runs, err := client.ListWorkflowRuns(ctx, owner, repo)
 		if err != nil {
 			return err
@@ -432,7 +478,11 @@ func waitForCommitRun(ctx context.Context, client *ForgejoClient, owner, repo, c
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for workflow run on %s/%s commit %s", owner, repo, commitSHA)
 		}
-		time.Sleep(15 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(15 * time.Second):
+		}
 	}
 }
 
@@ -655,6 +705,105 @@ func validateLeaseWitnessSummary(summary leaseWitnessSummary, expectedJobs int) 
 		return fmt.Errorf("max active leases %d, required at least %d", summary.MaxActiveLeases, requiredOverlap)
 	}
 	return nil
+}
+
+func resolveFixtureParallelism(requested, fixtureCount int) int {
+	if fixtureCount <= 1 {
+		return 1
+	}
+	if requested > 0 {
+		if requested > fixtureCount {
+			return fixtureCount
+		}
+		return requested
+	}
+
+	auto := runtime.NumCPU() / 2
+	if auto < 1 {
+		auto = 1
+	}
+	if auto > 4 {
+		auto = 4
+	}
+	if auto > fixtureCount {
+		auto = fixtureCount
+	}
+	return auto
+}
+
+func parallelMapOrdered[T any, R any](ctx context.Context, parallelism int, items []T, fn func(context.Context, int, T) (R, error)) ([]R, error) {
+	results := make([]R, len(items))
+	if len(items) == 0 {
+		return results, nil
+	}
+	if parallelism <= 0 {
+		parallelism = 1
+	}
+	if parallelism > len(items) {
+		parallelism = len(items)
+	}
+
+	workerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan int)
+	var (
+		wg       sync.WaitGroup
+		errMu    sync.Mutex
+		firstErr error
+	)
+
+	worker := func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case idx, ok := <-jobs:
+				if !ok {
+					return
+				}
+				result, err := fn(workerCtx, idx, items[idx])
+				if err != nil {
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = err
+						cancel()
+					}
+					errMu.Unlock()
+					return
+				}
+				results[idx] = result
+			}
+		}
+	}
+
+	wg.Add(parallelism)
+	for i := 0; i < parallelism; i++ {
+		go worker()
+	}
+
+sendLoop:
+	for idx := range items {
+		select {
+		case <-workerCtx.Done():
+			break sendLoop
+		case jobs <- idx:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	errMu.Lock()
+	err := firstErr
+	errMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return results, nil
 }
 
 func forgejoRepoURL(baseURL, owner, repo string) string {

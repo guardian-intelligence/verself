@@ -109,7 +109,6 @@ ci-fixtures-refresh: ## Rebuild and stage CI guest artifacts on the existing hos
 	$(MAKE) deploy-ci-artifacts
 
 CI_FIXTURES_PLAYBOOK ?= playbooks/ci-fixtures.yml
-CI_FIXTURE_FULL_TARGETS ?= ci-fixtures-pass ci-fixtures-fail
 
 ci-fixtures-run: ## Run the selected CI fixture playbook against the existing host
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
@@ -123,10 +122,9 @@ ci-fixtures-fail: CI_FIXTURES_PLAYBOOK := playbooks/ci-fixtures-fail.yml
 ci-fixtures-fail: ## Run the negative CI fixture suite against the existing host
 	$(MAKE) ci-fixtures-run CI_FIXTURES_PLAYBOOK=$(CI_FIXTURES_PLAYBOOK)
 
-ci-fixtures-full: ci-fixtures-refresh ## Refresh artifacts, then run all configured CI fixture suites
-	@for target in $(CI_FIXTURE_FULL_TARGETS); do \
-		$(MAKE) $$target || exit $$?; \
-	done
+ci-fixtures-full: ci-fixtures-refresh ## Refresh artifacts, then run the pass and fail CI fixture suites together
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	cd ansible && ansible-playbook playbooks/ci-fixtures.yml --extra-vars '{"ci_fixtures_suites":["pass","fail"]}'
 
 guest-rootfs: ## Build Alpine guest rootfs on the server
 	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }

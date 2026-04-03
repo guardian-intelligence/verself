@@ -98,7 +98,7 @@ make ci-fixtures-pass
 - `make ci-fixtures-pass`: run the positive CI fixture suite against the current host
 - `make ci-fixtures-fail`: run the negative CI fixture suite against the current host
 - `make ci-fixtures-refresh`: rebuild and restage guest artifacts without a full redeploy
-- `make ci-fixtures-full`: refresh guest artifacts, then run the configured CI fixture target set
+- `make ci-fixtures-full`: refresh guest artifacts, then run the pass and fail fixture suites in one bounded-parallel rehearsal
 
 For live operator access patterns, including ClickHouse queries over SSH, see [docs/architecture/operator-workflows.md](docs/architecture/operator-workflows.md).
 

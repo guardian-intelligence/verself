@@ -1,9 +1,11 @@
 package ci
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestLoadFixtures_FixtureMatrix(t *testing.T) {
@@ -105,5 +107,29 @@ func TestAssertFixtureExecOutcome(t *testing.T) {
 	}
 	if err := assertFixtureExecOutcome(metadata, outcome); err != nil {
 		t.Fatalf("assertFixtureExecOutcome: %v", err)
+	}
+}
+
+func TestResolveFixtureParallelismCapsRequestedValue(t *testing.T) {
+	got := resolveFixtureParallelism(8, 5)
+	if got != 5 {
+		t.Fatalf("resolveFixtureParallelism: got %d want 5", got)
+	}
+}
+
+func TestParallelMapOrderedPreservesInputOrder(t *testing.T) {
+	input := []int{1, 2, 3, 4}
+
+	got, err := parallelMapOrdered(context.Background(), 4, input, func(ctx context.Context, idx int, value int) (int, error) {
+		time.Sleep(time.Duration(len(input)-value) * 5 * time.Millisecond)
+		return value * 10, nil
+	})
+	if err != nil {
+		t.Fatalf("parallelMapOrdered: %v", err)
+	}
+
+	want := []int{10, 20, 30, 40}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parallelMapOrdered: got %v want %v", got, want)
 	}
 }
