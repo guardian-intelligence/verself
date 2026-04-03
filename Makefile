@@ -2,7 +2,7 @@
        hooks-install \
        doctor setup-dev setup-sops edit-secrets setup-domain \
        server-profile provision deprovision deploy deploy-dashboards \
-       ci-fixtures-refresh ci-fixtures-pass ci-fixtures-full \
+       ci-fixtures-refresh ci-fixtures-run ci-fixtures-pass ci-fixtures-fail ci-fixtures-full \
        guest-rootfs deploy-ci-artifacts smelter-build smelter-dev
 
 BINARY   := forge-metal
@@ -100,13 +100,20 @@ ci-fixtures-refresh: ## Rebuild and stage CI guest artifacts on the existing hos
 	$(MAKE) guest-rootfs
 	$(MAKE) deploy-ci-artifacts
 
-ci-fixtures-pass: ## Run the positive CI fixture suite against the existing host
-	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
-	cd ansible && ansible-playbook playbooks/ci-fixtures.yml \
-		-e nix_server_profile_path=$(NIX_PROFILE) \
-		-e '{"ci_fixtures_suites":["pass"]}'
+CI_FIXTURES_PLAYBOOK ?= playbooks/ci-fixtures.yml
+CI_FIXTURE_FULL_TARGETS ?= ci-fixtures-pass
 
-CI_FIXTURE_FULL_TARGETS := ci-fixtures-pass
+ci-fixtures-run: ## Run the selected CI fixture playbook against the existing host
+	@test -f $(INVENTORY) || { echo "ERROR: $(INVENTORY) not found — run 'make provision' first"; exit 1; }
+	cd ansible && ansible-playbook $(CI_FIXTURES_PLAYBOOK)
+
+ci-fixtures-pass: CI_FIXTURES_PLAYBOOK := playbooks/ci-fixtures-pass.yml
+ci-fixtures-pass: ## Run the positive CI fixture suite against the existing host
+	$(MAKE) ci-fixtures-run CI_FIXTURES_PLAYBOOK=$(CI_FIXTURES_PLAYBOOK)
+
+ci-fixtures-fail: CI_FIXTURES_PLAYBOOK := playbooks/ci-fixtures-fail.yml
+ci-fixtures-fail: ## Run the negative CI fixture suite against the existing host
+	$(MAKE) ci-fixtures-run CI_FIXTURES_PLAYBOOK=$(CI_FIXTURES_PLAYBOOK)
 
 ci-fixtures-full: ci-fixtures-refresh ## Refresh artifacts, then run all configured CI fixture suites
 	@for target in $(CI_FIXTURE_FULL_TARGETS); do \

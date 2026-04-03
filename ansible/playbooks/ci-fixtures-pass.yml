@@ -1,0 +1,12 @@
+---
+# Run the positive CI fixture suite against the existing deployed host state.
+
+- name: Run positive CI fixture suite
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ci_fixtures_suites:
+      - pass
+  roles:
+    - ci_fixtures

@@ -1,6 +1,69 @@
 ---
 # Stage controlled fixture suites on the worker and verify expected CI outcomes.
 
+- name: Resolve Forgejo admin credentials from password lookup
+  ansible.builtin.set_fact:
+    ci_fixtures_forgejo_admin_user: >-
+      {{ forgejo_admin_user | default(
+           'forge-admin-' ~ lookup('password', credentials_dir ~ '/forgejo_admin_user_slug length=4 chars=ascii_lowercase,digits'),
+           true
+         ) }}
+    ci_fixtures_forgejo_admin_email: >-
+      {{ forgejo_admin_email | default(
+           'admin+' ~ lookup('password', credentials_dir ~ '/forgejo_admin_email_slug length=6 chars=ascii_lowercase,digits') ~ '@forge-metal.local',
+           true
+         ) }}
+    ci_fixtures_forgejo_admin_password: >-
+      {{ forgejo_admin_password | default(
+           lookup('password', credentials_dir ~ '/forgejo_admin_password length=24 chars=ascii_letters,digits') ~ '#@F1',
+           true
+         ) }}
+  no_log: true
+
+- name: Verify forge-metal CLI is present on the worker
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/forge-metal"
+  register: ci_fixtures_forge_metal_cli
+
+- name: Fail when forge-metal CLI is missing
+  ansible.builtin.fail:
+    msg: >-
+      forge-metal CLI not found at {{ fm_bin }}/forge-metal.
+      Run: make deploy
+  when: not ci_fixtures_forge_metal_cli.stat.exists
+
+- name: Verify staged CI artifacts are present
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ firecracker_kernel_path }}"
+    - "{{ firecracker_rootfs_path }}"
+    - "{{ firecracker_guest_artifact_manifest_path }}"
+  register: ci_fixtures_required_paths
+
+- name: Collect missing CI artifact paths
+  ansible.builtin.set_fact:
+    ci_fixtures_missing_required_paths: >-
+      {{
+        ci_fixtures_required_paths.results
+        | rejectattr('stat.exists')
+        | map(attribute='stat.path')
+        | list
+      }}
+
+- name: Fail when staged CI artifacts are missing
+  ansible.builtin.fail:
+    msg: >-
+      CI fixture prerequisites are missing on the worker: {{ ci_fixtures_missing_required_paths | join(', ') }}.
+      Run: make ci-fixtures-refresh
+  when: ci_fixtures_missing_required_paths | length > 0
+
+- name: Wait for Forgejo to be reachable
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ forgejo_port }}"
+    timeout: 30
+
 - name: Reset fixture staging directory
   ansible.builtin.file:
     path: /opt/forge-metal/test-fixtures
@@ -32,10 +95,10 @@
 
 - name: Create API token for fixture seeding
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/users/{{ forgejo_admin_user }}/tokens"
+    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/users/{{ ci_fixtures_forgejo_admin_user }}/tokens"
     method: POST
-    user: "{{ forgejo_admin_user }}"
-    password: "{{ forgejo_admin_password }}"
+    user: "{{ ci_fixtures_forgejo_admin_user }}"
+    password: "{{ ci_fixtures_forgejo_admin_password }}"
     force_basic_auth: true
     body_format: json
     body:
@@ -63,9 +126,9 @@
       'run',
       '--fixtures-root', '/opt/forge-metal/test-fixtures',
       '--forgejo-url', 'http://127.0.0.1:' ~ (forgejo_port | string),
-      '--owner', forgejo_admin_user,
-      '--username', forgejo_admin_user,
-      '--email', forgejo_admin_email,
+      '--owner', ci_fixtures_forgejo_admin_user,
+      '--username', ci_fixtures_forgejo_admin_user,
+      '--email', ci_fixtures_forgejo_admin_email,
       '--token', ci_fixtures_api_token.json.sha1
     ] + ci_fixtures_suite_args }}"
   become: true
