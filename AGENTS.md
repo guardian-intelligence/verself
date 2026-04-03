@@ -19,8 +19,10 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 
 - homestead-smelter is a guest agent + host Firecracker mVM agent written in Zig. The guest agent collects heartbeat health diagnostics and runs on each Firecracker VM, streaming data up continuously to the host agent, which then writes data to a socket for consumers.
 - Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
+- Auth: Zitadel
+- Payments: Stripe + TigerBeetle + PostgreSQL
 
-## CI Architecture (Target)
+## CI Architecture
 
 The optimization stack is, at a high level:
 
