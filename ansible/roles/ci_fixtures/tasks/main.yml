@@ -18,6 +18,8 @@
            lookup('password', credentials_dir ~ '/forgejo_admin_password length=24 chars=ascii_letters,digits') ~ '#@F1',
            true
          ) }}
+    ci_fixtures_clickhouse_password: >-
+      {{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}
   no_log: true
 
 - name: Verify forge-metal CLI is present on the worker
@@ -36,9 +38,9 @@
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
-    - "{{ firecracker_kernel_path }}"
-    - "{{ firecracker_rootfs_path }}"
-    - "{{ firecracker_guest_artifact_manifest_path }}"
+    - "{{ firecracker_kernel_path | default('/var/lib/ci/vmlinux') }}"
+    - "{{ firecracker_rootfs_path | default('/var/lib/ci/rootfs.ext4') }}"
+    - "{{ firecracker_guest_artifact_manifest_path | default('/var/lib/ci/guest-artifacts.json') }}"
   register: ci_fixtures_required_paths
 
 - name: Collect missing CI artifact paths
@@ -107,7 +109,11 @@
         - "all"
     status_code: [201]
   register: ci_fixtures_api_token
-  no_log: true
+  changed_when: true
+
+- name: Parse fixture seeding API token
+  ansible.builtin.set_fact:
+    ci_fixtures_api_token_sha1: "{{ ci_fixtures_api_token.json.sha1 }}"
 
 - name: Reset fixture suite CLI arguments
   ansible.builtin.set_fact:
@@ -128,11 +134,11 @@
       '--forgejo-url', 'http://127.0.0.1:' ~ (forgejo_port | string),
       '--owner', ci_fixtures_forgejo_admin_user,
       '--username', ci_fixtures_forgejo_admin_user,
-      '--email', ci_fixtures_forgejo_admin_email,
-      '--token', ci_fixtures_api_token.json.sha1
+      '--email', ci_fixtures_forgejo_admin_email
     ] + ci_fixtures_suite_args }}"
   become: true
   environment:
+    FORGE_METAL_CLICKHOUSE_PASSWORD: "{{ ci_fixtures_clickhouse_password }}"
+    FORGE_METAL_FIXTURES_TOKEN: "{{ ci_fixtures_api_token_sha1 }}"
     PATH: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   changed_when: true
-  no_log: true
