@@ -28,6 +28,15 @@
   register: base_ssh_gssapi_update
   failed_when: false
 
+- name: Harden sshd configuration
+  ansible.builtin.template:
+    src: sshd-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/50-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sshd
+
 - name: Allow bench-ci to execute forge-metal CI runs as root
   ansible.builtin.copy:
     content: |
