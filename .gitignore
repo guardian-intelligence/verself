@@ -58,3 +58,5 @@ ci/output/sbom.txt
 *.log
 
 .claude/scheduled_tasks.lock
+
+__pycache__
