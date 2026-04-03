@@ -99,7 +99,14 @@ func unmountDataset(ctx context.Context, mountDir string) error {
 	cmd := exec.CommandContext(ctx, "umount", mountDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("umount %s: %s: %w", mountDir, strings.TrimSpace(string(out)), err)
+		// Fallback: lazy unmount detaches immediately even if busy.
+		// Without this, a busy mount leaks permanently because nothing
+		// in the system retries or reaps it.
+		lazyCmd := exec.CommandContext(ctx, "umount", "-l", mountDir)
+		if lazyOut, lazyErr := lazyCmd.CombinedOutput(); lazyErr != nil {
+			return fmt.Errorf("umount %s: %s (lazy fallback: %s: %w)", mountDir,
+				strings.TrimSpace(string(out)), strings.TrimSpace(string(lazyOut)), lazyErr)
+		}
 	}
 	return os.RemoveAll(mountDir)
 }

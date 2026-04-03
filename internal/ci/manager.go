@@ -123,13 +123,23 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	cloneDuration = time.Since(cloneStart)
 	logger.Info("repo golden clone created", "clone_ms", cloneDuration.Milliseconds(), "base_snapshot", m.baseGoldenSnapshot(), "previous_dataset", previousDataset)
 
+	// Track mount state so the cleanup defer can unmount before destroying.
+	// ZFS destroy -f only force-unmounts ZFS-native mounts, not ext4-over-zvol
+	// VFS mounts, so we must unmount explicitly or the dataset leaks.
 	cleanupTargetDataset := true
+	var cleanupMountDir string
 	defer func() {
 		if !cleanupTargetDataset {
 			return
 		}
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), zfsTimeout)
 		defer cleanupCancel()
+		if cleanupMountDir != "" {
+			if umountErr := unmountDataset(cleanupCtx, cleanupMountDir); umountErr != nil {
+				logger.Warn("cleanup unmount failed", "mount", cleanupMountDir, "err", umountErr)
+			}
+			cleanupMountDir = ""
+		}
 		cleanupStart := time.Now()
 		if destroyErr := destroyDatasetRecursive(cleanupCtx, targetDataset); destroyErr != nil {
 			logger.Warn("failed to destroy warm target dataset", "err", destroyErr)
@@ -142,39 +152,33 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	if err != nil {
 		return err
 	}
+	cleanupMountDir = mountDir
 
 	workspace := filepath.Join(mountDir, "workspace")
 	if err := os.RemoveAll(workspace); err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return fmt.Errorf("clear workspace: %w", err)
 	}
 	if err := runGit("", nil, "clone", "--depth", "1", "--branch", req.DefaultBranch, req.RepoURL, workspace); err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 
 	manifest, err = LoadManifest(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 	toolchain, err = DetectToolchain(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 	jobEnv, err := buildJobEnv(manifest)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 	if err := writeLockfileHash(workspace, toolchain); err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 	commitSHA, err = gitHeadSHA(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
 		return err
 	}
 
@@ -182,6 +186,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	if err := unmountDataset(ctx, mountDir); err != nil {
 		return err
 	}
+	cleanupMountDir = ""
 
 	orch := firecracker.New(m.firecrackerConfig, m.logger)
 	startedAt = time.Now().UTC()
@@ -281,40 +286,48 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		return nil, err
 	}
 
+	// Unmount-then-destroy cleanup; same pattern as Warm().
+	execMounted := true
+	execCleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
+		defer cancel()
+		if execMounted {
+			if umountErr := unmountDataset(cleanupCtx, mountDir); umountErr != nil {
+				m.logger.Warn("exec cleanup unmount failed", "mount", mountDir, "err", umountErr)
+			}
+			execMounted = false
+		}
+		_ = destroyDatasetRecursive(cleanupCtx, jobDataset)
+	}
+
 	workspace := filepath.Join(mountDir, "workspace")
 	if err := fetchRef(workspace, req.Ref); err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 	manifest, err := LoadManifest(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 	toolchain, err := DetectToolchain(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 	jobEnv, err := buildJobEnv(manifest)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 	commitSHA, err := gitHeadSHA(workspace)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 	installNeeded, err := lockfileChanged(workspace, toolchain)
 	if err != nil {
-		_ = unmountDataset(context.Background(), mountDir)
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+		execCleanup()
 		return nil, err
 	}
 
@@ -323,6 +336,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*firecracker.JobRe
 		_ = destroyDatasetRecursive(context.Background(), jobDataset)
 		return nil, err
 	}
+	execMounted = false
 
 	orch := firecracker.New(m.firecrackerConfig, m.logger)
 	startedAt := time.Now().UTC()
