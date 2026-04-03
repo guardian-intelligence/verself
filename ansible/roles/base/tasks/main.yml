@@ -19,6 +19,27 @@
     home: /var/lib/bench-ci
     create_home: true
 
+- name: Resolve forge-metal ClickHouse password
+  ansible.builtin.set_fact:
+    base_clickhouse_password: "{{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: Create forge-metal system config directory
+  ansible.builtin.file:
+    path: /etc/forge-metal
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy forge-metal system config
+  ansible.builtin.template:
+    src: forge-metal-config.toml.j2
+    dest: /etc/forge-metal/config.toml
+    owner: root
+    group: root
+    mode: "0600"
+
 - name: Disable unsupported GSSAPIAuthentication in ssh_config
   ansible.builtin.lineinfile:
     path: /etc/ssh/ssh_config
