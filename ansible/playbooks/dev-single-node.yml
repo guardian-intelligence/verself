@@ -99,6 +99,7 @@
   roles:
     - nix_deploy
     - base
+    - nftables
     - cloudflare_dns
     - clickhouse
     - otelcol

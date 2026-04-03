@@ -1,0 +1,42 @@
+#!/usr/sbin/nft -f
+# Host firewall: default-deny ingress with allowlisted services.
+# Managed by Ansible — do not edit manually.
+
+table inet forge_metal_host
+delete table inet forge_metal_host
+
+table inet forge_metal_host {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # Existing connections (fast-path, matches ~95% of packets)
+        ct state established,related accept
+        ct state invalid drop
+
+        # Trusted interfaces: loopback, WireGuard mesh
+{% for iface in nftables_trusted_interfaces %}
+        iifname "{{ iface }}" accept
+{% endfor %}
+
+        # ICMP / ICMPv6 (ping, PMTUD, neighbor discovery)
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+
+{% if nftables_public_tcp_ports | length > 0 %}
+        # Public TCP services (Caddy HTTP/HTTPS, Forgejo SSH)
+        tcp dport { {{ nftables_public_tcp_ports | join(', ') }} } accept
+{% endif %}
+
+{% if nftables_public_udp_ports | length > 0 %}
+        # Public UDP services (WireGuard)
+        udp dport { {{ nftables_public_udp_ports | join(', ') }} } accept
+{% endif %}
+
+{% if nftables_ssh_public %}
+        # SSH from public internet (per-source-IP rate limit)
+        tcp dport 22 ct state new meter ssh_rate { ip saddr limit rate {{ nftables_ssh_rate }} burst {{ nftables_ssh_burst }} packets } accept
+{% endif %}
+
+        # Everything else hits policy drop.
+    }
+}

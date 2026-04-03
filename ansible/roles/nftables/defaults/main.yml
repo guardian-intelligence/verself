@@ -1,0 +1,23 @@
+---
+# Public-facing TCP ports (accessible from the internet).
+nftables_public_tcp_ports:
+  - 80
+  - 443
+  - "{{ forgejo_ssh_port | default(2222) }}"
+
+# Public-facing UDP ports.
+nftables_public_udp_ports:
+  - "{{ wireguard_port | default(51820) }}"
+
+# Interfaces where all inbound traffic is accepted without port filtering.
+nftables_trusted_interfaces:
+  - lo
+  - "{{ wireguard_interface | default('wg0') }}"
+
+# Allow SSH (port 22) from the public internet with per-source-IP rate limiting.
+# Set to false to restrict SSH to trusted interfaces only (WireGuard).
+nftables_ssh_public: true
+
+# Per-source-IP new-connection rate limit for public SSH.
+nftables_ssh_rate: "3/minute"
+nftables_ssh_burst: 5
