@@ -1,0 +1,9 @@
+---
+# Sync HyperDX sources and dashboards without a full platform redeploy.
+
+- name: Sync HyperDX dashboards
+  hosts: infra
+  become: true
+  gather_facts: true
+  roles:
+    - hyperdx_dashboards

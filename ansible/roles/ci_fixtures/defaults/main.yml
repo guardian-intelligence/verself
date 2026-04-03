@@ -1,2 +1,5 @@
 ---
 # ci_fixtures role defaults.
+
+ci_fixtures_suites:
+  - pass

@@ -124,8 +124,8 @@ func TestUniquePRBranch_IsRepoScopedAndStable(t *testing.T) {
 }
 
 func TestFixtureWorkflow_IncludesRunID(t *testing.T) {
-	workflow := fixtureWorkflow("http://127.0.0.1:3000", "fixtures-e2e-20260401")
-	if !strings.Contains(workflow, "--run-id 'fixtures-e2e-20260401'") {
+	workflow := fixtureWorkflow("http://127.0.0.1:3000", "fixtures-pass-20260401")
+	if !strings.Contains(workflow, "--run-id 'fixtures-pass-20260401'") {
 		t.Fatalf("workflow missing run-id flag: %q", workflow)
 	}
 }

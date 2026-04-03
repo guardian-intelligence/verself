@@ -33,4 +33,40 @@ func TestLoadFixtures_FixtureMatrix(t *testing.T) {
 	if fixtures[0].Metadata.Description == "" {
 		t.Fatalf("fixture metadata description is empty")
 	}
+	if fixtures[0].Metadata.Suite != FixtureSuitePass {
+		t.Fatalf("fixture suite: got %q want %q", fixtures[0].Metadata.Suite, FixtureSuitePass)
+	}
+	if fixtures[0].Metadata.ExpectedResult != "success" {
+		t.Fatalf("fixture expected result: got %q want success", fixtures[0].Metadata.ExpectedResult)
+	}
+}
+
+func TestSelectFixturesBySuite(t *testing.T) {
+	fixtures := []Fixture{
+		{
+			Name: "pass-fixture",
+			Metadata: FixtureMetadata{
+				Suite:          FixtureSuitePass,
+				ExpectedResult: "success",
+			},
+		},
+		{
+			Name: "fail-fixture",
+			Metadata: FixtureMetadata{
+				Suite:          FixtureSuiteFail,
+				ExpectedResult: "failure",
+			},
+		},
+	}
+
+	selected, suites, err := selectFixturesBySuite(fixtures, []string{"pass"})
+	if err != nil {
+		t.Fatalf("selectFixturesBySuite: %v", err)
+	}
+	if !reflect.DeepEqual(suites, []string{"pass"}) {
+		t.Fatalf("suite names: got %v want [pass]", suites)
+	}
+	if len(selected) != 1 || selected[0].Name != "pass-fixture" {
+		t.Fatalf("selected fixtures: got %#v", selected)
+	}
 }

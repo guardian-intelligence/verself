@@ -15,15 +15,16 @@ import (
 func fixturesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fixtures",
-		Short: "Seed and verify controlled Next.js fixture repos in Forgejo",
+		Short: "Seed and verify controlled fixture suites in Forgejo",
 	}
-	cmd.AddCommand(fixturesE2ECmd())
+	cmd.AddCommand(fixturesRunCmd())
 	return cmd
 }
 
-func fixturesE2ECmd() *cobra.Command {
+func fixturesRunCmd() *cobra.Command {
 	var (
 		fixturesRoot    string
+		suites          []string
 		forgejoURL      string
 		owner           string
 		token           string
@@ -44,8 +45,8 @@ func fixturesE2ECmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "e2e",
-		Short: "Seed the fixture repos, warm their goldens, open PRs, and wait for CI success",
+		Use:   "run",
+		Short: "Seed fixture suites, warm their goldens, open PRs, and verify expected CI outcomes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if owner == "" {
 				return fmt.Errorf("owner is required")
@@ -82,8 +83,9 @@ func fixturesE2ECmd() *cobra.Command {
 				client = ci.NewForgejoTokenClient(forgejoURL, token)
 			}
 
-			return ci.RunFixturesE2E(ctx, logger, manager, client, ci.E2EOptions{
+			return ci.RunFixtureSuites(ctx, logger, manager, client, ci.FixtureRunOptions{
 				FixturesRoot: fixturesRoot,
+				Suites:       suites,
 				ForgejoURL:   forgejoURL,
 				Owner:        owner,
 				Token:        token,
@@ -94,6 +96,7 @@ func fixturesE2ECmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&fixturesRoot, "fixtures-root", "test/fixtures", "Local fixture repository root")
+	cmd.Flags().StringSliceVar(&suites, "suite", []string{"pass"}, "Fixture suite(s) to run")
 	cmd.Flags().StringVar(&forgejoURL, "forgejo-url", "http://127.0.0.1:3000", "Forgejo base URL")
 	cmd.Flags().StringVar(&owner, "owner", "", "Forgejo owner/user that should own the fixture repos")
 	cmd.Flags().StringVar(&token, "token", "", "Forgejo API token")

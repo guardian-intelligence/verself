@@ -14,7 +14,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			Repo: "forge-admin-usj5/next-bun-monorepo",
 			Ref:  "refs/pull/82/head",
 		},
-		RunID: "fixtures-e2e-20260401-063752",
+		RunID: "fixtures-pass-20260401-063752",
 		Manifest: &Manifest{
 			Version:  1,
 			WorkDir:  ".",
@@ -113,10 +113,10 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 			Repo:          "forge-admin-usj5/next-bun-monorepo",
 			RepoURL:       "http://127.0.0.1:3000/forge-admin-usj5/next-bun-monorepo.git",
 			DefaultBranch: "main",
-			RunID:         "fixtures-e2e-20260401-072318",
+			RunID:         "fixtures-pass-20260401-072318",
 		},
-		RunID:           "fixtures-e2e-20260401-072318-warm",
-		ParentRunID:     "fixtures-e2e-20260401-072318",
+		RunID:           "fixtures-pass-20260401-072318-warm",
+		ParentRunID:     "fixtures-pass-20260401-072318",
 		Manifest:        &Manifest{Version: 1, WorkDir: ".", Profile: RuntimeProfileNode},
 		Toolchain:       &Toolchain{PackageManager: PackageManagerBun, PackageManagerVersion: "1.2.20", NodeVersion: "22.14.0"},
 		TargetDataset:   "benchpool/repo-goldens/next-bun-monorepo-1",
@@ -170,7 +170,7 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 	if payload["event_kind"] != "warm" {
 		t.Fatalf("event_kind: got %v", payload["event_kind"])
 	}
-	if payload["parent_run_id"] != "fixtures-e2e-20260401-072318" {
+	if payload["parent_run_id"] != "fixtures-pass-20260401-072318" {
 		t.Fatalf("parent_run_id: got %v", payload["parent_run_id"])
 	}
 	if payload["filesystem_check_ok"] != true {
@@ -191,8 +191,8 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 }
 
 func TestWarmRunIDs(t *testing.T) {
-	runID, parent := warmRunIDs("fixtures-e2e-20260401-072318")
-	if runID != "fixtures-e2e-20260401-072318-warm" || parent != "fixtures-e2e-20260401-072318" {
+	runID, parent := warmRunIDs("fixtures-pass-20260401-072318")
+	if runID != "fixtures-pass-20260401-072318-warm" || parent != "fixtures-pass-20260401-072318" {
 		t.Fatalf("warmRunIDs explicit: got run_id=%q parent=%q", runID, parent)
 	}
 	runID, parent = warmRunIDs("")
