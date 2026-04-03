@@ -8,20 +8,16 @@ Use `make deploy-dashboards` when the change is limited to HyperDX sources or da
 
 ## ClickHouse Access
 
-ClickHouse is not exposed for unauthenticated remote access. Query it over SSH on the worker and use the controller-side password from `ansible/.credentials/clickhouse_password`.
+ClickHouse is not exposed for unauthenticated remote access. Use the repo wrapper so you do not have to manually prefix SSH, the password file, or the stable worker client path each time.
 
-The stable client path on the worker is `/opt/forge-metal/profile/bin/clickhouse-client`. Do not rely on `clickhouse-client` being on the default SSH `PATH`, and do not hardcode a `/nix/store/...` path.
+The wrapper resolves the worker from `ansible/inventory/hosts.ini`, reads the controller-side password from `ansible/.credentials/clickhouse_password`, and invokes `/opt/forge-metal/profile/bin/clickhouse-client` on the worker. Do not hardcode a `/nix/store/...` path.
 
-Use this pattern from the repo root:
+Use it from the repo root:
 
 ```bash
-CLICKHOUSE_PASSWORD=$(cat ansible/.credentials/clickhouse_password)
-ssh ubuntu@64.34.84.75 \
-  "sudo /opt/forge-metal/profile/bin/clickhouse-client \
-    --user default \
-    --password '$CLICKHOUSE_PASSWORD' \
-    --database forge_metal \
-    --query 'SHOW TABLES'"
+make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
+make clickhouse-shell
+./scripts/clickhouse.sh --database forge_metal --query 'SHOW TABLES'
 ```
 
 The current database layout is:
