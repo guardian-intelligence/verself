@@ -1,0 +1,11 @@
+---
+- name: Reload systemd
+  listen: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart TigerBeetle
+  listen: restart tigerbeetle
+  ansible.builtin.systemd:
+    name: tigerbeetle
+    state: restarted

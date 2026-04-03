@@ -1,0 +1,7 @@
+---
+# TigerBeetle defaults.
+tigerbeetle_data_dir: /var/lib/tigerbeetle
+tigerbeetle_data_file: /var/lib/tigerbeetle/data.tigerbeetle
+tigerbeetle_cluster_id: 0
+tigerbeetle_replica_id: 0
+tigerbeetle_replica_count: 1

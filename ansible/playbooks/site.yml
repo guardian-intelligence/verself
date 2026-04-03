@@ -121,6 +121,7 @@
     - wireguard
     - cloudflare_dns
     - clickhouse
+    - tigerbeetle
     - otelcol
     - hyperdx
     - hyperdx_dashboards

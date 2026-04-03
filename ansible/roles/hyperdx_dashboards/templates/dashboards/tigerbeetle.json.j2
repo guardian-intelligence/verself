@@ -1,0 +1,39 @@
+{
+  "name": "TigerBeetle",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "TigerBeetle Memory (RSS)",
+      "x": 0, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, formatReadableSize(avg(Value)) as label, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'tigerbeetle' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "TigerBeetle CPU (cores)",
+      "x": 6, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT ts as __hdx_time_bucket, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts, ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'tigerbeetle' GROUP BY ts, pid, state) GROUP BY ts ORDER BY ts",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "TigerBeetle StatsD Metrics (all tb.*)",
+      "x": 0, "y": 9, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT MetricName, count() as samples, round(avg(Value), 2) as avg_value, round(max(Value), 2) as max_value FROM default.otel_metrics_gauge WHERE $__timeFilter_ms(TimeUnix) AND MetricName LIKE 'tb.%' GROUP BY MetricName ORDER BY MetricName"
+      }
+    }
+  ]
+}
