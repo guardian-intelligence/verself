@@ -38,47 +38,126 @@
     hyperdx_dashboards_connection_id: "{{ hyperdx_dashboards_sources_result.json.data[0].connection }}"
 
 # --------------------------------------------------------------------------- #
-# Metric source (created via MongoDB — the v2 sources API is read-only)        #
+# OTel Metrics source reconciliation                                          #
 # --------------------------------------------------------------------------- #
 
-- name: Index existing sources by name
+- name: Build source index by name
   ansible.builtin.set_fact:
-    hyperdx_dashboards_source_names: "{{ hyperdx_dashboards_sources_result.json.data | map(attribute='name') | list }}"
+    hyperdx_dashboards_sources_by_name: >-
+      {{
+        hyperdx_dashboards_sources_result.json.data
+        | items2dict(key_name='name', value_name='id')
+      }}
 
 - name: Get team ID
   ansible.builtin.command: >
     mongosh --quiet --eval "db.teams.findOne({}, {_id: 1})._id.toString()" hyperdx
   register: hyperdx_dashboards_team_id_result
   changed_when: false
-  when: "'OTel Metrics' not in hyperdx_dashboards_source_names"
 
-- name: Create OTel Metrics source
+- name: Reconcile OTel Metrics source metadata
   ansible.builtin.command:
     argv:
       - mongosh
       - --quiet
       - --eval
       - >-
-          db.sources.insertOne({
-            name: "OTel Metrics",
-            kind: "metric",
-            team: ObjectId("{{ hyperdx_dashboards_team_id_result.stdout | trim | regex_replace("^'|'$", '') }}"),
-            connection: ObjectId("{{ hyperdx_dashboards_connection_id }}"),
-            from: { databaseName: "default", tableName: "" },
-            metricTables: {
-              gauge: "otel_metrics_gauge",
-              sum: "otel_metrics_sum",
-              histogram: "otel_metrics_histogram"
-            },
-            timestampValueExpression: "TimeUnix",
-            resourceAttributesExpression: "ResourceAttributes",
-            createdAt: new Date(),
-            updatedAt: new Date()
-          })
+          const teamId = ObjectId("{{ hyperdx_dashboards_team_id_result.stdout | trim | regex_replace("^'|'$", '') }}");
+          const connectionId = ObjectId("{{ hyperdx_dashboards_connection_id }}");
+          const otelLogsSourceId = "{{ hyperdx_dashboards_sources_by_name.get('OTel Logs', '') }}";
+          const desiredFrom = { databaseName: "default", tableName: "otel_metrics_gauge" };
+          const desiredMetricTables = {
+            gauge: "otel_metrics_gauge",
+            sum: "otel_metrics_sum",
+            histogram: "otel_metrics_histogram"
+          };
+          const existing = db.sources.find({ name: "OTel Metrics" }).sort({ createdAt: 1, _id: 1 }).toArray();
+          let changed = false;
+          let keepId;
+
+          if (existing.length === 0) {
+            keepId = db.sources.insertOne({
+              name: "OTel Metrics",
+              kind: "metric",
+              team: teamId,
+              connection: connectionId,
+              from: desiredFrom,
+              metricTables: desiredMetricTables,
+              timestampValueExpression: "TimeUnix",
+              resourceAttributesExpression: "ResourceAttributes",
+              logSourceId: otelLogsSourceId,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }).insertedId;
+            changed = true;
+          } else {
+            const canonical = existing.find((source) =>
+              source.from
+              && source.from.databaseName === desiredFrom.databaseName
+              && source.from.tableName === desiredFrom.tableName
+            ) || existing[0];
+            keepId = canonical._id;
+
+            const update = {
+              name: "OTel Metrics",
+              kind: "metric",
+              team: teamId,
+              connection: connectionId,
+              from: desiredFrom,
+              metricTables: desiredMetricTables,
+              timestampValueExpression: "TimeUnix",
+              resourceAttributesExpression: "ResourceAttributes",
+              updatedAt: new Date()
+            };
+            if (otelLogsSourceId !== "") {
+              update.logSourceId = otelLogsSourceId;
+            }
+
+            db.sources.updateOne({ _id: keepId }, { $set: update });
+            const duplicates = existing
+              .filter((source) => source._id.toString() !== keepId.toString())
+              .map((source) => source._id);
+            if (duplicates.length > 0) {
+              db.sources.deleteMany({ _id: { $in: duplicates } });
+            }
+
+            const metricTables = canonical.metricTables || {};
+            const metricTablesMatch =
+              metricTables.gauge === desiredMetricTables.gauge
+              && metricTables.sum === desiredMetricTables.sum
+              && metricTables.histogram === desiredMetricTables.histogram;
+            const connectionMatches =
+              canonical.connection && canonical.connection.toString() === connectionId.toString();
+            const teamMatches =
+              canonical.team && canonical.team.toString() === teamId.toString();
+            const logSourceMatches =
+              otelLogsSourceId === "" || canonical.logSourceId === otelLogsSourceId;
+
+            if (
+              canonical.kind !== "metric"
+              || !canonical.from
+              || canonical.from.databaseName !== desiredFrom.databaseName
+              || canonical.from.tableName !== desiredFrom.tableName
+              || canonical.timestampValueExpression !== "TimeUnix"
+              || canonical.resourceAttributesExpression !== "ResourceAttributes"
+              || !connectionMatches
+              || !teamMatches
+              || !metricTablesMatch
+              || !logSourceMatches
+              || duplicates.length > 0
+            ) {
+              changed = true;
+            }
+          }
+
+          print(JSON.stringify({ changed, keepId: keepId.toString() }));
       - hyperdx
-  when: "'OTel Metrics' not in hyperdx_dashboards_source_names"
-  register: hyperdx_dashboards_metric_source_created
-  changed_when: true
+  register: hyperdx_dashboards_metric_source_reconcile
+  changed_when: >-
+    (
+      hyperdx_dashboards_metric_source_reconcile.stdout
+      | from_json
+    ).changed | bool
 
 - name: Refresh sources
   ansible.builtin.uri:

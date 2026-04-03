@@ -121,7 +121,7 @@ make deploy  # idempotent, no wipe — this is the normal workflow
 
 This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
 
-> **`make ci-fixtures-pass` runs the lightweight positive fixture suite against the current host state.** Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
+> **`make ci-fixtures-pass` runs the lightweight positive fixture suite against the current host state.** `make ci-fixtures-fail` is scaffolded on the same runner-only path and becomes useful once fail fixtures exist. Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
 
 ### 4. Log in
 
@@ -132,6 +132,32 @@ printf '%s#@F1\n' "$(cat ansible/.credentials/hyperdx_admin_password)"
 ```
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
+
+### 5. Query ClickHouse
+
+The ClickHouse password is stored on the controller in `ansible/.credentials/clickhouse_password`. The stable client path on the worker is `/opt/forge-metal/profile/bin/clickhouse-client`; do not assume `clickhouse-client` is on the default SSH `PATH`, and do not hardcode a `/nix/store/...` path.
+
+```bash
+CLICKHOUSE_PASSWORD=$(cat ansible/.credentials/clickhouse_password)
+ssh ubuntu@64.34.84.75 \
+  "sudo /opt/forge-metal/profile/bin/clickhouse-client \
+    --user default \
+    --password '$CLICKHOUSE_PASSWORD' \
+    --database forge_metal \
+    --query 'SHOW TABLES'"
+```
+
+Current table locations:
+
+- `forge_metal.ci_events`
+- `forge_metal.smelter_rehearsals`
+- `default.otel_logs`
+- `default.otel_traces`
+- `default.otel_metrics_gauge`
+- `default.otel_metrics_sum`
+- `default.otel_metrics_histogram`
+
+The OTel tables live in `default`, not in an `otel` database.
 
 ### TLS with a real domain (Cloudflare)
 
@@ -220,7 +246,8 @@ Compression codecs per column type:
 | `make deploy-dashboards` | Sync HyperDX dashboards and sources without a full platform redeploy |
 | `make ci-fixtures-refresh` | Rebuild and stage CI guest artifacts on the existing host |
 | `make ci-fixtures-pass` | Run the positive CI fixture suite against the existing host |
-| `make ci-fixtures-full` | Refresh CI artifacts, then run the configured fixture suite set |
+| `make ci-fixtures-fail` | Run the scaffolded negative CI fixture suite once fail fixtures exist |
+| `make ci-fixtures-full` | Refresh CI artifacts, then run the configured fixture target set |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
@@ -281,7 +308,8 @@ PASS: host agent observed live guest telemetry
 | `make smelter-dev` | ~10s | Iterating on guest Zig code |
 | `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
 | `make ci-fixtures-pass` | ~3-5min | Re-run the positive fixture suite against the current host |
-| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the configured fixture suite set |
+| `make ci-fixtures-fail` | ~3-5min | Re-run the negative fixture suite once fail fixtures exist |
+| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the configured fixture target set |
 
 ## Project Structure
 

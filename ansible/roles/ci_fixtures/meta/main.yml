@@ -1,4 +1,2 @@
 ---
-# forgejo: Forgejo must be running with admin seeded before fixture seeding.
-dependencies:
-  - role: forgejo
+# ci_fixtures runs against the existing deployed host state.

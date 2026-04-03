@@ -1,14 +1,9 @@
 ---
-# Deploy the CI stack needed for fixture suites on the existing host and run
-# the selected suites.
+# Run the selected CI fixture suites against the existing deployed host state.
 
-- name: Deploy forge-metal and run CI fixture suites
+- name: Run selected CI fixture suites
   hosts: all
   become: true
+  gather_facts: false
   roles:
-    - nix_deploy
-    - base
-    - verdaccio
-    - forgejo
-    - firecracker
     - ci_fixtures

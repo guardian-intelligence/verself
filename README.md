@@ -94,8 +94,11 @@ make ci-fixtures-pass
 - `make hooks-install`: install the repo's git pre-commit hooks
 - `make deploy`: normal idempotent deploy path
 - `make ci-fixtures-pass`: run the positive CI fixture suite against the current host
+- `make ci-fixtures-fail`: run the scaffolded negative CI fixture suite against the current host once fail fixtures exist
 - `make ci-fixtures-refresh`: rebuild and restage guest artifacts without a full redeploy
-- `make ci-fixtures-full`: run the configured CI fixture suite set after refresh
+- `make ci-fixtures-full`: refresh guest artifacts, then run the configured CI fixture target set
+
+For live operator access patterns, including ClickHouse queries over SSH, see [docs/architecture/operator-workflows.md](docs/architecture/operator-workflows.md).
 
 
 --- A note on the future ---
