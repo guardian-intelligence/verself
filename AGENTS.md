@@ -243,7 +243,7 @@ Compression codecs per column type:
 | `make ci-fixtures-refresh` | Rebuild and stage CI guest artifacts on the existing host |
 | `make ci-fixtures-pass` | Run the positive CI fixture suite against the existing host |
 | `make ci-fixtures-fail` | Run the negative CI fixture suite against the existing host |
-| `make ci-fixtures-full` | Refresh CI artifacts, then run the configured fixture target set |
+| `make ci-fixtures-full` | Refresh CI artifacts, then run the pass and fail fixture suites together |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
 | `make guest-rootfs` | Build Alpine guest rootfs on the server |
@@ -305,7 +305,7 @@ PASS: host agent observed live guest telemetry
 | `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
 | `make ci-fixtures-pass` | ~3-5min | Re-run the positive fixture suite against the current host |
 | `make ci-fixtures-fail` | ~3-5min | Re-run the negative fixture suite against the current host |
-| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the configured fixture target set |
+| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the pass and fail fixture suites together |
 
 ## Project Structure
 

@@ -40,12 +40,12 @@ Use `make ci-fixtures-fail` for deterministic negative-path verification against
 
 Use `make ci-fixtures-refresh` when the guest kernel, rootfs, or staged CI artifacts changed. It rebuilds and restages the Firecracker guest artifacts without touching the rest of the platform.
 
-Use `make ci-fixtures-full` when you want the composed rehearsal: refresh guest artifacts first, then run the configured fixture target set from `CI_FIXTURE_FULL_TARGETS`. It now defaults to `ci-fixtures-pass ci-fixtures-fail`. The orchestration is suite-based so additional suites can be added without changing the operator entrypoints.
+Use `make ci-fixtures-full` when you want the composed rehearsal: refresh guest artifacts first, then run the pass and fail fixture suites in one bounded-parallel fixture run. The suite list is still driven by `ci_fixtures_suites` in the Ansible role, but the operator entrypoint no longer shells through the per-suite Make targets.
 
 ## Suite Model
 
-The current suite is `pass`. It contains the positive example repositories that are expected to complete with a successful Forgejo Actions result.
+`pass` contains the positive example repositories that are expected to complete with a successful Forgejo Actions result.
 
 `fail` is the negative-path suite name. The first fixture exercises a deterministic run-phase test failure and asserts the exact failure signature from exec telemetry.
 
-`full` is not a suite itself; it is the orchestration target that refreshes artifacts and then runs the configured target list.
+`full` is not a suite itself; it is the orchestration target that refreshes artifacts and then runs the pass and fail suites together.

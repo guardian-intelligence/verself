@@ -14,5 +14,10 @@ argument_specs:
           - pass
         description:
           - "Ordered list of fixture suites to run."
-          - "Current suites: pass. Future suites can be added without"
-          - "changing the orchestration surface."
+          - "Current suites: pass, fail."
+      ci_fixtures_parallelism:
+        type: int
+        default: 0
+        description:
+          - "Fixture preparation and verification parallelism."
+          - "Set to 0 to auto-size from the worker CPU count."

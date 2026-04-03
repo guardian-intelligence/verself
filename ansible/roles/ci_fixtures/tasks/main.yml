@@ -131,6 +131,7 @@
       'fixtures',
       'run',
       '--fixtures-root', '/opt/forge-metal/test-fixtures',
+      '--parallelism', (ci_fixtures_parallelism | int | string),
       '--forgejo-url', 'http://127.0.0.1:' ~ (forgejo_port | string),
       '--owner', ci_fixtures_forgejo_admin_user,
       '--username', ci_fixtures_forgejo_admin_user,

@@ -3,3 +3,4 @@
 
 ci_fixtures_suites:
   - pass
+ci_fixtures_parallelism: 0
