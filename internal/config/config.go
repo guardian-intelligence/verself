@@ -17,12 +17,21 @@ var defaultConfig []byte
 
 // Config is the top-level configuration for forge-metal.
 type Config struct {
-	ClickHouse ClickHouseConfig `toml:"clickhouse" json:"clickhouse"`
-	ZFS        ZFSConfig        `toml:"zfs" json:"zfs"`
-	WireGuard  WireGuardConfig  `toml:"wireguard" json:"wireguard"`
-	Latitude   LatitudeConfig   `toml:"latitude" json:"latitude"`
-	SSH        SSHConfig        `toml:"ssh" json:"ssh"`
-	Source     ConfigSource     `toml:"-" json:"-"`
+	ClickHouse  ClickHouseConfig  `toml:"clickhouse" json:"clickhouse"`
+	ZFS         ZFSConfig         `toml:"zfs" json:"zfs"`
+	WireGuard   WireGuardConfig   `toml:"wireguard" json:"wireguard"`
+	Latitude    LatitudeConfig    `toml:"latitude" json:"latitude"`
+	SSH         SSHConfig         `toml:"ssh" json:"ssh"`
+	SupplyChain SupplyChainConfig `toml:"supplychain" json:"supplychain"`
+	Source      ConfigSource      `toml:"-" json:"-"`
+}
+
+// SupplyChainConfig controls the Verdaccio mirror scan pipeline.
+type SupplyChainConfig struct {
+	MinReleaseAgeDays int               `toml:"min_release_age_days" json:"min_release_age_days"`
+	OSVDatabasePath   string            `toml:"osv_database_path" json:"osv_database_path"`
+	GuardDogExclude   []string          `toml:"guarddog_exclude_rules" json:"guarddog_exclude_rules"`
+	Allowlist         map[string]string `toml:"allowlist" json:"allowlist"`
 }
 
 // ValueSource records where a config value came from.

@@ -32,3 +32,8 @@ billing = "hourly"
 private_key_path = "~/.ssh/id_ed25519"
 public_key_path = "~/.ssh/id_ed25519.pub"
 user = "ubuntu"
+
+[supplychain]
+min_release_age_days = 3
+osv_database_path = "/var/lib/osv-scanner"
+guarddog_exclude_rules = ["npm-obfuscation"]

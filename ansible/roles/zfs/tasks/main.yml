@@ -47,3 +47,10 @@
   community.general.zfs:
     name: "{{ zfs_pool }}/{{ zfs_ci_dataset }}"
     state: present
+
+- name: Create Verdaccio storage dataset
+  community.general.zfs:
+    name: "{{ zfs_pool }}/{{ zfs_verdaccio_dataset }}"
+    state: present
+    extra_zfs_properties:
+      mountpoint: /var/lib/verdaccio/storage

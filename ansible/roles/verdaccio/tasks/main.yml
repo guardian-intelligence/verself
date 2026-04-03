@@ -17,7 +17,7 @@
     state: directory
     mode: "0755"
 
-- name: Create Verdaccio storage directory
+- name: Set Verdaccio storage ownership
   ansible.builtin.file:
     path: /var/lib/verdaccio/storage
     state: directory
@@ -72,6 +72,24 @@
   notify:
     - reload systemd
     - restart verdaccio
+
+- name: Install js-x-ray for supply chain scanning
+  ansible.builtin.command: >
+    {{ fm_bin }}/npm install --global
+    --prefix {{ verdaccio_install_prefix }}
+    @nodesecure/js-x-ray@latest
+    --registry https://registry.npmjs.org
+  args:
+    creates: "{{ verdaccio_install_prefix }}/lib/node_modules/@nodesecure/js-x-ray"
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
+    HOME: /root
+
+- name: Create OSV-Scanner database directory
+  ansible.builtin.file:
+    path: /var/lib/osv-scanner
+    state: directory
+    mode: "0755"
 
 - name: Enable and start Verdaccio
   ansible.builtin.systemd:

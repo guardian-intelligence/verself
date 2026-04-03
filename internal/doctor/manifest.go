@@ -44,7 +44,7 @@ func loadManifestFrom(path string) ([]ToolSpec, error) {
 		"go", "zig", "tofu", "ansible", "ansible-lint", "pre-commit",
 		"protoc", "buf", "shellcheck", "jq", "sops", "age", "clickhouse",
 		"golangci-lint", "gofumpt", "protoc-gen-go", "protoc-gen-go-grpc",
-		"crun", "debootstrap",
+		"crun", "debootstrap", "guarddog", "osv-scanner",
 	}
 
 	var specs []ToolSpec
