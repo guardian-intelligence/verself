@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,7 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	ci "github.com/forge-metal/forge-metal/internal/ci"
+	"github.com/forge-metal/forge-metal/internal/config"
 	"github.com/forge-metal/forge-metal/internal/firecracker"
+	"github.com/forge-metal/forge-metal/internal/supplychain"
 )
 
 func ciCmd() *cobra.Command {
@@ -22,6 +25,7 @@ func ciCmd() *cobra.Command {
 	}
 	cmd.AddCommand(ciWarmCmd())
 	cmd.AddCommand(ciExecCmd())
+	cmd.AddCommand(ciScanRegistryCmd())
 	return cmd
 }
 
@@ -215,6 +219,62 @@ func handleSignals(cancel context.CancelFunc, logger *slog.Logger) {
 
 func forgejoRepoURL(baseURL, repo string) string {
 	return fmt.Sprintf("%s/%s.git", trimTrailingSlash(baseURL), repo)
+}
+
+func ciScanRegistryCmd() *cobra.Command {
+	var storagePath string
+
+	cmd := &cobra.Command{
+		Use:   "scan-registry",
+		Short: "Run supply chain scanners against Verdaccio mirror storage",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+			cfg, err := config.Load("")
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			gate := supplychain.NewGate(supplychain.GateConfig{
+				MinReleaseAgeDays: cfg.SupplyChain.MinReleaseAgeDays,
+				GuardDogExclude:   cfg.SupplyChain.GuardDogExclude,
+				OSVDatabasePath:   cfg.SupplyChain.OSVDatabasePath,
+				Allowlist:         cfg.SupplyChain.Allowlist,
+			})
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			defer cancel()
+			handleSignals(cancel, logger)
+
+			logger.Info("scanning Verdaccio mirror", "storage_path", storagePath)
+			result, err := gate.Run(ctx, storagePath)
+			if err != nil {
+				return fmt.Errorf("scan pipeline failed: %w", err)
+			}
+
+			// JSON output to stdout.
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(result); err != nil {
+				return err
+			}
+
+			logger.Info("scan complete",
+				"pass", result.Pass,
+				"tarballs", result.TarballsScanned,
+				"duration_ms", result.Duration.Milliseconds(),
+				"summary", result.Summary(),
+			)
+
+			if !result.Pass {
+				os.Exit(1)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&storagePath, "storage-path", "/var/lib/verdaccio/storage", "Verdaccio storage directory")
+	return cmd
 }
 
 func trimTrailingSlash(value string) string {

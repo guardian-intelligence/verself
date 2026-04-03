@@ -84,6 +84,15 @@ type CIEvent struct {
 	GuestKernelBytes           uint64 `ch:"guest_kernel_bytes"`
 	GuestPackageCount          uint32 `ch:"guest_package_count"`
 
+	// Supply chain scanning (event_kind = "supply-chain-scan")
+	SupplyChainScanNs    int64  `ch:"supply_chain_scan_ns"`
+	SupplyChainScanOK    uint8  `ch:"supply_chain_scan_ok"`
+	ScanAgeFindings      uint16 `ch:"scan_age_findings"`
+	ScanGuardDogFindings uint16 `ch:"scan_guarddog_findings"`
+	ScanJSXRayFindings   uint16 `ch:"scan_jsxray_findings"`
+	ScanOSVFindings      uint16 `ch:"scan_osv_findings"`
+	ScanTarballsCount    uint32 `ch:"scan_tarballs_count"`
+
 	// Cache effectiveness
 	NPMCacheHit     uint8 `ch:"npm_cache_hit"`
 	NextCacheHit    uint8 `ch:"next_cache_hit"`

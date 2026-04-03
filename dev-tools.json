@@ -141,5 +141,19 @@
     "version": "1.0.134",
     "strategy": "apt",
     "version_cmd": "debootstrap --version"
+  },
+  "guarddog": {
+    "version": "2.9.0",
+    "strategy": "pipx",
+    "pipx_package": "guarddog",
+    "version_cmd": "guarddog --version"
+  },
+  "osv-scanner": {
+    "version": "2.3.5",
+    "strategy": "binary",
+    "url": "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64",
+    "sha256": "bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
+    "install_path": "/usr/local/bin/osv-scanner",
+    "version_cmd": "osv-scanner --version"
   }
 }
