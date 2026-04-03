@@ -266,21 +266,18 @@
       {{ hyperdx_dashboards_rendered_tiles | selectattr('config.configType', 'defined') | list }}
 
 - name: Validate raw SQL tiles return data
-  ansible.builtin.command:
-    argv:
-      - "{{ fm_bin }}/clickhouse-client"
-      - --user
-      - default
-      - --password
-      - "{{ hyperdx_dashboards_clickhouse_password }}"
-      - --query
-      - >-
-          SELECT count() FROM (
-            {{ item.config.sqlTemplate
-               | regex_replace('\$__timeFilter_ms\((\w+)\)', '\1 >= now() - INTERVAL 5 MINUTE')
-               | regex_replace('\$__timeInterval\((\w+)\)', 'toStartOfInterval(\1, INTERVAL 1 minute)')
-            }}
-          )
+  ansible.builtin.shell: |
+    set -o pipefail
+    cat <<'EOF' | {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+    SELECT count() FROM (
+      {{ item.config.sqlTemplate
+         | regex_replace('\$__timeFilter_ms\((\w+)\)', '\1 >= now() - INTERVAL 5 MINUTE')
+         | regex_replace('\$__timeInterval\((\w+)\)', 'toStartOfInterval(\1, INTERVAL 1 minute)')
+      }}
+    )
+    EOF
+  args:
+    executable: /bin/bash
   loop: "{{ hyperdx_dashboards_sql_tiles }}"
   loop_control:
     label: "{{ item.name }}"
@@ -289,4 +286,5 @@
     hyperdx_dashboards_sql_validation.rc != 0
     or (hyperdx_dashboards_sql_validation.stdout | trim | int) == 0
   changed_when: false
-  no_log: true
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ hyperdx_dashboards_clickhouse_password }}"

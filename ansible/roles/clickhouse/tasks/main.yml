@@ -62,18 +62,28 @@
     daemon_reload: true
 
 - name: Wait for ClickHouse
-  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }} --query 'SELECT 1'"
+  ansible.builtin.shell: >
+    {{ fm_bin }}/clickhouse-client
+    --user default
+    --password "$CLICKHOUSE_PASSWORD"
+    --query 'SELECT 1'
   register: clickhouse_ready
   retries: 10
   delay: 3
   until: clickhouse_ready.rc == 0
   changed_when: false
-  no_log: true
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
 - name: Flush system logs (creates query_log table if query logging just enabled)
-  ansible.builtin.command: "{{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }} --query 'SYSTEM FLUSH LOGS'"
+  ansible.builtin.shell: >
+    {{ fm_bin }}/clickhouse-client
+    --user default
+    --password "$CLICKHOUSE_PASSWORD"
+    --query 'SYSTEM FLUSH LOGS'
   changed_when: false
-  no_log: true
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
 - name: Compute local migrations fingerprint
   delegate_to: localhost
@@ -105,15 +115,16 @@
         mode: "0644"
 
     - name: Create forge_metal database
-      ansible.builtin.command: >
-        {{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }}
+      ansible.builtin.shell: >
+        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
         --query 'CREATE DATABASE IF NOT EXISTS forge_metal'
       changed_when: false
-      no_log: true
+      environment:
+        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
     - name: Apply migration files
-      ansible.builtin.command: >
-        {{ fm_bin }}/clickhouse-client --user default --password {{ clickhouse_password }}
+      ansible.builtin.shell: >
+        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
         --database forge_metal --multiquery
         --queries-file /opt/forge-metal/migrations/{{ item }}
       loop: >-
@@ -125,7 +136,8 @@
       loop_control:
         label: "{{ item }}"
       changed_when: false
-      no_log: true
+      environment:
+        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
     - name: Record migrations fingerprint
       ansible.builtin.copy:
