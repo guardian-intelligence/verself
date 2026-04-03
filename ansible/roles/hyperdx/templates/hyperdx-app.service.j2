@@ -7,7 +7,7 @@ Type=simple
 User={{ ansible_user }}
 WorkingDirectory={{ hyperdx_install_dir }}/packages/app
 EnvironmentFile={{ hyperdx_env_file }}
-ExecStart={{ fm_bin }}/npx next start -p {{ hyperdx_app_port }}
+ExecStart={{ fm_bin }}/npx next start -p {{ services.hyperdx.app_port }}
 Restart=on-failure
 RestartSec=5
 Environment=PATH={{ fm_bin }}:/usr/bin:/bin

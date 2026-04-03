@@ -45,8 +45,8 @@
 
 - name: Wait for Forgejo to be ready
   ansible.builtin.wait_for:
-    port: "{{ forgejo_port }}"
-    host: 127.0.0.1
+    port: "{{ services.forgejo.port }}"
+    host: "{{ services.forgejo.host }}"
     timeout: 60
 
 - name: Include admin user seeding

@@ -39,7 +39,7 @@
 
 - name: Seed admin user via registration API
   ansible.builtin.uri:
-    url: "http://localhost:{{ hyperdx_app_port }}/api/register/password"
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.app_port }}/api/register/password"
     method: POST
     body_format: json
     body:

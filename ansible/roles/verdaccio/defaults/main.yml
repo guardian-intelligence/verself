@@ -1,3 +1,2 @@
 ---
 verdaccio_install_prefix: /opt/forge-metal/verdaccio
-verdaccio_port: 4873

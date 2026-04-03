@@ -220,8 +220,8 @@
 
 - name: Wait for HyperDX API to be ready
   ansible.builtin.wait_for:
-    port: "{{ hyperdx_api_port }}"
-    host: 127.0.0.1
+    port: "{{ services.hyperdx.api_port }}"
+    host: "{{ services.hyperdx.host }}"
     timeout: 60
 
 - name: Enable and start HyperDX App
@@ -233,8 +233,8 @@
 
 - name: Wait for HyperDX App to be ready
   ansible.builtin.wait_for:
-    port: "{{ hyperdx_app_port }}"
-    host: 127.0.0.1
+    port: "{{ services.hyperdx.app_port }}"
+    host: "{{ services.hyperdx.host }}"
     timeout: 60
 
 - name: Remove legacy ClickStack HyperDX install path

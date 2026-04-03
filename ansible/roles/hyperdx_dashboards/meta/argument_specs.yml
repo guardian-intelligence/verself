@@ -6,12 +6,8 @@ argument_specs:
       - "Uses the live HyperDX API plus MongoDB source metadata to create or"
       - "update the default infrastructure dashboards without rebuilding or"
       - "restarting the HyperDX application."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
-      hyperdx_dashboards_api_port:
-        type: int
-        default: 8000
-        description: "HyperDX API server port used for dashboard synchronization."
-
       fm_bin:
         type: path
         required: true

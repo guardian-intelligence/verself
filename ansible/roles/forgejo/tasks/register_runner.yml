@@ -85,7 +85,7 @@
           - register
           - --no-interactive
           - --instance
-          - "http://127.0.0.1:{{ forgejo_port }}"
+          - "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}"
           - --token
           - "{{ forgejo_runner_registration_token.stdout | trim }}"
           - --name

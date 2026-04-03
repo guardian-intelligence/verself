@@ -62,8 +62,8 @@
 
 - name: Wait for Forgejo to be reachable
   ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: "{{ forgejo_port }}"
+    host: "{{ services.forgejo.host }}"
+    port: "{{ services.forgejo.port }}"
     timeout: 30
 
 - name: Reset fixture staging directory
@@ -97,7 +97,7 @@
 
 - name: Create API token for fixture seeding
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ forgejo_port }}/api/v1/users/{{ ci_fixtures_forgejo_admin_user }}/tokens"
+    url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/users/{{ ci_fixtures_forgejo_admin_user }}/tokens"
     method: POST
     user: "{{ ci_fixtures_forgejo_admin_user }}"
     password: "{{ ci_fixtures_forgejo_admin_password }}"
@@ -132,7 +132,7 @@
       'run',
       '--fixtures-root', '/opt/forge-metal/test-fixtures',
       '--parallelism', (ci_fixtures_parallelism | int | string),
-      '--forgejo-url', 'http://127.0.0.1:' ~ (forgejo_port | string),
+      '--forgejo-url', 'http://' ~ services.forgejo.host ~ ':' ~ (services.forgejo.port | string),
       '--owner', ci_fixtures_forgejo_admin_user,
       '--username', ci_fixtures_forgejo_admin_user,
       '--email', ci_fixtures_forgejo_admin_email
