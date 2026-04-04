@@ -19,18 +19,6 @@
     - "{{ clickhouse_data_path }}"
     - /var/log/clickhouse-server
 
-- name: Deploy ClickHouse server config
-  ansible.builtin.template:
-    src: clickhouse-config.xml.j2
-    dest: /etc/clickhouse-server/config.d/forge-metal.xml
-    owner: root
-    group: clickhouse
-    mode: "0640"
-  notify: restart clickhouse
-
-- name: Apply ClickHouse config changes before proceeding
-  ansible.builtin.meta: flush_handlers
-
 - name: Deploy ClickHouse systemd unit
   ansible.builtin.copy:
     content: |
@@ -52,6 +40,18 @@
     mode: "0644"
   notify:
     - restart clickhouse
+
+- name: Deploy ClickHouse server config
+  ansible.builtin.template:
+    src: clickhouse-config.xml.j2
+    dest: /etc/clickhouse-server/config.d/forge-metal.xml
+    owner: root
+    group: clickhouse
+    mode: "0640"
+  notify: restart clickhouse
+
+- name: Apply ClickHouse config changes before proceeding
+  ansible.builtin.meta: flush_handlers
 
 - name: Enable and start ClickHouse
   ansible.builtin.systemd:

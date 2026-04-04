@@ -89,16 +89,16 @@
     path: /etc/credstore/zitadel
     state: directory
     owner: root
-    group: root
-    mode: "0700"
+    group: zitadel
+    mode: "0750"
 
 - name: Deploy Zitadel masterkey to credstore
   ansible.builtin.copy:
     content: "{{ zitadel_masterkey }}"
     dest: /etc/credstore/zitadel/masterkey
     owner: root
-    group: root
-    mode: "0600"
+    group: zitadel
+    mode: "0640"
   no_log: true
   notify:
     - restart zitadel
@@ -125,6 +125,41 @@
     owner: zitadel
     group: zitadel
     mode: "0600"
+
+# --- systemd unit ---
+# Deployed before init/setup so the restart handler has a valid target.
+
+- name: Deploy Zitadel systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Zitadel Identity Provider
+      After=network.target postgresql.service
+      Requires=postgresql.service
+
+      [Service]
+      Type=simple
+      User=zitadel
+      Group=zitadel
+      LoadCredential=masterkey:/etc/credstore/zitadel/masterkey
+      ExecStart={{ fm_bin }}/zitadel start \
+        --masterkeyFile %d/masterkey \
+        --config {{ zitadel_config_dir }}/config.yaml
+      Restart=always
+      RestartSec=5
+      LimitNOFILE=65536
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/zitadel.service
+    mode: "0644"
+  notify:
+    - restart zitadel
+
+- name: Remove legacy environment file (masterkey now read from file)
+  ansible.builtin.file:
+    path: "{{ zitadel_config_dir }}/env"
+    state: absent
 
 # --- First-run initialization ---
 # Zitadel has a three-phase lifecycle: init (create schemas), setup (run
@@ -225,40 +260,6 @@
   become: false
   no_log: true
   changed_when: true
-
-# --- systemd unit ---
-
-- name: Deploy Zitadel systemd unit
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=Zitadel Identity Provider
-      After=network.target postgresql.service
-      Requires=postgresql.service
-
-      [Service]
-      Type=simple
-      User=zitadel
-      Group=zitadel
-      LoadCredential=masterkey:/etc/credstore/zitadel/masterkey
-      ExecStart={{ fm_bin }}/zitadel start \
-        --masterkeyFile %d/masterkey \
-        --config {{ zitadel_config_dir }}/config.yaml
-      Restart=always
-      RestartSec=5
-      LimitNOFILE=65536
-
-      [Install]
-      WantedBy=multi-user.target
-    dest: /etc/systemd/system/zitadel.service
-    mode: "0644"
-  notify:
-    - restart zitadel
-
-- name: Remove legacy environment file (masterkey now read from file)
-  ansible.builtin.file:
-    path: "{{ zitadel_config_dir }}/env"
-    state: absent
 
 - name: Apply Zitadel unit changes before proceeding
   ansible.builtin.meta: flush_handlers
