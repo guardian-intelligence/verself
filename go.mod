@@ -5,8 +5,12 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/google/uuid v1.6.0
+	github.com/lib/pq v1.12.3
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/spf13/cobra v1.8.1
+	github.com/stripe/stripe-go/v85 v85.0.0
+	github.com/tigerbeetle/tigerbeetle-go v0.16.78
+	pgregory.net/rapid v1.2.0
 )
 
 require (
@@ -24,7 +28,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
+	golang.org/x/sys v0.42.0
+	golang.org/x/term v0.41.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

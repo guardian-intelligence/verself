@@ -343,11 +343,11 @@ PostgreSQL
 
 One PostgreSQL instance. Databases are isolated — no cross-database queries, no shared schemas. The tenant linkage between apps is the Zitadel organization ID stored as a column in each app's tables.
 
-Application state lives here. Financial state does not — that's TigerBeetle. The billing package's product catalog, subscription state, grant attribution, retry/DLQ state, and Stripe correlation live in PostgreSQL; aggregate balance enforcement lives in TigerBeetle.
+Application state lives here. Financial state does not — that's TigerBeetle. The billing package's product catalog, subscription state, immutable grant catalog, retry/DLQ state, and Stripe correlation live in PostgreSQL; per-grant balance enforcement lives in TigerBeetle.
 
 Billing package tables live in the existing `sandbox` database because that is the infrastructure truth today. The database name does not imply product scope. The billing package is shared across products even though the backing PostgreSQL database retains its historical name.
 
-Every billing mutation that reads or writes `credit_grants`, subscription status, or product eligibility for a single org acquires `pg_advisory_xact_lock(org_id::bigint)` inside the transaction before any reads. This is mandatory. The org IDs issued by Zitadel are decimal strings that fit in signed 63 bits, so the cast is lossless for forge-metal.
+Every active `credit_grants` row must have a corresponding open TigerBeetle grant account. PostgreSQL is the immutable grant catalog; TigerBeetle is the single source of financial truth for available, pending, and consumed balances. The org IDs issued by Zitadel are decimal strings that fit in signed 63 bits, so they still fit TigerBeetle `user_data_64` exactly.
 
 #### Sandbox database schema
 
@@ -421,30 +421,25 @@ CREATE UNIQUE INDEX idx_one_active_sub_per_product
     ON subscriptions (org_id, product_id)
     WHERE status IN ('active', 'past_due', 'trialing');
 
-CREATE TYPE grant_account AS ENUM ('free_tier', 'credit');
-
 CREATE TABLE credit_grants (
     grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
-    account_type        grant_account NOT NULL,
     amount              BIGINT NOT NULL CHECK (amount > 0),
-    consumed            BIGINT NOT NULL DEFAULT 0 CHECK (consumed >= 0),
-    expired             BIGINT NOT NULL DEFAULT 0 CHECK (expired >= 0),
-    remaining           BIGINT GENERATED ALWAYS AS (amount - consumed - expired) STORED,
     source              TEXT NOT NULL,      -- subscription, purchase, promo, refund, free_tier
     stripe_reference_id TEXT,
     subscription_id     BIGINT REFERENCES subscriptions(subscription_id),
     period_start        TIMESTAMPTZ,
     period_end          TIMESTAMPTZ,
     expires_at          TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_credit_grants_active
     ON credit_grants (org_id, product_id, expires_at)
-    WHERE remaining > 0;
+    WHERE closed_at IS NULL;
 CREATE UNIQUE INDEX idx_credit_grants_subscription_period
-    ON credit_grants (subscription_id, period_start, account_type)
+    ON credit_grants (subscription_id, period_start)
     WHERE subscription_id IS NOT NULL;
 
 CREATE TABLE org_pricing_overrides (
@@ -634,9 +629,8 @@ Budget 1-2 GiB, not 50 MB.
 Every billing concept maps to TigerBeetle accounts and transfers. No special-cased application logic for discounts, credits, or free tier — they're all transfers between accounts.
 
 ```
-Per org (account IDs derived via OrgAccountID):
-├── OrgAccountID(orgID, FreeTier)   # free-plan allowance for the current billing period
-├── OrgAccountID(orgID, Credit)     # prepaid / subscription-funded aggregate balance
+Per grant (account IDs derived via GrantAccountID):
+├── GrantAccountID(grantID=...)     # source=user_data_32, org_id=user_data_64
 
 Operator (account IDs derived via OperatorAccountID, org_id=0):
 ├── OperatorAccountID(Revenue)          # realized revenue from paid usage only
@@ -647,7 +641,7 @@ Operator (account IDs derived via OperatorAccountID, org_id=0):
 └── OperatorAccountID(ExpiredCredits)   # breakage from expired paid credits
 ```
 
-Three ways for an org to have balance: free-plan grants (funded from `FreeTierPool`), prepaid credits (Stripe ACH/card top-ups), and metered-subscription deposits (recurring Stripe invoices). All three fund the same draw-down chain. From TigerBeetle's perspective, every VM launch is the same operation: "does this org have enough aggregate balance to run?" Product-specific eligibility and the `included` versus `overage` decision live in PostgreSQL under the per-org advisory lock.
+Each `credit_grants` row gets its own TigerBeetle account. The account ceiling is enforced by `debits_must_not_exceed_credits`, so each grant is independently non-negative. PostgreSQL decides the eligible waterfall order for a reservation; TigerBeetle serializes the actual debits atomically. There is no per-org aggregate balance account and no PostgreSQL-side serialization requirement on the reserve hot path.
 
 #### Account flags
 
@@ -657,8 +651,7 @@ All accounts are created with `History: true` to enable `GetAccountTransfers` an
 
 | Account | Code | Flags | Effect |
 |---------|------|-------|--------|
-| `OrgAccountID(orgID, FreeTier)` | 1 | `debits_must_not_exceed_credits`, `history` | Monthly allowance — usage reservations fail when allowance exhausted. |
-| `OrgAccountID(orgID, Credit)` | 2 | `debits_must_not_exceed_credits`, `history` | Prepaid balance — cannot go negative. Funds come from Stripe purchases or subscription deposits. |
+| `GrantAccountID(grantID)` | 9 | `debits_must_not_exceed_credits`, `history` | One account per grant. `user_data_64 = org_id`, `user_data_32 = source_type`. Remaining balance is derived directly from TigerBeetle. |
 | `OperatorAccountID(Revenue)` | 3 | `debits_must_not_exceed_credits`, `history` | Earned revenue from paid usage only. Credit-normal — paid VM charges credit it, refunds debit it. Flag prevents refunding more than earned. (`credits_must_not_exceed_debits` would reject the first charge — tested against live TigerBeetle.) |
 | `OperatorAccountID(FreeTierExpense)` | 7 | `history` | Cost of free-tier compute given away. Credit-normal — free-tier VM charges credit it. No balance constraint — the expense is bounded by FreeTierPool, not by this account's balance. |
 | `OperatorAccountID(FreeTierPool)` | 4 | `debits_must_not_exceed_credits`, `history` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
@@ -670,8 +663,8 @@ All accounts are created with `History: true` to enable `GetAccountTransfers` an
 
 | Flag | When used |
 |------|-----------|
-| `linked` | Chain multiple transfers to succeed or fail atomically. Used when a VM reservation should drain free-tier first, then fall back to credits. |
-| `balancing_debit` | Auto-clamp the debit amount to available balance. Used for the free-tier leg of a reservation: "debit up to X, but don't exceed what's left." |
+| `linked` | Chain multiple transfers to succeed or fail atomically. Not used on the grant-waterfall reserve path. |
+| `balancing_debit` | Auto-clamp the debit amount to available balance. Used on each per-grant reservation leg. |
 | `balancing_credit` | Auto-clamp the credit amount to the account's limit. Used for free-tier monthly reset: "credit up to the monthly cap, don't stack unused balance." |
 | `pending` | Reserve funds at VM launch. Moves amount into `debits_pending` / `credits_pending` — reserved but not spent. |
 | `post_pending_transfer` | Settle a reservation at VM exit. Can specify a lower amount than the original pending — the difference is released. |
@@ -679,27 +672,25 @@ All accounts are created with `History: true` to enable `GetAccountTransfers` an
 
 #### Two-phase billing (VM lifecycle)
 
-The core billing mechanism is two-phase transfers tied to the VM lifecycle, not periodic aggregation. This gives sub-minute lockout for exhausted accounts without per-second TigerBeetle traffic.
+The core billing mechanism is a sequential per-grant waterfall tied to the VM lifecycle, not periodic aggregation. This gives sub-minute lockout for exhausted grants without per-second TigerBeetle traffic.
 
 ```
 1. User requests VM launch (vcpus=2, mem_mib=512)
 2. Orchestrator estimates cost for RESERVATION_WINDOW (e.g., 300 seconds):
      reservation = (vcpus × vcpu_rate + mem_gib × mem_rate) × 300
-3. Orchestrator reserves funds (two round trips, not one):
-     a. Post PENDING transfer:
-        id:     VMTransferID(jobID, windowSeq=0, LegFreeTier, KindReservation)
-        debit:  OrgAccountID(orgID, FreeTier)
-        credit: OperatorAccountID(FreeTierExpense)
-        flags:  pending | balancing_debit (clamps to available free-tier balance)
-     b. Read back transfer 3a's result to learn the clamped amount
-     c. Compute remainder = reservation - clamped_amount
-     d. If remainder > 0: post PENDING transfer:
-        id:     VMTransferID(jobID, windowSeq=0, LegCredit, KindReservation)
-        debit:  OrgAccountID(orgID, Credit)
-        credit: OperatorAccountID(Revenue)
-        flags:  pending
-     e. If 3d fails (insufficient credit balance): void 3a, reject launch
-     → If both succeed: funds reserved across two pending transfers, VM boots
+3. Orchestrator reserves funds by walking the eligible grant waterfall:
+     a. Query PostgreSQL for active grants for the product
+     b. Batch LookupAccounts on those grant IDs
+     c. Select pricing phase from available balances:
+        free_tier grants first, then subscription grants, then overage
+     d. For each eligible grant in order:
+        id:     VMTransferID(jobID, windowSeq=0, grant_idx, KindReservation)
+        debit:  GrantAccountID(grantID)
+        credit: operator sink for the chosen phase
+        flags:  pending | balancing_debit
+     e. Read back each transfer's clamped amount, decrement remainder, continue
+     f. If remainder > 0 after the waterfall: void every pending leg, reject launch
+     → If remainder reaches zero: funds are reserved across N pending grant legs, VM boots
 4. VM runs
 5. Every RESERVATION_WINDOW (300s) while VM is alive:
      a. POST current pending transfers for actual seconds used:
@@ -712,7 +703,7 @@ The core billing mechanism is two-phase transfers tied to the VM lifecycle, not 
      b. Excess reservation released automatically (partial post)
 ```
 
-This is a two-round-trip operation per reservation: `balancing_debit` clamps the free-tier transfer to available balance, but TigerBeetle does not auto-route the remainder to another account. The orchestrator must read back the clamped amount from the first transfer's result before computing the second transfer's amount. The two pending transfers are independent (not linked) so they can be individually posted/voided during settlement.
+This is a sequential readback operation per reservation: `balancing_debit` clamps each grant leg to the grant's available balance, but TigerBeetle does not auto-route the remainder. The orchestrator must read back each leg's clamped amount before deciding whether to continue to the next grant. The pending transfers are independent so they can be individually posted/voided during settlement.
 
 The reservation window is tunable: 60 seconds for aggressive enforcement, 300 seconds for less TigerBeetle traffic. A user who exhausts their balance is locked out within one reservation window.
 
@@ -807,7 +798,7 @@ VM launch request
     ↓
 Orchestrator: estimate cost for reservation window
     ↓
-TigerBeetle: pending transfers (free-tier → expense, credit → revenue)
+TigerBeetle: pending transfers (grant waterfall → phase sink)
     ↓ success                    ↓ failure
 VM boots                    Reject: insufficient balance
     ↓
@@ -823,7 +814,7 @@ Post final pending transfer (actual usage)
 Write metering row to ClickHouse (append-only, once)
 ```
 
-Pricing lookup comes from PostgreSQL `plans` plus optional `org_pricing_overrides`. The orchestrator computes the reservation amount from the selected rate card, but the data itself is not compiled into the binary. The `included` versus `overage` phase is selected under the org advisory lock at reservation boundaries and written into the `Reservation` plus the final ClickHouse metering row.
+Pricing lookup comes from PostgreSQL `plans` plus optional `org_pricing_overrides`. The orchestrator computes the reservation amount from the selected rate card, but the data itself is not compiled into the binary. The `included` versus `overage` phase is selected from the active eligible grant set at reservation boundaries and written into the `Reservation` plus the final ClickHouse metering row.
 
 #### Reconciliation path (hourly cron)
 
@@ -894,8 +885,8 @@ A cryptographic hash (blake3, SHA-256) provides probabilistic collision resistan
 
 | Entity | Input fields | Input bits | Fits in 128? |
 |--------|-------------|-----------|:------------:|
-| Account | org_id(64) + account_type(16) | 80 | Yes |
-| VM transfer | job_id(64) + window_seq(32) + leg(8) + phase(8) | 112 | Yes |
+| Account | grant_id(64) + account_type(16) | 80 | Yes |
+| VM transfer | job_id(64) + window_seq(32) + grant_idx(8) + kind(8) | 112 | Yes |
 | Subscription-period deposit transfer | subscription_id(64) + year_month(16) + kind(8) | 88 | Yes |
 | Stripe/task-driven transfer | task_id(64) + kind(8) | 72 | Yes |
 
@@ -927,31 +918,30 @@ The Go client stores `Uint128` as 16 little-endian bytes. `BytesToUint128` maps 
 ┌──────────────────────────────────────┬──────────────────────────────────────┐
 │         bytes [0:7] (low u64)        │        bytes [8:15] (high u64)       │
 ├────────────┬─────────────────────────┼──────────────────────────────────────┤
-│ type (u16) │     reserved (48 bits)  │             org_id (u64)             │
+│ type (u16) │     reserved (48 bits)  │            grant_id (u64)            │
 └────────────┴─────────────────────────┴──────────────────────────────────────┘
 
-Numeric value: org_id × 2⁶⁴ + account_type
-Sort order:    by org (time-ordered snowflake), then by type within org
+Numeric value: grant_id × 2⁶⁴ + account_type
+Sort order:    by grant creation order, then by type within grant
 ```
 
-Zitadel organization IDs are 63-bit snowflake-style integers — they encode a millisecond timestamp in the upper bits, so orgs created later have higher IDs. Placing org_id in the high u64 means account IDs increase monotonically as orgs are onboarded, and all accounts for a given org are contiguous in the LSM (they differ only in the low bits).
+`credit_grants.grant_id` is a PostgreSQL identity column. It is monotonically increasing on the single node, which is the exact property TigerBeetle's LSM tree benefits from. Placing `grant_id` in the high u64 means grant accounts increase in creation order without any external mapping table.
 
-Operator accounts (no org) use `org_id = 0`. Zitadel snowflake IDs are always large positive numbers, so zero is an unambiguous sentinel. Operator account IDs are small numbers that sort before all org accounts — natural, since they're created once at system initialization.
+Operator accounts use `grant_id = 0` as a sentinel. Grant IDs are always positive, so zero is unambiguous. Operator account IDs are small numbers that sort before all grant accounts — natural, since they're created once at system initialization.
 
 Account type enum (also stored in TigerBeetle's `code` field):
 
 | Value | Name | Owner | TigerBeetle flags |
 |-------|------|-------|-------------------|
-| 1 | free-tier | per org | `debits_must_not_exceed_credits` |
-| 2 | credit | per org | `debits_must_not_exceed_credits` |
 | 3 | revenue | operator (org_id=0) | `debits_must_not_exceed_credits` |
 | 4 | free-tier-pool | operator | `debits_must_not_exceed_credits` |
 | 5 | stripe-holding | operator | (none — contra account) |
 | 6 | promo-pool | operator | `debits_must_not_exceed_credits` |
 | 7 | free-tier-expense | operator | (none — expense accumulator) |
 | 8 | expired-credits | operator | (none — breakage accumulator) |
+| 9 | grant | per grant | `debits_must_not_exceed_credits`, `history` |
 
-The type is encoded in two places: in the account ID (for deterministic derivation without a lookup) and in the `code` field (for `QueryFilter` operations). The `user_data_64` field stores the raw `org_id` for reverse lookups — `QueryFilter{UserData64: orgID}` returns all accounts for an org without decomposing the packed ID.
+The type is encoded in two places: in the account ID (for deterministic derivation without a lookup) and in the `code` field (for `QueryFilter` operations). Grant accounts additionally store `org_id` in `user_data_64` and `source_type` in `user_data_32`, so reverse lookups and per-source scans do not require unpacking the ID.
 
 ##### Transfer ID layout
 
@@ -962,25 +952,25 @@ Transfers have different natural keys depending on their kind, but the bit layou
 ┌──────────────────────────────────────┬──────────────────────────────────────┐
 │         bytes [0:7] (low u64)        │        bytes [8:15] (high u64)       │
 ├───────────┬────────┬────────┬────────┼──────────────────────────────────────┤
-│  seq (32) │leg (8) │kind (8)│rsv (16)│           source_id (u64)            │
+│  seq (32) │grant_idx (8)│kind (8)│rsv (16)│      source_id (u64)            │
 └───────────┴────────┴────────┴────────┴──────────────────────────────────────┘
 
-Numeric value: source_id × 2⁶⁴ + (reserved << 48) + (kind << 40) + (leg << 32) + seq
+Numeric value: source_id × 2⁶⁴ + (reserved << 48) + (kind << 40) + (grant_idx << 32) + seq
 ```
 
 **source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For subscription-period deposits: `subscription_id` (from `subscriptions.subscription_id`). For payment-driven tasks: `task_id` (from `tasks.task_id`). For expiry sweeps: `grant_id` (from `credit_grants.grant_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
 
 **seq** (u32): Sequence number within the source. VM transfers: reservation window number (0 = initial, 1 = first renewal, ...). Subscription-period deposits: `year × 12 + month` derived from `period_start.UTC()`. Stripe deposits: 0 (one transfer per task).
 
-**leg** (u8): Which leg of a multi-transfer operation. The two-phase billing flow creates two transfers per reservation window: leg 0 = free-tier debit, leg 1 = credit debit. Single-leg transfers (resets, deposits) use leg 0.
+**grant_idx** (u8): Position of a grant within the reservation waterfall. A reservation window may debit 1..N grant accounts in order. Single-transfer flows (deposits, disputes, expiry) use `grant_idx = 0`.
 
-**kind** (u8): Transfer kind enum. Distinguishes reservation from settlement from void — critical because the same `(job_id, window_seq, leg)` triple appears in both the pending transfer and its post/void, and they must have different IDs.
+**kind** (u8): Transfer kind enum. Distinguishes reservation from settlement from void — critical because the same `(job_id, window_seq, grant_idx)` triple appears in both the pending transfer and its post/void, and they must have different IDs.
 
 Transfer kind enum (also stored in TigerBeetle's `code` field):
 
 | Value | Name | source_id | TigerBeetle flags |
 |-------|------|-----------|-------------------|
-| 1 | vm_reservation | job_id | `pending` + `balancing_debit` (free-tier leg → FreeTierExpense) or `pending` (credit leg → Revenue) |
+| 1 | vm_reservation | job_id | `pending` + `balancing_debit` on each grant leg |
 | 2 | vm_settlement | job_id | `post_pending_transfer` |
 | 3 | vm_void | job_id | `void_pending_transfer` |
 | 4 | free_tier_reset | subscription_id | `balancing_credit` |
@@ -996,9 +986,9 @@ Each transfer kind has a distinct idempotency domain — the set of fields that 
 
 | Kind | Idempotency key | Guarantee |
 |------|----------------|-----------|
-| vm_reservation | (job_id, window_seq, leg) | One pending reservation per (job, window, leg). Orchestrator crash + retry resubmits the same ID. |
-| vm_settlement | (job_id, window_seq, leg) | One settlement per pending. Different `kind` byte prevents collision with the pending. |
-| vm_void | (job_id, window_seq, leg) | One void per pending. Mutually exclusive with settlement (enforced by TigerBeetle — pending resolves at most once). |
+| vm_reservation | (job_id, window_seq, grant_idx) | One pending reservation per (job, window, waterfall position). Orchestrator crash + retry resubmits the same ID. |
+| vm_settlement | (job_id, window_seq, grant_idx) | One settlement per pending. Different `kind` byte prevents collision with the pending. |
+| vm_void | (job_id, window_seq, grant_idx) | One void per pending. Mutually exclusive with settlement (enforced by TigerBeetle — pending resolves at most once). |
 | free_tier_reset | (subscription_id, year_month) | One periodic free-plan deposit per subscription period. Re-running the deposit job produces the same transfer IDs — TigerBeetle returns `exists`. |
 | stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(idempotency_key)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
 | dispute_debit | (task_id) | One debit per dispute task. Uses `KindDisputeDebit` (8) in the kind byte, distinct from `KindStripeDeposit` (5), preventing ID collision between a deposit and a dispute sharing the same task_id. |
@@ -1020,27 +1010,27 @@ type GrantID int64
 type AccountID  struct{ raw types.Uint128 }  // cannot be used as TransferID
 type TransferID struct{ raw types.Uint128 }  // cannot be used as AccountID
 
-func OrgAccountID(org OrgID, t OrgAcctType) AccountID {
+func GrantAccountID(grant GrantID) AccountID {
     var id [16]byte
-    binary.LittleEndian.PutUint16(id[0:2], uint16(t))
-    binary.LittleEndian.PutUint64(id[8:16], uint64(org))
-    return AccountID{tb.BytesToUint128(id)}
+    binary.LittleEndian.PutUint16(id[0:2], uint16(AcctGrant))
+    binary.LittleEndian.PutUint64(id[8:16], uint64(grant))
+    return AccountID{types.BytesToUint128(id)}
 }
 
 func OperatorAccountID(t OperatorAcctType) AccountID {
     var id [16]byte
     binary.LittleEndian.PutUint16(id[0:2], uint16(t))
     // bytes [8:16] = 0 (operator sentinel)
-    return AccountID{tb.BytesToUint128(id)}
+    return AccountID{types.BytesToUint128(id)}
 }
 
-func VMTransferID(job JobID, seq uint32, leg Leg, kind XferKind) TransferID {
+func VMTransferID(job JobID, seq uint32, grantIdx uint8, kind XferKind) TransferID {
     var id [16]byte
     binary.LittleEndian.PutUint32(id[0:4], seq)
-    id[4] = uint8(leg)
+    id[4] = grantIdx
     id[5] = uint8(kind)
     binary.LittleEndian.PutUint64(id[8:16], uint64(job))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 
 func SubscriptionPeriodID(sub SubscriptionID, periodStart time.Time, kind XferKind) TransferID {
@@ -1049,38 +1039,38 @@ func SubscriptionPeriodID(sub SubscriptionID, periodStart time.Time, kind XferKi
     binary.LittleEndian.PutUint32(id[0:4], uint32(t.Year())*12+uint32(t.Month()))
     id[5] = uint8(kind)
     binary.LittleEndian.PutUint64(id[8:16], uint64(sub))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 
 func StripeDepositID(task TaskID, kind XferKind) TransferID {
     var id [16]byte
     id[5] = uint8(kind)
     binary.LittleEndian.PutUint64(id[8:16], uint64(task))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 
 func CreditExpiryID(grant GrantID) TransferID {
     var id [16]byte
     id[5] = uint8(KindCreditExpiry)
     binary.LittleEndian.PutUint64(id[8:16], uint64(grant))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 ```
 
 Reverse functions exist for debugging — given any TigerBeetle ID from logs or the REPL, extract the original fields without a mapping table:
 
 ```go
-func (a AccountID) Parse() (org OrgID, acctType uint16) {
+func (a AccountID) ParseGrant() (grant GrantID, acctType uint16) {
     b := a.raw.Bytes()
     acctType = binary.LittleEndian.Uint16(b[0:2])
-    org = OrgID(binary.LittleEndian.Uint64(b[8:16]))
+    grant = GrantID(binary.LittleEndian.Uint64(b[8:16]))
     return
 }
 
-func (t TransferID) Parse() (sourceID uint64, seq uint32, leg uint8, kind uint8) {
+func (t TransferID) Parse() (sourceID uint64, seq uint32, grantIdx uint8, kind uint8) {
     b := t.raw.Bytes()
     seq = binary.LittleEndian.Uint32(b[0:4])
-    leg = b[4]
+    grantIdx = b[4]
     kind = b[5]
     sourceID = binary.LittleEndian.Uint64(b[8:16])
     return
@@ -1091,11 +1081,11 @@ func (t TransferID) Parse() (sourceID uint64, seq uint32, leg uint8, kind uint8)
 
 TigerBeetle indexes `user_data_128`, `user_data_64`, and `user_data_32` for `QueryFilter` operations. The packed ID handles derivation; the `user_data` fields handle queries.
 
-| Field | Accounts | Transfers |
-|-------|----------|-----------|
-| `user_data_64` | `org_id` — find all accounts for an org | `org_id` — find all transfers for an org |
-| `user_data_32` | 0 (unused) | `window_seq` — find transfers for a specific reservation window |
-| `user_data_128` | 0 (unused) | 0 (reserved for future use) |
+| Field | Grant Accounts | Operator Accounts | Transfers |
+|-------|----------------|-------------------|-----------|
+| `user_data_64` | `org_id` | 0 | `org_id` |
+| `user_data_32` | `source_type` (`1=free_tier`, `2=subscription`, `3=purchase`, `4=promo`, `5=refund`) | 0 | `window_seq` |
+| `user_data_128` | 0 | 0 | 0 |
 
 ##### Asset scale
 
@@ -1113,25 +1103,25 @@ For operations processing more items (e.g., `ResetFreeTier` across 10,000 orgs),
 
 When inspecting TigerBeetle state via the REPL or logs, every ID is self-describing. No mapping table to consult, no hash to reverse.
 
-Account ID example (`0x027f4e8a5c0100000100000000000000` in hex):
+Account ID example:
 ```
-bytes [8:16] → org_id = 180025476050993153  (decimal)
-bytes [0:2]  → type = 1                     (free-tier)
-→ This is org 180025476050993153's free-tier account.
+bytes [8:16] → grant_id = 8421
+bytes [0:2]  → type = 9
+→ This is grant 8421's TigerBeetle account.
 ```
 
 Transfer ID example:
 ```
 bytes [8:16] → source_id = 4217   (job_id)
 bytes [0:4]  → seq = 3            (window 3)
-byte  [4]    → leg = 1            (credit leg)
+byte  [4]    → grant_idx = 1      (second grant in the waterfall)
 byte  [5]    → kind = 2           (vm_settlement)
-→ This is the settlement of job 4217, window 3, credit leg.
+→ This is the settlement of job 4217, window 3, waterfall grant 1.
 ```
 
 #### Org provisioning sequence
 
-When a new customer org appears for the first time, three systems need state: Zitadel (org already exists — created during onboarding or self-service signup), PostgreSQL (orgs row), and TigerBeetle (free-tier + credit accounts). These cannot be provisioned atomically across three systems.
+When a new customer org appears for the first time, only two systems need immediate state: Zitadel (org already exists — created during onboarding or self-service signup) and PostgreSQL (`orgs` row). TigerBeetle grant accounts are created lazily when the first grant is deposited.
 
 ```
 User's first authenticated request
@@ -1144,26 +1134,19 @@ User's first authenticated request
   ├─ 3. PostgreSQL: INSERT INTO orgs ... ON CONFLICT DO NOTHING
   │     (idempotent — concurrent first-requests from same org are safe)
   │
-  ├─ 4. TigerBeetle: create_accounts([
-  │       OrgAccountID(orgID, FreeTier),
-  │       OrgAccountID(orgID, Credit)
-  │     ])
-  │     (idempotent — duplicate account IDs return `exists`, not error)
-  │
-  └─ 5. Return response (org context ready)
+  └─ 4. Return response (org context ready)
 ```
 
-Both PostgreSQL (`ON CONFLICT DO NOTHING`) and TigerBeetle (`create_accounts` returns `exists` for duplicate IDs) handle concurrent provisioning without locking. Two requests from the same org arriving simultaneously both succeed — the second is a no-op in both systems.
+PostgreSQL handles concurrent provisioning without locking. Two requests from the same org arriving simultaneously both succeed — the second is a no-op.
 
 Failure matrix:
 
 | Failure point | State | Recovery |
 |--------------|-------|----------|
-| After step 3, before step 4 | PostgreSQL has orgs row, TigerBeetle has no accounts | Next request retries step 4. Deterministic ID derivation ensures the same account IDs are submitted. |
-| Step 4 partial (free-tier created, credit fails) | One account exists | `create_accounts` is a batch — TigerBeetle creates both or neither per batch. If the batch is split across calls, the retry recreates both; the existing one returns `exists`. |
-| Zitadel org deleted after provisioning | PostgreSQL and TigerBeetle have orphaned state | No automatic cleanup. The reconciliation cron can detect orgs in PostgreSQL with no corresponding Zitadel org and flag them. TigerBeetle accounts with zero balance are inert. |
+| After step 3 | PostgreSQL has `orgs` row, no grants yet | Safe. Grant accounts are created later at deposit time. |
+| Zitadel org deleted after provisioning | PostgreSQL has orphaned `orgs` row | No automatic cleanup. Reconciliation can flag orgs in PostgreSQL with no corresponding Zitadel org. |
 
-Provisioning is lazy (triggered by first authenticated request), not eager (triggered by org creation in Zitadel). Lazy provisioning is simpler — no Zitadel webhook or action needed — and the idempotent retry paths make it robust. An org that exists in Zitadel but has never authenticated has no PostgreSQL row and no TigerBeetle accounts, which is correct (no free tier, no billing state for an unused org).
+Provisioning is lazy (triggered by first authenticated request), not eager (triggered by org creation in Zitadel). An org that exists in Zitadel but has never authenticated has no PostgreSQL row and no TigerBeetle grant accounts, which is correct.
 
 #### VM launch: authorization gate → balance gate
 
@@ -1180,18 +1163,21 @@ Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
   │     └─ Missing role → 403 Forbidden
   │
   ├─ 3. Org provisioning (idempotent, skip if exists)
-  │     PostgreSQL upsert + TigerBeetle create_accounts
+  │     PostgreSQL upsert only
   │
-  ├─ 4. Pricing lookup under pg_advisory_xact_lock(org_id::bigint) (~1ms)
+  ├─ 4. Pricing lookup in PostgreSQL (~1ms)
   │     Read active subscription, plan, and optional org_pricing_overrides
   │     Select pricing phase: free_tier, included, or overage
   │     Compute reservation = rate_card(dimensions) × WINDOW
   │
-  ├─ 5. TigerBeetle reservation (two round trips, ~2ms)
-  │     a. Pending transfer: debit {org}/free-tier → credit operator/free-tier-expense
-  │        (balancing_debit — clamps to available free-tier balance)
-  │     b. Read back clamped amount, compute remainder
-  │     c. If remainder > 0: pending transfer: debit {org}/credit → credit operator/revenue
+  ├─ 5. TigerBeetle reservation (grant waterfall)
+  │     a. Query PostgreSQL for eligible active grants for the product
+  │     b. Batch LookupAccounts on those grant IDs
+  │     c. For each grant in waterfall order:
+  │          pending transfer: debit GrantAccountID(grantID) → credit phase sink
+  │          flags: pending | balancing_debit
+  │          read back clamped amount, decrement remainder
+  │     d. If remainder > 0: void every pending leg
   │     └─ Insufficient funds → 402 Payment Required
   │     └─ TigerBeetle unavailable → 503 Service Unavailable
   │
@@ -1203,9 +1189,9 @@ Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
 
 **Fail-closed policy**: If TigerBeetle is unavailable, no VMs launch (503). Fail-open on a billing gate means giving away free compute with no ledger record. The orchestrator does not maintain a local balance cache or "grace period" — TigerBeetle is the single source of truth for balance enforcement.
 
-**Latency budget**: JWT validation is in-process (~0ms). PostgreSQL pricing lookup plus advisory lock is ~1ms. TigerBeetle reservation is ~2ms (two round trips at ~1ms each). Total gate overhead is still negligible against Firecracker's ~125ms snapshot boot.
+**Latency budget**: JWT validation is in-process (~0ms). PostgreSQL pricing lookup is ~1ms. TigerBeetle reservation is one `LookupAccounts` plus 1..N `CreateTransfers`/`LookupTransfers` pairs depending on how many grants are touched, but the common case is still a handful of localhost round trips. Total gate overhead remains negligible against Firecracker's ~125ms snapshot boot.
 
-**Void-on-boot-failure**: If Firecracker fails to start after funds are reserved, the orchestrator immediately voids the pending transfers. The transfer IDs for the void are deterministic — `VMTransferID(jobID, 0, leg, KindVoid)` — so a crash between the failed boot and the void is recovered on restart by resubmitting the same void.
+**Void-on-boot-failure**: If Firecracker fails to start after funds are reserved, the orchestrator immediately voids every pending grant leg. The transfer IDs for the voids are deterministic — `VMTransferID(jobID, 0, grant_idx, KindVoid)` — so a crash between the failed boot and the void is recovered on restart by resubmitting the same voids.
 
 #### Machine user auth boundaries
 
@@ -1224,7 +1210,7 @@ stripe-webhook-worker    Next.js API (webhook)      TigerBeetle :3320 (Go client
                          PostgreSQL (task queue)
 ```
 
-The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads TigerBeetle for aggregate balance display and PostgreSQL for product-specific grant attribution.
+The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads PostgreSQL for the active grant catalog and TigerBeetle for the corresponding per-grant balances.
 
 The machine user identity is stored in TigerBeetle's `user_data` fields on transfers for audit. It is not used for access control — network binding (`127.0.0.1:3320`) is the only access control mechanism.
 
@@ -1240,17 +1226,20 @@ Cron (daily, systemd timer)
   ├─ 2. For each subscription:
   │     ├─ Load plan
   │     ├─ If included_credits = 0: skip
-  │     ├─ Check UNIQUE(subscription_id, period_start, account_type)
+  │     ├─ Check UNIQUE(subscription_id, period_start)
+  │     ├─ Allocate new grant_id in PostgreSQL
+  │     ├─ Create GrantAccountID(grantID)
   │     ├─ Derive transfer ID from subscription_id + period marker
-  │     ├─ Choose source/account:
-  │     │   free plan       → source=free_tier,   debit FreeTierPool  → credit org/FreeTier
-  │     │   paid metered    → source=subscription, debit StripeHolding → credit org/Credit
-  │     └─ Insert credit_grants row for this product period
+  │     ├─ Choose source/funding account:
+  │     │   free plan       → source=free_tier,    debit FreeTierPool
+  │     │   paid metered    → source=subscription, debit StripeHolding
+  │     ├─ Transfer funding account → GrantAccountID(grantID)
+  │     └─ Insert immutable credit_grants row for this product period
   │
   └─ 3. Log summary to ClickHouse / billing_events
 ```
 
-Idempotency is two-layered: PostgreSQL blocks duplicate grant rows for the same `(subscription_id, period_start, account_type)`, and TigerBeetle blocks duplicate transfers by deterministic ID. Annual subscriptions still deposit monthly drips rather than a single twelve-month grant.
+Idempotency is two-layered: PostgreSQL blocks duplicate grant rows for the same `(subscription_id, period_start)`, and TigerBeetle blocks duplicate transfers by deterministic ID. Annual subscriptions still deposit monthly drips rather than a single twelve-month grant.
 
 #### Stripe payment → org credit: identity resolution
 
@@ -1272,11 +1261,13 @@ Stripe webhook (payment_intent.succeeded)
   │
   ├─ 4. Worker picks up task via SKIP LOCKED:
   │     ├─ Derive transfer ID: StripeDepositID(taskID, KindStripeDeposit)
-  │     ├─ Derive account IDs:
+  │     ├─ Allocate new grant_id in PostgreSQL
+  │     ├─ Create GrantAccountID(grantID)
+  │     ├─ Submit transfer:
   │     │   debit:  OperatorAccountID(StripeHolding)
-  │     │   credit: OrgAccountID(orgID, Credit)
-  │     ├─ Submit transfer
+  │     │   credit: GrantAccountID(grantID)
   │     │   (TigerBeetle deduplication = second idempotency layer)
+  │     ├─ Insert immutable credit_grants row
   │     └─ Mark task completed
   │
   └─ 5. If transfer fails → task enters retrying/dead state per billing queue policy
@@ -1296,22 +1287,22 @@ Customer buys credits via `POST /v1/checkout/sessions` in `mode=payment`. On `pa
 
 ```
 debit:  OperatorAccountID(StripeHolding)
-credit: OrgAccountID(orgID, Credit)
+credit: GrantAccountID(grantID)
 amount: purchased_amount_in_ledger_units
 ```
 
-The corresponding `credit_grants` row is product-scoped (`source='purchase'`) even though TigerBeetle remains aggregate per org.
+The corresponding `credit_grants` row is product-scoped (`source='purchase'`). TigerBeetle and PostgreSQL refer to the same grant via `grant_id`.
 
 #### Metered subscriptions (included credits plus optional overage)
 
 Customer subscribes via `POST /v1/checkout/sessions` in `mode=subscription`. Stripe collects the invoice; the periodic deposit job materializes the included credits into TigerBeetle plus PostgreSQL:
 
 ```
-free plan       → debit FreeTierPool   → credit org/FreeTier   (source='free_tier')
-paid metered    → debit StripeHolding  → credit org/Credit     (source='subscription')
+free plan       → debit FreeTierPool   → credit GrantAccountID(grantID)   (source='free_tier')
+paid metered    → debit StripeHolding  → credit GrantAccountID(grantID)   (source='subscription')
 ```
 
-The overage decision is not made in Stripe. It is made at reservation boundaries in PostgreSQL by checking whether included-grant eligibility remains for that product under the org advisory lock. If included credits are exhausted and the plan exposes `overage_unit_rates`, the next reservation window is priced at the overage rate card. There is no mid-window split between included and overage phases.
+The overage decision is not made in Stripe. It is made at reservation boundaries in PostgreSQL by checking whether eligible included grants remain for that product. If included credits are exhausted and the plan exposes `overage_unit_rates`, the next reservation window is priced at the overage rate card. There is no mid-window split between included and overage phases.
 
 Annual billing uses the same subscription rows with `cadence='annual'`, but included credits are still deposited monthly. This reduces operator exposure if the annual invoice is later disputed.
 
