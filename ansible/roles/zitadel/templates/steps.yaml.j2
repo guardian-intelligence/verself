@@ -1,0 +1,24 @@
+# Zitadel first-instance bootstrap.
+# Managed by Ansible — do not edit manually.
+# Passed to `zitadel setup --steps` on first init only.
+
+FirstInstance:
+  InstanceName: forge-metal
+  PatPath: "{{ zitadel_config_dir }}/admin.pat"
+  Org:
+    Name: forge-metal
+    Human:
+      UserName: admin
+      FirstName: forge-metal
+      LastName: Admin
+      Email:
+        Address: "admin@{{ forge_metal_domain }}"
+        Verified: true
+      Password: "{{ zitadel_admin_password }}"
+      PasswordChangeRequired: false
+    Machine:
+      Machine:
+        Username: forge-metal-admin
+        Name: forge-metal admin
+      Pat:
+        ExpirationDate: "2099-01-01T00:00:00Z"

@@ -41,6 +41,10 @@
   ansible.builtin.set_fact:
     zitadel_masterkey: "{{ lookup('password', credentials_dir + '/zitadel_masterkey length=32 chars=ascii_letters,digits') }}"
 
+- name: Generate Zitadel admin password base
+  ansible.builtin.set_fact:
+    zitadel_admin_password: "{{ lookup('password', credentials_dir + '/zitadel_admin_password length=32 chars=ascii_letters,digits') }}#@F1"
+
 # --- PostgreSQL database and user ---
 
 - name: Create zitadel PostgreSQL user
@@ -117,6 +121,14 @@
   notify:
     - restart zitadel
 
+- name: Deploy Zitadel first-instance steps
+  ansible.builtin.template:
+    src: steps.yaml.j2
+    dest: "{{ zitadel_config_dir }}/steps.yaml"
+    owner: zitadel
+    group: zitadel
+    mode: "0600"
+
 # --- First-run initialization ---
 # Zitadel has a three-phase lifecycle: init (create schemas), setup (run
 # migrations + create first instance), start (run the server).
@@ -157,6 +169,7 @@
       {{ fm_bin }}/zitadel setup
       --masterkeyFile {{ zitadel_config_dir }}/masterkey
       --config {{ zitadel_config_dir }}/config.yaml
+      --steps {{ zitadel_config_dir }}/steps.yaml
   become: true
   become_user: zitadel
   when: "'1' not in zitadel_init_check.stdout"
@@ -176,6 +189,44 @@
   changed_when: false
   when: "'1' not in zitadel_init_check.stdout"
   failed_when: "'eventstore' not in zitadel_schema_check.stdout"
+
+# --- Admin PAT ---
+# FirstInstance.Org.Machine creates a machine user (IAM_OWNER) and writes the
+# PAT to PatPath during `zitadel setup`. Save a local copy for Ansible and
+# export it as a fact so downstream roles can call the Admin API.
+
+- name: Verify admin PAT was written by setup
+  ansible.builtin.stat:
+    path: "{{ zitadel_config_dir }}/admin.pat"
+  register: zitadel_admin_pat_file
+  failed_when: not zitadel_admin_pat_file.stat.exists
+
+- name: Set admin PAT file permissions
+  ansible.builtin.file:
+    path: "{{ zitadel_config_dir }}/admin.pat"
+    owner: zitadel
+    group: zitadel
+    mode: "0600"
+
+- name: Read admin PAT
+  ansible.builtin.slurp:
+    src: "{{ zitadel_config_dir }}/admin.pat"
+  register: zitadel_admin_pat_raw
+  no_log: true
+
+- name: Export admin PAT for downstream roles
+  ansible.builtin.set_fact:
+    zitadel_admin_pat: "{{ zitadel_admin_pat_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: Save admin PAT to local credentials
+  ansible.builtin.copy:
+    content: "{{ zitadel_admin_pat }}"
+    dest: "{{ credentials_dir }}/zitadel_admin_pat"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
 
 # --- systemd unit ---
 

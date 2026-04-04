@@ -39,6 +39,11 @@ DefaultInstance:
       # Login V2 is a separate Next.js app (zitadel-login), not embedded in the
       # Zitadel Go binary. Until deployed as a separate service, use embedded Login V1.
       Required: false
+  LabelPolicy:
+    DisableWatermark: true
+    HideLoginNameSuffix: true
+  LoginPolicy:
+    AllowRegister: false
 
 Instrumentation:
   Trace:
