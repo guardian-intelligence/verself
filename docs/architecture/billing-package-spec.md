@@ -16,15 +16,15 @@ Four systems participate in every non-trivial billing flow:
 | System | Authoritative for | Not authoritative for |
 |--------|-------------------|-----------------------|
 | Stripe | Cash collection, subscription invoice lifecycle, dispute notifications, Checkout sessions | Metering truth, internal balance enforcement, per-product credit attribution |
-| TigerBeetle | Aggregate posted/pending balances, idempotent money movement, immutable transfer log | Per-product eligibility, grant expiration policy, task retry state |
-| PostgreSQL | Product catalog, plan policy, per-product grant attribution, subscription state, task queue, retry/DLQ state | Aggregate account balance |
+| TigerBeetle | Per-grant posted/pending balances, idempotent money movement, immutable transfer log | Product eligibility policy, task retry state |
+| PostgreSQL | Product catalog, immutable grant catalog, subscription state, task queue, retry/DLQ state | Grant balance |
 | ClickHouse | Append-only metering history, rolling-window quota queries, reconciliation evidence | Online balance enforcement |
 
 The deliberate cross-system rule is:
 
 1. Stripe decides whether external money was collected.
-2. TigerBeetle decides whether forge-metal can afford to provide service right now.
-3. PostgreSQL decides whether a given product is allowed to spend that aggregate balance.
+2. TigerBeetle decides whether forge-metal can afford to provide service right now, one grant at a time.
+3. PostgreSQL decides which grants are eligible to be spent for a given product.
 4. ClickHouse records what actually happened.
 
 The TigerBeetle account model and deterministic ID derivation scheme from
@@ -33,8 +33,10 @@ an alternate account ID scheme.
 
 This document makes six material design decisions that were previously ambiguous:
 
-- TigerBeetle remains aggregate per org, product-unaware. Product-specific eligibility is
-  enforced by PostgreSQL under a mandatory per-org advisory lock.
+- Each credit grant gets its own TigerBeetle account with
+  `DebitsMustNotExceedCredits`. TigerBeetle is the single source of financial
+  truth for balance. PostgreSQL is an immutable grant catalog. Financial
+  operations do not require PostgreSQL-side serialization.
 - Overage is a second rate card, not a post-facto inference from aggregate balance.
   The pricing phase is selected at reservation boundaries and recorded explicitly.
 - Overage spending is capped per subscription via `overage_cap_units`. The org admin controls
@@ -78,11 +80,9 @@ is infrastructure truth today; this specification does not introduce a third Pos
 database. The billing package is shared across products even though the backing PostgreSQL
 database retains its historical name.
 
-Every mutating billing operation that reads or writes `credit_grants`, subscription status, or
-product eligibility for a specific org must execute under a PostgreSQL transaction that first
-acquires `pg_advisory_xact_lock(org_id::bigint)`. This is mandatory. Zitadel org IDs are
-positive snowflake-style integers that fit in signed 63 bits, so `TEXT -> BIGINT` conversion is
-lossless for forge-metal orgs.
+Mutating billing operations may use PostgreSQL transactions for catalog writes, but the
+financial invariant no longer depends on PostgreSQL locking. Grant balance is enforced
+directly by TigerBeetle on each grant account.
 
 ### 1.1 Products
 
@@ -181,6 +181,14 @@ collected up front, but the credit deposit schedule is monthly drip.
 
 The previous scalar `overage_rate` is removed. A single integer is not expressive enough for
 multi-dimensional pricing such as `{vcpu_second, gib_second}`.
+
+**Future refinement: rate card versioning.** `unit_rates` and `overage_unit_rates` live
+directly on `plans` in the initial implementation. When pricing iteration requires auditable
+mid-period rate changes, introduce a `plan_rate_versions` table keyed on `(plan_id,
+effective_at)` and record the `version_id` on each metering row. Resolution becomes "latest
+version where `effective_at <= now()`." The migration is a column move, not a redesign. Until
+then, price decreases can be applied immediately (each `Reserve` reads the current row); price
+increases should coincide with period boundaries.
 
 **`unit_rates` JSONB**: Per-product metering dimensions. The billing package computes
 `sum(allocation[dimension] × rate_card[dimension])`. It does not interpret the semantic
@@ -386,31 +394,23 @@ exposure if the annual charge is disputed.
 
 ### 1.5 Credit Grants
 
-TigerBeetle tracks aggregate balances per org account. PostgreSQL tracks the product-specific
-grants that make those balances spendable. The central rule in Revision 3 is:
+Each `credit_grants` row is an immutable catalog entry for one TigerBeetle grant account. The
+central rule in Revision 3 is:
 
-> TigerBeetle answers "can this org afford this in aggregate right now?" PostgreSQL answers
-> "is this product allowed to spend that aggregate balance, and if so from which grant set?"
+> TigerBeetle answers "how much remains on this grant right now?" PostgreSQL answers
+> "which grants are eligible to fund this product, and in what order?"
 
-This revision keeps aggregate TigerBeetle accounts and rejects per-product TigerBeetle
-account proliferation. The concurrency hazard is resolved with the per-org advisory lock.
-
-Grant rows therefore need one additional field: which TigerBeetle account the grant funds.
+There is no aggregate per-org balance account. TigerBeetle is the single source of financial
+truth. PostgreSQL no longer stores mutable consumption counters.
 
 ```sql
-CREATE TYPE grant_account AS ENUM ('free_tier', 'credit');
-
 CREATE TABLE credit_grants (
     grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
-    account_type        grant_account NOT NULL,
 
-    -- Amounts (ledger units)
+    -- Original funded amount (ledger units)
     amount              BIGINT NOT NULL CHECK (amount > 0),
-    consumed            BIGINT NOT NULL DEFAULT 0 CHECK (consumed >= 0),
-    expired             BIGINT NOT NULL DEFAULT 0 CHECK (expired >= 0),
-    remaining           BIGINT GENERATED ALWAYS AS (amount - consumed - expired) STORED,
 
     -- Source attribution
     source              TEXT NOT NULL,
@@ -421,44 +421,43 @@ CREATE TABLE credit_grants (
     period_start        TIMESTAMPTZ,
     period_end          TIMESTAMPTZ,
     expires_at          TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_credit_grants_active
     ON credit_grants (org_id, product_id, expires_at)
-    WHERE remaining > 0;
+    WHERE closed_at IS NULL;
 
 CREATE UNIQUE INDEX idx_credit_grants_subscription_period
-    ON credit_grants (subscription_id, period_start, account_type)
+    ON credit_grants (subscription_id, period_start)
     WHERE subscription_id IS NOT NULL;
 ```
 
-Required source/account combinations:
+Required source meanings:
 
-| `source` | `account_type` | Meaning |
-|----------|----------------|---------|
-| `subscription` | `credit` | Included credits on a paid metered subscription |
-| `purchase` | `credit` | Product-specific prepaid top-up |
-| `promo` | `credit` | Promotional credit funded by `PromoPool` |
-| `refund` | `credit` | Refund credit or manual make-good tied to an invoice |
-| `free_tier` | `free_tier` | Monthly free-plan allowance funded by `FreeTierPool` |
+| `source` | Meaning |
+|----------|---------|
+| `subscription` | Included credits on a paid metered subscription |
+| `purchase` | Product-specific prepaid top-up |
+| `promo` | Promotional credit funded by `PromoPool` |
+| `refund` | Refund credit or manual make-good tied to an invoice |
+| `free_tier` | Monthly free-plan allowance funded by `FreeTierPool` |
 
-They stay in sync via three mechanisms:
+The billing system keeps grant state aligned by construction:
 
-1. **Grant creation**: the worker posts the TigerBeetle transfer and inserts the
-   `credit_grants` row as one logical operation. If it crashes between them, reconciliation
-   detects the drift.
-2. **Grant consumption**: `Settle`, `ExpireCredits`, `HandleDispute`, and any other
-   grant-mutating operation run under the per-org advisory lock. Consumption order is:
-   product match, then eligibility set, then earliest `expires_at`, then smallest `grant_id`.
-3. **Expiration sweeper**: a daily cron finds expired grants and drains them from the
-   corresponding TigerBeetle account using a clamped transfer.
+1. **Grant creation**: create the TigerBeetle grant account, fund it, then insert the
+   immutable `credit_grants` row.
+2. **Grant consumption**: `Reserve`, `Settle`, `Renew`, `HandleDispute`, and
+   `ExpireCredits` operate directly on the grant account that the row names via `grant_id`.
+3. **Grant closure**: expiry or dispute workflows drain the grant account, then set
+   `closed_at` when the account is no longer active.
 
 Eligibility sets:
 
-- free-tier leg: `source='free_tier'`
-- included metered leg: `source='subscription'`
-- overage or prepaid leg: `source IN ('purchase', 'promo', 'refund')`
+- free-tier phase: `source='free_tier'`
+- included phase: `source='subscription'`
+- overage/prepaid phase: `source IN ('purchase', 'promo', 'refund')`
 
 Expiration policies:
 
@@ -470,34 +469,21 @@ Expiration policies:
 | `free_tier` | End of month | Monthly allowance |
 | `refund` | Same as original grant | Refund credits inherit the original expiry policy |
 
-**Decision: aggregate TigerBeetle accounts plus PostgreSQL advisory locks**
-
-The three candidate designs were:
-
-- per-product TigerBeetle accounts
-- aggregate TigerBeetle accounts with per-org advisory locking
-- accepting the race
-
-This specification chooses aggregate TigerBeetle accounts plus per-org advisory locking.
+**Decision: one TigerBeetle account per grant**
 
 Reasons:
 
-- It preserves the RFC account model and deterministic ID layout unchanged.
-- It keeps TigerBeetle account count stable at `2 * orgs + operator_accounts`.
-- It serializes exactly the critical section that was previously unsafe: product grant
-  eligibility lookup plus TigerBeetle mutation plus grant-row mutation.
-- The latency cost is negligible on a single-node deployment because the protected critical
-  section is PostgreSQL plus localhost TigerBeetle.
-
-Rejected alternatives:
-
-- Per-product TigerBeetle accounts would fit only by consuming reserved bits in the existing
-  ID layout and would materially change `GetOrgBalance` semantics and operator ergonomics.
-- Accepting the race would make the core financial invariant dependent on "rare in practice".
+- `DebitsMustNotExceedCredits` enforces each grant's ceiling directly in TigerBeetle.
+- No PostgreSQL-side serialization is required on the financial hot path; TigerBeetle
+  serializes concurrent debits atomically.
+- `consumed` is derived from `debits_posted` on the grant account.
+- `remaining` is derived from `credits_posted - debits_posted - debits_pending`.
+- Reconciliation no longer needs to repair grant drift between mutable PostgreSQL counters and
+  TigerBeetle aggregate balances.
 
 `grant_id` remains a PostgreSQL `BIGINT GENERATED ALWAYS AS IDENTITY`. That is sufficient for
-`CreditExpiryID(grant_id)`: the high 64 bits remain globally increasing, which is what
-TigerBeetle's LSM ordering cares about.
+`GrantAccountID(grant_id)` and `CreditExpiryID(grant_id)`: the high 64 bits remain globally
+increasing, which is what TigerBeetle's LSM ordering cares about.
 
 ### 1.6 Org Pricing Overrides
 
@@ -623,7 +609,7 @@ Normative task types and payload contracts:
 | `task_type` | `idempotency_key` | Payload keys |
 |-------------|-------------------|--------------|
 | `stripe_purchase_deposit` | Stripe PaymentIntent ID | `org_id`, `product_id`, `stripe_payment_intent_id`, `amount_ledger_units`, `expires_at` |
-| `stripe_subscription_credit_deposit` | Stripe invoice ID | `org_id`, `product_id`, `subscription_id`, `stripe_invoice_id`, `amount_ledger_units`, `period_start`, `period_end`, `expires_at`, `account_type` |
+| `stripe_subscription_credit_deposit` | Stripe invoice ID | `org_id`, `product_id`, `subscription_id`, `stripe_invoice_id`, `amount_ledger_units`, `period_start`, `period_end`, `expires_at`, `source` |
 | `stripe_licensed_charge` | Stripe invoice ID | `org_id`, `product_id`, `subscription_id`, `stripe_invoice_id`, `amount_ledger_units`, `period_start`, `period_end` |
 | `stripe_dispute_debit` | Stripe dispute ID | `org_id`, `stripe_dispute_id`, `stripe_payment_intent_id`, `amount_ledger_units` |
 | `trust_tier_evaluate` | `trust_tier_evaluate:<date>` | `as_of_date` |
@@ -797,8 +783,7 @@ type TransferID struct{ raw types.Uint128 }
 
 type OrgAcctType uint16
 const (
-    AcctFreeTier     OrgAcctType = 1
-    AcctCredit       OrgAcctType = 2
+    AcctGrant OrgAcctType = 9
 )
 
 type OperatorAcctType uint16
@@ -824,12 +809,6 @@ const (
     KindCreditExpiry        XferKind = 9  // NEW: expired credit sweep
 )
 
-type Leg uint8
-const (
-    LegFreeTier Leg = 0
-    LegCredit   Leg = 1
-)
-
 type PricingPhase string
 const (
     PricingPhaseFreeTier PricingPhase = "free_tier"
@@ -838,20 +817,25 @@ const (
     PricingPhaseLicensed PricingPhase = "licensed"
 )
 
-type GrantAccount string
+type GrantSourceType uint8
 const (
-    GrantAccountFreeTier GrantAccount = "free_tier"
-    GrantAccountCredit   GrantAccount = "credit"
+    SourceFreeTier     GrantSourceType = 1
+    SourceSubscription GrantSourceType = 2
+    SourcePurchase     GrantSourceType = 3
+    SourcePromo        GrantSourceType = 4
+    SourceRefund       GrantSourceType = 5
 )
 ```
 
-ID derivation functions are defined in the RFC (§ "Go type system"): `OrgAccountID`,
+ID derivation functions are defined in the RFC (§ "Go type system"): `GrantAccountID`,
 `OperatorAccountID`, `VMTransferID`, `SubscriptionPeriodID`, `StripeDepositID`, and
-`CreditExpiryID`.
+`CreditExpiryID`. `AccountID.ParseGrant()` reverses `GrantAccountID`, and
+`TransferID.Parse()` returns `grant_idx` rather than the old two-leg enum.
 
 `SubscriptionPeriodID(subscriptionID, periodStartUTC, kind)` uses the same transfer-ID
 layout as the RFC: `source_id = subscription_id` in the high 64 bits, `seq = year*12+month`
-from `periodStart.UTC()`, `kind = KindFreeTierReset` or `KindSubscriptionDeposit`, `leg = 0`.
+from `periodStart.UTC()`, `kind = KindFreeTierReset` or `KindSubscriptionDeposit`,
+`grant_idx = 0`.
 
 Task-driven transfer kinds (`stripe_deposit`, `promo_credit`, `dispute_debit`) use the
 `StripeDepositID(taskID, kind)` pattern. Periodic subscription grants do not.
@@ -890,12 +874,10 @@ func NewClient(tb tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*Client
 #### EnsureOrg
 
 ```go
-// EnsureOrg provisions an org across PostgreSQL and TigerBeetle.
+// EnsureOrg provisions an org in PostgreSQL.
 //
 // Postconditions:
 //   - PostgreSQL orgs table has a row for orgID (INSERT ... ON CONFLICT DO NOTHING)
-//   - TigerBeetle has two accounts: FreeTier and Credit
-//   - Both accounts have History: true for GetAccountTransfers support
 //
 // Idempotency: Fully idempotent.
 func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string) error
@@ -913,6 +895,13 @@ type Balance struct {
 }
 
 // GetOrgBalance reads the current balance from TigerBeetle.
+//
+// Flow:
+//   1. SELECT grant_id, source FROM credit_grants
+//      WHERE org_id = $1 AND closed_at IS NULL
+//   2. Batch LookupAccounts on GrantAccountID(grant_id)
+//   3. Sum available/pending for free-tier grants vs. all other grants
+//
 // Read-only, always safe.
 func (c *Client) GetOrgBalance(ctx context.Context, orgID OrgID) (Balance, error)
 ```
@@ -925,15 +914,13 @@ type ProductBalance struct {
     FreeTierRemaining uint64
     IncludedRemaining uint64
     PrepaidRemaining  uint64
-    AggregateFreeTier uint64
-    AggregateCredit   uint64
 }
 
 // GetProductBalance reads product-specific grant state from PostgreSQL and the
-// aggregate backing balances from TigerBeetle.
+// corresponding TigerBeetle grant accounts.
 //
-// Reserve does not depend on this helper; it re-runs the authoritative checks
-// under the per-org advisory lock.
+// Reserve does not depend on this helper; it re-runs the authoritative grant
+// eligibility checks when it builds the waterfall.
 func (c *Client) GetProductBalance(ctx context.Context, orgID OrgID, productID string) (ProductBalance, error)
 ```
 
@@ -978,10 +965,7 @@ type Reservation struct {
     CostPerSec  uint64
 
     // Pending transfer state
-    FreeTierTransferID TransferID
-    CreditTransferID   TransferID
-    FreeTierAmount     uint64
-    CreditAmount       uint64
+    GrantLegs []GrantLeg
 }
 ```
 
@@ -1039,27 +1023,36 @@ type ReserveRequest struct {
 
 // Reserve initiates a billing reservation for a metered product.
 //
-// Under pg_advisory_xact_lock(org_id):
+// Flow:
 //   1. Read the active subscription for ProductID, if any.
-//   2. Determine the pricing phase:
-//      a. free_tier if active free-tier grants remain for ProductID
-//      b. included if active subscription grants remain for ProductID
+//   2. SELECT grant_id, source, expires_at FROM credit_grants
+//      WHERE org_id = :org AND product_id = :product AND closed_at IS NULL
+//      ORDER BY eligibility priority, expires_at ASC, grant_id ASC
+//   3. Batch LookupAccounts on those grant IDs.
+//   4. Determine the pricing phase:
+//      a. free_tier if sum(available free-tier grants) > 0
+//      b. included if sum(available subscription grants) > 0
 //      c. overage if the active plan has non-empty overage_unit_rates
-//      d. overage with the default plan if there is no active subscription but
-//         ProductID has a default plan and eligible prepaid grants remain
-//   3. Resolve the rate card for that phase, applying org_pricing_overrides if present.
-//   4. Compute costPerSec = sum(allocation[dim] × resolvedRateCard[dim]).
-//   5. Compute windowCost = costPerSec × ReservationWindowSecs.
-//   6. If the pricing phase is overage and subscription.overage_cap_units is non-NULL,
+//      d. else ErrInsufficientBalance
+//   5. Resolve the rate card for that phase, applying org_pricing_overrides if present.
+//   6. Compute costPerSec = sum(allocation[dim] × resolvedRateCard[dim]).
+//   7. Compute windowCost = costPerSec × ReservationWindowSecs.
+//   8. If the pricing phase is overage and subscription.overage_cap_units is non-NULL,
 //      query current-period overage consumption from ClickHouse:
 //        SELECT sum(charge_units) FROM forge_metal.metering
 //        WHERE org_id = :org_id AND product_id = :product_id
 //          AND pricing_phase = 'overage'
 //          AND started_at >= :current_period_start
 //      If consumed + windowCost > overage_cap_units, return ErrOverageCeilingExceeded.
-//   7. Reserve windowCost in TigerBeetle:
-//      - free-tier account first with balancing_debit
-//      - credit account second for any remainder
+//   9. Reserve windowCost in TigerBeetle by walking the eligible grant waterfall:
+//      for i, grant := range eligibleGrants {
+//          submit pending balancing_debit using
+//          VMTransferID(jobID, windowSeq, i, KindReservation)
+//          lookup transfer, read clamped amount, decrement remainder
+//          append GrantLeg{GrantID, TransferID, Amount}
+//          break if remainder == 0
+//      }
+//  10. If remainder > 0, void all pending legs and return ErrInsufficientBalance.
 //
 // Rate selection is per reservation window. The billing package does not split a
 // single window across included and overage phases. If included credits exhaust
@@ -1071,25 +1064,21 @@ type ReserveRequest struct {
 //   - Allocation keys must have corresponding entries in the resolved rate card
 //
 // Postconditions on success:
-//   - 1-2 pending TigerBeetle transfers reserving funds for one window
-//   - Reservation populated with the chosen PricingPhase, PlanID, and ActorID
+//   - 1..N pending TigerBeetle transfers reserving funds for one window
+//   - Reservation populated with the chosen PricingPhase, PlanID, ActorID, and GrantLegs
 //
 // Error conditions:
 //   - ErrOrgSuspended: subscription status is 'suspended'
 //   - ErrNoActiveSubscription: no active subscription and no default pay-as-you-go plan
-//   - ErrInsufficientBalance: rate card resolved but aggregate backing balance insufficient
+//   - ErrInsufficientBalance: rate card resolved but the eligible grant waterfall cannot cover the window
 //   - ErrOverageCeilingExceeded: overage consumption would exceed subscription.overage_cap_units
 //   - ErrDimensionMismatch: allocation key not found in unit_rates
 //   - TigerBeetle unavailable: transport error
 //   - ClickHouse unavailable during overage ceiling check: fail closed (503)
 //
-// Idempotency: Transfer IDs are deterministic from (JobID, WindowSeq, Leg, Kind).
+// Idempotency: Transfer IDs are deterministic from (JobID, WindowSeq, grant_idx, Kind).
 func (c *Client) Reserve(ctx context.Context, req ReserveRequest) (Reservation, error)
 ```
-
-The previous wording treated PostgreSQL grant state as advisory while TigerBeetle
-held the real balance. That was the race. Revision 3 makes PostgreSQL grant state part of the
-authoritative admission decision by serializing it with the org advisory lock.
 
 #### Renew, Settle, Void
 
@@ -1101,13 +1090,12 @@ func (c *Client) Void(ctx context.Context, reservation *Reservation) error
 
 Normative semantics:
 
-- `Renew`: settle the current window, mutate grant consumption under the org advisory lock,
-  then reserve the next window using current grant state. `Renew` may therefore change
-  `reservation.PricingPhase`.
-- `Settle`: post the pending TigerBeetle transfers for the actual cost, update
-  `credit_grants.consumed` for the exact set of grants eligible for `reservation.PricingPhase`,
-  and write the `forge_metal.metering` row (including `actor_id` from the reservation).
-- `Void`: cancel pending transfers without mutating grant consumption.
+- `Renew`: settle the current window, re-read the active grant catalog, then reserve the next
+  window. `Renew` may therefore change `reservation.PricingPhase`.
+- `Settle`: post each pending grant leg for the actual cost and write the
+  `forge_metal.metering` row (including `actor_id` from the reservation). No PostgreSQL
+  consumption counter is updated.
+- `Void`: cancel each pending grant leg.
 
 ### 2.6 Credit Management
 
@@ -1117,7 +1105,6 @@ Normative semantics:
 type CreditGrant struct {
     OrgID          OrgID
     ProductID      string
-    AccountType    GrantAccount
     Amount         uint64      // ledger units
     Source         string      // "subscription", "purchase", "promo", "free_tier", "refund"
     StripeReferenceID string   // Stripe payment intent or invoice ID
@@ -1127,19 +1114,15 @@ type CreditGrant struct {
     ExpiresAt      *time.Time  // nil = never expires
 }
 
-// DepositCredits creates a credit grant and posts the corresponding TigerBeetle transfer.
+// DepositCredits creates a TigerBeetle grant account, funds it, and inserts the
+// immutable PostgreSQL catalog row.
 //
-// Postconditions:
-//   - TigerBeetle transfer: debit StripeHolding → credit org/Credit
-//     (for purchase/subscription/refund sources)
-//     OR debit FreeTierPool → credit org/FreeTier (for free_tier source)
-//     OR debit PromoPool → credit org/Credit (for promo source)
-//   - credit_grants row inserted in PostgreSQL with account_type populated
-//   - billing_events row logged
-//
-// The TigerBeetle transfer and PostgreSQL insert are NOT atomic. TigerBeetle is
-// the source of truth for balance; PostgreSQL is the source of truth for
-// attribution and expiration. Reconciliation detects discrepancies.
+// Flow:
+//   1. Create TigerBeetle account for GrantAccountID(grantID) with
+//      DebitsMustNotExceedCredits and History
+//   2. Post funding transfer from the source operator account to GrantAccountID(grantID)
+//   3. Insert credit_grants row in PostgreSQL
+//   4. Log billing event
 //
 // Error conditions:
 //   - TigerBeetle unavailable: returns error (no grant row created)
@@ -1194,12 +1177,13 @@ type ExpireResult struct {
 
 // ExpireCredits sweeps expired credit grants.
 //
-// For each grant where expires_at <= now() AND remaining > 0:
-//   1. Post TigerBeetle transfer:
-//      - free_tier grants: debit org/FreeTier → credit operator/FreeTierExpense (clamped)
-//      - credit grants: debit org/Credit → credit operator/ExpiredCredits (clamped)
-//   2. Update grant: expired = remaining
-//   3. Log billing event
+// For each grant where expires_at <= now() AND closed_at IS NULL:
+//   1. BalancingDebit from GrantAccountID(grantID) into:
+//      - FreeTierExpense for free_tier grants
+//      - ExpiredCredits for every other grant source
+//   2. Close the TigerBeetle grant account
+//   3. UPDATE credit_grants SET closed_at = now()
+//   4. Log billing event
 //
 // Error conditions:
 //   - PostgreSQL unavailable: returns error immediately
@@ -1214,16 +1198,18 @@ func (c *Client) ExpireCredits(ctx context.Context) (ExpireResult, error)
 #### HandleDispute
 
 ```go
-// HandleDispute processes a chargeback by debiting the org's credit account.
+// HandleDispute processes a chargeback by debiting the grant(s) funded by the
+// disputed Stripe payment first.
 //
 // Postconditions:
-//   - TigerBeetle transfer: debit org/Credit → credit StripeHolding
-//     (balancing_debit to clamp if balance insufficient)
+//   - TigerBeetle transfer(s): debit the original disputed grant(s) first,
+//     then other eligible grants in reverse waterfall order if needed,
+//     crediting StripeHolding
 //   - If org's credit balance insufficient to cover dispute: all org
 //     subscriptions suspended via SuspendOrg
 //   - billing_events row logged with event_type='dispute_opened'
-//   - credit_grants updated: consumed increased on the original grant
-//     that funded the disputed payment (matched via stripe_reference_id)
+//   - credit_grants remains immutable; dispute attribution comes from
+//     stripe_reference_id and TigerBeetle transfer history
 //
 // Idempotency: Transfer ID derived from taskID + KindDisputeDebit.
 func (c *Client) HandleDispute(ctx context.Context, orgID OrgID, taskID TaskID, disputeAmount uint64) error
@@ -1281,9 +1267,9 @@ type DepositResult struct {
 // For each active subscription with included_credits > 0:
 //   1. Check if a credit_grants row already exists for this (subscription_id, period_start)
 //   2. If not:
-//      - free plans: DepositCredits(taskID=nil, source='free_tier', account_type='free_tier')
-//      - paid metered plans: DepositCredits(taskID=nil, source='subscription', account_type='credit')
-//   3. Use balancing_credit only for free-tier grants
+//      - free plans: DepositCredits(taskID=nil, source='free_tier')
+//      - paid metered plans: DepositCredits(taskID=nil, source='subscription')
+//   3. Each deposit creates a fresh TigerBeetle grant account for that period
 //
 // This runs monthly for both monthly and annual subscriptions (monthly drip).
 // Annual subscriptions receive 1/12th of yearly credits each month.
@@ -1300,11 +1286,11 @@ func (c *Client) DepositSubscriptionCredits(ctx context.Context) (DepositResult,
 func (c *Client) Reconcile(ctx context.Context, ch ClickHouseQuerier) (ReconcileResult, error)
 ```
 
-Revision 3 reconciliation compares:
+Reconciliation compares:
 
-- ClickHouse metering rows
-- TigerBeetle posted transfers
-- PostgreSQL grant remaining totals
+- every active PostgreSQL grant row against an open TigerBeetle grant account
+- TigerBeetle settled transfers against ClickHouse metering rows
+- TigerBeetle grant accounts against PostgreSQL catalog rows to detect orphans
 
 It does not call Stripe usage-record endpoints. Stripe is not the metering source of truth.
 
@@ -1391,14 +1377,32 @@ client per request.
 
 ### 3.2 Account Construction
 
-#### Org accounts
+#### Grant accounts
 
-Two accounts per org: FreeTier (code 1) and Credit (code 2). Both have
-`DebitsMustNotExceedCredits: true` and `History: true`.
+Each `credit_grants.grant_id` gets exactly one TigerBeetle account:
+
+```go
+types.Account{
+    ID:         GrantAccountID(grantID).raw,
+    UserData64: uint64(orgID),
+    UserData32: uint32(sourceType), // 1=free_tier, 2=subscription, 3=purchase, 4=promo, 5=refund
+    Ledger:     1,
+    Code:       uint16(AcctGrant), // 9
+    Flags: types.AccountFlags{
+        DebitsMustNotExceedCredits: true,
+        History:                    true,
+    }.ToUint16(),
+}
+```
+
+This account is the grant's balance. `debits_posted` is consumed amount. `available` is
+`credits_posted - debits_posted - debits_pending`. `closed_at` in PostgreSQL is set only
+after the account has been drained and closed.
 
 #### Operator accounts
 
-Six operator accounts. Addition:
+Operator accounts remain unchanged. The addition relevant to this redesign is
+`ExpiredCredits`, which receives unused paid grant balances during expiry sweeps:
 
 ```go
 {
@@ -1419,26 +1423,26 @@ free tier). Accountants care about this distinction.
 
 ### 3.3 Transfer Construction — Credit Expiry
 
-New transfer type for the `ExpireCredits` sweeper:
+The expiry sweeper drains one grant account at a time:
 
 ```go
 expiryTransfer := types.Transfer{
-    ID:              CreditExpiryID(grantID).raw,  // new derivation function
-    DebitAccountID:  OrgAccountID(orgID, AcctCredit).raw,
-    CreditAccountID: OperatorAccountID(AcctExpiredCredits).raw,
-    Amount:          types.ToUint128(remainingAmount),
+    ID:              CreditExpiryID(grantID).raw,
+    DebitAccountID:  GrantAccountID(grantID).raw,
+    CreditAccountID: sinkAccountID, // ExpiredCredits or FreeTierExpense
+    Amount:          types.ToUint128(requestedAmount),
     Ledger:          1,
-    Code:            uint16(KindCreditExpiry), // 9
+    Code:            uint16(KindCreditExpiry),
     Flags: types.TransferFlags{
-        BalancingDebit: true,  // clamp to available balance
+        BalancingDebit: true,
     }.ToUint16(),
     UserData64: uint64(orgID),
 }
 ```
 
-`BalancingDebit` is critical: between the PostgreSQL query (which reads `remaining > 0`)
-and the TigerBeetle transfer, the org may have consumed some credits. The clamped amount
-from `LookupTransfers` is used to update `credit_grants.expired`.
+`BalancingDebit` is critical: between the PostgreSQL query (`closed_at IS NULL`) and the
+TigerBeetle transfer, a concurrent settlement may have consumed some of the grant. The
+clamped amount from `LookupTransfers` is the authoritative expired amount.
 
 **ID derivation for credit expiry:**
 
@@ -1447,7 +1451,7 @@ func CreditExpiryID(grantID int64) TransferID {
     var id [16]byte
     id[5] = uint8(KindCreditExpiry)
     binary.LittleEndian.PutUint64(id[8:16], uint64(grantID))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 ```
 
@@ -1476,14 +1480,14 @@ succeeded. `AccountExists` (value 21) is idempotent confirmation.
 
 ### 3.5 Transfer Construction
 
-**Pending reservation (free-tier leg with balancing_debit):**
+Reservations are sequential per-grant waterfalls. Each pending transfer is one leg:
 
 ```go
-freeTierTransfer := types.Transfer{
-    ID:              VMTransferID(jobID, windowSeq, LegFreeTier, KindReservation).raw,
-    DebitAccountID:  OrgAccountID(orgID, AcctFreeTier).raw,
-    CreditAccountID: OperatorAccountID(AcctFreeTierExpense).raw,
-    Amount:          types.ToUint128(windowCost),
+reservationLeg := types.Transfer{
+    ID:              VMTransferID(jobID, windowSeq, grantIdx, KindReservation).raw,
+    DebitAccountID:  GrantAccountID(grantID).raw,
+    CreditAccountID: phaseSinkAccountID, // FreeTierExpense or Revenue
+    Amount:          types.ToUint128(remainder),
     Ledger:          1,
     Code:            uint16(KindReservation),
     Flags:           types.TransferFlags{Pending: true, BalancingDebit: true}.ToUint16(),
@@ -1496,38 +1500,23 @@ freeTierTransfer := types.Transfer{
 **Reading back the clamped amount** (two-round-trip pattern):
 
 ```go
-transfers, err := client.LookupTransfers([]types.Uint128{freeTierTransfer.ID})
+transfers, err := client.LookupTransfers([]types.Uint128{reservationLeg.ID})
 clampedAmount := uint128ToUint64(transfers[0].Amount) // actual, not requested
-remainder := windowCost - clampedAmount
+remainder -= clampedAmount
 ```
 
 TigerBeetle does not return the clamped amount in `CreateTransfers` results — `LookupTransfers`
 is the only way to read it.
 
-**Credit leg (if remainder > 0):**
-
-```go
-creditTransfer := types.Transfer{
-    ID:              VMTransferID(jobID, windowSeq, LegCredit, KindReservation).raw,
-    DebitAccountID:  OrgAccountID(orgID, AcctCredit).raw,
-    CreditAccountID: OperatorAccountID(AcctRevenue).raw,
-    Amount:          types.ToUint128(remainder),
-    Ledger: 1, Code: uint16(KindReservation),
-    Flags:  types.TransferFlags{Pending: true}.ToUint16(),
-    UserData64: uint64(orgID), UserData32: windowSeq,
-    Timeout: cfg.PendingTimeoutSecs,
-}
-```
-
-If this fails with `TransferExceedsCredits`: void the free-tier transfer, return
-`ErrInsufficientBalance`.
+The orchestrator repeats that loop for each eligible grant in order. If `remainder > 0`
+after the final grant, it voids every pending leg and returns `ErrInsufficientBalance`.
 
 **Settlement (post pending):**
 
 ```go
 types.Transfer{
-    ID:        VMTransferID(jobID, windowSeq, leg, KindSettlement).raw,
-    PendingID: VMTransferID(jobID, windowSeq, leg, KindReservation).raw,
+    ID:        VMTransferID(jobID, windowSeq, grantIdx, KindSettlement).raw,
+    PendingID: VMTransferID(jobID, windowSeq, grantIdx, KindReservation).raw,
     Amount:    types.ToUint128(actualCost), // partial post releases excess
     Flags:     types.TransferFlags{PostPendingTransfer: true}.ToUint16(),
 }
@@ -1537,16 +1526,15 @@ types.Transfer{
 
 ```go
 types.Transfer{
-    ID:        VMTransferID(jobID, windowSeq, leg, KindVoid).raw,
-    PendingID: VMTransferID(jobID, windowSeq, leg, KindReservation).raw,
+    ID:        VMTransferID(jobID, windowSeq, grantIdx, KindVoid).raw,
+    PendingID: VMTransferID(jobID, windowSeq, grantIdx, KindReservation).raw,
     Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
 }
 ```
 
 **Linked transfers:** `Linked` flag chains transfers atomically. Last in chain must NOT
-have `Linked` set. The two-phase billing flow does NOT use linked transfers — free-tier
-and credit legs are independent (balancing_debit requires readback; legs must be
-individually post-able/voidable).
+have `Linked` set. The grant-waterfall flow does NOT use linked transfers — each leg
+requires readback and must remain individually post-able/voidable.
 
 **Periodic subscription deposit:**
 
@@ -1554,18 +1542,15 @@ individually post-able/voidable).
 types.Transfer{
     ID:              SubscriptionPeriodID(subscriptionID, periodStart, KindFreeTierReset).raw,
     DebitAccountID:  OperatorAccountID(AcctFreeTierPool).raw,
-    CreditAccountID: OrgAccountID(orgID, AcctFreeTier).raw,
+    CreditAccountID: GrantAccountID(grantID).raw,
     Amount:          types.ToUint128(includedCredits),
     Ledger: 1, Code: uint16(KindFreeTierReset),
-    Flags:  types.TransferFlags{BalancingCredit: true}.ToUint16(),
     UserData64: uint64(orgID),
 }
 ```
 
-`BalancingCredit` clamps to available headroom — prevents accumulation.
-
 Paid metered subscriptions use the same helper with `KindSubscriptionDeposit` and
-`DebitAccountID = OperatorAccountID(AcctStripeHolding)`, `CreditAccountID = OrgAccountID(orgID, AcctCredit)`.
+`DebitAccountID = OperatorAccountID(AcctStripeHolding)`, `CreditAccountID = GrantAccountID(grantID)`.
 
 **ID derivation for subscription-period deposits:**
 
@@ -1576,7 +1561,7 @@ func SubscriptionPeriodID(subscriptionID int64, periodStart time.Time, kind Xfer
     binary.LittleEndian.PutUint32(id[0:4], uint32(t.Year())*12+uint32(t.Month()))
     id[5] = uint8(kind)
     binary.LittleEndian.PutUint64(id[8:16], uint64(subscriptionID))
-    return TransferID{tb.BytesToUint128(id)}
+    return TransferID{types.BytesToUint128(id)}
 }
 ```
 
@@ -1598,8 +1583,8 @@ Licensed products do not create `credit_grants`. The recurring Stripe invoice is
 directly as revenue in TigerBeetle.
 
 TigerBeetle is intentionally unaware of pricing-phase selection. `included` versus `overage`
-is decided in PostgreSQL under the org advisory lock and recorded in the `Reservation` and the
-ClickHouse metering row. TigerBeetle only sees the resulting reservation amount.
+is decided in PostgreSQL from the eligible grant set and recorded in the `Reservation` and the
+ClickHouse metering row. TigerBeetle only sees the resulting reservation legs.
 
 ### 3.6 Transfer Error Handling
 
@@ -1922,13 +1907,11 @@ Required operations in the state machine:
 
 Required invariants in `Check`:
 
-- TigerBeetle never reports negative available balance on either org account
-- `remaining = amount - consumed - expired` for every `credit_grants` row
-- no row has `consumed + expired > amount`
-- sum of active `credit_grants.remaining` for `account_type='credit'` approximates the
-  TigerBeetle credit balance for that org, allowing only pending-transfer tolerance
-- sum of active `credit_grants.remaining` for `account_type='free_tier'` approximates the
-  TigerBeetle free-tier balance for that org, allowing only pending-transfer tolerance
+- for each active grant, TigerBeetle available equals
+  `credits_posted - debits_posted - debits_pending`
+- no TigerBeetle grant account has a negative available balance
+- every active PostgreSQL grant row has exactly one TigerBeetle grant account with
+  `code=9`, `user_data_64=org_id`, and `user_data_32=source_type`
 - `AcctExpiredCredits` only receives transfers with `Code == KindCreditExpiry`
 - any `Reservation` that settles must consume grant rows from the eligibility set implied by
   `reservation.PricingPhase`
@@ -1976,7 +1959,8 @@ owned by Layer 1 and Layer 3.
 
 Required named checks:
 
-- `grant_balance_consistency` (alert): product-grant totals match TigerBeetle aggregate balances
+- `grant_account_catalog_consistency` (alert): every active PostgreSQL grant row has an open TigerBeetle grant account
+- `no_orphan_grant_accounts` (alert): every TigerBeetle grant account has a PostgreSQL catalog row
 - `expired_grants_swept` (warn): no expired active grants without an expiry transfer
 - `licensed_charge_exactly_once` (alert): each licensed invoice produces exactly one revenue
   transfer
@@ -1995,7 +1979,7 @@ Required cycle:
 4. sleep
 5. Settle
 6. verify a `forge_metal.metering` row exists
-7. verify TigerBeetle and PostgreSQL balances moved as expected
+7. verify the funded grant account balance decreased exactly as expected
 
 The canary is not allowed to depend on Stripe being available.
 
@@ -2010,7 +1994,7 @@ Required fault catalog:
 |-------|-------------------|
 | PostgreSQL down during `DepositCredits` | TigerBeetle transfer may succeed, grant row missing, reconciliation detects |
 | Expiry sweeper crashes mid-batch | idempotent replay via `CreditExpiryID(grantID)` |
-| Concurrent `Reserve` and `ExpireCredits` on same org | serialized by advisory lock; no cross-product overspend |
+| Concurrent `Reserve` and `ExpireCredits` on same grant | TigerBeetle serializes the debits; no grant can go negative |
 | Smart Retries emits repeated `invoice.payment_failed` for one invoice | subscription stays `past_due`, no duplicate grant deposits |
 | Stripe sends `invoice.paid` twice | task idempotency plus TigerBeetle transfer idempotency prevent duplicate mutation |
 | Licensed invoice task replays after partial failure | exactly one `StripeHolding -> Revenue` transfer |
@@ -2126,7 +2110,7 @@ Key policies:
 - **EnsureOrg**: return error, next request retries.
 - **DepositCredits** (grant row insert after TB transfer): TB transfer may succeed
   without corresponding grant row. Reconciliation detects.
-- **Reserve**: if the advisory-lock transaction cannot start, fail closed.
+- **Reserve**: if PostgreSQL cannot supply the eligible grant catalog, fail closed.
 
 ### 7.3 Stripe Failures
 
@@ -2158,13 +2142,12 @@ Key policies:
 
 - **Recovery:** Re-run. `CreditExpiryID(grantID)` produces the same transfer ID.
   TigerBeetle returns `TransferExists` for already-processed grants. PostgreSQL grant
-  rows are updated idempotently (SET expired = remaining WHERE remaining > 0).
+  rows are updated idempotently (`SET closed_at = now()` where still open).
 
-#### Concurrent Reserve and ExpireCredits on same org
+#### Concurrent Reserve and ExpireCredits on same grant
 
-- **Resolution:** both execute under `pg_advisory_xact_lock(org_id)`, so they do not observe
-  concurrent PostgreSQL grant state for the same org. TigerBeetle clamping remains the second
-  line of defense if a lockless caller is introduced by bug.
+- **Resolution:** both debit the same TigerBeetle grant account using balancing semantics, so
+  the grant cannot go negative. PostgreSQL only records closure after the account is drained.
 
 #### Subscription renewal deposit when org has been suspended
 
@@ -2179,7 +2162,7 @@ Key policies:
 
 #### Stripe account configured to leave subscriptions `past_due`
 
-- **Resolution:** unsupported for this revision. The billing doctor must fail configuration
+- **Resolution:** unsupported. The billing doctor must fail configuration
   validation if the Stripe account terminal action diverges from "cancel the subscription".
 
 #### Credit note created, local cancellation update fails
