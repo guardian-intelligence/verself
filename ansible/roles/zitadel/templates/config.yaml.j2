@@ -39,6 +39,17 @@ DefaultInstance:
       # Login V2 is a separate Next.js app (zitadel-login), not embedded in the
       # Zitadel Go binary. Until deployed as a separate service, use embedded Login V1.
       Required: false
+  DomainPolicy:
+    # Sender domain (notify.X) differs from Zitadel's ExternalDomain (auth.X).
+    SMTPSenderAddressMatchesInstanceDomain: false
+  SMTPConfiguration:
+    SMTP:
+      Host: "{{ zitadel_smtp_host }}"
+      User: "{{ zitadel_smtp_user }}"
+      Password: "{{ resend_api_key }}"
+    TLS: {{ zitadel_smtp_tls | lower }}
+    From: "{{ resend_sender_address }}"
+    FromName: "{{ resend_sender_name }}"
   LabelPolicy:
     DisableWatermark: true
     HideLoginNameSuffix: true

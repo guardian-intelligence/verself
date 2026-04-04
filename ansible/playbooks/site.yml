@@ -120,6 +120,7 @@
   roles:
     - wireguard
     - cloudflare_dns
+    - resend
     - clickhouse
     - tigerbeetle
     - postgresql

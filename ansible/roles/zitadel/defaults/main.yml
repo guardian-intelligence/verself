@@ -3,3 +3,8 @@
 zitadel_config_dir: /etc/zitadel
 zitadel_subdomain: auth
 zitadel_domain: "{{ zitadel_subdomain }}.{{ forge_metal_domain }}"
+
+# SMTP (Resend)
+zitadel_smtp_host: "smtp.resend.com:465"
+zitadel_smtp_user: "resend"
+zitadel_smtp_tls: true
