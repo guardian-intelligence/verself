@@ -86,7 +86,7 @@ func TestGrantBalanceAgainstLiveHost(t *testing.T) {
 	if balance != expected {
 		t.Fatalf("expected balance %+v, got %+v", expected, balance)
 	}
-	t.Logf("verified grant balances for org_id=%d free_tier=%d credit=%d", orgID, expected.FreeTierAvailable, expected.CreditAvailable)
+	t.Logf("verified grant balances for org_id=%d free_tier=%d credit=%d total=%d", orgID, expected.FreeTierAvailable, expected.CreditAvailable, expected.TotalAvailable)
 }
 
 func newLivePhase1Env(t *testing.T) livePhase1Env {

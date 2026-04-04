@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/stripe/stripe-go/v85"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
@@ -90,18 +91,23 @@ func (c *Client) GetOrgBalance(ctx context.Context, orgID OrgID) (Balance, error
 	accountIDs := make([]types.Uint128, 0, 8)
 	sourceByAccountID := make(map[types.Uint128]GrantSourceType)
 	for rows.Next() {
-		var grantID int64
+		var grantIDStr string
 		var source string
-		if err := rows.Scan(&grantID, &source); err != nil {
+		if err := rows.Scan(&grantIDStr, &source); err != nil {
 			return Balance{}, fmt.Errorf("scan active grant: %w", err)
+		}
+
+		parsedULID, err := ulid.ParseStrict(grantIDStr)
+		if err != nil {
+			return Balance{}, fmt.Errorf("parse grant ULID %q: %w", grantIDStr, err)
 		}
 
 		sourceType, err := ParseGrantSourceType(source)
 		if err != nil {
-			return Balance{}, fmt.Errorf("grant %d: %w", grantID, err)
+			return Balance{}, fmt.Errorf("grant %s: %w", grantIDStr, err)
 		}
 
-		accountID := GrantAccountID(GrantID(grantID)).raw
+		accountID := GrantAccountID(GrantID(parsedULID)).raw
 		accountIDs = append(accountIDs, accountID)
 		sourceByAccountID[accountID] = sourceType
 	}
@@ -216,7 +222,7 @@ func grantAccount(grantID GrantID, orgID OrgID, sourceType GrantSourceType) type
 		UserData64: uint64(orgID),
 		UserData32: uint32(sourceType),
 		Ledger:     1,
-		Code:       uint16(AcctGrant),
+		Code:       AcctGrantCode,
 		Flags:      types.AccountFlags{DebitsMustNotExceedCredits: true, History: true}.ToUint16(),
 	}
 }

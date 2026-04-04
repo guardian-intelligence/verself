@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
 
@@ -327,17 +329,23 @@ func (c *Client) loadGrantBalances(ctx context.Context, orgID OrgID, productID s
 	accountIDs := make([]types.Uint128, 0, 8)
 	for rows.Next() {
 		var (
-			grantID   int64
-			source    string
-			expiresAt sql.NullTime
+			grantIDStr string
+			source     string
+			expiresAt  sql.NullTime
 		)
-		if err := rows.Scan(&grantID, &source, &expiresAt); err != nil {
+		if err := rows.Scan(&grantIDStr, &source, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan grant row: %w", err)
 		}
 
+		parsedULID, err := ulid.ParseStrict(grantIDStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse grant ULID %q: %w", grantIDStr, err)
+		}
+		grantID := GrantID(parsedULID)
+
 		sourceType, err := ParseGrantSourceType(source)
 		if err != nil {
-			return nil, fmt.Errorf("grant %d: %w", grantID, err)
+			return nil, fmt.Errorf("grant %x: %w", grantID, err)
 		}
 
 		var expiresAtPtr *time.Time
@@ -347,11 +355,11 @@ func (c *Client) loadGrantBalances(ctx context.Context, orgID OrgID, productID s
 		}
 
 		rowsForLookup = append(rowsForLookup, grantRow{
-			grantID:   GrantID(grantID),
+			grantID:   grantID,
 			source:    sourceType,
 			expiresAt: expiresAtPtr,
 		})
-		accountIDs = append(accountIDs, GrantAccountID(GrantID(grantID)).raw)
+		accountIDs = append(accountIDs, GrantAccountID(grantID).raw)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate grant rows: %w", err)
@@ -377,12 +385,12 @@ func (c *Client) loadGrantBalances(ctx context.Context, orgID OrgID, productID s
 	for _, row := range rowsForLookup {
 		account, ok := accountByID[GrantAccountID(row.grantID).raw]
 		if !ok {
-			return nil, fmt.Errorf("lookup grant accounts: missing account for grant %d", row.grantID)
+			return nil, fmt.Errorf("lookup grant accounts: missing account for grant %x", row.grantID)
 		}
 
 		available, err := availableFromAccount(account)
 		if err != nil {
-			return nil, fmt.Errorf("grant %d available: %w", row.grantID, err)
+			return nil, fmt.Errorf("grant %x available: %w", row.grantID, err)
 		}
 
 		grants = append(grants, grantBalance{
@@ -451,7 +459,7 @@ func (c *Client) reserveGrantWaterfall(ctx context.Context, jobID JobID, orgID O
 		case left.expiresAt != nil && right.expiresAt != nil && !left.expiresAt.Equal(*right.expiresAt):
 			return left.expiresAt.Before(*right.expiresAt)
 		default:
-			return left.grantID < right.grantID
+			return bytes.Compare(left.grantID[:], right.grantID[:]) < 0
 		}
 	})
 

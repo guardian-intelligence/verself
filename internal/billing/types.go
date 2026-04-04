@@ -5,11 +5,10 @@ import (
 	"time"
 )
 
-type OrgAcctType uint16
-
-const (
-	AcctGrant OrgAcctType = 9
-)
+// AcctGrantCode is the TigerBeetle account code for grant accounts.
+// With ULID-based grant IDs, type discrimination is via the code field
+// on the TigerBeetle account, not encoded in the account ID bits.
+const AcctGrantCode uint16 = 9
 
 type OperatorAcctType uint16
 

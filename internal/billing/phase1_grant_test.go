@@ -3,10 +3,12 @@ package billing
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
@@ -52,6 +54,8 @@ func seedGrantForTest(t fatalHelper, client *Client, db *sql.DB, tbClient tb.Cli
 	return seedGrantForProductTest(t, client, db, tbClient, orgID, billingTestProductID, sourceType, amount)
 }
 
+// seedGrantForProductTest creates a grant using the PG-first ordering from
+// the spec: generate ULID → insert PG catalog row → create TB account → fund.
 func seedGrantForProductTest(t fatalHelper, client *Client, db *sql.DB, tbClient tb.Client, orgID OrgID, productID string, sourceType GrantSourceType, amount uint64) seededGrant {
 	t.Helper()
 
@@ -64,28 +68,36 @@ func seedGrantForProductTest(t fatalHelper, client *Client, db *sql.DB, tbClient
 		t.Fatalf("ensure org %d: %v", orgID, err)
 	}
 
-	var grantID int64
-	if err := db.QueryRowContext(ctx, `
-		INSERT INTO credit_grants (org_id, product_id, amount, source)
-		VALUES ($1, $2, $3, $4)
-		RETURNING grant_id
-	`, strconv.FormatUint(uint64(orgID), 10), productID, int64(amount), sourceType.String()).Scan(&grantID); err != nil {
+	// 1. Generate ULID (application-generated, not database-generated)
+	grantID := NewGrantID()
+	grantIDStr := ulid.ULID(grantID).String()
+
+	// 2. Insert PG catalog row first (serialization point)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO credit_grants (grant_id, org_id, product_id, amount, source)
+		VALUES ($1, $2, $3, $4, $5)
+	`, grantIDStr, strconv.FormatUint(uint64(orgID), 10), productID, int64(amount), sourceType.String()); err != nil {
 		t.Fatalf("insert grant row: %v", err)
 	}
 
-	if err := client.createGrantAccount(GrantID(grantID), orgID, sourceType); err != nil {
+	// 3. Create TB account (TigerBeetle last)
+	if err := client.createGrantAccount(grantID, orgID, sourceType); err != nil {
 		t.Fatalf("create grant account: %v", err)
 	}
 
+	// 4. Fund the account. Derive a unique transfer ID from the ULID's
+	// random tail so each seeded grant gets its own transfer.
+	syntheticTaskID := TaskID(binary.BigEndian.Uint64(grantID[8:16]))
 	transfer := tbtypes.Transfer{
-		ID:              StripeDepositID(TaskID(grantID), KindStripeDeposit).raw,
+		ID:              StripeDepositID(syntheticTaskID, KindStripeDeposit).raw,
 		DebitAccountID:  OperatorAccountID(AcctStripeHolding).raw,
-		CreditAccountID: GrantAccountID(GrantID(grantID)).raw,
+		CreditAccountID: GrantAccountID(grantID).raw,
 		UserData64:      uint64(orgID),
 		Code:            uint16(KindStripeDeposit),
 		Ledger:          1,
 		Amount:          tbtypes.ToUint128(amount),
 	}
+
 	results, err := tbClient.CreateTransfers([]tbtypes.Transfer{transfer})
 	if err != nil {
 		t.Fatalf("fund grant account: %v", err)
@@ -95,7 +107,7 @@ func seedGrantForProductTest(t fatalHelper, client *Client, db *sql.DB, tbClient
 	}
 
 	return seededGrant{
-		grantID:    GrantID(grantID),
+		grantID:    grantID,
 		orgID:      orgID,
 		sourceType: sourceType,
 		amount:     amount,
@@ -114,44 +126,44 @@ func requireGrantAccount(t fatalHelper, tbClient tb.Client, grant seededGrant) {
 	}
 
 	account := accounts[0]
-	if account.Code != uint16(AcctGrant) {
-		t.Fatalf("grant %d: expected code %d, got %d", grant.grantID, AcctGrant, account.Code)
+	if account.Code != AcctGrantCode {
+		t.Fatalf("grant %x: expected code %d, got %d", grant.grantID, AcctGrantCode, account.Code)
 	}
 	if account.Ledger != 1 {
-		t.Fatalf("grant %d: expected ledger 1, got %d", grant.grantID, account.Ledger)
+		t.Fatalf("grant %x: expected ledger 1, got %d", grant.grantID, account.Ledger)
 	}
 	if account.UserData64 != uint64(grant.orgID) {
-		t.Fatalf("grant %d: expected user_data_64 %d, got %d", grant.grantID, grant.orgID, account.UserData64)
+		t.Fatalf("grant %x: expected user_data_64 %d, got %d", grant.grantID, grant.orgID, account.UserData64)
 	}
 	if account.UserData32 != uint32(grant.sourceType) {
-		t.Fatalf("grant %d: expected user_data_32 %d, got %d", grant.grantID, grant.sourceType, account.UserData32)
+		t.Fatalf("grant %x: expected user_data_32 %d, got %d", grant.grantID, grant.sourceType, account.UserData32)
 	}
 	if flags := account.AccountFlags(); flags != (tbtypes.AccountFlags{DebitsMustNotExceedCredits: true, History: true}) {
-		t.Fatalf("grant %d: unexpected flags %+v", grant.grantID, flags)
+		t.Fatalf("grant %x: unexpected flags %+v", grant.grantID, flags)
 	}
 
 	available, err := availableFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d available: %v", grant.grantID, err)
+		t.Fatalf("grant %x available: %v", grant.grantID, err)
 	}
 	if available != grant.amount {
-		t.Fatalf("grant %d: expected available %d, got %d", grant.grantID, grant.amount, available)
+		t.Fatalf("grant %x: expected available %d, got %d", grant.grantID, grant.amount, available)
 	}
 
 	pending, err := pendingFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d pending: %v", grant.grantID, err)
+		t.Fatalf("grant %x pending: %v", grant.grantID, err)
 	}
 	if pending != 0 {
-		t.Fatalf("grant %d: expected pending 0, got %d", grant.grantID, pending)
+		t.Fatalf("grant %x: expected pending 0, got %d", grant.grantID, pending)
 	}
 
 	consumed, err := consumedFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d consumed: %v", grant.grantID, err)
+		t.Fatalf("grant %x consumed: %v", grant.grantID, err)
 	}
 	if consumed != 0 {
-		t.Fatalf("grant %d: expected consumed 0, got %d", grant.grantID, consumed)
+		t.Fatalf("grant %x: expected consumed 0, got %d", grant.grantID, consumed)
 	}
 }
 
@@ -160,29 +172,29 @@ func requireGrantBalance(t fatalHelper, tbClient tb.Client, grantID GrantID, wan
 
 	accounts, err := tbClient.LookupAccounts([]tbtypes.Uint128{GrantAccountID(grantID).raw})
 	if err != nil {
-		t.Fatalf("lookup grant account %d: %v", grantID, err)
+		t.Fatalf("lookup grant account %x: %v", grantID, err)
 	}
 	if len(accounts) != 1 {
-		t.Fatalf("expected 1 grant account for %d, got %d", grantID, len(accounts))
+		t.Fatalf("expected 1 grant account for %x, got %d", grantID, len(accounts))
 	}
 
 	account := accounts[0]
 	available, err := availableFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d available: %v", grantID, err)
+		t.Fatalf("grant %x available: %v", grantID, err)
 	}
 	pending, err := pendingFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d pending: %v", grantID, err)
+		t.Fatalf("grant %x pending: %v", grantID, err)
 	}
 	consumed, err := consumedFromAccount(account)
 	if err != nil {
-		t.Fatalf("grant %d consumed: %v", grantID, err)
+		t.Fatalf("grant %x consumed: %v", grantID, err)
 	}
 
 	if available != wantAvailable || pending != wantPending || consumed != wantConsumed {
 		t.Fatalf(
-			"grant %d: expected available=%d pending=%d consumed=%d, got available=%d pending=%d consumed=%d",
+			"grant %x: expected available=%d pending=%d consumed=%d, got available=%d pending=%d consumed=%d",
 			grantID,
 			wantAvailable,
 			wantPending,
