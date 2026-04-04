@@ -506,26 +506,110 @@
       (dev_tools_protoc_gen_go_grpc_current.stdout | default(''))
 
 # ============================================================================
-# pipx: ansible
+# uv (tarball with two binaries: uv, uvx)
 # ============================================================================
 
-- name: Ensure pipx is available
+- name: Check current uv version
+  ansible.builtin.command: /usr/local/bin/uv --version
+  register: dev_tools_uv_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.uv is defined
+
+- name: Install uv {{ dev_tools_manifest.uv.version }}
+  when:
+    - dev_tools_manifest.uv is defined
+    - dev_tools_uv_current.rc != 0 or dev_tools_manifest.uv.version not in (dev_tools_uv_current.stdout | default(''))
+  block:
+    - name: Create temp dir for uv
+      ansible.builtin.tempfile:
+        state: directory
+      register: dev_tools_uv_tmp
+
+    - name: Download uv tarball
+      ansible.builtin.get_url:
+        url: "{{ dev_tools_manifest.uv.url }}"
+        dest: "{{ dev_tools_uv_tmp.path }}/uv.tar.gz"
+        checksum: "sha256:{{ dev_tools_manifest.uv.sha256 }}"
+        mode: "0644"
+
+    - name: Extract uv
+      ansible.builtin.unarchive:
+        src: "{{ dev_tools_uv_tmp.path }}/uv.tar.gz"
+        dest: "{{ dev_tools_uv_tmp.path }}"
+        remote_src: true
+
+    - name: Install uv binaries
+      ansible.builtin.copy:
+        src: "{{ dev_tools_uv_tmp.path }}/uv-x86_64-unknown-linux-gnu/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        remote_src: true
+        mode: "0755"
+      loop:
+        - uv
+        - uvx
+
+    - name: Clean up temp dir
+      ansible.builtin.file:
+        path: "{{ dev_tools_uv_tmp.path }}"
+        state: absent
+
+- name: Verify uv version
+  ansible.builtin.command: /usr/local/bin/uv --version
+  register: dev_tools_uv_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest.uv.version not in dev_tools_uv_version_check.stdout"
+  when: dev_tools_manifest.uv is defined
+
+# ============================================================================
+# uv tool: ansible-core (with ansible-lint), pre-commit, guarddog
+# ============================================================================
+
+- name: Remove stale pipx installation
   ansible.builtin.apt:
     name: pipx
-    state: present
+    state: absent
 
-- name: Install ansible-core via pipx
-  ansible.builtin.command:
-    cmd: "pipx install ansible-core=={{ dev_tools_manifest.ansible.version }}"
-  environment:
-    PIPX_HOME: /opt/pipx
-    PIPX_BIN_DIR: /usr/local/bin
-  register: dev_tools_pipx_ansible
-  changed_when: "'installed package' in dev_tools_pipx_ansible.stdout"
-  failed_when:
-    - dev_tools_pipx_ansible.rc != 0
-    - "'already seems to be installed' not in (dev_tools_pipx_ansible.stdout + dev_tools_pipx_ansible.stderr)"
+- name: Remove stale pipx home directory
+  ansible.builtin.file:
+    path: /opt/pipx
+    state: absent
+
+- name: Check ansible version
+  ansible.builtin.command: /usr/local/bin/ansible --version
+  register: dev_tools_ansible_current
+  changed_when: false
+  failed_when: false
   when: dev_tools_manifest.ansible is defined
+
+- name: Check ansible-lint version
+  ansible.builtin.command: /usr/local/bin/ansible-lint --version
+  register: dev_tools_ansible_lint_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest['ansible-lint'] is defined
+
+- name: Install ansible-core with ansible-lint via uv tool
+  ansible.builtin.command:
+    cmd: >-
+      /usr/local/bin/uv tool install
+      ansible-core=={{ dev_tools_manifest.ansible.version }}
+      --with ansible-lint=={{ dev_tools_manifest['ansible-lint'].version }}
+  environment:
+    UV_TOOL_DIR: /opt/uv-tools
+    UV_TOOL_BIN_DIR: /usr/local/bin
+  register: dev_tools_uv_ansible
+  changed_when: "'Installed' in dev_tools_uv_ansible.stdout"
+  failed_when:
+    - dev_tools_uv_ansible.rc != 0
+    - "'is already installed' not in (dev_tools_uv_ansible.stderr | default(''))"
+  when:
+    - dev_tools_manifest.ansible is defined
+    - >-
+      dev_tools_ansible_current.rc != 0
+      or dev_tools_manifest.ansible.version not in (dev_tools_ansible_current.stdout | default(''))
+      or dev_tools_ansible_lint_current.rc != 0
+      or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
 
 - name: Verify Ansible version
   ansible.builtin.command: /usr/local/bin/ansible --version
@@ -534,38 +618,12 @@
   failed_when: "dev_tools_manifest.ansible.version not in dev_tools_ansible_version_check.stdout"
   when: dev_tools_manifest.ansible is defined
 
-- name: Check ansible-lint version
-  ansible.builtin.command: /usr/local/bin/ansible-lint --version
-  register: dev_tools_ansible_lint_current
-  changed_when: false
-  failed_when: false
-  when:
-    - dev_tools_manifest.ansible is defined
-    - dev_tools_manifest['ansible-lint'] is defined
-
-- name: Install ansible-lint into the ansible-core pipx environment
-  ansible.builtin.command:
-    cmd: >-
-      pipx inject --include-apps ansible-core
-      ansible-lint=={{ dev_tools_manifest['ansible-lint'].version }}
-  environment:
-    PIPX_HOME: /opt/pipx
-    PIPX_BIN_DIR: /usr/local/bin
-  changed_when: true
-  when:
-    - dev_tools_manifest.ansible is defined
-    - dev_tools_manifest['ansible-lint'] is defined
-    - dev_tools_ansible_lint_current.rc != 0
-      or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
-
 - name: Verify ansible-lint version
   ansible.builtin.command: /usr/local/bin/ansible-lint --version
   register: dev_tools_ansible_lint_version_check
   changed_when: false
   failed_when: "dev_tools_manifest['ansible-lint'].version not in dev_tools_ansible_lint_version_check.stdout"
-  when:
-    - dev_tools_manifest.ansible is defined
-    - dev_tools_manifest['ansible-lint'] is defined
+  when: dev_tools_manifest['ansible-lint'] is defined
 
 - name: Check pre-commit version
   ansible.builtin.command: /usr/local/bin/pre-commit --version
@@ -574,17 +632,17 @@
   failed_when: false
   when: dev_tools_manifest['pre-commit'] is defined
 
-- name: Install pre-commit via pipx
+- name: Install pre-commit via uv tool
   ansible.builtin.command:
-    cmd: "pipx install pre-commit=={{ dev_tools_manifest['pre-commit'].version }}"
+    cmd: "/usr/local/bin/uv tool install pre-commit=={{ dev_tools_manifest['pre-commit'].version }}"
   environment:
-    PIPX_HOME: /opt/pipx
-    PIPX_BIN_DIR: /usr/local/bin
-  register: dev_tools_pre_commit_install
-  changed_when: "'installed package' in dev_tools_pre_commit_install.stdout"
+    UV_TOOL_DIR: /opt/uv-tools
+    UV_TOOL_BIN_DIR: /usr/local/bin
+  register: dev_tools_uv_pre_commit
+  changed_when: "'Installed' in dev_tools_uv_pre_commit.stdout"
   failed_when:
-    - dev_tools_pre_commit_install.rc != 0
-    - "'already seems to be installed' not in (dev_tools_pre_commit_install.stdout + dev_tools_pre_commit_install.stderr)"
+    - dev_tools_uv_pre_commit.rc != 0
+    - "'is already installed' not in (dev_tools_uv_pre_commit.stderr | default(''))"
   when:
     - dev_tools_manifest['pre-commit'] is defined
     - dev_tools_pre_commit_current.rc != 0
@@ -596,6 +654,36 @@
   changed_when: false
   failed_when: "dev_tools_manifest['pre-commit'].version not in dev_tools_pre_commit_version_check.stdout"
   when: dev_tools_manifest['pre-commit'] is defined
+
+- name: Check guarddog version
+  ansible.builtin.command: /usr/local/bin/guarddog --version
+  register: dev_tools_guarddog_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.guarddog is defined
+
+- name: Install guarddog via uv tool
+  ansible.builtin.command:
+    cmd: "/usr/local/bin/uv tool install guarddog=={{ dev_tools_manifest.guarddog.version }}"
+  environment:
+    UV_TOOL_DIR: /opt/uv-tools
+    UV_TOOL_BIN_DIR: /usr/local/bin
+  register: dev_tools_uv_guarddog
+  changed_when: "'Installed' in dev_tools_uv_guarddog.stdout"
+  failed_when:
+    - dev_tools_uv_guarddog.rc != 0
+    - "'is already installed' not in (dev_tools_uv_guarddog.stderr | default(''))"
+  when:
+    - dev_tools_manifest.guarddog is defined
+    - dev_tools_guarddog_current.rc != 0
+      or dev_tools_manifest.guarddog.version not in (dev_tools_guarddog_current.stdout | default(''))
+
+- name: Verify guarddog version
+  ansible.builtin.command: /usr/local/bin/guarddog --version
+  register: dev_tools_guarddog_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest.guarddog.version not in dev_tools_guarddog_version_check.stdout"
+  when: dev_tools_manifest.guarddog is defined
 
 - name: Install required Ansible collections
   ansible.builtin.command:
