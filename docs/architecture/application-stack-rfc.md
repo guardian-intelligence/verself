@@ -316,7 +316,7 @@ SMTP is required for email verification, password reset, and user invitations. W
 #### Backup strategy
 
 1. **PostgreSQL ZFS snapshots** of the data directory. Crash-consistent because the event store is append-only — a snapshot at any point captures a valid prefix of the event log. Projections (materialized views) are derived from events and can be rebuilt by replaying the event store.
-2. **Masterkey backup.** The masterkey file must be backed up separately from the database — it is not stored in PostgreSQL. Without it, encrypted secrets (IdP configs, TOTP seeds, signing keys) are unrecoverable. Store alongside other credentials in the existing `ansible/.credentials/` directory, included in the ZFS snapshot path.
+2. **Masterkey backup.** The masterkey file must be backed up separately from the database — it is not stored in PostgreSQL. Without it, encrypted secrets (IdP configs, TOTP seeds, signing keys) are unrecoverable. The masterkey is stored in `secrets.sops.yml` (SOPS-encrypted, committed to git) and deployed to `/etc/credstore/zitadel/masterkey` on the server.
 
 The event store is the single source of truth. If projections become corrupted, Zitadel rebuilds them on startup from the event log. A bare restore requires only the PostgreSQL data directory and the masterkey file.
 
@@ -483,14 +483,14 @@ TigerBeetle's deployment is two commands:
 tigerbeetle format --cluster=0 --replica=0 --replica-count=1 /var/lib/tigerbeetle/data.tigerbeetle
 
 # Run
-tigerbeetle start --addresses=127.0.0.1:3000 /var/lib/tigerbeetle/data.tigerbeetle
+tigerbeetle start --addresses=127.0.0.1:3320 /var/lib/tigerbeetle/data.tigerbeetle
 ```
 
 The data file is a single pre-allocated file that grows elastically. Internally it's divided into 512 KiB blocks, all immutable and 128-bit checksummed. There are no configuration files — cluster topology is baked in at format time.
 
 The systemd unit requires `AmbientCapabilities=CAP_IPC_LOCK` and `LimitMEMLOCK=infinity` because TigerBeetle locks its entire working set into physical memory (prevents the kernel from swapping pages to disk). Same pattern as ClickHouse's large-page setup.
 
-Default port: 3000.
+Default port: 3320 (moved from TigerBeetle's default 3000 to avoid conflict with Forgejo).
 
 #### Single-node caveats
 
@@ -537,15 +537,17 @@ Three ways for an org to have balance: free tier (automatic monthly), prepaid cr
 
 TigerBeetle accounts have flags that constrain what transfers are permitted. These are set at account creation and cannot be changed.
 
-| Account | Code | Flag | Effect |
-|---------|------|------|--------|
-| `OrgAccountID(orgID, FreeTier)` | 1 | `debits_must_not_exceed_credits` | Monthly allowance — usage reservations fail when allowance exhausted. |
-| `OrgAccountID(orgID, Credit)` | 2 | `debits_must_not_exceed_credits` | Prepaid balance — cannot go negative. Funds come from Stripe purchases or subscription deposits. |
-| `OperatorAccountID(Revenue)` | 3 | `debits_must_not_exceed_credits` | Earned revenue from paid usage only. Credit-normal — paid VM charges credit it, refunds debit it. Flag prevents refunding more than earned. (`credits_must_not_exceed_debits` would reject the first charge — tested against live TigerBeetle.) |
-| `OperatorAccountID(FreeTierExpense)` | 7 | (none) | Cost of free-tier compute given away. Credit-normal — free-tier VM charges credit it. Unflagged because the expense is bounded by FreeTierPool, not by this account's balance. |
-| `OperatorAccountID(FreeTierPool)` | 4 | `debits_must_not_exceed_credits` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
-| `OperatorAccountID(StripeHolding)` | 5 | (none) | Contra account. Intentionally unflagged — allows negative balance growth. Each Stripe deposit is a single transfer that debits StripeHolding and credits the org (no separate "receipt" entry). The running negative balance represents total Stripe funds disbursed to org accounts — the contra-entry for real money sitting in Stripe's bank. |
-| `OperatorAccountID(PromoPool)` | 6 | `debits_must_not_exceed_credits` | Promotional credits draw from a funded pool. |
+All accounts are created with `History: true` to enable `GetAccountTransfers` and `GetAccountBalances` queries. This is required for balance drift detection, audit queries, and the reconciliation cron.
+
+| Account | Code | Flags | Effect |
+|---------|------|-------|--------|
+| `OrgAccountID(orgID, FreeTier)` | 1 | `debits_must_not_exceed_credits`, `history` | Monthly allowance — usage reservations fail when allowance exhausted. |
+| `OrgAccountID(orgID, Credit)` | 2 | `debits_must_not_exceed_credits`, `history` | Prepaid balance — cannot go negative. Funds come from Stripe purchases or subscription deposits. |
+| `OperatorAccountID(Revenue)` | 3 | `debits_must_not_exceed_credits`, `history` | Earned revenue from paid usage only. Credit-normal — paid VM charges credit it, refunds debit it. Flag prevents refunding more than earned. (`credits_must_not_exceed_debits` would reject the first charge — tested against live TigerBeetle.) |
+| `OperatorAccountID(FreeTierExpense)` | 7 | `history` | Cost of free-tier compute given away. Credit-normal — free-tier VM charges credit it. No balance constraint — the expense is bounded by FreeTierPool, not by this account's balance. |
+| `OperatorAccountID(FreeTierPool)` | 4 | `debits_must_not_exceed_credits`, `history` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
+| `OperatorAccountID(StripeHolding)` | 5 | `history` | Contra account. No balance constraint — allows negative balance growth. Each Stripe deposit is a single transfer that debits StripeHolding and credits the org (no separate "receipt" entry). The running negative balance represents total Stripe funds disbursed to org accounts — the contra-entry for real money sitting in Stripe's bank. |
+| `OperatorAccountID(PromoPool)` | 6 | `debits_must_not_exceed_credits`, `history` | Promotional credits draw from a funded pool. |
 
 #### Transfer flags
 
@@ -606,17 +608,17 @@ Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerB
 ```go
 import tb "github.com/tigerbeetle/tigerbeetle-go"
 
-client, err := tb.NewClient(tb.ToUint128(0), []string{"127.0.0.1:3000"})
+client, err := tb.NewClient(types.ToUint128(0), []string{"127.0.0.1:3320"})
 defer client.Close()
 ```
 
-Thread-safe, single instance shared across goroutines. The client batches operations automatically. Requires Go >= 1.21, Linux >= 5.6 in production.
+Thread-safe, single instance shared across goroutines. The client batches operations automatically. Requires Go >= 1.21, Linux >= 5.6 in production. Import: `types` is `github.com/tigerbeetle/tigerbeetle-go/pkg/types`. The Go SDK version must match the server binary version (0.16.x).
 
 #### Security model
 
-TigerBeetle has no authentication or authorization. No passwords, no TLS, no per-client permissions. Any process that can open a TCP connection to port 3000 has full read-write access. This is a deliberate design choice — TigerBeetle is meant to sit behind your application layer.
+TigerBeetle has no authentication or authorization. No passwords, no TLS, no per-client permissions. Any process that can open a TCP connection to port 3320 has full read-write access. This is a deliberate design choice — TigerBeetle is meant to sit behind your application layer.
 
-For this deployment: TigerBeetle listens on `127.0.0.1:3000`. Only local processes (the VM orchestrator, the reconciliation cron, the Stripe webhook worker) can connect. Network binding is the access control. If multi-service access with different permission levels is needed later, the documented pattern is a gateway service that authenticates callers and proxies permitted operations.
+For this deployment: TigerBeetle listens on `127.0.0.1:3320`. Only local processes (the VM orchestrator, the reconciliation cron, the Stripe webhook worker) can connect. Network binding is the access control. If multi-service access with different permission levels is needed later, the documented pattern is a gateway service that authenticates callers and proxies permitted operations.
 
 #### Observability
 
@@ -861,6 +863,7 @@ Transfer kind enum (also stored in TigerBeetle's `code` field):
 | 5 | stripe_deposit | task_id | (single-phase) |
 | 6 | subscription_deposit | task_id | (single-phase) |
 | 7 | promo_credit | task_id | (single-phase) |
+| 8 | dispute_debit | task_id | `balancing_debit` (clamps to available credit balance; debits org/credit, credits StripeHolding) |
 
 ##### Transfer idempotency by construction
 
@@ -873,6 +876,7 @@ Each transfer kind has a distinct idempotency domain — the set of fields that 
 | vm_void | (job_id, window_seq, leg) | One void per pending. Mutually exclusive with settlement (enforced by TigerBeetle — pending resolves at most once). |
 | free_tier_reset | (org_id, year_month) | One reset per (org, month). Re-running the monthly cron produces the same transfer IDs — TigerBeetle returns `exists`. |
 | stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(stripe_pi_id)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
+| dispute_debit | (task_id) | One debit per dispute task. Uses `KindDisputeDebit` (8) in the kind byte, distinct from `KindStripeDeposit` (5), preventing ID collision between a deposit and a dispute sharing the same task_id. |
 
 Two layers of idempotency for Stripe deposits: PostgreSQL `UNIQUE` prevents duplicate tasks, TigerBeetle's ID-based deduplication prevents duplicate transfers. Either layer alone is sufficient; both together handle every crash/retry/webhook-replay scenario.
 
@@ -962,6 +966,12 @@ TigerBeetle indexes `user_data_128`, `user_data_64`, and `user_data_32` for `Que
 All TigerBeetle amounts use a fixed-point scale of `10⁷` (7 decimal places). USD has 2 decimal places, but sub-cent pricing for vCPU-seconds requires more precision. `10⁷` gives 5 digits below the cent, handling rates like `$0.0000325/vCPU-second` without rounding until the final invoice.
 
 `$1.00 = 10,000,000 ledger units`. All accounts use the same `ledger` value (1). Multi-currency would use a second ledger value with its own scale.
+
+##### Batch size limits
+
+TigerBeetle's protocol limits each batch to **8191 items** (accounts or transfers). `CreateAccounts` and `CreateTransfers` accept up to 8191 entries per call. Exceeding this returns `ErrMaximumBatchSizeExceeded`. Query operations (`QueryAccounts`, `QueryTransfers`, `GetAccountTransfers`) return at most **8189 results** per call — pagination uses `TimestampMin`/`TimestampMax` from the last result's `Timestamp` field.
+
+For operations processing more items (e.g., `ResetFreeTier` across 10,000 orgs), batch into groups of 8190 (leaving 1 entry of headroom).
 
 ##### Debugging: reading a raw u128
 
@@ -1061,24 +1071,24 @@ Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
 
 #### Machine user auth boundaries
 
-The orchestrator, reconciliation cron, and Stripe webhook worker are Zitadel machine users. TigerBeetle has no authentication — any process on `127.0.0.1:3000` has full read-write access. The Zitadel identity serves two purposes: accessing Zitadel's own Management API (e.g., listing orgs), and providing audit trail metadata (which service performed which operation).
+The orchestrator, reconciliation cron, and Stripe webhook worker are Zitadel machine users. TigerBeetle has no authentication — any process on `127.0.0.1:3320` has full read-write access. The Zitadel identity serves two purposes: accessing Zitadel's own Management API (e.g., listing orgs), and providing audit trail metadata (which service performed which operation).
 
 ```
                          Zitadel-authenticated      Direct (localhost, no auth)
-orchestrator             Zitadel API (list orgs)    TigerBeetle :3000 (Go client)
+orchestrator             Zitadel API (list orgs)    TigerBeetle :3320 (Go client)
                          PostgreSQL (pricing)        ClickHouse (metering writes)
 
-reconciliation-cron      —                          TigerBeetle :3000 (Go client)
+reconciliation-cron      —                          TigerBeetle :3320 (Go client)
                                                      ClickHouse (metering reads)
                                                      PostgreSQL (watermark)
 
-stripe-webhook-worker    Next.js API (webhook)      TigerBeetle :3000 (Go client)
+stripe-webhook-worker    Next.js API (webhook)      TigerBeetle :3320 (Go client)
                          PostgreSQL (task queue)
 ```
 
 The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads TigerBeetle for balance display only (current balance = `credits_posted - debits_posted` on the org's credit account plus `credits_posted - debits_posted` on the free-tier account).
 
-The machine user identity is stored in TigerBeetle's `user_data` fields on transfers for audit. It is not used for access control — network binding (`127.0.0.1:3000`) is the only access control mechanism.
+The machine user identity is stored in TigerBeetle's `user_data` fields on transfers for audit. It is not used for access control — network binding (`127.0.0.1:3320`) is the only access control mechanism.
 
 #### Free tier reset flow
 
@@ -1138,7 +1148,7 @@ The `stripe_customer_id` column on the `orgs` table is set when the org first cr
 
 ### Payments: Stripe (external)
 
-Accepted external dependency. Three funding sources feed into TigerBeetle accounts:
+Accepted external dependency. Go SDK: `github.com/stripe/stripe-go/v82` (pin to latest stable at implementation time; verify import paths match). Three funding sources feed into TigerBeetle accounts:
 
 #### Prepaid credits (one-time purchase)
 
@@ -1269,7 +1279,7 @@ Ansible roles (new):
 └── storefront_app/  # Next.js process, env, systemd
 
 Caddy routes (additions):
-├── auth.<domain>    → Zitadel :8080 (h2c — required for gRPC)
+├── auth.<domain>    → Zitadel :8085 (h2c — required for gRPC)
 ├── sandbox.<domain> → Sandbox app :3001
 └── store.<domain>   → Storefront app :3002
 ```

@@ -126,16 +126,17 @@ This builds the Nix server profile, pushes it over SSH, and configures services 
 ### 4. Log in
 
 ```bash
-# HyperDX admin credentials are generated on first deploy in ansible/.credentials/
-printf 'admin+%s@forge-metal.local\n' "$(cat ansible/.credentials/hyperdx_admin_email_slug)"
-printf '%s#@F1\n' "$(cat ansible/.credentials/hyperdx_admin_password)"
+# HyperDX admin credentials are in the SOPS-encrypted secrets file
+sops -d --extract '["hyperdx_admin_email_slug"]' ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_password_base"]' ansible/group_vars/all/secrets.sops.yml
+# Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
 ```
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
 
 ### 5. Query ClickHouse
 
-Use the repo wrapper instead of typing the SSH and password prefix by hand. It resolves the worker from `ansible/inventory/hosts.ini`, reads `ansible/.credentials/clickhouse_password`, and invokes the stable worker path `/opt/forge-metal/profile/bin/clickhouse-client`.
+Use the repo wrapper instead of typing the SSH and password prefix by hand. It resolves the worker from `ansible/inventory/hosts.ini`, reads the ClickHouse password from SOPS, and invokes the stable worker path `/opt/forge-metal/profile/bin/clickhouse-client`.
 
 ```bash
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal

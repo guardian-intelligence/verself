@@ -68,12 +68,6 @@
     group: postgres
     mode: "0755"
 
-# --- Credentials ---
-
-- name: Generate PostgreSQL admin password
-  ansible.builtin.set_fact:
-    postgresql_admin_password: "{{ lookup('password', credentials_dir + '/postgresql_admin_password length=32 chars=ascii_letters,digits') }}"
-
 # --- Idempotent initdb ---
 
 - name: Check if PostgreSQL data directory is initialized
@@ -190,11 +184,6 @@
   become: true
   become_user: postgres
   changed_when: false
-  no_log: true
-
-- name: Generate billing PostgreSQL password
-  ansible.builtin.set_fact:
-    postgresql_billing_password: "{{ lookup('password', credentials_dir + '/postgresql_billing_password length=32 chars=ascii_letters,digits') }}"
   no_log: true
 
 - name: Create billing PostgreSQL user if missing

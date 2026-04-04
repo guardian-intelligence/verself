@@ -1,0 +1,219 @@
+---
+# Bootstrap SOPS+Age encryption for forge-metal secrets.
+# Runs on localhost (the operator's machine). Idempotent.
+#
+# What it does:
+#   1. Generates an Age keypair if one doesn't exist
+#   2. Writes .sops.yaml with the Age public key
+#   3. Installs the community.sops Ansible collection
+#   4. Generates all service credentials
+#   5. Writes and encrypts ansible/group_vars/all/secrets.sops.yml
+#
+# Usage:
+#   make setup-sops
+#   # or directly:
+#   cd ansible && ansible-playbook playbooks/setup-sops.yml
+
+- name: Bootstrap SOPS encryption
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    repo_root: "{{ playbook_dir }}/../.."
+    secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+    age_key_file: >-
+      {{ lookup('env', 'SOPS_AGE_KEY_FILE')
+         | default(lookup('env', 'HOME') ~ '/.config/sops/age/keys.txt', true) }}
+
+  tasks:
+    # --- Dependency checks ---
+
+    - name: Assert age-keygen is installed
+      ansible.builtin.command: which age-keygen
+      changed_when: false
+      failed_when: age_keygen_check.rc != 0
+      register: age_keygen_check
+
+    - name: Assert sops is installed
+      ansible.builtin.command: which sops
+      changed_when: false
+      failed_when: sops_check.rc != 0
+      register: sops_check
+
+    # --- Age key generation ---
+
+    - name: Check for existing Age key
+      ansible.builtin.stat:
+        path: "{{ age_key_file }}"
+      register: age_key_stat
+
+    - name: Create Age key directory
+      ansible.builtin.file:
+        path: "{{ age_key_file | dirname }}"
+        state: directory
+        mode: "0700"
+      when: not age_key_stat.stat.exists
+
+    - name: Generate Age keypair
+      ansible.builtin.command:
+        cmd: age-keygen -o {{ age_key_file }}
+      when: not age_key_stat.stat.exists
+      changed_when: true
+
+    - name: Set Age key file permissions
+      ansible.builtin.file:
+        path: "{{ age_key_file }}"
+        mode: "0600"
+
+    - name: Extract Age public key
+      ansible.builtin.shell:
+        cmd: set -o pipefail && grep -o 'age1[a-z0-9]*' {{ age_key_file }} | head -1
+      args:
+        executable: /bin/bash
+      register: age_pub_key
+      changed_when: false
+
+    - name: Display Age public key
+      ansible.builtin.debug:
+        msg: "Age public key: {{ age_pub_key.stdout }}"
+
+    # --- .sops.yaml ---
+
+    - name: Write .sops.yaml
+      ansible.builtin.copy:
+        content: |
+          # sops configuration for forge-metal secrets.
+          # The age public key is written by: make setup-sops
+          #
+          # Encrypted files (*.sops.yml) are safe to commit.
+          # The age private key (~/.config/sops/age/keys.txt) is NOT.
+
+          creation_rules:
+            - path_regex: \.sops\.yml$
+              age: >-
+                {{ age_pub_key.stdout }}
+        dest: "{{ repo_root }}/.sops.yaml"
+        mode: "0644"
+
+    # --- Ansible collection ---
+
+    - name: Install community.sops Ansible collection
+      ansible.builtin.command:
+        cmd: >-
+          ansible-galaxy collection install
+          -r {{ playbook_dir }}/../requirements.yml
+          --force-with-deps
+      changed_when: true
+
+    # --- Skip if already encrypted ---
+
+    - name: Check for existing secrets.sops.yml
+      ansible.builtin.stat:
+        path: "{{ secrets_file }}"
+      register: secrets_file_stat
+
+    - name: End early if secrets.sops.yml already exists
+      ansible.builtin.meta: end_play
+      when: secrets_file_stat.stat.exists
+
+    # --- Generate credentials ---
+
+    - name: Generate all service credentials
+      ansible.builtin.set_fact:
+        cred_postgresql_admin_password: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_postgresql_billing_password: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_clickhouse_password: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_zitadel_db_password: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_zitadel_masterkey: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_zitadel_admin_password_base: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_forgejo_admin_user_slug: >-
+          {{ lookup('community.general.random_string',
+             length=4, upper=false, lower=true,
+             numbers=true, special=false) }}
+        cred_forgejo_admin_email_slug: >-
+          {{ lookup('community.general.random_string',
+             length=6, upper=false, lower=true,
+             numbers=true, special=false) }}
+        cred_forgejo_admin_password_base: >-
+          {{ lookup('community.general.random_string',
+             length=24, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_hyperdx_admin_email_slug: >-
+          {{ lookup('community.general.random_string',
+             length=6, upper=false, lower=true,
+             numbers=true, special=false) }}
+        cred_hyperdx_admin_password_base: >-
+          {{ lookup('community.general.random_string',
+             length=24, upper=true, lower=true,
+             numbers=true, special=false) }}
+        cred_hyperdx_session_secret: >-
+          {{ lookup('community.general.random_string',
+             length=64, override_all='0123456789abcdef') }}
+        cred_billing_pg_password: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+      no_log: true
+
+    # --- Write and encrypt ---
+
+    - name: Write plaintext secrets file
+      ansible.builtin.copy:
+        content: |
+          cloudflare_api_token: ""
+          postgresql_admin_password: "{{ cred_postgresql_admin_password }}"
+          postgresql_billing_password: "{{ cred_postgresql_billing_password }}"
+          clickhouse_password: "{{ cred_clickhouse_password }}"
+          zitadel_db_password: "{{ cred_zitadel_db_password }}"
+          zitadel_masterkey: "{{ cred_zitadel_masterkey }}"
+          zitadel_admin_password_base: "{{ cred_zitadel_admin_password_base }}"
+          zitadel_admin_pat: ""
+          forgejo_admin_user_slug: "{{ cred_forgejo_admin_user_slug }}"
+          forgejo_admin_email_slug: "{{ cred_forgejo_admin_email_slug }}"
+          forgejo_admin_password_base: "{{ cred_forgejo_admin_password_base }}"
+          hyperdx_admin_email_slug: "{{ cred_hyperdx_admin_email_slug }}"
+          hyperdx_admin_password_base: "{{ cred_hyperdx_admin_password_base }}"
+          hyperdx_session_secret: "{{ cred_hyperdx_session_secret }}"
+          billing_pg_password: "{{ cred_billing_pg_password }}"
+          stripe_secret_key: ""
+          stripe_webhook_secret: ""
+        dest: "{{ secrets_file }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Encrypt secrets file with SOPS
+      ansible.builtin.command:
+        cmd: sops encrypt -i {{ secrets_file }}
+      changed_when: true
+
+    # --- Summary ---
+
+    - name: Report setup complete
+      ansible.builtin.debug:
+        msg: |
+          SOPS encryption bootstrapped.
+            Secrets file: {{ secrets_file }}
+            Age key:      {{ age_key_file }}
+
+            Next steps:
+              Edit secrets:  make edit-secrets
+              Deploy:        make deploy

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
-credentials_file="${CLICKHOUSE_PASSWORD_FILE:-ansible/.credentials/clickhouse_password}"
+secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
 remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/forge-metal/profile/bin/clickhouse-client}"
 ssh_opts=(-o StrictHostKeyChecking=no)
 
@@ -15,8 +15,8 @@ if [[ ! -f "$inventory" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$credentials_file" ]]; then
-  echo "ERROR: $credentials_file not found. Run 'make deploy' first." >&2
+if [[ ! -f "$secrets_file" ]]; then
+  echo "ERROR: $secrets_file not found. Run 'make setup-sops' first." >&2
   exit 1
 fi
 
@@ -33,7 +33,7 @@ if [[ -z "$remote_user" ]]; then
   exit 1
 fi
 
-clickhouse_password="$(<"$credentials_file")"
+clickhouse_password="$(sops -d --extract '["clickhouse_password"]' "$secrets_file")"
 remote_password_q="$(printf '%q' "$clickhouse_password")"
 remote_path_q="$(printf '%q' "$remote_path")"
 
