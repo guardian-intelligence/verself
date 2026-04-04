@@ -2,11 +2,6 @@
 # ClickHouse configuration.
 # Binary provided by the Nix server profile.
 
-- name: Generate ClickHouse default user password
-  ansible.builtin.set_fact:
-    clickhouse_password: "{{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}"
-  no_log: true
-
 - name: Create ClickHouse system group
   ansible.builtin.group:
     name: clickhouse

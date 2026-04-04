@@ -27,24 +27,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-# --- Credentials ---
-
-- name: Load PostgreSQL admin password
-  ansible.builtin.set_fact:
-    zitadel_pg_admin_password: "{{ lookup('password', credentials_dir + '/postgresql_admin_password length=32 chars=ascii_letters,digits') }}"
-
-- name: Generate Zitadel database password
-  ansible.builtin.set_fact:
-    zitadel_db_password: "{{ lookup('password', credentials_dir + '/zitadel_db_password length=32 chars=ascii_letters,digits') }}"
-
-- name: Generate Zitadel masterkey (32 chars, AES-256)
-  ansible.builtin.set_fact:
-    zitadel_masterkey: "{{ lookup('password', credentials_dir + '/zitadel_masterkey length=32 chars=ascii_letters,digits') }}"
-
-- name: Generate Zitadel admin password base
-  ansible.builtin.set_fact:
-    zitadel_admin_password: "{{ lookup('password', credentials_dir + '/zitadel_admin_password length=32 chars=ascii_letters,digits') }}#@F1"
-
 # --- PostgreSQL database and user ---
 
 - name: Create zitadel PostgreSQL user
@@ -62,7 +44,7 @@
         END IF;
       END $$;"
   environment:
-    PGPASSWORD: "{{ zitadel_pg_admin_password }}"
+    PGPASSWORD: "{{ postgresql_admin_password }}"
   changed_when: false
   no_log: true
 
@@ -75,7 +57,7 @@
       -U postgres -c
       "SELECT 'exists' FROM pg_database WHERE datname = 'zitadel';"
   environment:
-    PGPASSWORD: "{{ zitadel_pg_admin_password }}"
+    PGPASSWORD: "{{ postgresql_admin_password }}"
   register: zitadel_db_check
   changed_when: false
 
@@ -88,7 +70,7 @@
       -U postgres -c
       "CREATE DATABASE zitadel OWNER zitadel;"
   environment:
-    PGPASSWORD: "{{ zitadel_pg_admin_password }}"
+    PGPASSWORD: "{{ postgresql_admin_password }}"
   when: "'exists' not in zitadel_db_check.stdout"
   changed_when: true
 
@@ -102,14 +84,29 @@
     group: zitadel
     mode: "0700"
 
-- name: Deploy Zitadel masterkey file
+- name: Create credstore directory for Zitadel
+  ansible.builtin.file:
+    path: /etc/credstore/zitadel
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy Zitadel masterkey to credstore
   ansible.builtin.copy:
     content: "{{ zitadel_masterkey }}"
-    dest: "{{ zitadel_config_dir }}/masterkey"
-    owner: zitadel
-    group: zitadel
+    dest: /etc/credstore/zitadel/masterkey
+    owner: root
+    group: root
     mode: "0600"
   no_log: true
+  notify:
+    - restart zitadel
+
+- name: Remove legacy masterkey from config directory
+  ansible.builtin.file:
+    path: "{{ zitadel_config_dir }}/masterkey"
+    state: absent
 
 - name: Deploy Zitadel config
   ansible.builtin.template:
@@ -167,7 +164,7 @@
   ansible.builtin.command:
     cmd: >-
       {{ fm_bin }}/zitadel setup
-      --masterkeyFile {{ zitadel_config_dir }}/masterkey
+      --masterkeyFile /etc/credstore/zitadel/masterkey
       --config {{ zitadel_config_dir }}/config.yaml
       --steps {{ zitadel_config_dir }}/steps.yaml
   become: true
@@ -219,14 +216,15 @@
     zitadel_admin_pat: "{{ zitadel_admin_pat_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: Save admin PAT to local credentials
-  ansible.builtin.copy:
-    content: "{{ zitadel_admin_pat }}"
-    dest: "{{ credentials_dir }}/zitadel_admin_pat"
-    mode: "0600"
+- name: Write admin PAT back to SOPS secrets
+  ansible.builtin.command:
+    cmd: >-
+      sops --set '["zitadel_admin_pat"] "{{ zitadel_admin_pat }}"'
+      {{ playbook_dir }}/../group_vars/all/secrets.sops.yml
   delegate_to: localhost
   become: false
   no_log: true
+  changed_when: true
 
 # --- systemd unit ---
 
@@ -242,8 +240,9 @@
       Type=simple
       User=zitadel
       Group=zitadel
+      LoadCredential=masterkey:/etc/credstore/zitadel/masterkey
       ExecStart={{ fm_bin }}/zitadel start \
-        --masterkeyFile {{ zitadel_config_dir }}/masterkey \
+        --masterkeyFile %d/masterkey \
         --config {{ zitadel_config_dir }}/config.yaml
       Restart=always
       RestartSec=5

@@ -130,7 +130,7 @@
       environment:
         PATH: "{{ fm_bin }}:/usr/local/bin:{{ ansible_facts['env']['PATH'] }}"
         HOME: /root
-        FORGE_METAL_CLICKHOUSE_PASSWORD: "{{ lookup('file', playbook_dir + '/../../.credentials/clickhouse_password', errors='ignore') | default('') }}"
+        FORGE_METAL_CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
       register: scan_result
       failed_when: false
       changed_when: false

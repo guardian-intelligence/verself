@@ -185,16 +185,31 @@
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
 
-- name: Generate session secret
-  ansible.builtin.set_fact:
-    hyperdx_session_secret: "{{ lookup('password', credentials_dir ~ '/hyperdx_session_secret length=64 chars=hexdigits') }}"
-  no_log: true
-
 - name: Deploy HyperDX environment file
   ansible.builtin.template:
     src: hyperdx.env.j2
     dest: "{{ hyperdx_env_file }}"
-    mode: "0640"
+    mode: "0644"
+  notify:
+    - restart hyperdx-api
+    - restart hyperdx-app
+
+- name: Create credstore directory for HyperDX
+  ansible.builtin.file:
+    path: /etc/credstore/hyperdx
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Deploy HyperDX secrets environment file
+  ansible.builtin.template:
+    src: hyperdx-secrets.env.j2
+    dest: /etc/credstore/hyperdx/secrets.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
   notify:
     - restart hyperdx-api
     - restart hyperdx-app

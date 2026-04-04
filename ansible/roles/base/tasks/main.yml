@@ -19,11 +19,6 @@
     home: /var/lib/bench-ci
     create_home: true
 
-- name: Resolve forge-metal ClickHouse password
-  ansible.builtin.set_fact:
-    base_clickhouse_password: "{{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}"
-  no_log: true
-
 - name: Create forge-metal system config directory
   ansible.builtin.file:
     path: /etc/forge-metal

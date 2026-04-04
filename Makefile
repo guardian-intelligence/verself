@@ -65,7 +65,7 @@ setup-dev: ## Install pinned dev tools from dev-tools.json via Ansible
 	cd ansible && ansible-playbook playbooks/setup-dev.yml
 
 setup-sops: ## Generate age key, encrypt initial secrets, install sops collection
-	./scripts/setup-sops.sh
+	cd ansible && ansible-playbook playbooks/setup-sops.yml
 
 edit-secrets: ## Open encrypted secrets in $EDITOR via sops
 	sops ansible/group_vars/all/secrets.sops.yml
