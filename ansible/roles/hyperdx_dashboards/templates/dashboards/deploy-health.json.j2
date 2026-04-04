@@ -1,0 +1,61 @@
+{
+  "name": "Deploy Health",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "Deploy Success Rate (%)",
+      "x": 0, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(started_at) as __hdx_time_bucket, 'success rate' as series, round(countIf(ok = 1) * 100.0 / greatest(count(), 1), 1) as rate FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "%"}
+      }
+    },
+    {
+      "name": "Deploy Duration (p50 / p95)",
+      "x": 4, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, series, seconds FROM (SELECT toStartOfDay(started_at) as __hdx_time_bucket, 'p50' as series, round(quantile(0.5)(total_ns / 1000000000), 1) as seconds FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(started_at) as __hdx_time_bucket, 'p95' as series, round(quantile(0.95)(total_ns / 1000000000), 1) as seconds FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket) ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "s"}
+      }
+    },
+    {
+      "name": "Deploy Frequency",
+      "x": 8, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(started_at) as __hdx_time_bucket, 'deploys' as series, toFloat64(count()) as deploys FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Recent Deploys",
+      "x": 0, "y": 9, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') as time, playbook, if(ok = 1, 'OK', 'FAIL') as status, round(total_ns / 1000000000, 1) as duration_s, substring(commit_sha, 1, 8) as commit, if(dirty = 1, 'dirty', 'clean') as tree, tasks_changed FROM forge_metal.deploy_events ORDER BY started_at DESC LIMIT 20"
+      }
+    },
+    {
+      "name": "Top 10 Slowest Tasks (last 30d)",
+      "x": 0, "y": 18, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT task_name, round(avg(duration_s), 2) as avg_seconds, round(max(duration_s), 2) as max_seconds, count() as occurrences FROM (SELECT JSONExtractString(task, 'name') as task_name, JSONExtractFloat(task, 'duration_ns') / 1000000000 as duration_s FROM forge_metal.deploy_events ARRAY JOIN JSONExtractArrayRaw(slowest_tasks) as task WHERE started_at >= now() - INTERVAL 30 DAY) GROUP BY task_name ORDER BY avg_seconds DESC LIMIT 10"
+      }
+    }
+  ]
+}
