@@ -119,59 +119,59 @@
 
     # --- Generate credentials ---
 
-    - name: Generate all service credentials
+    - name: Generate random components
       ansible.builtin.set_fact:
-        cred_postgresql_admin_password: >-
+        _rand32: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_postgresql_billing_password: >-
+        _rand32b: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_clickhouse_password: >-
+        _rand32c: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_zitadel_db_password: >-
+        _rand32d: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_zitadel_masterkey: >-
+        _rand32e: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_zitadel_admin_password_base: >-
+        _rand32f: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        cred_forgejo_admin_user_slug: >-
+        _rand32g: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
+        _rand24a: >-
+          {{ lookup('community.general.random_string',
+             length=24, upper=true, lower=true,
+             numbers=true, special=false) }}
+        _rand24b: >-
+          {{ lookup('community.general.random_string',
+             length=24, upper=true, lower=true,
+             numbers=true, special=false) }}
+        _slug4: >-
           {{ lookup('community.general.random_string',
              length=4, upper=false, lower=true,
              numbers=true, special=false) }}
-        cred_forgejo_admin_email_slug: >-
+        _slug6a: >-
           {{ lookup('community.general.random_string',
              length=6, upper=false, lower=true,
              numbers=true, special=false) }}
-        cred_forgejo_admin_password_base: >-
-          {{ lookup('community.general.random_string',
-             length=24, upper=true, lower=true,
-             numbers=true, special=false) }}
-        cred_hyperdx_admin_email_slug: >-
+        _slug6b: >-
           {{ lookup('community.general.random_string',
              length=6, upper=false, lower=true,
              numbers=true, special=false) }}
-        cred_hyperdx_admin_password_base: >-
-          {{ lookup('community.general.random_string',
-             length=24, upper=true, lower=true,
-             numbers=true, special=false) }}
-        cred_hyperdx_session_secret: >-
+        _hex64: >-
           {{ lookup('community.general.random_string',
              length=64, override_all='0123456789abcdef') }}
-        cred_billing_pg_password: >-
-          {{ lookup('community.general.random_string',
-             length=32, upper=true, lower=true,
-             numbers=true, special=false) }}
       no_log: true
 
     # --- Write and encrypt ---
@@ -181,20 +181,20 @@
         content: |
           cloudflare_api_token: ""
           latitudesh_auth_token: ""
-          postgresql_admin_password: "{{ cred_postgresql_admin_password }}"
-          postgresql_billing_password: "{{ cred_postgresql_billing_password }}"
-          clickhouse_password: "{{ cred_clickhouse_password }}"
-          zitadel_db_password: "{{ cred_zitadel_db_password }}"
-          zitadel_masterkey: "{{ cred_zitadel_masterkey }}"
-          zitadel_admin_password_base: "{{ cred_zitadel_admin_password_base }}"
+          postgresql_admin_password: "{{ _rand32 }}"
+          postgresql_billing_password: "{{ _rand32b }}"
+          clickhouse_password: "{{ _rand32c }}"
+          zitadel_db_password: "{{ _rand32d }}"
+          zitadel_masterkey: "{{ _rand32e }}"
+          zitadel_admin_password: "{{ _rand32f }}#@F1"
           zitadel_admin_pat: ""
-          forgejo_admin_user_slug: "{{ cred_forgejo_admin_user_slug }}"
-          forgejo_admin_email_slug: "{{ cred_forgejo_admin_email_slug }}"
-          forgejo_admin_password_base: "{{ cred_forgejo_admin_password_base }}"
-          hyperdx_admin_email_slug: "{{ cred_hyperdx_admin_email_slug }}"
-          hyperdx_admin_password_base: "{{ cred_hyperdx_admin_password_base }}"
-          hyperdx_session_secret: "{{ cred_hyperdx_session_secret }}"
-          billing_pg_password: "{{ cred_billing_pg_password }}"
+          forgejo_admin_user: "forge-admin-{{ _slug4 }}"
+          forgejo_admin_email: "admin+{{ _slug6a }}@forge-metal.local"
+          forgejo_admin_password: "{{ _rand24a }}#@F1"
+          hyperdx_admin_email: "admin+{{ _slug6b }}@forge-metal.local"
+          hyperdx_admin_password: "{{ _rand24b }}#@F1"
+          hyperdx_session_secret: "{{ _hex64 }}"
+          billing_pg_password: "{{ _rand32g }}"
           stripe_secret_key: ""
           stripe_webhook_secret: ""
         dest: "{{ secrets_file }}"
