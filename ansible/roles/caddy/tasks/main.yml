@@ -27,7 +27,8 @@
     content: |
       [Unit]
       Description=Caddy HTTP/2 web server
-      After=network-online.target
+      After=nftables.service network-online.target
+      Requires=nftables.service
       Wants=network-online.target
 
       [Service]

@@ -8,7 +8,7 @@ delete table ip forge_metal_firecracker
 
 table ip forge_metal_firecracker {
     chain forward {
-        type filter hook forward priority filter; policy accept;
+        type filter hook forward priority filter; policy drop;
 
         # Block guest-to-guest lateral movement
         ip saddr {{ firecracker_guest_pool_cidr }} ip daddr {{ firecracker_guest_pool_cidr }} drop

@@ -26,7 +26,8 @@
     content: |
       [Unit]
       Description=OpenTelemetry Collector
-      After=network.target clickhouse-server.service
+      After=nftables.service network.target clickhouse-server.service
+      Requires=nftables.service
 
       [Service]
       Type=simple

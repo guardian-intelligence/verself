@@ -134,8 +134,8 @@
     content: |
       [Unit]
       Description=Zitadel Identity Provider
-      After=network.target postgresql.service
-      Requires=postgresql.service
+      After=nftables.service network.target postgresql.service
+      Requires=nftables.service postgresql.service
 
       [Service]
       Type=simple

@@ -90,7 +90,8 @@
     content: |
       [Unit]
       Description=TigerBeetle
-      After=network.target
+      After=nftables.service network.target
+      Requires=nftables.service
 
       [Service]
       Type=simple

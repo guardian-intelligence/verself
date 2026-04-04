@@ -24,7 +24,8 @@
     content: |
       [Unit]
       Description=ClickHouse Server
-      After=network.target
+      After=nftables.service network.target
+      Requires=nftables.service
 
       [Service]
       Type=simple

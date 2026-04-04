@@ -12,3 +12,10 @@
     daemon_reload: true
     name: hyperdx-app
     state: restarted
+
+- name: Restart MongoDB
+  listen: restart mongod
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: mongod
+    state: restarted
