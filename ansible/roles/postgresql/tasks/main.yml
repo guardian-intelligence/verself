@@ -192,6 +192,93 @@
   changed_when: false
   no_log: true
 
+- name: Generate billing PostgreSQL password
+  ansible.builtin.set_fact:
+    postgresql_billing_password: "{{ lookup('password', credentials_dir + '/postgresql_billing_password length=32 chars=ascii_letters,digits') }}"
+  no_log: true
+
+- name: Create billing PostgreSQL user if missing
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "DO $$ BEGIN
+        CREATE USER billing WITH PASSWORD '{{ postgresql_billing_password }}' LOGIN;
+      EXCEPTION
+        WHEN duplicate_object THEN
+          NULL;
+      END $$;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
+- name: Sync billing PostgreSQL password
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "ALTER ROLE billing WITH PASSWORD '{{ postgresql_billing_password }}';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
+# PostgreSQL 16 has no CREATE DATABASE IF NOT EXISTS and disallows
+# CREATE DATABASE inside DO/transaction blocks, so we gate creation with an
+# existence query and create each database outside a transaction.
+- name: Check if billing databases exist
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -tAc
+      "SELECT 1 FROM pg_database WHERE datname = '{{ item }}';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  loop:
+    - sandbox
+    - storefront
+  register: postgresql_billing_db_checks
+  changed_when: false
+  no_log: true
+
+- name: Create billing databases if missing
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "CREATE DATABASE {{ item.item }} OWNER billing;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  loop: "{{ postgresql_billing_db_checks.results }}"
+  when: item.stdout | trim != '1'
+  changed_when: true
+  no_log: true
+
+- name: Ensure billing owns sandbox and storefront databases
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "ALTER DATABASE {{ item }} OWNER TO billing;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  loop:
+    - sandbox
+    - storefront
+  changed_when: false
+  no_log: true
+
 # --- Connection smoke test ---
 
 - name: Verify TCP connection to PostgreSQL

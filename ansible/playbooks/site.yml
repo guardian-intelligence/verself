@@ -123,6 +123,7 @@
     - clickhouse
     - tigerbeetle
     - postgresql
+    - billing
     - zitadel
     - otelcol
     - hyperdx
