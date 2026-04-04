@@ -1,0 +1,11 @@
+# PostgreSQL host-based authentication.
+# Managed by Ansible — do not edit manually.
+#
+# TYPE  DATABASE  USER  ADDRESS      METHOD
+
+# Unix socket (local admin)
+local   all       all                peer
+
+# TCP from localhost — password auth for application services.
+host    all       all   127.0.0.1/32 scram-sha-256
+host    all       all   ::1/128      scram-sha-256

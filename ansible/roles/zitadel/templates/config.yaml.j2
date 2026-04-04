@@ -1,0 +1,51 @@
+# Zitadel configuration.
+# Managed by Ansible — do not edit manually.
+
+Log:
+  Level: info
+  Formatter:
+    Format: json
+
+Port: {{ services.zitadel.port }}
+ExternalDomain: {{ zitadel_domain }}
+ExternalPort: 443
+ExternalSecure: true
+
+TLS:
+  Enabled: false
+
+Database:
+  postgres:
+    Host: {{ services.postgresql.host }}
+    Port: {{ services.postgresql.port }}
+    Database: zitadel
+    User:
+      Username: zitadel
+      Password: "{{ zitadel_db_password }}"
+      SSL:
+        Mode: disable
+    Admin:
+      Username: postgres
+      Password: "{{ zitadel_pg_admin_password }}"
+      SSL:
+        Mode: disable
+    MaxOpenConns: 10
+    MaxIdleConns: 5
+    MaxConnLifetime: 30m
+
+DefaultInstance:
+  Features:
+    LoginV2:
+      # Login V2 is a separate Next.js app (zitadel-login), not embedded in the
+      # Zitadel Go binary. Until deployed as a separate service, use embedded Login V1.
+      Required: false
+
+Instrumentation:
+  Trace:
+    Exporter:
+      Type: grpc
+      Endpoint: {{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      Insecure: true
+    Fraction: 1
+  Metrics:
+    Enabled: true

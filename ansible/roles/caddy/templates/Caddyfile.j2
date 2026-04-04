@@ -36,3 +36,13 @@
 	import waf
 	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
 }
+
+{{ zitadel_domain }} {
+	import access_log
+	import waf
+	reverse_proxy {{ services.zitadel.host }}:{{ services.zitadel.port }} {
+		transport http {
+			versions h2c
+		}
+	}
+}

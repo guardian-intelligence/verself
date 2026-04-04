@@ -1,0 +1,5 @@
+---
+# Zitadel defaults.
+zitadel_config_dir: /etc/zitadel
+zitadel_subdomain: auth
+zitadel_domain: "{{ zitadel_subdomain }}.{{ forge_metal_domain }}"

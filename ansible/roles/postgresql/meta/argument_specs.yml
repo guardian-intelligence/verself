@@ -1,0 +1,29 @@
+---
+argument_specs:
+  main:
+    short_description: "PostgreSQL database server"
+    description:
+      - "Deploys PostgreSQL from the Nix profile. Initializes the data"
+      - "directory (idempotent), configures listen address and auth,"
+      - "and creates application databases and users."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
+    options:
+      postgresql_data_dir:
+        type: path
+        default: /var/lib/postgresql/16/forge-metal
+        description: "PostgreSQL data directory."
+
+      postgresql_config_dir:
+        type: path
+        default: /etc/postgresql/forge-metal
+        description: "PostgreSQL configuration directory."
+
+      postgresql_log_dir:
+        type: path
+        default: /var/log/postgresql
+        description: "PostgreSQL log directory."
+
+      fm_bin:
+        type: path
+        required: true
+        description: "Path to the Nix server profile bin directory."

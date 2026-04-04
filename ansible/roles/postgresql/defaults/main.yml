@@ -1,0 +1,5 @@
+---
+# PostgreSQL defaults.
+postgresql_data_dir: /var/lib/postgresql/16/forge-metal
+postgresql_config_dir: /etc/postgresql/forge-metal
+postgresql_log_dir: /var/log/postgresql

@@ -250,6 +250,38 @@
   when: "'TigerBeetle' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
+# Zitadel dashboard                                                            #
+# --------------------------------------------------------------------------- #
+
+- name: Render Zitadel dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_zitadel_body: "{{ lookup('template', 'dashboards/zitadel.json.j2') }}"
+
+- name: Create Zitadel dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_zitadel_body }}"
+    status_code: [200]
+  when: "'Zitadel' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Zitadel dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Zitadel'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_zitadel_body }}"
+    status_code: [200]
+  when: "'Zitadel' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
 # Validate every tile renders data                                             #
 # --------------------------------------------------------------------------- #
 

@@ -35,3 +35,9 @@ services:
     host: "127.0.0.1"
     port: 3320
     statsd_port: 8125
+  postgresql:
+    host: "127.0.0.1"
+    port: 5432
+  zitadel:
+    host: "127.0.0.1"
+    port: 8085
