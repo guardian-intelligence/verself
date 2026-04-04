@@ -2,9 +2,9 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 0.0.0.0:{{ services.otelcol.grpc_port }}
+        endpoint: 127.0.0.1:{{ services.otelcol.grpc_port }}
       http:
-        endpoint: 0.0.0.0:{{ services.otelcol.http_port }}
+        endpoint: 127.0.0.1:{{ services.otelcol.http_port }}
   filelog/caddy:
     include: [/var/log/caddy/access.log]
     storage: file_storage
@@ -212,7 +212,7 @@ exporters:
 
 extensions:
   health_check:
-    endpoint: 0.0.0.0:13133  # not in service registry — no cross-service consumers
+    endpoint: 127.0.0.1:13133  # not in service registry — no cross-service consumers
   file_storage:
     directory: /var/lib/otelcol/storage
 
