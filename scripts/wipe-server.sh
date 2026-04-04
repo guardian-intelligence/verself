@@ -47,23 +47,23 @@ done
 
 echo "=== Removing data directories ==="
 for d in /var/lib/tigerbeetle /var/lib/forgejo /var/lib/clickhouse \
-         /var/lib/verdaccio /var/lib/bench-ci /var/lib/ci \
+         /var/lib/verdaccio /var/lib/forge-runner /var/lib/ci \
          /var/log/clickhouse-server /opt/forge-metal /opt/verdaccio \
          /var/lib/postgresql /var/lib/mongodb; do
   [ -d "$d" ] && rm -r "$d"
 done
 
 echo "=== Destroying ZFS pool ==="
-zpool destroy benchpool 2>/dev/null || true
+zpool destroy forgepool 2>/dev/null || true
 
 echo "=== Removing system users/groups ==="
-for u in forgejo zitadel clickhouse tigerbeetle bench-ci verdaccio caddy; do
+for u in forgejo zitadel clickhouse tigerbeetle forge-runner verdaccio caddy; do
   userdel -r "$u" 2>/dev/null || true
   groupdel "$u" 2>/dev/null || true
 done
 
 echo "=== Removing sudoers and npm config ==="
-rm -f /etc/sudoers.d/bench-ci /etc/npmrc
+rm -f /etc/sudoers.d/forge-runner /etc/npmrc
 
 echo "=== Removing SSH hardening (will be re-applied) ==="
 rm -f /etc/ssh/sshd_config.d/99-forge-metal.conf

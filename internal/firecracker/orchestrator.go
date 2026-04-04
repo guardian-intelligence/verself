@@ -23,7 +23,7 @@ import (
 
 // Config holds settings for the Firecracker orchestrator.
 type Config struct {
-	Pool            string // ZFS pool name, e.g. "benchpool"
+	Pool            string // ZFS pool name, e.g. "forgepool"
 	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
 	CIDataset       string // dataset for job clones, e.g. "ci"
 	KernelPath      string // path to vmlinux on host, e.g. "/var/lib/ci/vmlinux"
@@ -42,7 +42,7 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Pool:            "benchpool",
+		Pool:            "forgepool",
 		GoldenZvol:      "golden-zvol",
 		CIDataset:       "ci",
 		KernelPath:      "/var/lib/ci/vmlinux",

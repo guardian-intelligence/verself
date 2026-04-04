@@ -1,6 +1,6 @@
 ---
 # Firecracker host setup defaults.
-firecracker_zfs_pool: benchpool
+firecracker_zfs_pool: forgepool
 firecracker_golden_zvol: golden-zvol
 firecracker_golden_zvol_size: 4G
 firecracker_ci_dataset: ci

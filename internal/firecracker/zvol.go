@@ -14,7 +14,7 @@ import (
 const zfsTimeout = 30 * time.Second
 
 // zvolDevicePath returns the block device path for a ZFS zvol.
-// e.g. "benchpool/ci/job-abc" -> "/dev/zvol/benchpool/ci/job-abc"
+// e.g. "forgepool/ci/job-abc" -> "/dev/zvol/forgepool/ci/job-abc"
 func zvolDevicePath(dataset string) string {
 	return "/dev/zvol/" + dataset
 }

@@ -262,7 +262,7 @@ Compression codecs per column type:
 1. Builds `homestead-smelter-guest` locally via `zig build` (~2s)
 2. SCPs the binary to the server (~1s)
 3. Runs `ansible/playbooks/smelter-dev.yml` which:
-   - Clones `benchpool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
+   - Clones `forgepool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
    - Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
    - Snapshots as `smelter-dev-zvol@ready`
    - Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
@@ -292,7 +292,7 @@ Expected output on success:
 → building homestead-smelter guest (zig)
 → uploading guest binary
 → running smelter dev playbook
-→ dev golden ready: benchpool/smelter-dev-zvol@ready
+→ dev golden ready: forgepool/smelter-dev-zvol@ready
 HELLO job_id=<job-id> stream_generation=3 host_seq=8 guest_seq=0 boot_id=<boot-id> mem_total_kb=2039556
 SAMPLE job_id=<job-id> stream_generation=3 host_seq=100 guest_seq=92 mem_available_kb=1935768 cpu_user_ticks=0
 SNAPSHOT_END host_seq=101
@@ -398,12 +398,14 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
+* When editing byte-layouts, avoid piecemeal edits as that's how you end up with contradictions.
 
 ## Coding Contract
 
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
 * Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
 * Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
+* Tests do not assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
 
 ## License
 

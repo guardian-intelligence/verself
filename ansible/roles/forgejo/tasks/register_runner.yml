@@ -1,13 +1,13 @@
 ---
 # Register Forgejo Actions runner (idempotent).
-# Skips if .runner file already exists in bench-ci workdir (written by register).
+# Skips if .runner file already exists in forge-runner workdir (written by register).
 
 - name: Check if runner is already registered
   ansible.builtin.stat:
-    path: /var/lib/bench-ci/.runner
+    path: /var/lib/forge-runner/.runner
   register: forgejo_runner_file_stat
 
-- name: Ensure /etc/forgejo is traversable by bench-ci
+- name: Ensure /etc/forgejo is traversable by forge-runner
   ansible.builtin.file:
     path: /etc/forgejo
     mode: "0755"
@@ -51,8 +51,8 @@
   ansible.builtin.copy:
     content: "{{ forgejo_runner_default_config.stdout }}"
     dest: /etc/forgejo/runner-config.yaml
-    owner: bench-ci
-    group: bench-ci
+    owner: forge-runner
+    group: forge-runner
     mode: "0640"
   register: forgejo_runner_config_file
 
@@ -94,11 +94,11 @@
           - ubuntu-latest:host
           - --config
           - /etc/forgejo/runner-config.yaml
-        chdir: /var/lib/bench-ci
+        chdir: /var/lib/forge-runner
       become: true
-      become_user: bench-ci
+      become_user: forge-runner
       environment:
-        HOME: /var/lib/bench-ci
+        HOME: /var/lib/forge-runner
       changed_when: true
 
 - name: Ensure forgejo-runner is enabled and started

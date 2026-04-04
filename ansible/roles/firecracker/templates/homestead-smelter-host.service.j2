@@ -1,6 +1,7 @@
 [Unit]
 Description=Homestead Smelter Firecracker Host Agent
-After=network-online.target forge-metal-firecracker-network.service
+After=forge-metal-firewall.target network-online.target forge-metal-firecracker-network.service
+Requires=forge-metal-firewall.target
 Wants=network-online.target
 
 [Service]

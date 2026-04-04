@@ -27,8 +27,8 @@
     content: |
       [Unit]
       Description=Caddy HTTP/2 web server
-      After=nftables.service network-online.target
-      Requires=nftables.service
+      After=forge-metal-firewall.target network-online.target
+      Requires=forge-metal-firewall.target
       Wants=network-online.target
 
       [Service]

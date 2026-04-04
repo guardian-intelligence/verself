@@ -9,7 +9,7 @@ argument_specs:
     options:
       firecracker_zfs_pool:
         type: str
-        default: benchpool
+        default: forgepool
         description: "ZFS pool for golden zvols and CI job clones."
 
       firecracker_golden_zvol:

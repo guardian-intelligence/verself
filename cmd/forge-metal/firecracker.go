@@ -177,7 +177,7 @@ Examples:
 
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (metadata)")
 	cmd.Flags().StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
-	cmd.Flags().StringVar(&pool, "pool", "", "ZFS pool name (default: benchpool)")
+	cmd.Flags().StringVar(&pool, "pool", "", "ZFS pool name (default: forgepool)")
 	cmd.Flags().StringVar(&goldenZvol, "golden-zvol", "", "Golden zvol name (default: golden-zvol)")
 	cmd.Flags().StringVar(&kernelPath, "kernel", "", "Path to vmlinux (default: /var/lib/ci/vmlinux)")
 	cmd.Flags().StringVar(&fcBin, "firecracker-bin", "", "Path to firecracker binary")

@@ -194,7 +194,7 @@ func ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin string, 
 }
 
 func addFirecrackerFlags(cmd *cobra.Command, pool, goldenZvol, kernelPath, fcBin, jailerBin *string, vcpus, memoryMiB *int, timeout, hostInterface, guestPoolCIDR, networkLeaseDir *string) {
-	cmd.Flags().StringVar(pool, "pool", "", "ZFS pool name (default: benchpool)")
+	cmd.Flags().StringVar(pool, "pool", "", "ZFS pool name (default: forgepool)")
 	cmd.Flags().StringVar(goldenZvol, "golden-zvol", "", "Base guest golden zvol name (default: golden-zvol)")
 	cmd.Flags().StringVar(kernelPath, "kernel", "", "Path to vmlinux (default: /var/lib/ci/vmlinux)")
 	cmd.Flags().StringVar(fcBin, "firecracker-bin", "", "Path to firecracker binary")
