@@ -1,10 +1,8 @@
 # forge-metal
 
-Repo is for a turnkey "company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via ZFS deep optimizations, ClickStack observability. This is free open-source software, not a PaaS.
+Free Open-Source Software for a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMs. This is not a PaaS -- the user owns what they deploy.
 
-Performance-first CI on bare metal. ZFS golden image clones (~1.7ms), Firecracker microVM isolation, ClickHouse wide events, and HyperDX for real-time observability. Designed for 1000+ globally distributed nodes.
-
-The goal is for turnkey bootstrap from 0 -> bare metal instance -> forgejo + click stack + 2 deployed frontend apps reading/writing off the same DB.
+Bootstrapping UX: turnkey from 0 -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
 
 Hard product design requirement: everything must be self-hosted.
 
@@ -402,7 +400,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 ## Coding Contract
 
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
-* Ansible playbook files must not have a newline at the end. This will be caught by `ansible-lint`.
+* Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
 * Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
 
 ## License

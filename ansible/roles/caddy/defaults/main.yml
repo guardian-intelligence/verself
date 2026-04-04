@@ -1,3 +1,8 @@
 ---
 # Caddy defaults.
+# Keep Coraza in DetectionOnly by default. HyperDX dashboard traffic sends
+# legitimate text/plain SQL bodies to /api/clickhouse-proxy, and the stock OWASP
+# CRS ruleset currently flags those requests as protocol/SQLi/RCE anomalies.
+# Do not switch this to blocking until we add narrow exclusions for the trusted
+# HyperDX query path instead of teaching operators to accept dashboard breakage.
 caddy_waf_mode: "DetectionOnly"  # DetectionOnly (log only) or On (block)

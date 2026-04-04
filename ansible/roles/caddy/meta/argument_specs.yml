@@ -11,7 +11,10 @@ argument_specs:
       caddy_waf_mode:
         type: str
         default: DetectionOnly
-        description: "Coraza WAF mode. DetectionOnly logs only; On blocks."
+        description: >-
+          Coraza WAF mode. Default remains DetectionOnly because HyperDX sends
+          legitimate text/plain SQL requests through /api/clickhouse-proxy and
+          the stock CRS ruleset currently produces false positives there.
 
       hyperdx_domain:
         type: str
