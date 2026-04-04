@@ -389,6 +389,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
 * Dev tools are system-installed via `make setup-dev`. No `nix develop` prefix needed.
+* Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to impelementing changes. The verification protocol should fail, and only then begin implementing until green.
 
 ## Output Contract
 
@@ -401,7 +402,8 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 ## Coding Contract
 
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
-* ANsible playbook files must not have a newline at the end. This will be caught by `ansible-lint`.
+* Ansible playbook files must not have a newline at the end. This will be caught by `ansible-lint`.
+* Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
 
 ## License
 
