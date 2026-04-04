@@ -178,8 +178,8 @@ Three machine users in the Platform Org for backend services:
 | Machine User | Auth Method | Purpose |
 |-------------|-------------|---------|
 | `orchestrator` | JWT Profile (key pair) | VM billing: create/post/void TigerBeetle transfers, read org pricing from PostgreSQL |
-| `reconciliation-cron` | PAT | Hourly consistency check: query ClickHouse metering, compare against TigerBeetle, push to Stripe |
-| `stripe-webhook-worker` | PAT | Process Stripe webhooks: credit org accounts in TigerBeetle, update order state in PostgreSQL |
+| `reconciliation-cron` | PAT | Hourly consistency check: query ClickHouse metering and compare against TigerBeetle |
+| `stripe-webhook-worker` | PAT | Process Stripe webhooks: fund per-grant accounts in TigerBeetle and update PostgreSQL billing state |
 
 JWT Profile is the most secure method for the orchestrator — a private key signs a JWT assertion exchanged at the token endpoint. No client secret transmitted over the wire. PATs are simpler (pre-generated Bearer tokens, no OAuth dance) and acceptable for internal cron jobs and webhook workers that run on localhost.
 
@@ -647,7 +647,7 @@ Each `credit_grants` row gets its own TigerBeetle account. The account ceiling i
 
 TigerBeetle accounts have flags that constrain what transfers are permitted. These are set at account creation and cannot be changed.
 
-All accounts are created with `History: true` to enable `GetAccountTransfers` and `GetAccountBalances` queries. This is required for balance drift detection, audit queries, and the reconciliation cron.
+All accounts are created with `History: true` to enable `GetAccountTransfers` and `GetAccountBalances` queries. This is required for audit queries, historical debugging, and the reconciliation cron.
 
 | Account | Code | Flags | Effect |
 |---------|------|-------|--------|
@@ -694,7 +694,7 @@ The core billing mechanism is a sequential per-grant waterfall tied to the VM li
 4. VM runs
 5. Every RESERVATION_WINDOW (300s) while VM is alive:
      a. POST current pending transfers for actual seconds used:
-        VMTransferID(jobID, windowSeq, leg, KindSettlement)
+        VMTransferID(jobID, windowSeq, grant_idx, KindSettlement)
         with pending_id referencing the original reservation
      b. Create NEW pending transfers for the next window (windowSeq increments)
      c. If new reservation fails → signal VM to shut down (funds_exhausted)
@@ -709,7 +709,7 @@ The reservation window is tunable: 60 seconds for aggressive enforcement, 300 se
 
 #### Idempotency
 
-Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically via injective bit packing (see "Deterministic ID derivation" section): `VMTransferID(job_id, window_seq, leg, kind)` for execution-time billing transfers, `SubscriptionPeriodID(subscription_id, period_start, kind)` for periodic subscription deposits, `StripeDepositID(task_id, kind)` for payment-driven tasks, and `CreditExpiryID(grant_id)` for expiry sweeps. The derivation is a pure function of application-layer identifiers — no mapping table, no sequence generator, no external state. Retries after orchestrator crashes resubmit the same IDs by construction.
+Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically via injective bit packing (see "Deterministic ID derivation" section): `VMTransferID(job_id, window_seq, grant_idx, kind)` for execution-time billing transfers, `SubscriptionPeriodID(subscription_id, period_start, kind)` for periodic subscription deposits, `StripeDepositID(task_id, kind)` for payment-driven tasks, and `CreditExpiryID(grant_id)` for expiry sweeps. The derivation is a pure function of application-layer identifiers — no mapping table, no sequence generator, no external state. Retries after orchestrator crashes resubmit the same IDs by construction.
 
 #### Go client
 
@@ -850,7 +850,7 @@ The real-time path is crash-safe because TigerBeetle transfers are idempotent by
 | During VM execution, before renewal | Firecracker VM continues running unaware of orchestrator state. On restart, the orchestrator discovers orphaned VMs by scanning Firecracker process state, computes actual wall-clock usage from VM start time to now, and posts the pending transfer(s) for the actual amount. If the orchestrator stays down longer than the pending transfer timeout, TigerBeetle voids the pending transfers and the org's funds are released — the operator absorbs the cost of the unmetered compute. Pending transfer timeout must be set longer than the maximum expected orchestrator restart time. |
 | After VM exit, before ClickHouse write | TigerBeetle has the financial record. Reconciliation cron detects missing metering row and alerts. ClickHouse row can be backfilled from TigerBeetle transfer data. |
 
-The reconciliation cron is not on the critical path — if it fails, billing enforcement continues via the orchestrator. Drift detection is delayed until the next successful run.
+The reconciliation cron is not on the critical path — if it fails, billing enforcement continues via the orchestrator. Reconciliation alerts and ClickHouse backfill evidence are delayed until the next successful run.
 
 ### Identity–Ledger Integration
 
@@ -879,13 +879,13 @@ TigerBeetle uses 128-bit unsigned integers for all account and transfer IDs. The
 
 ##### The injectivity requirement
 
-A function `f: A → B` is injective if distinct inputs always produce distinct outputs. For financial IDs, injectivity is not optional — a collision means two accounts or two transfers sharing an ID, and TigerBeetle silently deduplicates (by design, for idempotency). A collision in account IDs means an org's free-tier account overlaps with another org's credit account. A collision in transfer IDs means a legitimate transfer is silently dropped as a duplicate.
+A function `f: A → B` is injective if distinct inputs always produce distinct outputs. For financial IDs, injectivity is not optional — a collision means two accounts or two transfers sharing an ID, and TigerBeetle silently deduplicates (by design, for idempotency). A collision in account IDs means one grant or operator account overlaps with another. A collision in transfer IDs means a legitimate transfer is silently dropped as a duplicate.
 
 A cryptographic hash (blake3, SHA-256) provides probabilistic collision resistance. An injective packing function provides a mathematical guarantee — zero collision probability, proven by construction. The choice between them depends on whether the input space fits in the output space (128 bits):
 
 | Entity | Input fields | Input bits | Fits in 128? |
 |--------|-------------|-----------|:------------:|
-| Account | grant_id(64) + account_type(16) | 80 | Yes |
+| Account | grant_id(64) + type(16) | 80 | Yes |
 | VM transfer | job_id(64) + window_seq(32) + grant_idx(8) + kind(8) | 112 | Yes |
 | Subscription-period deposit transfer | subscription_id(64) + year_month(16) + kind(8) | 88 | Yes |
 | Stripe/task-driven transfer | task_id(64) + kind(8) | 72 | Yes |
@@ -921,7 +921,7 @@ The Go client stores `Uint128` as 16 little-endian bytes. `BytesToUint128` maps 
 │ type (u16) │     reserved (48 bits)  │            grant_id (u64)            │
 └────────────┴─────────────────────────┴──────────────────────────────────────┘
 
-Numeric value: grant_id × 2⁶⁴ + account_type
+Numeric value: grant_id × 2⁶⁴ + type
 Sort order:    by grant creation order, then by type within grant
 ```
 
@@ -977,7 +977,7 @@ Transfer kind enum (also stored in TigerBeetle's `code` field):
 | 5 | stripe_deposit | task_id | (single-phase) |
 | 6 | subscription_deposit | task_id | (single-phase) |
 | 7 | promo_credit | task_id | (single-phase) |
-| 8 | dispute_debit | task_id | `balancing_debit` (clamps to available credit balance; debits org/credit, credits StripeHolding) |
+| 8 | dispute_debit | task_id | `balancing_debit` on the disputed grant waterfall, crediting `StripeHolding` |
 | 9 | credit_expiry | grant_id | `balancing_debit` for org-side debit, single-phase sweep into `ExpiredCredits` or `FreeTierExpense` |
 
 ##### Transfer idempotency by construction
@@ -1430,4 +1430,4 @@ Caddy routes (additions):
 5. **Storefront app** — simpler CRUD, proves auth + Stripe Checkout end-to-end
 6. **Sandbox metering table** — extend ClickHouse schema
 7. **Sandbox app + orchestrator billing** — two-phase transfers wired into VM lifecycle
-8. **Reconciliation cron** — hourly ClickHouse ↔ TigerBeetle consistency check + Stripe usage sync
+8. **Reconciliation cron** — hourly ClickHouse ↔ TigerBeetle consistency check

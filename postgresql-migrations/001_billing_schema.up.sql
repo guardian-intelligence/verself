@@ -1,32 +1,10 @@
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
-        CREATE TYPE subscription_status AS ENUM ('active', 'past_due', 'suspended', 'cancelled', 'trialing');
-    END IF;
-END $$;
+CREATE TYPE subscription_status AS ENUM ('active', 'past_due', 'suspended', 'cancelled', 'trialing');
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'billing_cadence') THEN
-        CREATE TYPE billing_cadence AS ENUM ('monthly', 'annual');
-    END IF;
-END $$;
+CREATE TYPE billing_cadence AS ENUM ('monthly', 'annual');
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'grant_account') THEN
-        CREATE TYPE grant_account AS ENUM ('free_tier', 'credit');
-    END IF;
-END $$;
+CREATE TYPE task_status AS ENUM ('pending', 'claimed', 'completed', 'retrying', 'dead');
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
-        CREATE TYPE task_status AS ENUM ('pending', 'claimed', 'completed', 'retrying', 'dead');
-    END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS products (
+CREATE TABLE products (
     product_id    TEXT PRIMARY KEY,
     display_name  TEXT NOT NULL,
     meter_unit    TEXT NOT NULL,
@@ -34,7 +12,7 @@ CREATE TABLE IF NOT EXISTS products (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS plans (
+CREATE TABLE plans (
     plan_id                 TEXT PRIMARY KEY,
     product_id              TEXT NOT NULL REFERENCES products(product_id),
     display_name            TEXT NOT NULL,
@@ -53,11 +31,11 @@ CREATE TABLE IF NOT EXISTS plans (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_default_plan_per_product
+CREATE UNIQUE INDEX idx_default_plan_per_product
     ON plans (product_id)
     WHERE is_default;
 
-CREATE TABLE IF NOT EXISTS orgs (
+CREATE TABLE orgs (
     org_id             TEXT PRIMARY KEY,
     display_name       TEXT NOT NULL,
     stripe_customer_id TEXT UNIQUE,
@@ -66,7 +44,7 @@ CREATE TABLE IF NOT EXISTS orgs (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS subscriptions (
+CREATE TABLE subscriptions (
     subscription_id        BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id                 TEXT NOT NULL REFERENCES orgs(org_id),
     plan_id                TEXT NOT NULL REFERENCES plans(plan_id),
@@ -87,38 +65,34 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_sub_per_product
+CREATE UNIQUE INDEX idx_one_active_sub_per_product
     ON subscriptions (org_id, product_id)
     WHERE status IN ('active', 'past_due', 'trialing');
 
-CREATE TABLE IF NOT EXISTS credit_grants (
+CREATE TABLE credit_grants (
     grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
-    account_type        grant_account NOT NULL,
     amount              BIGINT NOT NULL CHECK (amount > 0),
-    consumed            BIGINT NOT NULL DEFAULT 0 CHECK (consumed >= 0),
-    expired             BIGINT NOT NULL DEFAULT 0 CHECK (expired >= 0),
-    remaining           BIGINT GENERATED ALWAYS AS (amount - consumed - expired) STORED,
     source              TEXT NOT NULL,
     stripe_reference_id TEXT,
     subscription_id     BIGINT REFERENCES subscriptions(subscription_id),
     period_start        TIMESTAMPTZ,
     period_end          TIMESTAMPTZ,
     expires_at          TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (consumed + expired <= amount)
+    closed_at           TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_credit_grants_active
+CREATE INDEX idx_credit_grants_active
     ON credit_grants (org_id, product_id, expires_at)
-    WHERE remaining > 0;
+    WHERE closed_at IS NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_grants_subscription_period
-    ON credit_grants (subscription_id, period_start, account_type)
+CREATE UNIQUE INDEX idx_credit_grants_subscription_period
+    ON credit_grants (subscription_id, period_start)
     WHERE subscription_id IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS org_pricing_overrides (
+CREATE TABLE org_pricing_overrides (
     org_id      TEXT NOT NULL REFERENCES orgs(org_id),
     plan_id     TEXT NOT NULL REFERENCES plans(plan_id),
     unit_rates  JSONB NOT NULL,
@@ -128,33 +102,32 @@ CREATE TABLE IF NOT EXISTS org_pricing_overrides (
     PRIMARY KEY (org_id, plan_id)
 );
 
-CREATE TABLE IF NOT EXISTS tasks (
-    task_id          BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    task_type        TEXT NOT NULL,
-    payload          JSONB NOT NULL DEFAULT '{}',
-    status           task_status NOT NULL DEFAULT 'pending',
-    idempotency_key  TEXT UNIQUE,
-    attempts         INTEGER NOT NULL DEFAULT 0,
-    max_attempts     INTEGER NOT NULL DEFAULT 5,
-    last_error       TEXT,
-    next_retry_at    TIMESTAMPTZ,
-    scheduled_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    claimed_at       TIMESTAMPTZ,
-    completed_at     TIMESTAMPTZ,
-    dead_at          TIMESTAMPTZ,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE tasks (
+    task_id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    task_type       TEXT NOT NULL,
+    payload         JSONB NOT NULL DEFAULT '{}',
+    status          task_status NOT NULL DEFAULT 'pending',
+    idempotency_key TEXT UNIQUE,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    max_attempts    INTEGER NOT NULL DEFAULT 5,
+    last_error      TEXT,
+    next_retry_at   TIMESTAMPTZ,
+    scheduled_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    dead_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_claimable
+CREATE INDEX idx_tasks_claimable
     ON tasks (scheduled_at, next_retry_at)
-    WHERE status IN ('pending', 'retrying')
-      ;
+    WHERE status IN ('pending', 'retrying');
 
-CREATE INDEX IF NOT EXISTS idx_tasks_dead
+CREATE INDEX idx_tasks_dead
     ON tasks (dead_at)
     WHERE status = 'dead';
 
-CREATE TABLE IF NOT EXISTS billing_events (
+CREATE TABLE billing_events (
     event_id        BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id          TEXT NOT NULL,
     event_type      TEXT NOT NULL,
@@ -166,14 +139,14 @@ CREATE TABLE IF NOT EXISTS billing_events (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_events_stripe
+CREATE UNIQUE INDEX idx_billing_events_stripe
     ON billing_events (stripe_event_id)
     WHERE stripe_event_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_billing_events_org
+CREATE INDEX idx_billing_events_org
     ON billing_events (org_id, created_at);
 
-CREATE TABLE IF NOT EXISTS billing_cursors (
+CREATE TABLE billing_cursors (
     cursor_name   TEXT PRIMARY KEY,
     cursor_ts     TIMESTAMPTZ,
     cursor_bigint BIGINT,
