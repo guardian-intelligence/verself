@@ -1,0 +1,37 @@
+# PostgreSQL configuration.
+# Managed by Ansible — do not edit manually.
+
+# Connection
+listen_addresses = '{{ services.postgresql.host }}'
+port = {{ services.postgresql.port }}
+max_connections = 100
+
+# Paths
+data_directory = '{{ postgresql_data_dir }}'
+hba_file = '{{ postgresql_config_dir }}/pg_hba.conf'
+
+# Logging
+logging_collector = on
+log_directory = '{{ postgresql_log_dir }}'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_rotation_age = 1d
+log_rotation_size = 100MB
+log_min_messages = warning
+log_line_prefix = '%m [%p] %q%u@%d '
+
+# Auth
+password_encryption = scram-sha-256
+
+# Memory (conservative — shared box with many services)
+shared_buffers = 256MB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+effective_cache_size = 512MB
+
+# WAL
+wal_level = replica
+max_wal_size = 1GB
+min_wal_size = 80MB
+
+# Unix socket directory
+unix_socket_directories = '/var/run/postgresql'

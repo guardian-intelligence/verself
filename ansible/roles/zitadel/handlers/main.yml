@@ -1,0 +1,7 @@
+---
+- name: Restart Zitadel
+  listen: restart zitadel
+  ansible.builtin.systemd:
+    name: zitadel
+    state: restarted
+    daemon_reload: true

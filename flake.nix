@@ -11,6 +11,45 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # Zitadel: official static binary, pinned independently from nixpkgs.
+        # nixpkgs carries 2.71.x; production requires 4.x (Actions V1 support,
+        # current security patches). Single Go binary, ~170 MB.
+        zitadel-static = pkgs.stdenv.mkDerivation {
+          pname = "zitadel";
+          version = "4.13.1";
+          src = pkgs.fetchurl {
+            url = "https://github.com/zitadel/zitadel/releases/download/v4.13.1/zitadel-linux-amd64.tar.gz";
+            hash = "sha256-/h9SMeXcvcpjrnetqw0iQdqv65cS59bN7TcT6e9Q8cs=";
+          };
+          dontConfigure = true;
+          dontBuild = true;
+          sourceRoot = ".";
+          installPhase = ''
+            mkdir -p $out/bin
+            cp zitadel-linux-amd64/zitadel $out/bin/
+          '';
+        };
+
+        # TigerBeetle: official static binary, pinned independently from nixpkgs.
+        # Statically linked Zig binary, ~20 MB. Weekly releases — pin for
+        # reproducibility and security patch tracking.
+        tigerbeetle-static = pkgs.stdenv.mkDerivation {
+          pname = "tigerbeetle";
+          version = "0.16.78";
+          src = pkgs.fetchurl {
+            url = "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.16.78/tigerbeetle-x86_64-linux.zip";
+            hash = "sha256-0y185q79dlWe/5PvwX50WFJDWBBZ1H2YgVVFjkqqK+s=";
+          };
+          nativeBuildInputs = [ pkgs.unzip ];
+          dontConfigure = true;
+          dontBuild = true;
+          sourceRoot = ".";
+          installPhase = ''
+            mkdir -p $out/bin
+            cp tigerbeetle $out/bin/
+          '';
+        };
+
         # ClickHouse: official static binary, pinned independently from nixpkgs.
         # ~500 MB static binary vs ~1.4 GB Nix closure (saves ~900 MB).
         clickhouse-static = pkgs.stdenv.mkDerivation {
@@ -41,7 +80,9 @@
           paths = [
             # --- Observability stack ---
             clickhouse-static      # Wide event storage (official static binary)
-            pkgs.tigerbeetle       # Financial ledger (double-entry accounting)
+            tigerbeetle-static     # Financial ledger (double-entry accounting)
+            pkgs.postgresql_16     # Application database (Zitadel, sandbox, storefront)
+            zitadel-static         # Identity provider (OIDC, event-sourced)
             # MongoDB excluded -- installed via apt (SSPL license, no binary cache, 30min+ source build)
             (pkgs.caddy.withPlugins {  # Reverse proxy, auto-TLS + Coraza WAF
               plugins = [ "github.com/corazawaf/coraza-caddy/v2@v2.4.0" ];

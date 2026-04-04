@@ -79,13 +79,109 @@ receivers:
     units: [caddy]
     resource:
       service.name: caddy
+  journald/zitadel:
+    units: [zitadel]
+    resource:
+      service.name: zitadel
+    operators:
+      # The journald receiver emits body as map[string]interface{} (Go map,
+      # not a JSON string). Extract the MESSAGE field to body first, then
+      # parse the Zitadel JSON log (slog.JSONHandler output).
+      - type: move
+        from: body.MESSAGE
+        to: body
+      - type: json_parser
+        parse_from: body
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+      - type: trace_parser
+        trace_id:
+          parse_from: attributes.TraceID
+        span_id:
+          parse_from: attributes.SpanID
+        if: attributes.TraceID != nil
+      - type: severity_parser
+        parse_from: attributes.level
+        mapping:
+          info: INFO
+          warn: WARN
+          error: ERROR
+          debug: DEBUG
+      - type: move
+        from: attributes.msg
+        to: body
+      # Flatten nested request object
+      - type: move
+        from: attributes.request.id
+        to: attributes.request_id
+        if: attributes.request != nil
+      - type: move
+        from: attributes.request.instance_host
+        to: attributes.instance_host
+        if: attributes.request != nil
+      # Rename to avoid collision with OTel resource service.name
+      - type: move
+        from: attributes.service
+        to: attributes.zitadel_service
+        if: attributes.service != nil
+      # Clean up parsed intermediate fields
+      - type: remove
+        field: attributes.time
+        if: attributes.time != nil
+      - type: remove
+        field: attributes.level
+        if: attributes.level != nil
+      - type: remove
+        field: attributes.TraceID
+        if: attributes.TraceID != nil
+      - type: remove
+        field: attributes.SpanID
+        if: attributes.SpanID != nil
+      - type: remove
+        field: attributes.request
+        if: attributes.request != nil
+      - type: remove
+        field: attributes.source
+        if: attributes.source != nil
+  filelog/postgresql:
+    include: [{{ postgresql_log_dir }}/postgresql-*.log]
+    storage: file_storage
+    resource:
+      service.name: postgresql
+    multiline:
+      line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+    operators:
+      - type: regex_parser
+        regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ \w+) \[(?P<pid>\d+)\]\s*(?:(?P<user>\S+)@(?P<database>\S+)\s+)?(?P<level>\w+):\s+(?P<message>.*)'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: "2006-01-02 15:04:05.000 MST"
+      - type: severity_parser
+        parse_from: attributes.level
+        mapping:
+          debug: [DEBUG, DEBUG1, DEBUG2, DEBUG3, DEBUG4, DEBUG5]
+          info: [INFO, LOG, NOTICE]
+          warn: WARNING
+          error: [ERROR, FATAL, PANIC]
+      - type: move
+        from: attributes.message
+        to: body
+      - type: remove
+        field: attributes.timestamp
+        if: attributes.timestamp != nil
+      - type: remove
+        field: attributes.level
+        if: attributes.level != nil
   hostmetrics:
     collection_interval: 1s
     scrapers:
       process:
         include:
           match_type: regexp
-          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle"]
+          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -124,7 +220,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/zitadel, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

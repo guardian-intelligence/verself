@@ -1,0 +1,6 @@
+---
+# nix_deploy: provides zitadel binary at fm_bin.
+# postgresql: Zitadel requires a running PostgreSQL instance.
+dependencies:
+  - role: nix_deploy
+  - role: postgresql

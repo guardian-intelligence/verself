@@ -9,6 +9,7 @@ exclude_paths:
 
 enable_list:
   - no-default-ports
+  - no-masterkey-cli
 
 warn_list:
   - experimental

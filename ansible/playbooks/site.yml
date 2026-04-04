@@ -122,6 +122,8 @@
     - cloudflare_dns
     - clickhouse
     - tigerbeetle
+    - postgresql
+    - zitadel
     - otelcol
     - hyperdx
     - hyperdx_dashboards

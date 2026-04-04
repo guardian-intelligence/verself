@@ -1,10 +1,11 @@
 ---
 argument_specs:
   main:
-    short_description: "Caddy edge proxy for HyperDX and Forgejo"
+    short_description: "Caddy edge proxy for HyperDX, Forgejo, and Zitadel"
     description:
       - "Deploys Caddy from the Nix profile and renders the edge config that"
-      - "fronts HyperDX and Forgejo with the shared WAF and access logging."
+      - "fronts HyperDX, Forgejo, and Zitadel with the shared WAF and access logging."
+      - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
       caddy_waf_mode:
@@ -21,6 +22,11 @@ argument_specs:
         type: str
         required: true
         description: "Public domain for Forgejo."
+
+      zitadel_domain:
+        type: str
+        required: true
+        description: "Public domain for Zitadel (h2c reverse proxy)."
 
       fm_bin:
         type: path

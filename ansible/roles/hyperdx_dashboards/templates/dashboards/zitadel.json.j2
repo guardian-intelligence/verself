@@ -1,0 +1,74 @@
+{
+  "name": "Zitadel",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "Zitadel Memory (RSS)",
+      "x": 0, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, formatReadableSize(avg(Value)) as label, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "Zitadel CPU (cores)",
+      "x": 6, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT ts as __hdx_time_bucket, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts, ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP BY ts, pid, state) GROUP BY ts ORDER BY ts",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "OIDC Request Latency (p50 / p95 / p99)",
+      "x": 0, "y": 9, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, series, ms FROM (SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, 'p50' as series, quantile(0.5)(Duration / 1000000) as ms FROM default.otel_traces WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'zitadel' AND SpanName NOT LIKE 'github.com/%' AND Duration > 0 GROUP BY __hdx_time_bucket UNION ALL SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, 'p95' as series, quantile(0.95)(Duration / 1000000) as ms FROM default.otel_traces WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'zitadel' AND SpanName NOT LIKE 'github.com/%' AND Duration > 0 GROUP BY __hdx_time_bucket UNION ALL SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, 'p99' as series, quantile(0.99)(Duration / 1000000) as ms FROM default.otel_traces WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'zitadel' AND SpanName NOT LIKE 'github.com/%' AND Duration > 0 GROUP BY __hdx_time_bucket) ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": " ms"}
+      }
+    },
+    {
+      "name": "Request Rate (rpm by endpoint)",
+      "x": 6, "y": 9, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, SpanName as series, count() as requests FROM default.otel_traces WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'zitadel' AND SpanName NOT LIKE 'github.com/%' AND Duration > 0 GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Error Rate",
+      "x": 0, "y": 18, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, countIf(StatusCode = 'Error') as errors, count() as total, round(countIf(StatusCode = 'Error') / greatest(count(), 1), 4) as error_rate FROM default.otel_traces WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'zitadel' AND SpanName NOT LIKE 'github.com/%' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "percent"}
+      }
+    },
+    {
+      "name": "Slowest Spans (last 5 min)",
+      "x": 6, "y": 18, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT SpanName, round(Duration / 1000000, 3) as duration_ms, StatusCode, TraceId FROM default.otel_traces WHERE Timestamp >= now() - INTERVAL 5 MINUTE AND ServiceName = 'zitadel' ORDER BY Duration DESC LIMIT 20"
+      }
+    }
+  ]
+}

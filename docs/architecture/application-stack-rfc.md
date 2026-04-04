@@ -202,12 +202,12 @@ zitadel setup --masterkey "$(cat /etc/zitadel/masterkey)" --config /etc/zitadel/
 zitadel start --masterkey "$(cat /etc/zitadel/masterkey)" --config /etc/zitadel/config.yaml
 ```
 
-`start-from-init` combines all three phases idempotently — suitable for the Ansible role's first-run path.
+`start-from-init` combines all three phases idempotently but does not exit after setup — it runs the server. For Ansible automation, run `init` and `setup` separately (both exit on completion), then let systemd manage `start`.
 
 Key configuration (`/etc/zitadel/config.yaml`):
 
 ```yaml
-Port: 8080
+Port: 8085  # 8080 is taken by HyperDX
 ExternalDomain: auth.example.com
 ExternalPort: 443
 ExternalSecure: true
@@ -227,7 +227,9 @@ Database:
         Mode: disable  # localhost, no TLS needed
     Admin:
       Username: postgres
-      Password: "${PG_ADMIN_PASSWORD}"
+      Password: "${PG_ADMIN_PASSWORD}"  # required — Zitadel connects over TCP, not unix socket
+      SSL:
+        Mode: disable
     MaxOpenConns: 10
     MaxIdleConns: 5
     MaxConnLifetime: 30m
@@ -242,7 +244,7 @@ Instrumentation:
     Enabled: true
 ```
 
-`ExternalDomain`, `ExternalPort`, and `ExternalSecure` must match the actual public URL. Mismatches cause redirect loops or broken OIDC flows — this is the #1 self-hosting configuration error. Changing these values after initialization requires rerunning `zitadel setup`.
+`ExternalDomain`, `ExternalPort`, and `ExternalSecure` must match the actual public URL. Mismatches cause redirect loops or broken OIDC flows — this is the #1 self-hosting configuration error. Zitadel also enforces `ExternalDomain` on API requests: any request whose `Host` header does not match gets rejected with "Instance not found." The `/debug/healthz` endpoint is exempt. Changing these values after initialization requires rerunning `zitadel setup`.
 
 **Masterkey**: A 32-character string used for AES-256 encryption of secrets at rest (IdP client secrets, TOTP seeds, SMTP passwords, signing keys). Generated once, stored in `/etc/zitadel/masterkey`. **Cannot be rotated** — losing it means losing access to all encrypted data. User passwords and client secrets are hashed (bcrypt/argon2), not encrypted, so those survive masterkey loss.
 
@@ -259,7 +261,7 @@ Type=simple
 User=zitadel
 Group=zitadel
 ExecStart=/opt/forge-metal/profile/bin/zitadel start \
-  --masterkey "${MASTERKEY}" \
+  --masterkeyFile /etc/zitadel/masterkey \
   --config /etc/zitadel/config.yaml
 Restart=always
 RestartSec=5
@@ -273,13 +275,13 @@ Caddy route — `h2c` (HTTP/2 cleartext) is required because Zitadel serves gRPC
 
 ```
 auth.example.com {
-  reverse_proxy h2c://localhost:8080
+  reverse_proxy h2c://localhost:8085
 }
 ```
 
 Without `h2c`, gRPC calls fail silently. Standard `http://` proxying breaks the Management, Admin, and System APIs.
 
-Default port: 8080.
+Default port: 8085 (moved from default 8080 to avoid conflict with HyperDX).
 
 #### Resource requirements
 
@@ -296,18 +298,18 @@ Password hashing (argon2/bcrypt) can spike to 4 CPU cores during authentication 
 
 Zitadel exports telemetry natively via OpenTelemetry — no sidecar or StatsD bridge needed (unlike TigerBeetle):
 
-- **Traces**: gRPC export to the existing OTel Collector on `:4317`. Every OIDC flow, API call, and event store write produces spans.
+- **Traces**: gRPC export to the existing OTel Collector on `:4317`. Every OIDC flow, API call, and event store write produces spans. The `Instrumentation.Trace.Exporter` config block must use exactly `Type: grpc` — Zitadel silently ignores unrecognized config keys, so a typo (e.g., `Traces` instead of `Trace`) produces zero trace export with no error logged.
 - **Metrics**: Prometheus endpoint at `/debug/metrics`. Request latency, active sessions, event store lag.
-- **Logs**: Structured JSON to stdout, captured by journald. Includes request ID correlation with OTel trace IDs.
+- **Logs**: Structured JSON to stdout (`Log.Formatter.Format: json`), captured by journald. The OTel Collector's `journald/zitadel` receiver parses JSON, extracts `TraceID`/`SpanID` (PascalCase) into OTel trace context for log-trace correlation in HyperDX. Note: `request` fields are nested objects in JSON mode (`request.id`, `request.instance_host`), not flat keys.
 - **Audit trail**: The event store itself. Every identity mutation is queryable via the Events API with filters by event type, aggregate ID, and time range. Retention is indefinite — events are never deleted.
 
-The OTel Collector already forwards to ClickHouse. Zitadel traces and metrics flow into the existing `otel_traces` and `otel_metrics_*` tables without additional configuration beyond the `Instrumentation` block in Zitadel's config.
+The OTel Collector already forwards to ClickHouse. Zitadel traces and metrics flow into the existing `otel_traces` and `otel_metrics_*` tables without additional configuration beyond the `Instrumentation` block in Zitadel's config. Logs flow via the `journald/zitadel` receiver → ClickHouse `otel_logs` table.
 
 #### Security model
 
 Zitadel has no built-in authentication between callers and its API — security depends on network binding and the reverse proxy layer.
 
-For this deployment: Zitadel listens on `127.0.0.1:8080`. Caddy terminates TLS and proxies public traffic to Zitadel. The Management Console (admin UI) is accessible at `auth.<domain>/ui/console` — restrict access via Caddy IP allowlisting or HTTP basic auth if the console should not be public-facing.
+For this deployment: Zitadel listens on `127.0.0.1:8085`. Caddy terminates TLS and proxies public traffic to Zitadel. The Management Console (admin UI) is accessible at `auth.<domain>/ui/console` — restrict access via Caddy IP allowlisting or HTTP basic auth if the console should not be public-facing.
 
 SMTP is required for email verification, password reset, and user invitations. Without a configured SMTP provider, these flows fail silently. Resend is the planned provider (deferred — not yet implemented). Until SMTP is configured, use pre-verified users and manual password setup.
 
@@ -327,6 +329,7 @@ The event store is the single source of truth. If projections become corrupted, 
 - **ExternalDomain/ExternalPort/ExternalSecure must be correct from day one.** Changing these post-initialization requires rerunning `zitadel setup` and may invalidate existing OIDC sessions and passkey registrations.
 - **Passkeys are domain-bound.** WebAuthn credentials are tied to `ExternalDomain`. Changing the domain after users register passkeys invalidates those credentials. Pick the final domain before onboarding users.
 - **AGPL-3.0 license.** Network use triggers copyleft. Acceptable for internal infrastructure use; would require evaluation if Zitadel were modified and exposed as a service to third parties.
+- **Login V2 is a separate service.** Zitadel 4.x defaults to `LoginV2.Required: true`, which redirects OIDC auth to `/ui/v2/login/` — a path served by a standalone Next.js app (`zitadel-login`), not the Go binary. The binary only embeds Login V1 (`/ui/login/`). This deployment disables Login V2 via the instance feature flag and uses the embedded Login V1. Login V1 is deprecated and removed in v5. Deploying Login V2 requires: (1) the `zitadel-login` Next.js service, (2) a service account PAT for the login app, (3) Caddy path-based routing to split `/ui/v2/login/*` to the login service.
 - **No built-in caching layer.** Redis caching exists but is beta (standalone only, no Sentinel/Cluster). At single-node scale, PostgreSQL query performance is sufficient.
 
 ### Database: PostgreSQL (single instance, multiple databases)

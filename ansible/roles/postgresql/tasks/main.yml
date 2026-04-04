@@ -1,0 +1,209 @@
+---
+# PostgreSQL database server.
+# Binary provided by the Nix server profile.
+
+# --- Binary presence ---
+
+- name: Verify PostgreSQL binary exists in Nix profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/postgres"
+  register: postgresql_binary
+  failed_when: not postgresql_binary.stat.exists
+
+- name: Capture PostgreSQL version
+  ansible.builtin.command:
+    cmd: "{{ fm_bin }}/postgres --version"
+  register: postgresql_version_output
+  changed_when: false
+
+- name: Assert PostgreSQL version matches expected
+  ansible.builtin.assert:
+    that: "'16.' in postgresql_version_output.stdout"
+    fail_msg: >-
+      Expected PostgreSQL 16.x, got: {{ postgresql_version_output.stdout }}.
+      Update flake.lock or adjust the version assertion.
+
+# --- System user ---
+
+- name: Create postgres system group
+  ansible.builtin.group:
+    name: postgres
+    system: true
+
+- name: Create postgres system user
+  ansible.builtin.user:
+    name: postgres
+    group: postgres
+    system: true
+    home: /var/lib/postgresql
+    shell: /bin/bash
+    create_home: true
+
+# --- Directories ---
+
+- name: Create PostgreSQL directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  loop:
+    - "{{ postgresql_data_dir }}"
+    - "{{ postgresql_config_dir }}"
+
+- name: Create PostgreSQL log directory
+  ansible.builtin.file:
+    path: "{{ postgresql_log_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+
+- name: Create PostgreSQL run directory
+  ansible.builtin.file:
+    path: /var/run/postgresql
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+
+# --- Credentials ---
+
+- name: Generate PostgreSQL admin password
+  ansible.builtin.set_fact:
+    postgresql_admin_password: "{{ lookup('password', credentials_dir + '/postgresql_admin_password length=32 chars=ascii_letters,digits') }}"
+
+# --- Idempotent initdb ---
+
+- name: Check if PostgreSQL data directory is initialized
+  ansible.builtin.stat:
+    path: "{{ postgresql_data_dir }}/PG_VERSION"
+  register: postgresql_data_stat
+
+- name: Write temporary password file for initdb
+  ansible.builtin.copy:
+    content: "{{ postgresql_admin_password }}"
+    dest: /tmp/.pg_initdb_pw
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  when: not postgresql_data_stat.stat.exists
+  no_log: true
+
+- name: Initialize PostgreSQL data directory
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/initdb
+      --pgdata={{ postgresql_data_dir }}
+      --auth=scram-sha-256
+      --encoding=UTF8
+      --locale=C.UTF-8
+      --pwfile=/tmp/.pg_initdb_pw
+  become: true
+  become_user: postgres
+  environment:
+    HOME: /tmp
+  changed_when: true
+  when: not postgresql_data_stat.stat.exists
+
+- name: Remove temporary password file
+  ansible.builtin.file:
+    path: /tmp/.pg_initdb_pw
+    state: absent
+
+# --- Configuration ---
+
+- name: Deploy postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "{{ postgresql_config_dir }}/postgresql.conf"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  notify:
+    - restart postgresql
+
+- name: Deploy pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgresql_config_dir }}/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  notify:
+    - restart postgresql
+
+# --- systemd unit ---
+
+- name: Deploy PostgreSQL systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=PostgreSQL
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=postgres
+      Group=postgres
+      ExecStart={{ fm_bin }}/postgres -D {{ postgresql_data_dir }} -c config_file={{ postgresql_config_dir }}/postgresql.conf
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=65536
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/postgresql.service
+    mode: "0644"
+  notify:
+    - restart postgresql
+
+- name: Apply PostgreSQL unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Enable and start ---
+
+- name: Enable and start PostgreSQL
+  ansible.builtin.systemd:
+    name: postgresql
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Readiness gate ---
+
+- name: Wait for PostgreSQL to be ready
+  ansible.builtin.wait_for:
+    port: "{{ services.postgresql.port }}"
+    host: "{{ services.postgresql.host }}"
+    timeout: 30
+
+# --- Set admin password (idempotent — always update to match credential file) ---
+
+- name: Set postgres superuser password
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql -h /var/run/postgresql -U postgres -c
+      "ALTER USER postgres PASSWORD '{{ postgresql_admin_password }}';"
+  become: true
+  become_user: postgres
+  changed_when: false
+  no_log: true
+
+# --- Connection smoke test ---
+
+- name: Verify TCP connection to PostgreSQL
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -c "SELECT 1 AS connected;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: postgresql_smoke_test
+  changed_when: false
+  failed_when: "'connected' not in postgresql_smoke_test.stdout"
