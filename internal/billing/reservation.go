@@ -52,6 +52,8 @@ func (c *Client) Renew(ctx context.Context, reservation *Reservation, actualSeco
 		ProductID:  reservation.ProductID,
 		ActorID:    reservation.ActorID,
 		Allocation: cloneFloat64Map(reservation.Allocation),
+		SourceType: reservation.SourceType,
+		SourceRef:  reservation.SourceRef,
 	}, reservation.WindowSeq+1, reservation.WindowStart.Add(time.Duration(actualSeconds)*time.Second).UTC())
 	if err != nil {
 		return err
@@ -115,6 +117,14 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 	if err := c.createTransfers(transfers); err != nil {
 		return fmt.Errorf("settle reservation: %w", err)
 	}
+
+	if c.metering != nil {
+		row := buildMeteringRow(reservation, actualSeconds, actualCost)
+		if err := c.metering.InsertMeteringRow(ctx, row); err != nil {
+			return fmt.Errorf("settle reservation: write metering row: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -145,6 +155,12 @@ func (c *Client) Void(ctx context.Context, reservation *Reservation) error {
 func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSeq uint32, windowStart time.Time) (Reservation, error) {
 	if err := ctx.Err(); err != nil {
 		return Reservation{}, err
+	}
+	if req.SourceType == "" {
+		return Reservation{}, fmt.Errorf("billing: ReserveRequest.SourceType is required")
+	}
+	if req.SourceRef == "" {
+		return Reservation{}, fmt.Errorf("billing: ReserveRequest.SourceRef is required")
 	}
 	if err := c.ensureOrgNotSuspended(ctx, req.OrgID); err != nil {
 		return Reservation{}, err
@@ -189,6 +205,8 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		ProductID:    req.ProductID,
 		PlanID:       planID,
 		ActorID:      req.ActorID,
+		SourceType:   req.SourceType,
+		SourceRef:    req.SourceRef,
 		WindowSeq:    windowSeq,
 		WindowSecs:   c.cfg.ReservationWindowSecs,
 		WindowStart:  windowStart.UTC(),
@@ -511,6 +529,7 @@ func (c *Client) reserveGrantWaterfall(ctx context.Context, jobID JobID, orgID O
 			GrantID:    grant.grantID,
 			TransferID: transferID,
 			Amount:     reservedAmount,
+			Source:     grant.source,
 		})
 		remainder -= reservedAmount
 	}
@@ -681,4 +700,49 @@ func minUint64(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+func buildMeteringRow(reservation *Reservation, actualSeconds uint32, actualCost uint64) MeteringRow {
+	// Compute per-source unit breakdown from settled grant legs.
+	var freeTier, subscription, purchase, promo, refund uint64
+	remainder := actualCost
+	for _, leg := range reservation.GrantLegs {
+		settled := minUint64(leg.Amount, remainder)
+		switch leg.Source {
+		case SourceFreeTier:
+			freeTier += settled
+		case SourceSubscription:
+			subscription += settled
+		case SourcePurchase:
+			purchase += settled
+		case SourcePromo:
+			promo += settled
+		case SourceRefund:
+			refund += settled
+		}
+		remainder -= settled
+		if remainder == 0 {
+			break
+		}
+	}
+
+	return MeteringRow{
+		OrgID:             strconv.FormatUint(uint64(reservation.OrgID), 10),
+		ActorID:           reservation.ActorID,
+		ProductID:         reservation.ProductID,
+		SourceType:        reservation.SourceType,
+		SourceRef:         reservation.SourceRef,
+		WindowSeq:         reservation.WindowSeq,
+		StartedAt:         reservation.WindowStart,
+		EndedAt:           reservation.WindowStart.Add(time.Duration(actualSeconds) * time.Second),
+		BilledSeconds:     actualSeconds,
+		PricingPhase:      string(reservation.PricingPhase),
+		Dimensions:        cloneFloat64Map(reservation.Allocation),
+		ChargeUnits:       actualCost,
+		FreeTierUnits:     freeTier,
+		SubscriptionUnits: subscription,
+		PurchaseUnits:     purchase,
+		PromoUnits:        promo,
+		RefundUnits:       refund,
+	}
 }

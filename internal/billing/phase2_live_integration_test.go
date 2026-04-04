@@ -5,6 +5,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -26,12 +27,15 @@ func TestReserveSettleAgainstLiveHost(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	jobID := JobID(time.Now().UTC().UnixNano() % 1_000_000_000)
 	reservation, err := env.client.Reserve(ctx, ReserveRequest{
-		JobID:      401,
+		JobID:      jobID,
 		OrgID:      orgID,
 		ProductID:  productID,
 		ActorID:    "user-live-phase2",
 		Allocation: map[string]float64{"unit": 1},
+		SourceType: "job",
+		SourceRef:  strconv.FormatInt(int64(jobID), 10),
 	})
 	if err != nil {
 		t.Fatalf("reserve live host: %v", err)

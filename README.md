@@ -1,7 +1,3 @@
-# forge-metal
-
-`forge-metal` is a self-hosted bare-metal platform for running Forgejo, fast CI on Firecracker + ZFS, and ClickHouse/HyperDX observability.
-
 The CI path is built around repo-specific golden images:
 
 1. start from a generic guest image
@@ -10,19 +6,6 @@ The CI path is built around repo-specific golden images:
 4. clone the golden with ZFS for each PR job
 5. run CI inside an isolated Firecracker microVM
 6. emit wide events to ClickHouse for inspection in HyperDX
-
-## Current Scope
-
-Today the proven path is:
-
-- Forgejo-hosted repos
-- Firecracker microVM execution
-- ZFS zvol clones for repo goldens
-- Node-based workloads using `npm`, `pnpm`, or `bun`
-- optional `postgres` service
-- fixture E2E that seeds controlled repos into Forgejo and verifies the warm path
-
-That is intentionally narrower than "arbitrary CI for any repo". The current interface limits and remaining implementation assumptions are tracked in [docs/architecture/legacy-assumptions-audit.md](docs/architecture/legacy-assumptions-audit.md).
 
 ## Canonical Workload Contract
 
@@ -80,29 +63,6 @@ Those are fixture orchestration concerns, not workload execution concerns.
 - Toolchain detection is derived behavior behind the current Node profile; it is not part of the repo-owned config surface.
 - The host now sends structured guest phases instead of generating `bash -lc` scripts. Shell is still allowed, but only when the workload explicitly uses it in `run` or `prepare`.
 - Per-job guest config is delivered over the host-initiated vsock control stream. MMDS is not part of the steady-state runtime path.
-
-## Basic Commands
-
-```bash
-cd ansible && ansible-playbook playbooks/setup-dev.yml   # one-time: install pinned dev tools
-make hooks-install
-cd ansible && ansible-playbook playbooks/provision.yml
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
-make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
-cd ansible && ansible-playbook playbooks/ci-fixtures-pass.yml
-```
-
-- `make hooks-install`: install the repo's git pre-commit hooks
-- `playbooks/dev-single-node.yml`: normal idempotent deploy path (supports `--tags` for targeting individual roles)
-- `make clickhouse-query`: run a ClickHouse query on the current worker without retyping SSH or credentials
-- `playbooks/ci-fixtures-pass.yml`: run the positive CI fixture suite against the current host
-- `playbooks/ci-fixtures-fail.yml`: run the negative CI fixture suite against the current host
-- `playbooks/guest-rootfs.yml`: rebuild and restage guest artifacts without a full redeploy
-- `playbooks/ci-fixtures-full.yml`: refresh guest artifacts, then run the pass and fail fixture suites together
-
-For live operator access patterns, including ClickHouse queries over SSH, see [docs/architecture/operator-workflows.md](docs/architecture/operator-workflows.md).
-
 
 --- A note on the future ---
 

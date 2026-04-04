@@ -67,6 +67,8 @@ func TestReserveDoesNotSplitAcrossPricingPhases(t *testing.T) {
 		ProductID:  productID,
 		ActorID:    "user-nosplit",
 		Allocation: map[string]float64{"unit": 1},
+		SourceType: "job",
+		SourceRef:  "101",
 	})
 	if !errors.Is(err, ErrInsufficientBalance) {
 		t.Fatalf("expected ErrInsufficientBalance, got %v", err)
@@ -97,6 +99,8 @@ func TestReserveWaterfallsAcrossMultipleGrantAccounts(t *testing.T) {
 		ProductID:  productID,
 		ActorID:    "user-waterfall",
 		Allocation: map[string]float64{"unit": 1},
+		SourceType: "job",
+		SourceRef:  "102",
 	})
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
@@ -113,9 +117,9 @@ func TestReserveWaterfallsAcrossMultipleGrantAccounts(t *testing.T) {
 	}
 
 	expected := []GrantLeg{
-		{GrantID: grantA.grantID, TransferID: VMTransferID(102, 0, 0, KindReservation), Amount: 10},
-		{GrantID: grantB.grantID, TransferID: VMTransferID(102, 0, 1, KindReservation), Amount: 20},
-		{GrantID: grantC.grantID, TransferID: VMTransferID(102, 0, 2, KindReservation), Amount: 30},
+		{GrantID: grantA.grantID, TransferID: VMTransferID(102, 0, 0, KindReservation), Amount: 10, Source: SourceSubscription},
+		{GrantID: grantB.grantID, TransferID: VMTransferID(102, 0, 1, KindReservation), Amount: 20, Source: SourceSubscription},
+		{GrantID: grantC.grantID, TransferID: VMTransferID(102, 0, 2, KindReservation), Amount: 30, Source: SourceSubscription},
 	}
 	for i, want := range expected {
 		if got := reservation.GrantLegs[i]; got != want {
@@ -151,6 +155,8 @@ func TestSettleAndVoidOperatePerGrantLegAndAreIdempotent(t *testing.T) {
 			ProductID:  productID,
 			ActorID:    "user-settle",
 			Allocation: map[string]float64{"unit": 1},
+			SourceType: "job",
+			SourceRef:  "103",
 		})
 		if err != nil {
 			t.Fatalf("reserve: %v", err)
@@ -187,6 +193,8 @@ func TestSettleAndVoidOperatePerGrantLegAndAreIdempotent(t *testing.T) {
 			ProductID:  productID,
 			ActorID:    "user-void",
 			Allocation: map[string]float64{"unit": 1},
+			SourceType: "job",
+			SourceRef:  "104",
 		})
 		if err != nil {
 			t.Fatalf("reserve: %v", err)
@@ -225,6 +233,8 @@ func TestRenewSettlesCurrentWindowAndReservesNext(t *testing.T) {
 		ProductID:  productID,
 		ActorID:    "user-renew",
 		Allocation: map[string]float64{"unit": 1},
+		SourceType: "job",
+		SourceRef:  "105",
 	})
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
@@ -244,7 +254,7 @@ func TestRenewSettlesCurrentWindowAndReservesNext(t *testing.T) {
 	if got, want := len(reservation.GrantLegs), 1; got != want {
 		t.Fatalf("expected %d next-window leg, got %d", want, got)
 	}
-	if got, want := reservation.GrantLegs[0], (GrantLeg{GrantID: grantB.grantID, TransferID: VMTransferID(105, 1, 0, KindReservation), Amount: 60}); got != want {
+	if got, want := reservation.GrantLegs[0], (GrantLeg{GrantID: grantB.grantID, TransferID: VMTransferID(105, 1, 0, KindReservation), Amount: 60, Source: SourceSubscription}); got != want {
 		t.Fatalf("unexpected renewed grant leg: expected %+v, got %+v", want, got)
 	}
 
@@ -280,12 +290,15 @@ func TestReservationLifecycleRapid(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		jobID := JobID(5000 + runID)
 		reservation, err := env.client.Reserve(ctx, ReserveRequest{
-			JobID:      JobID(5000 + runID),
+			JobID:      jobID,
 			OrgID:      orgID,
 			ProductID:  productID,
 			ActorID:    "user-rapid",
 			Allocation: map[string]float64{"unit": 1},
+			SourceType: "job",
+			SourceRef:  strconv.FormatInt(int64(jobID), 10),
 		})
 		if total < 60 {
 			if !errors.Is(err, ErrInsufficientBalance) {
