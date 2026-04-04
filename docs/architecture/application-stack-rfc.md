@@ -422,7 +422,7 @@ CREATE UNIQUE INDEX idx_one_active_sub_per_product
     WHERE status IN ('active', 'past_due', 'trialing');
 
 CREATE TABLE credit_grants (
-    grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    grant_id            TEXT PRIMARY KEY,  -- ULID, application-generated
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
     amount              BIGINT NOT NULL CHECK (amount > 0),
@@ -515,7 +515,7 @@ CREATE TABLE billing_events (
     org_id          TEXT NOT NULL,
     event_type      TEXT NOT NULL,
     subscription_id BIGINT,
-    grant_id        BIGINT,
+    grant_id        TEXT,
     task_id         BIGINT,
     payload         JSONB NOT NULL DEFAULT '{}',
     stripe_event_id TEXT,
@@ -881,55 +881,49 @@ TigerBeetle uses 128-bit unsigned integers for all account and transfer IDs. The
 
 A function `f: A → B` is injective if distinct inputs always produce distinct outputs. For financial IDs, injectivity is not optional — a collision means two accounts or two transfers sharing an ID, and TigerBeetle silently deduplicates (by design, for idempotency). A collision in account IDs means one grant or operator account overlaps with another. A collision in transfer IDs means a legitimate transfer is silently dropped as a duplicate.
 
-A cryptographic hash (blake3, SHA-256) provides probabilistic collision resistance. An injective packing function provides a mathematical guarantee — zero collision probability, proven by construction. The choice between them depends on whether the input space fits in the output space (128 bits):
+Two ID derivation strategies coexist in this system:
+
+| Strategy | Used for | Collision guarantee | LSM-friendly |
+|----------|----------|:-------------------:|:------------:|
+| **ULID half-swap** | Grant account IDs, credit expiry transfer IDs | Probabilistic (ULID uniqueness: 80 random bits per millisecond) | Yes (timestamp in high bits after endian swap) |
+| **Injective packing** | VM transfers, subscription-period deposits, Stripe/task transfers, operator accounts | Zero (proven by construction) | Yes (source_id in high bits) |
+
+Grant IDs are application-generated ULIDs (128-bit, time-ordered, via `github.com/oklog/ulid/v2`). The ULID is mapped to a TigerBeetle `Uint128` by swapping the two big-endian 8-byte halves into little-endian u64s, which places the ULID's 48-bit timestamp into the high u64 where TigerBeetle's LSM tree benefits from it. The mapping is bijective — the reverse function recovers the original ULID. ULID collision probability (birthday bound on 80 random bits within the same millisecond) is negligible for single-node billing volumes.
+
+Transfer IDs for VM reservations, subscription deposits, and task-driven flows use injective packing of `BIGINT` source IDs. `job_id`, `subscription_id`, and `task_id` remain PostgreSQL `BIGINT GENERATED ALWAYS AS IDENTITY` — their transfer ID input spaces are ≤ 112 bits and fit in 128 without hashing:
 
 | Entity | Input fields | Input bits | Fits in 128? |
 |--------|-------------|-----------|:------------:|
-| Account | grant_id(64) + type(16) | 80 | Yes |
 | VM transfer | job_id(64) + window_seq(32) + grant_idx(8) + kind(8) | 112 | Yes |
 | Subscription-period deposit transfer | subscription_id(64) + year_month(16) + kind(8) | 88 | Yes |
 | Stripe/task-driven transfer | task_id(64) + kind(8) | 72 | Yes |
-
-Every input space is ≤ 128 bits. No hashing is required anywhere in the system.
-
-This depends on a schema choice: `job_id` and `task_id` in PostgreSQL are `BIGINT` (64 bits), not `UUID` (128 bits). A UUID `job_id` would push the VM transfer input to 192 bits, forcing a hash and surrendering both reversibility and guaranteed uniqueness. On a single PostgreSQL instance, `GENERATED ALWAYS AS IDENTITY` produces monotonically increasing integers without coordination overhead — UUIDs solve a distributed systems problem this deployment doesn't have.
-
-The properties of injective packing vs. hashing:
-
-| Property | Injective packing | Cryptographic hash |
-|----------|:-:|:-:|
-| Zero collision probability | Yes (proven) | No (probabilistic) |
-| Deterministic | Yes | Yes |
-| Reversible (extract original fields from ID) | Yes | No |
-| LSM-friendly (monotonically increasing) | Yes (if high bits are time-ordered) | No (pseudo-random output) |
-| Requires external mapping table | No | No |
-| External dependencies | None | Hash library |
 
 ##### Byte ordering and LSM performance
 
 TigerBeetle's LSM tree achieves higher throughput with monotonically increasing IDs. The `ID()` helper in every client library generates ULID-style identifiers: `u128 = (timestamp << 80) | random`, placing the timestamp in the most-significant bits so IDs increase over time.
 
-The Go client stores `Uint128` as 16 little-endian bytes. `BytesToUint128` maps `bytes[0:8]` to the low u64 and `bytes[8:16]` to the high u64. Numeric comparison treats the high u64 as the primary sort key. The design rule: **place the temporally-increasing field in bytes [8:16]** (the high u64) so the packed ID's sort order aligns with creation order.
+The Go client stores `Uint128` as 16 little-endian bytes. `BytesToUint128` maps `bytes[0:8]` to the low u64 and `bytes[8:16]` to the high u64. Numeric comparison treats the high u64 as the primary sort key. For packed transfer IDs, the design rule is: **place the temporally-increasing field in bytes [8:16]** (the high u64) so the packed ID's sort order aligns with creation order. Grant account IDs achieve this by swapping the ULID's big-endian halves: `BE.Uint64(ulid[0:8])` (containing the timestamp) becomes the high u64, and `BE.Uint64(ulid[8:16])` becomes the low u64. A naive byte copy via `BytesToUint128(ulid[:])` would scatter the timestamp across the low u64 due to the endianness mismatch — the half-swap is required.
 
 ##### Account ID layout
 
+Grant accounts and operator accounts use separate ID schemes within the same `Uint128` space:
+
+**Grant accounts**: The TigerBeetle account ID is the grant's ULID with its big-endian halves swapped into the `Uint128`'s little-endian layout (high u64 = `BE.Uint64(ulid[0:8])`, low u64 = `BE.Uint64(ulid[8:16])`). No type prefix in the ID bits. The `code` field on the TigerBeetle account stores `9` (AcctGrant) for type discrimination.
+
+**Operator accounts**: Small sentinel IDs with `type` in the low 16 bits and zeros elsewhere:
+
 ```
-128-bit Account ID (16 bytes, little-endian)
+128-bit Operator Account ID (16 bytes, little-endian)
 ┌──────────────────────────────────────┬──────────────────────────────────────┐
 │         bytes [0:7] (low u64)        │        bytes [8:15] (high u64)       │
 ├────────────┬─────────────────────────┼──────────────────────────────────────┤
-│ type (u16) │     reserved (48 bits)  │            grant_id (u64)            │
+│ type (u16) │          zeros          │               zeros                  │
 └────────────┴─────────────────────────┴──────────────────────────────────────┘
-
-Numeric value: grant_id × 2⁶⁴ + type
-Sort order:    by grant creation order, then by type within grant
 ```
 
-`credit_grants.grant_id` is a PostgreSQL identity column. It is monotonically increasing on the single node, which is the exact property TigerBeetle's LSM tree benefits from. Placing `grant_id` in the high u64 means grant accounts increase in creation order without any external mapping table.
+The two ranges do not overlap: after the half-swap, the high u64 contains `BE.Uint64(ulid[0:8])` — the ULID timestamp occupies the top 48 bits of this value, which is always > 0 for any ULID generated after Unix epoch. Operator account IDs always have zero in the high u64. The non-overlap is structural, not probabilistic.
 
-Operator accounts use `grant_id = 0` as a sentinel. Grant IDs are always positive, so zero is unambiguous. Operator account IDs are small numbers that sort before all grant accounts — natural, since they're created once at system initialization.
-
-Account type enum (also stored in TigerBeetle's `code` field):
+Account type enum (stored in TigerBeetle's `code` field):
 
 | Value | Name | Owner | TigerBeetle flags |
 |-------|------|-------|-------------------|
@@ -941,11 +935,15 @@ Account type enum (also stored in TigerBeetle's `code` field):
 | 8 | expired-credits | operator | (none — breakage accumulator) |
 | 9 | grant | per grant | `debits_must_not_exceed_credits`, `history` |
 
-The type is encoded in two places: in the account ID (for deterministic derivation without a lookup) and in the `code` field (for `QueryFilter` operations). Grant accounts additionally store `org_id` in `user_data_64` and `source_type` in `user_data_32`, so reverse lookups and per-source scans do not require unpacking the ID.
+Grant accounts store `org_id` in `user_data_64` and `source_type` in `user_data_32`, so reverse lookups and per-source scans do not require any ID unpacking.
 
 ##### Transfer ID layout
 
-Transfers have different natural keys depending on their kind, but the bit layout is uniform — only the interpretation of the high u64 changes.
+Two transfer ID schemes exist:
+
+**Credit expiry transfers**: The transfer ID uses the same ULID half-swap as the grant account ID. Account IDs and transfer IDs are separate TigerBeetle namespaces, so the same numeric value in both is safe. There is exactly one expiry transfer per grant, so the ULID uniquely identifies it. The transfer's `code` field stores `KindCreditExpiry` (9).
+
+**All other transfers**: Injective packing of `BIGINT` source IDs. The bit layout is uniform — only the interpretation of the high u64 changes.
 
 ```
 128-bit Transfer ID (16 bytes, little-endian)
@@ -958,11 +956,11 @@ Transfers have different natural keys depending on their kind, but the bit layou
 Numeric value: source_id × 2⁶⁴ + (reserved << 48) + (kind << 40) + (grant_idx << 32) + seq
 ```
 
-**source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For subscription-period deposits: `subscription_id` (from `subscriptions.subscription_id`). For payment-driven tasks: `task_id` (from `tasks.task_id`). For expiry sweeps: `grant_id` (from `credit_grants.grant_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
+**source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For subscription-period deposits: `subscription_id` (from `subscriptions.subscription_id`). For payment-driven tasks: `task_id` (from `tasks.task_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
 
 **seq** (u32): Sequence number within the source. VM transfers: reservation window number (0 = initial, 1 = first renewal, ...). Subscription-period deposits: `year × 12 + month` derived from `period_start.UTC()`. Stripe deposits: 0 (one transfer per task).
 
-**grant_idx** (u8): Position of a grant within the reservation waterfall. A reservation window may debit 1..N grant accounts in order. Single-transfer flows (deposits, disputes, expiry) use `grant_idx = 0`.
+**grant_idx** (u8): Position of a grant within the reservation waterfall. A reservation window may debit 1..N grant accounts in order. Single-transfer flows (deposits, disputes) use `grant_idx = 0`.
 
 **kind** (u8): Transfer kind enum. Distinguishes reservation from settlement from void — critical because the same `(job_id, window_seq, grant_idx)` triple appears in both the pending transfer and its post/void, and they must have different IDs.
 
@@ -978,7 +976,7 @@ Transfer kind enum (also stored in TigerBeetle's `code` field):
 | 6 | subscription_deposit | task_id | (single-phase) |
 | 7 | promo_credit | task_id | (single-phase) |
 | 8 | dispute_debit | task_id | `balancing_debit` on the disputed grant waterfall, crediting `StripeHolding` |
-| 9 | credit_expiry | grant_id | `balancing_debit` for org-side debit, single-phase sweep into `ExpiredCredits` or `FreeTierExpense` |
+| 9 | credit_expiry | grant ULID (full 128 bits) | `balancing_debit` for org-side debit, single-phase sweep into `ExpiredCredits` or `FreeTierExpense` |
 
 ##### Transfer idempotency by construction
 
@@ -992,37 +990,48 @@ Each transfer kind has a distinct idempotency domain — the set of fields that 
 | free_tier_reset | (subscription_id, year_month) | One periodic free-plan deposit per subscription period. Re-running the deposit job produces the same transfer IDs — TigerBeetle returns `exists`. |
 | stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(idempotency_key)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
 | dispute_debit | (task_id) | One debit per dispute task. Uses `KindDisputeDebit` (8) in the kind byte, distinct from `KindStripeDeposit` (5), preventing ID collision between a deposit and a dispute sharing the same task_id. |
-| credit_expiry | (grant_id) | One expiry sweep per grant. Uses `KindCreditExpiry` (9), distinct from subscription and dispute flows. |
+| credit_expiry | (grant ULID) | One expiry sweep per grant. Transfer ID = grant ULID. Separate TigerBeetle namespace from the account ID. |
 
 Two layers of idempotency for Stripe deposits: PostgreSQL `UNIQUE` prevents duplicate tasks, TigerBeetle's ID-based deduplication prevents duplicate transfers. Either layer alone is sufficient; both together handle every crash/retry/webhook-replay scenario.
 
 ##### Go type system
 
-The packing functions are the only way to construct IDs. Distinct Go types prevent category errors at compile time:
+Distinct Go types prevent category errors at compile time:
 
 ```go
 type OrgID  uint64
 type JobID  int64   // BIGINT GENERATED ALWAYS AS IDENTITY
 type SubscriptionID int64
 type TaskID int64
-type GrantID int64
+type GrantID [16]byte  // ULID, 128-bit, time-ordered
 
 type AccountID  struct{ raw types.Uint128 }  // cannot be used as TransferID
 type TransferID struct{ raw types.Uint128 }  // cannot be used as AccountID
 
+// Grant account: ULID half-swap into Uint128 (timestamp in high u64).
 func GrantAccountID(grant GrantID) AccountID {
-    var id [16]byte
-    binary.LittleEndian.PutUint16(id[0:2], uint16(AcctGrant))
-    binary.LittleEndian.PutUint64(id[8:16], uint64(grant))
-    return AccountID{types.BytesToUint128(id)}
+    return AccountID{types.Uint128{
+        binary.BigEndian.Uint64(grant[8:16]),  // low u64 ← ULID random tail
+        binary.BigEndian.Uint64(grant[0:8]),   // high u64 ← ULID timestamp + random head
+    }}
 }
 
+// Credit expiry transfer: same half-swap, different TigerBeetle namespace.
+func CreditExpiryID(grant GrantID) TransferID {
+    return TransferID{types.Uint128{
+        binary.BigEndian.Uint64(grant[8:16]),
+        binary.BigEndian.Uint64(grant[0:8]),
+    }}
+}
+
+// Operator accounts: small sentinel IDs (high u64 = 0).
 func OperatorAccountID(t OperatorAcctType) AccountID {
     var id [16]byte
     binary.LittleEndian.PutUint16(id[0:2], uint16(t))
-    // bytes [8:16] = 0 (operator sentinel)
     return AccountID{types.BytesToUint128(id)}
 }
+
+// Packed transfer IDs for BIGINT source entities:
 
 func VMTransferID(job JobID, seq uint32, grantIdx uint8, kind XferKind) TransferID {
     var id [16]byte
@@ -1048,25 +1057,20 @@ func StripeDepositID(task TaskID, kind XferKind) TransferID {
     binary.LittleEndian.PutUint64(id[8:16], uint64(task))
     return TransferID{types.BytesToUint128(id)}
 }
-
-func CreditExpiryID(grant GrantID) TransferID {
-    var id [16]byte
-    id[5] = uint8(KindCreditExpiry)
-    binary.LittleEndian.PutUint64(id[8:16], uint64(grant))
-    return TransferID{types.BytesToUint128(id)}
-}
 ```
 
-Reverse functions exist for debugging — given any TigerBeetle ID from logs or the REPL, extract the original fields without a mapping table:
+Reverse functions exist for debugging:
 
 ```go
-func (a AccountID) ParseGrant() (grant GrantID, acctType uint16) {
-    b := a.raw.Bytes()
-    acctType = binary.LittleEndian.Uint16(b[0:2])
-    grant = GrantID(binary.LittleEndian.Uint64(b[8:16]))
-    return
+// Grant account → recover ULID (reverse the half-swap)
+func (a AccountID) GrantULID() GrantID {
+    var g GrantID
+    binary.BigEndian.PutUint64(g[0:8], a.raw[1])   // high u64 → ULID bytes 0:8
+    binary.BigEndian.PutUint64(g[8:16], a.raw[0])   // low u64 → ULID bytes 8:16
+    return g
 }
 
+// Packed transfer → extract fields
 func (t TransferID) Parse() (sourceID uint64, seq uint32, grantIdx uint8, kind uint8) {
     b := t.raw.Bytes()
     seq = binary.LittleEndian.Uint32(b[0:4])
@@ -1101,22 +1105,32 @@ For operations processing more items (e.g., `ResetFreeTier` across 10,000 orgs),
 
 ##### Debugging: reading a raw u128
 
-When inspecting TigerBeetle state via the REPL or logs, every ID is self-describing. No mapping table to consult, no hash to reverse.
+Grant account IDs are ULIDs (after reversing the half-swap) — decode with any ULID library
+to get the timestamp and entropy. Operator account IDs are small integers readable by
+inspection.
 
-Account ID example:
+Grant account ID example:
 ```
-bytes [8:16] → grant_id = 8421
-bytes [0:2]  → type = 9
-→ This is grant 8421's TigerBeetle account.
+Uint128 high u64 = 0x0190A3... low u64 = 0x7F2B...
+→ GrantULID() recovers ULID 01HZXYZ...
+→ code = 9 (AcctGrant)
+→ ULID timestamp: 2026-04-04T12:34:56Z
 ```
 
-Transfer ID example:
+Packed transfer ID example:
 ```
 bytes [8:16] → source_id = 4217   (job_id)
 bytes [0:4]  → seq = 3            (window 3)
 byte  [4]    → grant_idx = 1      (second grant in the waterfall)
 byte  [5]    → kind = 2           (vm_settlement)
 → This is the settlement of job 4217, window 3, waterfall grant 1.
+```
+
+Credit expiry transfer ID example:
+```
+Same Uint128 as the grant account (same half-swap of the same ULID)
+code = 9 (KindCreditExpiry)
+→ This is the expiry sweep for grant 01HZXYZ...
 ```
 
 #### Org provisioning sequence
@@ -1226,20 +1240,21 @@ Cron (daily, systemd timer)
   ├─ 2. For each subscription:
   │     ├─ Load plan
   │     ├─ If included_credits = 0: skip
-  │     ├─ Check UNIQUE(subscription_id, period_start)
-  │     ├─ Allocate new grant_id in PostgreSQL
-  │     ├─ Create GrantAccountID(grantID)
+  │     ├─ Generate grant_id = NewGrantID() (ULID)
+  │     ├─ INSERT credit_grants row (PG first — serialization point)
+  │     │   ON CONFLICT (subscription_id, period_start) DO NOTHING
+  │     │   If no row returned: another writer won, skip
+  │     ├─ Create GrantAccountID(grantID) in TigerBeetle
   │     ├─ Derive transfer ID from subscription_id + period marker
   │     ├─ Choose source/funding account:
   │     │   free plan       → source=free_tier,    debit FreeTierPool
   │     │   paid metered    → source=subscription, debit StripeHolding
-  │     ├─ Transfer funding account → GrantAccountID(grantID)
-  │     └─ Insert immutable credit_grants row for this product period
+  │     └─ Transfer funding account → GrantAccountID(grantID)
   │
   └─ 3. Log summary to ClickHouse / billing_events
 ```
 
-Idempotency is two-layered: PostgreSQL blocks duplicate grant rows for the same `(subscription_id, period_start)`, and TigerBeetle blocks duplicate transfers by deterministic ID. Annual subscriptions still deposit monthly drips rather than a single twelve-month grant.
+Idempotency is two-layered: PostgreSQL blocks duplicate grant rows for the same `(subscription_id, period_start)` via unique index, and TigerBeetle blocks duplicate transfers by deterministic ID. The PostgreSQL insert is the serialization point — if both the cron and an `invoice.paid` webhook race on the same period, the unique index ensures exactly one writer proceeds. Annual subscriptions still deposit monthly drips rather than a single twelve-month grant.
 
 #### Stripe payment → org credit: identity resolution
 
@@ -1260,14 +1275,14 @@ Stripe webhook (payment_intent.succeeded)
   │     (UNIQUE constraint = first idempotency layer)
   │
   ├─ 4. Worker picks up task via SKIP LOCKED:
+  │     ├─ Generate grant_id = NewGrantID() (ULID)
+  │     ├─ INSERT credit_grants row (PG first — serialization point)
+  │     ├─ Create GrantAccountID(grantID) in TigerBeetle
   │     ├─ Derive transfer ID: StripeDepositID(taskID, KindStripeDeposit)
-  │     ├─ Allocate new grant_id in PostgreSQL
-  │     ├─ Create GrantAccountID(grantID)
   │     ├─ Submit transfer:
   │     │   debit:  OperatorAccountID(StripeHolding)
   │     │   credit: GrantAccountID(grantID)
   │     │   (TigerBeetle deduplication = second idempotency layer)
-  │     ├─ Insert immutable credit_grants row
   │     └─ Mark task completed
   │
   └─ 5. If transfer fails → task enters retrying/dead state per billing queue policy
