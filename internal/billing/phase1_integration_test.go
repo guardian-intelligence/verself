@@ -97,6 +97,32 @@ func TestCreditGrantsSchemaMatchesCurrentBillingMigration(t *testing.T) {
 		t.Fatal("expected closed_at column on credit_grants")
 	}
 
+	// Verify grant_id is TEXT (ULID), not BIGINT (identity sequence)
+	var grantIDType string
+	if err := pg.QueryRowContext(ctx, `
+		SELECT data_type
+		FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'credit_grants' AND column_name = 'grant_id'
+	`).Scan(&grantIDType); err != nil {
+		t.Fatalf("query grant_id data type: %v", err)
+	}
+	if grantIDType != "text" {
+		t.Fatalf("expected grant_id type text (ULID), got %q", grantIDType)
+	}
+
+	// Verify no credit_grants_grant_id_seq sequence exists (identity sequence removed)
+	var seqCount int
+	if err := pg.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM information_schema.sequences
+		WHERE sequence_schema = 'public' AND sequence_name = 'credit_grants_grant_id_seq'
+	`).Scan(&seqCount); err != nil {
+		t.Fatalf("query credit_grants sequence: %v", err)
+	}
+	if seqCount != 0 {
+		t.Fatal("unexpected credit_grants_grant_id_seq sequence still exists")
+	}
+
 	var activeIndexDef string
 	if err := pg.QueryRowContext(ctx, `
 		SELECT indexdef

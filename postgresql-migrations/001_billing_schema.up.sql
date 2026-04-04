@@ -70,7 +70,7 @@ CREATE UNIQUE INDEX idx_one_active_sub_per_product
     WHERE status IN ('active', 'past_due', 'trialing');
 
 CREATE TABLE credit_grants (
-    grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    grant_id            TEXT PRIMARY KEY,  -- ULID, application-generated
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
     amount              BIGINT NOT NULL CHECK (amount > 0),
@@ -132,7 +132,7 @@ CREATE TABLE billing_events (
     org_id          TEXT NOT NULL,
     event_type      TEXT NOT NULL,
     subscription_id BIGINT,
-    grant_id        BIGINT,
+    grant_id        TEXT,
     task_id         BIGINT,
     payload         JSONB NOT NULL DEFAULT '{}',
     stripe_event_id TEXT,

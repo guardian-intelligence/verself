@@ -47,7 +47,7 @@ func TestReserveSettleAgainstLiveHost(t *testing.T) {
 	requireGrantBalance(t, env.tbClient, grantA.grantID, 0, 0, 40)
 	requireGrantBalance(t, env.tbClient, grantB.grantID, 75, 0, 5)
 	t.Logf(
-		"verified live reserve+settle org_id=%d product_id=%s grant_a=%d grant_b=%d",
+		"verified live reserve+settle org_id=%d product_id=%s grant_a=%x grant_b=%x",
 		orgID,
 		productID,
 		grantA.grantID,

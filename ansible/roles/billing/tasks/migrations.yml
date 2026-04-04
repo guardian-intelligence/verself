@@ -218,9 +218,6 @@
         IF to_regclass('public.subscriptions_subscription_id_seq') IS NOT NULL THEN
           EXECUTE 'ALTER SEQUENCE public.subscriptions_subscription_id_seq OWNER TO billing';
         END IF;
-        IF to_regclass('public.credit_grants_grant_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.credit_grants_grant_id_seq OWNER TO billing';
-        END IF;
         IF to_regclass('public.tasks_task_id_seq') IS NOT NULL THEN
           EXECUTE 'ALTER SEQUENCE public.tasks_task_id_seq OWNER TO billing';
         END IF;
@@ -243,7 +240,6 @@
       TO billing;
       GRANT ALL PRIVILEGES ON SEQUENCE
         public.subscriptions_subscription_id_seq,
-        public.credit_grants_grant_id_seq,
         public.tasks_task_id_seq,
         public.billing_events_event_id_seq
       TO billing;
