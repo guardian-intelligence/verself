@@ -138,3 +138,33 @@
   when: >-
     resend_domain_status == 'verified'
     or (resend_verify_poll.json.status | default('')) == 'verified'
+
+# --- DMARC ---
+# Enforce sender alignment for the transactional subdomain and root domain.
+# p=reject is safe here: single sender (Resend), no third-party mail to break.
+
+- name: Create DMARC record for sending subdomain
+  community.general.cloudflare_dns:
+    zone: "{{ forge_metal_domain }}"
+    record: "_dmarc.{{ resend_domain }}"
+    type: TXT
+    value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
+
+- name: Create DMARC record for root domain
+  community.general.cloudflare_dns:
+    zone: "{{ forge_metal_domain }}"
+    record: "_dmarc.{{ forge_metal_domain }}"
+    type: TXT
+    value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false

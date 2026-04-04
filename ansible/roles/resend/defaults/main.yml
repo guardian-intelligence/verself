@@ -3,3 +3,8 @@
 
 resend_api_url: "https://api.resend.com"
 resend_region: "us-east-1"
+
+# DMARC policy for the sending subdomain and root domain.
+# "reject" is safe for dedicated transactional subdomains with a single sender.
+resend_dmarc_policy: "reject"
+resend_dmarc_rua: "dmarc@{{ resend_domain }}"
