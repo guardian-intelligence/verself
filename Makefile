@@ -2,7 +2,7 @@
 	       hooks-install \
 	       doctor setup-dev setup-sops edit-secrets setup-domain \
 	       server-profile provision deprovision deploy deploy-dashboards \
-	       clickhouse-shell clickhouse-query upload-deploy-event \
+	       clickhouse-shell clickhouse-query \
 	       ci-fixtures-refresh ci-fixtures-run ci-fixtures-pass ci-fixtures-fail ci-fixtures-full \
 	       guest-rootfs deploy-ci-artifacts smelter-build smelter-dev
 
@@ -95,10 +95,6 @@ deprovision: ## Destroy all bare metal infrastructure
 deploy: ## Deploy to all nodes (idempotent, no wipe)
 	cd ansible && ansible-playbook playbooks/dev-single-node.yml \
 		-e nix_server_profile_path=$(NIX_PROFILE)
-	@./scripts/upload-deploy-event.sh 2>/dev/null || true
-
-upload-deploy-event: ## Upload the latest deploy event to ClickHouse
-	./scripts/upload-deploy-event.sh
 
 deploy-dashboards: ## Sync HyperDX dashboards and sources without a full redeploy
 	cd ansible && ansible-playbook playbooks/hyperdx-dashboards.yml
