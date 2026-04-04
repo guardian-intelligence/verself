@@ -1,13 +1,73 @@
-storage: /var/lib/verdaccio/storage
+# Verdaccio npm registry mirror — managed by Ansible.
+# See docs/research/verdaccio/ for security hardening rationale.
+
+storage: {{ verdaccio_storage_path | default('/var/lib/verdaccio/storage') }}
+
 auth:
   htpasswd:
     file: /etc/verdaccio/htpasswd
+    algorithm: bcrypt
+    rounds: 10
+    max_users: 0
+
+web:
+  enable: false
+
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
+    cache: true
+    maxage: 30m
+    strict_ssl: true
+
 packages:
   '**':
     access: $all
     publish: $authenticated
     proxy: npmjs
-listen: 0.0.0.0:{{ services.verdaccio.port }}
+
+max_body_size: 100mb
+listen: {{ services.verdaccio.host }}:{{ services.verdaccio.port }}
+
+# verdaccio-security-filter: supply chain security gate.
+#
+# On Verdaccio 6.x, filter_metadata is broken (verdaccio#5372, fix in 7.x).
+# Only the middleware layer loads — it blocks tarball downloads for blocked
+# packages/scopes. The filters section is pre-configured so age/CVE/license
+# checks activate automatically when we upgrade to 7.x+.
+filters:
+  security-filter:
+    enabled: true
+    packageAge:
+      enabled: true
+      minVersionAgeDays: 3
+    cveCheck:
+      enabled: true
+      severity: critical
+      autoBlock: true
+    licenses:
+      enabled: true
+      blocked:
+        - UNLICENSED
+
+middlewares:
+  security-filter:
+    enabled: true
+    mode: blacklist
+    blockedPatterns: []
+    blockedScopes: []
+    packageAge:
+      enabled: true
+      minVersionAgeDays: 3
+    cveCheck:
+      enabled: true
+      severity: critical
+      autoBlock: true
+    licenses:
+      enabled: true
+      blocked:
+        - UNLICENSED
+    errorHandling:
+      onFilterError: fail-closed
+      onCveCheckError: fail-open
+      onLicenseCheckError: fail-open

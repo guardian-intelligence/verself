@@ -125,7 +125,7 @@
                 let baseName = baseNameOf (toString path);
                 in !(baseName == "result" || baseName == "results" || baseName == ".direnv");
             };
-            vendorHash = "sha256-RtOvjXttFRD9F+btSaxn1Zm9JjVM18HR2q1ktYUXte4=";
+            vendorHash = "sha256-CC5cB5cKnn0wx5DQI4yRFYeicKb7fWjbJMtdx4HI+s0=";
             subPackages = [ "cmd/forge-metal" ];
             # Skip sandbox-hostile test that shells out to a temp script.
             checkFlags = [ "-run" "^(?!TestConfigEditUsesEditorAndCreatesFile)" ];

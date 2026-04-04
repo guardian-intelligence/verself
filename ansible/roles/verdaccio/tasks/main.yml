@@ -25,17 +25,37 @@
     group: verdaccio
     mode: "0755"
 
+- name: Check installed Verdaccio version
+  ansible.builtin.command: "{{ verdaccio_install_prefix }}/bin/verdaccio --version"
+  register: verdaccio_installed_version
+  changed_when: false
+  failed_when: false
+
 - name: Install Verdaccio via npm
   ansible.builtin.command: >
     {{ fm_bin }}/npm install --global
     --prefix {{ verdaccio_install_prefix }}
     verdaccio@{{ verdaccio_version }}
     --registry https://registry.npmjs.org
-  args:
-    creates: "{{ verdaccio_install_prefix }}/bin/verdaccio"
+  when: verdaccio_installed_version.stdout | default('') | trim != verdaccio_version
+  changed_when: true
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
     HOME: /root
+  notify: restart verdaccio
+
+- name: Install verdaccio-security-filter plugin
+  ansible.builtin.command: >
+    {{ fm_bin }}/npm install --global
+    --prefix {{ verdaccio_install_prefix }}
+    verdaccio-security-filter@{{ verdaccio_security_filter_version }}
+    --registry https://registry.npmjs.org
+  args:
+    creates: "{{ verdaccio_install_prefix }}/lib/node_modules/verdaccio-security-filter"
+  environment:
+    PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
+    HOME: /root
+  notify: restart verdaccio
 
 - name: Create Verdaccio config directory
   ansible.builtin.file:
