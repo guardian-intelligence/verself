@@ -19,6 +19,7 @@ Required (not implemented) - Email Delivery (Resend only in the future)
 - Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
 - Auth: Zitadel
 - Payments: Stripe + TigerBeetle + PostgreSQL
+- otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 
 ## CI Architecture
 
