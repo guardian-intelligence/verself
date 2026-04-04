@@ -7,6 +7,11 @@
     clickhouse_password: "{{ lookup('password', credentials_dir ~ '/clickhouse_password length=32 chars=ascii_letters,digits') }}"
   no_log: true
 
+- name: Create ClickHouse system group
+  ansible.builtin.group:
+    name: clickhouse
+    system: true
+
 - name: Create ClickHouse directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -24,8 +29,8 @@
     src: clickhouse-config.xml.j2
     dest: /etc/clickhouse-server/config.d/forge-metal.xml
     owner: root
-    group: root
-    mode: "0644"
+    group: clickhouse
+    mode: "0640"
   notify: restart clickhouse
 
 - name: Apply ClickHouse config changes before proceeding
