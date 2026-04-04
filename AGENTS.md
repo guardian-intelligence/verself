@@ -15,6 +15,12 @@ Required - Email Delivery (Resend only for now)
 
 ## Context
 
+Key focus areas for this project
+
+* Secure by default, above and beyond most SaaS provided options. Security must be regularly audited and verified (still working on this)
+* Cheap -- you only pay for compute and object storage which are commodity priced.
+* [aspirational, not yet fully implemented] Solves genuinely difficult problems faced by businesses - Lowering a price for a product should be easy and fast: customer billing pages should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
+
 - homestead-smelter is a guest agent + host Firecracker mVM agent written in Zig. The guest agent collects heartbeat health diagnostics and runs on each Firecracker VM, streaming data up continuously to the host agent, which then writes data to a socket for consumers.
 - Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
 - Auth: Zitadel
