@@ -1,8 +1,9 @@
-"""deploy_events — write one JSON artifact per ansible-playbook run.
+"""deploy_events — write one deploy event per ansible-playbook run to ClickHouse.
 
-Zero external dependencies. The JSON file is uploaded to ClickHouse
-post-deploy by scripts/upload-deploy-event.sh, which pipes through
-the existing scripts/clickhouse.sh SSH tunnel.
+Self-inserting: after the playbook completes, the callback shells out to
+scripts/clickhouse.sh (which handles SSH + SOPS password + clickhouse-client)
+and pipes a single JSONEachRow directly. Falls back to writing a local JSON
+file if the insert fails.
 
 Enable in ansible.cfg:
     callback_plugins = plugins/callback
@@ -24,16 +25,16 @@ from ansible.plugins.callback import CallbackBase
 DOCUMENTATION = """
     name: deploy_events
     type: aggregate
-    short_description: Write deploy event JSON for ClickHouse ingestion
+    short_description: Record deploy events in ClickHouse
     description:
         - Captures playbook timing, task counts, and git metadata.
-        - Writes a single JSON file per run to ~/.cache/forge-metal/deploy-events/.
-        - Override output directory with DEPLOY_EVENT_DIR env var.
+        - Inserts directly into ClickHouse via scripts/clickhouse.sh.
+        - Falls back to ~/.cache/forge-metal/deploy-events/ on failure.
     requirements:
         - No external dependencies (stdlib only)
 """
 
-DEPLOY_EVENT_DIR = os.environ.get(
+FALLBACK_DIR = os.environ.get(
     "DEPLOY_EVENT_DIR",
     str(Path.home() / ".cache" / "forge-metal" / "deploy-events"),
 )
@@ -62,7 +63,7 @@ class CallbackModule(CallbackBase):
             "unreachable": 0,
         }
 
-    # -- git helpers (best-effort, never fails) --
+    # -- helpers --
 
     @staticmethod
     def _git(*args):
@@ -78,6 +79,45 @@ class CallbackModule(CallbackBase):
             )
         except Exception:
             return ""
+
+    @staticmethod
+    def _repo_root():
+        r = CallbackModule._git("rev-parse", "--show-toplevel")
+        return Path(r) if r else None
+
+    def _to_clickhouse_row(self, event):
+        """Transform event dict to ClickHouse JSONEachRow format."""
+        row = dict(event)
+        row["ok"] = 1 if row["ok"] else 0
+        row["dirty"] = 1 if row["dirty"] else 0
+        row["hosts"] = json.dumps(row["hosts"])
+        row["slowest_tasks"] = json.dumps(row["slowest_tasks"])
+        return json.dumps(row)
+
+    def _try_insert(self, row_json):
+        """Attempt to insert via scripts/clickhouse.sh. Returns True on success."""
+        root = self._repo_root()
+        if not root:
+            return False
+        script = root / "scripts" / "clickhouse.sh"
+        if not script.exists():
+            return False
+        try:
+            subprocess.run(
+                [
+                    str(script),
+                    "--database", "forge_metal",
+                    "--query", "INSERT INTO deploy_events FORMAT JSONEachRow",
+                ],
+                input=(row_json + "\n").encode(),
+                cwd=str(root),
+                timeout=30,
+                check=True,
+                capture_output=True,
+            )
+            return True
+        except Exception:
+            return False
 
     # -- Ansible hooks --
 
@@ -123,17 +163,13 @@ class CallbackModule(CallbackBase):
     def v2_playbook_on_stats(self, stats):
         end_ns = time.time_ns()
 
-        # Per-host summary from the stats object.
         hosts = {}
         for host in sorted(stats.processed):
             hosts[host] = stats.summarize(host)
 
-        # Top 10 slowest tasks.
-        slowest = sorted(self._task_timings, key=lambda x: x[1], reverse=True)[:10]
-
-        overall_ok = (
-            self._counts["failed"] == 0 and self._counts["unreachable"] == 0
-        )
+        slowest = sorted(
+            self._task_timings, key=lambda x: x[1], reverse=True
+        )[:10]
 
         event = {
             "deploy_id": self._deploy_id,
@@ -146,12 +182,13 @@ class CallbackModule(CallbackBase):
             "dirty": self._git("status", "--porcelain") != "",
             "started_at": datetime.fromtimestamp(
                 self._start_ns / 1e9, tz=timezone.utc
-            ).isoformat(),
+            ).strftime("%Y-%m-%d %H:%M:%S.%f"),
             "completed_at": datetime.fromtimestamp(
                 end_ns / 1e9, tz=timezone.utc
-            ).isoformat(),
+            ).strftime("%Y-%m-%d %H:%M:%S.%f"),
             "total_ns": end_ns - self._start_ns,
-            "ok": overall_ok,
+            "ok": self._counts["failed"] == 0
+            and self._counts["unreachable"] == 0,
             "tasks_ok": self._counts["ok"],
             "tasks_failed": self._counts["failed"],
             "tasks_skipped": self._counts["skipped"],
@@ -165,10 +202,22 @@ class CallbackModule(CallbackBase):
             "ansible_version": "",
         }
 
-        out = Path(DEPLOY_EVENT_DIR)
-        out.mkdir(parents=True, exist_ok=True)
-        artifact = out / f"{self._deploy_id}.json"
-        artifact.write_text(json.dumps(event) + "\n")
-        self._display.display(
-            f"deploy_events: wrote {artifact}", color="cyan"
-        )
+        row = self._to_clickhouse_row(event)
+
+        # Write fallback file first so events survive insert failures.
+        fallback = Path(FALLBACK_DIR)
+        fallback.mkdir(parents=True, exist_ok=True)
+        artifact = fallback / f"{self._deploy_id}.json"
+        artifact.write_text(row + "\n")
+
+        if self._try_insert(row):
+            artifact.unlink(missing_ok=True)
+            self._display.display(
+                f"deploy_events: {self._deploy_id} inserted into ClickHouse",
+                color="cyan",
+            )
+        else:
+            self._display.display(
+                f"deploy_events: insert failed, saved to {artifact}",
+                color="yellow",
+            )
