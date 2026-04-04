@@ -86,7 +86,7 @@
 - name: Create DNS records in Cloudflare
   community.general.cloudflare_dns:
     zone: "{{ forge_metal_domain }}"
-    record: "{{ item.name }}.{{ resend_domain }}"
+    record: "{{ item.name }}.{{ forge_metal_domain }}"
     type: "{{ item.type }}"
     value: "{{ item.value | regex_replace('^\"|\"$', '') }}"
     priority: "{{ item.priority | default(omit) }}"
@@ -96,7 +96,7 @@
     api_token: "{{ cloudflare_api_token }}"
   loop: "{{ resend_dns_records }}"
   loop_control:
-    label: "{{ item.type }} {{ item.name }}.{{ resend_domain }}"
+    label: "{{ item.type }} {{ item.name }}.{{ forge_metal_domain }}"
   delegate_to: localhost
   become: false
   when: resend_domain_status != 'verified'
