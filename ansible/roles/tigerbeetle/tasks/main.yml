@@ -2,6 +2,22 @@
 # TigerBeetle financial ledger.
 # Binary provided by the Nix server profile.
 
+# --- System user (least-privilege) ---
+
+- name: Create tigerbeetle system group
+  ansible.builtin.group:
+    name: tigerbeetle
+    system: true
+
+- name: Create tigerbeetle system user
+  ansible.builtin.user:
+    name: tigerbeetle
+    group: tigerbeetle
+    system: true
+    home: "{{ tigerbeetle_data_dir }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
 # --- Binary presence ---
 
 - name: Verify TigerBeetle binary exists in Nix profile
@@ -31,11 +47,23 @@
   ansible.builtin.file:
     path: "{{ tigerbeetle_data_dir }}"
     state: directory
-    owner: root
-    group: root
-    mode: "0755"
+    owner: tigerbeetle
+    group: tigerbeetle
+    mode: "0700"
 
 # --- Idempotent format ---
+# Delete any root-owned data file from before the tigerbeetle user existed.
+
+- name: Check if root-owned TigerBeetle data file exists
+  ansible.builtin.stat:
+    path: "{{ tigerbeetle_data_file }}"
+  register: tigerbeetle_data_pre
+
+- name: Remove root-owned data file so it can be recreated by tigerbeetle user
+  ansible.builtin.file:
+    path: "{{ tigerbeetle_data_file }}"
+    state: absent
+  when: tigerbeetle_data_pre.stat.exists and tigerbeetle_data_pre.stat.pw_name == 'root'
 
 - name: Check if TigerBeetle data file exists
   ansible.builtin.stat:
@@ -50,6 +78,8 @@
       --replica={{ tigerbeetle_replica_id }}
       --replica-count={{ tigerbeetle_replica_count }}
       {{ tigerbeetle_data_file }}
+  become: true
+  become_user: tigerbeetle
   changed_when: true
   when: not tigerbeetle_data_stat.stat.exists
 
@@ -64,7 +94,8 @@
 
       [Service]
       Type=simple
-      User=root
+      User=tigerbeetle
+      Group=tigerbeetle
       ExecStart={{ fm_bin }}/tigerbeetle start \
         --addresses={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }} \
         --experimental \
@@ -74,6 +105,22 @@
       RestartSec=5
       AmbientCapabilities=CAP_IPC_LOCK
       LimitMEMLOCK=infinity
+      DevicePolicy=closed
+      LockPersonality=true
+      ProtectClock=true
+      ProtectControlGroups=true
+      ProtectHome=true
+      ProtectHostname=true
+      ProtectKernelLogs=true
+      ProtectKernelModules=true
+      ProtectKernelTunables=true
+      ProtectProc=noaccess
+      ProtectSystem=strict
+      RestrictAddressFamilies=AF_INET AF_INET6
+      RestrictNamespaces=true
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      ReadWritePaths={{ tigerbeetle_data_dir }}
 
       [Install]
       WantedBy=multi-user.target
