@@ -277,6 +277,38 @@
   when: "'Zitadel' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
+# Deploy Health dashboard                                                      #
+# --------------------------------------------------------------------------- #
+
+- name: Render Deploy Health dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_deploy_health_body: "{{ lookup('template', 'dashboards/deploy-health.json.j2') }}"
+
+- name: Create Deploy Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_deploy_health_body }}"
+    status_code: [200]
+  when: "'Deploy Health' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Deploy Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Deploy Health'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_deploy_health_body }}"
+    status_code: [200]
+  when: "'Deploy Health' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
 # Validate every tile renders data                                             #
 # --------------------------------------------------------------------------- #
 
