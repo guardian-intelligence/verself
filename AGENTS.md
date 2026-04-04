@@ -11,7 +11,7 @@ Exceptions:
 Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (done through `zfs send`, not LINSTOR + DRBD)
 Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
-Required (not implemented) - Email Delivery (Resend only in the future)
+Required - Email Delivery (Resend only for now)
 
 ## Context
 
@@ -405,8 +405,6 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
 * Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
 * Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
-* Tests do not assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
-
-## License
-
-MIT
+* Remember the philosophy that tests will never be able to assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
+* Package management for python must be done with `uv` do not use pip or conda.
+* Don't resolve failures through silent no-ops and imperative checks. Failures should be loud and signals should be followed in order to address root causes.
