@@ -135,8 +135,8 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 		ParentRunID:     "fixtures-pass-20260401-072318",
 		Manifest:        &Manifest{Version: 1, WorkDir: ".", Profile: RuntimeProfileNode},
 		Toolchain:       &Toolchain{PackageManager: PackageManagerBun, PackageManagerVersion: "1.2.20", NodeVersion: "22.14.0"},
-		TargetDataset:   "benchpool/repo-goldens/next-bun-monorepo-1",
-		PreviousDataset: "benchpool/repo-goldens/next-bun-monorepo-0",
+		TargetDataset:   "forgepool/repo-goldens/next-bun-monorepo-1",
+		PreviousDataset: "forgepool/repo-goldens/next-bun-monorepo-0",
 		Job: firecracker.JobConfig{
 			JobID:          "5c0e6fd6-d718-4b52-abcd-1234567890ab",
 			RunCommand:     []string{"bun", "run", "warm"},

@@ -2,12 +2,13 @@
 # Variables specific to worker nodes.
 
 # ZFS
-zfs_pool: benchpool
+zfs_pool: forgepool
 zfs_golden_dataset: golden
 zfs_ci_dataset: ci
 
 # Verdaccio
-verdaccio_version: "6.1.2"
+verdaccio_version: "6.3.2"
+verdaccio_security_filter_version: "1.3.5"
 
 # Optional override for Forgejo Actions runner concurrency.
 # Unset uses the host vCPU count.

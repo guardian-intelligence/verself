@@ -134,8 +134,8 @@
     content: |
       [Unit]
       Description=Zitadel Identity Provider
-      After=nftables.service network.target postgresql.service
-      Requires=nftables.service postgresql.service
+      After=forge-metal-firewall.target network.target postgresql.service
+      Requires=forge-metal-firewall.target postgresql.service
 
       [Service]
       Type=simple

@@ -33,7 +33,8 @@
     content: |
       [Unit]
       Description=containerd container runtime
-      After=network.target
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
 
       [Service]
       Type=notify

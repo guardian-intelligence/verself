@@ -11,13 +11,13 @@
 #   # or: ansible-playbook ansible/playbooks/mirror-update.yml -i ansible/inventory/hosts.ini
 #
 # Rollback:
-#   ssh <host> 'sudo zfs rollback benchpool/verdaccio@scanned'
+#   ssh <host> 'sudo zfs rollback forgepool/verdaccio@scanned'
 
 - name: Update and scan Verdaccio mirror
   hosts: workers
   become: true
   vars:
-    zfs_pool: benchpool
+    zfs_pool: forgepool
     verdaccio_dataset: "{{ zfs_pool }}/verdaccio"
     staging_dataset: "{{ zfs_pool }}/verdaccio-staging"
     staging_mount: /mnt/verdaccio-staging

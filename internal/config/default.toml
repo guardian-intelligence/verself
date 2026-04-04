@@ -13,7 +13,7 @@ enabled = false
 # When enabled, uses ReplicatedMergeTree. Otherwise MergeTree.
 
 [zfs]
-pool = "benchpool"
+pool = "forgepool"
 golden_dataset = "golden"
 ci_dataset = "ci"
 

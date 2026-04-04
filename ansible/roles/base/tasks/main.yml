@@ -11,12 +11,12 @@
     state: present
     update_cache: true
 
-- name: Create bench-ci system user
+- name: Create forge-runner system user
   ansible.builtin.user:
-    name: bench-ci
+    name: forge-runner
     system: true
     shell: /bin/bash
-    home: /var/lib/bench-ci
+    home: /var/lib/forge-runner
     create_home: true
 
 - name: Create credstore parent directory
@@ -61,10 +61,10 @@
     mode: "0644"
   notify: Reload sshd
 
-- name: Allow bench-ci to execute forge-metal CI runs as root
+- name: Allow forge-runner to execute forge-metal CI runs as root
   ansible.builtin.copy:
     content: |
-      bench-ci ALL=(root) NOPASSWD: /opt/forge-metal/profile/bin/forge-metal ci exec *
-    dest: /etc/sudoers.d/bench-ci-firecracker
+      forge-runner ALL=(root) NOPASSWD: /opt/forge-metal/profile/bin/forge-metal ci exec *
+    dest: /etc/sudoers.d/forge-runner-firecracker
     mode: "0440"
     validate: "visudo -cf %s"

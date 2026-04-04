@@ -1,7 +1,7 @@
 [Unit]
 Description=HyperDX Frontend (Next.js)
-After=nftables.service network.target hyperdx-api.service
-Requires=nftables.service
+After=forge-metal-firewall.target network.target hyperdx-api.service
+Requires=forge-metal-firewall.target
 
 [Service]
 Type=simple

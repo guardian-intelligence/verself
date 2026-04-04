@@ -24,8 +24,8 @@
     content: |
       [Unit]
       Description=ClickHouse Server
-      After=nftables.service network.target
-      Requires=nftables.service
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
 
       [Service]
       Type=simple

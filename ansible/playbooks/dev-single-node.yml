@@ -61,7 +61,7 @@
           cloudflare_api_token is empty. Run: make setup-domain
 
     - name: Check ZFS pool exists
-      ansible.builtin.command: "zpool status benchpool"
+      ansible.builtin.command: "zpool status forgepool"
       changed_when: false
       failed_when: false
       register: preflight_zpool
@@ -79,7 +79,7 @@
     - name: Warn if ZFS pool is missing (firecracker role will fail)
       ansible.builtin.debug:
         msg: >-
-          WARNING: ZFS pool 'benchpool' not found. The zfs and firecracker roles
+          WARNING: ZFS pool 'forgepool' not found. The zfs and firecracker roles
           will create it, but only if a suitable disk is available.
       when: preflight_zpool.rc != 0
 

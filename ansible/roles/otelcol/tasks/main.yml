@@ -26,8 +26,8 @@
     content: |
       [Unit]
       Description=OpenTelemetry Collector
-      After=nftables.service network.target clickhouse-server.service
-      Requires=nftables.service
+      After=forge-metal-firewall.target network.target clickhouse-server.service
+      Requires=forge-metal-firewall.target
 
       [Service]
       Type=simple

@@ -5,7 +5,7 @@ Three-tier zvol clone hierarchy. Each CI job's rootfs traces back to one base im
 ```mermaid
 graph TD
     subgraph "Layer 1: Base Golden"
-        ROOTFS["rootfs.ext4"] -->|"dd"| ZVOL["benchpool/golden-zvol"]
+        ROOTFS["rootfs.ext4"] -->|"dd"| ZVOL["forgepool/golden-zvol"]
         ZVOL --> SNAP["golden-zvol@ready"]
     end
 
@@ -81,7 +81,7 @@ Clone base golden → mount → replace one binary → snapshot → boot VM → 
 ## On disk
 
 ```
-benchpool/
+forgepool/
 ├── golden-zvol                         (4G zvol, volblocksize=16K, lz4)
 │   └── @ready                          (origin for repo goldens)
 ├── repo-goldens/
@@ -96,11 +96,11 @@ benchpool/
 ## Debugging
 
 ```bash
-zfs list -r -t all benchpool              # full hierarchy
-zfs get origin benchpool/repo-goldens/X   # what was this cloned from
-zfs get -r clones benchpool/golden-zvol@ready  # who depends on this snapshot
-zfs get written benchpool/ci/job-X        # COW bytes dirtied
-zfs list -t snapshot -o name,clones benchpool/golden-zvol@ready  # safe to destroy?
+zfs list -r -t all forgepool              # full hierarchy
+zfs get origin forgepool/repo-goldens/X   # what was this cloned from
+zfs get -r clones forgepool/golden-zvol@ready  # who depends on this snapshot
+zfs get written forgepool/ci/job-X        # COW bytes dirtied
+zfs list -t snapshot -o name,clones forgepool/golden-zvol@ready  # safe to destroy?
 ```
 
 ## Guest perspective

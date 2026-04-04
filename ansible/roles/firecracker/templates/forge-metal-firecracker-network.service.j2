@@ -1,6 +1,7 @@
 [Unit]
 Description=Configure forge-metal Firecracker host networking
-After=network-online.target
+After=forge-metal-firewall.target network-online.target
+Requires=forge-metal-firewall.target
 Wants=network-online.target
 
 [Service]

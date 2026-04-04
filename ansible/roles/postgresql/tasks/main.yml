@@ -135,8 +135,8 @@
     content: |
       [Unit]
       Description=PostgreSQL
-      After=nftables.service network.target
-      Requires=nftables.service
+      After=forge-metal-firewall.target network.target
+      Requires=forge-metal-firewall.target
 
       [Service]
       Type=simple

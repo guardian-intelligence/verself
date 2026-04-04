@@ -30,3 +30,16 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Deploy forge-metal-firewall target
+  ansible.builtin.template:
+    src: forge-metal-firewall.target.j2
+    dest: /etc/systemd/system/forge-metal-firewall.target
+    mode: "0644"
+
+- name: Enable forge-metal-firewall target
+  ansible.builtin.systemd:
+    name: forge-metal-firewall.target
+    enabled: true
+    state: started
+    daemon_reload: true
