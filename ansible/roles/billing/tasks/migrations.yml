@@ -1,0 +1,165 @@
+---
+- name: Compute local PostgreSQL migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../postgresql-migrations"
+    executable: /bin/bash
+  register: billing_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote PostgreSQL migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/postgresql-migrations/.applied-hash
+  register: billing_pg_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected billing tables
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d sandbox
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'orgs';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: billing_pg_table_probe
+  changed_when: false
+  no_log: true
+
+- name: Apply billing PostgreSQL migrations
+  when: >-
+    billing_pg_migrations_remote_hash is failed
+    or (billing_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (billing_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (billing_pg_table_probe.stdout | trim) == '0'
+  block:
+    - name: Upload PostgreSQL migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../postgresql-migrations/"
+        dest: /opt/forge-metal/postgresql-migrations/
+        mode: "0644"
+
+    - name: Apply PostgreSQL migration files
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U billing
+          -d sandbox
+          -v ON_ERROR_STOP=1
+          -f /opt/forge-metal/postgresql-migrations/{{ item }}
+      environment:
+        PGPASSWORD: "{{ postgresql_billing_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../postgresql-migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record PostgreSQL migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ billing_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/postgresql-migrations/.applied-hash
+        mode: "0644"
+
+- name: Reconcile billing object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d sandbox
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+          EXECUTE 'ALTER TYPE subscription_status OWNER TO billing';
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'billing_cadence') THEN
+          EXECUTE 'ALTER TYPE billing_cadence OWNER TO billing';
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'grant_account') THEN
+          EXECUTE 'ALTER TYPE grant_account OWNER TO billing';
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+          EXECUTE 'ALTER TYPE task_status OWNER TO billing';
+        END IF;
+
+        IF to_regclass('public.products') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.products OWNER TO billing';
+        END IF;
+        IF to_regclass('public.plans') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.plans OWNER TO billing';
+        END IF;
+        IF to_regclass('public.orgs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.orgs OWNER TO billing';
+        END IF;
+        IF to_regclass('public.subscriptions') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.subscriptions OWNER TO billing';
+        END IF;
+        IF to_regclass('public.credit_grants') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.credit_grants OWNER TO billing';
+        END IF;
+        IF to_regclass('public.org_pricing_overrides') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.org_pricing_overrides OWNER TO billing';
+        END IF;
+        IF to_regclass('public.tasks') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.tasks OWNER TO billing';
+        END IF;
+        IF to_regclass('public.billing_events') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.billing_events OWNER TO billing';
+        END IF;
+        IF to_regclass('public.billing_cursors') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.billing_cursors OWNER TO billing';
+        END IF;
+
+        IF to_regclass('public.subscriptions_subscription_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.subscriptions_subscription_id_seq OWNER TO billing';
+        END IF;
+        IF to_regclass('public.credit_grants_grant_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.credit_grants_grant_id_seq OWNER TO billing';
+        END IF;
+        IF to_regclass('public.tasks_task_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.tasks_task_id_seq OWNER TO billing';
+        END IF;
+        IF to_regclass('public.billing_events_event_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.billing_events_event_id_seq OWNER TO billing';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO billing;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.products,
+        public.plans,
+        public.orgs,
+        public.subscriptions,
+        public.credit_grants,
+        public.org_pricing_overrides,
+        public.tasks,
+        public.billing_events,
+        public.billing_cursors
+      TO billing;
+      GRANT ALL PRIVILEGES ON SEQUENCE
+        public.subscriptions_subscription_id_seq,
+        public.credit_grants_grant_id_seq,
+        public.tasks_task_id_seq,
+        public.billing_events_event_id_seq
+      TO billing;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true

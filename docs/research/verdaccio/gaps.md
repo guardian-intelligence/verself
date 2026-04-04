@@ -86,9 +86,14 @@ web:
 if you want deterministic CI, add `--no-audit` to all `npm install` commands in CI
 workflows.
 
-### 7. Version pin is 6.1.2 — current stable is 6.3.2
+### 7. ~~Version pin is 6.1.2~~ — upgraded to 6.3.2
 
-Minor version bump. Check changelog for security fixes, but this is low risk.
+Upgraded in `ansible/group_vars/workers/main.yml`. Installed `verdaccio-security-filter@1.3.5`
+for middleware-layer supply chain gating (package blocking, scope filtering, tarball gating).
+
+**Note:** Verdaccio 6.x has broken `filter_metadata` plugin loading (verdaccio#5372, fix in
+PR #5548 merged to master but never backported to 6.x). The `filters:` config section is
+pre-declared so age/CVE/license checks activate automatically when upgrading to 7.x+.
 
 ## What's Already Good
 
