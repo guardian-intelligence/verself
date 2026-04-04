@@ -19,6 +19,14 @@
     home: /var/lib/bench-ci
     create_home: true
 
+- name: Create credstore parent directory
+  ansible.builtin.file:
+    path: /etc/credstore
+    state: directory
+    owner: root
+    group: root
+    mode: "0711"
+
 - name: Create forge-metal system config directory
   ansible.builtin.file:
     path: /etc/forge-metal
