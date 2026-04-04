@@ -30,21 +30,20 @@
   },
   "ansible": {
     "version": "2.20.3",
-    "strategy": "pipx",
-    "pipx_package": "ansible-core",
+    "strategy": "uv_tool",
+    "uv_package": "ansible-core",
+    "with": ["ansible-lint==26.4.0"],
     "version_cmd": "ansible --version"
   },
   "ansible-lint": {
     "version": "26.4.0",
-    "strategy": "pipx_inject",
-    "pipx_package": "ansible-core",
-    "inject_package": "ansible-lint",
+    "strategy": "uv_tool_companion",
     "version_cmd": "ansible-lint --version"
   },
   "pre-commit": {
     "version": "4.5.1",
-    "strategy": "pipx",
-    "pipx_package": "pre-commit",
+    "strategy": "uv_tool",
+    "uv_package": "pre-commit",
     "version_cmd": "pre-commit --version"
   },
   "protoc": {
@@ -100,6 +99,17 @@
     "install_path": "/usr/local/bin/age",
     "version_cmd": "age --version"
   },
+  "uv": {
+    "version": "0.11.3",
+    "strategy": "tarball",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+    "sha256": "c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
+    "strip_components": 1,
+    "install_dir": "/tmp/uv-extract",
+    "bins": ["uv", "uvx"],
+    "install_path": "/usr/local/bin/uv",
+    "version_cmd": "uv --version"
+  },
   "clickhouse": {
     "version": "26.3.2.3",
     "strategy": "tarball",
@@ -144,8 +154,8 @@
   },
   "guarddog": {
     "version": "2.9.0",
-    "strategy": "pipx",
-    "pipx_package": "guarddog",
+    "strategy": "uv_tool",
+    "uv_package": "guarddog",
     "version_cmd": "guarddog --version"
   },
   "osv-scanner": {
