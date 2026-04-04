@@ -55,6 +55,7 @@ Verified upstream contracts as of 2026-04-04:
 | `github.com/tigerbeetle/tigerbeetle-go` | `v0.16.78` | No `0.17.x` or `0.18.x` release line is published on the Go module proxy. |
 | `github.com/stripe/stripe-go/v85` | `v85.0.0` | `v85.1.0-*` prereleases exist; no stable `v86` exists. |
 | `pgregory.net/rapid` | `v1.2.0` | `StateMachineActions` accepts `func(rapid.TB)` methods. |
+| `github.com/oklog/ulid/v2` | `v2.1.0` | ULID generation with monotonic entropy source. |
 
 ---
 
@@ -404,7 +405,7 @@ truth. PostgreSQL no longer stores mutable consumption counters.
 
 ```sql
 CREATE TABLE credit_grants (
-    grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    grant_id            TEXT PRIMARY KEY,  -- ULID, application-generated
     org_id              TEXT NOT NULL REFERENCES orgs(org_id),
     product_id          TEXT NOT NULL REFERENCES products(product_id),
 
@@ -414,7 +415,7 @@ CREATE TABLE credit_grants (
     -- Source attribution
     source              TEXT NOT NULL,
     stripe_reference_id TEXT,
-    subscription_id     BIGINT REFERENCES subscriptions(subscription_id),
+    subscription_id     BIGINT REFERENCES subscriptions(subscription_id),  -- nullable; only set for subscription/free_tier grants
 
     -- Lifecycle
     period_start        TIMESTAMPTZ,
@@ -445,8 +446,9 @@ Required source meanings:
 
 The billing system keeps grant state aligned by construction:
 
-1. **Grant creation**: allocate `grant_id`, create the TigerBeetle grant account, fund it,
-   then insert the immutable `credit_grants` row using that `grant_id`.
+1. **Grant creation**: generate `grant_id` (ULID), insert the immutable `credit_grants`
+   row in PostgreSQL (serialization point), then create the TigerBeetle grant account and
+   fund it. PostgreSQL is written first, TigerBeetle last.
 2. **Grant consumption**: `Reserve`, `Settle`, `Renew`, `HandleDispute`, and
    `ExpireCredits` operate directly on the grant account that the row names via `grant_id`.
 3. **Grant closure**: expiry or dispute workflows drain the grant account, then set
@@ -478,9 +480,14 @@ One TigerBeetle account per grant:
 - Reconciliation no longer needs to repair grant drift between PostgreSQL counters and
   TigerBeetle. The grant account itself is the balance.
 
-`grant_id` is a PostgreSQL `BIGINT GENERATED ALWAYS AS IDENTITY`. That is sufficient for
-`GrantAccountID(grant_id)` and `CreditExpiryID(grant_id)`: the high 64 bits remain globally
-increasing, which is what TigerBeetle's LSM ordering cares about.
+`grant_id` is an application-generated ULID (128-bit, time-ordered). The ULID is mapped to a
+TigerBeetle `Uint128` by swapping its big-endian halves into the little-endian layout:
+`GrantAccountID(grantID)` places `BE.Uint64(ulid[0:8])` (timestamp + random head) in the
+high u64 and `BE.Uint64(ulid[8:16])` (random tail) in the low u64. `CreditExpiryID(grantID)`
+uses the same half-swap in the transfer ID namespace. This places the ULID's 48-bit timestamp
+in the high u64 where TigerBeetle's LSM tree benefits from monotonic ordering. Because the ID
+is application-generated, not database-generated, the grant's TigerBeetle identity is
+decoupled from PostgreSQL's internal sequence state.
 
 ### 1.6 Org Pricing Overrides
 
@@ -621,7 +628,7 @@ CREATE TABLE billing_events (
     org_id          TEXT NOT NULL,
     event_type      TEXT NOT NULL,
     subscription_id BIGINT,
-    grant_id        BIGINT,
+    grant_id        TEXT,
     task_id         BIGINT,
     payload         JSONB NOT NULL DEFAULT '{}',
     stripe_event_id TEXT,
@@ -765,6 +772,7 @@ Normative versions:
 - TigerBeetle Go SDK: `v0.16.78`
 - Stripe Go SDK: `v85.0.0`
 - rapid: `v1.2.0`
+- ulid: `v2.1.0`
 
 ### 2.2 ID Types
 
@@ -774,14 +782,10 @@ Reproduced from the RFC.
 type OrgID  uint64
 type JobID  int64
 type TaskID int64
+type GrantID [16]byte  // ULID, 128-bit, time-ordered
 
 type AccountID  struct{ raw types.Uint128 }
 type TransferID struct{ raw types.Uint128 }
-
-type OrgAcctType uint16
-const (
-    AcctGrant OrgAcctType = 9
-)
 
 type OperatorAcctType uint16
 const (
@@ -790,7 +794,7 @@ const (
     AcctStripeHolding   OperatorAcctType = 5
     AcctPromoPool       OperatorAcctType = 6
     AcctFreeTierExpense OperatorAcctType = 7
-    AcctExpiredCredits  OperatorAcctType = 8  // NEW: breakage (deferred revenue never recognized)
+    AcctExpiredCredits  OperatorAcctType = 8
 )
 
 type XferKind uint8
@@ -802,8 +806,8 @@ const (
     KindStripeDeposit       XferKind = 5
     KindSubscriptionDeposit XferKind = 6
     KindPromoCredit         XferKind = 7
-    KindDisputeDebit        XferKind = 8  // NEW: chargeback debit
-    KindCreditExpiry        XferKind = 9  // NEW: expired credit sweep
+    KindDisputeDebit        XferKind = 8
+    KindCreditExpiry        XferKind = 9
 )
 
 type PricingPhase string
@@ -824,15 +828,35 @@ const (
 )
 ```
 
-ID derivation functions are defined in the RFC (§ "Go type system"): `GrantAccountID`,
-`OperatorAccountID`, `VMTransferID`, `SubscriptionPeriodID`, `StripeDepositID`, and
-`CreditExpiryID`. `AccountID.ParseGrant()` reverses `GrantAccountID`, and
-`TransferID.Parse()` returns `grant_idx`.
+ULID generation uses `github.com/oklog/ulid/v2` with a monotonic entropy source:
 
-`SubscriptionPeriodID(subscriptionID, periodStartUTC, kind)` uses the same transfer-ID
-layout as the RFC: `source_id = subscription_id` in the high 64 bits, `seq = year*12+month`
-from `periodStart.UTC()`, `kind = KindFreeTierReset` or `KindSubscriptionDeposit`,
-`grant_idx = 0`.
+```go
+import "github.com/oklog/ulid/v2"
+
+func NewGrantID() GrantID {
+    return GrantID(ulid.Make())
+}
+```
+
+Grant-related ID derivation swaps the ULID's big-endian halves into TigerBeetle's
+little-endian `Uint128` layout, placing the timestamp in the high u64 where the LSM tree
+benefits from it:
+
+- `GrantAccountID(grantID)`: ULID bytes 0:8 (timestamp + random head) become the high u64;
+  bytes 8:16 (random tail) become the low u64. The numeric value differs from the ULID's
+  big-endian interpretation, but the mapping is bijective and the reverse function recovers
+  the original ULID.
+- `CreditExpiryID(grantID)`: same half-swap into a `TransferID`. Account IDs and transfer
+  IDs are separate TigerBeetle namespaces, so the same numeric value in both is safe. The
+  transfer's `code` field stores `KindCreditExpiry` for type discrimination.
+
+Other ID derivation functions use the packed transfer-ID layout defined in the RFC:
+`VMTransferID`, `SubscriptionPeriodID`, `StripeDepositID`. These use `BIGINT` source IDs
+(job_id, subscription_id, task_id) in the high 64 bits.
+
+`SubscriptionPeriodID(subscriptionID, periodStartUTC, kind)` uses `source_id = subscription_id`
+in the high 64 bits, `seq = year*12+month` from `periodStart.UTC()`,
+`kind = KindFreeTierReset` or `KindSubscriptionDeposit`, `grant_idx = 0`.
 
 Task-driven transfer kinds (`stripe_deposit`, `promo_credit`, `dispute_debit`) use the
 `StripeDepositID(taskID, kind)` pattern. Periodic subscription grants do not.
@@ -1111,26 +1135,43 @@ type CreditGrant struct {
     ExpiresAt      *time.Time  // nil = never expires
 }
 
-// DepositCredits creates a TigerBeetle grant account, funds it, and inserts the
-// immutable PostgreSQL catalog row.
+// DepositCredits inserts the PostgreSQL catalog row first (serialization point),
+// then creates the TigerBeetle grant account and funds it.
+//
+// Ordering rationale (Write Last, Read First): PostgreSQL is the system of
+// reference; TigerBeetle is the system of record. Writing PostgreSQL first
+// ensures that a crash between the two systems leaves a catalog row with no
+// funded account (detectable, retryable) rather than a funded account with no
+// catalog row (orphan money).
 //
 // Flow:
-//   1. Allocate grant_id from PostgreSQL
-//   2. Create TigerBeetle account for GrantAccountID(grantID) with
+//   1. Generate grant_id = NewGrantID() (ULID)
+//   2. INSERT INTO credit_grants (...) the immutable catalog row.
+//      For subscription/free_tier sources, the unique index on
+//      (subscription_id, period_start) serves as the race arbiter:
+//      ON CONFLICT DO NOTHING. If no row is returned, another writer won
+//      the race — return early with no error.
+//   3. Create TigerBeetle account for GrantAccountID(grantID) with
 //      DebitsMustNotExceedCredits and History
-//   3. Post funding transfer from the source operator account to GrantAccountID(grantID)
-//   4. Insert credit_grants row in PostgreSQL using the allocated grant_id
+//   4. Post funding transfer from the source operator account to
+//      GrantAccountID(grantID)
 //   5. Log billing event
 //
 // Error conditions:
-//   - TigerBeetle unavailable: returns error (no grant row created)
-//   - PostgreSQL unavailable: TigerBeetle transfer may have succeeded but
-//     grant row is missing. Reconciliation cron detects and alerts.
+//   - PostgreSQL unavailable: returns error (no grant row created, no TB mutation)
+//   - TigerBeetle unavailable after PG insert: grant row exists but account
+//     is unfunded. Same grant_id on retry produces the same TigerBeetle
+//     account ID (deterministic from ULID). Reconciliation detects and alerts.
 //
 // Idempotency:
-//   - purchase / promo / refund: transfer ID derived from *taskID
-//   - subscription / free_tier: transfer ID derived from
-//     SubscriptionPeriodID(*grant.SubscriptionID, *grant.PeriodStart, kind)
+//   - subscription / free_tier: PostgreSQL unique index on
+//     (subscription_id, period_start) prevents duplicate grants.
+//     TigerBeetle transfer ID derived from
+//     SubscriptionPeriodID(*grant.SubscriptionID, *grant.PeriodStart, kind).
+//   - purchase / promo / refund: task idempotency_key prevents duplicate
+//     tasks. TigerBeetle transfer ID derived from *taskID.
+//     Grant ULID is deterministic per task execution (generated once,
+//     persisted in the catalog row on first attempt, reused on retry).
 //
 // Preconditions:
 //   - taskID must be non-nil for purchase, promo, and refund sources
@@ -1187,7 +1228,8 @@ type ExpireResult struct {
 //   - PostgreSQL unavailable: returns error immediately
 //   - Individual TigerBeetle failures: accumulated in Errors, processing continues
 //
-// Idempotency: Transfer ID derived from (grant_id, KindCreditExpiry). Safe to re-run.
+// Idempotency: Transfer ID = CreditExpiryID(grantID) = the grant's ULID. One expiry
+// transfer per grant. TigerBeetle returns TransferExists on replay. Safe to re-run.
 func (c *Client) ExpireCredits(ctx context.Context) (ExpireResult, error)
 ```
 
@@ -1373,21 +1415,28 @@ client per request.
 
 #### Grant accounts
 
-Each `credit_grants.grant_id` gets exactly one TigerBeetle account:
+Each `credit_grants.grant_id` (ULID) gets exactly one TigerBeetle account. The account ID
+is the ULID interpreted as `Uint128` — no packing, no type prefix:
 
 ```go
 types.Account{
-    ID:         GrantAccountID(grantID).raw,
+    ID:         GrantAccountID(grantID).raw,  // ULID half-swap into Uint128
     UserData64: uint64(orgID),
     UserData32: uint32(sourceType), // 1=free_tier, 2=subscription, 3=purchase, 4=promo, 5=refund
     Ledger:     1,
-    Code:       uint16(AcctGrant), // 9
+    Code:       uint16(9),  // AcctGrant — type discrimination via code, not via ID bits
     Flags: types.AccountFlags{
         DebitsMustNotExceedCredits: true,
         History:                    true,
     }.ToUint16(),
 }
 ```
+
+Grant accounts (ULID-based) and operator accounts (small sentinel IDs with high bits = 0)
+occupy non-overlapping ranges of the `Uint128` space. After the half-swap, the high u64
+contains `BE.Uint64(ulid[0:8])` — the ULID timestamp occupies the top 48 bits of this value,
+which is always > 0 for any ULID generated after Unix epoch. Operator account IDs always
+have zero in the high u64. The non-overlap is structural, not probabilistic.
 
 This account is the grant's balance. `debits_posted` is consumed amount. `available` is
 `credits_posted - debits_posted - debits_pending`. `closed_at` in PostgreSQL is set only
@@ -1441,13 +1490,25 @@ clamped amount from `LookupTransfers` is the authoritative expired amount.
 **ID derivation for credit expiry:**
 
 ```go
-func CreditExpiryID(grantID int64) TransferID {
-    var id [16]byte
-    id[5] = uint8(KindCreditExpiry)
-    binary.LittleEndian.PutUint64(id[8:16], uint64(grantID))
-    return TransferID{types.BytesToUint128(id)}
+func GrantAccountID(grant GrantID) AccountID {
+    return AccountID{types.Uint128{
+        binary.BigEndian.Uint64(grant[8:16]),  // low u64 ← ULID random tail
+        binary.BigEndian.Uint64(grant[0:8]),   // high u64 ← ULID timestamp + random head
+    }}
+}
+
+func CreditExpiryID(grant GrantID) TransferID {
+    return TransferID{types.Uint128{
+        binary.BigEndian.Uint64(grant[8:16]),
+        binary.BigEndian.Uint64(grant[0:8]),
+    }}
 }
 ```
+
+Both functions swap the ULID's big-endian halves into TigerBeetle's little-endian Uint128,
+placing the timestamp in the high u64 for LSM ordering. Account IDs and transfer IDs are
+separate TigerBeetle namespaces, so the same numeric value in both is safe. There is exactly
+one grant account and at most one expiry transfer per grant.
 
 ### 3.4 Account Creation Error Handling
 
@@ -1985,7 +2046,9 @@ Required fault catalog:
 
 | Fault | Expected behavior |
 |-------|-------------------|
-| PostgreSQL down during `DepositCredits` | TigerBeetle transfer may succeed, grant row missing, reconciliation detects |
+| PostgreSQL down during `DepositCredits` | No grant row inserted, no TigerBeetle mutation. Retryable. |
+| TigerBeetle down after PG insert in `DepositCredits` | Grant row exists, account unfunded. Same ULID on retry. Reconciliation detects. |
+| Cron and webhook race on subscription deposit | PostgreSQL unique index `(subscription_id, period_start)` is the arbiter. Loser returns early, no orphan TB accounts. |
 | Expiry sweeper crashes mid-batch | idempotent replay via `CreditExpiryID(grantID)` |
 | Concurrent `Reserve` and `ExpireCredits` on same grant | TigerBeetle serializes the debits; no grant can go negative |
 | Smart Retries emits repeated `invoice.payment_failed` for one invoice | subscription stays `past_due`, no duplicate grant deposits |
@@ -2101,8 +2164,10 @@ Key policies:
 
 - **Webhook processing**: return 500, Stripe retries.
 - **EnsureOrg**: return error, next request retries.
-- **DepositCredits** (grant row insert after TB transfer): TB transfer may succeed
-  without corresponding grant row. Reconciliation detects.
+- **DepositCredits** (PG insert is the first step): if the insert succeeds but
+  TigerBeetle is unavailable, the grant row exists with no funded account.
+  Same grant ULID on retry produces the same TigerBeetle account ID.
+  Reconciliation detects unfunded grants and alerts.
 - **Reserve**: if PostgreSQL cannot supply the eligible grant catalog, fail closed.
 
 ### 7.3 Stripe Failures
@@ -2147,6 +2212,14 @@ Key policies:
 - **Policy:** Deposit the credits anyway. The credits belong to the org (they paid for
   them). Suspension prevents *consumption*, not *receipt*. When suspension is lifted,
   the credits are available.
+
+#### Cron and webhook race on subscription credit deposit
+
+- **Resolution:** both paths call `DepositCredits`, which inserts the PostgreSQL catalog
+  row first. The unique index on `(subscription_id, period_start)` is the serialization
+  point: exactly one writer wins the insert, the other gets a no-op and returns early.
+  No orphan TigerBeetle accounts are created because the losing path never reaches
+  TigerBeetle.
 
 #### Duplicate `invoice.paid` delivery
 
@@ -2269,6 +2342,9 @@ GET /internal/billing/v1/orgs/:org_id/usage?product_id=sandbox&since=<ts>&limit=
 | 15 | Overage ceiling | Add `overage_cap_units` to `subscriptions`; enforce in `Reserve` |
 | 16 | Stripe metering | Remove `/usage_records` dependency from reconciliation |
 | 17 | Annual refunds | Use Stripe credit notes as the refund artifact |
+| 18 | Grant IDs | ULID `grant_id` (application-generated), endian-aware half-swap for TigerBeetle account and expiry transfer IDs, account type via `code` field not ID bits |
+| 19 | DepositCredits ordering | PostgreSQL insert first (serialization point), TigerBeetle last (Write Last, Read First) |
+| 20 | ULID dependency | Add `github.com/oklog/ulid/v2` `v2.1.0` |
 
 ## Appendix B: Remaining Manual-Review Items
 
