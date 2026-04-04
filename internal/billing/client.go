@@ -15,11 +15,12 @@ import (
 
 // Client is the billing package entrypoint.
 type Client struct {
-	tb     tb.Client
-	pg     *sql.DB
-	stripe *stripe.Client
-	cfg    Config
-	clock  func() time.Time
+	tb       tb.Client
+	pg       *sql.DB
+	stripe   *stripe.Client
+	metering MeteringWriter
+	cfg      Config
+	clock    func() time.Time
 }
 
 // NewClient constructs a billing Client.
@@ -50,6 +51,12 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*
 	}
 
 	return client, nil
+}
+
+// SetMeteringWriter configures the optional ClickHouse metering writer.
+// When set, Settle writes a forge_metal.metering row after posting transfers.
+func (c *Client) SetMeteringWriter(w MeteringWriter) {
+	c.metering = w
 }
 
 // EnsureOrg provisions an org in PostgreSQL.

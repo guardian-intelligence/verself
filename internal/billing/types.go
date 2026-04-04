@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -73,6 +74,7 @@ type GrantLeg struct {
 	GrantID    GrantID
 	TransferID TransferID
 	Amount     uint64
+	Source     GrantSourceType
 }
 
 type Reservation struct {
@@ -81,6 +83,8 @@ type Reservation struct {
 	ProductID    string
 	PlanID       string
 	ActorID      string
+	SourceType   string
+	SourceRef    string
 	WindowSeq    uint32
 	WindowSecs   uint32
 	WindowStart  time.Time
@@ -109,6 +113,35 @@ type ReserveRequest struct {
 	ProductID  string
 	ActorID    string
 	Allocation map[string]float64
+	SourceType string // metering source type: "job", "request_batch", etc.
+	SourceRef  string // metering source reference: product-specific identifier
+}
+
+// MeteringRow is one row in forge_metal.metering.
+type MeteringRow struct {
+	OrgID             string
+	ActorID           string
+	ProductID         string
+	SourceType        string
+	SourceRef         string
+	WindowSeq         uint32
+	StartedAt         time.Time
+	EndedAt           time.Time
+	BilledSeconds     uint32
+	PricingPhase      string
+	Dimensions        map[string]float64
+	ChargeUnits       uint64
+	FreeTierUnits     uint64
+	SubscriptionUnits uint64
+	PurchaseUnits     uint64
+	PromoUnits        uint64
+	RefundUnits       uint64
+	ExitReason        string
+}
+
+// MeteringWriter inserts metering rows into ClickHouse.
+type MeteringWriter interface {
+	InsertMeteringRow(ctx context.Context, row MeteringRow) error
 }
 
 type CreditGrant struct {

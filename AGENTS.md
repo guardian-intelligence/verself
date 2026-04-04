@@ -4,6 +4,10 @@ Free Open-Source Software for a turnkey "software company in a box": fully self-
 
 Bootstrapping UX: turnkey from 0 -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
 
+## Deployment Topology
+
+Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.
+
 Hard product design requirement: everything must be self-hosted.
 
 Exceptions:
@@ -427,6 +431,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
 * Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`. No `nix develop` prefix needed.
 * Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to impelementing changes. The verification protocol should fail, and only then begin implementing until green.
+* Avoid using one off non-syntax-aware scripts to do large parallel changes or refactors. Use subagents for that class of tasks instead as unexpected edge cases are likely and judgement is often required.
 
 ## Output Contract
 
@@ -441,6 +446,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
 * Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
+* Treat errors as data. Use tagged and structured errors to aid in control flow.
 * Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
 * Remember the philosophy that tests will never be able to assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
 * Package management for python must be done with `uv` do not use pip or conda.
