@@ -180,6 +180,7 @@
       ansible.builtin.copy:
         content: |
           cloudflare_api_token: ""
+          latitudesh_auth_token: ""
           postgresql_admin_password: "{{ cred_postgresql_admin_password }}"
           postgresql_billing_password: "{{ cred_postgresql_billing_password }}"
           clickhouse_password: "{{ cred_clickhouse_password }}"
