@@ -98,7 +98,7 @@ The integration path mirrors the existing service model:
 3. The NixOS module provides the systemd unit with hardening already applied
 4. Config is a Nix attrset -> JSON, deployed by Ansible template
 
-The `restartIfChanged = false` behavior is important -- it means `make deploy` won't
+The `restartIfChanged = false` behavior is important -- it means a deploy won't
 accidentally seal OpenBao. The operator must explicitly restart the service when needed
 (e.g., after a seal key rotation or version upgrade).
 

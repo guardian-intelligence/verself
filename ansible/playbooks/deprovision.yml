@@ -1,0 +1,38 @@
+---
+# Destroy all bare metal infrastructure and remove generated inventory.
+#
+# Usage:
+#   cd ansible && ansible-playbook playbooks/deprovision.yml
+
+- name: Destroy bare metal infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    terraform_project_path: "{{ playbook_dir }}/../../terraform"
+    sops_secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+    deprovision_inventory_file: "{{ playbook_dir }}/../inventory/hosts.ini"
+  tasks:
+    - name: Extract Latitude.sh auth token from SOPS
+      ansible.builtin.command:
+        cmd: >-
+          sops -d --extract '["latitudesh_auth_token"]'
+          {{ sops_secrets_file }}
+      register: latitudesh_token
+      changed_when: false
+      no_log: true
+
+    - name: Destroy OpenTofu-managed infrastructure
+      community.general.terraform:
+        project_path: "{{ terraform_project_path }}"
+        state: absent
+        binary_path: tofu
+        variables_files:
+          - terraform.tfvars.json
+      environment:
+        LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
+
+    - name: Remove generated inventory file
+      ansible.builtin.file:
+        path: "{{ deprovision_inventory_file }}"
+        state: absent

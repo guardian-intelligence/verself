@@ -32,7 +32,7 @@ Artifacts land in `homestead-smelter/zig-out/bin/`.
 
 ## Run Against a Firecracker VM
 
-The guest binary is a required part of the Alpine rootfs. `make guest-rootfs` requires `zig` and uploads a prebuilt `homestead-smelter-guest` so the VM image always contains it. The current guest boot path starts it from `forgevm-init`.
+The guest binary is a required part of the Alpine rootfs. The `guest-rootfs.yml` playbook requires `zig` and uploads a prebuilt `homestead-smelter-guest` so the VM image always contains it. The current guest boot path starts it from `forgevm-init`.
 
 Run the host daemon locally:
 

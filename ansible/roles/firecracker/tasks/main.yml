@@ -268,7 +268,7 @@
   ansible.builtin.fail:
     msg: >
       CI artifacts not found at {{ firecracker_kernel_path }}, {{ firecracker_rootfs_path }}, and/or {{ firecracker_guest_artifact_manifest_path }}.
-      Stage them with: make guest-rootfs && make deploy-ci-artifacts
+      Stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
   when: not firecracker_ci_kernel.stat.exists or not firecracker_ci_rootfs.stat.exists or not firecracker_ci_guest_artifacts.stat.exists
 
 # --- Golden zvol ---

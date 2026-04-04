@@ -11,12 +11,12 @@ if [[ -n "${SSH_OPTS:-}" ]]; then
 fi
 
 if [[ ! -f "$inventory" ]]; then
-  echo "ERROR: $inventory not found. Run 'make provision' first." >&2
+  echo "ERROR: $inventory not found. Run 'cd ansible && ansible-playbook playbooks/provision.yml' first." >&2
   exit 1
 fi
 
 if [[ ! -f "$secrets_file" ]]; then
-  echo "ERROR: $secrets_file not found. Run 'make setup-sops' first." >&2
+  echo "ERROR: $secrets_file not found. Run 'cd ansible && ansible-playbook playbooks/setup-sops.yml' first." >&2
   exit 1
 fi
 

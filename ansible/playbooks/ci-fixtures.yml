@@ -6,4 +6,5 @@
   become: true
   gather_facts: false
   roles:
-    - ci_fixtures
+    - role: ci_fixtures
+      tags: [ci_fixtures]

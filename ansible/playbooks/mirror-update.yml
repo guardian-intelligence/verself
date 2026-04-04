@@ -7,8 +7,7 @@
 # success. Production Verdaccio is never modified directly.
 #
 # Usage:
-#   make mirror-update
-#   # or: ansible-playbook ansible/playbooks/mirror-update.yml -i ansible/inventory/hosts.ini
+#   cd ansible && ansible-playbook playbooks/mirror-update.yml
 #
 # Rollback:
 #   ssh <host> 'sudo zfs rollback forgepool/verdaccio@scanned'

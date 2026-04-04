@@ -29,7 +29,7 @@ func doctorCmd() *cobra.Command {
 
 			issues := summary.Missing + summary.VersionMismatch
 			if issues > 0 {
-				fmt.Println("  hint: run 'make setup-dev' to install pinned versions")
+				fmt.Println("  hint: run 'cd ansible && ansible-playbook playbooks/setup-dev.yml' to install pinned versions")
 				return fmt.Errorf("%d issues found", issues)
 			}
 			return nil

@@ -3,12 +3,30 @@
 # VM, verify the host agent is streaming guest telemetry, then tear down.
 #
 # This is the fastest way to iterate on homestead-smelter guest code (~10s).
-# Requires a valid golden-zvol@ready (run make guest-rootfs && make deploy-ci-artifacts
-# && make deploy at least once first).
+# Requires a valid golden-zvol@ready (run the guest-rootfs and deploy playbooks
+# at least once first).
 #
 # Usage:
-#   make smelter-dev          (preferred — builds Zig + uploads binary first)
-#   ansible-playbook playbooks/smelter-dev.yml
+#   cd ansible && ansible-playbook playbooks/smelter-dev.yml
+
+- name: Build and upload smelter guest binary
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Build homestead-smelter guest locally
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command:
+        argv: [zig, build, -Doptimize=ReleaseSafe]
+        chdir: "{{ playbook_dir }}/../../homestead-smelter"
+      changed_when: true
+
+    - name: Upload guest binary to server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../homestead-smelter/zig-out/bin/homestead-smelter-guest"
+        dest: /tmp/homestead-smelter-guest
+        mode: "0755"
 
 - name: Hot-swap smelter guest and probe in Firecracker VM
   hosts: all

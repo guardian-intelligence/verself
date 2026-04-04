@@ -84,21 +84,22 @@ Those are fixture orchestration concerns, not workload execution concerns.
 ## Basic Commands
 
 ```bash
-make setup-dev   # one-time: install pinned dev tools
+cd ansible && ansible-playbook playbooks/setup-dev.yml   # one-time: install pinned dev tools
 make hooks-install
-make provision
-make deploy
+cd ansible && ansible-playbook playbooks/provision.yml
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
-make ci-fixtures-pass
+cd ansible && ansible-playbook playbooks/ci-fixtures-pass.yml
 ```
 
 - `make hooks-install`: install the repo's git pre-commit hooks
-- `make deploy`: normal idempotent deploy path
+- `playbooks/dev-single-node.yml`: normal idempotent deploy path (supports `--tags` for targeting individual roles)
 - `make clickhouse-query`: run a ClickHouse query on the current worker without retyping SSH or credentials
-- `make ci-fixtures-pass`: run the positive CI fixture suite against the current host
-- `make ci-fixtures-fail`: run the negative CI fixture suite against the current host
-- `make ci-fixtures-refresh`: rebuild and restage guest artifacts without a full redeploy
-- `make ci-fixtures-full`: refresh guest artifacts, then run the pass and fail fixture suites in one bounded-parallel rehearsal
+- `playbooks/ci-fixtures-pass.yml`: run the positive CI fixture suite against the current host
+- `playbooks/ci-fixtures-fail.yml`: run the negative CI fixture suite against the current host
+- `playbooks/guest-rootfs.yml`: rebuild and restage guest artifacts without a full redeploy
+- `playbooks/ci-fixtures-full.yml`: refresh guest artifacts, then run the pass and fail fixture suites together
 
 For live operator access patterns, including ClickHouse queries over SSH, see [docs/architecture/operator-workflows.md](docs/architecture/operator-workflows.md).
 

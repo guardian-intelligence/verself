@@ -12,6 +12,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  tags: [always]
   tasks:
     - name: Require nix_server_profile_path
       ansible.builtin.assert:
@@ -46,23 +47,25 @@
   hosts: all
   gather_facts: false
   become: true
+  tags: [always]
   tasks:
     - name: Require forge_metal_domain
       ansible.builtin.assert:
         that: forge_metal_domain | default('', true) | length > 0
         fail_msg: >-
-          forge_metal_domain is required. Run: make setup-domain
+          forge_metal_domain is required. Run: make setup-domain DOMAIN=example.com
 
     - name: Require cloudflare_api_token
       ansible.builtin.assert:
         that: cloudflare_api_token | default('', true) | length > 0
         fail_msg: >-
-          cloudflare_api_token is empty. Run: make setup-domain
+          cloudflare_api_token is empty. Run: make setup-domain DOMAIN=example.com
 
 - name: "Preflight: worker prerequisites"
   hosts: workers
   gather_facts: false
   become: true
+  tags: [always]
   tasks:
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status forgepool"
@@ -92,7 +95,7 @@
         msg: >-
           CI artifacts not staged on {{ inventory_hostname }}. The firecracker role
           requires vmlinux and rootfs.ext4 at /var/lib/ci/.
-          Run: make guest-rootfs && make deploy-ci-artifacts
+          Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
       when: not preflight_ci_kernel.stat.exists or not preflight_ci_rootfs.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
@@ -101,33 +104,53 @@
   hosts: all
   become: true
   roles:
-    - nix_deploy
-    - base
-    - nftables
-    - zfs
+    - role: nix_deploy
+      tags: [nix_deploy]
+    - role: base
+      tags: [base]
+    - role: nftables
+      tags: [nftables]
+    - role: zfs
+      tags: [zfs]
 
 - name: Configure worker nodes
   hosts: workers
   become: true
   roles:
-    - containerd
-    - wireguard
-    - firecracker
+    - role: containerd
+      tags: [containerd]
+    - role: wireguard
+      tags: [wireguard]
+    - role: firecracker
+      tags: [firecracker]
 
 - name: Configure infrastructure nodes
   hosts: infra
   become: true
   roles:
-    - wireguard
-    - cloudflare_dns
-    - resend
-    - clickhouse
-    - tigerbeetle
-    - postgresql
-    - billing
-    - zitadel
-    - otelcol
-    - hyperdx
-    - verdaccio
-    - forgejo
-    - caddy
+    - role: wireguard
+      tags: [wireguard]
+    - role: cloudflare_dns
+      tags: [cloudflare_dns]
+    - role: resend
+      tags: [resend]
+    - role: clickhouse
+      tags: [clickhouse]
+    - role: tigerbeetle
+      tags: [tigerbeetle]
+    - role: postgresql
+      tags: [postgresql]
+    - role: billing
+      tags: [billing]
+    - role: zitadel
+      tags: [zitadel]
+    - role: otelcol
+      tags: [otelcol]
+    - role: hyperdx
+      tags: [hyperdx]
+    - role: verdaccio
+      tags: [verdaccio]
+    - role: forgejo
+      tags: [forgejo]
+    - role: caddy
+      tags: [caddy]

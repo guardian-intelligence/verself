@@ -10,8 +10,6 @@
 #   5. Writes and encrypts ansible/group_vars/all/secrets.sops.yml
 #
 # Usage:
-#   make setup-sops
-#   # or directly:
 #   cd ansible && ansible-playbook playbooks/setup-sops.yml
 
 - name: Bootstrap SOPS encryption
@@ -84,7 +82,7 @@
       ansible.builtin.copy:
         content: |
           # sops configuration for forge-metal secrets.
-          # The age public key is written by: make setup-sops
+          # The age public key is written by: ansible-playbook playbooks/setup-sops.yml
           #
           # Encrypted files (*.sops.yml) are safe to commit.
           # The age private key (~/.config/sops/age/keys.txt) is NOT.
@@ -217,5 +215,5 @@
             Age key:      {{ age_key_file }}
 
             Next steps:
-              Edit secrets:  make edit-secrets
-              Deploy:        make deploy
+              Edit secrets:  sops ansible/group_vars/all/secrets.sops.yml
+              Deploy:        cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...

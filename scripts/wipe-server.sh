@@ -72,4 +72,5 @@ echo "=== Done — server is wiped ==="
 EOF
 
 echo "Server wiped. Next steps:"
-echo "  make guest-rootfs && make deploy-ci-artifacts && make deploy"
+echo "  cd ansible && ansible-playbook playbooks/guest-rootfs.yml"
+echo "  cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=..."

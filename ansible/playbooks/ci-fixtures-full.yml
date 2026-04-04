@@ -1,0 +1,20 @@
+---
+# Refresh CI artifacts then run both pass and fail fixture suites.
+#
+# Usage:
+#   cd ansible && ansible-playbook playbooks/ci-fixtures-full.yml
+
+- name: Refresh CI artifacts  # noqa: name[play]
+  ansible.builtin.import_playbook: guest-rootfs.yml
+
+- name: Run full CI fixture suites
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    ci_fixtures_suites:
+      - pass
+      - fail
+  roles:
+    - role: ci_fixtures
+      tags: [ci_fixtures]
