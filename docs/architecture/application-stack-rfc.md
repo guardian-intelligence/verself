@@ -343,27 +343,118 @@ PostgreSQL
 
 One PostgreSQL instance. Databases are isolated — no cross-database queries, no shared schemas. The tenant linkage between apps is the Zitadel organization ID stored as a column in each app's tables.
 
-Application state lives here. Financial state does not — that's TigerBeetle. Pricing configuration (per-org rates, plan tier) lives in PostgreSQL; balance enforcement lives in TigerBeetle.
+Application state lives here. Financial state does not — that's TigerBeetle. The billing package's product catalog, subscription state, grant attribution, retry/DLQ state, and Stripe correlation live in PostgreSQL; aggregate balance enforcement lives in TigerBeetle.
+
+Billing package tables live in the existing `sandbox` database because that is the infrastructure truth today. The database name does not imply product scope. The billing package is shared across products even though the backing PostgreSQL database retains its historical name.
+
+Every billing mutation that reads or writes `credit_grants`, subscription status, or product eligibility for a single org acquires `pg_advisory_xact_lock(org_id::bigint)` inside the transaction before any reads. This is mandatory. The org IDs issued by Zitadel are decimal strings that fit in signed 63 bits, so the cast is lossless for forge-metal.
 
 #### Sandbox database schema
 
 ```sql
--- Org registration. Created lazily on first authenticated request (JIT provisioning
--- from the token's urn:zitadel:iam:user:resourceowner:id claim).
+-- Billing catalog. Product-agnostic.
+CREATE TABLE products (
+    product_id    TEXT PRIMARY KEY,
+    display_name  TEXT NOT NULL,
+    meter_unit    TEXT NOT NULL,  -- vcpu_second, token, gb_month, unit
+    billing_model TEXT NOT NULL,  -- metered, licensed, one_time
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE plans (
+    plan_id                 TEXT PRIMARY KEY,
+    product_id              TEXT NOT NULL REFERENCES products(product_id),
+    display_name            TEXT NOT NULL,
+    stripe_monthly_price_id TEXT,
+    stripe_annual_price_id  TEXT,
+    monthly_price_cents     INTEGER,
+    annual_price_cents      INTEGER,
+    included_credits        BIGINT NOT NULL DEFAULT 0,
+    unit_rates              JSONB NOT NULL DEFAULT '{}',
+    overage_unit_rates      JSONB NOT NULL DEFAULT '{}',
+    quotas                  JSONB NOT NULL DEFAULT '{}',
+    cancellation_policy     JSONB NOT NULL DEFAULT '{"annual_refund_mode":"credit_note","void_remaining_credits":false}',
+    is_default              BOOLEAN NOT NULL DEFAULT false,
+    sort_order              INTEGER NOT NULL DEFAULT 0,
+    active                  BOOLEAN NOT NULL DEFAULT true,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_default_plan_per_product
+    ON plans (product_id) WHERE is_default;
+
+-- Org registration and Stripe correlation. Created lazily on first authenticated
+-- request from the token's urn:zitadel:iam:user:resourceowner:id claim.
 CREATE TABLE orgs (
     org_id              TEXT PRIMARY KEY,   -- Zitadel organization ID (string, not UUID)
     display_name        TEXT NOT NULL,
-    plan_tier           TEXT NOT NULL DEFAULT 'free',
     stripe_customer_id  TEXT UNIQUE,        -- set on first Stripe Checkout session
+    billing_email       TEXT,
+    trust_tier          TEXT NOT NULL DEFAULT 'new',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Per-org pricing overrides. NULL columns fall back to platform default rates.
-CREATE TABLE org_pricing (
-    org_id       TEXT PRIMARY KEY REFERENCES orgs(org_id),
-    vcpu_rate    BIGINT,             -- ledger units per vCPU-second (NULL = default)
-    mem_rate     BIGINT,             -- ledger units per GiB-second (NULL = default)
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TYPE subscription_status AS ENUM (
+    'active', 'past_due', 'suspended', 'cancelled', 'trialing'
+);
+CREATE TYPE billing_cadence AS ENUM ('monthly', 'annual');
+
+CREATE TABLE subscriptions (
+    subscription_id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    org_id                  TEXT NOT NULL REFERENCES orgs(org_id),
+    plan_id                 TEXT NOT NULL REFERENCES plans(plan_id),
+    product_id              TEXT NOT NULL REFERENCES products(product_id),
+    stripe_subscription_id  TEXT UNIQUE,
+    stripe_item_id          TEXT,
+    cadence                 billing_cadence NOT NULL DEFAULT 'monthly',
+    billing_anchor_day      SMALLINT NOT NULL DEFAULT 1,
+    current_period_start    TIMESTAMPTZ,
+    current_period_end      TIMESTAMPTZ,
+    status                  subscription_status NOT NULL DEFAULT 'active',
+    status_changed_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    past_due_since          TIMESTAMPTZ,
+    cancel_at_period_end    BOOLEAN NOT NULL DEFAULT false,
+    cancelled_at            TIMESTAMPTZ,
+    cancellation_reason     TEXT,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_one_active_sub_per_product
+    ON subscriptions (org_id, product_id)
+    WHERE status IN ('active', 'past_due', 'trialing');
+
+CREATE TYPE grant_account AS ENUM ('free_tier', 'credit');
+
+CREATE TABLE credit_grants (
+    grant_id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    org_id              TEXT NOT NULL REFERENCES orgs(org_id),
+    product_id          TEXT NOT NULL REFERENCES products(product_id),
+    account_type        grant_account NOT NULL,
+    amount              BIGINT NOT NULL CHECK (amount > 0),
+    consumed            BIGINT NOT NULL DEFAULT 0 CHECK (consumed >= 0),
+    expired             BIGINT NOT NULL DEFAULT 0 CHECK (expired >= 0),
+    remaining           BIGINT GENERATED ALWAYS AS (amount - consumed - expired) STORED,
+    source              TEXT NOT NULL,      -- subscription, purchase, promo, refund, free_tier
+    stripe_reference_id TEXT,
+    subscription_id     BIGINT REFERENCES subscriptions(subscription_id),
+    period_start        TIMESTAMPTZ,
+    period_end          TIMESTAMPTZ,
+    expires_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_credit_grants_active
+    ON credit_grants (org_id, product_id, expires_at)
+    WHERE remaining > 0;
+CREATE UNIQUE INDEX idx_credit_grants_subscription_period
+    ON credit_grants (subscription_id, period_start, account_type)
+    WHERE subscription_id IS NOT NULL;
+
+CREATE TABLE org_pricing_overrides (
+    org_id       TEXT NOT NULL REFERENCES orgs(org_id),
+    plan_id      TEXT NOT NULL REFERENCES plans(plan_id),
+    unit_rates   JSONB NOT NULL,
+    quotas       JSONB,
+    notes        TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (org_id, plan_id)
 );
 
 -- API keys for programmatic VM launch. Keys are bcrypt-hashed; the plaintext
@@ -386,6 +477,7 @@ CREATE TABLE api_keys (
 CREATE TABLE jobs (
     job_id       BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     org_id       TEXT NOT NULL REFERENCES orgs(org_id),
+    product_id   TEXT NOT NULL REFERENCES products(product_id),
     status       TEXT NOT NULL DEFAULT 'pending',
     vcpus        SMALLINT NOT NULL,
     mem_mib      INTEGER NOT NULL,
@@ -395,32 +487,69 @@ CREATE TABLE jobs (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- SKIP LOCKED task queue. BIGINT PK for TigerBeetle transfer ID derivation.
--- stripe_pi_id UNIQUE is the idempotency anchor for Stripe webhook deduplication.
+CREATE TYPE task_status AS ENUM ('pending', 'claimed', 'completed', 'retrying', 'dead');
+
+-- Billing package task queue. BIGINT PK participates in deterministic
+-- TigerBeetle transfer ID derivation for Stripe-driven tasks.
 CREATE TABLE tasks (
-    task_id      BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    task_type    TEXT NOT NULL,
-    payload      JSONB NOT NULL DEFAULT '{}',
-    status       TEXT NOT NULL DEFAULT 'pending',
-    stripe_pi_id TEXT UNIQUE,            -- one task per Stripe payment intent
-    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at   TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    error        TEXT,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    task_id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    task_type       TEXT NOT NULL,
+    payload         JSONB NOT NULL DEFAULT '{}',
+    status          task_status NOT NULL DEFAULT 'pending',
+    idempotency_key TEXT UNIQUE,         -- pi_..., in_..., dp_..., or app-generated compound key
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    max_attempts    INTEGER NOT NULL DEFAULT 5,
+    last_error      TEXT,
+    next_retry_at   TIMESTAMPTZ,
+    scheduled_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    dead_at         TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_tasks_pending ON tasks (scheduled_at) WHERE status = 'pending';
+CREATE INDEX idx_tasks_claimable
+    ON tasks (scheduled_at)
+    WHERE status IN ('pending', 'retrying')
+      AND (next_retry_at IS NULL OR next_retry_at <= now());
+CREATE INDEX idx_tasks_dead
+    ON tasks (dead_at)
+    WHERE status = 'dead';
+
+CREATE TABLE billing_events (
+    event_id        BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    org_id          TEXT NOT NULL,
+    event_type      TEXT NOT NULL,
+    subscription_id BIGINT,
+    grant_id        BIGINT,
+    task_id         BIGINT,
+    payload         JSONB NOT NULL DEFAULT '{}',
+    stripe_event_id TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_billing_events_stripe
+    ON billing_events (stripe_event_id)
+    WHERE stripe_event_id IS NOT NULL;
+
+CREATE TABLE billing_cursors (
+    cursor_name   TEXT PRIMARY KEY,
+    cursor_ts     TIMESTAMPTZ,
+    cursor_bigint BIGINT,
+    cursor_json   JSONB NOT NULL DEFAULT '{}',
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 ```
 
 #### Storefront database schema
 
 ```sql
-CREATE TABLE orgs (
-    org_id              TEXT PRIMARY KEY,
-    display_name        TEXT NOT NULL,
-    billing_email       TEXT,
-    stripe_customer_id  TEXT UNIQUE,        -- set on first Stripe Checkout session
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+-- Storefront keeps product-local state only. Billing ownership remains in the
+-- sandbox database; this database does not duplicate Stripe customer mapping,
+-- subscriptions, credit grants, or the billing task queue.
+CREATE TABLE org_profiles (
+    org_id         TEXT PRIMARY KEY,
+    display_name   TEXT NOT NULL,
+    billing_email  TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE inventory (
@@ -439,30 +568,16 @@ CREATE TABLE inventory (
 
 CREATE TABLE orders (
     order_id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id                   TEXT NOT NULL REFERENCES orgs(org_id),
+    org_id                   TEXT NOT NULL REFERENCES org_profiles(org_id),
     server_id                UUID NOT NULL REFERENCES inventory(server_id),
     status                   TEXT NOT NULL DEFAULT 'pending_payment',
     stripe_payment_intent_id TEXT,
     stripe_subscription_id   TEXT,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE TABLE tasks (
-    task_id      BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    task_type    TEXT NOT NULL,
-    payload      JSONB NOT NULL DEFAULT '{}',
-    status       TEXT NOT NULL DEFAULT 'pending',
-    stripe_pi_id TEXT UNIQUE,            -- one task per Stripe payment intent
-    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at   TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    error        TEXT,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_tasks_pending ON tasks (scheduled_at) WHERE status = 'pending';
 ```
 
-`org_id` is `TEXT` in both databases because Zitadel organization IDs are string identifiers (numeric strings like `"180025476050993153"`), not UUIDs. The `orgs` row is created lazily on first authenticated request — the Next.js API layer reads `urn:zitadel:iam:user:resourceowner:id` from the token, upserts into `orgs`, and uses the resulting `org_id` as the tenant context for all queries in the request.
+`org_id` is `TEXT` in both databases because Zitadel organization IDs are string identifiers (numeric strings like `"180025476050993153"`), not UUIDs. The canonical billing row is `sandbox.orgs`, created lazily on first authenticated request. Product-local projections such as `storefront.org_profiles` are derived from the same token claim and keyed by the same `org_id`.
 
 ### Financial Ledger: TigerBeetle
 
@@ -520,18 +635,19 @@ Every billing concept maps to TigerBeetle accounts and transfers. No special-cas
 
 ```
 Per org (account IDs derived via OrgAccountID):
-├── OrgAccountID(orgID, FreeTier)   # monthly allowance, reset on the 1st
-├── OrgAccountID(orgID, Credit)     # prepaid balance (Stripe + subscriptions)
+├── OrgAccountID(orgID, FreeTier)   # free-plan allowance for the current billing period
+├── OrgAccountID(orgID, Credit)     # prepaid / subscription-funded aggregate balance
 
 Operator (account IDs derived via OperatorAccountID, org_id=0):
 ├── OperatorAccountID(Revenue)          # realized revenue from paid usage only
 ├── OperatorAccountID(FreeTierExpense)  # cost of free-tier compute given away
 ├── OperatorAccountID(FreeTierPool)     # funds monthly free tier grants
 ├── OperatorAccountID(StripeHolding)    # Stripe payments land here before crediting org
-└── OperatorAccountID(PromoPool)        # funds promotional credits
+├── OperatorAccountID(PromoPool)        # funds promotional credits
+└── OperatorAccountID(ExpiredCredits)   # breakage from expired paid credits
 ```
 
-Three ways for an org to have balance: free tier (automatic monthly), prepaid credits (Stripe ACH/card), and subscription deposits (recurring Stripe). All three fund the same draw-down chain. From TigerBeetle's perspective, every VM launch is the same operation: "does this org have enough balance to run?" The difference is where the credit side lands: free-tier consumption credits FreeTierExpense (marketing cost), paid consumption credits Revenue (earned income).
+Three ways for an org to have balance: free-plan grants (funded from `FreeTierPool`), prepaid credits (Stripe ACH/card top-ups), and metered-subscription deposits (recurring Stripe invoices). All three fund the same draw-down chain. From TigerBeetle's perspective, every VM launch is the same operation: "does this org have enough aggregate balance to run?" Product-specific eligibility and the `included` versus `overage` decision live in PostgreSQL under the per-org advisory lock.
 
 #### Account flags
 
@@ -548,6 +664,7 @@ All accounts are created with `History: true` to enable `GetAccountTransfers` an
 | `OperatorAccountID(FreeTierPool)` | 4 | `debits_must_not_exceed_credits`, `history` | Pool has a finite budget. Free tier grants debit this account — fails if pool exhausted. |
 | `OperatorAccountID(StripeHolding)` | 5 | `history` | Contra account. No balance constraint — allows negative balance growth. Each Stripe deposit is a single transfer that debits StripeHolding and credits the org (no separate "receipt" entry). The running negative balance represents total Stripe funds disbursed to org accounts — the contra-entry for real money sitting in Stripe's bank. |
 | `OperatorAccountID(PromoPool)` | 6 | `debits_must_not_exceed_credits`, `history` | Promotional credits draw from a funded pool. |
+| `OperatorAccountID(ExpiredCredits)` | 8 | `history` | Breakage accumulator for expired paid credits. Credit-normal — expiration sweeps credit it when unused paid grants lapse. |
 
 #### Transfer flags
 
@@ -601,7 +718,7 @@ The reservation window is tunable: 60 seconds for aggressive enforcement, 300 se
 
 #### Idempotency
 
-Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically via injective bit packing (see "Deterministic ID derivation" section): `VMTransferID(job_id, window_seq, leg, kind)` for billing transfers, `FreeTierResetID(org_id, year, month)` for monthly resets, `StripeDepositID(task_id, kind)` for payment credits. The derivation is a pure function of application-layer identifiers — no mapping table, no sequence generator, no external state. Retries after orchestrator crashes resubmit the same IDs by construction.
+Every transfer has a 128-bit ID. Posting the same ID twice is a no-op — TigerBeetle returns success without double-processing. Transfer IDs are derived deterministically via injective bit packing (see "Deterministic ID derivation" section): `VMTransferID(job_id, window_seq, leg, kind)` for execution-time billing transfers, `SubscriptionPeriodID(subscription_id, period_start, kind)` for periodic subscription deposits, `StripeDepositID(task_id, kind)` for payment-driven tasks, and `CreditExpiryID(grant_id)` for expiry sweeps. The derivation is a pure function of application-layer identifiers — no mapping table, no sequence generator, no external state. Retries after orchestrator crashes resubmit the same IDs by construction.
 
 #### Go client
 
@@ -613,6 +730,8 @@ defer client.Close()
 ```
 
 Thread-safe, single instance shared across goroutines. The client batches operations automatically. Requires Go >= 1.21, Linux >= 5.6 in production. Import: `types` is `github.com/tigerbeetle/tigerbeetle-go/pkg/types`. The Go SDK version must match the server binary version (0.16.x).
+
+All balance and amount fields in the current `0.16.x` Go client are `types.Uint128`, including `Transfer.Amount`. forge-metal rates and grants are sized to fit in `uint64`, but every conversion from TigerBeetle back to application integers uses an overflow guard before truncation.
 
 #### Security model
 
@@ -641,41 +760,43 @@ Single-replica means no replication-based durability. Two complementary backup m
 
 ### Metering: ClickHouse (already deployed)
 
-Raw usage events are already flowing from smelter into ClickHouse as wide events. Sandbox metering extends this — each VM execution produces a row with resource allocation, wall-clock duration, and billing metadata.
+Raw usage events already flow from smelter into ClickHouse as wide events. Billing extends this with one generic append-only table that records the billable source, the pricing phase selected at reservation time, and the funding-source breakdown that was actually settled.
 
-ClickHouse is the metering source of truth for audit and analytics. It retains full-resolution events permanently. TigerBeetle handles real-time balance enforcement via two-phase transfers; ClickHouse provides the long-term record for reconciliation, usage dashboards, and dispute resolution.
+ClickHouse is the metering source of truth for audit and analytics. It retains full-resolution events permanently. TigerBeetle handles online balance enforcement; PostgreSQL handles product eligibility and grant attribution; ClickHouse provides the immutable execution record for reconciliation, customer usage pages, and dispute review.
 
-New table: `forge_metal.sandbox_metering`
+New table: `forge_metal.metering`
 
 ```sql
-CREATE TABLE forge_metal.sandbox_metering (
-    org_id          LowCardinality(String)  CODEC(ZSTD(3)),
-    job_id          Int64                   CODEC(Delta(8), ZSTD(3)),
-    started_at      DateTime64(6)           CODEC(DoubleDelta, ZSTD(3)),
-    ended_at        DateTime64(6)           CODEC(DoubleDelta, ZSTD(3)),
-    wall_clock_us   Int64                   CODEC(Delta(8), ZSTD(3)),
-    billed_seconds  UInt32                  CODEC(Delta(4), ZSTD(3)),
-    cpu_us          Int64                   CODEC(Delta(8), ZSTD(3)),
-    mem_peak_kb     Int64                   CODEC(T64, ZSTD(3)),
-    vcpus           UInt8                   CODEC(ZSTD(3)),
-    mem_mib         UInt16                  CODEC(T64, ZSTD(3)),
-    charge_units        UInt64                  CODEC(T64, ZSTD(3)),
-    free_tier_units     UInt64                  CODEC(T64, ZSTD(3)),
-    paid_units          UInt64                  CODEC(T64, ZSTD(3)),
-    exit_reason         LowCardinality(String)  CODEC(ZSTD(3))
+CREATE TABLE forge_metal.metering (
+    org_id               LowCardinality(String)               CODEC(ZSTD(3)),
+    product_id           LowCardinality(String)               CODEC(ZSTD(3)),
+    source_type          LowCardinality(String)               CODEC(ZSTD(3)), -- job, request_batch, licensed_period
+    source_ref           String                               CODEC(ZSTD(3)), -- product-owned opaque identifier
+    window_seq           UInt32                               CODEC(Delta(4), ZSTD(3)),
+    started_at           DateTime64(6)                        CODEC(DoubleDelta, ZSTD(3)),
+    ended_at             DateTime64(6)                        CODEC(DoubleDelta, ZSTD(3)),
+    billed_seconds       UInt32                               CODEC(Delta(4), ZSTD(3)),
+    pricing_phase        LowCardinality(String)               CODEC(ZSTD(3)), -- free_tier, included, overage, licensed
+    dimensions           Map(LowCardinality(String), Float64) CODEC(ZSTD(3)),
+    charge_units         UInt64                               CODEC(T64, ZSTD(3)),
+    free_tier_units      UInt64                               CODEC(T64, ZSTD(3)),
+    subscription_units   UInt64                               CODEC(T64, ZSTD(3)),
+    purchase_units       UInt64                               CODEC(T64, ZSTD(3)),
+    promo_units          UInt64                               CODEC(T64, ZSTD(3)),
+    refund_units         UInt64                               CODEC(T64, ZSTD(3)),
+    exit_reason          LowCardinality(String)               CODEC(ZSTD(3)),
+    recorded_at          DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3))
 ) ENGINE = MergeTree()
-ORDER BY (org_id, started_at)
+ORDER BY (org_id, product_id, started_at, source_ref, window_seq)
 ```
 
-Billing is per-second with per-invocation rounding: `billed_seconds = ceil(wall_clock_us / 1_000_000)`. Charges are computed as `(vcpus × vcpu_rate + mem_gib × mem_rate) × billed_seconds`, matching the E2B/Modal model of separate vCPU and memory dimensions.
+For sandbox, `source_type='job'`, `source_ref` is the decimal `job_id`, and `dimensions` carries the resource vectors used for rating (`vcpu_seconds`, `gib_seconds`, `concurrent_vms`, or whatever the product defines). For licensed products there is still a metering row, but `pricing_phase='licensed'` and the row exists for visibility rather than online balance gating.
 
-`charge_units` records the total ledger units charged via TigerBeetle for this job. `free_tier_units` and `paid_units` break this down by funding source (free-tier consumption → FreeTierExpense vs paid consumption → Revenue). `charge_units = free_tier_units + paid_units` is an invariant enforced by the orchestrator at write time, not a ClickHouse materialized column. `exit_reason` distinguishes normal completion, timeout, and balance exhaustion (`funds_exhausted`).
-
-No `billed` / `billed_at` mutation columns. ClickHouse MergeTree is append-only — `ALTER TABLE UPDATE` triggers asynchronous mutations that rewrite entire data parts. The row is written once at VM exit with the final billing outcome already resolved by the orchestrator.
+Required invariant: `charge_units = free_tier_units + subscription_units + purchase_units + promo_units + refund_units`. The orchestrator writes that breakdown once, at settlement time. No `billed` / `billed_at` mutation columns — MergeTree remains append-only.
 
 ### Billing Architecture
 
-Billing has two paths: a real-time path that enforces balance limits during VM execution, and a reconciliation path that syncs financial state to Stripe and detects discrepancies.
+Billing has two paths: a real-time path that enforces balance limits during product execution, and a reconciliation path that compares ClickHouse, TigerBeetle, and PostgreSQL for drift.
 
 #### Real-time path (VM orchestrator)
 
@@ -702,29 +823,31 @@ Post final pending transfer (actual usage)
 Write metering row to ClickHouse (append-only, once)
 ```
 
-Rating logic (vCPU rate, memory rate, per-second pricing) lives in the orchestrator. Pricing changes are code deploys — acceptable for a single-operator platform.
+Pricing lookup comes from PostgreSQL `plans` plus optional `org_pricing_overrides`. The orchestrator computes the reservation amount from the selected rate card, but the data itself is not compiled into the binary. The `included` versus `overage` phase is selected under the org advisory lock at reservation boundaries and written into the `Reservation` plus the final ClickHouse metering row.
 
 #### Reconciliation path (hourly cron)
 
-A Go binary runs hourly via systemd timer. Its job is not to compute charges (the orchestrator already did that) but to verify consistency and sync to Stripe.
+A Go binary runs hourly via systemd timer. Its job is not to compute charges; the orchestrator already did that. Its job is to verify that the three internal sources of truth still agree.
 
-1. **Query ClickHouse** for all unreconciled metering rows using a high-water mark, not a sliding time window. The cron persists the last-reconciled `started_at` timestamp in PostgreSQL and queries forward from it.
+1. **Query ClickHouse** for unreconciled metering rows using a durable high-water mark stored in `sandbox.billing_cursors`.
    ```sql
-   SELECT org_id, job_id, charge_units, free_tier_units, paid_units, billed_seconds, started_at
-   FROM sandbox_metering
+   SELECT org_id, product_id, source_ref, window_seq, charge_units,
+          free_tier_units, subscription_units, purchase_units, promo_units, refund_units,
+          started_at, ended_at
+   FROM forge_metal.metering
    WHERE started_at > :last_reconciled_at
-     AND started_at <= now() - INTERVAL 5 MINUTE  -- grace period for late writes
+     AND started_at <= now() - INTERVAL 5 MINUTE
    ORDER BY started_at
    ```
-   After successful reconciliation, advance the watermark to the maximum `started_at` in the result set. This eliminates the gap where a VM spanning an hour boundary could be missed by a fixed `now() - INTERVAL 1 HOUR` window — every row is reconciled exactly once regardless of when it was written.
+2. **Query TigerBeetle** for the posted transfers covering the same sources.
+3. **Query PostgreSQL** for the `credit_grants`, `billing_events`, and task completions that should explain those transfers.
+4. **Compare.** Alert on any of:
+   - metering row with no matching settled transfer
+   - TigerBeetle transfer with no matching grant/event attribution
+   - subscription deposit event with no corresponding grant row
+5. **Advance the cursor** only after the comparison succeeds for the full batch.
 
-2. **Query TigerBeetle** for posted transfers in the same range (via `get_account_transfers` with timestamp filter).
-
-3. **Compare.** Flag discrepancies — a metering row without a corresponding posted transfer, or vice versa. Alert on mismatch.
-
-4. **Push paid usage records to Stripe.** Only `paid_units` are synced — free-tier consumption is not billable and is not reported to Stripe. Stripe Usage Records API with `action: 'set'` and the window timestamp. Idempotent — setting the same timestamp twice overwrites rather than accumulates.
-
-5. **Log reconciliation result to ClickHouse** as a wide event for observability.
+Stripe is not a metering sink. There is no `/usage_records` synchronization path in this architecture.
 
 #### Crash safety
 
@@ -736,7 +859,7 @@ The real-time path is crash-safe because TigerBeetle transfers are idempotent by
 | During VM execution, before renewal | Firecracker VM continues running unaware of orchestrator state. On restart, the orchestrator discovers orphaned VMs by scanning Firecracker process state, computes actual wall-clock usage from VM start time to now, and posts the pending transfer(s) for the actual amount. If the orchestrator stays down longer than the pending transfer timeout, TigerBeetle voids the pending transfers and the org's funds are released — the operator absorbs the cost of the unmetered compute. Pending transfer timeout must be set longer than the maximum expected orchestrator restart time. |
 | After VM exit, before ClickHouse write | TigerBeetle has the financial record. Reconciliation cron detects missing metering row and alerts. ClickHouse row can be backfilled from TigerBeetle transfer data. |
 
-The reconciliation cron is not on the critical path — if it fails, billing enforcement continues via the orchestrator. Stripe sync is delayed but catches up on the next successful run.
+The reconciliation cron is not on the critical path — if it fails, billing enforcement continues via the orchestrator. Drift detection is delayed until the next successful run.
 
 ### Identity–Ledger Integration
 
@@ -773,8 +896,8 @@ A cryptographic hash (blake3, SHA-256) provides probabilistic collision resistan
 |--------|-------------|-----------|:------------:|
 | Account | org_id(64) + account_type(16) | 80 | Yes |
 | VM transfer | job_id(64) + window_seq(32) + leg(8) + phase(8) | 112 | Yes |
-| Free-tier reset transfer | org_id(64) + year_month(16) | 80 | Yes |
-| Stripe deposit transfer | task_id(64) + kind(8) | 72 | Yes |
+| Subscription-period deposit transfer | subscription_id(64) + year_month(16) + kind(8) | 88 | Yes |
+| Stripe/task-driven transfer | task_id(64) + kind(8) | 72 | Yes |
 
 Every input space is ≤ 128 bits. No hashing is required anywhere in the system.
 
@@ -826,6 +949,7 @@ Account type enum (also stored in TigerBeetle's `code` field):
 | 5 | stripe-holding | operator | (none — contra account) |
 | 6 | promo-pool | operator | `debits_must_not_exceed_credits` |
 | 7 | free-tier-expense | operator | (none — expense accumulator) |
+| 8 | expired-credits | operator | (none — breakage accumulator) |
 
 The type is encoded in two places: in the account ID (for deterministic derivation without a lookup) and in the `code` field (for `QueryFilter` operations). The `user_data_64` field stores the raw `org_id` for reverse lookups — `QueryFilter{UserData64: orgID}` returns all accounts for an org without decomposing the packed ID.
 
@@ -844,9 +968,9 @@ Transfers have different natural keys depending on their kind, but the bit layou
 Numeric value: source_id × 2⁶⁴ + (reserved << 48) + (kind << 40) + (leg << 32) + seq
 ```
 
-**source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For free-tier resets: `org_id`. For Stripe deposits: `task_id` (from `tasks.task_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
+**source_id** (high u64): The primary entity this transfer belongs to. For VM transfers: `job_id` (from `jobs.job_id`). For subscription-period deposits: `subscription_id` (from `subscriptions.subscription_id`). For payment-driven tasks: `task_id` (from `tasks.task_id`). For expiry sweeps: `grant_id` (from `credit_grants.grant_id`). Always a `BIGINT` from PostgreSQL, always monotonically increasing, always in the high bits for LSM ordering.
 
-**seq** (u32): Sequence number within the source. VM transfers: reservation window number (0 = initial, 1 = first renewal, ...). Free-tier resets: `year × 12 + month` (fits in u16, giving ~5,400 years). Stripe deposits: 0 (one transfer per task).
+**seq** (u32): Sequence number within the source. VM transfers: reservation window number (0 = initial, 1 = first renewal, ...). Subscription-period deposits: `year × 12 + month` derived from `period_start.UTC()`. Stripe deposits: 0 (one transfer per task).
 
 **leg** (u8): Which leg of a multi-transfer operation. The two-phase billing flow creates two transfers per reservation window: leg 0 = free-tier debit, leg 1 = credit debit. Single-leg transfers (resets, deposits) use leg 0.
 
@@ -859,11 +983,12 @@ Transfer kind enum (also stored in TigerBeetle's `code` field):
 | 1 | vm_reservation | job_id | `pending` + `balancing_debit` (free-tier leg → FreeTierExpense) or `pending` (credit leg → Revenue) |
 | 2 | vm_settlement | job_id | `post_pending_transfer` |
 | 3 | vm_void | job_id | `void_pending_transfer` |
-| 4 | free_tier_reset | org_id | `balancing_credit` |
+| 4 | free_tier_reset | subscription_id | `balancing_credit` |
 | 5 | stripe_deposit | task_id | (single-phase) |
 | 6 | subscription_deposit | task_id | (single-phase) |
 | 7 | promo_credit | task_id | (single-phase) |
 | 8 | dispute_debit | task_id | `balancing_debit` (clamps to available credit balance; debits org/credit, credits StripeHolding) |
+| 9 | credit_expiry | grant_id | `balancing_debit` for org-side debit, single-phase sweep into `ExpiredCredits` or `FreeTierExpense` |
 
 ##### Transfer idempotency by construction
 
@@ -874,9 +999,10 @@ Each transfer kind has a distinct idempotency domain — the set of fields that 
 | vm_reservation | (job_id, window_seq, leg) | One pending reservation per (job, window, leg). Orchestrator crash + retry resubmits the same ID. |
 | vm_settlement | (job_id, window_seq, leg) | One settlement per pending. Different `kind` byte prevents collision with the pending. |
 | vm_void | (job_id, window_seq, leg) | One void per pending. Mutually exclusive with settlement (enforced by TigerBeetle — pending resolves at most once). |
-| free_tier_reset | (org_id, year_month) | One reset per (org, month). Re-running the monthly cron produces the same transfer IDs — TigerBeetle returns `exists`. |
-| stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(stripe_pi_id)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
+| free_tier_reset | (subscription_id, year_month) | One periodic free-plan deposit per subscription period. Re-running the deposit job produces the same transfer IDs — TigerBeetle returns `exists`. |
+| stripe_deposit | (task_id) | One deposit per task. Duplicate Stripe webhooks produce duplicate task rows blocked by `UNIQUE(idempotency_key)` in PostgreSQL — the first layer. Same task_id → same transfer ID → TigerBeetle deduplication — the second layer. |
 | dispute_debit | (task_id) | One debit per dispute task. Uses `KindDisputeDebit` (8) in the kind byte, distinct from `KindStripeDeposit` (5), preventing ID collision between a deposit and a dispute sharing the same task_id. |
+| credit_expiry | (grant_id) | One expiry sweep per grant. Uses `KindCreditExpiry` (9), distinct from subscription and dispute flows. |
 
 Two layers of idempotency for Stripe deposits: PostgreSQL `UNIQUE` prevents duplicate tasks, TigerBeetle's ID-based deduplication prevents duplicate transfers. Either layer alone is sufficient; both together handle every crash/retry/webhook-replay scenario.
 
@@ -887,10 +1013,12 @@ The packing functions are the only way to construct IDs. Distinct Go types preve
 ```go
 type OrgID  uint64
 type JobID  int64   // BIGINT GENERATED ALWAYS AS IDENTITY
+type SubscriptionID int64
 type TaskID int64
+type GrantID int64
 
-type AccountID  struct{ raw tb.Uint128 }  // cannot be used as TransferID
-type TransferID struct{ raw tb.Uint128 }  // cannot be used as AccountID
+type AccountID  struct{ raw types.Uint128 }  // cannot be used as TransferID
+type TransferID struct{ raw types.Uint128 }  // cannot be used as AccountID
 
 func OrgAccountID(org OrgID, t OrgAcctType) AccountID {
     var id [16]byte
@@ -915,11 +1043,12 @@ func VMTransferID(job JobID, seq uint32, leg Leg, kind XferKind) TransferID {
     return TransferID{tb.BytesToUint128(id)}
 }
 
-func FreeTierResetID(org OrgID, year uint16, month uint8) TransferID {
+func SubscriptionPeriodID(sub SubscriptionID, periodStart time.Time, kind XferKind) TransferID {
+    t := periodStart.UTC()
     var id [16]byte
-    binary.LittleEndian.PutUint32(id[0:4], uint32(year)*12+uint32(month))
-    id[5] = uint8(KindFreeTierReset)
-    binary.LittleEndian.PutUint64(id[8:16], uint64(org))
+    binary.LittleEndian.PutUint32(id[0:4], uint32(t.Year())*12+uint32(t.Month()))
+    id[5] = uint8(kind)
+    binary.LittleEndian.PutUint64(id[8:16], uint64(sub))
     return TransferID{tb.BytesToUint128(id)}
 }
 
@@ -927,6 +1056,13 @@ func StripeDepositID(task TaskID, kind XferKind) TransferID {
     var id [16]byte
     id[5] = uint8(kind)
     binary.LittleEndian.PutUint64(id[8:16], uint64(task))
+    return TransferID{tb.BytesToUint128(id)}
+}
+
+func CreditExpiryID(grant GrantID) TransferID {
+    var id [16]byte
+    id[5] = uint8(KindCreditExpiry)
+    binary.LittleEndian.PutUint64(id[8:16], uint64(grant))
     return TransferID{tb.BytesToUint128(id)}
 }
 ```
@@ -1046,8 +1182,10 @@ Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
   ├─ 3. Org provisioning (idempotent, skip if exists)
   │     PostgreSQL upsert + TigerBeetle create_accounts
   │
-  ├─ 4. Pricing lookup: read org_pricing from PostgreSQL (~1ms)
-  │     Compute reservation = (vcpus × vcpu_rate + mem_gib × mem_rate) × WINDOW
+  ├─ 4. Pricing lookup under pg_advisory_xact_lock(org_id::bigint) (~1ms)
+  │     Read active subscription, plan, and optional org_pricing_overrides
+  │     Select pricing phase: free_tier, included, or overage
+  │     Compute reservation = rate_card(dimensions) × WINDOW
   │
   ├─ 5. TigerBeetle reservation (two round trips, ~2ms)
   │     a. Pending transfer: debit {org}/free-tier → credit operator/free-tier-expense
@@ -1065,7 +1203,7 @@ Client → POST /api/v1/vms {vcpus: 2, mem_mib: 512}
 
 **Fail-closed policy**: If TigerBeetle is unavailable, no VMs launch (503). Fail-open on a billing gate means giving away free compute with no ledger record. The orchestrator does not maintain a local balance cache or "grace period" — TigerBeetle is the single source of truth for balance enforcement.
 
-**Latency budget**: JWT validation is in-process (~0ms). PostgreSQL pricing lookup is ~1ms. TigerBeetle reservation is ~2ms (two round trips at ~1ms each). Total gate overhead is ~3ms, negligible against Firecracker's ~125ms snapshot boot.
+**Latency budget**: JWT validation is in-process (~0ms). PostgreSQL pricing lookup plus advisory lock is ~1ms. TigerBeetle reservation is ~2ms (two round trips at ~1ms each). Total gate overhead is still negligible against Firecracker's ~125ms snapshot boot.
 
 **Void-on-boot-failure**: If Firecracker fails to start after funds are reserved, the orchestrator immediately voids the pending transfers. The transfer IDs for the void are deterministic — `VMTransferID(jobID, 0, leg, KindVoid)` — so a crash between the failed boot and the void is recovered on restart by resubmitting the same void.
 
@@ -1086,33 +1224,33 @@ stripe-webhook-worker    Next.js API (webhook)      TigerBeetle :3320 (Go client
                          PostgreSQL (task queue)
 ```
 
-The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads TigerBeetle for balance display only (current balance = `credits_posted - debits_posted` on the org's credit account plus `credits_posted - debits_posted` on the free-tier account).
+The orchestrator talks to TigerBeetle directly via the Go client — not through a Next.js API layer. This means billing logic (reservation, settlement, void) lives in the Go orchestrator binary, not in the Next.js application. The Next.js Sandbox app reads TigerBeetle for aggregate balance display and PostgreSQL for product-specific grant attribution.
 
 The machine user identity is stored in TigerBeetle's `user_data` fields on transfers for audit. It is not used for access control — network binding (`127.0.0.1:3320`) is the only access control mechanism.
 
-#### Free tier reset flow
+#### Subscription credit deposit flow
 
-Monthly cron (1st of each month) resets every org's free-tier account. The org list comes from PostgreSQL's `orgs` table — it contains exactly the set of orgs that have been provisioned (have TigerBeetle accounts), avoiding lookups for Zitadel orgs that have never authenticated.
+Included credits are deposited per subscription period, not via a global "reset every org on the 1st" job. The scheduler walks active subscriptions whose current period has started and materializes the corresponding grant for that period exactly once.
 
 ```
-Cron (1st of month, systemd timer)
+Cron (daily, systemd timer)
   │
-  ├─ 1. Query PostgreSQL: SELECT org_id FROM orgs
+  ├─ 1. Query PostgreSQL: active subscriptions whose current_period_start <= now()
   │
-  ├─ 2. For each org:
-  │     ├─ Derive transfer ID: FreeTierResetID(orgID, year, month)
-  │     ├─ Derive account IDs:
-  │     │   debit:  OperatorAccountID(FreeTierPool)
-  │     │   credit: OrgAccountID(orgID, FreeTier)
-  │     ├─ Submit transfer with flags: balancing_credit
-  │     └─ TigerBeetle returns `created` or `exists` (idempotent)
+  ├─ 2. For each subscription:
+  │     ├─ Load plan
+  │     ├─ If included_credits = 0: skip
+  │     ├─ Check UNIQUE(subscription_id, period_start, account_type)
+  │     ├─ Derive transfer ID from subscription_id + period marker
+  │     ├─ Choose source/account:
+  │     │   free plan       → source=free_tier,   debit FreeTierPool  → credit org/FreeTier
+  │     │   paid metered    → source=subscription, debit StripeHolding → credit org/Credit
+  │     └─ Insert credit_grants row for this product period
   │
-  └─ 3. Log summary to ClickHouse
+  └─ 3. Log summary to ClickHouse / billing_events
 ```
 
-Idempotency: The transfer ID encodes `(org_id, year, month)`. Re-running the cron (after a crash, or manually) submits the same IDs — TigerBeetle returns `exists` for already-processed orgs. No partial-reset corruption is possible.
-
-Edge case — org created mid-reset: If a new org is provisioned after the cron reads the org list but before it finishes, the new org misses this month's reset. Acceptable — they get their free tier on next month's run, or on a manual re-trigger.
+Idempotency is two-layered: PostgreSQL blocks duplicate grant rows for the same `(subscription_id, period_start, account_type)`, and TigerBeetle blocks duplicate transfers by deterministic ID. Annual subscriptions still deposit monthly drips rather than a single twelve-month grant.
 
 #### Stripe payment → org credit: identity resolution
 
@@ -1126,9 +1264,9 @@ Stripe webhook (payment_intent.succeeded)
   ├─ 2. PostgreSQL: SELECT org_id FROM orgs WHERE stripe_customer_id = $1
   │     (mapping created when the org first initiates a Stripe Checkout session)
   │
-  ├─ 3. PostgreSQL: INSERT INTO tasks (task_type, payload, stripe_pi_id)
-  │     VALUES ('credit_org', {...}, payment_intent_id)
-  │     ON CONFLICT (stripe_pi_id) DO NOTHING
+  ├─ 3. PostgreSQL: INSERT INTO tasks (task_type, payload, idempotency_key)
+  │     VALUES ('stripe_purchase_deposit', {...}, payment_intent_id)
+  │     ON CONFLICT (idempotency_key) DO NOTHING
   │     RETURNING task_id
   │     (UNIQUE constraint = first idempotency layer)
   │
@@ -1141,88 +1279,96 @@ Stripe webhook (payment_intent.succeeded)
   │     │   (TigerBeetle deduplication = second idempotency layer)
   │     └─ Mark task completed
   │
-  └─ 5. If transfer fails → task stays pending, retried on next poll
+  └─ 5. If transfer fails → task enters retrying/dead state per billing queue policy
 ```
 
-The `stripe_customer_id` column on the `orgs` table is set when the org first creates a Stripe Checkout session (before payment). Both the sandbox and storefront databases have this column — each app creates its own Stripe customer for the org. A shared billing database was considered and rejected: two columns across two databases is less complexity than a third database for marginal deduplication.
+`stripe_customer_id` is owned by the billing package in the `sandbox.orgs` table. Product-local databases key off `org_id`; they do not duplicate Stripe customer mapping or billing subscription state.
 
 ### Payments: Stripe (external)
 
-Accepted external dependency. Go SDK: `github.com/stripe/stripe-go/v82` (pin to latest stable at implementation time; verify import paths match). Three funding sources feed into TigerBeetle accounts:
+Accepted external dependency. Go SDK: `github.com/stripe/stripe-go/v85`. The implementation uses `stripe.NewClient(apiKey)` and `webhook.ConstructEvent(payload, signature, secret)`.
+
+Stripe is cash collection and subscription-lifecycle truth. It is not the metering sink. The billing system branches on the product's billing model.
 
 #### Prepaid credits (one-time purchase)
 
-Customer buys credits via Stripe Checkout (card or ACH). No subscription, no commitment.
+Customer buys credits via `POST /v1/checkout/sessions` in `mode=payment`. On `payment_intent.succeeded`, the worker enqueues `stripe_purchase_deposit`, derives `StripeDepositID(task_id, KindStripeDeposit)`, and posts:
 
 ```
-Stripe Checkout session completes
-  → payment_intent.succeeded webhook
-  → PostgreSQL task row (stripe_pi_id UNIQUE = idempotency anchor)
-  → Worker derives transfer ID: StripeDepositID(task_id, KindStripeDeposit)
-  → Worker posts TigerBeetle transfer:
-      debit:  OperatorAccountID(StripeHolding)
-      credit: OrgAccountID(orgID, Credit)
-      amount: purchased_amount_in_ledger_units
-      user_data_64: org_id
+debit:  OperatorAccountID(StripeHolding)
+credit: OrgAccountID(orgID, Credit)
+amount: purchased_amount_in_ledger_units
 ```
 
-#### Monthly plan (subscription with included credits)
+The corresponding `credit_grants` row is product-scoped (`source='purchase'`) even though TigerBeetle remains aggregate per org.
 
-Customer subscribes to a plan ($X/month or $X×10/year). Each billing period, included credits are deposited into their account.
+#### Metered subscriptions (included credits plus optional overage)
 
-```
-Stripe invoice.paid webhook
-  → PostgreSQL task row (stripe_pi_id UNIQUE = idempotency anchor)
-  → Worker derives transfer ID: StripeDepositID(task_id, KindSubscriptionDeposit)
-  → Worker posts TigerBeetle transfer:
-      debit:  OperatorAccountID(StripeHolding)
-      credit: OrgAccountID(orgID, Credit)
-      amount: plan_included_credits
-      user_data_64: org_id
-```
-
-Annual billing is identical — Stripe handles the billing cadence, TigerBeetle just sees credit deposits. Overage beyond included credits draws from any existing prepaid balance. If both are exhausted, VMs stop launching.
-
-#### Free tier (monthly reset, no Stripe)
-
-Every org gets a monthly allowance of compute. No credit card required. Resets on the 1st via systemd timer.
+Customer subscribes via `POST /v1/checkout/sessions` in `mode=subscription`. Stripe collects the invoice; the periodic deposit job materializes the included credits into TigerBeetle plus PostgreSQL:
 
 ```
-Monthly cron (1st of month):
-  For each org (from PostgreSQL orgs table):
-    Transfer {
-      id:     FreeTierResetID(orgID, year, month)   ← deterministic, idempotent
-      debit:  OperatorAccountID(FreeTierPool)
-      credit: OrgAccountID(orgID, FreeTier)
-      amount: MONTHLY_ALLOWANCE
-      flags:  balancing_credit  ← caps at allowance, doesn't stack
-      user_data_64: org_id
-    }
+free plan       → debit FreeTierPool   → credit org/FreeTier   (source='free_tier')
+paid metered    → debit StripeHolding  → credit org/Credit     (source='subscription')
 ```
 
-`balancing_credit` prevents accumulation — if 200 of 1000 units remain, the reset brings the account to 1000, not 1200.
+The overage decision is not made in Stripe. It is made at reservation boundaries in PostgreSQL by checking whether included-grant eligibility remains for that product under the org advisory lock. If included credits are exhausted and the plan exposes `overage_unit_rates`, the next reservation window is priced at the overage rate card. There is no mid-window split between included and overage phases.
+
+Annual billing uses the same subscription rows with `cadence='annual'`, but included credits are still deposited monthly. This reduces operator exposure if the annual invoice is later disputed.
+
+#### Licensed subscriptions
+
+Licensed products do not create `credit_grants`. On `invoice.paid`, the worker enqueues `stripe_licensed_charge` and records the recurring invoice directly in TigerBeetle:
+
+```
+debit:  OperatorAccountID(StripeHolding)
+credit: OperatorAccountID(Revenue)
+amount: licensed_invoice_amount
+```
+
+Access is then gated by `subscriptions.status`, not by a draw-down account balance.
+
+#### Smart Retries and cancellation
+
+Smart Retries is a Stripe Dashboard setting, not an API parameter. This design assumes:
+
+- Smart Retries enabled
+- retry window configured to `8` attempts within `2 weeks`
+- terminal action configured to cancel the subscription
+
+Under that configuration, every failed attempt emits `invoice.payment_failed`, eventual recovery emits `invoice.paid`, and retry exhaustion emits `customer.subscription.deleted`. If the Stripe account is configured to leave subscriptions `past_due` or `unpaid` instead, the billing package assumptions no longer hold.
+
+Annual cancellation with refund uses `POST /v1/credit_notes` against the finalized invoice before deleting the subscription. `DELETE /v1/subscriptions/{id}` with `prorate=true` alone is not the refund artifact this architecture relies on.
 
 #### Storefront payments
 
-Separate from sandbox billing. Standard Stripe Checkout sessions for server purchases, Stripe Billing for monthly recurring. Webhook-driven provisioning: `payment_intent.succeeded` → PostgreSQL task row → provisioning worker. No TigerBeetle involvement — storefront orders are simple purchase transactions, not metered usage.
+Storefront still uses standard Stripe Checkout and Stripe Billing for hardware/server purchases. Those are product transactions, not metered balance movements. The billing package owns customer correlation and subscription cash collection, but storefront order provisioning remains product-local.
 
 #### Customer-facing usage
 
-Usage visibility is a Next.js page querying ClickHouse directly, not Stripe's dashboard. Current balance is read from TigerBeetle. Stripe is the payment rail, not the usage display.
+Usage visibility is a Next.js page backed by ClickHouse plus TigerBeetle, not Stripe's dashboard. Stripe is the payment rail, not the usage display.
 
 ### Task Queue: PostgreSQL SKIP LOCKED
 
-No message broker. Async work (provisioning after payment, webhook processing, Stripe sync retries) uses PostgreSQL as a task queue:
+No message broker. Async billing work (webhook side effects, periodic deposits, dispute handling, trust-tier evaluation) uses PostgreSQL as a task queue with retries and dead-letter visibility:
 
 ```sql
-SELECT * FROM tasks
-WHERE status = 'pending' AND scheduled_at <= now()
-ORDER BY scheduled_at
-FOR UPDATE SKIP LOCKED
-LIMIT 1
+UPDATE tasks
+SET status = 'claimed', claimed_at = now(), attempts = attempts + 1
+WHERE task_id = (
+    SELECT task_id
+    FROM tasks
+    WHERE status IN ('pending', 'retrying')
+      AND (next_retry_at IS NULL OR next_retry_at <= now())
+    ORDER BY scheduled_at
+    FOR UPDATE SKIP LOCKED
+    LIMIT 1
+)
+RETURNING *;
 ```
 
-This handles the concurrency patterns both apps need without adding infrastructure. When fan-out or multi-node coordination becomes necessary, NATS JetStream is the upgrade path — single Go binary, ~50 MB, built-in persistence. Kafka is categorically excluded for single-node deployments.
+On failure, the worker transitions the row to `retrying` with exponential backoff (`5s, 10s, 20s, 40s, 80s`). When `attempts >= max_attempts`, the row moves to `dead` and requires explicit operator replay or resolution.
+
+This covers the current single-node concurrency patterns without adding infrastructure. When fan-out or multi-node coordination becomes necessary, NATS JetStream is the first upgrade path. Kafka remains categorically excluded for single-node deployments.
 
 ### Messaging: Deferred
 
