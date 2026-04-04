@@ -76,17 +76,20 @@ setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 server-profile: ## Build Nix server profile (golden image closure)
 	nix build .#server-profile --print-out-paths
 
+SOPS_SECRETS = $(CURDIR)/ansible/group_vars/all/secrets.sops.yml
+TOFU_ENV = LATITUDESH_AUTH_TOKEN=$$(sops -d --extract '["latitudesh_auth_token"]' $(SOPS_SECRETS))
+
 provision: ## Provision bare metal via OpenTofu, generate Ansible inventory
 	@test -f terraform/terraform.tfvars.json || \
 		{ echo "Error: terraform/terraform.tfvars.json not found."; \
 		  echo "Copy the example and fill in your project_id:"; \
 		  echo "  cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json"; \
 		  exit 1; }
-	cd terraform && tofu init -input=false && tofu apply -var-file=terraform.tfvars.json
+	cd terraform && $(TOFU_ENV) tofu init -input=false && $(TOFU_ENV) tofu apply -auto-approve -var-file=terraform.tfvars.json
 	./scripts/generate-inventory.sh
 
 deprovision: ## Destroy all bare metal infrastructure
-	cd terraform && tofu destroy -var-file=terraform.tfvars.json
+	cd terraform && $(TOFU_ENV) tofu destroy -auto-approve -var-file=terraform.tfvars.json
 	rm -f ansible/inventory/hosts.ini
 
 deploy: ## Deploy to all nodes (idempotent, no wipe)
