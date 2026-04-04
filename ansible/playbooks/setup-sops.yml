@@ -197,6 +197,7 @@
           billing_pg_password: "{{ _rand32g }}"
           stripe_secret_key: ""
           stripe_webhook_secret: ""
+          resend_api_key: ""
         dest: "{{ secrets_file }}"
         mode: "0600"
       no_log: true

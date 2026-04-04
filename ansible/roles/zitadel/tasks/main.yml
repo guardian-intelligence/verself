@@ -413,3 +413,66 @@
   until: >-
     zitadel_metrics.status == 200
     and 'projection_events_processed_total' in zitadel_metrics.content
+
+# --- SMTP email provider (Resend) ---
+# DefaultInstance.SMTPConfiguration only applies to new instances. For the
+# existing instance, configure SMTP via the Admin API. The PAT was exported
+# earlier in this role as zitadel_admin_pat.
+
+- name: List existing SMTP providers
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/admin/v1/email/smtp"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ zitadel_admin_pat }}"
+      Host: "{{ zitadel_domain }}"
+    return_content: true
+    status_code: 200
+  register: zitadel_smtp_list
+  when: resend_api_key | default('', true) | length > 0
+
+- name: Check for existing SMTP provider
+  ansible.builtin.set_fact:
+    zitadel_smtp_exists: >-
+      {{ (zitadel_smtp_list.json.result | default([]) | length) > 0 }}
+  when: resend_api_key | default('', true) | length > 0
+
+- name: Create SMTP provider via Admin API
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/admin/v1/email/smtp"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_admin_pat }}"
+      Host: "{{ zitadel_domain }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      senderAddress: "{{ resend_sender_address }}"
+      senderName: "{{ resend_sender_name }}"
+      tls: "{{ zitadel_smtp_tls }}"
+      host: "{{ zitadel_smtp_host }}"
+      user: "{{ zitadel_smtp_user }}"
+      description: "Resend"
+      plain:
+        password: "{{ resend_api_key }}"
+    return_content: true
+    status_code: [200, 201]
+  register: zitadel_smtp_created
+  no_log: true
+  when:
+    - resend_api_key | default('', true) | length > 0
+    - not zitadel_smtp_exists
+
+- name: Activate SMTP provider
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port
+      }}/admin/v1/email/smtp/{{ zitadel_smtp_created.json.id }}/_activate
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_admin_pat }}"
+      Host: "{{ zitadel_domain }}"
+    status_code: 200
+  when:
+    - resend_api_key | default('', true) | length > 0
+    - not zitadel_smtp_exists

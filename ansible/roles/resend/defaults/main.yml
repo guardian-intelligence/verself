@@ -1,0 +1,5 @@
+---
+# Resend role defaults.
+
+resend_api_url: "https://api.resend.com"
+resend_region: "us-east-1"

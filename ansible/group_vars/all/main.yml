@@ -11,6 +11,12 @@ fm_bin: "/opt/forge-metal/profile/bin"
 #   git.<domain>    → Forgejo
 forge_metal_domain: "anveio.com"
 
+# Transactional email (Resend)
+resend_subdomain: notify
+resend_domain: "{{ resend_subdomain }}.{{ forge_metal_domain }}"
+resend_sender_address: "noreply@{{ resend_domain }}"
+resend_sender_name: forge-metal
+
 # WireGuard
 wireguard_interface: wg0
 wireguard_port: 51820
