@@ -1,6 +1,7 @@
 [Unit]
 Description=HyperDX Frontend (Next.js)
-After=network.target hyperdx-api.service
+After=nftables.service network.target hyperdx-api.service
+Requires=nftables.service
 
 [Service]
 Type=simple

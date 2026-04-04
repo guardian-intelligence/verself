@@ -135,7 +135,8 @@
     content: |
       [Unit]
       Description=PostgreSQL
-      After=network.target
+      After=nftables.service network.target
+      Requires=nftables.service
 
       [Service]
       Type=simple

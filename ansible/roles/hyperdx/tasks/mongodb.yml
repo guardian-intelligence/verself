@@ -29,8 +29,25 @@
     group: mongodb
     mode: "0755"
 
+- name: Create mongod systemd override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/mongod.service.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy mongod nftables dependency override
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      After=nftables.service
+      Requires=nftables.service
+    dest: /etc/systemd/system/mongod.service.d/nftables.conf
+    mode: "0644"
+  notify: restart mongod
+
 - name: Enable and start MongoDB
   ansible.builtin.systemd:
     name: mongod
     enabled: true
     state: started
+    daemon_reload: true

@@ -1,7 +1,7 @@
 [Unit]
 Description=HyperDX API Server
-After=network.target mongod.service clickhouse-server.service
-Requires=mongod.service clickhouse-server.service
+After=nftables.service network.target mongod.service clickhouse-server.service
+Requires=nftables.service mongod.service clickhouse-server.service
 
 [Service]
 Type=simple

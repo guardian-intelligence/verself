@@ -1,6 +1,7 @@
 [Unit]
 Description=Verdaccio npm registry mirror
-After=network.target
+After=nftables.service network.target
+Requires=nftables.service
 
 [Service]
 Type=simple
