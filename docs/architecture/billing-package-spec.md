@@ -1,4 +1,4 @@
-# `internal/billing` Package Specification — Revision 3
+# `internal/billing` Package Specification
 
 Package `billing` is the financial core of forge-metal. It owns org financial
 provisioning, product pricing lookup, credit grant lifecycle, quota enforcement, Stripe cash
@@ -28,10 +28,9 @@ The deliberate cross-system rule is:
 4. ClickHouse records what actually happened.
 
 The TigerBeetle account model and deterministic ID derivation scheme from
-`docs/architecture/application-stack-rfc.md` remain in force. This revision does not introduce
-an alternate account ID scheme.
+`docs/architecture/application-stack-rfc.md` are normative for this package.
 
-This document makes six material design decisions that were previously ambiguous:
+This document makes six material design decisions:
 
 - Each credit grant gets its own TigerBeetle account with
   `DebitsMustNotExceedCredits`. TigerBeetle is the single source of financial
@@ -43,9 +42,9 @@ This document makes six material design decisions that were previously ambiguous
   the ceiling; `Reserve` enforces it at reservation boundaries using ClickHouse actuals.
 - Metering rows record `actor_id` (the Zitadel user who triggered the usage). Per-member
   spending policy is deferred; the column is recorded now to avoid losing attribution history.
-- Stripe usage-record synchronization is removed from the design. The current Stripe surface
-  has moved toward billing meters, and forge-metal does not require Stripe to be the metering
-  source of truth.
+- Stripe usage-record synchronization is not part of this design. Stripe billing meters are
+  sufficient for Stripe-facing lifecycle needs, and forge-metal does not require Stripe to be
+  the metering source of truth.
 - Annual cancellation with refund is modeled as credit-note issuance against the finalized
   Stripe invoice, not as `DELETE /v1/subscriptions/{id}` with `prorate=true` alone.
 
@@ -55,7 +54,7 @@ Verified upstream contracts as of 2026-04-04:
 |------------|------------------|-------|
 | `github.com/tigerbeetle/tigerbeetle-go` | `v0.16.78` | No `0.17.x` or `0.18.x` release line is published on the Go module proxy. |
 | `github.com/stripe/stripe-go/v85` | `v85.0.0` | `v85.1.0-*` prereleases exist; no stable `v86` exists. |
-| `pgregory.net/rapid` | `v1.2.0` | `StateMachine` interface unchanged; `StateMachineActions` additionally accepts `func(rapid.TB)` methods. |
+| `pgregory.net/rapid` | `v1.2.0` | `StateMachineActions` accepts `func(rapid.TB)` methods. |
 
 ---
 
@@ -104,7 +103,7 @@ CREATE TABLE products (
 | `meter_unit` | NOT NULL | Primary display unit: `'vcpu_second'`, `'token'`, `'request'`, `'gb_month'`, `'unit'` |
 | `billing_model` | NOT NULL | `'metered'`, `'licensed'`, `'one_time'` |
 
-`billing_model` is a product-level invariant in this revision. A product does not mix
+`billing_model` is a product-level invariant. A product does not mix
 metered, licensed, and one-time plans under the same `product_id`.
 
 **Billing models**
@@ -179,7 +178,7 @@ collected up front, but the credit deposit schedule is monthly drip.
   reservations fail with `ErrInsufficientBalance` unless the org also has eligible prepaid
   grants for that product and the product's default plan is explicitly configured.
 
-The previous scalar `overage_rate` is removed. A single integer is not expressive enough for
+`overage_rate` is intentionally not part of this schema. A single integer is not expressive enough for
 multi-dimensional pricing such as `{vcpu_second, gib_second}`.
 
 **Future refinement: rate card versioning.** `unit_rates` and `overage_unit_rates` live
@@ -395,7 +394,7 @@ exposure if the annual charge is disputed.
 ### 1.5 Credit Grants
 
 Each `credit_grants` row is an immutable catalog entry for one TigerBeetle grant account. The
-central rule in Revision 3 is:
+central rule is:
 
 > TigerBeetle answers "how much remains on this grant right now?" PostgreSQL answers
 > "which grants are eligible to fund this product, and in what order?"
@@ -446,8 +445,8 @@ Required source meanings:
 
 The billing system keeps grant state aligned by construction:
 
-1. **Grant creation**: create the TigerBeetle grant account, fund it, then insert the
-   immutable `credit_grants` row.
+1. **Grant creation**: allocate `grant_id`, create the TigerBeetle grant account, fund it,
+   then insert the immutable `credit_grants` row using that `grant_id`.
 2. **Grant consumption**: `Reserve`, `Settle`, `Renew`, `HandleDispute`, and
    `ExpireCredits` operate directly on the grant account that the row names via `grant_id`.
 3. **Grant closure**: expiry or dispute workflows drain the grant account, then set
@@ -469,19 +468,17 @@ Expiration policies:
 | `free_tier` | End of month | Monthly allowance |
 | `refund` | Same as original grant | Refund credits inherit the original expiry policy |
 
-**Decision: one TigerBeetle account per grant**
-
-Reasons:
+One TigerBeetle account per grant:
 
 - `DebitsMustNotExceedCredits` enforces each grant's ceiling directly in TigerBeetle.
 - No PostgreSQL-side serialization is required on the financial hot path; TigerBeetle
   serializes concurrent debits atomically.
 - `consumed` is derived from `debits_posted` on the grant account.
 - `remaining` is derived from `credits_posted - debits_posted - debits_pending`.
-- Reconciliation no longer needs to repair grant drift between mutable PostgreSQL counters and
-  TigerBeetle aggregate balances.
+- Reconciliation no longer needs to repair grant drift between PostgreSQL counters and
+  TigerBeetle. The grant account itself is the balance.
 
-`grant_id` remains a PostgreSQL `BIGINT GENERATED ALWAYS AS IDENTITY`. That is sufficient for
+`grant_id` is a PostgreSQL `BIGINT GENERATED ALWAYS AS IDENTITY`. That is sufficient for
 `GrantAccountID(grant_id)` and `CreditExpiryID(grant_id)`: the high 64 bits remain globally
 increasing, which is what TigerBeetle's LSM ordering cares about.
 
@@ -729,7 +726,7 @@ Required invariants:
 `source_ref` is opaque to the billing package. For sandbox it is the decimal string form of
 `job_id`.
 
-### 1.11 Jobs (product-specific, unchanged in ownership)
+### 1.11 Jobs (product-specific)
 
 The `jobs` table stays product-specific. The billing package never owns product execution
 state directly. Each product type may keep its own control-plane tables:
@@ -771,7 +768,7 @@ Normative versions:
 
 ### 2.2 ID Types
 
-Reproduced from the RFC with additions for dispute debits and credit expiry.
+Reproduced from the RFC.
 
 ```go
 type OrgID  uint64
@@ -830,7 +827,7 @@ const (
 ID derivation functions are defined in the RFC (§ "Go type system"): `GrantAccountID`,
 `OperatorAccountID`, `VMTransferID`, `SubscriptionPeriodID`, `StripeDepositID`, and
 `CreditExpiryID`. `AccountID.ParseGrant()` reverses `GrantAccountID`, and
-`TransferID.Parse()` returns `grant_idx` rather than the old two-leg enum.
+`TransferID.Parse()` returns `grant_idx`.
 
 `SubscriptionPeriodID(subscriptionID, periodStartUTC, kind)` uses the same transfer-ID
 layout as the RFC: `source_id = subscription_id` in the high 64 bits, `seq = year*12+month`
@@ -1043,7 +1040,7 @@ type ReserveRequest struct {
 //        WHERE org_id = :org_id AND product_id = :product_id
 //          AND pricing_phase = 'overage'
 //          AND started_at >= :current_period_start
-//      If consumed + windowCost > overage_cap_units, return ErrOverageCeilingExceeded.
+//      If currentOverageUnits + windowCost > overage_cap_units, return ErrOverageCeilingExceeded.
 //   9. Reserve windowCost in TigerBeetle by walking the eligible grant waterfall:
 //      for i, grant := range eligibleGrants {
 //          submit pending balancing_debit using
@@ -1118,11 +1115,12 @@ type CreditGrant struct {
 // immutable PostgreSQL catalog row.
 //
 // Flow:
-//   1. Create TigerBeetle account for GrantAccountID(grantID) with
+//   1. Allocate grant_id from PostgreSQL
+//   2. Create TigerBeetle account for GrantAccountID(grantID) with
 //      DebitsMustNotExceedCredits and History
-//   2. Post funding transfer from the source operator account to GrantAccountID(grantID)
-//   3. Insert credit_grants row in PostgreSQL
-//   4. Log billing event
+//   3. Post funding transfer from the source operator account to GrantAccountID(grantID)
+//   4. Insert credit_grants row in PostgreSQL using the allocated grant_id
+//   5. Log billing event
 //
 // Error conditions:
 //   - TigerBeetle unavailable: returns error (no grant row created)
@@ -1238,7 +1236,7 @@ type CancelSubscriptionRequest struct {
 // Immediate annual cancellation with refund uses:
 //   1. POST /v1/credit_notes against the finalized annual invoice
 //   2. DELETE /v1/subscriptions/{id} with prorate=false
-//   3. Optional void of remaining grants in PostgreSQL/TigerBeetle
+//   3. Optional drain and closure of remaining active grant accounts
 //
 // Graceful cancellation uses:
 //   1. POST /v1/subscriptions/{id} with cancel_at_period_end=true
@@ -1293,12 +1291,8 @@ Reconciliation compares:
 - TigerBeetle grant accounts against PostgreSQL catalog rows to detect orphans
 
 It does not call Stripe usage-record endpoints. Stripe is not the metering source of truth.
-
-#### DetectBalanceDrift
-
-```go
-func (c *Client) DetectBalanceDrift(ctx context.Context) (DriftResult, error)
-```
+There is no separate grant-drift detector because PostgreSQL no longer stores mutable grant
+balances.
 
 #### EvaluateTrustTiers
 
@@ -1357,11 +1351,11 @@ at `v0.16.78`.
 
 Validated upstream facts:
 
-- `tb.NewClient(clusterID types.Uint128, addresses []string) (Client, error)` remains the
-  constructor signature; the older `concurrencyMax` parameter is gone.
-- `types.AccountFlags` and `types.TransferFlags` still expose the field names used in this
-  specification and still serialize through `.ToUint16()`.
-- `types.Transfer.Amount` is still `types.Uint128`, not `uint64`.
+- `tb.NewClient(clusterID types.Uint128, addresses []string) (Client, error)` is the
+  constructor signature.
+- `types.AccountFlags` and `types.TransferFlags` expose the field names used in this
+  specification and serialize through `.ToUint16()`.
+- `types.Transfer.Amount` is `types.Uint128`.
 - `types.TransferExists` is `46` and `types.TransferExceedsCredits` is `54`.
 
 ### 3.1 Client Construction
@@ -1401,8 +1395,8 @@ after the account has been drained and closed.
 
 #### Operator accounts
 
-Operator accounts remain unchanged. The addition relevant to this redesign is
-`ExpiredCredits`, which receives unused paid grant balances during expiry sweeps:
+Operator accounts include `ExpiredCredits`, which receives unused paid grant balances during
+expiry sweeps:
 
 ```go
 {
@@ -1641,12 +1635,12 @@ packed 16-byte arrays. Comparison: direct `==` works. Ordering: convert via `.Bi
 
 Validated upstream facts:
 
-- `stripe.NewClient(apiKey)` remains the recommended initialization path in `stripe-go/v85`.
-- `webhook.ConstructEvent(payload []byte, header string, secret string)` still delegates to
+- `stripe.NewClient(apiKey)` is the recommended initialization path in `stripe-go/v85`.
+- `webhook.ConstructEvent(payload []byte, header string, secret string)` delegates to
   `webhook.DefaultTolerance`, which is `300 * time.Second`.
-- The 3DS field path for Checkout in `v85.0.0` remains
+- The 3DS field path for Checkout in `v85.0.0` is
   `CheckoutSessionParams.PaymentMethodOptions.Card.RequestThreeDSecure`.
-- `v85.0.0` is the current stable SDK release. `v85.1.0-*` prereleases exist; no stable `v86`
+- `v85.0.0` is the stable SDK release. `v85.1.0-*` prereleases exist; no stable `v86`
   module is published.
 
 ### 4.1 Client Initialization
@@ -1853,18 +1847,17 @@ This specification does not call:
 
 Reason:
 
-- the current `stripe-go/v85` generated surface no longer exposes the old usage-record helper
-  APIs
-- current Stripe billing documentation has moved toward billing meters and meter events
+- the `stripe-go/v85` generated surface does not expose a usage-record helper API
+- Stripe billing documentation uses billing meters and meter events
 - forge-metal already has its own metering source of truth in ClickHouse plus its own balance
   enforcement in TigerBeetle
 
 If forge-metal later decides to mirror usage into Stripe Billing Meters, that is a separate
-design and not an implementation detail of this package revision.
+design and not an implementation detail of this package.
 
 ### 4.8 Test Inputs
 
-The test-card references in this specification are pinned to current Stripe docs:
+The test-card references in this specification are pinned to Stripe docs:
 
 - `4000000000003220`: 3DS Required, succeeds after authentication
 - `4000003720000278`: bypasses pending balance; it is not the canonical 3DS-required card
@@ -1881,7 +1874,7 @@ not as a 3DS trigger.
 Use `pgregory.net/rapid` `v1.2.0` against a real TigerBeetle instance and a real PostgreSQL
 database.
 
-The `rapid.StateMachine` interface itself is unchanged from `v1.1.0`:
+The `rapid.StateMachine` interface is:
 
 ```go
 type StateMachine interface {
@@ -1889,7 +1882,7 @@ type StateMachine interface {
 }
 ```
 
-`rapid.StateMachineActions` in `v1.2.0` additionally accepts action methods of type
+`rapid.StateMachineActions` in `v1.2.0` accepts action methods of type
 `func(rapid.TB)`, but the billing package test harness should continue using explicit
 `func(*rapid.T)` methods for clarity.
 
@@ -2126,7 +2119,7 @@ Key policies:
 Key policies:
 
 - **CheckQuotas**: fail closed.
-- **Metering write after settle**: TigerBeetle remains authoritative; reconciliation backfills
+- **Metering write after settle**: TigerBeetle is authoritative; reconciliation backfills
   or alerts.
 - **Reconcile**: fail immediately. Do not advance the watermark.
 
@@ -2279,10 +2272,8 @@ GET /internal/billing/v1/orgs/:org_id/usage?product_id=sandbox&since=<ts>&limit=
 
 ## Appendix B: Remaining Manual-Review Items
 
-- The shared billing schema still lives in the PostgreSQL database named `sandbox` because that
-  is current infrastructure truth. A future cutover may want to rename the database to
-  `billing`, but that is outside this document-only task.
-- The current Ansible billing credentials publish both `BILLING_PG_DSN` and `STOREFRONT_PG_DSN`.
+- The shared billing schema lives in the PostgreSQL database named `sandbox`.
+- The Ansible billing credentials publish both `BILLING_PG_DSN` and `STOREFRONT_PG_DSN`.
   The storefront application integration should be reviewed when `internal/billing` is
   implemented so the intended database ownership is explicit in code.
 - **Per-member spending policy** is deferred. `actor_id` is recorded in metering rows so

@@ -28,6 +28,12 @@ type seededGrant struct {
 func ensureTestProduct(t fatalHelper, db *sql.DB) {
 	t.Helper()
 
+	ensureMeteredProduct(t, db, billingTestProductID)
+}
+
+func ensureMeteredProduct(t fatalHelper, db *sql.DB, productID string) {
+	t.Helper()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -35,7 +41,7 @@ func ensureTestProduct(t fatalHelper, db *sql.DB) {
 		INSERT INTO products (product_id, display_name, meter_unit, billing_model)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT DO NOTHING
-	`, billingTestProductID, "Billing Test Product", "unit", "metered"); err != nil {
+	`, productID, "Billing Test Product", "unit", "metered"); err != nil {
 		t.Fatalf("insert test product: %v", err)
 	}
 }
@@ -43,7 +49,13 @@ func ensureTestProduct(t fatalHelper, db *sql.DB) {
 func seedGrantForTest(t fatalHelper, client *Client, db *sql.DB, tbClient tb.Client, orgID OrgID, sourceType GrantSourceType, amount uint64) seededGrant {
 	t.Helper()
 
-	ensureTestProduct(t, db)
+	return seedGrantForProductTest(t, client, db, tbClient, orgID, billingTestProductID, sourceType, amount)
+}
+
+func seedGrantForProductTest(t fatalHelper, client *Client, db *sql.DB, tbClient tb.Client, orgID OrgID, productID string, sourceType GrantSourceType, amount uint64) seededGrant {
+	t.Helper()
+
+	ensureMeteredProduct(t, db, productID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -57,7 +69,7 @@ func seedGrantForTest(t fatalHelper, client *Client, db *sql.DB, tbClient tb.Cli
 		INSERT INTO credit_grants (org_id, product_id, amount, source)
 		VALUES ($1, $2, $3, $4)
 		RETURNING grant_id
-	`, strconv.FormatUint(uint64(orgID), 10), billingTestProductID, int64(amount), sourceType.String()).Scan(&grantID); err != nil {
+	`, strconv.FormatUint(uint64(orgID), 10), productID, int64(amount), sourceType.String()).Scan(&grantID); err != nil {
 		t.Fatalf("insert grant row: %v", err)
 	}
 
@@ -140,5 +152,44 @@ func requireGrantAccount(t fatalHelper, tbClient tb.Client, grant seededGrant) {
 	}
 	if consumed != 0 {
 		t.Fatalf("grant %d: expected consumed 0, got %d", grant.grantID, consumed)
+	}
+}
+
+func requireGrantBalance(t fatalHelper, tbClient tb.Client, grantID GrantID, wantAvailable, wantPending, wantConsumed uint64) {
+	t.Helper()
+
+	accounts, err := tbClient.LookupAccounts([]tbtypes.Uint128{GrantAccountID(grantID).raw})
+	if err != nil {
+		t.Fatalf("lookup grant account %d: %v", grantID, err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 grant account for %d, got %d", grantID, len(accounts))
+	}
+
+	account := accounts[0]
+	available, err := availableFromAccount(account)
+	if err != nil {
+		t.Fatalf("grant %d available: %v", grantID, err)
+	}
+	pending, err := pendingFromAccount(account)
+	if err != nil {
+		t.Fatalf("grant %d pending: %v", grantID, err)
+	}
+	consumed, err := consumedFromAccount(account)
+	if err != nil {
+		t.Fatalf("grant %d consumed: %v", grantID, err)
+	}
+
+	if available != wantAvailable || pending != wantPending || consumed != wantConsumed {
+		t.Fatalf(
+			"grant %d: expected available=%d pending=%d consumed=%d, got available=%d pending=%d consumed=%d",
+			grantID,
+			wantAvailable,
+			wantPending,
+			wantConsumed,
+			available,
+			pending,
+			consumed,
+		)
 	}
 }

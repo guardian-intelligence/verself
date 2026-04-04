@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode"
@@ -23,6 +24,8 @@ import (
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"pgregory.net/rapid"
 )
+
+var ensureOrgStateMachineRunCounter atomic.Uint64
 
 func TestEnsureOrgStateMachine(t *testing.T) {
 	t.Parallel()
@@ -46,6 +49,7 @@ func TestEnsureOrgStateMachine(t *testing.T) {
 			client:           client,
 			pg:               env.pg,
 			tbClient:         env.tbClient,
+			orgOffset:        OrgID(ensureOrgStateMachineRunCounter.Add(1) * 1_000_000),
 			seen:             make(map[OrgID]struct{}),
 			expectedBalances: make(map[OrgID]Balance),
 			grants:           make(map[GrantID]seededGrant),
@@ -54,7 +58,7 @@ func TestEnsureOrgStateMachine(t *testing.T) {
 	})
 }
 
-func TestCreditGrantsSchemaAfterPerGrantMigration(t *testing.T) {
+func TestCreditGrantsSchemaMatchesCurrentBillingMigration(t *testing.T) {
 	t.Parallel()
 
 	pg, _ := startPostgresForBillingTests(t)
@@ -122,6 +126,7 @@ type ensureOrgStateMachine struct {
 	client           *Client
 	pg               *sql.DB
 	tbClient         tb.Client
+	orgOffset        OrgID
 	seen             map[OrgID]struct{}
 	expectedBalances map[OrgID]Balance
 	grants           map[GrantID]seededGrant
@@ -131,7 +136,7 @@ func (sm *ensureOrgStateMachine) OpEnsureOrg(t *rapid.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	orgID := OrgID(rapid.Uint64Range(1, 128).Draw(t, "org_id"))
+	orgID := sm.orgOffset + OrgID(rapid.Uint64Range(1, 128).Draw(t, "org_id"))
 	displayName := validDisplayName(rapid.String().Draw(t, "display_name"))
 
 	if err := sm.client.EnsureOrg(ctx, orgID, displayName); err != nil {
@@ -142,7 +147,7 @@ func (sm *ensureOrgStateMachine) OpEnsureOrg(t *rapid.T) {
 }
 
 func (sm *ensureOrgStateMachine) OpDepositCredits(t *rapid.T) {
-	orgID := OrgID(rapid.Uint64Range(1, 128).Draw(t, "org_id"))
+	orgID := sm.orgOffset + OrgID(rapid.Uint64Range(1, 128).Draw(t, "org_id"))
 	sourceType := GrantSourceType(rapid.Uint64Range(1, 5).Draw(t, "source_type"))
 	amount := rapid.Uint64Range(1, 1_000_000).Draw(t, "amount")
 

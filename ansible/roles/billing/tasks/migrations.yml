@@ -5,7 +5,7 @@
   run_once: true
   ansible.builtin.shell:
     cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../postgresql-migrations"
+    chdir: "{{ role_path }}/../../../postgresql-migrations"
     executable: /bin/bash
   register: billing_pg_migrations_local_hash
   changed_when: false
@@ -39,11 +39,102 @@
        != (billing_pg_migrations_local_hash.stdout.split()[0] | trim)
     or (billing_pg_table_probe.stdout | trim) == '0'
   block:
+    - name: Remove deployed PostgreSQL migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/postgresql-migrations
+        state: absent
+
+    - name: Create deployed PostgreSQL migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/postgresql-migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Upload PostgreSQL migrations
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../postgresql-migrations/"
+        src: "{{ role_path }}/../../../postgresql-migrations/"
         dest: /opt/forge-metal/postgresql-migrations/
         mode: "0644"
+
+    - name: Stop TigerBeetle before billing ledger reset
+      ansible.builtin.systemd:
+        name: tigerbeetle
+        state: stopped
+
+    - name: Remove TigerBeetle data file before billing ledger reset
+      ansible.builtin.file:
+        path: "{{ billing_tigerbeetle_data_file }}"
+        state: absent
+
+    - name: Format TigerBeetle data file for billing ledger reset
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/tigerbeetle format
+          --cluster={{ billing_tigerbeetle_cluster_id }}
+          --replica={{ billing_tigerbeetle_replica_id }}
+          --replica-count={{ billing_tigerbeetle_replica_count }}
+          {{ billing_tigerbeetle_data_file }}
+      become: true
+      become_user: tigerbeetle
+      changed_when: true
+
+    - name: Start TigerBeetle after billing ledger reset
+      ansible.builtin.systemd:
+        name: tigerbeetle
+        state: started
+
+    - name: Wait for TigerBeetle after billing ledger reset
+      ansible.builtin.wait_for:
+        host: "{{ services.tigerbeetle.host }}"
+        port: "{{ services.tigerbeetle.port }}"
+        timeout: 30
+
+    - name: Terminate sandbox connections before recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'sandbox' AND pid <> pg_backend_pid();"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Drop sandbox database before schema recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "DROP DATABASE IF EXISTS sandbox;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create sandbox database for billing schema
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE sandbox OWNER billing;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
 
     - name: Apply PostgreSQL migration files
       ansible.builtin.command:
@@ -59,7 +150,7 @@
         PGPASSWORD: "{{ postgresql_billing_password }}"
       loop: >-
         {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../postgresql-migrations/[0-9][0-9][0-9]_*.up.sql')
+          query('ansible.builtin.fileglob', role_path + '/../../../postgresql-migrations/[0-9][0-9][0-9]_*.up.sql')
           | map('basename')
           | sort
         }}
@@ -91,9 +182,6 @@
         END IF;
         IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'billing_cadence') THEN
           EXECUTE 'ALTER TYPE billing_cadence OWNER TO billing';
-        END IF;
-        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'grant_account') THEN
-          EXECUTE 'ALTER TYPE grant_account OWNER TO billing';
         END IF;
         IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
           EXECUTE 'ALTER TYPE task_status OWNER TO billing';
