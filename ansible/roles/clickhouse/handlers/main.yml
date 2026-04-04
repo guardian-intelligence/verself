@@ -1,11 +1,7 @@
 ---
-- name: Reload systemd
-  listen: reload systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
-
 - name: Restart ClickHouse
   listen: restart clickhouse
   ansible.builtin.systemd:
+    daemon_reload: true
     name: clickhouse-server
     state: restarted

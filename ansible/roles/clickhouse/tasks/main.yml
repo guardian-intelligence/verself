@@ -51,7 +51,6 @@
     dest: /etc/systemd/system/clickhouse-server.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart clickhouse
 
 - name: Enable and start ClickHouse

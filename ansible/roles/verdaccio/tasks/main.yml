@@ -70,7 +70,6 @@
     dest: /etc/systemd/system/verdaccio.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart verdaccio
 
 - name: Install js-x-ray for supply chain scanning

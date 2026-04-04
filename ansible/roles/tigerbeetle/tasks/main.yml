@@ -80,7 +80,6 @@
     dest: /etc/systemd/system/tigerbeetle.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart tigerbeetle
 
 - name: Apply TigerBeetle unit changes before proceeding

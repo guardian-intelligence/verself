@@ -204,12 +204,14 @@
     src: hyperdx-api.service.j2
     dest: /etc/systemd/system/hyperdx-api.service
     mode: "0644"
+  notify: restart hyperdx-api
 
 - name: Deploy HyperDX App systemd unit
   ansible.builtin.template:
     src: hyperdx-app.service.j2
     dest: /etc/systemd/system/hyperdx-app.service
     mode: "0644"
+  notify: restart hyperdx-app
 
 - name: Enable and start HyperDX API
   ansible.builtin.systemd:

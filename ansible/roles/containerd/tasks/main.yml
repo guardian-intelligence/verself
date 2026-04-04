@@ -51,7 +51,6 @@
     dest: /etc/systemd/system/containerd.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart containerd
 
 - name: Enable and start containerd

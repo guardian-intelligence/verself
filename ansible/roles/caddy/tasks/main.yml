@@ -45,7 +45,6 @@
     dest: /etc/systemd/system/caddy.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart caddy
 
 - name: Enable and start Caddy
