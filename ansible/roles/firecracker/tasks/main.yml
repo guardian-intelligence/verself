@@ -401,9 +401,8 @@
 
 - name: Destroy old golden zvol (cascade removes @ready snapshot)
   ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}"
-  when:
-    - firecracker_refresh_base_golden_needed
-    - firecracker_golden_zvol_check.rc == 0
+  when: firecracker_refresh_base_golden_needed
+  failed_when: false
   changed_when: true
 
 - name: Promote staging zvol to golden

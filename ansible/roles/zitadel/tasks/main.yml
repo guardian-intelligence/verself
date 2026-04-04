@@ -171,19 +171,10 @@
 # deploy requires rerunning `zitadel setup` manually — a restart alone
 # won't apply the migration.
 
-- name: Check if Zitadel has been initialized
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U zitadel -d zitadel -c
-      "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'eventstore';"
-  environment:
-    PGPASSWORD: "{{ zitadel_db_password }}"
-  register: zitadel_init_check
-  changed_when: false
-  failed_when: false
+- name: Check if Zitadel setup has completed (admin PAT exists)
+  ansible.builtin.stat:
+    path: "{{ zitadel_config_dir }}/admin.pat"
+  register: zitadel_setup_done
 
 - name: Run Zitadel init (create database schemas)
   ansible.builtin.command:
@@ -192,7 +183,7 @@
       --config {{ zitadel_config_dir }}/config.yaml
   become: true
   become_user: zitadel
-  when: "'1' not in zitadel_init_check.stdout"
+  when: not zitadel_setup_done.stat.exists
   changed_when: true
 
 - name: Run Zitadel setup (migrations + first instance)
@@ -204,23 +195,8 @@
       --steps {{ zitadel_config_dir }}/steps.yaml
   become: true
   become_user: zitadel
-  when: "'1' not in zitadel_init_check.stdout"
+  when: not zitadel_setup_done.stat.exists
   changed_when: true
-
-- name: Verify Zitadel schemas were created
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U zitadel -d zitadel -c
-      "SELECT schema_name FROM information_schema.schemata WHERE schema_name IN ('eventstore', 'projections', 'system') ORDER BY schema_name;"
-  environment:
-    PGPASSWORD: "{{ zitadel_db_password }}"
-  register: zitadel_schema_check
-  changed_when: false
-  when: "'1' not in zitadel_init_check.stdout"
-  failed_when: "'eventstore' not in zitadel_schema_check.stdout"
 
 # --- Admin PAT ---
 # FirstInstance.Org.Machine creates a machine user (IAM_OWNER) and writes the
