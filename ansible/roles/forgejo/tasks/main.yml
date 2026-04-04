@@ -33,7 +33,6 @@
     dest: /etc/systemd/system/forgejo.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart forgejo
 
 - name: Enable and start Forgejo
@@ -58,7 +57,6 @@
     dest: /etc/systemd/system/forgejo-runner.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart forgejo-runner
 
 - name: Flush handlers before runner registration

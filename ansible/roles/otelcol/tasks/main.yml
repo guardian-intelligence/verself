@@ -39,7 +39,6 @@
     dest: /etc/systemd/system/otelcol.service
     mode: "0644"
   notify:
-    - reload systemd
     - restart otelcol
 
 - name: Enable and start OTel Collector
