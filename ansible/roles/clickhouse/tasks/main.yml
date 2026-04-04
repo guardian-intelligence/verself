@@ -101,11 +101,22 @@
   register: clickhouse_migrations_remote_hash
   failed_when: false
 
+- name: Probe for expected tables (fingerprint can survive a wipe if /opt/forge-metal is recreated before deploy)
+  ansible.builtin.shell: >
+    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+    --query "SELECT count() FROM system.tables
+             WHERE database = 'default' AND name = 'otel_metrics_sum'"
+  register: clickhouse_otel_table_probe
+  changed_when: false
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+
 - name: Apply ClickHouse migrations
   when: >-
     clickhouse_migrations_remote_hash is failed
     or (clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
        != (clickhouse_migrations_local_hash.stdout.split()[0] | trim)
+    or (clickhouse_otel_table_probe.stdout | trim) == '0'
   block:
     - name: Upload migrations
       ansible.builtin.copy:
