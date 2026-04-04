@@ -52,7 +52,7 @@ type Config struct {
 func Run(cfg Config, p prompt.Prompter, w io.Writer) error {
 	// Prerequisite: SOPS must be initialized.
 	if _, err := os.Stat(cfg.SecretsFile); os.IsNotExist(err) {
-		return fmt.Errorf("secrets not initialized — run: make setup-sops")
+		return fmt.Errorf("secrets not initialized — run: cd ansible && ansible-playbook playbooks/setup-sops.yml")
 	}
 
 	fields := readCurrentState(cfg)
@@ -156,7 +156,7 @@ func runInteractive(cfg Config, fields [totalFields]*Field, p prompt.Prompter, w
 	anyChanged := fields[0].Changed || fields[1].Changed
 	if !anyChanged {
 		fmt.Fprintf(w, "  All fields configured. Run forge-metal setup-domain --domain [string] --token [string] to configure fields\n")
-		fmt.Fprintf(w, "  Next: make deploy\n")
+		fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...\n")
 		return nil
 	}
 
@@ -164,7 +164,7 @@ func runInteractive(cfg Config, fields [totalFields]*Field, p prompt.Prompter, w
 	if err := writeChangedFields(cfg, fields, w); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "  Next: make deploy\n")
+	fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...\n")
 	return nil
 }
 

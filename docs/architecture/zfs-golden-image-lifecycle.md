@@ -74,7 +74,7 @@ New dataset per warm. Old one destroyed only after new one promotes. Always a va
 3. Boot VM. Skip `npm install` if lockfile unchanged (warm caches intact)
 4. `zfs get written` for telemetry, then `zfs destroy`
 
-## Dev hot-swap (`make smelter-dev`)
+## Dev hot-swap (`smelter-dev.yml`)
 
 Clone base golden → mount → replace one binary → snapshot → boot VM → probe → destroy. ~10s loop, no rootfs rebuild.
 

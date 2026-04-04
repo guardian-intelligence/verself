@@ -13,6 +13,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  tags: [always]
   tasks:
     - name: Require nix_server_profile_path
       ansible.builtin.assert:
@@ -47,18 +48,19 @@
   hosts: all
   gather_facts: false
   become: true
+  tags: [always]
   tasks:
     - name: Require forge_metal_domain
       ansible.builtin.assert:
         that: forge_metal_domain | default('', true) | length > 0
         fail_msg: >-
-          forge_metal_domain is required. Run: make setup-domain
+          forge_metal_domain is required. Run: make setup-domain DOMAIN=example.com
 
     - name: Require cloudflare_api_token
       ansible.builtin.assert:
         that: cloudflare_api_token | default('', true) | length > 0
         fail_msg: >-
-          cloudflare_api_token is empty. Run: make setup-domain
+          cloudflare_api_token is empty. Run: make setup-domain DOMAIN=example.com
 
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status forgepool"
@@ -87,7 +89,7 @@
       ansible.builtin.fail:
         msg: >-
           CI artifacts not staged. The firecracker role requires vmlinux and rootfs.ext4
-          at /var/lib/ci/. Run: make guest-rootfs && make deploy-ci-artifacts
+          at /var/lib/ci/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
       when: not preflight_ci_kernel.stat.exists or not preflight_ci_rootfs.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
@@ -97,18 +99,33 @@
   become: true
   force_handlers: true
   roles:
-    - nix_deploy
-    - base
-    - nftables
-    - cloudflare_dns
-    - clickhouse
-    - tigerbeetle
-    - postgresql
-    - billing
-    - zitadel
-    - otelcol
-    - hyperdx
-    - verdaccio
-    - forgejo
-    - firecracker
-    - caddy
+    - role: nix_deploy
+      tags: [nix_deploy]
+    - role: base
+      tags: [base]
+    - role: nftables
+      tags: [nftables]
+    - role: cloudflare_dns
+      tags: [cloudflare_dns]
+    - role: clickhouse
+      tags: [clickhouse]
+    - role: tigerbeetle
+      tags: [tigerbeetle]
+    - role: postgresql
+      tags: [postgresql]
+    - role: billing
+      tags: [billing]
+    - role: zitadel
+      tags: [zitadel]
+    - role: otelcol
+      tags: [otelcol]
+    - role: hyperdx
+      tags: [hyperdx]
+    - role: verdaccio
+      tags: [verdaccio]
+    - role: forgejo
+      tags: [forgejo]
+    - role: firecracker
+      tags: [firecracker]
+    - role: caddy
+      tags: [caddy]

@@ -1,0 +1,52 @@
+---
+# Provision bare metal infrastructure via OpenTofu and generate Ansible inventory.
+#
+# Usage:
+#   cd ansible && ansible-playbook playbooks/provision.yml
+
+- name: Provision bare metal infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    terraform_project_path: "{{ playbook_dir }}/../../terraform"
+    sops_secrets_file: "{{ playbook_dir }}/../group_vars/all/secrets.sops.yml"
+    inventory_script: "{{ playbook_dir }}/../../scripts/generate-inventory.sh"
+  tasks:
+    - name: Verify terraform.tfvars.json exists
+      ansible.builtin.stat:
+        path: "{{ terraform_project_path }}/terraform.tfvars.json"
+      register: tfvars_stat
+
+    - name: Fail if tfvars missing
+      ansible.builtin.fail:
+        msg: >-
+          terraform/terraform.tfvars.json not found.
+          Copy the example and fill in your project_id:
+            cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json
+      when: not tfvars_stat.stat.exists
+
+    - name: Extract Latitude.sh auth token from SOPS
+      ansible.builtin.command:
+        cmd: >-
+          sops -d --extract '["latitudesh_auth_token"]'
+          {{ sops_secrets_file }}
+      register: latitudesh_token
+      changed_when: false
+      no_log: true
+
+    - name: Apply OpenTofu configuration
+      community.general.terraform:
+        project_path: "{{ terraform_project_path }}"
+        state: present
+        force_init: true
+        binary_path: tofu
+        variables_files:
+          - terraform.tfvars.json
+      environment:
+        LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
+
+    - name: Generate Ansible inventory from OpenTofu outputs
+      ansible.builtin.command:
+        cmd: "{{ inventory_script }}"
+      changed_when: true

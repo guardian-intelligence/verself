@@ -27,6 +27,8 @@ Key focus areas for this project
 - Payments: Stripe + TigerBeetle + PostgreSQL
 - otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 
+* Less important but useful if editing instructions: ./claude/CLAUDE.md is symlinked from AGENTS.md
+
 ## CI Architecture
 
 The optimization stack is, at a high level:
@@ -101,34 +103,35 @@ This project makes heavy use of ZFS. Research notes are in `docs/research/`.
 ### 1. Install dev tools
 
 ```bash
-make setup-dev  # installs Go, OpenTofu, Ansible, protoc, clickhouse-client, etc.
+cd ansible && ansible-playbook playbooks/setup-dev.yml
 ```
 
 ### 2. Provision bare metal
 
 ```bash
-# Set your Latitude.sh API token
-export LATITUDESH_AUTH_TOKEN="your-token-here"
-
 # Create your tfvars (one-time)
 cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json
 # Edit terraform/terraform.tfvars.json — set project_id to your Latitude.sh project
 
 # Provision server + generate Ansible inventory
-make provision
+cd ansible && ansible-playbook playbooks/provision.yml
 ```
 
-This provisions a bare metal server via OpenTofu and auto-generates `ansible/inventory/hosts.ini` from the outputs.
+This provisions a bare metal server via OpenTofu and auto-generates `ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
 
 ### 3. Deploy
 
 ```bash
-make deploy  # idempotent, no wipe — this is the normal workflow
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
-This builds the Nix server profile, pushes it over SSH, and configures services via Ansible. Safe to run repeatedly.
+Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
-> **`make ci-fixtures-pass` and `make ci-fixtures-fail` run lightweight fixture suites against the current host state.** Use `make ci-fixtures-refresh` when guest artifacts changed, and `make ci-fixtures-full` when you want the refresh + suite orchestration together.
+```bash
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=... --tags caddy
+```
 
 ### 4. Log in
 
@@ -167,10 +170,11 @@ The OTel tables live in `default`, not in an `otel` database.
 
 ```bash
 make setup-domain DOMAIN=anveio.com
-make deploy
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
-`setup-domain` walks you through everything: initializes secrets if needed, guides you through creating a Cloudflare API token, validates it, and writes the config. Then `deploy` creates DNS records and provisions TLS.
+`setup-domain` walks you through everything: initializes secrets if needed, guides you through creating a Cloudflare API token, validates it, and writes the config. Then deploy creates DNS records and provisions TLS.
 
 Services get subdomains automatically:
 
@@ -182,7 +186,7 @@ Services get subdomains automatically:
 ### Deprovision
 
 ```bash
-make deprovision  # destroys server + SSH key via OpenTofu, removes inventory
+cd ansible && ansible-playbook playbooks/deprovision.yml
 ```
 
 This runs `tofu destroy` and cleans up the generated Ansible inventory. DNS records (if any) must be removed separately via the Cloudflare dashboard or API.
@@ -195,7 +199,7 @@ All server software (Caddy, Forgejo, ClickHouse, etc.) is packaged in a single N
 
 - **Reproducible**: `flake.lock` pins every dependency transitively. Same lock = same binaries, always.
 - **Fast deploys**: The closure is pushed once over SSH. No apt repos, no GitHub downloads, no `yarn install`.
-- **Atomic updates**: `nix flake update` + `make deploy` upgrades everything. Rollback = `git revert flake.lock`.
+- **Atomic updates**: `nix flake update` + deploy upgrades everything. Rollback = `git revert flake.lock`.
 - **No apt, no get_url, no build-from-source at deploy time** (except HyperDX, which builds from source using Nix-provided Node.js).
 
 The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must match running kernel).
@@ -203,9 +207,11 @@ The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must 
 ### Version Updates
 
 ```bash
-nix flake update           # update all packages
-make deploy --limit canary # deploy to one node, verify services come up
-make deploy                # roll out fleet-wide
+nix flake update                                              # update all packages
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=... --limit canary               # deploy to one node
+cd ansible && ansible-playbook playbooks/site.yml \
+  -e nix_server_profile_path=...                              # roll out fleet-wide
 ```
 
 ### Architecture
@@ -237,59 +243,82 @@ Compression codecs per column type:
 - Low-cardinality strings: `LowCardinality + ZSTD(3)`
 - Floats: `Gorilla + ZSTD(3)`
 
-## Makefile Targets
+## Makefile Targets (local only)
 
 | Target | Description |
 |--------|-------------|
-| `make setup-dev` | Install pinned dev tools from dev-tools.json via Ansible |
-| `make provision` | Provision bare metal via OpenTofu, generate Ansible inventory |
-| `make deprovision` | Destroy all bare metal infrastructure |
-| `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
-| `make server-profile` | Build Nix server profile (golden image closure) |
-| `make deploy` | Deploy to all nodes (idempotent, no wipe) — **use this normally** |
-| `make deploy-dashboards` | Sync HyperDX dashboards and sources without a full platform redeploy |
-| `make ci-fixtures-refresh` | Rebuild and stage CI guest artifacts on the existing host |
-| `make ci-fixtures-pass` | Run the positive CI fixture suite against the existing host |
-| `make ci-fixtures-fail` | Run the negative CI fixture suite against the existing host |
-| `make ci-fixtures-full` | Refresh CI artifacts, then run the pass and fail fixture suites together |
 | `make build` | Build the `forge-metal` Go binary locally |
 | `make test` | Run Go tests |
-| `make guest-rootfs` | Build Alpine guest rootfs on the server |
-| `make deploy-ci-artifacts` | Deploy rootfs to /var/lib/ci/ on the server |
+| `make test-integration` | Run all tests including ZFS integration (requires sudo + zfs) |
+| `make lint` | Run golangci-lint |
+| `make lint-ansible` | Run ansible-lint on playbooks and roles |
+| `make fmt` | Format Go code with gofumpt |
+| `make vet` | Run go vet |
+| `make tidy` | Run go mod tidy |
+| `make doctor` | Check that all required dev tools are present and at the right version |
+| `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
+| `make server-profile` | Build Nix server profile (golden image closure) |
 | `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
-| `make smelter-dev` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
+| `make clickhouse-shell` | Open an interactive clickhouse-client session on the worker |
+| `make clickhouse-query` | Run a ClickHouse query on the worker |
+| `make edit-secrets` | Open encrypted secrets in $EDITOR via sops |
+
+## Ansible Playbooks
+
+All remote orchestration is done via Ansible playbooks. Run from the `ansible/` directory.
+
+| Playbook | Description |
+|----------|-------------|
+| `playbooks/setup-dev.yml` | Install pinned dev tools from dev-tools.json |
+| `playbooks/setup-sops.yml` | Bootstrap SOPS+Age encryption for secrets |
+| `playbooks/provision.yml` | Provision bare metal via OpenTofu, generate inventory |
+| `playbooks/deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
+| `playbooks/dev-single-node.yml` | Deploy to single node (idempotent) |
+| `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra) |
+| `playbooks/guest-rootfs.yml` | Build guest rootfs and stage CI artifacts |
+| `playbooks/hyperdx-dashboards.yml` | Sync HyperDX dashboards without full redeploy |
+| `playbooks/ci-fixtures.yml` | Run CI fixture suites |
+| `playbooks/ci-fixtures-pass.yml` | Run positive fixture suite |
+| `playbooks/ci-fixtures-fail.yml` | Run negative fixture suite |
+| `playbooks/ci-fixtures-full.yml` | Refresh artifacts, then run pass + fail suites |
+| `playbooks/smelter-dev.yml` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
+| `playbooks/security-patch.yml` | Rolling OS security updates |
+| `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
+
+All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
 
 ## Developing homestead-smelter
 
-`make smelter-dev` is the best way to test homestead-smelter guest changes. It provides a ~10 second edit-test loop by hot-swapping the Zig binary into a dev golden zvol, bypassing the full rootfs rebuild (~90s).
+`smelter-dev.yml` is the fastest way to test homestead-smelter guest changes. It provides a ~10 second edit-test loop by hot-swapping the Zig binary into a dev golden zvol, bypassing the full rootfs rebuild (~90s).
 
 ### What it does
 
-1. Builds `homestead-smelter-guest` locally via `zig build` (~2s)
-2. SCPs the binary to the server (~1s)
-3. Runs `ansible/playbooks/smelter-dev.yml` which:
-   - Clones `forgepool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
-   - Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
-   - Snapshots as `smelter-dev-zvol@ready`
-   - Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
-   - Waits for the VM's vsock bridge socket to appear
-   - Waits for `homestead-smelter-host check-live` to observe the VM
-   - Prints `homestead-smelter-host snapshot` output for the live VM
-   - Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
+The playbook is self-contained — it builds the Zig binary locally, uploads it, then:
+
+1. Clones `forgepool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
+2. Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
+3. Snapshots as `smelter-dev-zvol@ready`
+4. Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
+5. Waits for the VM's vsock bridge socket to appear
+6. Waits for `homestead-smelter-host check-live` to observe the VM
+7. Prints `homestead-smelter-host snapshot` output for the live VM
+8. Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
 
 ### Prerequisites
 
 The server must have been deployed at least once with a valid golden image:
 
 ```bash
-make guest-rootfs && make deploy-ci-artifacts && make deploy
+cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
 ### Usage
 
 ```bash
 # Edit homestead-smelter/src/guest.zig, then:
-make smelter-dev
+cd ansible && ansible-playbook playbooks/smelter-dev.yml
 ```
 
 Expected output on success:
@@ -307,13 +336,13 @@ PASS: host agent observed live guest telemetry
 
 ### How it compares to other targets
 
-| Path | Time | When to use |
-|------|------|-------------|
-| `make smelter-dev` | ~10s | Iterating on guest Zig code |
-| `make guest-rootfs && make deploy-ci-artifacts` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
-| `make ci-fixtures-pass` | ~3-5min | Re-run the positive fixture suite against the current host |
-| `make ci-fixtures-fail` | ~3-5min | Re-run the negative fixture suite against the current host |
-| `make ci-fixtures-full` | ~5min+ | Refresh guest artifacts, then run the pass and fail fixture suites together |
+| Playbook | Time | When to use |
+|----------|------|-------------|
+| `smelter-dev.yml` | ~10s | Iterating on guest Zig code |
+| `guest-rootfs.yml` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
+| `ci-fixtures-pass.yml` | ~3-5min | Re-run the positive fixture suite against the current host |
+| `ci-fixtures-fail.yml` | ~3-5min | Re-run the negative fixture suite against the current host |
+| `ci-fixtures-full.yml` | ~5min+ | Refresh guest artifacts, then run pass and fail suites together |
 
 ## Project Structure
 
@@ -333,10 +362,12 @@ forge-metal/
 │   ├── prompt/            # Shared Prompter interface + TTY implementation
 │   └── provision/         # Server provisioning logic
 ├── ansible/
-│   ├── playbooks/         # ci-e2e, dev-single-node, site
+│   ├── playbooks/         # All orchestration: deploy, provision, CI fixtures, smelter-dev
 │   └── roles/
 │       ├── nix_deploy/    # Install Nix + push server profile closure
 │       ├── base/          # System config (ZFS, users, npm registry, sudoers)
+│       ├── guest_rootfs/  # Build Firecracker guest rootfs (local compile + remote build)
+│       ├── deploy_ci_artifacts/ # Stage built guest artifacts to /var/lib/ci/
 │       ├── cloudflare_dns/ # Cloudflare DNS A record management
 │       ├── clickhouse/    # ClickHouse config + schema bootstrap
 │       ├── otelcol/       # OTLP ingestion and export to ClickHouse
@@ -394,7 +425,7 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 ## Tool Use Contract
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
-* Dev tools are system-installed via `make setup-dev`. No `nix develop` prefix needed.
+* Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`. No `nix develop` prefix needed.
 * Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to impelementing changes. The verification protocol should fail, and only then begin implementing until green.
 
 ## Output Contract

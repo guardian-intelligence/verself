@@ -10,7 +10,7 @@
   ansible.builtin.fail:
     msg: >-
       forge-metal CLI not found at {{ fm_bin }}/forge-metal.
-      Run: make deploy
+      Run: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...
   when: not ci_fixtures_forge_metal_cli.stat.exists
 
 - name: Verify staged CI artifacts are present
@@ -36,7 +36,7 @@
   ansible.builtin.fail:
     msg: >-
       CI fixture prerequisites are missing on the worker: {{ ci_fixtures_missing_required_paths | join(', ') }}.
-      Run: make ci-fixtures-refresh
+      Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
   when: ci_fixtures_missing_required_paths | length > 0
 
 - name: Wait for Forgejo to be reachable

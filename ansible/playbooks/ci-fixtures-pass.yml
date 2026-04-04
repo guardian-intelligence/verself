@@ -9,4 +9,5 @@
     ci_fixtures_suites:
       - pass
   roles:
-    - ci_fixtures
+    - role: ci_fixtures
+      tags: [ci_fixtures]
