@@ -2,7 +2,6 @@ package billing
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -12,8 +11,17 @@ import (
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
 
-// DepositCredits inserts the PostgreSQL catalog row first (serialization point),
-// then creates the TigerBeetle grant account and funds it.
+// DepositCredits uses a two-phase TigerBeetle transfer to coordinate PG and TB
+// state. The pending transfer locks funds in the source pool; if the PG write
+// fails or the process crashes, the pending transfer expires and funds return
+// automatically. On retry, deterministic transfer IDs make every step idempotent.
+//
+// Flow:
+//  1. PG INSERT grant row (serialization, returns grantID even on conflict)
+//  2. TB CreateAccount (idempotent)
+//  3. TB CreateTransfer PENDING (funds locked, not yet available to grant)
+//  4. TB PostPendingTransfer (funds now in grant — atomicity point)
+//  5. PG INSERT billing event
 //
 // For subscription/free_tier sources, idempotency is via the unique index on
 // (subscription_id, period_start). For purchase/promo/refund sources,
@@ -33,24 +41,34 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 	}
 
 	fundingAccount, xferKind := depositFundingSource(sourceType)
-
-	grantID := NewGrantID()
-	grantIDStr := ulid.ULID(grantID).String()
 	orgIDStr := strconv.FormatUint(uint64(grant.OrgID), 10)
 
 	// Step 1: PG catalog row (serialization point).
-	// For subscription/free_tier, the unique index on (subscription_id, period_start)
-	// prevents duplicate grants. ON CONFLICT DO NOTHING means another writer won the race.
-	var inserted bool
+	// Always returns a grantID — either from the new insert or the existing row.
+	// This ensures retries use the same TB account as the original call.
+	grantID := NewGrantID()
+	grantIDStr := ulid.ULID(grantID).String()
+	var returnedGrantIDStr string
 	err = c.pg.QueryRowContext(ctx, `
-		INSERT INTO credit_grants (
-			grant_id, org_id, product_id, amount, source,
-			stripe_reference_id, subscription_id,
-			period_start, period_end, expires_at
+		WITH inserted AS (
+			INSERT INTO credit_grants (
+				grant_id, org_id, product_id, amount, source,
+				stripe_reference_id, subscription_id,
+				period_start, period_end, expires_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			ON CONFLICT DO NOTHING
+			RETURNING grant_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT DO NOTHING
-		RETURNING true
+		SELECT grant_id FROM inserted
+		UNION ALL
+		SELECT grant_id FROM credit_grants
+		WHERE subscription_id IS NOT DISTINCT FROM $7
+		  AND period_start IS NOT DISTINCT FROM $8
+		  AND org_id = $2
+		  AND product_id = $3
+		  AND source = $5
+		LIMIT 1
 	`,
 		grantIDStr,
 		orgIDStr,
@@ -62,35 +80,54 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 		grant.PeriodStart,
 		grant.PeriodEnd,
 		grant.ExpiresAt,
-	).Scan(&inserted)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("deposit credits: insert grant row: %w", err)
-	}
-	if !inserted {
-		// Another writer won the race on the unique index — idempotent success.
-		return nil
+	).Scan(&returnedGrantIDStr)
+	if err != nil {
+		return fmt.Errorf("deposit credits: upsert grant row: %w", err)
 	}
 
-	// Step 2: Create TigerBeetle grant account.
+	// Use the returned grant ID (may differ from generated one on retry).
+	if returnedGrantIDStr != grantIDStr {
+		parsedULID, err := ulid.ParseStrict(returnedGrantIDStr)
+		if err != nil {
+			return fmt.Errorf("deposit credits: parse existing grant ULID %q: %w", returnedGrantIDStr, err)
+		}
+		grantID = GrantID(parsedULID)
+		grantIDStr = returnedGrantIDStr
+	}
+
+	// Step 2: TB grant account (idempotent via AccountExists).
 	if err := c.createGrantAccount(grantID, grant.OrgID, sourceType); err != nil {
 		return fmt.Errorf("deposit credits: %w", err)
 	}
 
-	// Step 3: Fund the grant account.
-	transferID := depositTransferID(sourceType, taskID, grant, xferKind)
+	// Step 3: TB pending transfer — funds locked in source, not yet in grant.
+	// If the process crashes after this step, the transfer expires after the
+	// timeout and funds return to the source pool automatically.
+	pendingID := depositTransferID(sourceType, taskID, grant, xferKind)
 	if err := c.createTransfers([]types.Transfer{{
-		ID:              transferID.raw,
+		ID:              pendingID.raw,
 		DebitAccountID:  OperatorAccountID(fundingAccount).raw,
 		CreditAccountID: GrantAccountID(grantID).raw,
 		UserData64:      uint64(grant.OrgID),
 		Code:            uint16(xferKind),
 		Ledger:          1,
 		Amount:          types.ToUint128(grant.Amount),
+		Flags:           types.TransferFlags{Pending: true}.ToUint16(),
+		Timeout:         3600, // 1 hour safety net for crash recovery
 	}}); err != nil {
-		return fmt.Errorf("deposit credits: fund grant: %w", err)
+		return fmt.Errorf("deposit credits: pending transfer: %w", err)
 	}
 
-	// Step 4: Log billing event.
+	// Step 4: Post the pending transfer — atomicity point.
+	// After this succeeds, the grant is funded in TB regardless of
+	// subsequent PG failures. Deterministic post ID ensures idempotency.
+	postID := depositTransferID(sourceType, taskID, grant, KindDepositConfirm)
+	if err := c.postPendingTransfer(pendingID, postID); err != nil {
+		return fmt.Errorf("deposit credits: %w", err)
+	}
+
+	// Step 5: Billing event (audit trail). If this fails, the grant is still
+	// funded correctly — the event can be reconstructed from TB transfer history.
 	var taskIDVal *int64
 	if taskID != nil {
 		v := int64(*taskID)
@@ -99,6 +136,7 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 	if _, err := c.pg.ExecContext(ctx, `
 		INSERT INTO billing_events (org_id, event_type, subscription_id, grant_id, task_id, payload)
 		VALUES ($1, 'credits_deposited', $2, $3, $4, $5::jsonb)
+		ON CONFLICT DO NOTHING
 	`,
 		orgIDStr,
 		grant.SubscriptionID,
@@ -194,8 +232,11 @@ func (c *Client) ExpireCredits(ctx context.Context) (ExpireResult, error) {
 	return result, nil
 }
 
+// expireSingleGrant uses a two-phase transfer to drain remaining balance from a
+// grant. The pending BalancingDebit locks the remaining balance; PG is updated
+// to closed; then the drain is posted. If PG update fails, the pending drain
+// expires and the balance is restored — the next sweep retries cleanly.
 func (c *Client) expireSingleGrant(ctx context.Context, grantID GrantID, orgID OrgID, source GrantSourceType, now time.Time) (uint64, error) {
-	// Determine sink account based on source type.
 	var sinkAccount OperatorAcctType
 	if source.IsFreeTier() {
 		sinkAccount = AcctFreeTierExpense
@@ -203,25 +244,26 @@ func (c *Client) expireSingleGrant(ctx context.Context, grantID GrantID, orgID O
 		sinkAccount = AcctExpiredCredits
 	}
 
-	// Step 1: BalancingDebit from grant account into sink.
-	// BalancingDebit clamps the transfer amount to the available balance,
-	// handling the case where concurrent settlements consumed some of the grant.
-	transferID := CreditExpiryID(grantID)
+	// Step 1: Pending BalancingDebit — locks remaining grant balance.
+	// BalancingDebit clamps to available; Pending means funds are in
+	// debits_pending, not yet posted. Timeout provides crash recovery.
+	pendingID := CreditExpiryID(grantID)
 	if err := c.createTransfers([]types.Transfer{{
-		ID:              transferID.raw,
+		ID:              pendingID.raw,
 		DebitAccountID:  GrantAccountID(grantID).raw,
 		CreditAccountID: OperatorAccountID(sinkAccount).raw,
 		Amount:          types.ToUint128(maxUint64),
 		Ledger:          1,
 		Code:            uint16(KindCreditExpiry),
-		Flags:           types.TransferFlags{BalancingDebit: true}.ToUint16(),
+		Flags:           types.TransferFlags{BalancingDebit: true, Pending: true}.ToUint16(),
 		UserData64:      uint64(orgID),
+		Timeout:         3600,
 	}}); err != nil {
-		return 0, fmt.Errorf("expiry transfer: %w", err)
+		return 0, fmt.Errorf("expiry pending transfer: %w", err)
 	}
 
-	// Read back the clamped amount to know how much was actually expired.
-	transfer, err := c.lookupTransfer(transferID)
+	// Read back the clamped amount to know how much will be expired.
+	transfer, err := c.lookupTransfer(pendingID)
 	if err != nil {
 		return 0, fmt.Errorf("lookup expiry transfer: %w", err)
 	}
@@ -239,10 +281,18 @@ func (c *Client) expireSingleGrant(ctx context.Context, grantID GrantID, orgID O
 		return 0, fmt.Errorf("close grant row: %w", err)
 	}
 
-	// Step 3: Log billing event.
+	// Step 3: Post the drain — atomicity point.
+	// After this, the expired balance is permanently moved to the sink.
+	postID := CreditExpiryPostID(grantID)
+	if err := c.postPendingTransfer(pendingID, postID); err != nil {
+		return 0, fmt.Errorf("expiry confirm: %w", err)
+	}
+
+	// Step 4: Billing event (audit trail).
 	if _, err := c.pg.ExecContext(ctx, `
 		INSERT INTO billing_events (org_id, event_type, grant_id, payload)
 		VALUES ($1, 'credits_expired', $2, $3::jsonb)
+		ON CONFLICT DO NOTHING
 	`,
 		orgIDStr,
 		grantIDStr,

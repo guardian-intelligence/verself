@@ -37,6 +37,18 @@
 	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
 }
 
+{{ billing_api_domain }} {
+	import access_log
+	import waf
+
+	handle /webhooks/stripe {
+		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }}
+	}
+
+	# Default deny — no other paths exposed publicly.
+	respond 404
+}
+
 {{ zitadel_domain }} {
 	import access_log
 	import waf

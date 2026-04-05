@@ -1,0 +1,109 @@
+{
+  "name": "PostgreSQL",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "Memory (RSS)",
+      "x": 0, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "CPU (cores)",
+      "x": 4, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT ts as __hdx_time_bucket, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts, ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second', min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP BY ts, pid, state) GROUP BY ts ORDER BY ts",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Active Connections",
+      "x": 8, "y": 0, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, avg(Value) as connections FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'postgresql.backends' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Transactions/s (commits + rollbacks)",
+      "x": 0, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, greatest(round((commits_last - commits_prev + rollbacks_last - rollbacks_prev) / greatest(dateDiff('second', ts_prev, __hdx_time_bucket), 1), 2), 0) as tps FROM (SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, sumIf(argMax(Value, TimeUnix), MetricName = 'postgresql.commits') as commits_last, lagInFrame(sumIf(argMax(Value, TimeUnix), MetricName = 'postgresql.commits')) OVER (ORDER BY $__timeInterval(TimeUnix)) as commits_prev, sumIf(argMax(Value, TimeUnix), MetricName = 'postgresql.rollbacks') as rollbacks_last, lagInFrame(sumIf(argMax(Value, TimeUnix), MetricName = 'postgresql.rollbacks')) OVER (ORDER BY $__timeInterval(TimeUnix)) as rollbacks_prev, lagInFrame($__timeInterval(TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) as ts_prev FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName IN ('postgresql.commits', 'postgresql.rollbacks') GROUP BY __hdx_time_bucket) WHERE commits_prev IS NOT NULL ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Cache Hit Ratio (%)",
+      "x": 4, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, round(sumIf(Value, MetricName = 'postgresql.blocks_read' AND Attributes['source'] = 'heap_hit') / greatest(sumIf(Value, MetricName = 'postgresql.blocks_read'), 1) * 100, 2) as cache_hit_pct FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'postgresql.blocks_read' GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "%"}
+      }
+    },
+    {
+      "name": "Database Size",
+      "x": 8, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, Attributes['postgresql.database.name'] as db, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'postgresql.db_size' GROUP BY __hdx_time_bucket, db ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "byte"}
+      }
+    },
+    {
+      "name": "Row Operations/s",
+      "x": 0, "y": 18, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, greatest(round((val_last - val_prev) / greatest(dateDiff('second', ts_prev, __hdx_time_bucket), 1), 2), 0) as ops_per_sec, op FROM (SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, Attributes['operation'] as op, argMax(Value, TimeUnix) as val_last, lagInFrame(argMax(Value, TimeUnix)) OVER (PARTITION BY Attributes['operation'] ORDER BY $__timeInterval(TimeUnix)) as val_prev, lagInFrame($__timeInterval(TimeUnix)) OVER (PARTITION BY Attributes['operation'] ORDER BY $__timeInterval(TimeUnix)) as ts_prev FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'postgresql.operations' GROUP BY __hdx_time_bucket, op) WHERE val_prev IS NOT NULL ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Log Errors (count by severity)",
+      "x": 4, "y": 18, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, SeverityText as severity, count() as cnt FROM default.otel_logs WHERE $__timeFilter_ms(Timestamp) AND ServiceName = 'postgresql' AND SeverityText IN ('WARN', 'ERROR') GROUP BY __hdx_time_bucket, severity ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Heartbeat (%)",
+      "x": 8, "y": 18, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, concat('uptime (avg: ', toString(round(avg_pct, 1)), '%)') as series, heartbeat_pct FROM (SELECT *, avg(heartbeat_pct) OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as __hdx_time_bucket, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE $__timeFilter_ms(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP BY __hdx_time_bucket)) ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "%"}
+      }
+    }
+  ]
+}

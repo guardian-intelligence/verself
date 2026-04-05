@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	tb "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
 
@@ -660,6 +661,38 @@ func (c *Client) createTransfers(transfers []types.Transfer) error {
 			return fmt.Errorf("transfer %d: %s", result.Index, result.Result)
 		default:
 			return fmt.Errorf("transfer %d: %s", result.Index, result.Result)
+		}
+	}
+
+	return nil
+}
+
+// postPendingTransfer posts a pending transfer, handling the two-phase commit
+// result codes. Returns nil on success or if the pending was already posted
+// (idempotent). Returns ErrPendingTransferExpired if the timeout elapsed.
+func (c *Client) postPendingTransfer(pendingID TransferID, postID TransferID) error {
+	results, err := c.tb.CreateTransfers([]types.Transfer{{
+		ID:        postID.raw,
+		PendingID: pendingID.raw,
+		Flags:     types.TransferFlags{PostPendingTransfer: true}.ToUint16(),
+		Amount:    tb.AmountMax,
+	}})
+	if err != nil {
+		return fmt.Errorf("post pending transfer: %w", err)
+	}
+
+	for _, result := range results {
+		switch result.Result {
+		case types.TransferOK, types.TransferExists:
+			return nil
+		case types.TransferPendingTransferAlreadyPosted:
+			return nil
+		case types.TransferPendingTransferExpired:
+			return ErrPendingTransferExpired
+		case types.TransferPendingTransferAlreadyVoided:
+			return fmt.Errorf("post pending transfer: %w: voided", ErrPendingTransferExpired)
+		default:
+			return fmt.Errorf("post pending transfer: %s", result.Result)
 		}
 	}
 

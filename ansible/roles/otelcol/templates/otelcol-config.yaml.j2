@@ -145,6 +145,18 @@ receivers:
       - type: remove
         field: attributes.source
         if: attributes.source != nil
+  journald/billing-api:
+    units: [billing-api]
+    resource:
+      service.name: billing-api
+  postgresql:
+    endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
+    username: postgres
+    password: "{{ postgresql_admin_password }}"
+    databases: [sandbox]
+    collection_interval: 10s
+    tls:
+      insecure: true
   filelog/postgresql:
     include: [{{ postgresql_log_dir }}/postgresql-*.log]
     storage: file_storage
@@ -181,7 +193,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
+          names: ["billing-server", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -220,7 +232,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/zitadel, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-api, journald/zitadel, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
@@ -228,6 +240,6 @@ service:
       processors: [batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, statsd]
+      receivers: [otlp, hostmetrics, postgresql, statsd]
       processors: [batch]
       exporters: [clickhouse]

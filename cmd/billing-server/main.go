@@ -322,19 +322,21 @@ type subscriptionInput struct {
 
 type depositCreditsOutput struct {
 	Body struct {
-		SubscriptionsProcessed int `json:"subscriptions_processed"`
-		CreditsDeposited       int `json:"credits_deposited"`
-		CreditsSkipped         int `json:"credits_skipped"`
-		CreditsFailed          int `json:"credits_failed"`
+		SubscriptionsProcessed int      `json:"subscriptions_processed"`
+		CreditsDeposited       int      `json:"credits_deposited"`
+		CreditsSkipped         int      `json:"credits_skipped"`
+		CreditsFailed          int      `json:"credits_failed"`
+		Errors                 []string `json:"errors,omitempty"`
 	}
 }
 
 type expireCreditsOutput struct {
 	Body struct {
-		GrantsChecked int    `json:"grants_checked"`
-		GrantsExpired int    `json:"grants_expired"`
-		GrantsFailed  int    `json:"grants_failed"`
-		UnitsExpired  uint64 `json:"units_expired"`
+		GrantsChecked int      `json:"grants_checked"`
+		GrantsExpired int      `json:"grants_expired"`
+		GrantsFailed  int      `json:"grants_failed"`
+		UnitsExpired  uint64   `json:"units_expired"`
+		Errors        []string `json:"errors,omitempty"`
 	}
 }
 
@@ -354,8 +356,9 @@ type reconcileOutput struct {
 
 type trustTierOutput struct {
 	Body struct {
-		OrgPromoted int `json:"org_promoted"`
-		OrgDemoted  int `json:"org_demoted"`
+		OrgPromoted int      `json:"org_promoted"`
+		OrgDemoted  int      `json:"org_demoted"`
+		Errors      []string `json:"errors,omitempty"`
 	}
 }
 
@@ -486,6 +489,9 @@ func opsDepositCredits(client *billing.Client) func(context.Context, *struct{}) 
 		out.Body.CreditsDeposited = result.CreditsDeposited
 		out.Body.CreditsSkipped = result.CreditsSkipped
 		out.Body.CreditsFailed = result.CreditsFailed
+		for _, e := range result.Errors {
+			out.Body.Errors = append(out.Body.Errors, e.Error())
+		}
 		return out, nil
 	}
 }
@@ -501,6 +507,9 @@ func opsExpireCredits(client *billing.Client) func(context.Context, *struct{}) (
 		out.Body.GrantsExpired = result.GrantsExpired
 		out.Body.GrantsFailed = result.GrantsFailed
 		out.Body.UnitsExpired = result.UnitsExpired
+		for _, e := range result.Errors {
+			out.Body.Errors = append(out.Body.Errors, e.Error())
+		}
 		return out, nil
 	}
 }
@@ -534,6 +543,9 @@ func opsTrustTierEvaluate(client *billing.Client) func(context.Context, *struct{
 		out := &trustTierOutput{}
 		out.Body.OrgPromoted = result.OrgPromoted
 		out.Body.OrgDemoted = result.OrgDemoted
+		for _, e := range result.Errors {
+			out.Body.Errors = append(out.Body.Errors, e.Error())
+		}
 		return out, nil
 	}
 }

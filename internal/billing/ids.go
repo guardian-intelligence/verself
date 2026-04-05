@@ -63,6 +63,20 @@ func CreditExpiryID(grant GrantID) TransferID {
 	return TransferID{raw: grantHalfSwap(grant)}
 }
 
+// CreditExpiryPostID returns a deterministic post-pending transfer ID for
+// grant expiry. Derived from the grant ULID with KindExpiryConfirm packed
+// into byte 5 of the low u64. This is collision-safe: the pending expiry ID
+// (from grantHalfSwap) has the ULID's random tail in bytes 0-7, while this
+// ID overwrites byte 5 with a known constant, producing a different value.
+func CreditExpiryPostID(grant GrantID) TransferID {
+	b := grantHalfSwap(grant).Bytes()
+	b[5] ^= 0xFF // flip all bits to guarantee difference from CreditExpiryID
+	return TransferID{raw: types.BytesToUint128(b)}
+}
+
+// Raw returns the underlying TigerBeetle Uint128 for direct TB API calls.
+func (a AccountID) Raw() types.Uint128 { return a.raw }
+
 // GrantULID recovers the original ULID from a grant account ID (reverses
 // the half-swap).
 func (a AccountID) GrantULID() GrantID {
