@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // GuardDogScanner runs DataDog's guarddog against each tarball in Verdaccio storage.
@@ -26,29 +30,45 @@ func (s *GuardDogScanner) Scan(ctx context.Context, storagePath string) ([]Findi
 		return nil, fmt.Errorf("enumerate tarballs: %w", err)
 	}
 
-	var findings []Finding
+	var (
+		mu       sync.Mutex
+		findings []Finding
+	)
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(runtime.NumCPU())
+
 	for _, tarball := range tarballs {
-		results, err := s.scanTarball(ctx, tarball)
-		if err != nil {
-			findings = append(findings, Finding{
-				Scanner:  s.Name(),
-				Package:  tarballPackageName(tarball),
-				Rule:     "scan-error",
-				Severity: SeverityBlocking,
-				Detail:   err.Error(),
-			})
-			continue
-		}
-		findings = append(findings, results...)
+		g.Go(func() error {
+			results, err := s.scanTarball(ctx, tarball)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				findings = append(findings, Finding{
+					Scanner:  s.Name(),
+					Package:  tarballPackageName(tarball),
+					Rule:     "scan-error",
+					Severity: SeverityBlocking,
+					Detail:   err.Error(),
+				})
+				return nil
+			}
+			findings = append(findings, results...)
+			return nil
+		})
 	}
 
+	if err := g.Wait(); err != nil {
+		return findings, err
+	}
 	return findings, nil
 }
 
-// guardDogOutput matches guarddog's JSON output format.
+// guardDogOutput matches guarddog v2.9.0 JSON output format.
 type guardDogOutput struct {
-	Errors  []any          `json:"errors"`
-	Results map[string]any `json:"results"`
+	Issues  int               `json:"issues"`
+	Errors  map[string]string `json:"errors"`
+	Results map[string]any    `json:"results"`
 }
 
 func (s *GuardDogScanner) scanTarball(ctx context.Context, tarball string) ([]Finding, error) {
@@ -77,7 +97,25 @@ func (s *GuardDogScanner) scanTarball(ctx context.Context, tarball string) ([]Fi
 
 	pkg := tarballPackageName(tarball)
 	var findings []Finding
+
+	// Report guarddog-level errors (e.g. semgrep not found, npm 404) as warnings.
+	for errName, errMsg := range parsed.Errors {
+		findings = append(findings, Finding{
+			Scanner:  "guarddog",
+			Package:  pkg,
+			Rule:     "error:" + errName,
+			Severity: SeverityWarning,
+			Detail:   errMsg,
+		})
+	}
+
+	// In v2.9.0, each rule value is an empty object {} when clean.
+	// Non-empty values contain actual findings.
 	for rule, detail := range parsed.Results {
+		detailMap, ok := detail.(map[string]any)
+		if !ok || len(detailMap) == 0 {
+			continue
+		}
 		findings = append(findings, Finding{
 			Scanner:  "guarddog",
 			Package:  pkg,

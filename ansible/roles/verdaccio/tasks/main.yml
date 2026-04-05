@@ -100,7 +100,7 @@
   ansible.builtin.command: >
     {{ fm_bin }}/npm install --global
     --prefix {{ verdaccio_install_prefix }}
-    @nodesecure/js-x-ray@latest
+    @nodesecure/js-x-ray@{{ verdaccio_jsxray_version }}
     --registry https://registry.npmjs.org
   args:
     creates: "{{ verdaccio_install_prefix }}/lib/node_modules/@nodesecure/js-x-ray"
@@ -108,11 +108,24 @@
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
     HOME: /root
 
-- name: Deploy jsxray-worker.mjs alongside forge-metal binary
+- name: Create supply chain scanner directory
+  ansible.builtin.file:
+    path: /opt/forge-metal/scan
+    state: directory
+    mode: "0755"
+
+- name: Deploy jsxray-worker.mjs
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../internal/supplychain/jsxray-worker.mjs"
-    dest: "{{ fm_bin }}/jsxray-worker.mjs"
+    dest: /opt/forge-metal/scan/jsxray-worker.mjs
     mode: "0644"
+
+- name: Symlink node_modules for ESM resolution
+  ansible.builtin.file:
+    src: "{{ verdaccio_install_prefix }}/lib/node_modules"
+    dest: /opt/forge-metal/scan/node_modules
+    state: link
+    force: true
 
 - name: Check if uv is installed
   ansible.builtin.stat:
@@ -146,6 +159,13 @@
   ansible.builtin.file:
     src: /root/.local/bin/guarddog
     dest: /usr/local/bin/guarddog
+    state: link
+    force: true
+
+- name: Symlink semgrep into PATH (required by guarddog)
+  ansible.builtin.file:
+    src: /root/.local/share/uv/tools/guarddog/bin/semgrep
+    dest: /usr/local/bin/semgrep
     state: link
     force: true
 

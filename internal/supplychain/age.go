@@ -3,6 +3,8 @@ package supplychain
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -31,7 +33,6 @@ func (s *AgeScanner) Scan(_ context.Context, storagePath string) ([]Finding, err
 	for _, dir := range packageDirs {
 		p, err := loadPackument(dir)
 		if err != nil {
-			// Missing or corrupt packument — flag but don't block.
 			findings = append(findings, Finding{
 				Scanner:  s.Name(),
 				Package:  dir,
@@ -46,13 +47,20 @@ func (s *AgeScanner) Scan(_ context.Context, storagePath string) ([]Finding, err
 			continue
 		}
 
+		// Only check versions that have a cached tarball. The packument
+		// contains timestamps for ALL versions ever published, but only
+		// installed versions have tarballs in storage.
+		cached := cachedVersions(dir, p.Name)
+
 		for version, timestamp := range p.Time {
 			if version == "created" || version == "modified" {
 				continue
 			}
+			if !cached[version] {
+				continue
+			}
 			publishedAt, err := time.Parse(time.RFC3339, timestamp)
 			if err != nil {
-				// Try alternate format npm sometimes uses.
 				publishedAt, err = time.Parse("2006-01-02T15:04:05.000Z", timestamp)
 				if err != nil {
 					continue
@@ -72,4 +80,30 @@ func (s *AgeScanner) Scan(_ context.Context, storagePath string) ([]Finding, err
 	}
 
 	return findings, nil
+}
+
+// cachedVersions returns the set of versions that have a .tgz tarball in the
+// package directory. Verdaccio stores tarballs as <pkg>-<version>.tgz.
+func cachedVersions(packageDir, packageName string) map[string]bool {
+	versions := make(map[string]bool)
+	entries, err := os.ReadDir(packageDir)
+	if err != nil {
+		return versions
+	}
+	// For scoped packages (@scope/name), strip the scope prefix from the tarball name.
+	baseName := packageName
+	if i := strings.LastIndex(baseName, "/"); i >= 0 {
+		baseName = baseName[i+1:]
+	}
+	prefix := baseName + "-"
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".tgz") || !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		version := strings.TrimPrefix(name, prefix)
+		version = strings.TrimSuffix(version, ".tgz")
+		versions[version] = true
+	}
+	return versions
 }
