@@ -2,7 +2,7 @@
 
 Free Open-Source Software for a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMs. This is not a PaaS -- the user owns what they deploy.
 
-Bootstrapping UX: turnkey from 0 -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
+Bootstrapping UX: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
 
 ## Deployment Topology
 
@@ -12,7 +12,7 @@ Hard product design requirement: everything must be self-hosted.
 
 Exceptions:
 
-Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (done through `zfs send`, not LINSTOR + DRBD)
+Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (will be done through `zfs send`, not LINSTOR + DRBD) [Backups not yet implemented]
 Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required - Email Delivery (Resend only for now)
@@ -95,18 +95,6 @@ make clickhouse-shell
 ./scripts/clickhouse.sh --query 'SELECT count() FROM otel_logs'
 ```
 
-Current table locations:
-
-- `forge_metal.ci_events`
-- `forge_metal.smelter_rehearsals`
-- `default.otel_logs`
-- `default.otel_traces`
-- `default.otel_metrics_gauge`
-- `default.otel_metrics_sum`
-- `default.otel_metrics_histogram`
-
-The OTel tables live in `default`, not in an `otel` database.
-
 ### TLS with a real domain (Cloudflare)
 
 ```bash
@@ -115,24 +103,13 @@ cd ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
-`setup-domain` walks you through everything: initializes secrets if needed, guides you through creating a Cloudflare API token, validates it, and writes the config. Then deploy creates DNS records and provisions TLS.
-
 Services get subdomains automatically:
 
 | Subdomain | Service |
 |-----------|---------|
 | `admin.<domain>` | ClickStack dashboard |
-| `git.<domain>` | Forgejo (when enabled) |
-
-### Deprovision
-
-```bash
-cd ansible && ansible-playbook playbooks/deprovision.yml
-```
-
-This runs `tofu destroy` and cleans up the generated Ansible inventory. DNS records (if any) must be removed separately via the Cloudflare dashboard or API.
-
-## How It Works
+| `git.<domain>` | Forgejo |
+| `auth<domain>` | Zitadel |
 
 ### Nix Server Profile
 
