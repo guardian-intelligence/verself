@@ -31,6 +31,7 @@
             <profile>default</profile>
             <quota>default</quota>
             <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
         </default>
     </users>
 
@@ -54,4 +55,15 @@
             </interval>
         </default>
     </quotas>
+
+    <!-- Named collections: credentials for external sources (PostgreSQL, etc.) -->
+    <named_collections>
+        <billing_pg>
+            <host>127.0.0.1</host>
+            <port>5432</port>
+            <database>sandbox</database>
+            <user>billing</user>
+            <password>{{ postgresql_billing_password }}</password>
+        </billing_pg>
+    </named_collections>
 </clickhouse>
