@@ -102,7 +102,7 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, product
 // plans table based on the requested cadence.
 //
 // Returns the Checkout session URL.
-func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID string, cadence BillingCadence) (string, error) {
+func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID string, cadence BillingCadence, successURL, cancelURL string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -139,7 +139,8 @@ func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID str
 
 	sessionParams := &stripe.CheckoutSessionCreateParams{
 		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL: stripe.String(""), // TODO: add SuccessURL/CancelURL params (like CreateCheckoutSession) when frontend calls this. Stripe rejects empty strings.
+		SuccessURL: stripe.String(successURL),
+		CancelURL:  stripe.String(cancelURL),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
 				Price:    stripe.String(stripePriceID.String),
