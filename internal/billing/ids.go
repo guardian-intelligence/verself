@@ -118,6 +118,16 @@ func StripeDepositID(task TaskID, kind XferKind) TransferID {
 	return TransferID{raw: types.BytesToUint128(id)}
 }
 
+// DisputeDebitID packs (task_id, grant_idx, KindDisputeDebit) into a transfer ID.
+// One transfer per (task, grant) pair — supports debiting up to 256 grants per dispute.
+func DisputeDebitID(task TaskID, grantIdx uint8) TransferID {
+	var id [16]byte
+	id[4] = grantIdx
+	id[5] = uint8(KindDisputeDebit)
+	binary.LittleEndian.PutUint64(id[8:16], uint64(task))
+	return TransferID{raw: types.BytesToUint128(id)}
+}
+
 // Parse extracts the packed fields from a non-ULID transfer ID.
 // Does not apply to credit expiry transfers (those use the ULID half-swap).
 func (t TransferID) Parse() (sourceID uint64, seq uint32, grantIdx uint8, kind uint8) {
