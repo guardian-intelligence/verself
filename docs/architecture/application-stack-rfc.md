@@ -775,7 +775,6 @@ CREATE TABLE forge_metal.metering (
     purchase_units       UInt64                               CODEC(T64, ZSTD(3)),
     promo_units          UInt64                               CODEC(T64, ZSTD(3)),
     refund_units         UInt64                               CODEC(T64, ZSTD(3)),
-    exit_reason          LowCardinality(String)               CODEC(ZSTD(3)),
     recorded_at          DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3))
 ) ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq)
@@ -784,6 +783,8 @@ ORDER BY (org_id, product_id, started_at, source_ref, window_seq)
 For sandbox, `source_type='job'`, `source_ref` is the decimal `job_id`, and `dimensions` carries the resource vectors used for rating (`vcpu_seconds`, `gib_seconds`, `concurrent_vms`, or whatever the product defines). For licensed products there is still a metering row, but `pricing_phase='licensed'` and the row exists for visibility rather than online balance gating.
 
 Required invariant: `charge_units = free_tier_units + subscription_units + purchase_units + promo_units + refund_units`. The orchestrator writes that breakdown once, at settlement time. No `billed` / `billed_at` mutation columns — MergeTree remains append-only.
+
+Product-specific lifecycle data (e.g. VM exit reason) belongs on the product's own table (e.g. `jobs.exit_reason`), not on the generic metering ledger.
 
 ### Billing Architecture
 

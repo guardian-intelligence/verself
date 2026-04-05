@@ -136,7 +136,6 @@ type MeteringRow struct {
 	PurchaseUnits     uint64             `ch:"purchase_units"`
 	PromoUnits        uint64             `ch:"promo_units"`
 	RefundUnits       uint64             `ch:"refund_units"`
-	ExitReason        string             `ch:"exit_reason"`
 	RecordedAt        time.Time          `ch:"recorded_at"`
 }
 

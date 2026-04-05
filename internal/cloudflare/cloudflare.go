@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 const defaultBaseURL = "https://api.cloudflare.com/client/v4"
@@ -76,7 +77,7 @@ type zoneResult struct {
 
 // FetchZones calls the /zones?name=<domain> API and returns the raw response body.
 func (c *Client) FetchZones(domain string) ([]byte, error) {
-	return c.do("GET", fmt.Sprintf("/zones?name=%s", domain), nil)
+	return c.do("GET", "/zones?"+url.Values{"name": {domain}}.Encode(), nil)
 }
 
 type dnsRecord struct {
@@ -95,7 +96,8 @@ type dnsListResponse struct {
 // EnsureDNSRecord creates or updates an A record for fqdn pointing to ip.
 func (c *Client) EnsureDNSRecord(zoneID, fqdn, ip string, proxied bool) error {
 	// Check for existing record
-	data, err := c.do("GET", fmt.Sprintf("/zones/%s/dns_records?type=A&name=%s", zoneID, fqdn), nil)
+	q := url.Values{"type": {"A"}, "name": {fqdn}}
+	data, err := c.do("GET", "/zones/"+url.PathEscape(zoneID)+"/dns_records?"+q.Encode(), nil)
 	if err != nil {
 		return fmt.Errorf("list DNS records: %w", err)
 	}
@@ -114,13 +116,9 @@ func (c *Client) EnsureDNSRecord(zoneID, fqdn, ip string, proxied bool) error {
 	}
 
 	if existing.Success && len(existing.Result) > 0 {
-		// Update existing
-		recordID := existing.Result[0].Name // use the record ID from result
-		_ = recordID
-		_, err = c.do("PUT", fmt.Sprintf("/zones/%s/dns_records/%s", zoneID, existing.Result[0].Name), record)
+		_, err = c.do("PUT", "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(existing.Result[0].Name), record)
 	} else {
-		// Create new
-		_, err = c.do("POST", fmt.Sprintf("/zones/%s/dns_records", zoneID), record)
+		_, err = c.do("POST", "/zones/"+url.PathEscape(zoneID)+"/dns_records", record)
 	}
 	if err != nil {
 		return fmt.Errorf("upsert DNS record %s: %w", fqdn, err)

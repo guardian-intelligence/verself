@@ -49,16 +49,18 @@ func NewClickHouseMeteringQuerier(conn driver.Conn, database string) *ClickHouse
 }
 
 // SumDimension returns the sum of a single dimension from the dimensions Map column.
+// Uses arrayElement(dimensions, key) with a parameterized key to avoid string
+// interpolation into the query — the dimension name goes through driver binding.
 func (q *ClickHouseMeteringQuerier) SumDimension(ctx context.Context, orgID OrgID, productID string, dimension string, since time.Time) (float64, error) {
 	var result float64
 	err := q.conn.QueryRow(ctx, fmt.Sprintf(`
-		SELECT sum(dimensions[%s])
+		SELECT sum(arrayElement(dimensions, $4))
 		FROM %s.metering
 		WHERE org_id = $1
 		  AND product_id = $2
 		  AND started_at >= $3
-	`, quoteCHString(dimension), q.database),
-		strconv.FormatUint(uint64(orgID), 10), productID, since,
+	`, q.database),
+		strconv.FormatUint(uint64(orgID), 10), productID, since, dimension,
 	).Scan(&result)
 	if err != nil {
 		return 0, fmt.Errorf("sum dimension %q: %w", dimension, err)
@@ -85,20 +87,3 @@ func (q *ClickHouseMeteringQuerier) SumChargeUnits(ctx context.Context, orgID Or
 	return result, nil
 }
 
-// quoteCHString returns a ClickHouse single-quoted string with basic escaping.
-func quoteCHString(s string) string {
-	// ClickHouse Map access uses bracket notation with single-quoted keys: dimensions['token']
-	var buf []byte
-	buf = append(buf, '\'')
-	for _, c := range []byte(s) {
-		if c == '\'' {
-			buf = append(buf, '\\', '\'')
-		} else if c == '\\' {
-			buf = append(buf, '\\', '\\')
-		} else {
-			buf = append(buf, c)
-		}
-	}
-	buf = append(buf, '\'')
-	return string(buf)
-}

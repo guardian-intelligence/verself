@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS forge_metal.metering (
     purchase_units     UInt64                               CODEC(T64, ZSTD(3)),
     promo_units        UInt64                               CODEC(T64, ZSTD(3)),
     refund_units       UInt64                               CODEC(T64, ZSTD(3)),
-    exit_reason        LowCardinality(String)               CODEC(ZSTD(3)),
     recorded_at        DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3))
 )
 ENGINE = MergeTree()
