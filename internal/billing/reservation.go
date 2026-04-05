@@ -253,6 +253,20 @@ func (c *Client) enforceOverageCap(ctx context.Context, orgID OrgID, productID s
 		return fmt.Errorf("overage cap projection: %w", err)
 	}
 	if projectedOverage > capUnits {
+		orgIDStr := strconv.FormatUint(uint64(orgID), 10)
+		_, _ = c.pg.ExecContext(ctx, `
+			INSERT INTO billing_events (org_id, event_type, payload)
+			VALUES ($1, 'overage_ceiling_hit', $2::jsonb)
+		`,
+			orgIDStr,
+			mustJSON(map[string]interface{}{
+				"product_id":        productID,
+				"cap_units":         capUnits,
+				"current_overage":   currentOverage,
+				"projected_overage": projectedOverage,
+				"window_cost":       windowCost,
+			}),
+		)
 		return ErrOverageCeilingExceeded
 	}
 	return nil
