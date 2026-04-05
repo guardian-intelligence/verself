@@ -113,27 +113,44 @@ func TestExpireCreditsAgainstLiveHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expire credits: %v", err)
 	}
+	// ExpireCredits is a global sweep — other expired grants may exist on the
+	// shared live DB. Assert >= 1 on the aggregate, then assert exact state on
+	// the specific grant we seeded.
 	if result.GrantsExpired < 1 {
-		t.Fatalf("expected at least 1 expired, got %d", result.GrantsExpired)
+		t.Fatalf("expected at least 1 expired in global sweep, got %d", result.GrantsExpired)
 	}
 	if result.GrantsFailed != 0 {
 		t.Fatalf("expected 0 failures, got %d: %v", result.GrantsFailed, result.Errors)
 	}
 
-	// Verify grant is closed.
-	var closedAt sql.NullTime
+	// Assert exact state on our specific grant — these are not affected by
+	// other parallel tests because they're scoped to this grant_id.
 	grantIDStr := ulid.ULID(grant.grantID).String()
+
+	var closedAt sql.NullTime
 	if err := env.pg.QueryRowContext(ctx, `
 		SELECT closed_at FROM credit_grants WHERE grant_id = $1
 	`, grantIDStr).Scan(&closedAt); err != nil {
 		t.Fatalf("query closed_at: %v", err)
 	}
 	if !closedAt.Valid {
-		t.Fatal("expected closed_at to be set")
+		t.Fatal("expected closed_at to be set for our grant")
 	}
 
-	// Verify TB balance is drained.
+	// TB balance must be exactly drained: 0 available, 0 pending, 500 consumed.
 	requireGrantBalance(t, env.tbClient, grant.grantID, 0, 0, 500)
+
+	// Verify exactly one billing event for our specific grant.
+	var eventCount int
+	if err := env.pg.QueryRowContext(ctx, `
+		SELECT count(*) FROM billing_events
+		WHERE event_type = 'credits_expired' AND grant_id = $1
+	`, grantIDStr).Scan(&eventCount); err != nil {
+		t.Fatalf("count expiry billing events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected exactly 1 credits_expired event for grant %s, got %d", grantIDStr, eventCount)
+	}
 
 	t.Logf("verified live expire_credits org_id=%d grant_id=%s expired=%d units=%d",
 		orgID, grantIDStr, result.GrantsExpired, result.UnitsExpired)
@@ -160,12 +177,16 @@ func TestRecordLicensedChargeAgainstLiveHost(t *testing.T) {
 		t.Fatalf("insert product: %v", err)
 	}
 
+	// Record Revenue balance before the charge.
+	revenueBefore := lookupOperatorPostedCredits(t, env.tbClient, AcctRevenue)
+
 	taskID := TaskID(time.Now().UTC().UnixNano() % 1_000_000_000)
+	invoiceID := fmt.Sprintf("in_test_licensed_live_%d", time.Now().UnixNano())
 	err := env.client.RecordLicensedCharge(ctx, taskID, LicensedCharge{
 		OrgID:           orgID,
 		ProductID:       productID,
 		SubscriptionID:  1001,
-		StripeInvoiceID: fmt.Sprintf("in_test_licensed_live_%d", time.Now().UnixNano()),
+		StripeInvoiceID: invoiceID,
 		Amount:          5000,
 		PeriodStart:     time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:       time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
@@ -174,19 +195,38 @@ func TestRecordLicensedChargeAgainstLiveHost(t *testing.T) {
 		t.Fatalf("record licensed charge: %v", err)
 	}
 
-	// Verify billing event.
+	// Verify TigerBeetle: Revenue account must have increased by exactly 5000.
+	revenueAfter := lookupOperatorPostedCredits(t, env.tbClient, AcctRevenue)
+	if revenueAfter-revenueBefore != 5000 {
+		t.Fatalf("expected Revenue to increase by exactly 5000, got %d (before=%d after=%d)",
+			revenueAfter-revenueBefore, revenueBefore, revenueAfter)
+	}
+
+	// Verify no credit_grants row was created (licensed products don't create grants).
+	orgIDStr := strconv.FormatUint(uint64(orgID), 10)
+	var grantCount int
+	if err := env.pg.QueryRowContext(ctx, `
+		SELECT count(*) FROM credit_grants WHERE org_id = $1 AND product_id = $2
+	`, orgIDStr, productID).Scan(&grantCount); err != nil {
+		t.Fatalf("count grants: %v", err)
+	}
+	if grantCount != 0 {
+		t.Fatalf("expected 0 grant rows for licensed product, got %d", grantCount)
+	}
+
+	// Verify exactly one billing event with correct fields.
 	var eventCount int
 	if err := env.pg.QueryRowContext(ctx, `
 		SELECT count(*) FROM billing_events
 		WHERE org_id = $1 AND event_type = 'licensed_charge_recorded'
-	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&eventCount); err != nil {
+	`, orgIDStr).Scan(&eventCount); err != nil {
 		t.Fatalf("count billing events: %v", err)
 	}
 	if eventCount != 1 {
-		t.Fatalf("expected 1 event, got %d", eventCount)
+		t.Fatalf("expected exactly 1 licensed_charge_recorded event, got %d", eventCount)
 	}
 
-	t.Logf("verified live record_licensed_charge org_id=%d product_id=%s task_id=%d", orgID, productID, taskID)
+	t.Logf("verified live record_licensed_charge org_id=%d product_id=%s task_id=%d revenue_delta=5000", orgID, productID, taskID)
 }
 
 // TestSettleMeteringRowAgainstLiveHost verifies that Settle writes a metering

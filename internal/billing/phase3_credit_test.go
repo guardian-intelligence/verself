@@ -116,16 +116,31 @@ func TestDepositCreditsIdempotencySubscription(t *testing.T) {
 		t.Fatalf("second deposit (should be idempotent): %v", err)
 	}
 
+	orgIDStr := strconv.FormatUint(uint64(orgID), 10)
+
 	// Only one grant row should exist.
 	var count int
 	if err := env.pg.QueryRowContext(ctx, `
 		SELECT count(*) FROM credit_grants
 		WHERE org_id = $1 AND product_id = $2 AND source = 'subscription'
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&count); err != nil {
+	`, orgIDStr, productID).Scan(&count); err != nil {
 		t.Fatalf("count grants: %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 grant row (idempotent), got %d", count)
+	}
+
+	// Only one billing event should exist — the second DepositCredits must not
+	// have logged a duplicate event.
+	var eventCount int
+	if err := env.pg.QueryRowContext(ctx, `
+		SELECT count(*) FROM billing_events
+		WHERE org_id = $1 AND event_type = 'credits_deposited'
+	`, orgIDStr).Scan(&eventCount); err != nil {
+		t.Fatalf("count billing events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected exactly 1 billing event (idempotent), got %d", eventCount)
 	}
 }
 
@@ -242,17 +257,17 @@ func TestExpireCreditsBasic(t *testing.T) {
 		t.Fatalf("expire credits: %v", err)
 	}
 
-	if result.GrantsChecked < 1 {
-		t.Fatalf("expected at least 1 grant checked, got %d", result.GrantsChecked)
+	if result.GrantsChecked != 1 {
+		t.Fatalf("expected exactly 1 grant checked, got %d", result.GrantsChecked)
 	}
-	if result.GrantsExpired < 1 {
-		t.Fatalf("expected at least 1 grant expired, got %d", result.GrantsExpired)
+	if result.GrantsExpired != 1 {
+		t.Fatalf("expected exactly 1 grant expired, got %d", result.GrantsExpired)
 	}
 	if result.GrantsFailed != 0 {
 		t.Fatalf("expected 0 grants failed, got %d: %v", result.GrantsFailed, result.Errors)
 	}
-	if result.UnitsExpired < 250 {
-		t.Fatalf("expected at least 250 units expired, got %d", result.UnitsExpired)
+	if result.UnitsExpired != 250 {
+		t.Fatalf("expected exactly 250 units expired, got %d", result.UnitsExpired)
 	}
 
 	// Verify expired grant has zero available. The BalancingDebit counts as
@@ -309,8 +324,8 @@ func TestExpireCreditsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first expire: %v", err)
 	}
-	if result1.GrantsExpired < 1 {
-		t.Fatalf("expected at least 1 expired, got %d", result1.GrantsExpired)
+	if result1.GrantsExpired != 1 {
+		t.Fatalf("expected exactly 1 expired, got %d", result1.GrantsExpired)
 	}
 
 	// Second sweep — should find nothing (closed_at is set).
@@ -348,14 +363,17 @@ func TestExpireCreditsFreeTierSinkAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expire: %v", err)
 	}
-	if result.GrantsExpired < 1 {
-		t.Fatalf("expected at least 1 expired, got %d", result.GrantsExpired)
+	if result.GrantsExpired != 1 {
+		t.Fatalf("expected exactly 1 expired, got %d", result.GrantsExpired)
+	}
+	if result.UnitsExpired != 75 {
+		t.Fatalf("expected exactly 75 units expired, got %d", result.UnitsExpired)
 	}
 
 	// FreeTierExpense should have received the expired amount.
 	freeTierExpenseAfter := lookupOperatorPostedCredits(t, env.tbClient, AcctFreeTierExpense)
-	if freeTierExpenseAfter-freeTierExpenseBefore < 75 {
-		t.Fatalf("expected FreeTierExpense to increase by at least 75, got %d", freeTierExpenseAfter-freeTierExpenseBefore)
+	if freeTierExpenseAfter-freeTierExpenseBefore != 75 {
+		t.Fatalf("expected FreeTierExpense to increase by exactly 75, got %d", freeTierExpenseAfter-freeTierExpenseBefore)
 	}
 }
 
