@@ -165,5 +165,13 @@
     "sha256": "bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b",
     "install_path": "/usr/local/bin/osv-scanner",
     "version_cmd": "osv-scanner --version"
+  },
+  "stripe": {
+    "version": "1.40.0",
+    "strategy": "tarball",
+    "url": "https://github.com/stripe/stripe-cli/releases/download/v1.40.0/stripe_1.40.0_linux_x86_64.tar.gz",
+    "sha256": "a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
+    "install_path": "/usr/local/bin/stripe",
+    "version_cmd": "stripe version"
   }
 }
