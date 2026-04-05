@@ -240,8 +240,6 @@ func TestSettleMeteringRowAgainstLiveHost(t *testing.T) {
 		t.Skip("set FORGE_METAL_BILLING_LIVE_CH_ADDR and FORGE_METAL_BILLING_LIVE_CH_PASSWORD")
 	}
 
-	env := newLivePhase1Env(t)
-
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddr},
 		Auth: clickhouse.Auth{
@@ -255,7 +253,7 @@ func TestSettleMeteringRowAgainstLiveHost(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = chConn.Close() })
 
-	env.client.SetMeteringWriter(NewClickHouseMeteringWriter(chConn, "forge_metal"))
+	env := newLivePhase1EnvWithMetering(t, NewClickHouseMeteringWriter(chConn, "forge_metal"), noopMeteringQuerier{})
 	env.client.cfg.ReservationWindowSecs = 60
 	env.client.cfg.PendingTimeoutSecs = 600
 

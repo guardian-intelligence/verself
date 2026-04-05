@@ -17,6 +17,11 @@ Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required - Email Delivery (Resend only for now)
 
+## Supply Chain Management
+
+* Git repos (including this one) are hosted on the deployed Forgejo instance at git.<domain_name>.com
+* We 
+
 ## Context
 
 Key focus areas for this project

@@ -91,8 +91,7 @@ func (c *Client) dispatchTask(ctx context.Context, task claimedTask) error {
 	case "stripe_dispute_debit":
 		return c.dispatchDisputeDebit(ctx, task)
 	case "trust_tier_evaluate":
-		// Phase 7 — not yet implemented. Goes to DLQ.
-		return ErrTaskNotImplemented
+		return c.dispatchTrustTierEvaluate(ctx, task)
 	default:
 		return fmt.Errorf("unknown task_type %q", task.TaskType)
 	}
@@ -249,6 +248,20 @@ func (c *Client) dispatchDisputeDebit(ctx context.Context, task claimedTask) err
 	}
 
 	return c.HandleDispute(ctx, OrgID(orgIDVal), TaskID(task.TaskID), p.PaymentIntentID, uint64(p.AmountLedgerUnits))
+}
+
+// dispatchTrustTierEvaluate runs the trust-tier evaluation cron.
+func (c *Client) dispatchTrustTierEvaluate(ctx context.Context, task claimedTask) error {
+	result, err := c.EvaluateTrustTiers(ctx)
+	if err != nil {
+		return fmt.Errorf("evaluate trust tiers: %w", err)
+	}
+
+	if len(result.Errors) > 0 {
+		return fmt.Errorf("evaluate trust tiers: %d partial errors, first: %w", len(result.Errors), result.Errors[0])
+	}
+
+	return nil
 }
 
 // completeTask marks a task as completed.

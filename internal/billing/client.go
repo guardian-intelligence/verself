@@ -24,8 +24,9 @@ type Client struct {
 	clock    func() time.Time
 }
 
-// NewClient constructs a billing Client.
-func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*Client, error) {
+// NewClient constructs a billing Client. All dependencies are required;
+// the server must refuse to start without ClickHouse metering connectivity.
+func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering MeteringWriter, querier MeteringQuerier, cfg Config) (*Client, error) {
 	if tbClient == nil {
 		return nil, fmt.Errorf("%w: tigerbeetle client is required", ErrInvalidConfig)
 	}
@@ -35,16 +36,24 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*
 	if sc == nil {
 		return nil, fmt.Errorf("%w: stripe client is required", ErrInvalidConfig)
 	}
+	if metering == nil {
+		return nil, fmt.Errorf("%w: metering writer is required", ErrInvalidConfig)
+	}
+	if querier == nil {
+		return nil, fmt.Errorf("%w: metering querier is required", ErrInvalidConfig)
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	client := &Client{
-		tb:     tbClient,
-		pg:     pg,
-		stripe: sc,
-		cfg:    cfg,
-		clock:  time.Now,
+		tb:       tbClient,
+		pg:       pg,
+		stripe:   sc,
+		metering: metering,
+		querier:  querier,
+		cfg:      cfg,
+		clock:    time.Now,
 	}
 
 	if err := client.createAccounts(operatorAccounts()); err != nil {
@@ -52,19 +61,6 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*
 	}
 
 	return client, nil
-}
-
-// SetMeteringWriter configures the optional ClickHouse metering writer.
-// When set, Settle writes a forge_metal.metering row after posting transfers.
-func (c *Client) SetMeteringWriter(w MeteringWriter) {
-	c.metering = w
-}
-
-// SetMeteringQuerier configures the ClickHouse metering reader.
-// Required for CheckQuotas and overage cap enforcement in Reserve.
-// Both fail closed if the querier is nil.
-func (c *Client) SetMeteringQuerier(q MeteringQuerier) {
-	c.querier = q
 }
 
 // EnsureOrg provisions an org in PostgreSQL.

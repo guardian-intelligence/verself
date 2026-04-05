@@ -100,8 +100,7 @@ func TestLoadQuotaPolicyReturnsNoneWhenNoSubscriptionOrDefaultPlanExists(t *test
 func TestCheckQuotasMonthWindowOnDefaultPlanWithoutSubscriptionFails(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	env.client.SetMeteringQuerier(&stubMeteringQuerier{})
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	orgID := OrgID(8_800_000_000_000_000_104)
 	productID, planID := uniqueCatalogIDs("quota-default-month")

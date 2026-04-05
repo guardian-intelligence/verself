@@ -39,7 +39,7 @@ func TestEnsureOrgStateMachine(t *testing.T) {
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 
-	client, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), cfg)
+	client, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), noopMeteringWriter{}, noopMeteringQuerier{}, cfg)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
