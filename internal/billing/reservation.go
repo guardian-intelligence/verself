@@ -194,6 +194,13 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		return Reservation{}, fmt.Errorf("window cost: %w", err)
 	}
 
+	// §2.5 step 8: overage ceiling enforcement.
+	if phase == PricingPhaseOverage {
+		if err := c.enforceOverageCap(ctx, req.OrgID, req.ProductID, windowCost); err != nil {
+			return Reservation{}, err
+		}
+	}
+
 	grantLegs, err := c.reserveGrantWaterfall(ctx, req.JobID, req.OrgID, windowSeq, phase, windowCost, eligible)
 	if err != nil {
 		return Reservation{}, err
@@ -216,6 +223,68 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		CostPerSec:   costPerSec,
 		GrantLegs:    grantLegs,
 	}, nil
+}
+
+// enforceOverageCap checks whether adding windowCost to the current-period
+// overage consumption would exceed the subscription's overage_cap_units.
+// No-op if the subscription has no cap (NULL). Fails closed if the querier
+// is not configured and the subscription has a cap.
+func (c *Client) enforceOverageCap(ctx context.Context, orgID OrgID, productID string, windowCost uint64) error {
+	cap, periodStart, err := c.loadOverageCap(ctx, orgID, productID)
+	if err != nil {
+		return err
+	}
+	if cap == nil {
+		return nil // no ceiling configured
+	}
+
+	capUnits := uint64(*cap)
+	if c.querier == nil {
+		return fmt.Errorf("%w: overage cap is set but metering querier is not configured", ErrOverageCeilingExceeded)
+	}
+
+	currentOverage, err := c.querier.SumChargeUnits(ctx, orgID, productID, PricingPhaseOverage, periodStart)
+	if err != nil {
+		return fmt.Errorf("overage cap check: %w", err)
+	}
+
+	projectedOverage, err := safeAddUint64(currentOverage, windowCost)
+	if err != nil {
+		return fmt.Errorf("overage cap projection: %w", err)
+	}
+	if projectedOverage > capUnits {
+		return ErrOverageCeilingExceeded
+	}
+	return nil
+}
+
+// loadOverageCap reads the subscription's overage_cap_units and current_period_start.
+// Returns (nil, _, nil) if the subscription has no cap or no active subscription exists.
+func (c *Client) loadOverageCap(ctx context.Context, orgID OrgID, productID string) (*int64, time.Time, error) {
+	var capUnits sql.NullInt64
+	var periodStart time.Time
+
+	err := c.pg.QueryRowContext(ctx, `
+		SELECT overage_cap_units, current_period_start
+		FROM subscriptions
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND status IN ('active', 'past_due', 'trialing')
+		ORDER BY subscription_id DESC
+		LIMIT 1
+	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&capUnits, &periodStart)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, time.Time{}, nil
+	}
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("load overage cap: %w", err)
+	}
+
+	if !capUnits.Valid {
+		return nil, time.Time{}, nil
+	}
+	v := capUnits.Int64
+	return &v, periodStart.UTC(), nil
 }
 
 func (c *Client) ensureOrgNotSuspended(ctx context.Context, orgID OrgID) error {
@@ -744,5 +813,6 @@ func buildMeteringRow(reservation *Reservation, actualSeconds uint32, actualCost
 		PurchaseUnits:     purchase,
 		PromoUnits:        promo,
 		RefundUnits:       refund,
+		RecordedAt:        time.Now().UTC(),
 	}
 }

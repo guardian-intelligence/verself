@@ -19,6 +19,7 @@ type Client struct {
 	pg       *sql.DB
 	stripe   *stripe.Client
 	metering MeteringWriter
+	querier  MeteringQuerier
 	cfg      Config
 	clock    func() time.Time
 }
@@ -57,6 +58,13 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, cfg Config) (*
 // When set, Settle writes a forge_metal.metering row after posting transfers.
 func (c *Client) SetMeteringWriter(w MeteringWriter) {
 	c.metering = w
+}
+
+// SetMeteringQuerier configures the ClickHouse metering reader.
+// Required for CheckQuotas and overage cap enforcement in Reserve.
+// Both fail closed if the querier is nil.
+func (c *Client) SetMeteringQuerier(q MeteringQuerier) {
+	c.querier = q
 }
 
 // EnsureOrg provisions an org in PostgreSQL.

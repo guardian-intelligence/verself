@@ -119,29 +119,42 @@ type ReserveRequest struct {
 
 // MeteringRow is one row in forge_metal.metering.
 type MeteringRow struct {
-	OrgID             string
-	ActorID           string
-	ProductID         string
-	SourceType        string
-	SourceRef         string
-	WindowSeq         uint32
-	StartedAt         time.Time
-	EndedAt           time.Time
-	BilledSeconds     uint32
-	PricingPhase      string
-	Dimensions        map[string]float64
-	ChargeUnits       uint64
-	FreeTierUnits     uint64
-	SubscriptionUnits uint64
-	PurchaseUnits     uint64
-	PromoUnits        uint64
-	RefundUnits       uint64
-	ExitReason        string
+	OrgID             string             `ch:"org_id"`
+	ActorID           string             `ch:"actor_id"`
+	ProductID         string             `ch:"product_id"`
+	SourceType        string             `ch:"source_type"`
+	SourceRef         string             `ch:"source_ref"`
+	WindowSeq         uint32             `ch:"window_seq"`
+	StartedAt         time.Time          `ch:"started_at"`
+	EndedAt           time.Time          `ch:"ended_at"`
+	BilledSeconds     uint32             `ch:"billed_seconds"`
+	PricingPhase      string             `ch:"pricing_phase"`
+	Dimensions        map[string]float64 `ch:"dimensions"`
+	ChargeUnits       uint64             `ch:"charge_units"`
+	FreeTierUnits     uint64             `ch:"free_tier_units"`
+	SubscriptionUnits uint64             `ch:"subscription_units"`
+	PurchaseUnits     uint64             `ch:"purchase_units"`
+	PromoUnits        uint64             `ch:"promo_units"`
+	RefundUnits       uint64             `ch:"refund_units"`
+	ExitReason        string             `ch:"exit_reason"`
+	RecordedAt        time.Time          `ch:"recorded_at"`
 }
 
 // MeteringWriter inserts metering rows into ClickHouse.
 type MeteringWriter interface {
 	InsertMeteringRow(ctx context.Context, row MeteringRow) error
+}
+
+// MeteringQuerier reads aggregated metering data from ClickHouse.
+// Two methods cover every billing read path: quota enforcement and overage cap checks.
+type MeteringQuerier interface {
+	// SumDimension returns the sum of a single dimension from the dimensions Map column
+	// for all metering rows matching (orgID, productID) with started_at >= since.
+	SumDimension(ctx context.Context, orgID OrgID, productID string, dimension string, since time.Time) (float64, error)
+
+	// SumChargeUnits returns the sum of charge_units for all metering rows matching
+	// (orgID, productID, pricingPhase) with started_at >= since.
+	SumChargeUnits(ctx context.Context, orgID OrgID, productID string, pricingPhase PricingPhase, since time.Time) (uint64, error)
 }
 
 type CreditGrant struct {
