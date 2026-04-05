@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stripe/stripe-go/v85"
 )
 
 // stubMeteringQuerier returns canned values for test assertions.
@@ -37,31 +39,31 @@ func (s *stubMeteringQuerier) SumChargeUnits(_ context.Context, orgID OrgID, pro
 // CheckQuotas tests
 // ---------------------------------------------------------------------------
 
-func TestCheckQuotasFailClosedWhenQuerierNil(t *testing.T) {
+func TestNewClientRejectsNilQuerier(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	orgID := OrgID(8_800_000_000_000_000_001)
-	productID, planID := uniqueCatalogIDs("quota-nil")
+	env := newPhase1TestEnv(t)
 
-	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
-		map[string]uint64{"unit": 1}, nil, false)
+	cfg := DefaultConfig()
+	cfg.ReservationWindowSecs = 60
+	cfg.PendingTimeoutSecs = 600
+	cfg.PgDSN = env.pgDSN
+	cfg.StripeSecretKey = "sk_test_placeholder"
+	cfg.StripeWebhookSecret = "whsec_test_placeholder"
+	cfg.TigerBeetleAddresses = []string{env.tbAddress}
+	cfg.TigerBeetleClusterID = env.clusterID
 
-	// querier is not set — CheckQuotas must fail closed.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_, err := env.client.CheckQuotas(ctx, orgID, productID, map[string]float64{"unit": 1})
-	if !errors.Is(err, ErrQuotaCheckUnavailable) {
-		t.Fatalf("expected ErrQuotaCheckUnavailable, got %v", err)
+	// NewClient must reject nil querier at construction time (fail closed).
+	_, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), noopMeteringWriter{}, nil, cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for nil querier, got %v", err)
 	}
 }
 
 func TestCheckQuotasNoLimitsAllowed(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	env.client.SetMeteringQuerier(&stubMeteringQuerier{})
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	orgID := OrgID(8_800_000_000_000_000_002)
 	productID, planID := uniqueCatalogIDs("quota-none")
@@ -85,8 +87,7 @@ func TestCheckQuotasNoLimitsAllowed(t *testing.T) {
 func TestCheckQuotasInstantWindowViolation(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	env.client.SetMeteringQuerier(&stubMeteringQuerier{})
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	orgID := OrgID(8_800_000_000_000_000_003)
 	productID, planID := uniqueCatalogIDs("quota-instant")
@@ -125,8 +126,7 @@ func TestCheckQuotasInstantWindowViolation(t *testing.T) {
 func TestCheckQuotasInstantWindowAllowed(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	env.client.SetMeteringQuerier(&stubMeteringQuerier{})
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	orgID := OrgID(8_800_000_000_000_000_004)
 	productID, planID := uniqueCatalogIDs("quota-instant-ok")
@@ -155,12 +155,8 @@ func TestCheckQuotasInstantWindowAllowed(t *testing.T) {
 func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
 	orgID := OrgID(8_800_000_000_000_000_005)
 	productID, planID := uniqueCatalogIDs("quota-rolling")
-
-	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
-		map[string]uint64{"unit": 1}, nil, false)
 
 	// Stub returns high usage for the "token" dimension.
 	stub := &stubMeteringQuerier{
@@ -168,7 +164,10 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 			fmt.Sprintf("%d:%s:token", orgID, productID): 60000,
 		},
 	}
-	env.client.SetMeteringQuerier(stub)
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+
+	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
+		map[string]uint64{"unit": 1}, nil, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -196,19 +195,18 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 func TestCheckQuotasRollingWindowAllowed(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
 	orgID := OrgID(8_800_000_000_000_000_006)
 	productID, planID := uniqueCatalogIDs("quota-rolling-ok")
-
-	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
-		map[string]uint64{"unit": 1}, nil, false)
 
 	stub := &stubMeteringQuerier{
 		dimensionSums: map[string]float64{
 			fmt.Sprintf("%d:%s:token", orgID, productID): 30000,
 		},
 	}
-	env.client.SetMeteringQuerier(stub)
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+
+	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
+		map[string]uint64{"unit": 1}, nil, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -229,15 +227,14 @@ func TestCheckQuotasRollingWindowAllowed(t *testing.T) {
 func TestCheckQuotasClickHouseErrorFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
+	stub := &stubMeteringQuerier{err: fmt.Errorf("connection refused")}
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+
 	orgID := OrgID(8_800_000_000_000_000_007)
 	productID, planID := uniqueCatalogIDs("quota-ch-err")
 
 	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1}, nil, false)
-
-	stub := &stubMeteringQuerier{err: fmt.Errorf("connection refused")}
-	env.client.SetMeteringQuerier(stub)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -259,9 +256,16 @@ func TestCheckQuotasClickHouseErrorFailsClosed(t *testing.T) {
 func TestOverageCapExceeded(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
 	orgID := OrgID(8_800_000_000_000_000_010)
 	productID, planID := uniqueCatalogIDs("overage-cap-exceed")
+
+	// Stub: current overage is 80 units this period.
+	stub := &stubMeteringQuerier{
+		chargeUnitSums: map[string]uint64{
+			fmt.Sprintf("%d:%s:overage", orgID, productID): 80,
+		},
+	}
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
 
 	// Plan with overage rates.
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
@@ -272,14 +276,6 @@ func TestOverageCapExceeded(t *testing.T) {
 
 	// Set overage cap on the subscription.
 	setOverageCapOnSubscription(t, env.pg, subID, 100)
-
-	// Stub: current overage is 80 units this period.
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 80,
-		},
-	}
-	env.client.SetMeteringQuerier(stub)
 
 	// Deplete the subscription grant so we enter overage phase.
 	subGrant := seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
@@ -321,9 +317,15 @@ func TestOverageCapExceeded(t *testing.T) {
 func TestOverageCapNotExceeded(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
 	orgID := OrgID(8_800_000_000_000_000_011)
 	productID, planID := uniqueCatalogIDs("overage-cap-ok")
+
+	stub := &stubMeteringQuerier{
+		chargeUnitSums: map[string]uint64{
+			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
+		},
+	}
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
 
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1},
@@ -333,13 +335,6 @@ func TestOverageCapNotExceeded(t *testing.T) {
 
 	// Cap is large enough: 500. Window cost = 180, current = 0.
 	setOverageCapOnSubscription(t, env.pg, subID, 500)
-
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
-		},
-	}
-	env.client.SetMeteringQuerier(stub)
 
 	// Deplete subscription grant.
 	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
@@ -381,9 +376,15 @@ func TestOverageCapNotExceeded(t *testing.T) {
 func TestOverageCapZeroBlocksAllOverage(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
 	orgID := OrgID(8_800_000_000_000_000_012)
 	productID, planID := uniqueCatalogIDs("overage-cap-zero")
+
+	stub := &stubMeteringQuerier{
+		chargeUnitSums: map[string]uint64{
+			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
+		},
+	}
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
 
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1},
@@ -393,13 +394,6 @@ func TestOverageCapZeroBlocksAllOverage(t *testing.T) {
 
 	// Cap = 0 means org has self-disabled overage.
 	setOverageCapOnSubscription(t, env.pg, subID, 0)
-
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
-		},
-	}
-	env.client.SetMeteringQuerier(stub)
 
 	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
 		orgID, productID, SourceSubscription, 60)
@@ -482,49 +476,24 @@ func TestOverageCapNullAllowsUnlimitedOverage(t *testing.T) {
 	}
 }
 
-func TestOverageCapFailClosedWhenQuerierNil(t *testing.T) {
+func TestNewClientRejectsNilMeteringWriter(t *testing.T) {
 	t.Parallel()
 
-	env := newPhase2TestEnv(t)
-	orgID := OrgID(8_800_000_000_000_000_014)
-	productID, planID := uniqueCatalogIDs("overage-cap-nil-q")
+	env := newPhase1TestEnv(t)
 
-	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
-		map[string]uint64{"unit": 1},
-		map[string]uint64{"unit": 3},
-		false,
-	)
+	cfg := DefaultConfig()
+	cfg.ReservationWindowSecs = 60
+	cfg.PendingTimeoutSecs = 600
+	cfg.PgDSN = env.pgDSN
+	cfg.StripeSecretKey = "sk_test_placeholder"
+	cfg.StripeWebhookSecret = "whsec_test_placeholder"
+	cfg.TigerBeetleAddresses = []string{env.tbAddress}
+	cfg.TigerBeetleClusterID = env.clusterID
 
-	setOverageCapOnSubscription(t, env.pg, subID, 100)
-	// querier is NOT set — enforceOverageCap must fail closed.
-
-	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
-		orgID, productID, SourceSubscription, 60)
-	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
-		orgID, productID, SourcePurchase, 500)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Deplete subscription.
-	res, err := env.client.Reserve(ctx, ReserveRequest{
-		JobID: 809, OrgID: orgID, ProductID: productID, ActorID: "user-nil-q",
-		Allocation: map[string]float64{"unit": 1}, SourceType: "job", SourceRef: "809",
-	})
-	if err != nil {
-		t.Fatalf("reserve1: %v", err)
-	}
-	if err := env.client.Settle(ctx, &res, 60); err != nil {
-		t.Fatalf("settle1: %v", err)
-	}
-
-	// Overage with cap but no querier → ErrOverageCeilingExceeded.
-	_, err = env.client.Reserve(ctx, ReserveRequest{
-		JobID: 810, OrgID: orgID, ProductID: productID, ActorID: "user-nil-q",
-		Allocation: map[string]float64{"unit": 1}, SourceType: "job", SourceRef: "810",
-	})
-	if !errors.Is(err, ErrOverageCeilingExceeded) {
-		t.Fatalf("expected ErrOverageCeilingExceeded (fail closed), got %v", err)
+	// NewClient must reject nil metering writer at construction time (fail closed).
+	_, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), nil, noopMeteringQuerier{}, cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for nil metering writer, got %v", err)
 	}
 }
 

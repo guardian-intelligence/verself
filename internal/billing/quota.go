@@ -43,9 +43,6 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 	if err := ctx.Err(); err != nil {
 		return QuotaResult{}, err
 	}
-	if c.querier == nil {
-		return QuotaResult{}, ErrQuotaCheckUnavailable
-	}
 
 	policy, err := c.loadQuotaPolicy(ctx, orgID, productID)
 	if err != nil {

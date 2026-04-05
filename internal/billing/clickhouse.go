@@ -87,3 +87,86 @@ func (q *ClickHouseMeteringQuerier) SumChargeUnits(ctx context.Context, orgID Or
 	return result, nil
 }
 
+// ClickHouseReconcileQuerier implements ClickHouseQuerier for reconciliation.
+// Separate from ClickHouseMeteringQuerier because reconciliation queries have
+// different shapes than hot-path queries.
+type ClickHouseReconcileQuerier struct {
+	conn     driver.Conn
+	database string
+}
+
+// NewClickHouseReconcileQuerier creates a reconciliation querier backed by ClickHouse.
+func NewClickHouseReconcileQuerier(conn driver.Conn, database string) *ClickHouseReconcileQuerier {
+	return &ClickHouseReconcileQuerier{conn: conn, database: database}
+}
+
+// SumChargeUnitsByOrg returns the total charge_units across all products for an org.
+func (q *ClickHouseReconcileQuerier) SumChargeUnitsByOrg(ctx context.Context, orgID string, since time.Time) (uint64, error) {
+	var result uint64
+	err := q.conn.QueryRow(ctx, fmt.Sprintf(`
+		SELECT sum(charge_units)
+		FROM %s.metering
+		WHERE org_id = $1
+		  AND started_at >= $2
+	`, q.database), orgID, since).Scan(&result)
+	if err != nil {
+		return 0, fmt.Errorf("sum charge_units for org %s: %w", orgID, err)
+	}
+	return result, nil
+}
+
+// SumChargeUnitsByGrantSource returns charge_units grouped by grant source type.
+func (q *ClickHouseReconcileQuerier) SumChargeUnitsByGrantSource(ctx context.Context, orgID string, productID string, since time.Time) (map[string]uint64, error) {
+	rows, err := q.conn.Query(ctx, fmt.Sprintf(`
+		SELECT
+			sum(free_tier_units) AS free_tier,
+			sum(subscription_units) AS subscription,
+			sum(purchase_units) AS purchase,
+			sum(promo_units) AS promo,
+			sum(refund_units) AS refund
+		FROM %s.metering
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND started_at >= $3
+	`, q.database), orgID, productID, since)
+	if err != nil {
+		return nil, fmt.Errorf("sum by grant source: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]uint64)
+	if rows.Next() {
+		var freeTier, subscription, purchase, promo, refund uint64
+		if err := rows.Scan(&freeTier, &subscription, &purchase, &promo, &refund); err != nil {
+			return nil, fmt.Errorf("scan grant source sums: %w", err)
+		}
+		result["free_tier"] = freeTier
+		result["subscription"] = subscription
+		result["purchase"] = purchase
+		result["promo"] = promo
+		result["refund"] = refund
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate grant source rows: %w", err)
+	}
+
+	return result, nil
+}
+
+// CountLicensedChargeRows returns the count of metering rows with pricing_phase='licensed'.
+func (q *ClickHouseReconcileQuerier) CountLicensedChargeRows(ctx context.Context, orgID string, productID string, since time.Time) (uint64, error) {
+	var result uint64
+	err := q.conn.QueryRow(ctx, fmt.Sprintf(`
+		SELECT count()
+		FROM %s.metering
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND pricing_phase = 'licensed'
+		  AND started_at >= $3
+	`, q.database), orgID, productID, since).Scan(&result)
+	if err != nil {
+		return 0, fmt.Errorf("count licensed rows: %w", err)
+	}
+	return result, nil
+}
+

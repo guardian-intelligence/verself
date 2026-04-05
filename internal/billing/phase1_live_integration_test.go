@@ -92,6 +92,12 @@ func TestGrantBalanceAgainstLiveHost(t *testing.T) {
 func newLivePhase1Env(t *testing.T) livePhase1Env {
 	t.Helper()
 
+	return newLivePhase1EnvWithMetering(t, noopMeteringWriter{}, noopMeteringQuerier{})
+}
+
+func newLivePhase1EnvWithMetering(t *testing.T, metering MeteringWriter, querier MeteringQuerier) livePhase1Env {
+	t.Helper()
+
 	pgDSN := os.Getenv("FORGE_METAL_BILLING_LIVE_PG_DSN")
 	tbAddress := os.Getenv("FORGE_METAL_BILLING_LIVE_TB_ADDRESS")
 	clusterIDText := os.Getenv("FORGE_METAL_BILLING_LIVE_TB_CLUSTER_ID")
@@ -131,7 +137,7 @@ func newLivePhase1Env(t *testing.T) livePhase1Env {
 	cfg.TigerBeetleAddresses = []string{tbAddress}
 	cfg.TigerBeetleClusterID = clusterID
 
-	client, err := NewClient(tbClient, pg, stripe.NewClient(cfg.StripeSecretKey), cfg)
+	client, err := NewClient(tbClient, pg, stripe.NewClient(cfg.StripeSecretKey), metering, querier, cfg)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}

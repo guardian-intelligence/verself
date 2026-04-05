@@ -371,8 +371,6 @@ func TestOverageCeilingHitBillingEvent(t *testing.T) {
 		t.Skip("set FORGE_METAL_BILLING_LIVE_CH_ADDR and FORGE_METAL_BILLING_LIVE_CH_PASSWORD")
 	}
 
-	env := newLivePhase1Env(t)
-
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddr},
 		Auth: clickhouse.Auth{Database: "forge_metal", Username: "default", Password: chPassword},
@@ -382,8 +380,7 @@ func TestOverageCeilingHitBillingEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = chConn.Close() })
 
-	env.client.SetMeteringWriter(NewClickHouseMeteringWriter(chConn, "forge_metal"))
-	env.client.SetMeteringQuerier(NewClickHouseMeteringQuerier(chConn, "forge_metal"))
+	env := newLivePhase1EnvWithMetering(t, NewClickHouseMeteringWriter(chConn, "forge_metal"), NewClickHouseMeteringQuerier(chConn, "forge_metal"))
 	env.client.cfg.ReservationWindowSecs = 60
 	env.client.cfg.PendingTimeoutSecs = 600
 
@@ -459,8 +456,6 @@ func TestQuotaExceededBillingEvent(t *testing.T) {
 		t.Skip("set FORGE_METAL_BILLING_LIVE_CH_ADDR and FORGE_METAL_BILLING_LIVE_CH_PASSWORD")
 	}
 
-	env := newLivePhase1Env(t)
-
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{chAddr},
 		Auth: clickhouse.Auth{Database: "forge_metal", Username: "default", Password: chPassword},
@@ -470,7 +465,7 @@ func TestQuotaExceededBillingEvent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = chConn.Close() })
 
-	env.client.SetMeteringQuerier(NewClickHouseMeteringQuerier(chConn, "forge_metal"))
+	env := newLivePhase1EnvWithMetering(t, noopMeteringWriter{}, NewClickHouseMeteringQuerier(chConn, "forge_metal"))
 
 	orgID := OrgID(8_400_000_000_000_000_000 + uint64(time.Now().UTC().Unix()%1_000_000))
 	productID, planID := uniqueCatalogIDs("live-phase5-quota-telemetry")

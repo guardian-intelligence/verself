@@ -10,7 +10,6 @@ var (
 	ErrNoActiveSubscription   = errors.New("billing: no active subscription")
 	ErrOverageCeilingExceeded = errors.New("billing: overage ceiling exceeded")
 	ErrDimensionMismatch      = errors.New("billing: allocation dimension missing from rate card")
-	ErrQuotaCheckUnavailable  = errors.New("billing: quota check unavailable (metering querier not configured)")
 	ErrWebhookVerification    = errors.New("billing: webhook verification failed")
 	ErrNoPriceConfigured      = errors.New("billing: no stripe price configured for cadence")
 	ErrTaskNotImplemented     = errors.New("billing: task type not yet implemented")

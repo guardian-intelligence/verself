@@ -118,11 +118,9 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 		return fmt.Errorf("settle reservation: %w", err)
 	}
 
-	if c.metering != nil {
-		row := buildMeteringRow(reservation, actualSeconds, actualCost)
-		if err := c.metering.InsertMeteringRow(ctx, row); err != nil {
-			return fmt.Errorf("settle reservation: write metering row: %w", err)
-		}
+	row := buildMeteringRow(reservation, actualSeconds, actualCost)
+	if err := c.metering.InsertMeteringRow(ctx, row); err != nil {
+		return fmt.Errorf("settle reservation: write metering row: %w", err)
 	}
 
 	return nil
@@ -239,10 +237,6 @@ func (c *Client) enforceOverageCap(ctx context.Context, orgID OrgID, productID s
 	}
 
 	capUnits := uint64(*cap)
-	if c.querier == nil {
-		return fmt.Errorf("%w: overage cap is set but metering querier is not configured", ErrOverageCeilingExceeded)
-	}
-
 	currentOverage, err := c.querier.SumChargeUnits(ctx, orgID, productID, PricingPhaseOverage, periodStart)
 	if err != nil {
 		return fmt.Errorf("overage cap check: %w", err)

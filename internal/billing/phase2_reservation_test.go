@@ -25,6 +25,12 @@ type phase2TestEnv struct {
 func newPhase2TestEnv(t *testing.T) phase2TestEnv {
 	t.Helper()
 
+	return newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, noopMeteringQuerier{})
+}
+
+func newPhase2TestEnvWithMetering(t *testing.T, metering MeteringWriter, querier MeteringQuerier) phase2TestEnv {
+	t.Helper()
+
 	env := newPhase1TestEnv(t)
 
 	cfg := DefaultConfig()
@@ -36,7 +42,7 @@ func newPhase2TestEnv(t *testing.T) phase2TestEnv {
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 
-	client, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), cfg)
+	client, err := NewClient(env.tbClient, env.pg, stripe.NewClient(cfg.StripeSecretKey), metering, querier, cfg)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
