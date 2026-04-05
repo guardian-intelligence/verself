@@ -31,76 +31,13 @@ Key focus areas for this project
 - Payments: Stripe + TigerBeetle + PostgreSQL
 - otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 
+* You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth.
+
 * Less important but useful if editing instructions: ./claude/CLAUDE.md is symlinked from AGENTS.md
 
 ## CI Architecture
 
-The optimization stack is, at a high level:
-
-- keep a repo-specific golden image of `main` with warmed caches
-- zfs for instant copy of the warmed golden image
-- local Forgejo fetches and mirrors for deterministic refs
-- warm default-branch database state when a fixture requests Postgres
-- turbo cache locally when the repo uses it
-
-Each CI job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of a golden image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
-
-```
-Host (CI Orchestrator — bare metal, root, ZFS kernel module)
-│
-├── ZFS Pool (NVMe-backed)
-│   ├── golden-zvol@ready                 ← golden image: ext4 inside zvol, warm caches, node_modules
-│   ├── ci/job-abc                        ← zvol clone (~1.7ms COW, metadata-only)
-│   ├── ci/job-def                        ← zvol clone
-│   └── ci/job-ghi                        ← zvol clone
-│
-├── Firecracker VM (job-abc)
-│   └── /dev/vda ← /dev/zvol/pool/ci/job-abc
-│       └── ext4 (from golden image, COW diverges on write)
-│
-├── Firecracker VM (job-def)
-│   └── /dev/vda ← /dev/zvol/pool/ci/job-def
-│
-└── Firecracker VM (job-ghi)
-    └── /dev/vda ← /dev/zvol/pool/ci/job-ghi
-```
-
-### Why this layering
-
-| Layer | Provides | Latency |
-|-------|----------|---------|
-| ZFS zvol clone | Instant COW rootfs from golden image | ~1.7ms kernel, ~5.7ms end-to-end |
-| Firecracker microVM | Process/memory/kernel isolation, deterministic execution | ~125ms from snapshot, ~3s cold boot |
-| gVisor (inside VM) | Syscall-level sandboxing for untrusted build scripts | Negligible on top of Firecracker |
-
-### Key distinctions
-
-- **zvol, not dataset.** Firecracker takes block devices (`/dev/zvol/...`), not mounted filesystems. A zvol is a ZFS block device — clone/destroy/written all work identically to datasets.
-- **Golden image is a zvol with ext4 inside.** Built from the generic guest image produced by `scripts/build-guest-rootfs.sh`, then refreshed by the `forge-metal ci warm` path into repo-specific goldens.
-- **Guest is unaware of ZFS.** It sees `/dev/vda` with ext4. No ZFS tooling needed in the VM image.
-- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in the `forge-metal` Go binary.
-
-### Orchestrator flow per job
-
-```
-1. zfs clone pool/golden-zvol@ready pool/ci/job-abc         # ~1.7ms
-2. firecracker --drive path=/dev/zvol/pool/ci/job-abc        # boot VM
-3. (job runs inside VM: git clone, npm install, npm test)
-4. VM exits
-5. zfs get written pool/ci/job-abc                           # bytes dirtied → ClickHouse wide event
-6. zfs destroy pool/ci/job-abc                               # cleanup
-```
-
-### What this does NOT use
-
-- **CRIU** — process checkpointing is fragile with Node.js/V8 (timer FDs, JIT pages, epoll). Not worth the complexity when ZFS clone already eliminates the expensive part (warm caches, pre-installed deps). Process startup of `node` is ~50ms.
-- **libzfs** — shells out to `zfs` CLI like every production ZFS project (OpenZFS, Incus, DBLab, OBuilder).
-- **Nested ZFS in guest** — the guest runs ext4 on a raw block device. ZFS stays on the host where it belongs.
-
-## ZFS
-
-This project makes heavy use of ZFS. Research notes are in `docs/research/`.
-
+See README.md for more -- the repo started as a CI orchestrator but has since evolved.
 
 ## Quick Start
 
@@ -265,6 +202,7 @@ Compression codecs per column type:
 | `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
 | `make clickhouse-shell` | Open an interactive clickhouse-client session on the worker |
 | `make clickhouse-query` | Run a ClickHouse query on the worker |
+| `make clickhouse-schemas` | Print CREATE TABLE statements for all project tables |
 | `make edit-secrets` | Open encrypted secrets in $EDITOR via sops |
 
 ## Ansible Playbooks
@@ -435,8 +373,9 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 
 ## Output Contract
 
-* When providing a recommendation, consider different plausible options and provide a differentiated recommendation.
+* When providing a recommendation, consider different plausible options and provide a differentiated recommendation that leans towards a simpler solution that best fits the long term goal of this project.
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
+* Do not speculate about host-level causes (resource exhaustion, network issues, etc.) without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to environmental factors.
 * Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
@@ -451,3 +390,5 @@ The current end-to-end proof is the controlled fixture suite under `test/fixture
 * Remember the philosophy that tests will never be able to assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
 * Package management for python must be done with `uv` do not use pip or conda.
 * Don't resolve failures through silent no-ops and imperative checks. Failures should be loud and signals should be followed in order to address root causes.
+* ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. Never use positional `batch.Append` — it silently corrupts data when columns are added or reordered.
+* ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden UInt8 column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (UInt8 over Int32 when the range fits).

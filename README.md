@@ -7,6 +7,73 @@ The CI path is built around repo-specific golden images:
 5. run CI inside an isolated Firecracker microVM
 6. emit wide events to ClickHouse for inspection in HyperDX
 
+
+The optimization stack is, at a high level:
+
+- keep a repo-specific golden image of `main` with warmed caches
+- zfs for instant copy of the warmed golden image
+- local Forgejo fetches and mirrors for deterministic refs
+- warm default-branch database state when a fixture requests Postgres
+- turbo cache locally when the repo uses it
+
+Each CI job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of a golden image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
+
+```
+Host (CI Orchestrator — bare metal, root, ZFS kernel module)
+│
+├── ZFS Pool (NVMe-backed)
+│   ├── golden-zvol@ready                 ← golden image: ext4 inside zvol, warm caches, node_modules
+│   ├── ci/job-abc                        ← zvol clone (~1.7ms COW, metadata-only)
+│   ├── ci/job-def                        ← zvol clone
+│   └── ci/job-ghi                        ← zvol clone
+│
+├── Firecracker VM (job-abc)
+│   └── /dev/vda ← /dev/zvol/pool/ci/job-abc
+│       └── ext4 (from golden image, COW diverges on write)
+│
+├── Firecracker VM (job-def)
+│   └── /dev/vda ← /dev/zvol/pool/ci/job-def
+│
+└── Firecracker VM (job-ghi)
+    └── /dev/vda ← /dev/zvol/pool/ci/job-ghi
+```
+
+### Why this layering
+
+| Layer | Provides | Latency |
+|-------|----------|---------|
+| ZFS zvol clone | Instant COW rootfs from golden image | ~1.7ms kernel, ~5.7ms end-to-end |
+| Firecracker microVM | Process/memory/kernel isolation, deterministic execution | ~125ms from snapshot, ~3s cold boot |
+| gVisor (inside VM) | Syscall-level sandboxing for untrusted build scripts | Negligible on top of Firecracker |
+
+### Key distinctions
+
+- **zvol, not dataset.** Firecracker takes block devices (`/dev/zvol/...`), not mounted filesystems. A zvol is a ZFS block device — clone/destroy/written all work identically to datasets.
+- **Golden image is a zvol with ext4 inside.** Built from the generic guest image produced by `scripts/build-guest-rootfs.sh`, then refreshed by the `forge-metal ci warm` path into repo-specific goldens.
+- **Guest is unaware of ZFS.** It sees `/dev/vda` with ext4. No ZFS tooling needed in the VM image.
+- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in the `forge-metal` Go binary.
+
+### Orchestrator flow per job
+
+```
+1. zfs clone pool/golden-zvol@ready pool/ci/job-abc         # ~1.7ms
+2. firecracker --drive path=/dev/zvol/pool/ci/job-abc        # boot VM
+3. (job runs inside VM: git clone, npm install, npm test)
+4. VM exits
+5. zfs get written pool/ci/job-abc                           # bytes dirtied → ClickHouse wide event
+6. zfs destroy pool/ci/job-abc                               # cleanup
+```
+
+### What this does NOT use
+
+- **CRIU** — process checkpointing is fragile with Node.js/V8 (timer FDs, JIT pages, epoll). Not worth the complexity when ZFS clone already eliminates the expensive part (warm caches, pre-installed deps). Process startup of `node` is ~50ms.
+- **libzfs** — shells out to `zfs` CLI like every production ZFS project (OpenZFS, Incus, DBLab, OBuilder).
+- **Nested ZFS in guest** — the guest runs ext4 on a raw block device. ZFS stays on the host where it belongs.
+
+## ZFS
+
+This project makes heavy use of ZFS. Research notes are in `docs/research/`.
+
 ## Canonical Workload Contract
 
 The repo-owned workload contract is:
