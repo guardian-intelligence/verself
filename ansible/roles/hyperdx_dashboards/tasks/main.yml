@@ -309,6 +309,38 @@
   when: "'Deploy Health' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
+# Billing Metering dashboard                                                   #
+# --------------------------------------------------------------------------- #
+
+- name: Render Billing Metering dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_billing_metering_body: "{{ lookup('template', 'dashboards/billing-metering.json.j2') }}"
+
+- name: Create Billing Metering dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_metering_body }}"
+    status_code: [200]
+  when: "'Billing Metering' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Billing Metering dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing Metering'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_metering_body }}"
+    status_code: [200]
+  when: "'Billing Metering' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
 # Validate every tile renders data                                             #
 # --------------------------------------------------------------------------- #
 
