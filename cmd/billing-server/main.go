@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,15 +33,17 @@ func main() {
 }
 
 func run() error {
-	// --- env vars aligned with Ansible credstore ---
-	pgDSN := requireEnv("BILLING_PG_DSN")
-	stripeKey := requireEnv("STRIPE_SECRET_KEY")
-	webhookSecret := requireEnv("STRIPE_WEBHOOK_SECRET")
+	// Secrets are delivered via systemd LoadCredential= (read from
+	// $CREDENTIALS_DIRECTORY, never in the process environment).
+	pgDSN := requireCredential("pg-dsn")
+	stripeKey := requireCredential("stripe-secret-key")
+	webhookSecret := requireCredential("stripe-webhook-secret")
+	chPassword := credentialOr("ch-password", "")
 
+	// Non-secret config stays as env vars (set via Environment= in the unit).
 	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
 	tbClusterID := envUint64("BILLING_TB_CLUSTER_ID", 0)
 	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
-	chPassword := envOr("BILLING_CH_PASSWORD", "")
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
 
 	// --- open connections ---
@@ -550,16 +553,42 @@ func opsTrustTierEvaluate(client *billing.Client) func(context.Context, *struct{
 	}
 }
 
-// --- env helpers ---
+// --- credential helpers (systemd LoadCredential=) ---
 
-func requireEnv(key string) string {
-	v := os.Getenv(key)
+func loadCredential(name string) (string, error) {
+	dir := os.Getenv("CREDENTIALS_DIRECTORY")
+	if dir == "" {
+		return "", fmt.Errorf("CREDENTIALS_DIRECTORY not set")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return "", fmt.Errorf("load credential %s: %w", name, err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func requireCredential(name string) string {
+	v, err := loadCredential(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "required credential %s: %v\n", name, err)
+		os.Exit(1)
+	}
 	if v == "" {
-		fmt.Fprintf(os.Stderr, "required env var %s is not set\n", key)
+		fmt.Fprintf(os.Stderr, "required credential %s is empty\n", name)
 		os.Exit(1)
 	}
 	return v
 }
+
+func credentialOr(name, fallback string) string {
+	v, err := loadCredential(name)
+	if err != nil || v == "" {
+		return fallback
+	}
+	return v
+}
+
+// --- env helpers (non-secret config) ---
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
