@@ -92,6 +92,10 @@
   notify:
     - restart verdaccio
 
+# ── Supply chain scanner dependencies ────────────────────────────
+# These tools are invoked by `forge-metal ci scan-registry` during
+# the mirror-update workflow. All are idempotent with creates: guards.
+
 - name: Install js-x-ray for supply chain scanning
   ansible.builtin.command: >
     {{ fm_bin }}/npm install --global
@@ -103,6 +107,54 @@
   environment:
     PATH: "{{ fm_bin }}:{{ ansible_facts['env']['PATH'] }}"
     HOME: /root
+
+- name: Deploy jsxray-worker.mjs alongside forge-metal binary
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../internal/supplychain/jsxray-worker.mjs"
+    dest: "{{ fm_bin }}/jsxray-worker.mjs"
+    mode: "0644"
+
+- name: Check if uv is installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/uv
+  register: verdaccio_uv_stat
+
+- name: Download uv installer
+  ansible.builtin.get_url:
+    url: https://astral.sh/uv/install.sh
+    dest: /tmp/uv-install.sh
+    mode: "0755"
+  when: not verdaccio_uv_stat.stat.exists
+
+- name: Install uv for Python tool management
+  ansible.builtin.command: /tmp/uv-install.sh
+  args:
+    creates: /usr/local/bin/uv
+  environment:
+    UV_INSTALL_DIR: /usr/local/bin
+
+- name: Install guarddog via uv tool
+  ansible.builtin.command: >
+    uv tool install guarddog=={{ verdaccio_guarddog_version }}
+  args:
+    creates: /root/.local/share/uv/tools/guarddog
+  environment:
+    PATH: "/usr/local/bin:{{ ansible_facts['env']['PATH'] }}"
+    HOME: /root
+
+- name: Symlink guarddog into PATH
+  ansible.builtin.file:
+    src: /root/.local/bin/guarddog
+    dest: /usr/local/bin/guarddog
+    state: link
+    force: true
+
+- name: Download osv-scanner binary
+  ansible.builtin.get_url:
+    url: "{{ verdaccio_osv_scanner_url }}"
+    dest: /usr/local/bin/osv-scanner
+    checksum: "sha256:{{ verdaccio_osv_scanner_sha256 }}"
+    mode: "0755"
 
 - name: Create OSV-Scanner database directory
   ansible.builtin.file:

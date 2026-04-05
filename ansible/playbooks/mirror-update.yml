@@ -23,8 +23,9 @@
     scanned_snapshot: "{{ verdaccio_dataset }}@scanned"
     staging_snapshot: "{{ staging_dataset }}@scanned"
     verdaccio_port: 4873
+    verdaccio_install_prefix: /opt/forge-metal/verdaccio
     fm_bin: /opt/forge-metal/profile/bin
-    fixture_root: /opt/forge-metal/profile/test/fixtures
+    fixture_root: /opt/forge-metal/test-fixtures
 
   tasks:
     # ── Preflight ──────────────────────────────────────────────────
@@ -122,6 +123,16 @@
         state: stopped
 
     # ── Scan ───────────────────────────────────────────────────────
+    - name: Download OSV vulnerability database
+      ansible.builtin.command: >
+        osv-scanner scan source
+        --offline-vulnerabilities --download-offline-databases
+        --allow-no-lockfiles -r /tmp
+      environment:
+        OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: /var/lib/osv-scanner
+        PATH: "/usr/local/bin:{{ ansible_facts['env']['PATH'] }}"
+      changed_when: true
+
     - name: Run supply chain scan pipeline
       ansible.builtin.command: >
         {{ fm_bin }}/forge-metal ci scan-registry
@@ -129,6 +140,7 @@
       environment:
         PATH: "{{ fm_bin }}:/usr/local/bin:{{ ansible_facts['env']['PATH'] }}"
         HOME: /root
+        NODE_PATH: "{{ verdaccio_install_prefix }}/lib/node_modules"
         FORGE_METAL_CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
       register: scan_result
       failed_when: false
