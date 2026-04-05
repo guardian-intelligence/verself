@@ -85,10 +85,33 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 		}
 	}
 
-	return QuotaResult{
+	result := QuotaResult{
 		Allowed:    len(violations) == 0,
 		Violations: violations,
-	}, nil
+	}
+	if !result.Allowed {
+		orgIDStr := strconv.FormatUint(uint64(orgID), 10)
+		violationDetails := make([]map[string]interface{}, len(violations))
+		for i, v := range violations {
+			violationDetails[i] = map[string]interface{}{
+				"dimension": v.Dimension,
+				"window":    v.Window,
+				"limit":     v.Limit,
+				"current":   v.Current,
+			}
+		}
+		_, _ = c.pg.ExecContext(ctx, `
+			INSERT INTO billing_events (org_id, event_type, payload)
+			VALUES ($1, 'quota_exceeded', $2::jsonb)
+		`,
+			orgIDStr,
+			mustJSON(map[string]interface{}{
+				"product_id": productID,
+				"violations": violationDetails,
+			}),
+		)
+	}
+	return result, nil
 }
 
 // loadQuotaPolicy resolves the active quota policy for an org/product.
