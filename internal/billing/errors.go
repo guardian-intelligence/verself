@@ -13,4 +13,5 @@ var (
 	ErrWebhookVerification    = errors.New("billing: webhook verification failed")
 	ErrNoPriceConfigured      = errors.New("billing: no stripe price configured for cadence")
 	ErrTaskNotImplemented     = errors.New("billing: task type not yet implemented")
+	ErrPendingTransferExpired = errors.New("billing: pending transfer expired, requires manual reconciliation")
 )

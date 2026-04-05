@@ -1,10 +1,11 @@
 ---
 argument_specs:
   main:
-    short_description: "Caddy edge proxy for HyperDX, Forgejo, and Zitadel"
+    short_description: "Caddy edge proxy for Billing API, HyperDX, Forgejo, and Zitadel"
     description:
       - "Deploys Caddy from the Nix profile and renders the edge config that"
-      - "fronts HyperDX, Forgejo, and Zitadel with the shared WAF and access logging."
+      - "fronts Billing API, HyperDX, Forgejo, and Zitadel with the shared WAF and access logging."
+      - "Billing API exposes only /webhooks/stripe publicly; all other paths return 404."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
@@ -15,6 +16,11 @@ argument_specs:
           Coraza WAF mode. Default remains DetectionOnly because HyperDX sends
           legitimate text/plain SQL requests through /api/clickhouse-proxy and
           the stock CRS ruleset currently produces false positives there.
+
+      billing_api_domain:
+        type: str
+        required: true
+        description: "Public domain for the Billing API (only /webhooks/stripe exposed)."
 
       hyperdx_domain:
         type: str

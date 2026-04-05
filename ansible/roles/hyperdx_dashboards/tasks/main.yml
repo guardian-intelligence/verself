@@ -405,6 +405,70 @@
   when: "'Verdaccio Supply Chain' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
+# PostgreSQL dashboard                                                         #
+# --------------------------------------------------------------------------- #
+
+- name: Render PostgreSQL dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_postgresql_body: "{{ lookup('template', 'dashboards/postgresql.json.j2') }}"
+
+- name: Create PostgreSQL dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_postgresql_body }}"
+    status_code: [200]
+  when: "'PostgreSQL' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update PostgreSQL dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['PostgreSQL'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_postgresql_body }}"
+    status_code: [200]
+  when: "'PostgreSQL' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Billing API dashboard                                                        #
+# --------------------------------------------------------------------------- #
+
+- name: Render Billing API dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_billing_api_body: "{{ lookup('template', 'dashboards/billing-api.json.j2') }}"
+
+- name: Create Billing API dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_api_body }}"
+    status_code: [200]
+  when: "'Billing API' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Billing API dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing API'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_api_body }}"
+    status_code: [200]
+  when: "'Billing API' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
 # Validate every tile renders data                                             #
 # --------------------------------------------------------------------------- #
 

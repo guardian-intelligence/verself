@@ -7,13 +7,13 @@
     cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
     chdir: "{{ role_path }}/../../../postgresql-migrations"
     executable: /bin/bash
-  register: billing_pg_migrations_local_hash
+  register: billing_api_pg_migrations_local_hash
   changed_when: false
 
 - name: Read remote PostgreSQL migrations fingerprint
   ansible.builtin.slurp:
     src: /opt/forge-metal/postgresql-migrations/.applied-hash
-  register: billing_pg_migrations_remote_hash
+  register: billing_api_pg_migrations_remote_hash
   failed_when: false
 
 - name: Probe for expected billing tables
@@ -28,16 +28,16 @@
       "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'orgs';"
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: billing_pg_table_probe
+  register: billing_api_pg_table_probe
   changed_when: false
   no_log: true
 
 - name: Apply billing PostgreSQL migrations
   when: >-
-    billing_pg_migrations_remote_hash is failed
-    or (billing_pg_migrations_remote_hash.content | default('') | b64decode | trim)
-       != (billing_pg_migrations_local_hash.stdout.split()[0] | trim)
-    or (billing_pg_table_probe.stdout | trim) == '0'
+    billing_api_pg_migrations_remote_hash is failed
+    or (billing_api_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (billing_api_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (billing_api_pg_table_probe.stdout | trim) == '0'
   block:
     - name: Remove deployed PostgreSQL migrations directory
       ansible.builtin.file:
@@ -65,17 +65,17 @@
 
     - name: Remove TigerBeetle data file before billing ledger reset
       ansible.builtin.file:
-        path: "{{ billing_tigerbeetle_data_file }}"
+        path: "{{ billing_api_tigerbeetle_data_file }}"
         state: absent
 
     - name: Format TigerBeetle data file for billing ledger reset
       ansible.builtin.command:
         cmd: >-
           {{ fm_bin }}/tigerbeetle format
-          --cluster={{ billing_tigerbeetle_cluster_id }}
-          --replica={{ billing_tigerbeetle_replica_id }}
-          --replica-count={{ billing_tigerbeetle_replica_count }}
-          {{ billing_tigerbeetle_data_file }}
+          --cluster={{ billing_api_tigerbeetle_cluster_id }}
+          --replica={{ billing_api_tigerbeetle_replica_id }}
+          --replica-count={{ billing_api_tigerbeetle_replica_count }}
+          {{ billing_api_tigerbeetle_data_file }}
       become: true
       become_user: tigerbeetle
       changed_when: true
@@ -161,7 +161,7 @@
 
     - name: Record PostgreSQL migrations fingerprint
       ansible.builtin.copy:
-        content: "{{ billing_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        content: "{{ billing_api_pg_migrations_local_hash.stdout.split()[0] }}\n"
         dest: /opt/forge-metal/postgresql-migrations/.applied-hash
         mode: "0644"
 

@@ -1,6 +1,0 @@
----
-- name: Include billing PostgreSQL migration tasks
-  ansible.builtin.include_tasks: migrations.yml
-
-- name: Include billing credential tasks
-  ansible.builtin.include_tasks: credentials.yml

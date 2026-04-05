@@ -34,6 +34,8 @@ const (
 	KindPromoCredit         XferKind = 7
 	KindDisputeDebit        XferKind = 8
 	KindCreditExpiry        XferKind = 9
+	KindDepositConfirm      XferKind = 10
+	KindExpiryConfirm       XferKind = 11
 )
 
 type PricingPhase string

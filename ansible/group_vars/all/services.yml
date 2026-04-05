@@ -38,6 +38,9 @@ services:
   postgresql:
     host: "127.0.0.1"
     port: 5432
+  billing:
+    host: "127.0.0.1"
+    port: 4242
   zitadel:
     host: "127.0.0.1"
     port: 8085

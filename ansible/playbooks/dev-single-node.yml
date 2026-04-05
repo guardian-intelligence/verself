@@ -113,8 +113,8 @@
       tags: [tigerbeetle]
     - role: postgresql
       tags: [postgresql]
-    - role: billing
-      tags: [billing]
+    - role: billing_api
+      tags: [billing_api]
     - role: zitadel
       tags: [zitadel]
     - role: otelcol
