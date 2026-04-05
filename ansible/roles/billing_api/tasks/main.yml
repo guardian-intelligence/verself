@@ -59,7 +59,14 @@
       Type=simple
       User=billing
       Group=billing
-      EnvironmentFile=/etc/credstore/billing/secrets.env
+      LoadCredential=pg-dsn:/etc/credstore/billing/pg-dsn
+      LoadCredential=stripe-secret-key:/etc/credstore/billing/stripe-secret-key
+      LoadCredential=stripe-webhook-secret:/etc/credstore/billing/stripe-webhook-secret
+      LoadCredential=ch-password:/etc/credstore/billing/ch-password
+      Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+      Environment=BILLING_TB_CLUSTER_ID={{ billing_api_tigerbeetle_cluster_id }}
+      Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
       ExecStart={{ fm_bin }}/billing-server
       Restart=on-failure
       RestartSec=5
