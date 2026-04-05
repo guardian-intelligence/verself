@@ -56,18 +56,5 @@ middlewares:
     mode: blacklist
     blockedPatterns: []
     blockedScopes: []
-    packageAge:
-      enabled: true
-      minVersionAgeDays: 3
-    cveCheck:
-      enabled: true
-      severity: critical
-      autoBlock: true
-    licenses:
-      enabled: true
-      blocked:
-        - UNLICENSED
     errorHandling:
       onFilterError: fail-closed
-      onCveCheckError: fail-open
-      onLicenseCheckError: fail-open

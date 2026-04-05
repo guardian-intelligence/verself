@@ -13,9 +13,11 @@ import (
 	"github.com/spf13/cobra"
 
 	ci "github.com/forge-metal/forge-metal/internal/ci"
+	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
 	"github.com/forge-metal/forge-metal/internal/config"
 	"github.com/forge-metal/forge-metal/internal/firecracker"
 	"github.com/forge-metal/forge-metal/internal/supplychain"
+	"github.com/google/uuid"
 )
 
 func ciCmd() *cobra.Command {
@@ -266,6 +268,11 @@ func ciScanRegistryCmd() *cobra.Command {
 				"summary", result.Summary(),
 			)
 
+			// Emit scan telemetry to ClickHouse.
+			if err := emitScanTelemetry(logger, cfg, result); err != nil {
+				logger.Warn("scan telemetry insert failed", "err", err)
+			}
+
 			if !result.Pass {
 				os.Exit(1)
 			}
@@ -275,6 +282,54 @@ func ciScanRegistryCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&storagePath, "storage-path", "/var/lib/verdaccio/storage", "Verdaccio storage directory")
 	return cmd
+}
+
+func emitScanTelemetry(logger *slog.Logger, cfg *config.Config, result supplychain.GateResult) error {
+	client, err := ch.New(cfg.ClickHouse)
+	if err != nil {
+		return fmt.Errorf("clickhouse connect: %w", err)
+	}
+	defer client.Close()
+
+	hostname, _ := os.Hostname()
+	findings := result.FindingsByScanner()
+	scanOK := uint8(0)
+	if result.Pass {
+		scanOK = 1
+	}
+
+	now := time.Now().UTC()
+	event := &ch.CIEvent{
+		JobID:                uuid.New(),
+		RunID:                "scan-" + uuid.NewString(),
+		EventKind:            "supply-chain-scan",
+		NodeID:               hostname,
+		Region:               cfg.Latitude.Region,
+		Plan:                 cfg.Latitude.Plan,
+		SupplyChainScanNs:   result.Duration.Nanoseconds(),
+		SupplyChainScanOK:   scanOK,
+		ScanAgeFindings:      uint16(findings["age"]),
+		ScanGuardDogFindings: uint16(findings["guarddog"]),
+		ScanJSXRayFindings:   uint16(findings["jsxray"]),
+		ScanOSVFindings:      uint16(findings["osv"]),
+		ScanTarballsCount:    uint32(result.TarballsScanned),
+		CreatedAt:            now,
+		StartedAt:            now.Add(-result.Duration),
+		CompletedAt:          now,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.InsertEvent(ctx, event); err != nil {
+		return fmt.Errorf("insert scan event: %w", err)
+	}
+
+	logger.Info("scan telemetry inserted",
+		"job_id", event.JobID,
+		"pass", result.Pass,
+		"tarballs", result.TarballsScanned,
+	)
+	return nil
 }
 
 func trimTrailingSlash(value string) string {

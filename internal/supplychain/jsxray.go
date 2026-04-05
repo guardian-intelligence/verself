@@ -112,22 +112,26 @@ func (s *JSXRayScanner) scanTarball(ctx context.Context, workerPath, tarball str
 
 // resolveWorkerPath finds the jsxray-worker.mjs file shipped alongside this package.
 func resolveWorkerPath() (string, error) {
-	// First, check relative to the running binary.
-	exe, err := os.Executable()
-	if err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "jsxray-worker.mjs")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+	candidates := []string{
+		// Server deployment: Ansible deploys the worker here with a node_modules
+		// symlink so ESM resolution finds @nodesecure/js-x-ray.
+		"/opt/forge-metal/scan/jsxray-worker.mjs",
+	}
+
+	// Check relative to the running binary (non-Nix deployments).
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "jsxray-worker.mjs"))
+	}
+
+	// Source tree location (development).
+	_, thisFile, _, _ := runtime.Caller(0)
+	candidates = append(candidates, filepath.Join(filepath.Dir(thisFile), "jsxray-worker.mjs"))
+
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c, nil
 		}
 	}
 
-	// Fall back to source tree location (development).
-	_, thisFile, _, _ := runtime.Caller(0)
-	candidate := filepath.Join(filepath.Dir(thisFile), "jsxray-worker.mjs")
-	if _, err := os.Stat(candidate); err == nil {
-		return candidate, nil
-	}
-
-	// Last resort: check PATH-adjacent.
-	return "", fmt.Errorf("jsxray-worker.mjs not found; expected alongside the forge-metal binary or in source tree")
+	return "", fmt.Errorf("jsxray-worker.mjs not found; checked: %v", candidates)
 }

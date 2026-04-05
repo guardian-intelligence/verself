@@ -3,5 +3,6 @@ verdaccio_install_prefix: /opt/forge-metal/verdaccio
 
 # Supply chain scanner versions — pinned to match dev-tools.json.
 verdaccio_guarddog_version: "2.9.0"
+verdaccio_jsxray_version: "15.1.0"
 verdaccio_osv_scanner_url: "https://github.com/google/osv-scanner/releases/download/v2.3.5/osv-scanner_linux_amd64"
 verdaccio_osv_scanner_sha256: "bb30c580afe5e757d3e959f4afd08a4795ea505ef84c46962b9a738aa573b41b"
