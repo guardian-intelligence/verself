@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -371,7 +372,11 @@ func readExistingToken(secretsFile string) string {
 }
 
 func saveToken(secretsFile, token string) error {
-	cmd := exec.Command("sops", "--set", fmt.Sprintf(`["cloudflare_api_token"] "%s"`, token), secretsFile)
+	jsonValue, err := json.Marshal(token)
+	if err != nil {
+		return fmt.Errorf("marshal token: %w", err)
+	}
+	cmd := exec.Command("sops", "--set", `["cloudflare_api_token"] `+string(jsonValue), secretsFile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
 	}

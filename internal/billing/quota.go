@@ -21,6 +21,20 @@ type quotaLimit struct {
 	Limit     uint64 `json:"limit"`
 }
 
+type quotaPolicySource string
+
+const (
+	quotaPolicySourceNone         quotaPolicySource = ""
+	quotaPolicySourceSubscription quotaPolicySource = "subscription"
+	quotaPolicySourceDefaultPlan  quotaPolicySource = "default_plan"
+)
+
+type loadedQuotaPolicy struct {
+	source      quotaPolicySource
+	limits      []quotaLimit
+	periodStart *time.Time
+}
+
 // CheckQuotas verifies that an org's usage is within plan-defined quota limits.
 // Rolling windows are evaluated via ClickHouse. Instant windows are compared
 // in-process from the caller-supplied usage map. Fails closed if the metering
@@ -33,25 +47,25 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 		return QuotaResult{}, ErrQuotaCheckUnavailable
 	}
 
-	limits, periodStart, err := c.loadQuotaPolicy(ctx, orgID, productID)
+	policy, err := c.loadQuotaPolicy(ctx, orgID, productID)
 	if err != nil {
 		return QuotaResult{}, err
 	}
-	if len(limits) == 0 {
+	if len(policy.limits) == 0 {
 		return QuotaResult{Allowed: true}, nil
 	}
 
 	now := c.clock().UTC()
 	var violations []QuotaViolation
 
-	for _, lim := range limits {
+	for _, lim := range policy.limits {
 		var current float64
 
 		switch lim.Window {
 		case "instant":
 			current = usage[lim.Dimension]
 		default:
-			since, err := windowSince(lim.Window, now, periodStart)
+			since, err := windowSince(lim.Window, now, policy.periodStart)
 			if err != nil {
 				return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
 			}
@@ -77,15 +91,33 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 	}, nil
 }
 
-// loadQuotaPolicy reads the quota limits from the active subscription's plan
-// or the default plan. Returns the parsed limits and the subscription's
-// current_period_start (needed for "month" window alignment). If there is no
-// subscription, periodStart is nil and "month" windows will error.
-func (c *Client) loadQuotaPolicy(ctx context.Context, orgID OrgID, productID string) ([]quotaLimit, *time.Time, error) {
+// loadQuotaPolicy resolves the active quota policy for an org/product.
+// It distinguishes "no applicable plan" from "plan exists but has no limits",
+// and only populates periodStart for subscription-backed policies.
+func (c *Client) loadQuotaPolicy(ctx context.Context, orgID OrgID, productID string) (loadedQuotaPolicy, error) {
 	orgIDText := strconv.FormatUint(uint64(orgID), 10)
 
-	// Try active subscription first.
-	var quotasJSON []byte
+	policy, found, err := c.loadSubscriptionQuotaPolicy(ctx, orgIDText, productID)
+	if err != nil {
+		return loadedQuotaPolicy{}, err
+	}
+	if found {
+		return policy, nil
+	}
+
+	policy, found, err = c.loadDefaultQuotaPolicy(ctx, productID)
+	if err != nil {
+		return loadedQuotaPolicy{}, err
+	}
+	if found {
+		return policy, nil
+	}
+
+	return loadedQuotaPolicy{source: quotaPolicySourceNone}, nil
+}
+
+func (c *Client) loadSubscriptionQuotaPolicy(ctx context.Context, orgIDText, productID string) (loadedQuotaPolicy, bool, error) {
+	var quotasJSON sql.NullString
 	var periodStart sql.NullTime
 
 	err := c.pg.QueryRowContext(ctx, `
@@ -98,43 +130,65 @@ func (c *Client) loadQuotaPolicy(ctx context.Context, orgID OrgID, productID str
 		ORDER BY s.subscription_id DESC
 		LIMIT 1
 	`, orgIDText, productID).Scan(&quotasJSON, &periodStart)
-
 	if errors.Is(err, sql.ErrNoRows) {
-		// Fall back to default plan quotas.
-		err = c.pg.QueryRowContext(ctx, `
-			SELECT p.quotas::text
-			FROM plans p
-			WHERE p.product_id = $1
-			  AND p.is_default
-			  AND p.active
-			LIMIT 1
-		`, productID).Scan(&quotasJSON)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil, nil
-		}
-		if err != nil {
-			return nil, nil, fmt.Errorf("load default plan quotas: %w", err)
-		}
-	} else if err != nil {
-		return nil, nil, fmt.Errorf("load subscription plan quotas: %w", err)
+		return loadedQuotaPolicy{}, false, nil
+	}
+	if err != nil {
+		return loadedQuotaPolicy{}, false, fmt.Errorf("load subscription plan quotas: %w", err)
 	}
 
-	if len(quotasJSON) == 0 || string(quotasJSON) == "{}" {
-		return nil, nil, nil
+	policy, err := decodeQuotaPolicy(quotasJSON)
+	if err != nil {
+		return loadedQuotaPolicy{}, false, fmt.Errorf("parse subscription plan quotas: %w", err)
+	}
+	policy.source = quotaPolicySourceSubscription
+
+	if periodStart.Valid {
+		t := periodStart.Time.UTC()
+		policy.periodStart = &t
+	}
+
+	return policy, true, nil
+}
+
+func (c *Client) loadDefaultQuotaPolicy(ctx context.Context, productID string) (loadedQuotaPolicy, bool, error) {
+	var quotasJSON sql.NullString
+
+	err := c.pg.QueryRowContext(ctx, `
+		SELECT p.quotas::text
+		FROM plans p
+		WHERE p.product_id = $1
+		  AND p.is_default
+		  AND p.active
+		LIMIT 1
+	`, productID).Scan(&quotasJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return loadedQuotaPolicy{}, false, nil
+	}
+	if err != nil {
+		return loadedQuotaPolicy{}, false, fmt.Errorf("load default plan quotas: %w", err)
+	}
+
+	policy, err := decodeQuotaPolicy(quotasJSON)
+	if err != nil {
+		return loadedQuotaPolicy{}, false, fmt.Errorf("parse default plan quotas: %w", err)
+	}
+	policy.source = quotaPolicySourceDefaultPlan
+
+	return policy, true, nil
+}
+
+func decodeQuotaPolicy(raw sql.NullString) (loadedQuotaPolicy, error) {
+	if !raw.Valid || raw.String == "" {
+		return loadedQuotaPolicy{}, nil
 	}
 
 	var policy quotaPolicy
-	if err := json.Unmarshal(quotasJSON, &policy); err != nil {
-		return nil, nil, fmt.Errorf("parse quotas JSON: %w", err)
+	if err := json.Unmarshal([]byte(raw.String), &policy); err != nil {
+		return loadedQuotaPolicy{}, err
 	}
 
-	var ps *time.Time
-	if periodStart.Valid {
-		t := periodStart.Time.UTC()
-		ps = &t
-	}
-
-	return policy.Limits, ps, nil
+	return loadedQuotaPolicy{limits: policy.Limits}, nil
 }
 
 // windowSince computes the lower bound for a rolling window query.
