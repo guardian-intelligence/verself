@@ -1,0 +1,72 @@
+{
+  "name": "Verdaccio Supply Chain",
+  "tags": ["infrastructure"],
+  "tiles": [
+    {
+      "name": "Scan Pass Rate (%)",
+      "x": 0, "y": 0, "w": 3, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'pass rate' as series, round(countIf(supply_chain_scan_ok = 1) * 100.0 / greatest(count(), 1), 1) as rate FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "%"}
+      }
+    },
+    {
+      "name": "Scan Duration (s)",
+      "x": 3, "y": 0, "w": 3, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'duration' as series, round(avg(supply_chain_scan_ns) / 1000000000, 1) as seconds FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": "s"}
+      }
+    },
+    {
+      "name": "Tarballs Scanned",
+      "x": 6, "y": 0, "w": 3, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'tarballs' as series, toFloat64(max(scan_tarballs_count)) as count FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Findings by Scanner",
+      "x": 9, "y": 0, "w": 3, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, series, findings FROM (SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'guarddog' as series, toFloat64(sum(scan_guarddog_findings)) as findings FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'jsxray' as series, toFloat64(sum(scan_jsxray_findings)) as findings FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'age' as series, toFloat64(sum(scan_age_findings)) as findings FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(created_at) as __hdx_time_bucket, 'osv' as series, toFloat64(sum(scan_osv_findings)) as findings FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' AND created_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket) ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Recent Scans",
+      "x": 0, "y": 9, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT formatDateTime(created_at, '%Y-%m-%d %H:%i:%S') as time, if(supply_chain_scan_ok = 1, 'PASS', 'FAIL') as result, scan_tarballs_count as tarballs, scan_age_findings as age, scan_guarddog_findings as guarddog, scan_jsxray_findings as jsxray, scan_osv_findings as osv, round(supply_chain_scan_ns / 1000000000, 1) as duration_s FROM forge_metal.ci_events WHERE event_kind = 'supply-chain-scan' ORDER BY created_at DESC LIMIT 20"
+      }
+    },
+    {
+      "name": "Mirror Update Deploys",
+      "x": 0, "y": 18, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') as time, if(ok = 1, 'OK', 'FAIL') as status, round(total_ns / 1000000000, 1) as duration_s, tasks_changed, tasks_failed, substring(commit_sha, 1, 8) as commit FROM forge_metal.deploy_events WHERE playbook LIKE '%mirror%' ORDER BY started_at DESC LIMIT 20"
+      }
+    }
+  ]
+}
