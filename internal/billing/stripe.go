@@ -139,7 +139,7 @@ func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID str
 
 	sessionParams := &stripe.CheckoutSessionCreateParams{
 		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		SuccessURL: stripe.String(""), // caller must set via params in future; Stripe requires non-empty
+		SuccessURL: stripe.String(""), // TODO: add SuccessURL/CancelURL params (like CreateCheckoutSession) when frontend calls this. Stripe rejects empty strings.
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{
 			{
 				Price:    stripe.String(stripePriceID.String),
