@@ -245,6 +245,59 @@
   when: dev_tools_manifest.sops is defined
 
 # ============================================================================
+# Stripe CLI (tarball → single binary)
+# ============================================================================
+
+- name: Check current Stripe CLI version
+  ansible.builtin.command: /usr/local/bin/stripe version
+  register: dev_tools_stripe_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.stripe is defined
+
+- name: Install Stripe CLI {{ dev_tools_manifest.stripe.version }}
+  when:
+    - dev_tools_manifest.stripe is defined
+    - dev_tools_stripe_current.rc != 0 or dev_tools_manifest.stripe.version not in (dev_tools_stripe_current.stdout | default(''))
+  block:
+    - name: Create temp dir for Stripe CLI
+      ansible.builtin.tempfile:
+        state: directory
+      register: dev_tools_stripe_tmp
+
+    - name: Download Stripe CLI tarball
+      ansible.builtin.get_url:
+        url: "{{ dev_tools_manifest.stripe.url }}"
+        dest: "{{ dev_tools_stripe_tmp.path }}/stripe.tar.gz"
+        checksum: "sha256:{{ dev_tools_manifest.stripe.sha256 }}"
+        mode: "0644"
+
+    - name: Extract Stripe CLI
+      ansible.builtin.unarchive:
+        src: "{{ dev_tools_stripe_tmp.path }}/stripe.tar.gz"
+        dest: "{{ dev_tools_stripe_tmp.path }}"
+        remote_src: true
+
+    - name: Install stripe binary
+      ansible.builtin.copy:
+        src: "{{ dev_tools_stripe_tmp.path }}/stripe"
+        dest: /usr/local/bin/stripe
+        remote_src: true
+        mode: "0755"
+
+    - name: Clean up temp dir
+      ansible.builtin.file:
+        path: "{{ dev_tools_stripe_tmp.path }}"
+        state: absent
+
+- name: Verify Stripe CLI version
+  ansible.builtin.command: /usr/local/bin/stripe version
+  register: dev_tools_stripe_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest.stripe.version not in dev_tools_stripe_version_check.stdout"
+  when: dev_tools_manifest.stripe is defined
+
+# ============================================================================
 # shellcheck (tarball → single binary)
 # ============================================================================
 
@@ -565,16 +618,6 @@
 # uv tool: ansible-core (with ansible-lint), pre-commit, guarddog
 # ============================================================================
 
-- name: Remove stale pipx installation
-  ansible.builtin.apt:
-    name: pipx
-    state: absent
-
-- name: Remove stale pipx home directory
-  ansible.builtin.file:
-    path: /opt/pipx
-    state: absent
-
 - name: Check ansible version
   ansible.builtin.command: /usr/local/bin/ansible --version
   register: dev_tools_ansible_current
@@ -610,6 +653,15 @@
       or dev_tools_manifest.ansible.version not in (dev_tools_ansible_current.stdout | default(''))
       or dev_tools_ansible_lint_current.rc != 0
       or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
+
+# uv tool install --with does not symlink companion executables; ensure ansible-lint is linked.
+- name: Symlink ansible-lint from uv venv
+  ansible.builtin.file:
+    src: /opt/uv-tools/ansible-core/bin/ansible-lint
+    dest: /usr/local/bin/ansible-lint
+    state: link
+    force: true
+  when: dev_tools_manifest['ansible-lint'] is defined
 
 - name: Verify Ansible version
   ansible.builtin.command: /usr/local/bin/ansible --version
@@ -704,3 +756,20 @@
       - crun
       - debootstrap
     state: present
+
+# ============================================================================
+# Cleanup: remove stale pipx (migrated to uv tool above)
+# Runs last to avoid disrupting the running Ansible process mid-playbook.
+# See ansible/ansible#85668 — replacing modules while a playbook is running
+# causes "Unknown profile name 'module_legacy_m2c'" deserialization errors.
+# ============================================================================
+
+- name: Remove stale pipx installation
+  ansible.builtin.apt:
+    name: pipx
+    state: absent
+
+- name: Remove stale pipx home directory
+  ansible.builtin.file:
+    path: /opt/pipx
+    state: absent
