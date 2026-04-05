@@ -89,8 +89,7 @@ func (c *Client) dispatchTask(ctx context.Context, task claimedTask) error {
 	case "stripe_licensed_charge":
 		return c.dispatchLicensedCharge(ctx, task)
 	case "stripe_dispute_debit":
-		// Phase 6 — not yet implemented. Goes to DLQ.
-		return ErrTaskNotImplemented
+		return c.dispatchDisputeDebit(ctx, task)
 	case "trust_tier_evaluate":
 		// Phase 7 — not yet implemented. Goes to DLQ.
 		return ErrTaskNotImplemented
@@ -226,6 +225,30 @@ func (c *Client) dispatchLicensedCharge(ctx context.Context, task claimedTask) e
 		PeriodStart:     periodStart,
 		PeriodEnd:       periodEnd,
 	})
+}
+
+// dispatchDisputeDebit calls HandleDispute for a chargeback debit.
+func (c *Client) dispatchDisputeDebit(ctx context.Context, task claimedTask) error {
+	var p struct {
+		OrgID             string `json:"org_id"`
+		DisputeID         string `json:"stripe_dispute_id"`
+		PaymentIntentID   string `json:"stripe_payment_intent_id"`
+		AmountLedgerUnits int64  `json:"amount_ledger_units"`
+	}
+	if err := json.Unmarshal(task.Payload, &p); err != nil {
+		return fmt.Errorf("parse dispute debit payload: %w", err)
+	}
+
+	orgIDVal, err := strconv.ParseUint(p.OrgID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse org_id %q: %w", p.OrgID, err)
+	}
+
+	if p.AmountLedgerUnits <= 0 {
+		return fmt.Errorf("dispute debit: amount must be positive, got %d", p.AmountLedgerUnits)
+	}
+
+	return c.HandleDispute(ctx, OrgID(orgIDVal), TaskID(task.TaskID), p.PaymentIntentID, uint64(p.AmountLedgerUnits))
 }
 
 // completeTask marks a task as completed.
