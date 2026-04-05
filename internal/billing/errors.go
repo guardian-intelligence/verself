@@ -10,4 +10,5 @@ var (
 	ErrNoActiveSubscription   = errors.New("billing: no active subscription")
 	ErrOverageCeilingExceeded = errors.New("billing: overage ceiling exceeded")
 	ErrDimensionMismatch      = errors.New("billing: allocation dimension missing from rate card")
+	ErrQuotaCheckUnavailable  = errors.New("billing: quota check unavailable (metering querier not configured)")
 )
