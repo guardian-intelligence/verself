@@ -1,0 +1,75 @@
+{
+  "name": "Billing Metering",
+  "tags": ["billing"],
+  "tiles": [
+    {
+      "name": "Charge Units by Pricing Phase",
+      "x": 0, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfHour(started_at) AS __hdx_time_bucket, pricing_phase AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": " units"}
+      }
+    },
+    {
+      "name": "Overage Units (Current Period)",
+      "x": 6, "y": 0, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfHour(started_at) AS __hdx_time_bucket, org_id AS series, toFloat64(sum(charge_units)) AS overage_units FROM forge_metal.metering WHERE pricing_phase = 'overage' AND started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": " units"}
+      }
+    },
+    {
+      "name": "Metering Rows per Day",
+      "x": 0, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(started_at) AS __hdx_time_bucket, 'rows' AS series, toFloat64(count()) AS row_count FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Charge Units by Product",
+      "x": 4, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT toStartOfDay(started_at) AS __hdx_time_bucket, product_id AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": " units"}
+      }
+    },
+    {
+      "name": "Funding Source Breakdown",
+      "x": 8, "y": 9, "w": 4, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT __hdx_time_bucket, series, units FROM (SELECT toStartOfDay(started_at) AS __hdx_time_bucket, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(started_at) AS __hdx_time_bucket, 'subscription' AS series, toFloat64(sum(subscription_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(started_at) AS __hdx_time_bucket, 'purchase' AS series, toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket UNION ALL SELECT toStartOfDay(started_at) AS __hdx_time_bucket, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY __hdx_time_bucket) ORDER BY __hdx_time_bucket",
+        "fillNulls": true,
+        "numberFormat": {"output": "number", "suffix": " units"}
+      }
+    },
+    {
+      "name": "Recent Metering Activity",
+      "x": 0, "y": 18, "w": 12, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, pricing_phase, charge_units, billed_seconds, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25"
+      }
+    }
+  ]
+}
