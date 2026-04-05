@@ -139,7 +139,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 		"expires_at":               expiresAt.Format(time.RFC3339),
 	}
 
-	return c.enqueueTask(ctx, "stripe_purchase_deposit", piID, payload, event.ID)
+	return c.enqueueTask(ctx, "stripe_purchase_deposit", piID, payload)
 }
 
 // handleInvoicePaid processes a recurring invoice success.
@@ -241,7 +241,7 @@ func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) erro
 			"expires_at":           expiresAt.Format(time.RFC3339),
 			"source":               "subscription",
 		}
-		return c.enqueueTask(ctx, "stripe_subscription_credit_deposit", invoiceID, payload, event.ID)
+		return c.enqueueTask(ctx, "stripe_subscription_credit_deposit", invoiceID, payload)
 
 	case "licensed":
 		amountPaid, _ := strconv.ParseInt(amountStr, 10, 64)
@@ -255,7 +255,7 @@ func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) erro
 			"period_start":        periodStart.Format(time.RFC3339),
 			"period_end":          periodEnd.Format(time.RFC3339),
 		}
-		return c.enqueueTask(ctx, "stripe_licensed_charge", invoiceID, payload, event.ID)
+		return c.enqueueTask(ctx, "stripe_licensed_charge", invoiceID, payload)
 
 	default:
 		return nil // one_time or unknown — no task needed
@@ -357,7 +357,7 @@ func (c *Client) handleDisputeCreated(ctx context.Context, event stripe.Event) e
 		mustJSON(payload),
 	)
 
-	return c.enqueueTask(ctx, "stripe_dispute_debit", disputeID, payload, event.ID)
+	return c.enqueueTask(ctx, "stripe_dispute_debit", disputeID, payload)
 }
 
 // handleSubscriptionDeleted marks the subscription as cancelled.
@@ -404,17 +404,11 @@ func (c *Client) handleSubscriptionDeleted(ctx context.Context, event stripe.Eve
 
 // enqueueTask inserts a task row with idempotency_key. ON CONFLICT handles
 // duplicate Stripe deliveries — the same event ID maps to the same task.
-func (c *Client) enqueueTask(ctx context.Context, taskType, idempotencyKey string, payload map[string]interface{}, stripeEventID string) error {
+func (c *Client) enqueueTask(ctx context.Context, taskType, idempotencyKey string, payload map[string]interface{}) error {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("enqueue task: marshal payload: %w", err)
 	}
-
-	var stripeEventIDPtr *string
-	if stripeEventID != "" {
-		stripeEventIDPtr = &stripeEventID
-	}
-	_ = stripeEventIDPtr // used below for future billing_events correlation
 
 	_, err = c.pg.ExecContext(ctx, `
 		INSERT INTO tasks (task_type, payload, idempotency_key)

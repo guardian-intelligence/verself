@@ -2,7 +2,9 @@ package billing
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -68,7 +70,7 @@ func (c *Client) claimTask(ctx context.Context) (claimedTask, bool, error) {
 		RETURNING task_id, task_type, payload, attempts, max_attempts, idempotency_key
 	`).Scan(&task.TaskID, &task.TaskType, &task.Payload, &task.Attempts, &task.MaxAttempts, &task.IdempotencyKey)
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return claimedTask{}, false, nil
 		}
 		return claimedTask{}, false, fmt.Errorf("claim task: %w", err)
