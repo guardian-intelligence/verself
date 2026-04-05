@@ -1,7 +1,7 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain \
        server-profile smelter-build \
-       clickhouse-shell clickhouse-query edit-secrets
+       clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 BINARY   := forge-metal
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -62,6 +62,9 @@ clickhouse-shell: ## Open an interactive clickhouse-client session on the worker
 clickhouse-query: ## Run a ClickHouse query on the worker: make clickhouse-query QUERY='SHOW TABLES' [DATABASE=forge_metal]
 	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
 	./scripts/clickhouse.sh $(if $(DATABASE),--database $(DATABASE),) --query "$(QUERY)"
+
+clickhouse-schemas: ## Print CREATE TABLE statements for all project tables
+	./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
 
 edit-secrets: ## Open encrypted secrets in $$EDITOR via sops
 	sops ansible/group_vars/all/secrets.sops.yml
