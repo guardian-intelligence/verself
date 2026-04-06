@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,11 +17,10 @@ import (
 // WebhookHandler returns an http.Handler that receives Stripe webhook events,
 // verifies signatures, and persists task rows for async processing.
 //
-// The handler itself does minimal work: it parses the event, performs any
-// synchronous side effects (customer correlation, dunning updates, subscription
-// cancellation), enqueues a task row for async work, and returns 200 to Stripe.
+// The handler itself does minimal work: it verifies the signature, durably
+// enqueues the event for async processing, and returns 200 to Stripe.
 //
-// Returns 400 on bad signature, 500 on persistence failure (so Stripe retries).
+// Returns 400 on bad signature, 500 on enqueue failure (so Stripe retries).
 func (c *Client) WebhookHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<16)) // 64KB max
@@ -38,13 +38,18 @@ func (c *Client) WebhookHandler() http.Handler {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
-		if err := c.handleWebhookEvent(ctx, event); err != nil {
+		if err := c.enqueueWebhookEvent(ctx, body, event); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("billing: queued stripe webhook event id=%s type=%s", event.ID, event.Type)
 
 		w.WriteHeader(http.StatusOK)
 	})
+}
+
+func (c *Client) enqueueWebhookEvent(ctx context.Context, body []byte, event stripe.Event) error {
+	return c.enqueueRawTask(ctx, "stripe_webhook_event", "stripe_event:"+event.ID, body)
 }
 
 func (c *Client) handleWebhookEvent(ctx context.Context, event stripe.Event) error {
@@ -231,15 +236,15 @@ func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) erro
 		}
 		expiresAt := periodEnd.AddDate(0, 0, 30) // period_end + 30 days grace
 		payload := map[string]interface{}{
-			"org_id":               orgIDStr,
-			"product_id":           productID,
-			"subscription_id":      subscriptionID,
-			"stripe_invoice_id":    invoiceID,
-			"amount_ledger_units":  includedCreds,
-			"period_start":         periodStart.Format(time.RFC3339),
-			"period_end":           periodEnd.Format(time.RFC3339),
-			"expires_at":           expiresAt.Format(time.RFC3339),
-			"source":               "subscription",
+			"org_id":              orgIDStr,
+			"product_id":          productID,
+			"subscription_id":     subscriptionID,
+			"stripe_invoice_id":   invoiceID,
+			"amount_ledger_units": includedCreds,
+			"period_start":        periodStart.Format(time.RFC3339),
+			"period_end":          periodEnd.Format(time.RFC3339),
+			"expires_at":          expiresAt.Format(time.RFC3339),
+			"source":              "subscription",
 		}
 		return c.enqueueTask(ctx, "stripe_subscription_credit_deposit", invoiceID, payload)
 
@@ -419,6 +424,18 @@ func (c *Client) enqueueTask(ctx context.Context, taskType, idempotencyKey strin
 		return fmt.Errorf("enqueue task %s: %w", taskType, err)
 	}
 
+	return nil
+}
+
+func (c *Client) enqueueRawTask(ctx context.Context, taskType, idempotencyKey string, payloadJSON []byte) error {
+	_, err := c.pg.ExecContext(ctx, `
+		INSERT INTO tasks (task_type, payload, idempotency_key)
+		VALUES ($1, $2::jsonb, $3)
+		ON CONFLICT (idempotency_key) DO NOTHING
+	`, taskType, string(payloadJSON), idempotencyKey)
+	if err != nil {
+		return fmt.Errorf("enqueue task %s: %w", taskType, err)
+	}
 	return nil
 }
 
