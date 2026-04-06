@@ -297,6 +297,23 @@ fn execStartJailer(config: *const OpsConfig, req: proto.Request, resp: *[proto.m
     child.spawn() catch
         return proto.errorResponse(resp, req.request_id, .operation_failed, "spawn jailer failed");
 
+    var api_socket_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const api_socket_path = std.fmt.bufPrint(
+        &api_socket_path_buf,
+        "{s}/firecracker/{s}/root/run/firecracker.sock",
+        .{ chroot_base.value, job_id.value },
+    ) catch return proto.errorResponse(resp, req.request_id, .internal_error, "api socket path too long");
+
+    waitForPathAbsolute(api_socket_path, 5 * std.time.ns_per_s) catch {
+        std.posix.kill(@intCast(child.id), std.posix.SIG.KILL) catch {};
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "wait for api socket failed");
+    };
+
+    var api_socket_path_z_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+    const api_socket_path_z = std.fmt.bufPrintZ(&api_socket_path_z_buf, "{s}", .{api_socket_path}) catch
+        return proto.errorResponse(resp, req.request_id, .internal_error, "api socket path too long");
+    _ = std.posix.system.chmod(api_socket_path_z, 0o770);
+
     return proto.okResponseWithU32(resp, req.request_id, @intCast(child.id));
 }
 
@@ -388,6 +405,18 @@ fn makePathAbsolute(path: []const u8) !void {
             else => return err,
         };
     }
+}
+
+fn waitForPathAbsolute(path: []const u8, timeout_ns: u64) !void {
+    const deadline = std.time.nanoTimestamp() + @as(i128, @intCast(timeout_ns));
+    while (std.time.nanoTimestamp() < deadline) {
+        std.fs.accessAbsolute(path, .{}) catch {
+            std.Thread.sleep(10 * std.time.ns_per_ms);
+            continue;
+        };
+        return;
+    }
+    return error.PathNotFound;
 }
 
 const CmdResult = struct {
