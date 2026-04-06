@@ -98,6 +98,8 @@ type JobResult struct {
 	Metrics              *VMMetrics
 }
 
+const firecrackerAPIStepTimeout = 5 * time.Second
+
 // Orchestrator manages the full lifecycle of a Firecracker VM job.
 type Orchestrator struct {
 	cfg    Config
@@ -297,34 +299,54 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 
 	apiSteps := []struct {
 		name string
-		fn   func() error
+		fn   func(context.Context) error
 	}{
-		{"metrics", func() error { return client.putMetrics(ctx, "/metrics.json") }},
-		{"boot-source", func() error { return client.putBootSource(ctx, "/vmlinux", bootArgs) }},
-		{"rootfs", func() error { return client.putDrive(ctx, "rootfs", "/rootfs", true) }},
-		{"machine-config", func() error { return client.putMachineConfig(ctx, o.cfg.VCPUs, o.cfg.MemoryMiB) }},
-		{"network", func() error {
-			return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
+		{"metrics", func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
+		{"boot-source", func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
+		{"rootfs", func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true) }},
+		{"machine-config", func(stepCtx context.Context) error {
+			return client.putMachineConfig(stepCtx, o.cfg.VCPUs, o.cfg.MemoryMiB)
 		}},
-		{"vsock", func() error {
+		{"network", func(stepCtx context.Context) error {
+			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
+		}},
+		{"vsock", func(stepCtx context.Context) error {
 			// Each VM needs a unique CID on the host. CID 0-2 are reserved
 			// (0=hypervisor, 1=reserved, 2=host). Derive from the network
 			// slot index which is already unique per concurrent VM.
 			cid := uint32(netSetup.Lease.SlotIndex) + 3
-			return client.putVsock(ctx, cid, "/run/forge-control.sock")
+			return client.putVsock(stepCtx, cid, "/run/forge-control.sock")
 		}},
-		{"entropy", func() error { return client.putEntropy(ctx) }},
+		{"entropy", func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
 	}
 
 	for _, step := range apiSteps {
-		if apiErr := step.fn(); apiErr != nil {
+		stepStart := time.Now()
+		logger.Info("configuring firecracker", "step", step.name)
+		stepCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+		apiErr := step.fn(stepCtx)
+		cancel()
+		if apiErr != nil {
 			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
 		}
+		logger.Info("configured firecracker",
+			"step", step.name,
+			"duration_ms", time.Since(stepStart).Milliseconds(),
+		)
 	}
 
-	if startVMErr := client.startInstance(ctx); startVMErr != nil {
+	startVMStart := time.Now()
+	logger.Info("configuring firecracker", "step", "instance-start")
+	startCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+	startVMErr := client.startInstance(startCtx)
+	cancel()
+	if startVMErr != nil {
 		return result, fmt.Errorf("start VM: %w", startVMErr)
 	}
+	logger.Info("configured firecracker",
+		"step", "instance-start",
+		"duration_ms", time.Since(startVMStart).Milliseconds(),
+	)
 	result.VMBootTime = time.Since(bootStart)
 	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
 

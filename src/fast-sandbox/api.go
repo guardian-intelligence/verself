@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 )
 
 // apiClient is a thin HTTP client over a Firecracker Unix socket.
@@ -18,11 +19,13 @@ type apiClient struct {
 }
 
 func newAPIClient(socketPath string) *apiClient {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	return &apiClient{
 		client: &http.Client{
+			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("unix", socketPath)
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return dialer.DialContext(ctx, "unix", socketPath)
 				},
 			},
 		},
