@@ -57,12 +57,20 @@
 	@stripe_webhook {
 		method POST
 		path /webhooks/stripe
+		client_ip {{ caddy_stripe_webhook_ips | join(' ') }}
+	}
+	@stripe_webhook_post {
+		method POST
+		path /webhooks/stripe
 	}
 	handle @stripe_webhook {
 		request_body {
 			max_size 65536
 		}
 		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }}
+	}
+	handle @stripe_webhook_post {
+		respond 403
 	}
 	handle /webhooks/stripe {
 		respond 405

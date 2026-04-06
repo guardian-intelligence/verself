@@ -15,6 +15,41 @@
     owner: root
     mode: "0755"
 
+- name: Require billing webhook DNS to remain DNS-only
+  ansible.builtin.assert:
+    that: not (cloudflare_proxied | default(false) | bool)
+    fail_msg: >-
+      billing webhook origin IP allowlisting requires billing DNS to remain
+      DNS-only (cloudflare_proxied=false). Move the allowlist to the
+      Cloudflare edge before enabling orange-cloud proxying.
+
+- name: Fetch Stripe webhook IP feed
+  ansible.builtin.uri:
+    url: "{{ caddy_stripe_webhook_ips_url }}"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: caddy_stripe_webhook_ips_response
+  delegate_to: localhost
+  become: false
+  retries: 5
+  delay: 3
+  until:
+    - caddy_stripe_webhook_ips_response.status == 200
+    - caddy_stripe_webhook_ips_response.json.WEBHOOKS | default([], true) | length > 0
+
+- name: Set Stripe webhook IP list fact
+  ansible.builtin.set_fact:
+    caddy_stripe_webhook_ips: "{{ caddy_stripe_webhook_ips_response.json.WEBHOOKS }}"
+
+- name: Assert Stripe webhook IP list parsed
+  ansible.builtin.assert:
+    that:
+      - caddy_stripe_webhook_ips | length > 0
+      - caddy_stripe_webhook_ips | select('string') | list | length == caddy_stripe_webhook_ips | length
+    fail_msg: >-
+      Failed to parse Stripe webhook IPs from {{ caddy_stripe_webhook_ips_url }}.
+
 - name: Deploy Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2

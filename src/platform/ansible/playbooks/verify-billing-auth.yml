@@ -336,14 +336,14 @@
           delay: 15
           until: verify_billing_auth_public_root.status == 404
 
-        - name: Verify public Stripe webhook bypasses bearer auth
+        - name: Verify public Stripe webhook denies non-Stripe origin
           ansible.builtin.uri:
             url: "{{ verify_billing_auth_public_billing_base_url }}/webhooks/stripe"
             method: POST
             headers:
               Content-Type: application/json
             body: "{}"
-            status_code: [200, 400, 401, 404, 405, 500]
+            status_code: 403
             validate_certs: true
             return_content: true
           register: verify_billing_auth_public_webhook_probe
@@ -351,8 +351,7 @@
           become: false
           retries: 20
           delay: 15
-          until: verify_billing_auth_public_webhook_probe.status in [200, 400, 404, 405, 500]
-          failed_when: verify_billing_auth_public_webhook_probe.status == 401
+          until: verify_billing_auth_public_webhook_probe.status == 403
 
       always:
         - name: Remove verification user grant
