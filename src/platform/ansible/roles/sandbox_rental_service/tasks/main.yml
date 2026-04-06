@@ -182,8 +182,23 @@
 
 # --- Readiness gate ---
 
-- name: Wait for sandbox-rental-service to be ready
-  ansible.builtin.wait_for:
-    host: "{{ services.sandbox_rental.host }}"
-    port: "{{ services.sandbox_rental.port }}"
-    timeout: 30
+- name: Wait for sandbox-rental-service unit to be active
+  ansible.builtin.service_facts:
+  register: sandbox_rental_service_unit_active
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: >-
+    (
+      sandbox_rental_service_unit_active.ansible_facts.services['sandbox-rental-service.service']
+      | default({})
+    ).state | default('') == 'running'
+
+- name: Wait for sandbox-rental-service listener to be present
+  ansible.builtin.command:
+    cmd: "ss -ltn '( sport = :{{ services.sandbox_rental.port }} )'"
+  register: sandbox_rental_service_listener
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: sandbox_rental_service_listener.stdout is search(':' ~ (services.sandbox_rental.port | string))
