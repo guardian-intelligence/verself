@@ -82,7 +82,7 @@
 
 {{ sandbox_rental_service_domain }} {
 	import access_log
-	import waf_blocking
+	import waf_detection
 
 	handle /api/* {
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
