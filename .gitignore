@@ -1,5 +1,8 @@
-# Binaries
+# Binaries (go build outputs next to source modules)
+/forge-metal
 src/platform/forge-metal
+src/billing-service/billing-service
+src/billing-service/tb-inspect
 
 # Config (contains credentials)
 forge-metal.toml
