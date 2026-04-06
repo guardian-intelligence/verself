@@ -169,4 +169,3 @@ func (q *ClickHouseReconcileQuerier) CountLicensedChargeRows(ctx context.Context
 	}
 	return result, nil
 }
-

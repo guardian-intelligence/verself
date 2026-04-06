@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	_ "github.com/lib/pq"
 
 	auth "github.com/forge-metal/auth-middleware"
+	billingclient "github.com/forge-metal/billing-client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
@@ -117,21 +119,22 @@ func run() error {
 
 	// --- billing client ---
 
-	billingClient := &jobs.BillingClient{
-		BaseURL:    billingURL,
-		HTTPClient: &http.Client{Timeout: 10 * time.Second},
-		Logger:     logger,
+	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(&http.Client{Timeout: 10 * time.Second}))
+	if err != nil {
+		return fmt.Errorf("create billing client: %w", err)
 	}
 
 	// --- job service ---
 
 	jobService := &jobs.Service{
-		PG:           pg,
-		CH:           chConn,
-		CHDatabase:   "forge_metal",
-		Orchestrator: orchestrator,
-		Billing:      billingClient,
-		Logger:       logger,
+		PG:            pg,
+		CH:            chConn,
+		CHDatabase:    "forge_metal",
+		Orchestrator:  orchestrator,
+		Billing:       billingClient,
+		BillingVCPUs:  fsVCPUs,
+		BillingMemMiB: fsMemoryMiB,
+		Logger:        logger,
 	}
 
 	// --- Huma API ---
@@ -256,7 +259,10 @@ func submitJob(svc *jobs.Service) func(context.Context, *submitJobInput) (*submi
 
 		jobID, err := svc.Submit(ctx, orgID, identity.Subject, repoURL, input.Body.RunCommand)
 		if err != nil {
-			if strings.Contains(err.Error(), "insufficient balance") {
+			if errors.Is(err, jobs.ErrQuotaExceeded) {
+				return nil, huma.Error429TooManyRequests("quota exceeded")
+			}
+			if errors.Is(err, billingclient.ErrPaymentRequired) {
 				return nil, huma.Error402PaymentRequired("insufficient balance")
 			}
 			return nil, huma.Error500InternalServerError("submit job", err)

@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	./src/auth-middleware
 	./src/billing
+	./src/billing-client
 	./src/billing-service
 	./src/fast-sandbox
 	./src/platform

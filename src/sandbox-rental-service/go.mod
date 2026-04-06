@@ -6,6 +6,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/forge-metal/auth-middleware v0.0.0
+	github.com/forge-metal/billing-client v0.0.0
 	github.com/forge-metal/fast-sandbox v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
@@ -14,11 +15,13 @@ require (
 require (
 	github.com/ClickHouse/ch-go v0.63.1 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/oapi-codegen/runtime v1.3.1 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -33,5 +36,6 @@ require (
 
 replace (
 	github.com/forge-metal/auth-middleware => ../auth-middleware
+	github.com/forge-metal/billing-client => ../billing-client
 	github.com/forge-metal/fast-sandbox => ../fast-sandbox
 )
