@@ -39,42 +39,49 @@ func (s *SocketPrivOps) connect() (net.Conn, error) {
 }
 
 func (s *SocketPrivOps) roundTrip(op opsOpCode, payload []byte) ([]byte, error) {
-	conn, err := s.connect()
-	if err != nil {
-		return nil, err
-	}
-
 	reqID := s.requestID.Add(1)
 	var sendBuf [opsMaxMessage]byte
 	n := opsEncodeRequest(sendBuf[:], op, reqID, payload)
 
-	if _, err := conn.Write(sendBuf[:n]); err != nil {
-		s.resetConn()
-		return nil, fmt.Errorf("ops send: %w", err)
+	for attempt := 0; attempt < 2; attempt++ {
+		conn, err := s.connect()
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err := conn.Write(sendBuf[:n]); err != nil {
+			s.resetConn()
+			if attempt == 0 {
+				continue
+			}
+			return nil, fmt.Errorf("ops send: %w", err)
+		}
+
+		var recvBuf [opsMaxMessage]byte
+		rn, err := conn.Read(recvBuf[:])
+		if err != nil {
+			s.resetConn()
+			return nil, fmt.Errorf("ops recv: %w", err)
+		}
+
+		status, respID, respPayload, err := opsDecodeResponse(recvBuf[:rn])
+		if err != nil {
+			return nil, err
+		}
+		if respID != reqID {
+			return nil, fmt.Errorf("ops response id mismatch: got %d, want %d", respID, reqID)
+		}
+		if status != opsStatusOK {
+			return nil, fmt.Errorf("ops error (status %d): %s", status, string(respPayload))
+		}
+
+		// Return a copy so callers aren't aliasing the recv buffer.
+		result := make([]byte, len(respPayload))
+		copy(result, respPayload)
+		return result, nil
 	}
 
-	var recvBuf [opsMaxMessage]byte
-	rn, err := conn.Read(recvBuf[:])
-	if err != nil {
-		s.resetConn()
-		return nil, fmt.Errorf("ops recv: %w", err)
-	}
-
-	status, respID, respPayload, err := opsDecodeResponse(recvBuf[:rn])
-	if err != nil {
-		return nil, err
-	}
-	if respID != reqID {
-		return nil, fmt.Errorf("ops response id mismatch: got %d, want %d", respID, reqID)
-	}
-	if status != opsStatusOK {
-		return nil, fmt.Errorf("ops error (status %d): %s", status, string(respPayload))
-	}
-
-	// Return a copy so callers aren't aliasing the recv buffer.
-	result := make([]byte, len(respPayload))
-	copy(result, respPayload)
-	return result, nil
+	return nil, fmt.Errorf("ops send: retries exhausted")
 }
 
 func (s *SocketPrivOps) resetConn() {
