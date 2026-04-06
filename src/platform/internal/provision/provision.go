@@ -382,7 +382,7 @@ func (w *Wizard) provision(token string) error {
 	fmt.Fprintln(w.Out)
 	fmt.Fprintln(w.Out, "Next steps:")
 	fmt.Fprintln(w.Out, "  forge-metal setup-domain   Configure DNS (optional)")
-	fmt.Fprintln(w.Out, "  cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...")
+	fmt.Fprintln(w.Out, "  cd ansible && ansible-playbook playbooks/dev-single-node.yml")
 	return nil
 }
 

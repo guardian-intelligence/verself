@@ -39,7 +39,7 @@
     that: "'0.16.' in tigerbeetle_version_output.stdout"
     fail_msg: >-
       Expected TigerBeetle 0.16.x, got: {{ tigerbeetle_version_output.stdout }}.
-      Update flake.lock or adjust the version assertion.
+      Update server-tools.json or adjust the version assertion.
 
 # --- Data directory ---
 

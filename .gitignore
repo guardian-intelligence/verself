@@ -37,9 +37,8 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# Nix
-result
-result-*
+# Build artifacts
+.build/
 
 # Zig
 src/homestead-smelter/.zig-cache/

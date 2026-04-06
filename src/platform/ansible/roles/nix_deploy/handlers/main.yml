@@ -1,6 +1,0 @@
----
-- name: Restart nix-daemon
-  listen: restart nix-daemon
-  ansible.builtin.systemd:
-    name: nix-daemon
-    state: restarted

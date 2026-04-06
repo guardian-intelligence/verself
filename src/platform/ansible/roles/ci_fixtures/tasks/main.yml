@@ -10,7 +10,7 @@
   ansible.builtin.fail:
     msg: >-
       forge-metal CLI not found at {{ fm_bin }}/forge-metal.
-      Run: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...
+      Run: cd ansible && ansible-playbook playbooks/dev-single-node.yml
   when: not ci_fixtures_forge_metal_cli.stat.exists
 
 - name: Verify staged CI artifacts are present

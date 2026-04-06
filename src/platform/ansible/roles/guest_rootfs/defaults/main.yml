@@ -6,5 +6,4 @@ guest_rootfs_build_script: "{{ guest_rootfs_project_root }}/scripts/build-guest-
 guest_rootfs_versions_json: "{{ guest_rootfs_project_root }}/ci/versions.json"
 guest_rootfs_smelter_dir: "{{ guest_rootfs_project_root }}/../homestead-smelter"
 guest_rootfs_remote_tmp: /tmp
-guest_rootfs_nix_path: "/home/{{ ansible_user | default('ubuntu') }}/.nix-profile/bin:/nix/var/nix/profiles/default/bin"
-guest_rootfs_remote_path: "{{ guest_rootfs_nix_path }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+guest_rootfs_remote_path: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

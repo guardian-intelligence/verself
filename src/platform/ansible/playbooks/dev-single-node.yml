@@ -2,8 +2,7 @@
 # Idempotent single-node deployment (no wipe).
 # Use for config changes and updates after initial deploy.
 #
-# Usage: ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
-#          -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
+# Usage: ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml
 
 # ── Preflight (~2s) ──────────────────────────────────────────────────────────
 # Catch missing prerequisites before the slow work starts.
@@ -15,19 +14,6 @@
   gather_facts: false
   tags: [always]
   tasks:
-    - name: Require nix_server_profile_path
-      ansible.builtin.assert:
-        that: nix_server_profile_path | default('') | length > 0
-        fail_msg: >-
-          nix_server_profile_path required — run:
-          nix build .#server-profile --no-link --print-out-paths
-
-    - name: Verify nix_server_profile_path exists on disk
-      ansible.builtin.stat:
-        path: "{{ nix_server_profile_path }}"
-      register: preflight_nix_profile
-      failed_when: not preflight_nix_profile.stat.exists
-
     - name: Zig must be available (needed by firecracker role)
       ansible.builtin.command: zig version
       changed_when: false
@@ -99,8 +85,8 @@
   become: true
   force_handlers: true
   roles:
-    - role: nix_deploy
-      tags: [nix_deploy]
+    - role: deploy_profile
+      tags: [deploy_profile]
     - role: base
       tags: [base]
     - role: nftables

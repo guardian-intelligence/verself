@@ -1,0 +1,145 @@
+---
+# Download, verify, and install pinned static binaries from server-tools.json.
+# Each binary is cached in the staging directory; get_url skips re-download
+# when the checksum matches.
+
+# ── ClickHouse (multi-call binary + symlinks) ────────────────────────────────
+
+- name: Download ClickHouse archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.clickhouse.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/clickhouse-{{ deploy_profile_server_tools_pins.clickhouse.version }}.tgz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.clickhouse.sha256 }}"
+    mode: "0644"
+
+- name: Extract ClickHouse binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/clickhouse-{{ deploy_profile_server_tools_pins.clickhouse.version }}.tgz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.clickhouse.extract_binary }}"
+
+- name: Install ClickHouse binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.clickhouse.extract_binary }}"
+    dest: "{{ fm_bin }}/clickhouse"
+    remote_src: true
+    mode: "0755"
+
+- name: Create ClickHouse multi-call symlinks
+  ansible.builtin.file:
+    src: "{{ fm_bin }}/clickhouse"
+    dest: "{{ fm_bin }}/{{ item }}"
+    state: link
+    force: true
+  loop: "{{ deploy_profile_server_tools_pins.clickhouse.symlinks }}"
+
+# ── TigerBeetle ──────────────────────────────────────────────────────────────
+
+- name: Download TigerBeetle archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.tigerbeetle.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}.zip"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.tigerbeetle.sha256 }}"
+    mode: "0644"
+
+- name: Extract TigerBeetle binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/tigerbeetle-{{ deploy_profile_server_tools_pins.tigerbeetle.version }}.zip"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
+
+- name: Install TigerBeetle binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.tigerbeetle.extract_binary }}"
+    dest: "{{ fm_bin }}/tigerbeetle"
+    remote_src: true
+    mode: "0755"
+
+# ── Zitadel ──────────────────────────────────────────────────────────────────
+
+- name: Download Zitadel archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.zitadel.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.zitadel.sha256 }}"
+    mode: "0644"
+
+- name: Extract Zitadel binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/zitadel-{{ deploy_profile_server_tools_pins.zitadel.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
+
+- name: Install Zitadel binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.zitadel.extract_binary }}"
+    dest: "{{ fm_bin }}/zitadel"
+    remote_src: true
+    mode: "0755"
+
+# ── Forgejo ──────────────────────────────────────────────────────────────────
+
+- name: Download Forgejo binary
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.forgejo.url }}"
+    dest: "{{ fm_bin }}/forgejo"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.forgejo.sha256 }}"
+    mode: "0755"
+
+# ── forgejo-runner ───────────────────────────────────────────────────────────
+
+- name: Download forgejo-runner binary
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.forgejo_runner.url }}"
+    dest: "{{ fm_bin }}/forgejo-runner"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.forgejo_runner.sha256 }}"
+    mode: "0755"
+
+# ── otelcol-contrib ──────────────────────────────────────────────────────────
+
+- name: Download otelcol-contrib archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.otelcol_contrib.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.otelcol_contrib.sha256 }}"
+    mode: "0644"
+
+- name: Extract otelcol-contrib binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/otelcol-contrib-{{ deploy_profile_server_tools_pins.otelcol_contrib.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
+
+- name: Install otelcol-contrib binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.otelcol_contrib.extract_binary }}"
+    dest: "{{ fm_bin }}/otelcol-contrib"
+    remote_src: true
+    mode: "0755"
+
+# ── containerd ───────────────────────────────────────────────────────────────
+
+- name: Download containerd archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.containerd.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.containerd.sha256 }}"
+    mode: "0644"
+
+- name: Extract containerd binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/containerd-{{ deploy_profile_server_tools_pins.containerd.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
+
+- name: Install containerd binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.containerd.extract_binary }}"
+    dest: "{{ fm_bin }}/containerd"
+    remote_src: true
+    mode: "0755"
