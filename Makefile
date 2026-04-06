@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain \
-       server-profile smelter-build \
+       smelter-build \
        clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -56,9 +56,6 @@ doctor: build ## Check that all required dev tools are present and at the right 
 
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
-
-server-profile: ## Build Nix server profile (golden image closure)
-	nix build .#server-profile --print-out-paths
 
 clickhouse-shell: ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh

@@ -157,7 +157,7 @@ func runInteractive(cfg Config, fields [totalFields]*Field, p prompt.Prompter, w
 	anyChanged := fields[0].Changed || fields[1].Changed
 	if !anyChanged {
 		fmt.Fprintf(w, "  All fields configured. Run forge-metal setup-domain --domain [string] --token [string] to configure fields\n")
-		fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...\n")
+		fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml\n")
 		return nil
 	}
 
@@ -165,7 +165,7 @@ func runInteractive(cfg Config, fields [totalFields]*Field, p prompt.Prompter, w
 	if err := writeChangedFields(cfg, fields, w); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...\n")
+	fmt.Fprintf(w, "  Next: cd ansible && ansible-playbook playbooks/dev-single-node.yml\n")
 	return nil
 }
 

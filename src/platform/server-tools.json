@@ -1,0 +1,67 @@
+{
+  "clickhouse": {
+    "version": "26.3.2.3",
+    "format": "tarball",
+    "url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+    "sha256": "2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+    "extract_binary": "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse",
+    "symlinks": ["clickhouse-server", "clickhouse-client", "clickhouse-local", "clickhouse-keeper", "clickhouse-benchmark"]
+  },
+  "tigerbeetle": {
+    "version": "0.16.78",
+    "format": "zip",
+    "url": "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.16.78/tigerbeetle-x86_64-linux.zip",
+    "sha256": "d32d7ce6aefd76559eff93efc17e74585243581059d47d988155458e4aaa2beb",
+    "extract_binary": "tigerbeetle"
+  },
+  "zitadel": {
+    "version": "4.13.1",
+    "format": "tarball",
+    "url": "https://github.com/zitadel/zitadel/releases/download/v4.13.1/zitadel-linux-amd64.tar.gz",
+    "sha256": "fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb",
+    "extract_binary": "zitadel-linux-amd64/zitadel"
+  },
+  "forgejo": {
+    "version": "14.0.3",
+    "format": "binary",
+    "url": "https://codeberg.org/forgejo/forgejo/releases/download/v14.0.3/forgejo-14.0.3-linux-amd64",
+    "sha256": "16379b564d791a48a8a6960dc772b53b6648faadf3f6cc4bb1650877d6eb2eea",
+    "binary_name": "forgejo"
+  },
+  "forgejo_runner": {
+    "version": "12.8.0",
+    "format": "binary",
+    "url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.8.0/forgejo-runner-12.8.0-linux-amd64",
+    "sha256": "90f0a8ea246748f2a89b03ba5f0688491ada6dc34fc01f6d9a33a7a891a38018",
+    "binary_name": "forgejo-runner"
+  },
+  "otelcol_contrib": {
+    "version": "0.149.0",
+    "format": "tarball",
+    "url": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+    "sha256": "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
+    "extract_binary": "otelcol-contrib"
+  },
+  "containerd": {
+    "version": "2.2.2",
+    "format": "tarball",
+    "url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+    "sha256": "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
+    "extract_binary": "bin/containerd"
+  },
+  "nodejs": {
+    "version": "22.22.2",
+    "format": "tarball_xz",
+    "url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
+    "sha256": "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
+    "strip_components": 1,
+    "install_dir": "/opt/forge-metal/nodejs",
+    "bin_symlinks": ["node", "npm", "npx", "corepack"]
+  },
+  "caddy": {
+    "version": "2.11.2",
+    "format": "xcaddy_build",
+    "plugins": ["github.com/corazawaf/coraza-caddy/v2@v2.4.0"],
+    "xcaddy_version": "0.4.5"
+  }
+}

@@ -1,4 +1,4 @@
 ---
-# nix_deploy: provides caddy at fm_bin.
+# deploy_profile: provides caddy at fm_bin.
 dependencies:
-  - role: nix_deploy
+  - role: deploy_profile

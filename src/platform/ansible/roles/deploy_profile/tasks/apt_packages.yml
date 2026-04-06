@@ -1,0 +1,72 @@
+---
+# Install apt-managed software and symlink binaries into fm_bin.
+
+# ── PostgreSQL 16 (PGDG repo) ────────────────────────────────────────────────
+
+- name: Install PGDG apt signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/pgdg.asc
+    mode: "0644"
+
+- name: Add PGDG apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    filename: pgdg
+    state: present
+
+- name: Install PostgreSQL {{ deploy_profile_postgresql_version }}
+  ansible.builtin.apt:
+    name: "postgresql-{{ deploy_profile_postgresql_version }}"
+    state: present
+    update_cache: true
+
+# Disable the auto-started PostgreSQL cluster — we manage our own data directory.
+- name: Stop default PostgreSQL cluster
+  ansible.builtin.command:
+    cmd: "pg_dropcluster --stop {{ deploy_profile_postgresql_version }} main"
+    removes: "/var/lib/postgresql/{{ deploy_profile_postgresql_version }}/main"
+  failed_when: false
+
+- name: Symlink PostgreSQL binaries into fm_bin
+  ansible.builtin.file:
+    src: "/usr/lib/postgresql/{{ deploy_profile_postgresql_version }}/bin/{{ item }}"
+    dest: "{{ fm_bin }}/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - postgres
+    - psql
+    - initdb
+    - pg_dump
+    - pg_restore
+    - pg_isready
+
+# ── wireguard-tools ──────────────────────────────────────────────────────────
+
+- name: Install wireguard-tools
+  ansible.builtin.apt:
+    name: wireguard-tools
+    state: present
+
+- name: Symlink wg into fm_bin
+  ansible.builtin.file:
+    src: /usr/bin/wg
+    dest: "{{ fm_bin }}/wg"
+    state: link
+    force: true
+
+# ── System tools (not in fm_bin, just need to be present) ────────────────────
+
+- name: Install system tools
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - jq
+      - python3
+      - sqlite3
+      - unzip
+      - xz-utils
+      - e2fsprogs
+    state: present

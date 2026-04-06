@@ -21,7 +21,7 @@
     that: "'16.' in postgresql_version_output.stdout"
     fail_msg: >-
       Expected PostgreSQL 16.x, got: {{ postgresql_version_output.stdout }}.
-      Update flake.lock or adjust the version assertion.
+      Update server-tools.json or adjust the version assertion.
 
 # --- System user ---
 

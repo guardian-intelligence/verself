@@ -6,7 +6,7 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
 
 ## Deployment Topology
 
-Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.
+This is a deploy-together system. Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.
 
 Hard product design requirement: everything must be self-hosted.
 
@@ -68,15 +68,13 @@ This provisions a bare metal server via OpenTofu and auto-generates `src/platfor
 ### 3. Deploy
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
 ```
 
 Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
 ```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=... --tags caddy
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --tags caddy
 ```
 
 ### 4. Log in
@@ -103,8 +101,7 @@ make clickhouse-shell
 
 ```bash
 make setup-domain DOMAIN=anveio.com
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
 ```
 
 Services get subdomains automatically:
@@ -115,33 +112,30 @@ Services get subdomains automatically:
 | `git.<domain>` | Forgejo |
 | `auth<domain>` | Zitadel |
 
-### Nix Server Profile
+### Server Profile
 
-All server software (Caddy, Forgejo, ClickHouse, etc.) is packaged in a single Nix closure (`flake.nix` -> `server-profile`). This means:
+All server software is managed by the `deploy_profile` Ansible role. It populates `/opt/forge-metal/profile/bin/` via three strategies:
 
-- **Reproducible**: `flake.lock` pins every dependency transitively. Same lock = same binaries, always.
-- **Fast deploys**: The closure is pushed once over SSH. No apt repos, no GitHub downloads, no `yarn install`.
-- **Atomic updates**: `nix flake update` + deploy upgrades everything. Rollback = `git revert flake.lock`.
-- **No apt, no get_url, no build-from-source at deploy time** (except HyperDX, which builds from source using Nix-provided Node.js).
+- **Go binaries** (forge-metal, billing-service): built on the controller via `go build`, copied to server
+- **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, forgejo-runner, otelcol-contrib, containerd, Node.js): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
+- **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into fm_bin
 
-The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must match running kernel).
+The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match running kernel).
 
 ### Version Updates
 
 ```bash
-nix flake update                                                          # update all packages
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=... --limit canary                           # deploy to one node
-cd src/platform/ansible && ansible-playbook playbooks/site.yml \
-  -e nix_server_profile_path=...                                          # roll out fleet-wide
+# Edit src/platform/server-tools.json — update version, url, sha256
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --limit canary  # deploy to one node
+cd src/platform/ansible && ansible-playbook playbooks/site.yml                             # roll out fleet-wide
 ```
 
 ### Architecture
 
 ```
-nix build .#server-profile --> content-addressed closure (~2GB)
-nix copy --to ssh://host   --> push closure to bare metal
-Ansible                    --> configure + enable services
+go build / xcaddy build   --> compile Go binaries on controller
+ansible-playbook           --> download static binaries, install apt packages, configure + enable services
 ```
 
 | Component | Port | Purpose |
@@ -179,7 +173,6 @@ Compression codecs per column type:
 | `make tidy` | Run go mod tidy |
 | `make doctor` | Check that all required dev tools are present and at the right version |
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
-| `make server-profile` | Build Nix server profile (golden image closure) |
 | `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
 | `make clickhouse-shell` | Open an interactive clickhouse-client session on the worker |
 | `make clickhouse-query` | Run a ClickHouse query on the worker |
@@ -233,8 +226,7 @@ The server must have been deployed at least once with a valid golden image:
 
 ```bash
 cd src/platform/ansible && ansible-playbook playbooks/guest-rootfs.yml
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
 ```
 
 ### Usage
@@ -271,7 +263,6 @@ PASS: host agent observed live guest telemetry
 
 ```
 forge-metal/                       # Monorepo root
-├── flake.nix                      # Nix server profile (builds from src/)
 ├── go.work                        # Go workspace linking src/{platform,billing,billing-service}
 ├── Makefile                       # Dev commands (wraps paths into src/)
 ├── docs/                          # Cross-cutting architecture docs
@@ -306,7 +297,7 @@ forge-metal/                       # Monorepo root
     ├── ansible/
     │   ├── playbooks/             # All orchestration: deploy, provision, CI, smelter-dev
     │   └── roles/
-    │       ├── nix_deploy/        # Install Nix + push server profile closure
+    │       ├── deploy_profile/    # Build + download + install all server binaries
     │       ├── base/              # System config (ZFS, users, npm registry, sudoers)
     │       ├── guest_rootfs/      # Build Firecracker guest rootfs
     │       ├── billing_service/   # Billing service deploy + credentials
@@ -325,7 +316,8 @@ forge-metal/                       # Monorepo root
     │   └── versions.json          # Pinned Alpine + Firecracker versions with SHA256
     ├── terraform/                 # Latitude.sh provisioning
     ├── migrations/                # ClickHouse schema (MergeTree + Replicated)
-    └── dev-tools.json             # Pinned dev tool versions, URLs, SHA256
+    ├── dev-tools.json             # Pinned dev tool versions, URLs, SHA256
+    └── server-tools.json          # Pinned server binary versions, URLs, SHA256
 ```
 
 ## Firecracker CI Status

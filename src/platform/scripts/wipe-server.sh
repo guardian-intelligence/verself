@@ -73,4 +73,4 @@ EOF
 
 echo "Server wiped. Next steps:"
 echo "  cd ansible && ansible-playbook playbooks/guest-rootfs.yml"
-echo "  cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=..."
+echo "  cd ansible && ansible-playbook playbooks/dev-single-node.yml"

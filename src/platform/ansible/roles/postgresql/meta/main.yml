@@ -1,4 +1,4 @@
 ---
-# nix_deploy: provides postgresql binary at fm_bin.
+# deploy_profile: provides postgresql binary at fm_bin.
 dependencies:
-  - role: nix_deploy
+  - role: deploy_profile

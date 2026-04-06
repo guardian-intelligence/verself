@@ -216,4 +216,4 @@
 
             Next steps:
               Edit secrets:  sops ansible/group_vars/all/secrets.sops.yml
-              Deploy:        cd ansible && ansible-playbook playbooks/dev-single-node.yml -e nix_server_profile_path=...
+              Deploy:        cd ansible && ansible-playbook playbooks/dev-single-node.yml
