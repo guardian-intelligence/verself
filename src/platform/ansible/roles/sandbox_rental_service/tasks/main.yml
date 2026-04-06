@@ -14,6 +14,11 @@
     name: sandbox_rental
     system: true
 
+- name: Create smelter ops group for sandbox-rental socket access
+  ansible.builtin.group:
+    name: "{{ firecracker_smelter_ops_group }}"
+    system: true
+
 - name: Create sandbox_rental system user
   ansible.builtin.user:
     name: sandbox_rental
