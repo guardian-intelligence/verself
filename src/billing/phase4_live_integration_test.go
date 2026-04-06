@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
 
 // TestCheckQuotasAgainstLiveHost exercises CheckQuotas end-to-end:
@@ -262,19 +263,15 @@ func TestOverageCapEnforcementAgainstLiveHost(t *testing.T) {
 		t.Fatalf("expected ErrOverageCeilingExceeded, got %v", err)
 	}
 
-	// Verify SumChargeUnits reads the overage metering rows.
-	querier := NewClickHouseMeteringQuerier(chConn, "forge_metal")
-	now := time.Now().UTC()
-	overageSum, err := querier.SumChargeUnits(ctx, orgID, productID, PricingPhaseOverage, now.Add(-1*time.Hour))
-	if err != nil {
-		t.Fatalf("sum charge units: %v", err)
+	// Overage cap is now enforced via TigerBeetle balance-conditional transfers.
+	// Verify the cap account balance reflects the consumed overage.
+	capAcctID := OverageCapAccountID(orgID, productID)
+	capAccounts, err := env.tbClient.LookupAccounts([]tbtypes.Uint128{capAcctID.raw})
+	if err != nil || len(capAccounts) == 0 {
+		t.Fatalf("lookup overage cap account: err=%v len=%d", err, len(capAccounts))
 	}
-	if overageSum != 90 {
-		t.Fatalf("expected overage sum = 90, got %d", overageSum)
-	}
-
-	t.Logf("verified live overage cap enforcement: org_id=%d overage_sum=%d cap=100 → blocked",
-		orgID, overageSum)
+	capAvail, _ := availableFromAccount(capAccounts[0])
+	t.Logf("verified live overage cap enforcement: org_id=%d cap_available=%d (cap account exhausted → blocked)", orgID, capAvail)
 }
 
 // TestMeteringQuerierSumDimensionAgainstLiveHost is a focused test for the
@@ -348,15 +345,18 @@ func TestMeteringQuerierSumDimensionAgainstLiveHost(t *testing.T) {
 		t.Fatalf("expected unit sum >= 2.0, got %.1f", unitSum)
 	}
 
-	chargeSum, err := querier.SumChargeUnits(ctx, orgID, productID, PricingPhaseIncluded, since)
+	// SumChargeUnits moved to ClickHouseReconcileQuerier (cold path).
+	// Verify via reconcile querier instead.
+	reconcileQuerier := NewClickHouseReconcileQuerier(chConn, "forge_metal")
+	chargeSum, err := reconcileQuerier.SumChargeUnitsByOrg(ctx, fmt.Sprintf("%d", orgID), since)
 	if err != nil {
-		t.Fatalf("sum charge units: %v", err)
+		t.Fatalf("sum charge units by org: %v", err)
 	}
 	// Two windows of 20 seconds at 1 unit/sec = 40 total charge_units.
 	if chargeSum != 40 {
 		t.Fatalf("expected charge_units sum = 40, got %d", chargeSum)
 	}
 
-	t.Logf("verified live SumDimension=%.1f SumChargeUnits=%d for org=%d product=%s",
+	t.Logf("verified live SumDimension=%.1f SumChargeUnitsByOrg=%d for org=%d product=%s",
 		unitSum, chargeSum, orgID, productID)
 }

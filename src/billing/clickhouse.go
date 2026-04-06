@@ -79,25 +79,6 @@ func (q *ClickHouseMeteringQuerier) SumDimension(ctx context.Context, orgID OrgI
 	return result, nil
 }
 
-// SumChargeUnits returns the sum of charge_units filtered by pricing phase.
-func (q *ClickHouseMeteringQuerier) SumChargeUnits(ctx context.Context, orgID OrgID, productID string, pricingPhase PricingPhase, since time.Time) (uint64, error) {
-	var result uint64
-	err := q.conn.QueryRow(ctx, fmt.Sprintf(`
-		SELECT sum(charge_units)
-		FROM %s.metering
-		WHERE org_id = $1
-		  AND product_id = $2
-		  AND pricing_phase = $3
-		  AND started_at >= $4
-	`, q.database),
-		strconv.FormatUint(uint64(orgID), 10), productID, string(pricingPhase), since,
-	).Scan(&result)
-	if err != nil {
-		return 0, fmt.Errorf("sum charge_units for phase %q: %w", pricingPhase, err)
-	}
-	return result, nil
-}
-
 // ClickHouseReconcileQuerier implements ClickHouseQuerier for reconciliation.
 // Separate from ClickHouseMeteringQuerier because reconciliation queries have
 // different shapes than hot-path queries.

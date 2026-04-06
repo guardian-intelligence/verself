@@ -119,6 +119,34 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 		return fmt.Errorf("settle reservation: %w", err)
 	}
 
+	// Overage cap: void the check-pending, post the real debit for actual cost.
+	if reservation.CapCheckLeg != nil && reservation.PricingPhase == PricingPhaseOverage {
+		capAcctID := OverageCapAccountID(reservation.OrgID, reservation.ProductID)
+		sinkID := OperatorAccountID(AcctQuotaSink)
+
+		var capTransfers []types.Transfer
+		// Void the cap check pending transfer.
+		capTransfers = append(capTransfers, types.Transfer{
+			ID:        OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindVoid).raw,
+			PendingID: reservation.CapCheckLeg.TransferID.raw,
+			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
+		})
+		// Post the real overage debit for actual cost.
+		if actualCost > 0 {
+			capTransfers = append(capTransfers, types.Transfer{
+				ID:              OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindOverageCapDebit).raw,
+				DebitAccountID:  capAcctID.raw,
+				CreditAccountID: sinkID.raw,
+				Amount:          types.ToUint128(actualCost),
+				Ledger:          1,
+				Code:            uint16(KindOverageCapDebit),
+			})
+		}
+		if err := c.createTransfers(capTransfers); err != nil {
+			return fmt.Errorf("settle overage cap: %w", err)
+		}
+	}
+
 	row := buildMeteringRow(reservation, actualSeconds, actualCost)
 	if err := c.metering.InsertMeteringRow(ctx, row); err != nil {
 		return fmt.Errorf("settle reservation: write metering row: %w", err)
@@ -141,6 +169,15 @@ func (c *Client) Void(ctx context.Context, reservation *Reservation) error {
 		transfers = append(transfers, types.Transfer{
 			ID:        VMTransferID(reservation.JobID, reservation.WindowSeq, uint8(i), KindVoid).raw,
 			PendingID: leg.TransferID.raw,
+			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
+		})
+	}
+
+	// Also void the cap check pending if present.
+	if reservation.CapCheckLeg != nil {
+		transfers = append(transfers, types.Transfer{
+			ID:        OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindVoid).raw,
+			PendingID: reservation.CapCheckLeg.TransferID.raw,
 			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
 		})
 	}
@@ -193,11 +230,14 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		return Reservation{}, fmt.Errorf("window cost: %w", err)
 	}
 
-	// §2.5 step 8: overage ceiling enforcement.
+	// §2.5 step 8: overage ceiling enforcement via TigerBeetle balance-conditional.
+	var capCheckLeg *GrantLeg
 	if phase == PricingPhaseOverage {
-		if err := c.enforceOverageCap(ctx, req.OrgID, req.ProductID, windowCost); err != nil {
+		leg, err := c.enforceOverageCapTB(ctx, req.OrgID, req.ProductID, windowCost, req.JobID, windowSeq)
+		if err != nil {
 			return Reservation{}, err
 		}
+		capCheckLeg = leg
 	}
 
 	grantLegs, err := c.reserveGrantWaterfall(ctx, req.JobID, req.OrgID, windowSeq, phase, windowCost, eligible)
@@ -221,50 +261,8 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		UnitRates:    cloneUint64Map(unitRates),
 		CostPerSec:   costPerSec,
 		GrantLegs:    grantLegs,
+		CapCheckLeg:  capCheckLeg,
 	}, nil
-}
-
-// enforceOverageCap checks whether adding windowCost to the current-period
-// overage consumption would exceed the subscription's overage_cap_units.
-// No-op if the subscription has no cap (NULL). Fails closed if the querier
-// is not configured and the subscription has a cap.
-func (c *Client) enforceOverageCap(ctx context.Context, orgID OrgID, productID string, windowCost uint64) error {
-	cap, periodStart, err := c.loadOverageCap(ctx, orgID, productID)
-	if err != nil {
-		return err
-	}
-	if cap == nil {
-		return nil // no ceiling configured
-	}
-
-	capUnits := uint64(*cap)
-	currentOverage, err := c.querier.SumChargeUnits(ctx, orgID, productID, PricingPhaseOverage, periodStart)
-	if err != nil {
-		return fmt.Errorf("overage cap check: %w", err)
-	}
-
-	projectedOverage, err := safeAddUint64(currentOverage, windowCost)
-	if err != nil {
-		return fmt.Errorf("overage cap projection: %w", err)
-	}
-	if projectedOverage > capUnits {
-		orgIDStr := strconv.FormatUint(uint64(orgID), 10)
-		_, _ = c.pg.ExecContext(ctx, `
-			INSERT INTO billing_events (org_id, event_type, payload)
-			VALUES ($1, 'overage_ceiling_hit', $2::jsonb)
-		`,
-			orgIDStr,
-			mustJSON(map[string]interface{}{
-				"product_id":        productID,
-				"cap_units":         capUnits,
-				"current_overage":   currentOverage,
-				"projected_overage": projectedOverage,
-				"window_cost":       windowCost,
-			}),
-		)
-		return ErrOverageCeilingExceeded
-	}
-	return nil
 }
 
 // loadOverageCap reads the subscription's overage_cap_units and current_period_start.
