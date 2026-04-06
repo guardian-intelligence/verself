@@ -77,7 +77,15 @@ func run() error {
 	defer func() { _ = chConn.Close() }()
 
 	sc := stripe.NewClient(stripeKey)
-	meteringWriter := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
+	meteringSink := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
+	meteringWriter := billing.NewAsyncMeteringWriter(meteringSink, billing.AsyncMeteringWriterConfig{})
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := meteringWriter.Close(flushCtx); err != nil {
+			log.Printf("billing: async metering shutdown: %v", err)
+		}
+	}()
 	meteringQuerier := billing.NewClickHouseMeteringQuerier(chConn, "forge_metal")
 	reconcileQuerier := billing.NewClickHouseReconcileQuerier(chConn, "forge_metal")
 

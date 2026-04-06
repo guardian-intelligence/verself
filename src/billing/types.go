@@ -141,7 +141,7 @@ type MeteringRow struct {
 	RecordedAt        time.Time          `ch:"recorded_at"`
 }
 
-// MeteringWriter inserts metering rows into ClickHouse.
+// MeteringWriter records metering rows durably enough for billing read paths and reconciliation.
 type MeteringWriter interface {
 	InsertMeteringRow(ctx context.Context, row MeteringRow) error
 }
