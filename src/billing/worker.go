@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"time"
+
+	"github.com/stripe/stripe-go/v85"
 )
 
 // RunWorker runs the task worker loop. It claims one task at a time,
@@ -82,6 +85,8 @@ func (c *Client) claimTask(ctx context.Context) (claimedTask, bool, error) {
 // Spec §8.2 dispatch table.
 func (c *Client) dispatchTask(ctx context.Context, task claimedTask) error {
 	switch task.TaskType {
+	case "stripe_webhook_event":
+		return c.dispatchWebhookEvent(ctx, task)
 	case "stripe_purchase_deposit":
 		return c.dispatchPurchaseDeposit(ctx, task)
 	case "stripe_subscription_credit_deposit":
@@ -97,14 +102,26 @@ func (c *Client) dispatchTask(ctx context.Context, task claimedTask) error {
 	}
 }
 
+func (c *Client) dispatchWebhookEvent(ctx context.Context, task claimedTask) error {
+	var event stripe.Event
+	if err := json.Unmarshal(task.Payload, &event); err != nil {
+		return fmt.Errorf("parse stripe webhook event payload: %w", err)
+	}
+	if err := c.handleWebhookEvent(ctx, event); err != nil {
+		return err
+	}
+	log.Printf("billing: processed stripe webhook event id=%s type=%s task_id=%d", event.ID, event.Type, task.TaskID)
+	return nil
+}
+
 // dispatchPurchaseDeposit calls DepositCredits for a one-time purchase.
 func (c *Client) dispatchPurchaseDeposit(ctx context.Context, task claimedTask) error {
 	var p struct {
-		OrgID              string `json:"org_id"`
-		ProductID          string `json:"product_id"`
-		StripePIID         string `json:"stripe_payment_intent_id"`
-		AmountLedgerUnits  int64  `json:"amount_ledger_units"`
-		ExpiresAt          string `json:"expires_at"`
+		OrgID             string `json:"org_id"`
+		ProductID         string `json:"product_id"`
+		StripePIID        string `json:"stripe_payment_intent_id"`
+		AmountLedgerUnits int64  `json:"amount_ledger_units"`
+		ExpiresAt         string `json:"expires_at"`
 	}
 	if err := json.Unmarshal(task.Payload, &p); err != nil {
 		return fmt.Errorf("parse purchase deposit payload: %w", err)
