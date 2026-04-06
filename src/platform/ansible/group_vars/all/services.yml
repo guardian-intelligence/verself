@@ -30,6 +30,7 @@ services:
     opamp_port: 4320
   verdaccio:
     host: "127.0.0.1"
+    listen_host: "0.0.0.0"
     port: 4873
   tigerbeetle:
     host: "127.0.0.1"

@@ -27,7 +27,7 @@ packages:
     proxy: npmjs
 
 max_body_size: 100mb
-listen: {{ services.verdaccio.host }}:{{ services.verdaccio.port }}
+listen: {{ services.verdaccio.listen_host }}:{{ services.verdaccio.port }}
 
 # verdaccio-security-filter: supply chain security gate.
 #
