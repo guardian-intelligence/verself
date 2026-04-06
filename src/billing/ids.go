@@ -219,8 +219,9 @@ func OverageCapAccountID(orgID OrgID, productID string) AccountID {
 }
 
 // QuotaTransferID builds a unique transfer ID for a quota check pending transfer.
-// Uses nanosecond timestamp + dimension hash for uniqueness (quota transfers are
-// never posted or voided by the application — they expire naturally).
+// Low u64: FNV-1a(dimension) + kind discriminator + org_id XOR'd into bytes 6-7.
+// High u64: nanosecond timestamp for uniqueness (quota transfers are never posted
+// or voided by the application — they expire naturally).
 func QuotaTransferID(orgID OrgID, dimension string, nanoTS int64) TransferID {
 	h := fnv.New32a()
 	h.Write([]byte(dimension))
@@ -228,16 +229,20 @@ func QuotaTransferID(orgID OrgID, dimension string, nanoTS int64) TransferID {
 	var id [16]byte
 	binary.LittleEndian.PutUint32(id[0:4], h.Sum32())
 	id[5] = uint8(KindQuotaCheck)
+	// Mix orgID into bytes 6-7 to prevent cross-org collisions at the same nanosecond.
+	binary.LittleEndian.PutUint16(id[6:8], uint16(orgID))
 	binary.LittleEndian.PutUint64(id[8:16], uint64(nanoTS))
 	return TransferID{raw: types.BytesToUint128(id)}
 }
 
 // OverageCapTransferID builds a transfer ID for overage cap operations.
+// Uses bytes 6-7 as a discriminator to avoid collisions with VMTransferID
+// (which uses bytes 4-5 for grantIdx+kind, leaving bytes 6-7 as zero).
 func OverageCapTransferID(jobID JobID, windowSeq uint32, kind XferKind) TransferID {
 	var id [16]byte
 	binary.LittleEndian.PutUint32(id[0:4], windowSeq)
-	id[4] = 0xFF // distinguishes from grant leg transfers (grantIdx < 256)
 	id[5] = uint8(kind)
+	binary.LittleEndian.PutUint16(id[6:8], AcctOverageCapCode) // discriminator in bytes 6-7
 	binary.LittleEndian.PutUint64(id[8:16], uint64(jobID))
 	return TransferID{raw: types.BytesToUint128(id)}
 }

@@ -206,21 +206,15 @@ func (c *Client) ensureOverageCapAccount(ctx context.Context, orgID OrgID, produ
 		return fmt.Errorf("overage cap credits: %w", err)
 	}
 
-	currentDebits, err := uint128ToUint64(accounts[0].DebitsPosted)
-	if err != nil {
-		return fmt.Errorf("overage cap debits: %w", err)
-	}
-
-	// Effective cap = credits - debits already consumed. We want effective = capUnits.
-	// So credits should be capUnits + currentDebits.
-	targetCredits := capUnits + currentDebits
-	if currentCredits == targetCredits {
+	// Credits should equal the cap (set once per period). As Settle posts
+	// real debits (KindOverageCapDebit), available decreases naturally.
+	if currentCredits == capUnits {
 		return nil
 	}
 
-	if currentCredits < targetCredits {
-		delta := targetCredits - currentCredits
-		xferID := quotaCreditTransferID(acctID, targetCredits)
+	if currentCredits < capUnits {
+		delta := capUnits - currentCredits
+		xferID := quotaCreditTransferID(acctID, capUnits)
 		results, err := c.tb.CreateTransfers([]types.Transfer{{
 			ID:              xferID.raw,
 			DebitAccountID:  sinkID.raw,

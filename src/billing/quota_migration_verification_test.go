@@ -205,21 +205,17 @@ func TestVerify_Quota_HourlyRateLimit(t *testing.T) {
 		t.Logf("job %d: allowed", i+1)
 	}
 
-	// 4th job — should FAIL (hourly limit exhausted).
-	// BASELINE BEHAVIOR: with noopMeteringQuerier, ClickHouse returns 0 so
-	// this passes incorrectly. After TB migration, the quota account tracks
-	// usage atomically and this correctly rejects.
+	// 4th job — should FAIL (hourly limit exhausted via TigerBeetle pending transfers).
 	r4, err := env.client.CheckQuotas(ctx, orgID, productID, map[string]float64{"jobs": 1})
 	if err != nil {
 		t.Fatalf("check quotas job 4: %v", err)
 	}
 	if r4.Allowed {
-		t.Log("BASELINE: 4th job was allowed (ClickHouse path returns 0 with noop querier — expected before TB migration)")
-	} else {
-		t.Logf("POST-MIGRATION: 4th job correctly rejected with %d violations", len(r4.Violations))
+		t.Fatal("expected hourly quota violation for 4th job, but was allowed")
 	}
+	t.Logf("4th job correctly rejected with %d violations", len(r4.Violations))
 
-	t.Log("PASS: hourly rate limit test completed")
+	t.Log("PASS: hourly rate limit enforcement")
 }
 
 // --- Verification Test 4: Overage cap enforcement ---

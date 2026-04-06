@@ -63,10 +63,6 @@ func (noopMeteringQuerier) SumDimension(context.Context, billing.OrgID, string, 
 	return 0, nil
 }
 
-func (noopMeteringQuerier) SumChargeUnits(context.Context, billing.OrgID, string, billing.PricingPhase, time.Time) (uint64, error) {
-	return 0, nil
-}
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
