@@ -1,7 +1,7 @@
 ---
 # Base system configuration for all nodes.
-# No package installs — all software comes from the Nix server profile.
-# This role only handles system-level configuration that Nix doesn't manage.
+# No package installs — all software comes from the deploy_profile role.
+# This role only handles system-level configuration (ZFS, users, sudoers, etc.).
 
 - name: Install ZFS and ext4 utilities
   ansible.builtin.apt:

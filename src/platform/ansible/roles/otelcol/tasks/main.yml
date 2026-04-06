@@ -1,6 +1,6 @@
 ---
 # OpenTelemetry Collector configuration.
-# Binary provided by the Nix server profile (otelcol-contrib).
+# Binary provided by deploy_profile role (pinned static binary).
 
 - name: Create OTel Collector config directory
   ansible.builtin.file:

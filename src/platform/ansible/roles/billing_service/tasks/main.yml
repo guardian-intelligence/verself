@@ -1,7 +1,7 @@
 ---
 # --- Verify binary ---
 
-- name: Verify billing-service binary exists in Nix profile
+- name: Verify billing-service binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/billing-service"
   register: billing_service_binary

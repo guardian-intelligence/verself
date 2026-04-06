@@ -1,11 +1,11 @@
 ---
 # Zitadel identity provider.
-# Binary provided by the Nix server profile.
+# Binary provided by deploy_profile role (pinned static binary).
 # Requires a running PostgreSQL instance (meta/main.yml dependency).
 
 # --- Binary presence ---
 
-- name: Verify Zitadel binary exists in Nix profile
+- name: Verify Zitadel binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/zitadel"
   register: zitadel_binary

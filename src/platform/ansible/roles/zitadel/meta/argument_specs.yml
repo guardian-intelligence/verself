@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "Zitadel identity provider"
     description:
-      - "Deploys Zitadel from the Nix profile. Creates the PostgreSQL"
+      - "Deploys Zitadel. Creates the PostgreSQL"
       - "database and user, generates the masterkey, runs start-from-init"
       - "(idempotent first-run), and configures the systemd unit."
       - "Exports OTel traces to the collector on localhost:4317."
@@ -26,4 +26,4 @@ argument_specs:
       fm_bin:
         type: path
         required: true
-        description: "Path to the Nix server profile bin directory."
+        description: "Path to the server binary directory."

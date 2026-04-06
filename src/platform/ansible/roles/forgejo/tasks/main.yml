@@ -1,6 +1,6 @@
 ---
 # Forgejo git server + CI runner configuration.
-# Binaries provided by Nix server profile (forgejo, forgejo-runner).
+# Binaries provided by deploy_profile role (pinned static binaries).
 
 - name: Create Forgejo user
   ansible.builtin.user:

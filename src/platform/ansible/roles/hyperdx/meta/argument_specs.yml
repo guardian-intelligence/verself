@@ -64,4 +64,4 @@ argument_specs:
       fm_bin:
         type: path
         required: true
-        description: "Path to the Nix server profile bin directory."
+        description: "Path to the server binary directory."

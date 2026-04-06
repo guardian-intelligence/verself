@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "OpenTelemetry Collector exporting directly to ClickHouse"
     description:
-      - "Deploys otelcol-contrib from the Nix profile, configures OTLP"
+      - "Deploys otelcol-contrib, configures OTLP"
       - "receivers plus host and Caddy scraping, and exports logs, traces,"
       - "and metrics into ClickHouse."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
@@ -11,4 +11,4 @@ argument_specs:
       fm_bin:
         type: path
         required: true
-        description: "Path to the Nix server profile bin directory."
+        description: "Path to the server binary directory."

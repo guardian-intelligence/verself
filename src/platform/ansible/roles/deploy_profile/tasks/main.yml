@@ -1,7 +1,6 @@
 ---
 # Populate /opt/forge-metal/profile/bin/ with all server binaries.
-# This role replaces nix_deploy: instead of pushing a Nix closure,
-# it builds Go/Caddy on the controller and downloads pinned static binaries.
+# Builds Go/Caddy on the controller and downloads pinned static binaries.
 
 - name: Load server tool pins
   ansible.builtin.set_fact:
