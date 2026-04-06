@@ -240,7 +240,7 @@ cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
 ### Usage
 
 ```bash
-# Edit homestead-smelter/src/guest.zig, then:
+# Edit src/homestead-smelter/src/guest.zig, then:
 cd src/forge-metal/ansible && ansible-playbook playbooks/smelter-dev.yml
 ```
 
@@ -274,8 +274,8 @@ forge-metal/                       # Monorepo root
 ├── flake.nix                      # Nix server profile (builds from src/)
 ├── go.work                        # Go workspace linking src/{forge-metal,billing,billing-service}
 ├── Makefile                       # Dev commands (wraps paths into src/)
-├── homestead-smelter/             # Zig guest/host agent (standalone project)
 ├── docs/                          # Cross-cutting architecture docs
+├── src/homestead-smelter/         # Zig guest/host agent (standalone project)
 ├── src/billing/                   # Billing domain library (standalone Go module)
 │   ├── go.mod                     # module github.com/forge-metal/billing
 │   ├── client.go                  # Core billing client

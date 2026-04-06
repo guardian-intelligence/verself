@@ -149,13 +149,13 @@ fi
 # only when the repo checkout and Zig are available on the build host.
 SMELTER_GUEST_SRC="$SCRIPT_DIR/homestead-smelter-guest"
 if [[ ! -f "$SMELTER_GUEST_SRC" ]]; then
-  if command -v zig >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/homestead-smelter/build.zig" ]]; then
+  if command -v zig >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/../homestead-smelter/build.zig" ]]; then
     echo "→ building homestead-smelter-guest from source"
     (
-      cd "$PROJECT_ROOT/homestead-smelter"
+      cd "$PROJECT_ROOT/../homestead-smelter"
       zig build -Doptimize=ReleaseSafe
     )
-    SMELTER_GUEST_SRC="$PROJECT_ROOT/homestead-smelter/zig-out/bin/homestead-smelter-guest"
+    SMELTER_GUEST_SRC="$PROJECT_ROOT/../homestead-smelter/zig-out/bin/homestead-smelter-guest"
   else
     echo "ERROR: missing homestead-smelter-guest binary" >&2
     exit 1

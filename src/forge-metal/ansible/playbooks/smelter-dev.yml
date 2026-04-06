@@ -7,7 +7,7 @@
 # at least once first).
 #
 # Usage:
-#   cd ansible && ansible-playbook playbooks/smelter-dev.yml
+#   cd src/forge-metal/ansible && ansible-playbook playbooks/smelter-dev.yml
 
 - name: Build and upload smelter guest binary
   hosts: all
@@ -19,12 +19,12 @@
       run_once: true
       ansible.builtin.command:
         argv: [zig, build, -Doptimize=ReleaseSafe]
-        chdir: "{{ playbook_dir }}/../../../../homestead-smelter"
+        chdir: "{{ playbook_dir }}/../../../homestead-smelter"
       changed_when: true
 
     - name: Upload guest binary to server
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../../../homestead-smelter/zig-out/bin/homestead-smelter-guest"
+        src: "{{ playbook_dir }}/../../../homestead-smelter/zig-out/bin/homestead-smelter-guest"
         dest: /tmp/homestead-smelter-guest
         mode: "0755"
 
