@@ -105,6 +105,24 @@ pub fn build(b: *std.Build) void {
     });
     const run_host_core_tests = b.addRunArtifact(host_core_tests);
 
+    const host_ops_proto_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/host_ops_proto.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_host_ops_proto_tests = b.addRunArtifact(host_ops_proto_tests);
+
+    const host_ops_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/host_ops.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_host_ops_tests = b.addRunArtifact(host_ops_tests);
+
     const guest_tests = b.addTest(.{
         .root_module = guest.root_module,
     });
@@ -127,6 +145,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_host_tests.step);
     test_step.dependOn(&run_host_proto_tests.step);
     test_step.dependOn(&run_host_core_tests.step);
+    test_step.dependOn(&run_host_ops_proto_tests.step);
+    test_step.dependOn(&run_host_ops_tests.step);
     test_step.dependOn(&run_guest_tests.step);
     test_step.dependOn(&run_vectors_tests.step);
 }

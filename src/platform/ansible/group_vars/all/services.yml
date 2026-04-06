@@ -42,6 +42,9 @@ services:
   billing:
     host: "127.0.0.1"
     port: 4242
+  sandbox_rental:
+    host: "127.0.0.1"
+    port: 4243
   zitadel:
     host: "127.0.0.1"
     port: 8085

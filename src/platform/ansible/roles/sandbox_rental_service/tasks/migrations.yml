@@ -1,0 +1,169 @@
+---
+- name: Compute local sandbox-rental PostgreSQL migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../../sandbox-rental-service/migrations"
+    executable: /bin/bash
+  register: sandbox_rental_service_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote sandbox-rental PostgreSQL migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/sandbox-rental-migrations/.applied-hash
+  register: sandbox_rental_service_pg_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected sandbox-rental tables
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d sandbox_rental
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jobs';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: sandbox_rental_service_pg_table_probe
+  changed_when: false
+  no_log: true
+
+- name: Apply sandbox-rental PostgreSQL migrations
+  when: >-
+    sandbox_rental_service_pg_migrations_remote_hash is failed
+    or (sandbox_rental_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (sandbox_rental_service_pg_table_probe.stdout | trim) == '0'
+  block:
+    - name: Remove deployed sandbox-rental migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/sandbox-rental-migrations
+        state: absent
+
+    - name: Create deployed sandbox-rental migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/sandbox-rental-migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload sandbox-rental PostgreSQL migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../sandbox-rental-service/migrations/"
+        dest: /opt/forge-metal/sandbox-rental-migrations/
+        mode: "0644"
+
+    - name: Terminate sandbox_rental connections before recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'sandbox_rental' AND pid <> pg_backend_pid();"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Drop sandbox_rental database before schema recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "DROP DATABASE IF EXISTS sandbox_rental;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create sandbox_rental database
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE sandbox_rental OWNER sandbox_rental;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Apply sandbox-rental PostgreSQL migration files
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U sandbox_rental
+          -d sandbox_rental
+          -v ON_ERROR_STOP=1
+          -f /opt/forge-metal/sandbox-rental-migrations/{{ item }}
+      environment:
+        PGPASSWORD: "{{ postgresql_sandbox_rental_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../../sandbox-rental-service/migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record sandbox-rental PostgreSQL migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/sandbox-rental-migrations/.applied-hash
+        mode: "0644"
+
+- name: Reconcile sandbox-rental object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d sandbox_rental
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF to_regclass('public.jobs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.jobs OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.job_logs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.job_logs OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.job_logs_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.job_logs_id_seq OWNER TO sandbox_rental';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO sandbox_rental;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.jobs,
+        public.job_logs
+      TO sandbox_rental;
+      GRANT ALL PRIVILEGES ON SEQUENCE
+        public.job_logs_id_seq
+      TO sandbox_rental;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true

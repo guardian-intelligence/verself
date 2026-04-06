@@ -1,0 +1,20 @@
+---
+- name: Check if sandbox-rental-service unit exists
+  listen: restart sandbox-rental-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/sandbox-rental-service.service
+  register: sandbox_rental_service_unit_file
+
+- name: Restart sandbox-rental-service
+  listen: restart sandbox-rental-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: sandbox-rental-service
+    state: restarted
+  when: sandbox_rental_service_unit_file.stat.exists
+
+- name: Reload nftables for sandbox-rental-service
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

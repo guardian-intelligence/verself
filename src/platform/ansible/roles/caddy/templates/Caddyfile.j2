@@ -80,6 +80,18 @@
 	respond 404
 }
 
+{{ sandbox_rental_service_domain }} {
+	import access_log
+	import waf_blocking
+
+	handle /api/* {
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+	}
+
+	# Default deny — no other paths exposed publicly.
+	respond 404
+}
+
 {{ zitadel_domain }} {
 	import access_log
 	import waf_detection
