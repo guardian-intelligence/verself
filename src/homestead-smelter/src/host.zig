@@ -3,6 +3,8 @@ const linux = std.os.linux;
 const hs = @import("homestead_smelter");
 const hostc = @import("host_core.zig");
 const hostp = @import("host_proto.zig");
+const ops_proto = @import("host_ops_proto.zig");
+const ops = @import("host_ops.zig");
 
 const default_jailer_root = "/srv/jailer/firecracker";
 const bridge_ack_buffer_bytes: usize = 256;
@@ -12,6 +14,7 @@ const consumer_request_buffer_bytes: usize = hostp.request_size;
 const epoll_max_events: usize = 64;
 const max_bridge_cmd_bytes: usize = 32;
 const max_consumers: usize = 16;
+const max_ops_clients: usize = 8;
 const max_runtime_vms: usize = 256;
 const reconnect_backoff_ns: u64 = 200 * std.time.ns_per_ms;
 const timer_tick_ns: u64 = 100 * std.time.ns_per_ms;
@@ -19,7 +22,7 @@ const discovery_period_ns: u64 = 250 * std.time.ns_per_ms;
 const event_ring_capacity: usize = 131072;
 const usage =
     \\Usage:
-    \\  homestead-smelter-host serve --listen-uds PATH [--jailer-root PATH]
+    \\  homestead-smelter-host serve --listen-uds PATH [--ops-uds PATH] [--jailer-root PATH]
     \\  homestead-smelter-host snapshot --control-uds PATH
     \\  homestead-smelter-host check-live --control-uds PATH --job-id UUID
     \\
@@ -32,8 +35,9 @@ const usage =
     \\in the current snapshot.
     \\
     \\Options:
-    \\  --listen-uds PATH   Host-agent control socket path
-    \\  --control-uds PATH  Host-agent control socket path
+    \\  --listen-uds PATH   Host-agent control socket path (telemetry)
+    \\  --control-uds PATH  Host-agent control socket path (client-side alias)
+    \\  --ops-uds PATH      Privileged operations socket path (0660 root:smelter-ops)
     \\  --jailer-root PATH  Firecracker jail root to scan (default: /srv/jailer/firecracker)
     \\  --job-id UUID       CI job UUID for `check-live`
     \\  --help              Show this help text
@@ -49,6 +53,7 @@ const Mode = enum {
 const Config = struct {
     mode: Mode,
     control_uds: []const u8 = "",
+    ops_uds: []const u8 = "",
     jailer_root: []const u8 = default_jailer_root,
     job_id: []const u8 = "",
 };
@@ -60,6 +65,8 @@ const FdKind = enum(u8) {
     timer = 2,
     bridge = 3,
     consumer = 4,
+    ops_listener = 5,
+    ops_client = 6,
 };
 
 const BridgeStage = enum {
@@ -118,18 +125,27 @@ const Consumer = struct {
     pending_packet: ?hostp.Packet = null,
 };
 
+const OpsClient = struct {
+    used: bool = false,
+    fd: ?std.posix.fd_t = null,
+};
+
 const Runtime = struct {
     control_uds: []const u8,
+    ops_uds: []const u8,
     jailer_root: []const u8,
     epoll_fd: std.posix.fd_t,
     listener_fd: std.posix.fd_t,
+    ops_listener_fd: ?std.posix.fd_t = null,
     timer_fd: std.posix.fd_t,
     next_discovery_ns: u64 = 0,
     core: HostCore = .{},
+    ops_config: ops.OpsConfig = .{ .pool_prefix = "", .jailer_root = "" },
     vms: [max_runtime_vms]RuntimeVm = [_]RuntimeVm{.{}} ** max_runtime_vms,
     consumers: [max_consumers]Consumer = [_]Consumer{.{}} ** max_consumers,
+    ops_clients: [max_ops_clients]OpsClient = [_]OpsClient{.{}} ** max_ops_clients,
 
-    fn init(self: *Runtime, control_uds: []const u8, jailer_root: []const u8) !void {
+    fn init(self: *Runtime, control_uds: []const u8, ops_uds: []const u8, jailer_root: []const u8) !void {
         const epoll_fd = try std.posix.epoll_create1(linux.EPOLL.CLOEXEC);
         errdefer std.posix.close(epoll_fd);
 
@@ -143,25 +159,43 @@ const Runtime = struct {
         errdefer std.posix.close(timer_fd);
         try armPeriodicTimer(timer_fd, timer_tick_ns);
 
+        // NOTE: pool_prefix is hardcoded to "forgepool" — the only pool name
+        // used in this project. If multi-pool support is ever needed, add a
+        // --pool-prefix CLI arg and thread it through here.
         self.* = .{
             .control_uds = control_uds,
+            .ops_uds = ops_uds,
             .jailer_root = jailer_root,
             .epoll_fd = epoll_fd,
             .listener_fd = listener_fd,
             .timer_fd = timer_fd,
             .next_discovery_ns = 0,
+            .ops_config = .{
+                .pool_prefix = "forgepool",
+                .jailer_root = std.fs.path.dirname(jailer_root) orelse "/srv/jailer",
+            },
         };
         try self.registerFd(listener_fd, fdToken(.listener, 0), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP);
         try self.registerFd(timer_fd, fdToken(.timer, 0), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP);
+
+        // Bind ops socket if configured.
+        if (ops_uds.len > 0) {
+            const ops_fd = try bindOpsListener(ops_uds);
+            self.ops_listener_fd = ops_fd;
+            try self.registerFd(ops_fd, fdToken(.ops_listener, 0), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP);
+        }
     }
 
     fn deinit(self: *Runtime) void {
         for (&self.vms) |*vm| self.closeBridge(vm);
         for (&self.consumers) |*consumer| self.closeConsumer(consumer);
+        for (&self.ops_clients) |*client| self.closeOpsClient(client);
         std.posix.close(self.timer_fd);
         std.posix.close(self.listener_fd);
+        if (self.ops_listener_fd) |fd| std.posix.close(fd);
         std.posix.close(self.epoll_fd);
         std.fs.deleteFileAbsolute(self.control_uds) catch {};
+        if (self.ops_uds.len > 0) std.fs.deleteFileAbsolute(self.ops_uds) catch {};
     }
 
     fn run(self: *Runtime) !void {
@@ -177,6 +211,8 @@ const Runtime = struct {
                     .timer => core_changed = (try self.handleTimer()) or core_changed,
                     .bridge => core_changed = (try self.handleBridgeEvent(decoded.index, event.events)) or core_changed,
                     .consumer => self.handleConsumerEvent(decoded.index, event.events),
+                    .ops_listener => self.acceptOpsClients(),
+                    .ops_client => self.handleOpsClientEvent(decoded.index, event.events),
                 }
             }
 
@@ -715,6 +751,91 @@ const Runtime = struct {
         const fd = consumer.fd orelse return;
         try self.modifyFd(fd, fdToken(.consumer, index), consumerInterest(consumer));
     }
+
+    // --- Ops socket handling ---
+
+    fn acceptOpsClients(self: *Runtime) void {
+        const listener_fd = self.ops_listener_fd orelse return;
+        while (true) {
+            const fd = std.posix.accept(listener_fd, null, null, std.posix.SOCK.CLOEXEC | std.posix.SOCK.NONBLOCK) catch |err| switch (err) {
+                error.WouldBlock => return,
+                else => {
+                    std.log.err("ops accept: {s}", .{@errorName(err)});
+                    return;
+                },
+            };
+
+            const index = self.allocOpsClient() catch {
+                std.posix.close(fd);
+                continue;
+            };
+            const client = &self.ops_clients[index];
+            client.* = .{ .used = true, .fd = fd };
+            self.registerFd(fd, fdToken(.ops_client, index), linux.EPOLL.IN | linux.EPOLL.ERR | linux.EPOLL.HUP) catch {
+                std.posix.close(fd);
+                client.* = .{};
+            };
+        }
+    }
+
+    fn handleOpsClientEvent(self: *Runtime, index: usize, events: u32) void {
+        if (index >= self.ops_clients.len) return;
+        const client = &self.ops_clients[index];
+        if (!client.used) return;
+        const fd = client.fd orelse return;
+
+        if ((events & (linux.EPOLL.ERR | linux.EPOLL.HUP)) != 0) {
+            self.closeOpsClient(client);
+            return;
+        }
+
+        if ((events & linux.EPOLL.IN) != 0) {
+            self.handleOpsRequest(fd, client);
+        }
+    }
+
+    fn handleOpsRequest(self: *Runtime, fd: std.posix.fd_t, client: *OpsClient) void {
+        var recv_buf: [ops_proto.max_message_size]u8 = undefined;
+        const n = std.posix.recv(fd, &recv_buf, 0) catch |err| switch (err) {
+            error.WouldBlock => return,
+            else => {
+                self.closeOpsClient(client);
+                return;
+            },
+        };
+        if (n == 0) {
+            self.closeOpsClient(client);
+            return;
+        }
+
+        var resp_buf: [ops_proto.max_message_size]u8 = undefined;
+        const resp_len = blk: {
+            const req = ops_proto.decodeRequest(recv_buf[0..n]) catch {
+                break :blk ops_proto.errorResponse(&resp_buf, 0, .invalid_request, "malformed request");
+            };
+            std.log.info("ops request: op={s} request_id={d}", .{ @tagName(req.op), req.request_id });
+            break :blk ops.dispatch(&self.ops_config, req, &resp_buf);
+        };
+
+        _ = std.posix.send(fd, resp_buf[0..resp_len], 0) catch {
+            self.closeOpsClient(client);
+            return;
+        };
+    }
+
+    fn allocOpsClient(self: *Runtime) !usize {
+        for (&self.ops_clients, 0..) |*client, index| {
+            if (client.used) continue;
+            return index;
+        }
+        return error.OpsClientCapacityExceeded;
+    }
+
+    fn closeOpsClient(self: *Runtime, client: *OpsClient) void {
+        _ = self;
+        if (client.fd) |fd| std.posix.close(fd);
+        client.* = .{};
+    }
 };
 
 pub fn main() !void {
@@ -731,7 +852,7 @@ pub fn main() !void {
     };
 
     switch (config.mode) {
-        .serve => try serve(config.control_uds, config.jailer_root),
+        .serve => try serve(config.control_uds, config.ops_uds, config.jailer_root),
         .snapshot => try snapshot(allocator, config.control_uds),
         .check_live => try checkLive(allocator, config.control_uds, config.job_id),
     }
@@ -752,6 +873,12 @@ fn parseArgs(args: []const []const u8) !Config {
             index += 1;
             if (index >= args.len) return error.MissingOptionValue;
             config.control_uds = args[index];
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--ops-uds")) {
+            index += 1;
+            if (index >= args.len) return error.MissingOptionValue;
+            config.ops_uds = args[index];
             continue;
         }
         if (std.mem.eql(u8, arg, "--jailer-root")) {
@@ -794,14 +921,17 @@ fn switchMode(value: []const u8) ?Mode {
     return null;
 }
 
-fn serve(control_uds: []const u8, jailer_root: []const u8) !void {
+fn serve(control_uds: []const u8, ops_uds: []const u8, jailer_root: []const u8) !void {
     const allocator = std.heap.page_allocator;
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root);
+    try runtime.init(control_uds, ops_uds, jailer_root);
     defer runtime.deinit();
 
     std.log.info("homestead-smelter host agent listening on {s}", .{control_uds});
+    if (ops_uds.len > 0) {
+        std.log.info("ops socket listening on {s}", .{ops_uds});
+    }
     try runtime.run();
 }
 
@@ -928,6 +1058,30 @@ fn bindListener(control_uds: []const u8) !std.posix.fd_t {
     errdefer std.posix.close(fd);
     try std.posix.bind(fd, &address.any, address.getOsSockLen());
     try std.posix.listen(fd, 16);
+    return fd;
+}
+
+/// Bind the privileged ops socket. Uses 0660 permissions (root:smelter-ops).
+/// The group ownership is set by the systemd service/Ansible — the socket
+/// defaults to root:root with 0660 here.
+fn bindOpsListener(ops_uds: []const u8) !std.posix.fd_t {
+    if (std.fs.path.dirname(ops_uds)) |parent| {
+        try std.fs.cwd().makePath(parent);
+    }
+    std.fs.deleteFileAbsolute(ops_uds) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+
+    var address = try std.net.Address.initUnix(ops_uds);
+    const fd = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.SEQPACKET | std.posix.SOCK.CLOEXEC | std.posix.SOCK.NONBLOCK, 0);
+    errdefer std.posix.close(fd);
+    try std.posix.bind(fd, &address.any, address.getOsSockLen());
+    // Restrict to 0660 (owner+group read/write). The Ansible role sets
+    // group ownership to smelter-ops after the service starts.
+    const ops_uds_z = try std.posix.toPosixPath(ops_uds);
+    _ = std.posix.system.chmod(&ops_uds_z, 0o660);
+    try std.posix.listen(fd, 8);
     return fd;
 }
 
@@ -1273,7 +1427,7 @@ test "runtime init and empty timer tick are stable" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root);
+    try runtime.init(control_uds, "", jailer_root);
     defer runtime.deinit();
 
     std.Thread.sleep(timer_tick_ns + (10 * std.time.ns_per_ms));
@@ -1296,7 +1450,7 @@ test "runtime serves empty snapshot over seqpacket attach" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root);
+    try runtime.init(control_uds, "", jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);
@@ -1334,7 +1488,7 @@ test "runtime epoll attach path is stable" {
 
     const runtime = try std.heap.page_allocator.create(Runtime);
     defer std.heap.page_allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root);
+    try runtime.init(control_uds, "", jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);
@@ -1381,7 +1535,7 @@ test "runtime handles consumer disconnect after snapshot" {
 
     const runtime = try allocator.create(Runtime);
     defer allocator.destroy(runtime);
-    try runtime.init(control_uds, jailer_root);
+    try runtime.init(control_uds, "", jailer_root);
     defer runtime.deinit();
 
     const client_fd = try openControlFd(control_uds);

@@ -1,0 +1,184 @@
+---
+# --- Verify binary ---
+
+- name: Verify sandbox-rental-service binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/sandbox-rental-service"
+  register: sandbox_rental_service_binary
+  failed_when: not sandbox_rental_service_binary.stat.exists
+
+# --- System user ---
+
+- name: Create sandbox_rental system group
+  ansible.builtin.group:
+    name: sandbox_rental
+    system: true
+
+- name: Create sandbox_rental system user
+  ansible.builtin.user:
+    name: sandbox_rental
+    group: sandbox_rental
+    groups: "{{ firecracker_smelter_ops_group }}"
+    append: true
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+# --- nftables egress rules ---
+
+- name: Deploy sandbox-rental-service nftables ruleset
+  ansible.builtin.template:
+    src: sandbox-rental.nft.j2
+    dest: /etc/nftables.d/sandbox-rental.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply sandbox-rental-service nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Schema migrations ---
+
+- name: Include sandbox-rental PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
+# --- Credentials ---
+
+- name: Include sandbox-rental credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+# --- Auth configuration ---
+
+- name: Wait for Zitadel before configuring sandbox-rental auth
+  ansible.builtin.wait_for:
+    host: "{{ services.zitadel.host }}"
+    port: "{{ services.zitadel.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for sandbox-rental auth setup
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: sandbox_rental_service_zitadel_admin_pat_raw
+  no_log: true
+
+- name: List Zitadel projects for sandbox-rental auth
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: sandbox_rental_service_zitadel_projects
+  no_log: true
+
+- name: Find sandbox-rental auth project
+  ansible.builtin.set_fact:
+    sandbox_rental_service_auth_project: >-
+      {{
+        (
+          sandbox_rental_service_zitadel_projects.json.result
+          | selectattr('name', 'equalto', sandbox_rental_service_auth_project_name)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create sandbox-rental auth project if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ sandbox_rental_service_auth_project_name }}"
+    return_content: true
+  register: sandbox_rental_service_auth_project_created
+  when: sandbox_rental_service_auth_project == {}
+  no_log: true
+
+- name: Set sandbox-rental auth audience
+  ansible.builtin.set_fact:
+    sandbox_rental_service_auth_audience: >-
+      {{
+        sandbox_rental_service_auth_project.id
+        | default(sandbox_rental_service_auth_project_created.json.id, true)
+      }}
+
+- name: Assert sandbox-rental auth audience is set
+  ansible.builtin.assert:
+    that: sandbox_rental_service_auth_audience | default('', true) | length > 0
+    fail_msg: sandbox_rental_service_auth_audience could not be resolved from Zitadel.
+
+# --- systemd unit ---
+
+- name: Deploy sandbox-rental-service systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Sandbox Rental Service
+      After=forge-metal-firewall.target network.target postgresql.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service
+
+      [Service]
+      Type=simple
+      User=sandbox_rental
+      Group=sandbox_rental
+      SupplementaryGroups={{ firecracker_smelter_ops_group }}
+      LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
+      LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
+      Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+      Environment=SANDBOX_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=SANDBOX_BILLING_URL=http://{{ services.billing.host }}:{{ services.billing.port }}
+      Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
+      Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
+      Environment=SANDBOX_SMELTER_OPS_SOCKET={{ firecracker_smelter_ops_socket }}
+      Environment=SANDBOX_FS_POOL=forgepool
+      Environment=SANDBOX_FS_GOLDEN_ZVOL=golden-zvol
+      Environment=SANDBOX_FS_CI_DATASET=ci
+      Environment=SANDBOX_FS_KERNEL_PATH=/var/lib/ci/vmlinux
+      Environment=SANDBOX_FS_FC_BIN=/usr/local/bin/firecracker
+      Environment=SANDBOX_FS_JAILER_BIN=/usr/local/bin/jailer
+      Environment=SANDBOX_FS_JAILER_ROOT=/srv/jailer
+      Environment=SANDBOX_FS_HOST_INTERFACE=eth0
+      Environment=SANDBOX_FS_GUEST_POOL_CIDR={{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}
+      Environment=SANDBOX_FS_NETWORK_LEASE_DIR=/var/lib/ci/leases
+      Environment=SANDBOX_FS_JAILER_UID={{ firecracker_jailer_uid | default(10000) }}
+      Environment=SANDBOX_FS_JAILER_GID={{ firecracker_jailer_gid | default(10000) }}
+      ExecStart={{ fm_bin }}/sandbox-rental-service
+      Restart=on-failure
+      RestartSec=5
+      ProtectHome=true
+      LockPersonality=true
+      NoNewPrivileges=true
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/sandbox-rental-service.service
+    mode: "0644"
+  notify:
+    - restart sandbox-rental-service
+
+- name: Apply sandbox-rental-service unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Enable and start ---
+
+- name: Enable and start sandbox-rental-service
+  ansible.builtin.systemd:
+    name: sandbox-rental-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Readiness gate ---
+
+- name: Wait for sandbox-rental-service to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.sandbox_rental.host }}"
+    port: "{{ services.sandbox_rental.port }}"
+    timeout: 30

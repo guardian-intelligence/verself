@@ -269,6 +269,80 @@
   changed_when: false
   no_log: true
 
+# --- Sandbox rental service ---
+
+- name: Create sandbox_rental PostgreSQL user if missing
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "DO $$ BEGIN
+        CREATE USER sandbox_rental WITH PASSWORD '{{ postgresql_sandbox_rental_password }}' LOGIN;
+      EXCEPTION
+        WHEN duplicate_object THEN
+          NULL;
+      END $$;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
+- name: Sync sandbox_rental PostgreSQL password
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "ALTER ROLE sandbox_rental WITH PASSWORD '{{ postgresql_sandbox_rental_password }}';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
+- name: Check if sandbox_rental database exists
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -tAc
+      "SELECT 1 FROM pg_database WHERE datname = 'sandbox_rental';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: postgresql_sandbox_rental_db_check
+  changed_when: false
+  no_log: true
+
+- name: Create sandbox_rental database if missing
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "CREATE DATABASE sandbox_rental OWNER sandbox_rental;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  when: postgresql_sandbox_rental_db_check.stdout | trim != '1'
+  changed_when: true
+  no_log: true
+
+- name: Ensure sandbox_rental owns sandbox_rental database
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres -c
+      "ALTER DATABASE sandbox_rental OWNER TO sandbox_rental;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
 # --- Connection smoke test ---
 
 - name: Verify TCP connection to PostgreSQL

@@ -103,6 +103,8 @@
       tags: [zitadel]
     - role: billing_service
       tags: [billing_service]
+    - role: sandbox_rental_service
+      tags: [sandbox_rental_service]
     - role: otelcol
       tags: [otelcol]
     - role: hyperdx

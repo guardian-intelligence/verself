@@ -62,7 +62,7 @@ func NewAllocator(cfg NetworkPoolConfig) *Allocator {
 	return &Allocator{cfg: normalizeNetworkPoolConfig(cfg)}
 }
 
-func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig) (*networkSetup, func(), error) {
+func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
 	allocator := NewAllocator(cfg)
 	if err := allocator.Recover(ctx); err != nil {
 		return nil, nil, fmt.Errorf("recover stale leases: %w", err)
@@ -74,26 +74,22 @@ func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig) (*ne
 	}
 
 	completedSteps := 0
-	steps := []struct {
-		name string
-		args []string
-	}{
-		{"create tap", []string{"ip", "tuntap", "add", lease.TapName, "mode", "tap"}},
-		{"assign ip", []string{"ip", "addr", "add", lease.HostCIDR, "dev", lease.TapName}},
-		{"link up", []string{"ip", "link", "set", lease.TapName, "up"}},
-	}
 
-	for _, step := range steps {
-		if err := runCmd(ctx, step.args[0], step.args[1:]...); err != nil {
-			cleanupNetwork(context.Background(), lease.TapName, completedSteps)
-			_ = allocator.Release(context.Background(), jobID)
-			return nil, nil, fmt.Errorf("network setup %s: %w", step.name, err)
-		}
-		completedSteps++
+	if err := ops.TapCreate(ctx, lease.TapName, lease.HostCIDR); err != nil {
+		_ = allocator.Release(context.Background(), jobID)
+		return nil, nil, fmt.Errorf("network setup create tap: %w", err)
 	}
+	completedSteps = 2 // TapCreate covers both tuntap add + addr add
+
+	if err := ops.TapUp(ctx, lease.TapName); err != nil {
+		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
+		_ = allocator.Release(context.Background(), jobID)
+		return nil, nil, fmt.Errorf("network setup link up: %w", err)
+	}
+	completedSteps = 3
 
 	cleanup := func() {
-		cleanupNetwork(context.Background(), lease.TapName, completedSteps)
+		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
 		_ = allocator.Release(context.Background(), jobID)
 	}
 
@@ -437,6 +433,16 @@ func cleanupNetwork(ctx context.Context, tapName string, steps int) error {
 		return nil
 	}
 	return runCmd(ctx, "ip", "link", "del", tapName)
+}
+
+func cleanupNetworkOps(ctx context.Context, tapName string, steps int, ops PrivOps) error {
+	if steps < 1 || tapName == "" {
+		return nil
+	}
+	if !tapExists(tapName) {
+		return nil
+	}
+	return ops.TapDelete(ctx, tapName)
 }
 
 func tapExists(name string) bool {

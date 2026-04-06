@@ -1,0 +1,39 @@
+#!/usr/sbin/nft -f
+# Sandbox rental service network restrictions.
+# Binds 127.0.0.1:4243 (loopback-only). Caddy reverse-proxies to it.
+#
+# The service runs as User=sandbox_rental. Egress is restricted by skuid
+# to only allow connections to PostgreSQL, ClickHouse, billing, and Zitadel
+# on localhost. All other outbound traffic from this user is dropped.
+
+table inet forge_metal_sandbox_rental
+delete table inet forge_metal_sandbox_rental
+
+table inet forge_metal_sandbox_rental {
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        # Reject external connections to the sandbox-rental port.
+        # Only loopback (Caddy reverse proxy) is allowed.
+        tcp dport {{ services.sandbox_rental.port }} iifname != "lo" drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        # Allow all traffic from other users.
+        meta skuid != sandbox_rental accept
+
+        # Allow loopback traffic to local services.
+        oifname "lo" tcp dport {{ services.postgresql.port }} accept
+        oifname "lo" tcp dport {{ services.clickhouse.native_port }} accept
+        oifname "lo" tcp dport {{ services.billing.port }} accept
+        oifname "lo" tcp dport {{ services.zitadel.port }} accept
+
+        # Allow Unix socket traffic (always passes output chain).
+        meta l4proto != tcp meta l4proto != udp accept
+
+        # Drop all other outbound traffic from sandbox_rental user.
+        drop
+    }
+}

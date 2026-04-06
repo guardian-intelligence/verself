@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,39 +16,6 @@ const zfsTimeout = 30 * time.Second
 // e.g. "forgepool/ci/job-abc" -> "/dev/zvol/forgepool/ci/job-abc"
 func zvolDevicePath(dataset string) string {
 	return "/dev/zvol/" + dataset
-}
-
-// zfsClone creates a ZFS clone from a snapshot.
-// Works for both datasets and zvols — the clone inherits the type.
-func zfsClone(ctx context.Context, snapshot, target string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "clone",
-		"-o", "forge:job_id="+filepath.Base(target),
-		"-o", "forge:created_at="+time.Now().UTC().Format(time.RFC3339),
-		snapshot, target)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("zfs clone %s -> %s: %s: %w",
-			snapshot, target, strings.TrimSpace(string(out)), err)
-	}
-	return nil
-}
-
-// zfsDestroy removes a ZFS dataset/zvol. No -r flag: only destroys
-// the exact dataset, not children. Caller must validate the path.
-func zfsDestroy(ctx context.Context, dataset string) error {
-	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "zfs", "destroy", dataset)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("zfs destroy %s: %s: %w",
-			dataset, strings.TrimSpace(string(out)), err)
-	}
-	return nil
 }
 
 // zfsSnapshotExists checks if a ZFS snapshot exists.

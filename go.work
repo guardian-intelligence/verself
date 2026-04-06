@@ -6,4 +6,5 @@ use (
 	./src/billing-service
 	./src/fast-sandbox
 	./src/platform
+	./src/sandbox-rental-service
 )

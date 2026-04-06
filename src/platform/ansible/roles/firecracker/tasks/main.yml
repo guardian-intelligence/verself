@@ -123,6 +123,12 @@
     gid: "{{ firecracker_jailer_gid }}"
     state: present
 
+- name: Create smelter-ops group for privileged operations socket access
+  ansible.builtin.group:
+    name: "{{ firecracker_smelter_ops_group }}"
+    system: true
+    state: present
+
 - name: Create firecracker user
   ansible.builtin.user:
     name: "{{ firecracker_jailer_user }}"
