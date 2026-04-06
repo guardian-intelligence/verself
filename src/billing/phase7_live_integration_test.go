@@ -95,11 +95,16 @@ func TestDepositSubscriptionCreditsAgainstLiveHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("idempotent deposit: %v", err)
 	}
-	// The second run still processes the subscription but DepositCredits returns
-	// early due to PG unique index. Since DepositCredits returns nil for both
-	// first-time and idempotent, the counter increments again. Verify no failures.
+	// The second run processes the subscription but DepositCredits detects the
+	// existing PG row and returns created=false, so it counts as skipped.
 	if result2.CreditsFailed > 0 {
 		t.Fatalf("expected no failures on idempotent run, got %d: %v", result2.CreditsFailed, result2.Errors)
+	}
+	if result2.CreditsDeposited > 0 {
+		t.Fatalf("expected 0 deposited on idempotent run, got %d", result2.CreditsDeposited)
+	}
+	if result2.CreditsSkipped == 0 {
+		t.Fatal("expected idempotent run to count as skipped")
 	}
 
 	// Still only one grant row.

@@ -227,7 +227,7 @@ func (a *App) dispatchPurchaseDeposit(ctx context.Context, task claimedTask) err
 	}
 
 	taskID := billing.TaskID(task.TaskID)
-	return a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
+	_, err = a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
 		OrgID:             billing.OrgID(orgID),
 		ProductID:         payload.ProductID,
 		Amount:            uint64(payload.AmountLedgerUnits),
@@ -235,6 +235,7 @@ func (a *App) dispatchPurchaseDeposit(ctx context.Context, task claimedTask) err
 		StripeReferenceID: payload.StripePIID,
 		ExpiresAt:         &expiresAt,
 	})
+	return err
 }
 
 func (a *App) dispatchSubscriptionCreditDeposit(ctx context.Context, task claimedTask) error {
@@ -275,7 +276,7 @@ func (a *App) dispatchSubscriptionCreditDeposit(ctx context.Context, task claime
 	}
 
 	taskID := billing.TaskID(task.TaskID)
-	return a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
+	_, err = a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
 		OrgID:             billing.OrgID(orgID),
 		ProductID:         payload.ProductID,
 		Amount:            uint64(payload.AmountLedgerUnits),
@@ -286,6 +287,7 @@ func (a *App) dispatchSubscriptionCreditDeposit(ctx context.Context, task claime
 		PeriodEnd:         &periodEnd,
 		ExpiresAt:         &expiresAt,
 	})
+	return err
 }
 
 func (a *App) dispatchLicensedCharge(ctx context.Context, task claimedTask) error {

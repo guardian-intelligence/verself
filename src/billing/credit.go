@@ -26,18 +26,20 @@ import (
 // For subscription/free_tier sources, idempotency is via the unique index on
 // (subscription_id, period_start). For purchase/promo/refund sources,
 // idempotency is via the task's idempotency_key plus deterministic transfer IDs.
-func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant CreditGrant) error {
+// DepositCredits creates a credit grant backed by a TigerBeetle account.
+// Returns (true, nil) on first deposit, (false, nil) on idempotent replay.
+func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant CreditGrant) (bool, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 
 	sourceType, err := ParseGrantSourceType(grant.Source)
 	if err != nil {
-		return fmt.Errorf("deposit credits: %w", err)
+		return false, fmt.Errorf("deposit credits: %w", err)
 	}
 
 	if err := validateDepositPreconditions(sourceType, taskID, grant); err != nil {
-		return err
+		return false, err
 	}
 
 	fundingAccount, xferKind := depositFundingSource(sourceType)
@@ -82,14 +84,16 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 		grant.ExpiresAt,
 	).Scan(&returnedGrantIDStr)
 	if err != nil {
-		return fmt.Errorf("deposit credits: upsert grant row: %w", err)
+		return false, fmt.Errorf("deposit credits: upsert grant row: %w", err)
 	}
 
-	// Use the returned grant ID (may differ from generated one on retry).
-	if returnedGrantIDStr != grantIDStr {
+	// If the returned grant ID differs from the one we generated, the PG row
+	// already existed — this is an idempotent replay, not a new deposit.
+	created := returnedGrantIDStr == grantIDStr
+	if !created {
 		parsedULID, err := ulid.ParseStrict(returnedGrantIDStr)
 		if err != nil {
-			return fmt.Errorf("deposit credits: parse existing grant ULID %q: %w", returnedGrantIDStr, err)
+			return false, fmt.Errorf("deposit credits: parse existing grant ULID %q: %w", returnedGrantIDStr, err)
 		}
 		grantID = GrantID(parsedULID)
 		grantIDStr = returnedGrantIDStr
@@ -97,7 +101,7 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 
 	// Step 2: TB grant account (idempotent via AccountExists).
 	if err := c.createGrantAccount(grantID, grant.OrgID, sourceType); err != nil {
-		return fmt.Errorf("deposit credits: %w", err)
+		return false, fmt.Errorf("deposit credits: %w", err)
 	}
 
 	// Step 3: TB pending transfer — funds locked in source, not yet in grant.
@@ -115,7 +119,7 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 		Flags:           types.TransferFlags{Pending: true}.ToUint16(),
 		Timeout:         3600, // 1 hour safety net for crash recovery
 	}}); err != nil {
-		return fmt.Errorf("deposit credits: pending transfer: %w", err)
+		return false, fmt.Errorf("deposit credits: pending transfer: %w", err)
 	}
 
 	// Step 4: Post the pending transfer — atomicity point.
@@ -123,7 +127,7 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 	// subsequent PG failures. Deterministic post ID ensures idempotency.
 	postID := depositTransferID(sourceType, taskID, grant, KindDepositConfirm)
 	if err := c.postPendingTransfer(pendingID, postID); err != nil {
-		return fmt.Errorf("deposit credits: %w", err)
+		return false, fmt.Errorf("deposit credits: %w", err)
 	}
 
 	// Step 5: Billing event (audit trail). If this fails, the grant is still
@@ -144,10 +148,10 @@ func (c *Client) DepositCredits(ctx context.Context, taskID *TaskID, grant Credi
 		taskIDVal,
 		mustJSON(map[string]interface{}{"amount": grant.Amount, "source": grant.Source, "product_id": grant.ProductID}),
 	); err != nil {
-		return fmt.Errorf("deposit credits: log billing event: %w", err)
+		return false, fmt.Errorf("deposit credits: log billing event: %w", err)
 	}
 
-	return nil
+	return created, nil
 }
 
 // ExpireCredits sweeps expired credit grants. For each grant where

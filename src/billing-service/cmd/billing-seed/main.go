@@ -153,7 +153,7 @@ func run() error {
 		deposited = cfg.targetPrepaidUnits - before.PrepaidRemaining
 		taskID := billing.TaskID(time.Now().UTC().UnixNano())
 		expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
-		if err := client.DepositCredits(ctx, &taskID, billing.CreditGrant{
+		if _, err := client.DepositCredits(ctx, &taskID, billing.CreditGrant{
 			OrgID:             billing.OrgID(cfg.orgID),
 			ProductID:         cfg.productID,
 			Amount:            deposited,

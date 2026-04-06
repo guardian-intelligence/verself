@@ -34,7 +34,7 @@ func TestDepositCreditsSubscriptionSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	err := env.client.DepositCredits(ctx, nil, CreditGrant{
+	created, err := env.client.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:          orgID,
 		ProductID:      productID,
 		Amount:         500,
@@ -46,6 +46,9 @@ func TestDepositCreditsSubscriptionSource(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("deposit credits: %v", err)
+	}
+	if !created {
+		t.Fatal("expected created=true for first deposit")
 	}
 
 	// Verify PG grant row exists.
@@ -109,11 +112,19 @@ func TestDepositCreditsIdempotencySubscription(t *testing.T) {
 		PeriodEnd:      &periodEnd,
 	}
 
-	if err := env.client.DepositCredits(ctx, nil, grant); err != nil {
+	created1, err := env.client.DepositCredits(ctx, nil, grant)
+	if err != nil {
 		t.Fatalf("first deposit: %v", err)
 	}
-	if err := env.client.DepositCredits(ctx, nil, grant); err != nil {
+	if !created1 {
+		t.Fatal("expected created=true for first deposit")
+	}
+	created2, err := env.client.DepositCredits(ctx, nil, grant)
+	if err != nil {
 		t.Fatalf("second deposit (should be idempotent): %v", err)
+	}
+	if created2 {
+		t.Fatal("expected created=false for idempotent replay")
 	}
 
 	orgIDStr := strconv.FormatUint(uint64(orgID), 10)
@@ -162,7 +173,7 @@ func TestDepositCreditsFreeTierSource(t *testing.T) {
 	// Fund FreeTierPool so the debit succeeds.
 	fundOperatorPool(t, env.tbClient, AcctFreeTierPool, 1000)
 
-	err := env.client.DepositCredits(ctx, nil, CreditGrant{
+	_, err := env.client.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:          orgID,
 		ProductID:      productID,
 		Amount:         100,
@@ -199,7 +210,7 @@ func TestDepositCreditsPurchaseSource(t *testing.T) {
 	defer cancel()
 
 	// Without taskID should fail.
-	err := env.client.DepositCredits(ctx, nil, CreditGrant{
+	_, err := env.client.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:     orgID,
 		ProductID: productID,
 		Amount:    300,
@@ -211,7 +222,7 @@ func TestDepositCreditsPurchaseSource(t *testing.T) {
 
 	// With taskID should succeed.
 	taskID := TaskID(9001)
-	err = env.client.DepositCredits(ctx, &taskID, CreditGrant{
+	_, err = env.client.DepositCredits(ctx, &taskID, CreditGrant{
 		OrgID:             orgID,
 		ProductID:         productID,
 		Amount:            300,
