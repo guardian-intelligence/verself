@@ -64,7 +64,7 @@ func NewAllocator(cfg NetworkPoolConfig) *Allocator {
 
 func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
 	allocator := NewAllocator(cfg)
-	if err := allocator.Recover(ctx); err != nil {
+	if err := allocator.Recover(ctx, ops); err != nil {
 		return nil, nil, fmt.Errorf("recover stale leases: %w", err)
 	}
 
@@ -175,7 +175,7 @@ func (a *Allocator) Release(ctx context.Context, jobID string) error {
 }
 
 // Recover reconciles stale lease files with live TAP devices and VM processes.
-func (a *Allocator) Recover(ctx context.Context) error {
+func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 	lockFile, releaseLock, err := a.acquireLock(ctx)
 	if err != nil {
 		return err
@@ -212,7 +212,10 @@ func (a *Allocator) Recover(ctx context.Context) error {
 		}
 
 		if tapExists {
-			if cleanupErr := cleanupNetwork(ctx, lease.TapName, 3); cleanupErr != nil {
+			if ops == nil {
+				return fmt.Errorf("cleanup stale tap %s: privileged ops are required", lease.TapName)
+			}
+			if cleanupErr := cleanupNetworkOps(ctx, lease.TapName, 3, ops); cleanupErr != nil {
 				return cleanupErr
 			}
 		}
@@ -423,16 +426,6 @@ func readLeaseFile(path string) (NetworkLease, error) {
 		return NetworkLease{}, fmt.Errorf("decode lease %s: %w", path, err)
 	}
 	return lease, nil
-}
-
-func cleanupNetwork(ctx context.Context, tapName string, steps int) error {
-	if steps < 1 || tapName == "" {
-		return nil
-	}
-	if !tapExists(tapName) {
-		return nil
-	}
-	return runCmd(ctx, "ip", "link", "del", tapName)
 }
 
 func cleanupNetworkOps(ctx context.Context, tapName string, steps int, ops PrivOps) error {
