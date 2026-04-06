@@ -46,6 +46,7 @@ func run() error {
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
+	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
 
 	pg, err := sql.Open("postgres", pgDSN)
 	if err != nil {
@@ -108,6 +109,7 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
+		JWKSURL:   authJWKSURL,
 	})(mux)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

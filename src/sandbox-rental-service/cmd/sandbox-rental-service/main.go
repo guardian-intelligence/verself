@@ -49,6 +49,7 @@ func run() error {
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
+	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
 
 	// fast-sandbox config
 	fsPool := envOr("SANDBOX_FS_POOL", "forgepool")
@@ -147,6 +148,7 @@ func run() error {
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
+		JWKSURL:   authJWKSURL,
 	})(mux)
 
 	// All routes require auth (no webhooks or public ops endpoints).

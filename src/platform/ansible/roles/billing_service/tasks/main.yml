@@ -135,6 +135,7 @@
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
+      Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
       Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
       ExecStart={{ fm_bin }}/billing-service
       Restart=on-failure
