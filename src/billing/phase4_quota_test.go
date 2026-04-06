@@ -194,12 +194,13 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 	}
 }
 
-func TestCheckQuotasRollingWindowAllowed(t *testing.T) {
+func TestCheckQuotasWeekWindowAllowedViaClickHouse(t *testing.T) {
 	t.Parallel()
 
 	orgID := OrgID(8_800_000_000_000_000_006)
-	productID, planID := uniqueCatalogIDs("quota-rolling-ok")
+	productID, planID := uniqueCatalogIDs("quota-week-ok")
 
+	// Week window stays on the ClickHouse-backed path (unlike hour/4h/instant → TigerBeetle).
 	stub := &stubMeteringQuerier{
 		dimensionSums: map[string]float64{
 			fmt.Sprintf("%d:%s:token", orgID, productID): 30000,
@@ -214,7 +215,7 @@ func TestCheckQuotasRollingWindowAllowed(t *testing.T) {
 	defer cancel()
 
 	setQuotasOnPlan(t, env.pg, planID, quotaPolicy{Limits: []quotaLimit{
-		{Dimension: "token", Window: "hour", Limit: 50000},
+		{Dimension: "token", Window: "week", Limit: 50000},
 	}})
 
 	result, err := env.client.CheckQuotas(ctx, orgID, productID, nil)
@@ -222,7 +223,7 @@ func TestCheckQuotasRollingWindowAllowed(t *testing.T) {
 		t.Fatalf("check quotas: %v", err)
 	}
 	if !result.Allowed {
-		t.Fatalf("expected Allowed=true, got violations: %+v", result.Violations)
+		t.Fatalf("expected Allowed=true (30000 < 50000), got violations: %+v", result.Violations)
 	}
 }
 
@@ -464,6 +465,76 @@ func TestOverageCapNullAllowsUnlimitedOverage(t *testing.T) {
 	}
 	if err := env.client.Void(ctx, &res2); err != nil {
 		t.Fatalf("void: %v", err)
+	}
+}
+
+// TestOverageCapCumulativeDepletion verifies that settled overage debits
+// accumulate correctly against the cap across multiple reserve/settle cycles.
+// This is the critical path: cap=200, window_cost=180, first settle=60 cost →
+// remaining cap should be 140, second 180-unit window should be blocked (180 > 140).
+func TestOverageCapCumulativeDepletion(t *testing.T) {
+	t.Parallel()
+
+	orgID := OrgID(8_800_000_000_000_000_014)
+	productID, planID := uniqueCatalogIDs("overage-cap-deplete")
+
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
+
+	// unit_rate=1 for included, overage_rate=3 → window_cost=3*60=180
+	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
+		map[string]uint64{"unit": 1},
+		map[string]uint64{"unit": 3},
+		false,
+	)
+
+	// Cap = 200.
+	setOverageCapOnSubscription(t, env.pg, subID, 200)
+
+	// Subscription grant to deplete, plus purchase grants for overage.
+	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
+		orgID, productID, SourceSubscription, 60)
+	seedGrantForProductTest(t, env.client, env.pg, env.tbClient,
+		orgID, productID, SourcePurchase, 10000)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Deplete subscription grant.
+	res1, err := env.client.Reserve(ctx, ReserveRequest{
+		JobID: 901, OrgID: orgID, ProductID: productID, ActorID: "user-deplete",
+		Allocation: map[string]float64{"unit": 1}, SourceType: "job", SourceRef: "901",
+	})
+	if err != nil {
+		t.Fatalf("reserve1 (included): %v", err)
+	}
+	if err := env.client.Settle(ctx, &res1, 60); err != nil {
+		t.Fatalf("settle1: %v", err)
+	}
+
+	// First overage: window_cost=180, cap=200. Should succeed.
+	// Settle 20 seconds: actual_cost=3*20=60 overage units debited from cap.
+	res2, err := env.client.Reserve(ctx, ReserveRequest{
+		JobID: 902, OrgID: orgID, ProductID: productID, ActorID: "user-deplete",
+		Allocation: map[string]float64{"unit": 1}, SourceType: "job", SourceRef: "902",
+	})
+	if err != nil {
+		t.Fatalf("reserve2 (overage, under cap): %v", err)
+	}
+	if res2.PricingPhase != PricingPhaseOverage {
+		t.Fatalf("expected overage phase, got %q", res2.PricingPhase)
+	}
+	if err := env.client.Settle(ctx, &res2, 20); err != nil {
+		t.Fatalf("settle2: %v", err)
+	}
+	// Cap consumed: 60. Remaining: 200 - 60 = 140.
+
+	// Second overage: window_cost=180 > remaining cap of 140. Should be blocked.
+	_, err = env.client.Reserve(ctx, ReserveRequest{
+		JobID: 903, OrgID: orgID, ProductID: productID, ActorID: "user-deplete",
+		Allocation: map[string]float64{"unit": 1}, SourceType: "job", SourceRef: "903",
+	})
+	if !errors.Is(err, ErrOverageCeilingExceeded) {
+		t.Fatalf("expected ErrOverageCeilingExceeded after cumulative depletion, got %v", err)
 	}
 }
 
