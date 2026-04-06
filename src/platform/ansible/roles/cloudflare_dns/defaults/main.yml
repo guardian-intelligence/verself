@@ -11,6 +11,7 @@ cloudflare_dns_records:
   - "{{ forgejo_subdomain | default('git') }}"
   - "{{ zitadel_subdomain | default('auth') }}"
   - "{{ billing_service_subdomain | default('billing') }}"
+  - "{{ sandbox_rental_service_subdomain | default('rent-a-sandbox') }}"
 
 # DNS record type. Override to AAAA for IPv6-only hosts.
 cloudflare_dns_record_type: A
