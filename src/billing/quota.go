@@ -53,27 +53,38 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 	}
 
 	now := c.clock().UTC()
-	var violations []QuotaViolation
 
+	// Separate TB-enforceable limits from ClickHouse-backed limits.
+	var tbLimits []quotaLimit
+	var chLimits []quotaLimit
 	for _, lim := range policy.limits {
-		var current float64
-
 		switch lim.Window {
-		case "instant":
-			current = usage[lim.Dimension]
+		case "instant", "hour", "4h":
+			tbLimits = append(tbLimits, lim)
 		default:
-			since, err := windowSince(lim.Window, now, policy.periodStart)
-			if err != nil {
-				return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
-			}
-			current, err = c.querier.SumDimension(ctx, orgID, productID, lim.Dimension, since)
-			if err != nil {
-				return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
-			}
+			chLimits = append(chLimits, lim)
 		}
+	}
 
+	// TigerBeetle path: atomic balance-conditional pending transfers.
+	tbViolations, err := c.attemptQuotaTransfers(ctx, orgID, productID, tbLimits, usage, now)
+	if err != nil {
+		return QuotaResult{}, fmt.Errorf("tb quota check: %w", err)
+	}
+
+	// ClickHouse path: rolling-window aggregation for long windows.
+	var chViolations []QuotaViolation
+	for _, lim := range chLimits {
+		since, err := windowSince(lim.Window, now, policy.periodStart)
+		if err != nil {
+			return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
+		}
+		current, err := c.querier.SumDimension(ctx, orgID, productID, lim.Dimension, since)
+		if err != nil {
+			return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
+		}
 		if uint64(current) >= lim.Limit {
-			violations = append(violations, QuotaViolation{
+			chViolations = append(chViolations, QuotaViolation{
 				Dimension: lim.Dimension,
 				Window:    lim.Window,
 				Limit:     lim.Limit,
@@ -81,6 +92,8 @@ func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string,
 			})
 		}
 	}
+
+	violations := append(tbViolations, chViolations...)
 
 	result := QuotaResult{
 		Allowed:    len(violations) == 0,

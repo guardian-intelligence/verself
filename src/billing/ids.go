@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -178,6 +179,66 @@ func DisputeDebitID(task TaskID, grantIdx uint8) TransferID {
 	id[4] = grantIdx
 	id[5] = uint8(KindDisputeDebit)
 	binary.LittleEndian.PutUint64(id[8:16], uint64(task))
+	return TransferID{raw: types.BytesToUint128(id)}
+}
+
+// QuotaAccountID builds a deterministic account ID for a quota limit.
+// High u64: org_id (LSM locality — same org's accounts are adjacent).
+// Low u64: FNV-1a(product_id + "\x00" + dimension + "\x00" + window) with
+// the quota code discriminator in bytes 6-7 to avoid collisions with grant
+// or operator accounts.
+func QuotaAccountID(orgID OrgID, productID, dimension, window string) AccountID {
+	h := fnv.New64a()
+	h.Write([]byte(productID))
+	h.Write([]byte{0})
+	h.Write([]byte(dimension))
+	h.Write([]byte{0})
+	h.Write([]byte(window))
+	hash := h.Sum64()
+
+	var id [16]byte
+	binary.LittleEndian.PutUint64(id[0:8], hash)
+	// Stamp quota code into bytes 6-7 to disambiguate from grant accounts.
+	binary.LittleEndian.PutUint16(id[6:8], AcctQuotaCode)
+	binary.LittleEndian.PutUint64(id[8:16], uint64(orgID))
+	return AccountID{raw: types.BytesToUint128(id)}
+}
+
+// OverageCapAccountID builds a deterministic account ID for an overage cap.
+// Same layout as QuotaAccountID but with OverageCapCode discriminator.
+func OverageCapAccountID(orgID OrgID, productID string) AccountID {
+	h := fnv.New64a()
+	h.Write([]byte(productID))
+	hash := h.Sum64()
+
+	var id [16]byte
+	binary.LittleEndian.PutUint64(id[0:8], hash)
+	binary.LittleEndian.PutUint16(id[6:8], AcctOverageCapCode)
+	binary.LittleEndian.PutUint64(id[8:16], uint64(orgID))
+	return AccountID{raw: types.BytesToUint128(id)}
+}
+
+// QuotaTransferID builds a unique transfer ID for a quota check pending transfer.
+// Uses nanosecond timestamp + dimension hash for uniqueness (quota transfers are
+// never posted or voided by the application — they expire naturally).
+func QuotaTransferID(orgID OrgID, dimension string, nanoTS int64) TransferID {
+	h := fnv.New32a()
+	h.Write([]byte(dimension))
+
+	var id [16]byte
+	binary.LittleEndian.PutUint32(id[0:4], h.Sum32())
+	id[5] = uint8(KindQuotaCheck)
+	binary.LittleEndian.PutUint64(id[8:16], uint64(nanoTS))
+	return TransferID{raw: types.BytesToUint128(id)}
+}
+
+// OverageCapTransferID builds a transfer ID for overage cap operations.
+func OverageCapTransferID(jobID JobID, windowSeq uint32, kind XferKind) TransferID {
+	var id [16]byte
+	binary.LittleEndian.PutUint32(id[0:4], windowSeq)
+	id[4] = 0xFF // distinguishes from grant leg transfers (grantIdx < 256)
+	id[5] = uint8(kind)
+	binary.LittleEndian.PutUint64(id[8:16], uint64(jobID))
 	return TransferID{raw: types.BytesToUint128(id)}
 }
 

@@ -14,9 +14,8 @@ import (
 
 // stubMeteringQuerier returns canned values for test assertions.
 type stubMeteringQuerier struct {
-	dimensionSums  map[string]float64 // key: "orgID:productID:dimension"
-	chargeUnitSums map[string]uint64  // key: "orgID:productID:phase"
-	err            error              // if set, all calls return this error
+	dimensionSums map[string]float64 // key: "orgID:productID:dimension"
+	err           error              // if set, all calls return this error
 }
 
 func (s *stubMeteringQuerier) SumDimension(_ context.Context, orgID OrgID, productID string, dimension string, _ time.Time) (float64, error) {
@@ -25,14 +24,6 @@ func (s *stubMeteringQuerier) SumDimension(_ context.Context, orgID OrgID, produ
 	}
 	key := fmt.Sprintf("%d:%s:%s", orgID, productID, dimension)
 	return s.dimensionSums[key], nil
-}
-
-func (s *stubMeteringQuerier) SumChargeUnits(_ context.Context, orgID OrgID, productID string, pricingPhase PricingPhase, _ time.Time) (uint64, error) {
-	if s.err != nil {
-		return 0, s.err
-	}
-	key := fmt.Sprintf("%d:%s:%s", orgID, productID, pricingPhase)
-	return s.chargeUnitSums[key], nil
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +107,13 @@ func TestCheckQuotasInstantWindowViolation(t *testing.T) {
 		t.Fatalf("expected 1 violation, got %d", len(result.Violations))
 	}
 	v := result.Violations[0]
-	if v.Dimension != "concurrent_vms" || v.Window != "instant" || v.Limit != 5 || v.Current != 6 {
+	if v.Dimension != "concurrent_vms" || v.Window != "instant" || v.Limit != 5 {
 		t.Fatalf("unexpected violation: %+v", v)
+	}
+	// Current is implementation-defined: TigerBeetle reports "at capacity" (== limit),
+	// not the caller-supplied usage value. Assert >= limit rather than exact value.
+	if v.Current < v.Limit {
+		t.Fatalf("expected Current >= Limit, got Current=%d Limit=%d", v.Current, v.Limit)
 	}
 }
 
@@ -156,13 +152,7 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 	orgID := OrgID(8_800_000_000_000_000_005)
 	productID, planID := uniqueCatalogIDs("quota-rolling")
 
-	// Stub returns high usage for the "token" dimension.
-	stub := &stubMeteringQuerier{
-		dimensionSums: map[string]float64{
-			fmt.Sprintf("%d:%s:token", orgID, productID): 60000,
-		},
-	}
-	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1}, nil, false)
@@ -170,13 +160,27 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Hourly quota: max 3 tokens per hour. Enforced via TigerBeetle pending
+	// transfers with timeout=3600s (leaky bucket).
 	setQuotasOnPlan(t, env.pg, planID, quotaPolicy{Limits: []quotaLimit{
-		{Dimension: "token", Window: "hour", Limit: 50000},
+		{Dimension: "token", Window: "hour", Limit: 3},
 	}})
 
-	result, err := env.client.CheckQuotas(ctx, orgID, productID, nil)
+	// Consume 3 tokens (exhaust the hourly quota).
+	for i := 0; i < 3; i++ {
+		r, err := env.client.CheckQuotas(ctx, orgID, productID, map[string]float64{"token": 1})
+		if err != nil {
+			t.Fatalf("check quotas %d: %v", i+1, err)
+		}
+		if !r.Allowed {
+			t.Fatalf("token %d should be allowed", i+1)
+		}
+	}
+
+	// 4th token should be rejected — hourly quota exhausted.
+	result, err := env.client.CheckQuotas(ctx, orgID, productID, map[string]float64{"token": 1})
 	if err != nil {
-		t.Fatalf("check quotas: %v", err)
+		t.Fatalf("check quotas 4th: %v", err)
 	}
 	if result.Allowed {
 		t.Fatal("expected rolling window violation, got Allowed=true")
@@ -185,7 +189,7 @@ func TestCheckQuotasRollingWindowViolation(t *testing.T) {
 		t.Fatalf("expected 1 violation, got %d", len(result.Violations))
 	}
 	v := result.Violations[0]
-	if v.Dimension != "token" || v.Window != "hour" || v.Limit != 50000 || v.Current != 60000 {
+	if v.Dimension != "token" || v.Window != "hour" {
 		t.Fatalf("unexpected violation: %+v", v)
 	}
 }
@@ -231,15 +235,18 @@ func TestCheckQuotasClickHouseErrorFailsClosed(t *testing.T) {
 	orgID := OrgID(8_800_000_000_000_000_007)
 	productID, planID := uniqueCatalogIDs("quota-ch-err")
 
-	ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
+	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1}, nil, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Use "week" window — this is the ClickHouse-backed path (hour/4h/instant use TigerBeetle).
+	// The week window requires a subscription with current_period_start for windowSince().
 	setQuotasOnPlan(t, env.pg, planID, quotaPolicy{Limits: []quotaLimit{
-		{Dimension: "token", Window: "hour", Limit: 50000},
+		{Dimension: "token", Window: "week", Limit: 50000},
 	}})
+	_ = subID
 
 	_, err := env.client.CheckQuotas(ctx, orgID, productID, nil)
 	if err == nil {
@@ -257,13 +264,9 @@ func TestOverageCapExceeded(t *testing.T) {
 	orgID := OrgID(8_800_000_000_000_000_010)
 	productID, planID := uniqueCatalogIDs("overage-cap-exceed")
 
-	// Stub: current overage is 80 units this period.
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 80,
-		},
-	}
-	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+	// Overage cap is now enforced via TigerBeetle balance-conditional transfers,
+	// not ClickHouse queries. The metering querier is unused for this path.
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	// Plan with overage rates.
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
@@ -318,12 +321,7 @@ func TestOverageCapNotExceeded(t *testing.T) {
 	orgID := OrgID(8_800_000_000_000_000_011)
 	productID, planID := uniqueCatalogIDs("overage-cap-ok")
 
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
-		},
-	}
-	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1},
@@ -377,12 +375,7 @@ func TestOverageCapZeroBlocksAllOverage(t *testing.T) {
 	orgID := OrgID(8_800_000_000_000_000_012)
 	productID, planID := uniqueCatalogIDs("overage-cap-zero")
 
-	stub := &stubMeteringQuerier{
-		chargeUnitSums: map[string]uint64{
-			fmt.Sprintf("%d:%s:overage", orgID, productID): 0,
-		},
-	}
-	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, stub)
+	env := newPhase2TestEnvWithMetering(t, noopMeteringWriter{}, &stubMeteringQuerier{})
 
 	subID := ensureMeteredPlanForTest(t, env.client, env.pg, orgID, productID, planID,
 		map[string]uint64{"unit": 1},

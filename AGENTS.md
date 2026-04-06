@@ -96,8 +96,9 @@ Billing is the entitlement layer. Services call the billing-service HTTP API to 
 Key focus areas for this project
 
 * Secure by default, above and beyond most SaaS provided options. Security must be regularly audited and verified (still working on this)
-* Cheap -- you only pay for compute and object storage which are commodity priced.
+* Cheap -- the operator, when starting and operating their business. They only pay for compute and object storage which are commodity priced, not for DataDog's operating margin.
 * [aspirational, not yet fully implemented] Solves genuinely difficult problems faced by businesses - Lowering a price for a product should be easy and fast: when the oeprator of the company reduces the price of a metered product, customer billing pages should update, marketing pages' pricing sections should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
+* Observable - o11y 2.0. Logs, traces, and metrics are one thing: the Wide Event. ClickHouse can handle millions of writes per second, leverage that by instrumenting as much as possible. It's easier to reduce instrumentation that's unnecessary than it is to backfill gaps.
 
 arch at a high level:
 

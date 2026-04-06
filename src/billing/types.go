@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
-// AcctGrantCode is the TigerBeetle account code for grant accounts.
-// With ULID-based grant IDs, type discrimination is via the code field
+// TigerBeetle account codes. Type discrimination is via the code field
 // on the TigerBeetle account, not encoded in the account ID bits.
-const AcctGrantCode uint16 = 9
+const (
+	AcctGrantCode      uint16 = 9  // credit grants (fund flow)
+	AcctQuotaCode      uint16 = 10 // quota enforcement (rate limiting via pending timeout)
+	AcctOverageCapCode uint16 = 11 // overage ceiling enforcement
+)
 
 type OperatorAcctType uint16
 
@@ -20,6 +23,7 @@ const (
 	AcctPromoPool       OperatorAcctType = 6
 	AcctFreeTierExpense OperatorAcctType = 7
 	AcctExpiredCredits  OperatorAcctType = 8
+	AcctQuotaSink       OperatorAcctType = 12 // sink for quota pending transfers
 )
 
 type XferKind uint8
@@ -36,6 +40,9 @@ const (
 	KindCreditExpiry        XferKind = 9
 	KindDepositConfirm      XferKind = 10
 	KindExpiryConfirm       XferKind = 11
+	KindQuotaCheck          XferKind = 12 // pending-only: expires after window, never posted
+	KindOverageCapCheck     XferKind = 13 // pending: voided after settlement posts real debit
+	KindOverageCapDebit     XferKind = 14 // posted: permanent overage consumption within period
 )
 
 type PricingPhase string
@@ -95,6 +102,7 @@ type Reservation struct {
 	UnitRates    map[string]uint64
 	CostPerSec   uint64
 	GrantLegs    []GrantLeg
+	CapCheckLeg  *GrantLeg // overage cap pending transfer (voided at Settle, replaced by real debit)
 }
 
 type QuotaResult struct {
@@ -147,15 +155,13 @@ type MeteringWriter interface {
 }
 
 // MeteringQuerier reads aggregated metering data from ClickHouse.
-// Two methods cover every billing read path: quota enforcement and overage cap checks.
+// After the TigerBeetle quota migration, only SumDimension is used on the hot
+// path (for week/month windows). Overage cap enforcement moved to TigerBeetle
+// balance-conditional transfers.
 type MeteringQuerier interface {
 	// SumDimension returns the sum of a single dimension from the dimensions Map column
 	// for all metering rows matching (orgID, productID) with started_at >= since.
 	SumDimension(ctx context.Context, orgID OrgID, productID string, dimension string, since time.Time) (float64, error)
-
-	// SumChargeUnits returns the sum of charge_units for all metering rows matching
-	// (orgID, productID, pricingPhase) with started_at >= since.
-	SumChargeUnits(ctx context.Context, orgID OrgID, productID string, pricingPhase PricingPhase, since time.Time) (uint64, error)
 }
 
 type CreditGrant struct {

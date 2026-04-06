@@ -224,6 +224,12 @@ func operatorAccounts() []types.Account {
 			Code:   uint16(AcctExpiredCredits),
 			Flags:  types.AccountFlags{History: true}.ToUint16(),
 		},
+		{
+			ID:     OperatorAccountID(AcctQuotaSink).raw,
+			Ledger: 1,
+			Code:   uint16(AcctQuotaSink),
+			Flags:  types.AccountFlags{}.ToUint16(),
+		},
 	}
 }
 
