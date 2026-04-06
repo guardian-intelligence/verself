@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain inventory-check verify-billing-auth \
-       smelter-build \
+       seed-sandbox-billing-test-data smelter-build \
        clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -73,6 +73,9 @@ inventory-check: ## Validate that the generated Ansible inventory exists
 
 verify-billing-auth: inventory-check ## Run the billing auth verification playbook
 	cd $(FM)/ansible && ansible-playbook playbooks/verify-billing-auth.yml
+
+seed-sandbox-billing-test-data: inventory-check ## Seed sandbox billing catalog + prepaid credits for testing
+	cd $(FM)/ansible && ansible-playbook playbooks/seed-sandbox-billing-test-data.yml
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
