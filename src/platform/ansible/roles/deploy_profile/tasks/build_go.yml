@@ -35,7 +35,7 @@
       - ./src/billing-service/cmd/billing-service
     chdir: "{{ deploy_profile_repo_root }}"
   environment:
-    CGO_ENABLED: "0"
+    CGO_ENABLED: "1"
     GOOS: linux
     GOARCH: amd64
   changed_when: true
@@ -54,7 +54,7 @@
       - ./src/billing-service/cmd/tb-inspect
     chdir: "{{ deploy_profile_repo_root }}"
   environment:
-    CGO_ENABLED: "0"
+    CGO_ENABLED: "1"
     GOOS: linux
     GOARCH: amd64
   changed_when: true

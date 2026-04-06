@@ -142,6 +142,10 @@
     "go_package": "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
     "version_cmd": "protoc-gen-go-grpc --version"
   },
+  "build-essential": {
+    "strategy": "apt",
+    "version_cmd": "gcc --version"
+  },
   "crun": {
     "version": "1.14.1",
     "strategy": "apt",
