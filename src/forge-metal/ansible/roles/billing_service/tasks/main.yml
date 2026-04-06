@@ -44,27 +44,6 @@
 - name: Include billing credential tasks
   ansible.builtin.include_tasks: credentials.yml
 
-# --- Stop and disable old billing-api unit if present ---
-
-- name: Check for legacy billing-api unit
-  ansible.builtin.stat:
-    path: /etc/systemd/system/billing-api.service
-  register: billing_service_legacy_unit
-
-- name: Stop and disable legacy billing-api unit
-  ansible.builtin.systemd:
-    name: billing-api
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  when: billing_service_legacy_unit.stat.exists
-
-- name: Remove legacy billing-api unit file
-  ansible.builtin.file:
-    path: /etc/systemd/system/billing-api.service
-    state: absent
-  when: billing_service_legacy_unit.stat.exists
-
 # --- systemd unit ---
 
 - name: Deploy billing-service systemd unit

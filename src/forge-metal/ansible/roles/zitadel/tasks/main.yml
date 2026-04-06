@@ -103,11 +103,6 @@
   notify:
     - restart zitadel
 
-- name: Remove legacy masterkey from config directory
-  ansible.builtin.file:
-    path: "{{ zitadel_config_dir }}/masterkey"
-    state: absent
-
 - name: Deploy Zitadel config
   ansible.builtin.template:
     src: config.yaml.j2
@@ -155,11 +150,6 @@
     mode: "0644"
   notify:
     - restart zitadel
-
-- name: Remove legacy environment file (masterkey now read from file)
-  ansible.builtin.file:
-    path: "{{ zitadel_config_dir }}/env"
-    state: absent
 
 # --- First-run initialization ---
 # Zitadel has a three-phase lifecycle: init (create schemas), setup (run

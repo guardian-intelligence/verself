@@ -52,18 +52,6 @@
     mode: "0700"
 
 # --- Idempotent format ---
-# Delete any root-owned data file from before the tigerbeetle user existed.
-
-- name: Check if root-owned TigerBeetle data file exists
-  ansible.builtin.stat:
-    path: "{{ tigerbeetle_data_file }}"
-  register: tigerbeetle_data_pre
-
-- name: Remove root-owned data file so it can be recreated by tigerbeetle user
-  ansible.builtin.file:
-    path: "{{ tigerbeetle_data_file }}"
-    state: absent
-  when: tigerbeetle_data_pre.stat.exists and tigerbeetle_data_pre.stat.pw_name == 'root'
 
 - name: Check if TigerBeetle data file exists
   ansible.builtin.stat:

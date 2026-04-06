@@ -253,15 +253,3 @@
     port: "{{ services.hyperdx.app_port }}"
     host: "{{ services.hyperdx.host }}"
     timeout: 60
-
-- name: Remove legacy ClickStack HyperDX install path
-  ansible.builtin.file:
-    path: /opt/clickstack
-    state: absent
-  when: hyperdx_install_dir != '/opt/clickstack/hyperdx'
-
-- name: Remove legacy ClickStack HyperDX config path
-  ansible.builtin.file:
-    path: /etc/clickstack
-    state: absent
-  when: hyperdx_config_dir != '/etc/clickstack'
