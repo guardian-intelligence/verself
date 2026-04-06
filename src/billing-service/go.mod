@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/billing v0.0.0
 	github.com/lib/pq v1.12.3
 	github.com/oklog/ulid/v2 v2.1.0
@@ -15,8 +16,11 @@ require (
 require (
 	github.com/ClickHouse/ch-go v0.63.1 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
+	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
@@ -26,8 +30,11 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
+	golang.org/x/oauth2 v0.28.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/forge-metal/billing => ../billing
+
+replace github.com/forge-metal/auth-middleware => ../auth-middleware

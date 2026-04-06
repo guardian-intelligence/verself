@@ -22,6 +22,7 @@ import (
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 
+	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing"
 )
 
@@ -45,6 +46,8 @@ func run() error {
 	tbClusterID := envUint64("BILLING_TB_CLUSTER_ID", 0)
 	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
+	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
+	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 
 	// --- open connections ---
 	pg, err := sql.Open("postgres", pgDSN)
@@ -103,6 +106,11 @@ func run() error {
 	// Mount Stripe webhook as raw handler (needs raw body for signature verification).
 	mux.Handle("POST /webhooks/stripe", client.WebhookHandler())
 
+	authHandler := auth.Middleware(auth.Config{
+		IssuerURL: authIssuerURL,
+		Audience:  authAudience,
+	})(mux)
+
 	// --- server lifecycle ---
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -117,7 +125,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           mux,
+		Handler:           billingHandler(mux, authHandler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -244,12 +252,12 @@ type orgProductPath struct {
 
 type balanceOutput struct {
 	Body struct {
-		OrgID              string `json:"org_id"`
-		FreeTierAvailable  uint64 `json:"free_tier_available"`
-		FreeTierPending    uint64 `json:"free_tier_pending"`
-		CreditAvailable    uint64 `json:"credit_available"`
-		CreditPending      uint64 `json:"credit_pending"`
-		TotalAvailable     uint64 `json:"total_available"`
+		OrgID             string `json:"org_id"`
+		FreeTierAvailable uint64 `json:"free_tier_available"`
+		FreeTierPending   uint64 `json:"free_tier_pending"`
+		CreditAvailable   uint64 `json:"credit_available"`
+		CreditPending     uint64 `json:"credit_pending"`
+		TotalAvailable    uint64 `json:"total_available"`
 	}
 }
 
@@ -292,8 +300,8 @@ type usageInput struct {
 
 type usageOutput struct {
 	Body struct {
-		OrgID  string                `json:"org_id"`
-		Events []billing.UsageEvent  `json:"events"`
+		OrgID  string               `json:"org_id"`
+		Events []billing.UsageEvent `json:"events"`
 	}
 }
 
@@ -590,6 +598,15 @@ func credentialOr(name, fallback string) string {
 
 // --- env helpers (non-secret config) ---
 
+func requireEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		fmt.Fprintf(os.Stderr, "required env %s is empty\n", key)
+		os.Exit(1)
+	}
+	return value
+}
+
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -608,4 +625,21 @@ func envUint64(key string, fallback uint64) uint64 {
 		os.Exit(1)
 	}
 	return v
+}
+
+func billingHandler(public http.Handler, protected http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isUnauthenticatedBillingPath(r.URL.Path) {
+			public.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
+}
+
+func isUnauthenticatedBillingPath(path string) bool {
+	if path == "/webhooks/stripe" {
+		return true
+	}
+	return strings.HasPrefix(path, "/internal/billing/v1/ops/")
 }

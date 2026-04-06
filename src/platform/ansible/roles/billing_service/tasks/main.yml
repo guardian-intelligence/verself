@@ -44,6 +44,73 @@
 - name: Include billing credential tasks
   ansible.builtin.include_tasks: credentials.yml
 
+# --- Auth configuration ---
+
+- name: Wait for Zitadel before configuring billing auth
+  ansible.builtin.wait_for:
+    host: "{{ services.zitadel.host }}"
+    port: "{{ services.zitadel.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for billing auth setup
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: billing_service_zitadel_admin_pat_raw
+  no_log: true
+
+- name: List Zitadel projects for billing auth
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: billing_service_zitadel_projects
+  no_log: true
+
+- name: Find billing auth project
+  ansible.builtin.set_fact:
+    billing_service_auth_project: >-
+      {{
+        (
+          billing_service_zitadel_projects.json.result
+          | selectattr('name', 'equalto', billing_service_auth_project_name)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create billing auth project if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ billing_service_auth_project_name }}"
+    return_content: true
+  register: billing_service_auth_project_created
+  when: billing_service_auth_project == {}
+  no_log: true
+
+- name: Set billing auth audience
+  ansible.builtin.set_fact:
+    billing_service_auth_audience: >-
+      {{
+        billing_service_auth_project.id
+        | default(billing_service_auth_project_created.json.id, true)
+      }}
+
+- name: Assert billing auth audience is set
+  ansible.builtin.assert:
+    that: billing_service_auth_audience | default('', true) | length > 0
+    fail_msg: billing_service_auth_audience could not be resolved from Zitadel.
+
 # --- systemd unit ---
 
 - name: Deploy billing-service systemd unit
@@ -67,6 +134,8 @@
       Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
+      Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
+      Environment=BILLING_AUTH_AUDIENCE={{ billing_service_auth_audience }}
       ExecStart={{ fm_bin }}/billing-service
       Restart=on-failure
       RestartSec=5
