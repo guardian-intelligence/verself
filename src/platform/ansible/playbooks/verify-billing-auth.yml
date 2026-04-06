@@ -17,6 +17,9 @@
     verify_billing_auth_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
     verify_billing_auth_zitadel_host: "auth.{{ forge_metal_domain }}"
     verify_billing_auth_billing_base_url: "http://{{ services.billing.host }}:{{ services.billing.port }}"
+    verify_billing_auth_public_zitadel_base_url: "https://{{ verify_billing_auth_zitadel_host }}"
+    verify_billing_auth_public_billing_base_url: >-
+      https://{{ billing_service_subdomain | default('billing') }}.{{ forge_metal_domain }}
     verify_billing_auth_scope: >-
       openid profile
       urn:zitadel:iam:org:project:id:{{ verify_billing_auth_project_id }}:aud
@@ -32,6 +35,22 @@
         host: "{{ services.billing.host }}"
         port: "{{ services.billing.port }}"
         timeout: 60
+
+    - name: Verify public Zitadel discovery endpoint
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_public_zitadel_base_url }}/.well-known/openid-configuration"
+        method: GET
+        status_code: 200
+        validate_certs: true
+        return_content: true
+      register: verify_billing_auth_public_discovery
+      delegate_to: localhost
+      become: false
+      retries: 10
+      delay: 6
+      until:
+        - verify_billing_auth_public_discovery.status == 200
+        - verify_billing_auth_public_discovery.json.issuer | default('') == verify_billing_auth_public_zitadel_base_url
 
     - name: Read Zitadel admin PAT
       ansible.builtin.slurp:
@@ -302,6 +321,38 @@
             return_content: true
           register: verify_billing_auth_webhook_probe
           failed_when: verify_billing_auth_webhook_probe.status == 401
+
+        - name: Verify public billing root remains closed
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_public_billing_base_url }}/"
+            method: GET
+            status_code: 404
+            validate_certs: true
+            return_content: true
+          register: verify_billing_auth_public_root
+          delegate_to: localhost
+          become: false
+          retries: 20
+          delay: 15
+          until: verify_billing_auth_public_root.status == 404
+
+        - name: Verify public Stripe webhook bypasses bearer auth
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_public_billing_base_url }}/webhooks/stripe"
+            method: POST
+            headers:
+              Content-Type: application/json
+            body: "{}"
+            status_code: [200, 400, 401, 404, 405, 500]
+            validate_certs: true
+            return_content: true
+          register: verify_billing_auth_public_webhook_probe
+          delegate_to: localhost
+          become: false
+          retries: 20
+          delay: 15
+          until: verify_billing_auth_public_webhook_probe.status in [200, 400, 404, 405, 500]
+          failed_when: verify_billing_auth_public_webhook_probe.status == 401
 
       always:
         - name: Remove verification user grant
