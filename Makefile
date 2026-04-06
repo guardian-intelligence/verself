@@ -10,6 +10,8 @@ FS       := src/fast-sandbox
 BS       := src/billing-service
 BL       := src/billing
 AM       := src/auth-middleware
+BC       := src/billing-client
+SR       := src/sandbox-rental-service
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 
 build: ## Build the forge-metal Go binary
@@ -22,7 +24,9 @@ clean:
 	rm -f $(FM)/forge-metal
 
 test: ## Run unit tests
-	go test -race ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/...
+	go test -race ./$(FM)/... ./$(FS)/...
+	go test -race -parallel=1 ./$(BL)/...
+	go test -race ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
 test-integration: ## Run all tests including ZFS integration (requires sudo + zfs)
 	@echo "Integration tests require root for ZFS pool operations."
@@ -31,7 +35,7 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
 lint:
-	golangci-lint run ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/...
+	golangci-lint run ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
@@ -44,10 +48,10 @@ hooks-install:
 	pre-commit install
 
 fmt:
-	gofumpt -w $(FM) $(FS) $(BL) $(BS) $(AM)
+	gofumpt -w $(FM) $(FS) $(BL) $(BS) $(AM) $(BC) $(SR)
 
 vet:
-	go vet ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/...
+	go vet ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
 tidy:
 	cd $(FM) && go mod tidy
@@ -55,6 +59,8 @@ tidy:
 	cd $(BL) && go mod tidy
 	cd $(BS) && go mod tidy
 	cd $(AM) && go mod tidy
+	cd $(BC) && go mod tidy
+	cd $(SR) && go mod tidy
 
 doctor: build ## Check that all required dev tools are present and at the right version
 	cd $(FM) && ./forge-metal doctor

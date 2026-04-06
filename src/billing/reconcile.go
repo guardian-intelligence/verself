@@ -499,4 +499,3 @@ func (c *Client) checkTrustTierMonotonicity(ctx context.Context) (ReconcileCheck
 
 	return check, nil
 }
-

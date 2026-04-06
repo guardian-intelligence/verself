@@ -2,126 +2,22 @@
 package jobs
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	billingclient "github.com/forge-metal/billing-client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/google/uuid"
 )
 
-// BillingClient calls the billing-service HTTP API for reservation lifecycle.
-type BillingClient struct {
-	BaseURL    string
-	HTTPClient *http.Client
-	Logger     *slog.Logger
-}
-
-// ReserveRequest is the payload for POST /internal/billing/v1/reserve.
-type ReserveRequest struct {
-	OrgID     uint64 `json:"org_id"`
-	ProductID string `json:"product_id"`
-	ActorID   string `json:"actor_id"`
-	SourceRef string `json:"source_ref"`
-}
-
-// ReserveResponse is the response from the reserve endpoint.
-type ReserveResponse struct {
-	ReservationID string `json:"reservation_id"`
-}
-
-// Reserve calls billing-service to reserve credits before work begins.
-// Returns empty reservation ID and nil error if billing is unavailable (logged as warning).
-func (b *BillingClient) Reserve(ctx context.Context, req ReserveRequest) (string, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return "", fmt.Errorf("marshal reserve request: %w", err)
-	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, b.BaseURL+"/internal/billing/v1/reserve", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("create reserve request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := b.HTTPClient.Do(httpReq)
-	if err != nil {
-		b.Logger.Warn("billing reserve unavailable, proceeding without billing", "error", err)
-		return "", nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusPaymentRequired {
-		return "", fmt.Errorf("insufficient balance")
-	}
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		b.Logger.Warn("billing reserve failed", "status", resp.StatusCode, "body", string(respBody))
-		return "", nil
-	}
-
-	var reserveResp ReserveResponse
-	if err := json.NewDecoder(resp.Body).Decode(&reserveResp); err != nil {
-		b.Logger.Warn("billing reserve: decode response", "error", err)
-		return "", nil
-	}
-	return reserveResp.ReservationID, nil
-}
-
-// Settle calls billing-service to settle actual usage after job completion.
-func (b *BillingClient) Settle(ctx context.Context, reservationID string, durationMs int64) {
-	if reservationID == "" {
-		return
-	}
-	payload := map[string]any{"reservation_id": reservationID, "actual_seconds": uint32(durationMs / 1000)}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.BaseURL+"/internal/billing/v1/settle", bytes.NewReader(body))
-	if err != nil {
-		b.Logger.Warn("billing settle: create request", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := b.HTTPClient.Do(req)
-	if err != nil {
-		b.Logger.Warn("billing settle: request failed", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b.Logger.Warn("billing settle: unexpected status", "status", resp.StatusCode)
-	}
-}
-
-// Void calls billing-service to release a reservation after failure.
-func (b *BillingClient) Void(ctx context.Context, reservationID string) {
-	if reservationID == "" {
-		return
-	}
-	payload := map[string]any{"reservation_id": reservationID}
-	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.BaseURL+"/internal/billing/v1/void", bytes.NewReader(body))
-	if err != nil {
-		b.Logger.Warn("billing void: create request", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := b.HTTPClient.Do(req)
-	if err != nil {
-		b.Logger.Warn("billing void: request failed", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b.Logger.Warn("billing void: unexpected status", "status", resp.StatusCode)
-	}
-}
+var ErrQuotaExceeded = errors.New("sandbox-rental: quota exceeded")
 
 // SandboxJobLog is a ClickHouse row for sandbox job log chunks.
 type SandboxJobLog struct {
@@ -152,12 +48,14 @@ type SandboxJobEvent struct {
 
 // Service manages the sandbox job lifecycle.
 type Service struct {
-	PG           *sql.DB
-	CH           driver.Conn
-	CHDatabase   string
-	Orchestrator *fastsandbox.Orchestrator
-	Billing      *BillingClient
-	Logger       *slog.Logger
+	PG            *sql.DB
+	CH            driver.Conn
+	CHDatabase    string
+	Orchestrator  *fastsandbox.Orchestrator
+	Billing       *billingclient.ServiceClient
+	BillingVCPUs  int
+	BillingMemMiB int
+	Logger        *slog.Logger
 }
 
 // Submit creates a job record and starts asynchronous execution.
@@ -165,36 +63,60 @@ type Service struct {
 func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, runCommand string) (uuid.UUID, error) {
 	jobID := uuid.New()
 	now := time.Now().UTC()
+	billingJobID, err := s.nextBillingJobID(ctx)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("allocate billing job id: %w", err)
+	}
 
-	// Reserve billing credits.
-	reservationID, err := s.Billing.Reserve(ctx, ReserveRequest{
-		OrgID:     orgID,
-		ProductID: "sandbox",
-		ActorID:   userID,
-		SourceRef: jobID.String(),
+	currentConcurrent, err := s.countRunningJobs(ctx, orgID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("count running jobs: %w", err)
+	}
+
+	quotaResult, err := s.Billing.CheckQuotas(ctx, orgID, "sandbox", map[string]float64{
+		"vcpu":           float64(s.BillingVCPUs),
+		"gib":            float64(s.BillingMemMiB) / 1024.0,
+		"concurrent_vms": float64(currentConcurrent + 1),
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("billing check quotas: %w", err)
+	}
+	if !quotaResult.Allowed {
+		return uuid.Nil, ErrQuotaExceeded
+	}
+
+	reservation, err := s.Billing.Reserve(ctx, billingJobID, orgID, "sandbox", userID, "job", jobID.String(), map[string]float64{
+		"vcpu": float64(s.BillingVCPUs),
+		"gib":  float64(s.BillingMemMiB) / 1024.0,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("billing reserve: %w", err)
 	}
+	reservationJSON, err := json.Marshal(reservation)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("marshal billing reservation: %w", err)
+	}
 
 	// Insert job record.
 	_, err = s.PG.ExecContext(ctx,
-		`INSERT INTO jobs (id, org_id, user_id, repo_url, run_command, status, billing_reservation_id, started_at, created_at)
-		 VALUES ($1, $2, $3, $4, $5, 'running', $6, $7, $7)`,
-		jobID, orgID, userID, repoURL, nullString(runCommand), nullString(reservationID), now,
+		`INSERT INTO jobs (id, org_id, user_id, repo_url, run_command, status, billing_job_id, billing_reservation, started_at, created_at)
+		 VALUES ($1, $2, $3, $4, $5, 'running', $6, $7::jsonb, $8, $8)`,
+		jobID, orgID, userID, repoURL, nullString(runCommand), billingJobID, string(reservationJSON), now,
 	)
 	if err != nil {
-		s.Billing.Void(ctx, reservationID)
+		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
+			s.Logger.Error("billing void after insert failure", "job_id", jobID, "error", voidErr)
+		}
 		return uuid.Nil, fmt.Errorf("insert job: %w", err)
 	}
 
 	// Run in background goroutine.
-	go s.execute(jobID, orgID, userID, repoURL, runCommand, reservationID)
+	go s.execute(jobID, orgID, userID, repoURL, runCommand, reservation)
 
 	return jobID, nil
 }
 
-func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCommand, reservationID string) {
+func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCommand string, reservation billingclient.Reservation) {
 	ctx := context.Background()
 	startedAt := time.Now().UTC()
 
@@ -220,13 +142,21 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 	if err != nil {
 		status = "failed"
 		s.Logger.Error("job execution failed", "job_id", jobID, "error", err)
-		s.Billing.Void(ctx, reservationID)
+		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
+			s.Logger.Error("billing void", "job_id", jobID, "error", voidErr)
+		}
 	} else {
 		exitCode = result.ExitCode
 		if exitCode != 0 {
 			status = "failed"
 		}
-		s.Billing.Settle(ctx, reservationID, durationMs)
+		actualSeconds := uint32(durationMs / 1000)
+		if actualSeconds == 0 {
+			actualSeconds = 1
+		}
+		if settleErr := s.Billing.Settle(ctx, reservation, actualSeconds); settleErr != nil {
+			s.Logger.Error("billing settle", "job_id", jobID, "error", settleErr)
+		}
 	}
 
 	var zfsWritten uint64
@@ -382,6 +312,27 @@ func (s *Service) GetJobLogs(ctx context.Context, jobID uuid.UUID) (string, erro
 		buf.Write(chunk)
 	}
 	return buf.String(), rows.Err()
+}
+
+func (s *Service) nextBillingJobID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := s.PG.QueryRowContext(ctx, `SELECT nextval('job_billing_id_seq')`).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (s *Service) countRunningJobs(ctx context.Context, orgID uint64) (int64, error) {
+	var count int64
+	if err := s.PG.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM jobs
+		WHERE org_id = $1
+		  AND status = 'running'
+	`, orgID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // JobRecord is the PG representation of a job.
