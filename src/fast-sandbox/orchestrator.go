@@ -3,6 +3,7 @@ package fastsandbox
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -350,6 +351,13 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	result.VMBootTime = time.Since(bootStart)
 	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
+	if waitErr := waitForPath(ctx, controlSockHost); waitErr != nil {
+		return result, fmt.Errorf("wait for guest control socket: %w", waitErr)
+	}
+	if chmodErr := o.ops.Chmod(ctx, controlSockHost, 0o770); chmodErr != nil {
+		return result, fmt.Errorf("chmod guest control socket: %w", chmodErr)
+	}
+
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailer.Wait() }()
 
@@ -479,6 +487,21 @@ func waitForSocket(ctx context.Context, path string) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("API socket %s not connectable: %w", path, ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func waitForPath(ctx context.Context, path string) error {
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("path %s not present: %w", path, ctx.Err())
 		case <-time.After(20 * time.Millisecond):
 		}
 	}

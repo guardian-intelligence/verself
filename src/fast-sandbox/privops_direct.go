@@ -147,6 +147,13 @@ func (DirectPrivOps) StartJailer(_ context.Context, jobID string, cfg JailerConf
 	}, nil
 }
 
+func (DirectPrivOps) Chmod(_ context.Context, path string, mode uint32) error {
+	if err := os.Chmod(path, os.FileMode(mode)); err != nil {
+		return fmt.Errorf("chmod %s to %o: %w", path, mode, err)
+	}
+	return nil
+}
+
 // copyFile is a helper for SetupJail kernel placement.
 func copyFile(src, dst string) error {
 	s, err := os.Open(src)

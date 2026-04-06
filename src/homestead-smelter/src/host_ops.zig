@@ -46,6 +46,7 @@ pub fn dispatch(config: *const OpsConfig, req: proto.Request, resp_buf: *[proto.
         .start_jailer => execStartJailer(config, req, resp_buf),
         .chown => execChown(config, req, resp_buf),
         .mknod_block => execMknodBlock(config, req, resp_buf),
+        .chmod => execChmod(config, req, resp_buf),
     };
 }
 
@@ -364,6 +365,23 @@ fn execMknodBlock(config: *const OpsConfig, req: proto.Request, resp: *[proto.ma
     const minor_str = std.fmt.bufPrint(&minor_buf, "{d}", .{minor_raw.value}) catch unreachable;
 
     return runCommand(resp, req.request_id, &.{ config.mknod_bin, path.value, "b", major_str, minor_str });
+}
+
+fn execChmod(config: *const OpsConfig, req: proto.Request, resp: *[proto.max_message_size]u8) usize {
+    const path = proto.readString(req.payload, 0) orelse
+        return proto.errorResponse(resp, req.request_id, .invalid_request, "missing path arg");
+    const mode_raw = proto.readU32(req.payload, path.next) orelse
+        return proto.errorResponse(resp, req.request_id, .invalid_request, "missing mode arg");
+
+    if (validateAbsolutePath(config, path.value)) |msg|
+        return proto.errorResponse(resp, req.request_id, .validation_failed, msg);
+    if (mode_raw.value > 0o777)
+        return proto.errorResponse(resp, req.request_id, .validation_failed, "mode out of range");
+
+    chmodAbsolute(path.value, mode_raw.value) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "chmod failed");
+
+    return proto.okResponse(resp, req.request_id);
 }
 
 // --- Helpers ---

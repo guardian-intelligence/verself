@@ -40,6 +40,7 @@ pub const OpCode = enum(u16) {
     start_jailer = 7,
     chown = 8,
     mknod_block = 9,
+    chmod = 10,
 };
 
 pub const Status = enum(u16) {

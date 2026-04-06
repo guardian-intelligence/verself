@@ -27,6 +27,7 @@ const (
 	opStartJailer opsOpCode = 7
 	opChown       opsOpCode = 8
 	opMknodBlock  opsOpCode = 9
+	opChmod       opsOpCode = 10
 )
 
 type opsStatus uint16
