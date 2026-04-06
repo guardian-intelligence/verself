@@ -41,8 +41,15 @@
 	import access_log
 	import waf
 
-	handle /webhooks/stripe {
+	@stripe_webhook {
+		method POST
+		path /webhooks/stripe
+	}
+	handle @stripe_webhook {
 		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }}
+	}
+	handle /webhooks/stripe {
+		respond 405
 	}
 
 	# Default deny — no other paths exposed publicly.
