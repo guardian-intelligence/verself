@@ -1,6 +1,6 @@
 ---
 # containerd + gVisor (runsc) configuration for worker nodes.
-# containerd provided by Nix server profile.
+# containerd provided by deploy_profile role (pinned static binary).
 # gVisor (runsc) downloaded as pinned static binary (Go version sensitive).
 
 - name: Download gVisor runsc (pinned release)

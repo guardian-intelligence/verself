@@ -1,7 +1,7 @@
 ---
 # Sealed Verdaccio npm mirror for worker nodes.
-# Verdaccio is not in nixpkgs, so we install it via the Nix-provided npm into a
-# writable prefix under /opt/forge-metal instead of the immutable Nix profile.
+# Installed via npm using Node.js from deploy_profile role into a writable
+# prefix under /opt/forge-metal (Verdaccio has no static binary).
 
 - name: Create Verdaccio system user
   ansible.builtin.user:

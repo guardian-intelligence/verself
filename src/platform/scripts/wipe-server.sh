@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wipe all forge-metal state from a provisioned server.
-# Keeps the OS, Nix store, and SSH config intact.
+# Keeps the OS, apt packages, and SSH config intact.
 # Usage: ./scripts/wipe-server.sh [host]
 set -euo pipefail
 

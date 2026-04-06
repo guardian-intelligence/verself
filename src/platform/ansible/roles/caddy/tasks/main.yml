@@ -1,6 +1,6 @@
 ---
 # Caddy reverse proxy with automatic TLS.
-# Binary provided by Nix server profile.
+# Binary provided by deploy_profile role (xcaddy build on controller).
 
 - name: Create Caddy config directory
   ansible.builtin.file:

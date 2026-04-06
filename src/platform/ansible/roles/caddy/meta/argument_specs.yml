@@ -3,8 +3,8 @@ argument_specs:
   main:
     short_description: "Caddy edge proxy for Billing Service, HyperDX, Forgejo, and Zitadel"
     description:
-      - "Deploys Caddy from the Nix profile and renders the edge config that"
-      - "fronts Billing Service, HyperDX, Forgejo, and Zitadel with the shared WAF and access logging."
+      - "Configures Caddy and renders the edge config that fronts Billing Service,"
+      - "HyperDX, Forgejo, and Zitadel with the shared WAF and access logging."
       - "Billing Service exposes only /webhooks/stripe publicly; all other paths return 404."
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
@@ -40,4 +40,4 @@ argument_specs:
       fm_bin:
         type: path
         required: true
-        description: "Path to the Nix server profile bin directory."
+        description: "Path to the server binary directory."

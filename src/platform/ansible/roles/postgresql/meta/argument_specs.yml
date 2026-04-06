@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "PostgreSQL database server"
     description:
-      - "Deploys PostgreSQL from the Nix profile. Initializes the data"
+      - "Deploys PostgreSQL. Initializes the data"
       - "directory (idempotent), configures listen address and auth,"
       - "and creates application databases and users."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
@@ -26,4 +26,4 @@ argument_specs:
       fm_bin:
         type: path
         required: true
-        description: "Path to the Nix server profile bin directory."
+        description: "Path to the server binary directory."

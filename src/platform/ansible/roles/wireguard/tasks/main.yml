@@ -1,6 +1,6 @@
 ---
 # WireGuard mesh networking setup.
-# wireguard-tools provided by Nix server profile.
+# wireguard-tools provided by deploy_profile role (apt).
 # Kernel module is built-in on Linux 6.8+.
 
 - name: Create WireGuard config directory

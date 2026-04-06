@@ -1,17 +1,9 @@
 ---
 # HyperDX observability UI — built from source at deploy time.
 #
-# Why not a pre-built Nix derivation?
-# We tried packaging HyperDX as a pre-built tarball in the Nix server profile
-# (like clickhouse-static). It failed because:
-#   1. next-runtime-env writes to the app's public/ dir at startup (EACCES in read-only Nix store)
-#   2. Yarn workspace symlinks break across Nix store boundaries
-#   3. The 1.9GB node_modules tree contains native addons, making the tarball arch-specific
-#      and ~365MB compressed — fragile to reproduce across Node.js ABI changes
-# The source build is slow (~140s) but fully reproducible: same git ref + same
-# Nix-provided Node.js = same output, every time. All build tools (node, yarn, tsc,
-# next) come from the pinned Nix closure, so nothing is downloaded from the internet
-# at build time except the HyperDX git repo itself.
+# Built from source at deploy time (~140s) using Node.js from deploy_profile role.
+# Cannot be distributed as a static binary due to native node_modules addons and
+# next-runtime-env requiring a writable public/ directory at startup.
 
 - name: Enable corepack for yarn
   ansible.builtin.command: "{{ fm_bin }}/corepack enable"

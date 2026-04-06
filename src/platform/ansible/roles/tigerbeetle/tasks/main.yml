@@ -1,6 +1,6 @@
 ---
 # TigerBeetle financial ledger.
-# Binary provided by the Nix server profile.
+# Binary provided by deploy_profile role (pinned static binary).
 
 # --- System user (least-privilege) ---
 
@@ -20,7 +20,7 @@
 
 # --- Binary presence ---
 
-- name: Verify TigerBeetle binary exists in Nix profile
+- name: Verify TigerBeetle binary exists in profile
   ansible.builtin.stat:
     path: "{{ fm_bin }}/tigerbeetle"
   register: tigerbeetle_binary

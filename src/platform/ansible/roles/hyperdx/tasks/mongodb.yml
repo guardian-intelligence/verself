@@ -1,6 +1,6 @@
 ---
 # MongoDB for HyperDX application state.
-# Installed via apt because there is no practical Nix binary-cache path here.
+# Installed via apt (no static binary available).
 
 - name: Add MongoDB GPG key
   ansible.builtin.apt_key:
