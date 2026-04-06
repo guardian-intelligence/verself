@@ -21,6 +21,9 @@ table inet forge_metal_sandbox_rental {
     chain output {
         type filter hook output priority filter; policy accept;
 
+        # Allow reply packets for accepted inbound connections to the local listener.
+        ct state established,related accept
+
         # Allow all traffic from other users.
         meta skuid != sandbox_rental accept
 
