@@ -22,6 +22,7 @@ type PrivOps interface {
 	TapDelete(ctx context.Context, tapName string) error
 	SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc string, uid, gid int) error
 	StartJailer(ctx context.Context, jobID string, cfg JailerConfig) (*JailerProcess, error)
+	Chmod(ctx context.Context, path string, mode uint32) error
 }
 
 // JailerConfig holds the parameters needed to start a Firecracker jailer.

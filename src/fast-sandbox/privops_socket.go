@@ -188,3 +188,11 @@ func (s *SocketPrivOps) StartJailer(_ context.Context, jobID string, cfg JailerC
 		},
 	}, nil
 }
+
+func (s *SocketPrivOps) Chmod(_ context.Context, path string, mode uint32) error {
+	var b opsPayloadBuilder
+	b.writeString(path)
+	b.writeU32(mode)
+	_, err := s.roundTrip(opChmod, b.bytes())
+	return err
+}
