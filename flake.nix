@@ -121,11 +121,11 @@
             pname = "forge-metal";
             version = "0.1.0";
             src = pkgs.lib.cleanSourceWith {
-              src = ./src/forge-metal;
+              src = ./src/platform;
               filter = path: type:
                 let
                   baseName = baseNameOf (toString path);
-                  srcStr = toString ./src/forge-metal;
+                  srcStr = toString ./src/platform;
                   isTopLevel = dirOf (toString path) == srcStr;
                   excludedDirs = [
                     "ansible" "terraform" "test" "ci" "scripts"

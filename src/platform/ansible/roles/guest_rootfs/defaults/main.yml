@@ -1,5 +1,5 @@
 ---
-# project_root points to src/forge-metal/ (where ansible, scripts, ci live).
+# project_root points to src/platform/ (where ansible, scripts, ci live).
 # homestead-smelter is a sibling at src/homestead-smelter/.
 guest_rootfs_project_root: "{{ playbook_dir }}/../.."
 guest_rootfs_build_script: "{{ guest_rootfs_project_root }}/scripts/build-guest-rootfs.sh"

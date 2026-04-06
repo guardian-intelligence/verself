@@ -7,7 +7,7 @@
 # at least once first).
 #
 # Usage:
-#   cd src/forge-metal/ansible && ansible-playbook playbooks/smelter-dev.yml
+#   cd src/platform/ansible && ansible-playbook playbooks/smelter-dev.yml
 
 - name: Build and upload smelter guest binary
   hosts: all
