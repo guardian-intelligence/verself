@@ -1,20 +1,20 @@
 # Binaries
-src/forge-metal/forge-metal
+src/platform/forge-metal
 
 # Config (contains credentials)
 forge-metal.toml
 
 # Terraform
-src/forge-metal/terraform/.terraform/
-src/forge-metal/terraform/.terraform.lock.hcl
-src/forge-metal/terraform/terraform.tfstate
-src/forge-metal/terraform/terraform.tfstate.backup
-src/forge-metal/terraform/*.tfvars.json
+src/platform/terraform/.terraform/
+src/platform/terraform/.terraform.lock.hcl
+src/platform/terraform/terraform.tfstate
+src/platform/terraform/terraform.tfstate.backup
+src/platform/terraform/*.tfvars.json
 
 # Ansible
-src/forge-metal/ansible/*.retry
-src/forge-metal/ansible/.cache/
-src/forge-metal/ansible/inventory/hosts.ini
+src/platform/ansible/*.retry
+src/platform/ansible/.cache/
+src/platform/ansible/inventory/hosts.ini
 
 # Age private keys (NEVER commit)
 **/keys.txt
@@ -49,8 +49,8 @@ src/homestead-smelter/zig-out/
 docs/references/
 
 # CI build artifacts
-src/forge-metal/ci/output/rootfs.ext4
-src/forge-metal/ci/output/sbom.txt
+src/platform/ci/output/rootfs.ext4
+src/platform/ci/output/sbom.txt
 
 # Logs
 *.log

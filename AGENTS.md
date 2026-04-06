@@ -49,33 +49,33 @@ See README.md for more -- the repo started as a CI orchestrator but has since ev
 ### 1. Install dev tools
 
 ```bash
-cd src/forge-metal/ansible && ansible-playbook playbooks/setup-dev.yml
+cd src/platform/ansible && ansible-playbook playbooks/setup-dev.yml
 ```
 
 ### 2. Provision bare metal
 
 ```bash
 # Create your tfvars (one-time)
-cp src/forge-metal/terraform/terraform.tfvars.example.json src/forge-metal/terraform/terraform.tfvars.json
+cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/terraform.tfvars.json
 # Edit terraform.tfvars.json — set project_id to your Latitude.sh project
 
 # Provision server + generate Ansible inventory
-cd src/forge-metal/ansible && ansible-playbook playbooks/provision.yml
+cd src/platform/ansible && ansible-playbook playbooks/provision.yml
 ```
 
-This provisions a bare metal server via OpenTofu and auto-generates `src/forge-metal/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
+This provisions a bare metal server via OpenTofu and auto-generates `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
 
 ### 3. Deploy
 
 ```bash
-cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
 Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
 ```bash
-cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=... --tags caddy
 ```
 
@@ -83,8 +83,8 @@ cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
 
 ```bash
 # HyperDX admin credentials are in the SOPS-encrypted secrets file
-sops -d --extract '["hyperdx_admin_email_slug"]' src/forge-metal/ansible/group_vars/all/secrets.sops.yml
-sops -d --extract '["hyperdx_admin_password_base"]' src/forge-metal/ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_email_slug"]' src/platform/ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_password_base"]' src/platform/ansible/group_vars/all/secrets.sops.yml
 # Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
 ```
 
@@ -92,7 +92,7 @@ Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let
 
 ### 5. Query ClickHouse
 
-Use the Makefile wrappers instead of typing the SSH and password prefix by hand. They `cd` into `src/forge-metal/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
+Use the Makefile wrappers instead of typing the SSH and password prefix by hand. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
 
 ```bash
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
@@ -103,7 +103,7 @@ make clickhouse-shell
 
 ```bash
 make setup-domain DOMAIN=anveio.com
-cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
@@ -130,9 +130,9 @@ The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must 
 
 ```bash
 nix flake update                                                          # update all packages
-cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=... --limit canary                           # deploy to one node
-cd src/forge-metal/ansible && ansible-playbook playbooks/site.yml \
+cd src/platform/ansible && ansible-playbook playbooks/site.yml \
   -e nix_server_profile_path=...                                          # roll out fleet-wide
 ```
 
@@ -188,7 +188,7 @@ Compression codecs per column type:
 
 ## Ansible Playbooks
 
-All remote orchestration is done via Ansible playbooks. Run from the `src/forge-metal/ansible/` directory.
+All remote orchestration is done via Ansible playbooks. Run from the `src/platform/ansible/` directory.
 
 | Playbook | Description |
 |----------|-------------|
@@ -232,8 +232,8 @@ The playbook is self-contained — it builds the Zig binary locally, uploads it,
 The server must have been deployed at least once with a valid golden image:
 
 ```bash
-cd src/forge-metal/ansible && ansible-playbook playbooks/guest-rootfs.yml
-cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/platform/ansible && ansible-playbook playbooks/guest-rootfs.yml
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
@@ -241,7 +241,7 @@ cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
 
 ```bash
 # Edit src/homestead-smelter/src/guest.zig, then:
-cd src/forge-metal/ansible && ansible-playbook playbooks/smelter-dev.yml
+cd src/platform/ansible && ansible-playbook playbooks/smelter-dev.yml
 ```
 
 Expected output on success:
@@ -272,7 +272,7 @@ PASS: host agent observed live guest telemetry
 ```
 forge-metal/                       # Monorepo root
 ├── flake.nix                      # Nix server profile (builds from src/)
-├── go.work                        # Go workspace linking src/{forge-metal,billing,billing-service}
+├── go.work                        # Go workspace linking src/{platform,billing,billing-service}
 ├── Makefile                       # Dev commands (wraps paths into src/)
 ├── docs/                          # Cross-cutting architecture docs
 ├── src/homestead-smelter/         # Zig guest/host agent (standalone project)
@@ -288,7 +288,7 @@ forge-metal/                       # Monorepo root
 │   ├── cmd/billing-service/       # Huma HTTP server (systemd LoadCredential= for secrets)
 │   ├── cmd/tb-inspect/            # TigerBeetle account inspector
 │   └── postgresql-migrations/     # Billing PostgreSQL schema
-└── src/forge-metal/               # Platform project (could be its own repo)
+└── src/platform/                  # Platform project (could be its own repo)
     ├── go.mod
     ├── cmd/forge-metal/           # CLI entry point (doctor, setup-domain, CI, fixtures)
     ├── cmd/forgevm-init/          # PID 1 inside Firecracker VMs
@@ -330,7 +330,7 @@ forge-metal/                       # Monorepo root
 
 ## Firecracker CI Status
 
-The current end-to-end proof is the controlled fixture suite under `src/forge-metal/test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
+The current end-to-end proof is the controlled fixture suite under `src/platform/test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
 
 ### Current platform decisions
 

@@ -99,7 +99,8 @@ class CallbackModule(CallbackBase):
         root = self._repo_root()
         if not root:
             return False
-        script = root / "scripts" / "clickhouse.sh"
+        platform = root / "src" / "platform"
+        script = platform / "scripts" / "clickhouse.sh"
         if not script.exists():
             return False
         try:
@@ -110,7 +111,7 @@ class CallbackModule(CallbackBase):
                     "--query", "INSERT INTO deploy_events FORMAT JSONEachRow",
                 ],
                 input=(row_json + "\n").encode(),
-                cwd=str(root),
+                cwd=str(platform),
                 timeout=30,
                 check=True,
                 capture_output=True,

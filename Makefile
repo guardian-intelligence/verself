@@ -5,7 +5,7 @@
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
-FM       := src/forge-metal
+FM       := src/platform
 BS       := src/billing-service
 BL       := src/billing
 
