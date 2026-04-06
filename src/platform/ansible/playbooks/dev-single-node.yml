@@ -99,10 +99,10 @@
       tags: [tigerbeetle]
     - role: postgresql
       tags: [postgresql]
-    - role: billing_service
-      tags: [billing_service]
     - role: zitadel
       tags: [zitadel]
+    - role: billing_service
+      tags: [billing_service]
     - role: otelcol
       tags: [otelcol]
     - role: hyperdx

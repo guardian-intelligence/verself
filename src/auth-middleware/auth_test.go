@@ -1,0 +1,191 @@
+package auth
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+func TestMiddlewareRejectsMissingBearerToken(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareAttachesIdentity(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss":                                   provider.URL,
+		"sub":                                   "user-123",
+		"aud":                                   []string{"billing-project"},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"email":                                 "alice@example.com",
+		"urn:zitadel:iam:user:resourceowner:id": "org-456",
+		"urn:zitadel:iam:org:project:roles": map[string]any{
+			"admin":  map[string]any{"org-456": "billing"},
+			"viewer": map[string]any{"org-456": "billing"},
+		},
+		"urn:zitadel:iam:org:project:999:roles": map[string]any{
+			"viewer": map[string]any{"org-456": "billing"},
+			"editor": map[string]any{"org-456": "billing"},
+		},
+		"amr": []string{"pwd", "mfa"},
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := FromContext(r.Context())
+		if identity == nil {
+			t.Fatal("expected identity in context")
+		}
+		if identity.Subject != "user-123" {
+			t.Fatalf("unexpected subject: %q", identity.Subject)
+		}
+		if identity.OrgID != "org-456" {
+			t.Fatalf("unexpected org id: %q", identity.OrgID)
+		}
+		if identity.Email != "alice@example.com" {
+			t.Fatalf("unexpected email: %q", identity.Email)
+		}
+		expectedRoles := []string{"admin", "editor", "viewer"}
+		if len(identity.Roles) != len(expectedRoles) {
+			t.Fatalf("unexpected roles length: got %v want %v", identity.Roles, expectedRoles)
+		}
+		for i, role := range expectedRoles {
+			if identity.Roles[i] != role {
+				t.Fatalf("unexpected roles: got %v want %v", identity.Roles, expectedRoles)
+			}
+		}
+		if _, ok := identity.Raw["amr"]; !ok {
+			t.Fatal("expected raw amr claim")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareRejectsWrongAudience(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss": provider.URL,
+		"sub": "user-123",
+		"aud": []string{"wrong-audience"},
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+type testProvider struct {
+	*httptest.Server
+	privateKey *rsa.PrivateKey
+	keyID      string
+}
+
+func newTestProvider(t *testing.T) *testProvider {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+
+	provider := &testProvider{
+		privateKey: privateKey,
+		keyID:      "test-key",
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":   provider.URL,
+			"jwks_uri": provider.URL + "/keys",
+		})
+	})
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]any{
+				{
+					"kty": "RSA",
+					"use": "sig",
+					"alg": "RS256",
+					"kid": provider.keyID,
+					"n":   base64.RawURLEncoding.EncodeToString(provider.privateKey.N.Bytes()),
+					"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(provider.privateKey.PublicKey.E)).Bytes()),
+				},
+			},
+		})
+	})
+
+	provider.Server = httptest.NewServer(mux)
+	return provider
+}
+
+func (p *testProvider) signToken(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = p.keyID
+
+	signed, err := token.SignedString(p.privateKey)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return signed
+}
