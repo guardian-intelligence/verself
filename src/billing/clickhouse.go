@@ -20,15 +20,26 @@ func NewClickHouseMeteringWriter(conn driver.Conn, database string) *ClickHouseM
 	return &ClickHouseMeteringWriter{conn: conn, database: database}
 }
 
-// InsertMeteringRow inserts a single metering row into forge_metal.metering.
+// InsertMeteringRow inserts a single metering row into the configured metering table.
 func (w *ClickHouseMeteringWriter) InsertMeteringRow(ctx context.Context, row MeteringRow) error {
+	return w.InsertMeteringRows(ctx, []MeteringRow{row})
+}
+
+// InsertMeteringRows inserts a batch of metering rows into the configured metering table.
+func (w *ClickHouseMeteringWriter) InsertMeteringRows(ctx context.Context, rows []MeteringRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
 	batch, err := w.conn.PrepareBatch(ctx, "INSERT INTO "+w.database+".metering")
 	if err != nil {
 		return fmt.Errorf("prepare metering batch: %w", err)
 	}
 
-	if err := batch.AppendStruct(&row); err != nil {
-		return fmt.Errorf("append metering row: %w", err)
+	for i := range rows {
+		if err := batch.AppendStruct(&rows[i]); err != nil {
+			return fmt.Errorf("append metering row: %w", err)
+		}
 	}
 
 	if err := batch.Send(); err != nil {
