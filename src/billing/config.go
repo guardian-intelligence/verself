@@ -17,8 +17,6 @@ type Config struct {
 	ReservationWindowSecs uint32
 	PendingTimeoutSecs    uint32
 	StripeSecretKey       string
-	StripeWebhookSecret   string
-	PgDSN                 string
 	TigerBeetleAddresses  []string
 	TigerBeetleClusterID  uint64
 }
@@ -48,12 +46,6 @@ func (c Config) Validate() error {
 	}
 	if c.StripeSecretKey == "" {
 		problems = append(problems, errors.New("stripe_secret_key is required"))
-	}
-	if c.StripeWebhookSecret == "" {
-		problems = append(problems, errors.New("stripe_webhook_secret is required"))
-	}
-	if c.PgDSN == "" {
-		problems = append(problems, errors.New("pg_dsn is required"))
 	}
 	if len(c.TigerBeetleAddresses) == 0 {
 		problems = append(problems, errors.New("at least one tigerbeetle address is required"))

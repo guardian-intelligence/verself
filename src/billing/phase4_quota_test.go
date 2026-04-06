@@ -47,9 +47,7 @@ func TestNewClientRejectsNilQuerier(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ReservationWindowSecs = 60
 	cfg.PendingTimeoutSecs = 600
-	cfg.PgDSN = env.pgDSN
 	cfg.StripeSecretKey = "sk_test_placeholder"
-	cfg.StripeWebhookSecret = "whsec_test_placeholder"
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 
@@ -484,9 +482,7 @@ func TestNewClientRejectsNilMeteringWriter(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ReservationWindowSecs = 60
 	cfg.PendingTimeoutSecs = 600
-	cfg.PgDSN = env.pgDSN
 	cfg.StripeSecretKey = "sk_test_placeholder"
-	cfg.StripeWebhookSecret = "whsec_test_placeholder"
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 

@@ -4,7 +4,6 @@ package billing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -533,60 +532,4 @@ func TestReconcileDetectsUnfundedGrantAgainstLiveHost(t *testing.T) {
 	}
 
 	t.Logf("verified reconcile detects unfunded grant: org=%s grant=%s", orgIDStr, grantULIDStr)
-}
-
-// TestTrustTierEvaluateTaskDispatchAgainstLiveHost verifies the worker
-// can dispatch a trust_tier_evaluate task.
-func TestTrustTierEvaluateTaskDispatchAgainstLiveHost(t *testing.T) {
-	t.Parallel()
-
-	env := newLivePhase1Env(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	asOfDate := time.Now().UTC().Format("2006-01-02")
-	idempotencyKey := fmt.Sprintf("trust_tier_evaluate:%s:phase7test:%d", asOfDate, time.Now().UnixNano())
-	payload := map[string]interface{}{
-		"as_of_date": asOfDate,
-	}
-	payloadJSON, _ := json.Marshal(payload)
-
-	var taskID int64
-	err := env.pg.QueryRowContext(ctx, `
-		INSERT INTO tasks (task_type, payload, idempotency_key)
-		VALUES ('trust_tier_evaluate', $1::jsonb, $2)
-		RETURNING task_id
-	`, string(payloadJSON), idempotencyKey).Scan(&taskID)
-	if err != nil {
-		t.Fatalf("insert task: %v", err)
-	}
-
-	task, ok, err := env.client.claimTask(ctx)
-	if err != nil {
-		t.Fatalf("claim task: %v", err)
-	}
-	if !ok {
-		t.Fatal("expected to claim a task")
-	}
-	if task.TaskID != taskID {
-		t.Fatalf("expected task_id %d, got %d", taskID, task.TaskID)
-	}
-
-	if err := env.client.dispatchTask(ctx, task); err != nil {
-		t.Fatalf("dispatch task: %v", err)
-	}
-	env.client.completeTask(ctx, task)
-
-	var status string
-	if err := env.pg.QueryRowContext(ctx, `
-		SELECT status FROM tasks WHERE task_id = $1
-	`, taskID).Scan(&status); err != nil {
-		t.Fatalf("query task status: %v", err)
-	}
-	if status != "completed" {
-		t.Fatalf("expected task status 'completed', got %q", status)
-	}
-
-	t.Logf("verified trust_tier_evaluate task dispatch: task_id=%d", taskID)
 }

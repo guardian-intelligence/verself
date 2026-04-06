@@ -131,9 +131,7 @@ func newLivePhase1EnvWithMetering(t *testing.T, metering MeteringWriter, querier
 	t.Cleanup(tbClient.Close)
 
 	cfg := DefaultConfig()
-	cfg.PgDSN = pgDSN
 	cfg.StripeSecretKey = "sk_test_placeholder"
-	cfg.StripeWebhookSecret = "whsec_test_placeholder"
 	cfg.TigerBeetleAddresses = []string{tbAddress}
 	cfg.TigerBeetleClusterID = clusterID
 

@@ -10,7 +10,8 @@ Tests use `stripe listen --forward-to localhost:4242/webhooks/stripe` to forward
 - The webhook signing secret to match the CLI's ephemeral secret (we hardcode it in SOPS)
 - A human watching the terminal
 
-The billing server's webhook handler (`internal/billing/webhook.go`) processes 6 Stripe event types:
+The billing-service runtime webhook handler (`src/billing-service/internal/runtime/app.go`)
+processes 6 Stripe event types:
 
 | Event type | Handler action |
 |---|---|
