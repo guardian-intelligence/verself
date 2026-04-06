@@ -73,25 +73,33 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 		return uuid.Nil, fmt.Errorf("count running jobs: %w", err)
 	}
 
-	quotaResult, err := s.Billing.CheckQuotas(ctx, orgID, "sandbox", map[string]float64{
+	usage := map[string]float64{
 		"vcpu":           float64(s.BillingVCPUs),
 		"gib":            float64(s.BillingMemMiB) / 1024.0,
 		"concurrent_vms": float64(currentConcurrent + 1),
-	})
+	}
+
+	quotaResult, err := s.Billing.CheckQuotas(ctx, orgID, "sandbox", usage)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("billing check quotas: %w", err)
 	}
+	quotaViolations := 0
+	if quotaResult.Violations != nil {
+		quotaViolations = len(*quotaResult.Violations)
+	}
+	s.Logger.Info("billing quota check", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "allowed", quotaResult.Allowed, "violations", quotaViolations)
 	if !quotaResult.Allowed {
 		return uuid.Nil, ErrQuotaExceeded
 	}
 
 	reservation, err := s.Billing.Reserve(ctx, billingJobID, orgID, "sandbox", userID, "job", jobID.String(), map[string]float64{
-		"vcpu": float64(s.BillingVCPUs),
-		"gib":  float64(s.BillingMemMiB) / 1024.0,
+		"vcpu": usage["vcpu"],
+		"gib":  usage["gib"],
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("billing reserve: %w", err)
 	}
+	s.Logger.Info("billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq)
 	reservationJSON, err := json.Marshal(reservation)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal billing reservation: %w", err)
@@ -109,6 +117,8 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 		}
 		return uuid.Nil, fmt.Errorf("insert job: %w", err)
 	}
+
+	s.Logger.Info("job submitted", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "repo_url", repoURL)
 
 	// Run in background goroutine.
 	go s.execute(jobID, orgID, userID, repoURL, runCommand, reservation)
@@ -144,6 +154,8 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 		s.Logger.Error("job execution failed", "job_id", jobID, "error", err)
 		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
 			s.Logger.Error("billing void", "job_id", jobID, "error", voidErr)
+		} else {
+			s.Logger.Info("billing voided", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq)
 		}
 	} else {
 		exitCode = result.ExitCode
@@ -156,6 +168,8 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 		}
 		if settleErr := s.Billing.Settle(ctx, reservation, actualSeconds); settleErr != nil {
 			s.Logger.Error("billing settle", "job_id", jobID, "error", settleErr)
+		} else {
+			s.Logger.Info("billing settled", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq, "actual_seconds", actualSeconds, "exit_code", exitCode)
 		}
 	}
 

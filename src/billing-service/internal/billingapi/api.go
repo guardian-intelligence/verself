@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -559,6 +560,7 @@ func checkQuotas(app *billingruntime.App) func(context.Context, *quotaCheckInput
 				Current:   violation.Current,
 			})
 		}
+		log.Printf("billing: quota check org_id=%d product_id=%s allowed=%t violations=%d", input.Body.OrgID, input.Body.ProductID, result.Allowed, len(result.Violations))
 		return out, nil
 	}
 }
@@ -583,6 +585,15 @@ func reserve(app *billingruntime.App) func(context.Context, *reserveInput) (*res
 		}
 		out := &reserveOutput{}
 		out.Body.Reservation = reservationFromDomain(reservation)
+		log.Printf(
+			"billing: reserved org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d",
+			input.Body.OrgID,
+			input.Body.ProductID,
+			input.Body.JobID,
+			input.Body.SourceType,
+			input.Body.SourceRef,
+			reservation.WindowSeq,
+		)
 		return out, nil
 	}
 }
@@ -602,6 +613,16 @@ func settle(app *billingruntime.App) func(context.Context, *settleInput) (*statu
 		}
 		out := &statusOutput{}
 		out.Body.Status = "settled"
+		log.Printf(
+			"billing: settled org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d actual_seconds=%d",
+			reservation.OrgID,
+			reservation.ProductID,
+			reservation.JobID,
+			reservation.SourceType,
+			reservation.SourceRef,
+			reservation.WindowSeq,
+			input.Body.ActualSeconds,
+		)
 		return out, nil
 	}
 }
@@ -621,6 +642,15 @@ func voidReservation(app *billingruntime.App) func(context.Context, *voidInput) 
 		}
 		out := &statusOutput{}
 		out.Body.Status = "voided"
+		log.Printf(
+			"billing: voided org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d",
+			reservation.OrgID,
+			reservation.ProductID,
+			reservation.JobID,
+			reservation.SourceType,
+			reservation.SourceRef,
+			reservation.WindowSeq,
+		)
 		return out, nil
 	}
 }
