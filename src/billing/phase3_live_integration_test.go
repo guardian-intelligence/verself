@@ -30,7 +30,7 @@ func TestDepositCreditsAgainstLiveHost(t *testing.T) {
 	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
-	err := env.client.DepositCredits(ctx, nil, CreditGrant{
+	created, err := env.client.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:          orgID,
 		ProductID:      productID,
 		Amount:         1000,
@@ -41,6 +41,9 @@ func TestDepositCreditsAgainstLiveHost(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("deposit credits: %v", err)
+	}
+	if !created {
+		t.Fatal("expected created=true for first deposit")
 	}
 
 	// Verify PG grant row.
@@ -65,7 +68,7 @@ func TestDepositCreditsAgainstLiveHost(t *testing.T) {
 	requireGrantBalance(t, env.tbClient, GrantID(parsedULID), 1000, 0, 0)
 
 	// Verify idempotency — second call should be no-op.
-	err = env.client.DepositCredits(ctx, nil, CreditGrant{
+	created2, err := env.client.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:          orgID,
 		ProductID:      productID,
 		Amount:         1000,
@@ -76,6 +79,9 @@ func TestDepositCreditsAgainstLiveHost(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("idempotent deposit: %v", err)
+	}
+	if created2 {
+		t.Fatal("expected created=false for idempotent replay")
 	}
 
 	// Still only one grant row.

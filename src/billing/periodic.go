@@ -129,11 +129,9 @@ func (c *Client) depositForSubscription(
 	}
 
 	// DepositCredits handles idempotency via PG unique index on
-	// (subscription_id, period_start). If the grant already exists,
-	// DepositCredits returns nil (idempotent success).
-	//
+	// (subscription_id, period_start). Returns (false, nil) on replay.
 	// We set expires_at to period_end so credits expire when the period ends.
-	err := c.DepositCredits(ctx, nil, CreditGrant{
+	created, err := c.DepositCredits(ctx, nil, CreditGrant{
 		OrgID:          orgID,
 		ProductID:      productID,
 		Amount:         amount,
@@ -147,10 +145,11 @@ func (c *Client) depositForSubscription(
 		return err
 	}
 
-	// DepositCredits returns nil for both first-time and idempotent calls.
-	// We can't distinguish "deposited" from "skipped" without checking PG,
-	// but DepositCredits already does the right thing. Count it as deposited.
-	result.CreditsDeposited++
+	if created {
+		result.CreditsDeposited++
+	} else {
+		result.CreditsSkipped++
+	}
 	return nil
 }
 
