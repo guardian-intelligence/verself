@@ -108,8 +108,9 @@
             pkgs.sqlite
             pkgs.python3           # Ansible requires Python on remote
 
-            # --- forge-metal binary ---
+            # --- forge-metal binaries ---
             self.packages.${system}.default
+            self.packages.${system}.billing-service
           ];
           pathsToLink = [ "/bin" "/share" "/lib" "/etc" ];
         };
@@ -120,15 +121,44 @@
             pname = "forge-metal";
             version = "0.1.0";
             src = pkgs.lib.cleanSourceWith {
-              src = ./.;
+              src = ./src/forge-metal;
               filter = path: type:
-                let baseName = baseNameOf (toString path);
-                in !(baseName == "result" || baseName == "results" || baseName == ".direnv");
+                let
+                  baseName = baseNameOf (toString path);
+                  srcStr = toString ./src/forge-metal;
+                  isTopLevel = dirOf (toString path) == srcStr;
+                  excludedDirs = [
+                    "ansible" "terraform" "test" "ci" "scripts"
+                    "config" "postgresql-migrations" "migrations"
+                  ];
+                in
+                !(baseName == "result" || baseName == "results" || baseName == ".direnv"
+                  || (isTopLevel && builtins.elem baseName excludedDirs));
             };
-            vendorHash = "sha256-2ZpBryxWtjgNnWgiCkkZIhOBWN9zZH/mELhjidQ93cw=";
-            subPackages = [ "cmd/forge-metal" "cmd/billing-server" ];
+            vendorHash = "sha256-RkmNVfxe0RPctkArIirHbCulA6kh1fMF+zvgf7Vsx9I=";
+            subPackages = [ "cmd/forge-metal" ];
             # Skip sandbox-hostile test that shells out to a temp script.
             checkFlags = [ "-run" "^(?!TestConfigEditUsesEditorAndCreatesFile)" ];
+
+            ldflags = [
+              "-s" "-w"
+              "-X main.version=${self.shortRev or "dev"}"
+            ];
+          };
+
+          billing-service = pkgs.buildGoModule {
+            pname = "billing-service";
+            version = "0.1.0";
+            src = pkgs.lib.fileset.toSource {
+              root = ./src;
+              fileset = pkgs.lib.fileset.unions [
+                ./src/billing
+                ./src/billing-service
+              ];
+            };
+            modRoot = "billing-service";
+            vendorHash = "sha256-PxDWkahDL+GTOB/uvJAKmuBsw9Sal3frwHoWP0Sd8gk=";
+            subPackages = [ "cmd/billing-service" "cmd/tb-inspect" ];
 
             ldflags = [
               "-s" "-w"

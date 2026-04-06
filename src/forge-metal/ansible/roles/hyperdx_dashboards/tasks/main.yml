@@ -1,0 +1,555 @@
+---
+# Provision HyperDX metric source and dashboards.
+#
+# Idempotent: creates the metric source if missing, looks up each dashboard by
+# name and creates or updates accordingly. Connection and source IDs are
+# resolved at runtime since they are assigned by MongoDB on first boot.
+
+# --------------------------------------------------------------------------- #
+# Auth + connection resolution                                                 #
+# --------------------------------------------------------------------------- #
+
+- name: Get HyperDX user access key
+  ansible.builtin.command: >
+    mongosh --quiet --eval "db.users.findOne({}, {accessKey: 1, _id: 0}).accessKey" hyperdx
+  register: hyperdx_dashboards_access_key_result
+  changed_when: false
+
+- name: Set access key fact
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_access_key: "{{ hyperdx_dashboards_access_key_result.stdout | trim | regex_replace(\"^'|'$\", '') }}"
+
+- name: Get sources and connection ID
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/sources"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+    return_content: true
+  register: hyperdx_dashboards_sources_result
+
+- name: Set connection ID fact
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_connection_id: "{{ hyperdx_dashboards_sources_result.json.data[0].connection }}"
+
+# --------------------------------------------------------------------------- #
+# OTel Metrics source reconciliation                                          #
+# --------------------------------------------------------------------------- #
+
+- name: Build source index by name
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_sources_by_name: >-
+      {{
+        hyperdx_dashboards_sources_result.json.data
+        | items2dict(key_name='name', value_name='id')
+      }}
+
+- name: Get team ID
+  ansible.builtin.command: >
+    mongosh --quiet --eval "db.teams.findOne({}, {_id: 1})._id.toString()" hyperdx
+  register: hyperdx_dashboards_team_id_result
+  changed_when: false
+
+- name: Reconcile OTel Metrics source metadata
+  ansible.builtin.command:
+    argv:
+      - mongosh
+      - --quiet
+      - --eval
+      - >-
+          const teamId = ObjectId("{{ hyperdx_dashboards_team_id_result.stdout | trim | regex_replace("^'|'$", '') }}");
+          const connectionId = ObjectId("{{ hyperdx_dashboards_connection_id }}");
+          const otelLogsSourceId = "{{ hyperdx_dashboards_sources_by_name.get('OTel Logs', '') }}";
+          const desiredFrom = { databaseName: "default", tableName: "otel_metrics_gauge" };
+          const desiredMetricTables = {
+            gauge: "otel_metrics_gauge",
+            sum: "otel_metrics_sum",
+            histogram: "otel_metrics_histogram"
+          };
+          const existing = db.sources.find({ name: "OTel Metrics" }).sort({ createdAt: 1, _id: 1 }).toArray();
+          let changed = false;
+          let keepId;
+
+          if (existing.length === 0) {
+            keepId = db.sources.insertOne({
+              name: "OTel Metrics",
+              kind: "metric",
+              team: teamId,
+              connection: connectionId,
+              from: desiredFrom,
+              metricTables: desiredMetricTables,
+              timestampValueExpression: "TimeUnix",
+              resourceAttributesExpression: "ResourceAttributes",
+              logSourceId: otelLogsSourceId,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }).insertedId;
+            changed = true;
+          } else {
+            const canonical = existing.find((source) =>
+              source.from
+              && source.from.databaseName === desiredFrom.databaseName
+              && source.from.tableName === desiredFrom.tableName
+            ) || existing[0];
+            keepId = canonical._id;
+
+            const update = {
+              name: "OTel Metrics",
+              kind: "metric",
+              team: teamId,
+              connection: connectionId,
+              from: desiredFrom,
+              metricTables: desiredMetricTables,
+              timestampValueExpression: "TimeUnix",
+              resourceAttributesExpression: "ResourceAttributes",
+              updatedAt: new Date()
+            };
+            if (otelLogsSourceId !== "") {
+              update.logSourceId = otelLogsSourceId;
+            }
+
+            db.sources.updateOne({ _id: keepId }, { $set: update });
+            const duplicates = existing
+              .filter((source) => source._id.toString() !== keepId.toString())
+              .map((source) => source._id);
+            if (duplicates.length > 0) {
+              db.sources.deleteMany({ _id: { $in: duplicates } });
+            }
+
+            const metricTables = canonical.metricTables || {};
+            const metricTablesMatch =
+              metricTables.gauge === desiredMetricTables.gauge
+              && metricTables.sum === desiredMetricTables.sum
+              && metricTables.histogram === desiredMetricTables.histogram;
+            const connectionMatches =
+              canonical.connection && canonical.connection.toString() === connectionId.toString();
+            const teamMatches =
+              canonical.team && canonical.team.toString() === teamId.toString();
+            const logSourceMatches =
+              otelLogsSourceId === "" || canonical.logSourceId === otelLogsSourceId;
+
+            if (
+              canonical.kind !== "metric"
+              || !canonical.from
+              || canonical.from.databaseName !== desiredFrom.databaseName
+              || canonical.from.tableName !== desiredFrom.tableName
+              || canonical.timestampValueExpression !== "TimeUnix"
+              || canonical.resourceAttributesExpression !== "ResourceAttributes"
+              || !connectionMatches
+              || !teamMatches
+              || !metricTablesMatch
+              || !logSourceMatches
+              || duplicates.length > 0
+            ) {
+              changed = true;
+            }
+          }
+
+          print(JSON.stringify({ changed, keepId: keepId.toString() }));
+      - hyperdx
+  register: hyperdx_dashboards_metric_source_reconcile
+  changed_when: >-
+    (
+      hyperdx_dashboards_metric_source_reconcile.stdout
+      | from_json
+    ).changed | bool
+
+- name: Refresh sources
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/sources"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+    return_content: true
+  register: hyperdx_dashboards_sources_result
+
+# --------------------------------------------------------------------------- #
+# Dashboards                                                                   #
+# --------------------------------------------------------------------------- #
+
+- name: List existing dashboards
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+    return_content: true
+  register: hyperdx_dashboards_dashboards_result
+
+- name: Index existing dashboards by name
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_dashboard_ids: >-
+      {{
+        hyperdx_dashboards_dashboards_result.json.data
+        | items2dict(key_name='name', value_name='id')
+      }}
+
+- name: Render Host Process Metrics dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_host_metrics_body: "{{ lookup('template', 'dashboards/host-process-metrics.json.j2') }}"
+
+- name: Create Host Process Metrics dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_host_metrics_body }}"
+    status_code: [200]
+  when: "'Host Process Metrics' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Host Process Metrics dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Host Process Metrics'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_host_metrics_body }}"
+    status_code: [200]
+  when: "'Host Process Metrics' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# TigerBeetle dashboard                                                        #
+# --------------------------------------------------------------------------- #
+
+- name: Render TigerBeetle dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_tigerbeetle_body: "{{ lookup('template', 'dashboards/tigerbeetle.json.j2') }}"
+
+- name: Create TigerBeetle dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_tigerbeetle_body }}"
+    status_code: [200]
+  when: "'TigerBeetle' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update TigerBeetle dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['TigerBeetle'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_tigerbeetle_body }}"
+    status_code: [200]
+  when: "'TigerBeetle' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Zitadel dashboard                                                            #
+# --------------------------------------------------------------------------- #
+
+- name: Render Zitadel dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_zitadel_body: "{{ lookup('template', 'dashboards/zitadel.json.j2') }}"
+
+- name: Create Zitadel dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_zitadel_body }}"
+    status_code: [200]
+  when: "'Zitadel' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Zitadel dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Zitadel'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_zitadel_body }}"
+    status_code: [200]
+  when: "'Zitadel' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Deploy Health dashboard                                                      #
+# --------------------------------------------------------------------------- #
+
+- name: Render Deploy Health dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_deploy_health_body: "{{ lookup('template', 'dashboards/deploy-health.json.j2') }}"
+
+- name: Create Deploy Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_deploy_health_body }}"
+    status_code: [200]
+  when: "'Deploy Health' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Deploy Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Deploy Health'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_deploy_health_body }}"
+    status_code: [200]
+  when: "'Deploy Health' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Billing Metering dashboard                                                   #
+# --------------------------------------------------------------------------- #
+
+- name: Render Billing Metering dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_billing_metering_body: "{{ lookup('template', 'dashboards/billing-metering.json.j2') }}"
+
+- name: Create Billing Metering dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_metering_body }}"
+    status_code: [200]
+  when: "'Billing Metering' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Billing Metering dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing Metering'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_metering_body }}"
+    status_code: [200]
+  when: "'Billing Metering' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Billing Health dashboard                                                     #
+# --------------------------------------------------------------------------- #
+
+- name: Render Billing Health dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_billing_health_body: "{{ lookup('template', 'dashboards/billing-health.json.j2') }}"
+
+- name: Create Billing Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_health_body }}"
+    status_code: [200]
+  when: "'Billing Health' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Billing Health dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing Health'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_health_body }}"
+    status_code: [200]
+  when: "'Billing Health' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Verdaccio Supply Chain dashboard                                             #
+# --------------------------------------------------------------------------- #
+
+- name: Render Verdaccio Supply Chain dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_verdaccio_supply_chain_body: "{{ lookup('template', 'dashboards/verdaccio-supply-chain.json.j2') }}"
+
+- name: Create Verdaccio Supply Chain dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_verdaccio_supply_chain_body }}"
+    status_code: [200]
+  when: "'Verdaccio Supply Chain' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Verdaccio Supply Chain dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Verdaccio Supply Chain'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_verdaccio_supply_chain_body }}"
+    status_code: [200]
+  when: "'Verdaccio Supply Chain' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# PostgreSQL dashboard                                                         #
+# --------------------------------------------------------------------------- #
+
+- name: Render PostgreSQL dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_postgresql_body: "{{ lookup('template', 'dashboards/postgresql.json.j2') }}"
+
+- name: Create PostgreSQL dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_postgresql_body }}"
+    status_code: [200]
+  when: "'PostgreSQL' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update PostgreSQL dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['PostgreSQL'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_postgresql_body }}"
+    status_code: [200]
+  when: "'PostgreSQL' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Remove legacy "Billing API" dashboard (renamed to "Billing Service")         #
+# --------------------------------------------------------------------------- #
+
+- name: Delete legacy Billing API dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing API'] }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+    status_code: [200, 204]
+  when: "'Billing API' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Billing Service dashboard                                                    #
+# --------------------------------------------------------------------------- #
+
+- name: Render Billing Service dashboard
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_billing_service_body: "{{ lookup('template', 'dashboards/billing-service.json.j2') }}"
+
+- name: Create Billing Service dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_service_body }}"
+    status_code: [200]
+  when: "'Billing Service' not in hyperdx_dashboards_dashboard_ids"
+
+- name: Update Billing Service dashboard
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing Service'] }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ hyperdx_dashboards_billing_service_body }}"
+    status_code: [200]
+  when: "'Billing Service' in hyperdx_dashboards_dashboard_ids"
+
+# --------------------------------------------------------------------------- #
+# Validate every tile renders data                                             #
+# --------------------------------------------------------------------------- #
+
+- name: Parse rendered dashboard tiles for validation
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_rendered_tiles: >-
+      {{ (hyperdx_dashboards_host_metrics_body | from_json).tiles }}
+
+- name: Collect builder tiles
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_builder_tiles: >-
+      {{ hyperdx_dashboards_rendered_tiles | selectattr('config.sourceId', 'defined') | list }}
+
+- name: Validate builder tiles return data
+  ansible.builtin.uri:
+    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/charts/series"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      series:
+        - sourceId: "{{ item.config.sourceId }}"
+          aggFn: "{{ item.config.select[0].aggFn }}"
+          field: "{{ item.config.select[0].valueExpression | default('') }}"
+          metricName: "{{ item.config.select[0].metricName }}"
+          metricDataType: "{{ item.config.select[0].metricType }}"
+          where: ""
+          groupBy: []
+      startTime: "{{ ((ansible_date_time.epoch | int) - 300) * 1000 }}"
+      endTime: "{{ (ansible_date_time.epoch | int) * 1000 }}"
+      granularity: "1m"
+    status_code: [200]
+    return_content: true
+  loop: "{{ hyperdx_dashboards_builder_tiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: hyperdx_dashboards_builder_validation
+  failed_when: >-
+    hyperdx_dashboards_builder_validation is failed
+    or (hyperdx_dashboards_builder_validation.json.data | default([]) | length) == 0
+
+- name: Collect raw SQL tiles
+  ansible.builtin.set_fact:
+    hyperdx_dashboards_sql_tiles: >-
+      {{ hyperdx_dashboards_rendered_tiles | selectattr('config.configType', 'defined') | list }}
+
+- name: Validate raw SQL tiles return data
+  ansible.builtin.shell: |
+    set -o pipefail
+    cat <<'EOF' | {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+    SELECT count() FROM (
+      {{ item.config.sqlTemplate
+         | regex_replace('\$__timeFilter_ms\((\w+)\)', '\1 >= now() - INTERVAL 5 MINUTE')
+         | regex_replace('\$__timeInterval\((\w+)\)', 'toStartOfInterval(\1, INTERVAL 1 minute)')
+      }}
+    )
+    EOF
+  args:
+    executable: /bin/bash
+  loop: "{{ hyperdx_dashboards_sql_tiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: hyperdx_dashboards_sql_validation
+  failed_when: >-
+    hyperdx_dashboards_sql_validation.rc != 0
+    or (hyperdx_dashboards_sql_validation.stdout | trim | int) == 0
+  changed_when: false
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"

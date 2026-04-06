@@ -1,4 +1,0 @@
----
-# nix_deploy: provides billing-server binary at fm_bin.
-dependencies:
-  - role: nix_deploy
