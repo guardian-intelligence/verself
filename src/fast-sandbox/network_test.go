@@ -148,7 +148,7 @@ func TestAllocatorRecoverRemovesStaleLease(t *testing.T) {
 		t.Fatalf("writeLeaseFile: %v", err)
 	}
 
-	if err := allocator.Recover(context.Background()); err != nil {
+	if err := allocator.Recover(context.Background(), nil); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestAllocatorRecoverKeepsRecentPendingLease(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 
-	if err := allocator.Recover(context.Background()); err != nil {
+	if err := allocator.Recover(context.Background(), nil); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
 
@@ -185,7 +185,7 @@ func TestAllocatorRecoverKeepsLivePID(t *testing.T) {
 		t.Fatalf("AttachPID: %v", err)
 	}
 
-	if err := allocator.Recover(context.Background()); err != nil {
+	if err := allocator.Recover(context.Background(), nil); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
 
