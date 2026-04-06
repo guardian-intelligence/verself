@@ -36,6 +36,12 @@ table inet forge_metal_sandbox_rental {
         # Allow OIDC discovery and JWKS fetches against Zitadel's public issuer URL.
         ip daddr {{ ansible_host }} tcp dport 443 accept
 
+{% for resolver in ansible_dns.nameservers | default([]) %}
+        # Allow DNS resolution via the host's configured upstream resolvers.
+        ip daddr {{ resolver }} udp dport 53 accept
+        ip daddr {{ resolver }} tcp dport 53 accept
+{% endfor %}
+
         # Allow Unix socket traffic (always passes output chain).
         meta l4proto != tcp meta l4proto != udp accept
 
