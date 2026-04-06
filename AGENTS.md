@@ -17,6 +17,73 @@ Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required - Email Delivery (Resend only for now)
 
+## Service Architecture
+
+```
+                                    ┌─────────────────────────────────────────────────────────┐
+                                    │                     Caddy (TLS + WAF)                    │
+                                    │   allowlist routing, Coraza WAF, Stripe IP allowlist     │
+                                    └──┬──────────┬──────────┬──────────┬──────────┬──────────┘
+                                       │          │          │          │          │
+                              ┌────────▼──┐ ┌─────▼────┐ ┌──▼───┐ ┌───▼────┐ ┌───▼──────────┐
+                              │rent-a-    │ │billing-  │ │Zitadel│ │Forgejo │ │  HyperDX     │
+                              │sandbox    │ │service   │ │(OIDC) │ │(git+CI)│ │  (obs UI)    │
+                              │(Next.js)  │ │(Go/Huma) │ │       │ │        │ │              │
+                              └─────┬─────┘ └──┬───┬───┘ └──┬───┘ └───┬────┘ └──────────────┘
+                                    │          │   │        │         │
+                              ┌─────▼──────────▼┐  │   OIDC JWKS     │
+                              │sandbox-rental-  │  │   (cached)       │
+                              │service (Go/Huma)│  │        │         │
+                              └──┬────┬────┬────┘  │        │         │
+                                 │    │    │       │        │         │
+                    ┌────────────▼┐   │  ┌─▼───────▼──┐     │    ┌────▼─────────────┐
+                    │fast-sandbox │   │  │auth-        │     │    │forge-metal CLI   │
+                    │(Go library) │   │  │middleware   │     │    │(CI warm/exec)    │
+                    │ZFS+FC orch  │   │  │(Go library) │     │    │imports           │
+                    └──┬──────────┘   │  └─────────────┘     │    │fast-sandbox      │
+                       │              │                      │    └──────────────────┘
+              ┌────────▼──────┐       │
+              │  Firecracker  │       │
+              │  VMs (jailer) │       │                    Data Stores
+              │  ┌──────────┐ │       │    ┌─────────────────────────────────────────┐
+              │  │homestead-│ │       │    │                                         │
+              │  │smelter   │ │       │    │  PostgreSQL ◄── billing schemas         │
+              │  │(Zig guest│ │       │    │               ◄── sandbox job_logs      │
+              │  │ agent)   │ │       │    │               ◄── Zitadel event store   │
+              │  └──────────┘ │       │    │               ◄── Forgejo metadata      │
+              └───────────────┘       │    │                                         │
+                                      │    │  TigerBeetle ◄── billing ledger        │
+                                      │    │                   (Reserve/Settle/Void) │
+                                      │    │                                         │
+                                      │    │  ClickHouse  ◄── OTel logs/traces      │
+                                      ├───►│               ◄── billing metering      │
+                                      │    │               ◄── CI wide events        │
+                                      │    │               ◄── sandbox job logs      │
+                                      │    │               ◄── deploy events         │
+                                      │    │                                         │
+                                      │    │  MongoDB     ◄── HyperDX app state     │
+                                      │    └─────────────────────────────────────────┘
+                                      │
+                              ┌───────▼───────┐
+                              │  Stripe       │
+                              │  (webhooks)   │
+                              └───────────────┘
+```
+
+### Auth model
+
+Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Frontends use OIDC code flow + PKCE directly with Zitadel. No auth proxy, no BFF session layer. Social login (Google/GitHub/Microsoft/Apple), MFA, and passkeys are Zitadel-side configuration — the middleware sees the same JWT regardless.
+
+### Dual-write pattern
+
+Services that produce data for both real-time UX and long-term analytics use **application-level dual write**: the service writes to PostgreSQL (for live sync via ElectricSQL → TanStack DB in the browser) and to ClickHouse (for dashboards, metering, and historical queries) in the same request path. Consistency between the two stores is verified by periodic reconciliation (same pattern as billing's 6-check `Reconcile()`).
+
+ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative but rejected — it is experimental and carries replication-slot coupling risks on a single node. The 3-node evolution of the system should introduce NATS JetStream or Kafka + Debezium for proper CDC, replacing application-level dual write with WAL-based streaming.
+
+### Entitlement
+
+Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Quota enforcement queries ClickHouse rolling windows via the `MeteringQuerier` interface.
+
 ## Supply Chain Management
 
 * Git repos (including this one) are hosted on the deployed Forgejo instance at git.<domain_name>.com
@@ -150,10 +217,14 @@ ansible-playbook           --> download static binaries, install apt packages, c
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| Caddy | 443, 80 | Reverse proxy with automatic TLS |
+| Caddy | 443, 80 | Reverse proxy with automatic TLS + WAF |
+| Billing Service | 4242 | Billing HTTP API (Reserve/Settle/Void, Stripe webhooks) |
 | Forgejo | 3000 | Git server + CI runner |
 | Verdaccio | 4873 | Sealed npm registry mirror |
+| Zitadel | 8085 | Identity provider (OIDC) |
 | ClickHouse | 9000, 8123 | Wide event storage with optimized codecs |
+| TigerBeetle | 3320 | Financial ledger (double-entry accounting) |
+| PostgreSQL | 5432 | Application databases (one per service) |
 | HyperDX | 8080, 8000 | Observability UI + API |
 | OTel Collector | 4317, 4318 | OTLP telemetry ingestion |
 | MongoDB | 27017 | HyperDX app state |
@@ -275,62 +346,81 @@ PASS: host agent observed live guest telemetry
 ## Project Structure
 
 ```
-forge-metal/                       # Monorepo root
-├── go.work                        # Go workspace linking src/{platform,billing,billing-service}
-├── Makefile                       # Dev commands (wraps paths into src/)
-├── docs/                          # Cross-cutting architecture docs
-├── src/homestead-smelter/         # Zig guest/host agent (standalone project)
-├── src/billing/                   # Billing domain library (standalone Go module)
-│   ├── go.mod                     # module github.com/forge-metal/billing
-│   ├── client.go                  # Core billing client
-│   ├── tigerbeetle.go             # TigerBeetle ledger operations
-│   ├── stripe.go                  # Stripe integration
-│   ├── clickhouse.go              # ClickHouse metering read/write
-│   └── ...                        # Types, errors, credit lifecycle, reconciliation
-├── src/billing-service/           # Billing HTTP service (standalone Go module)
-│   ├── go.mod                     # module github.com/forge-metal/billing-service
-│   ├── cmd/billing-service/       # Huma HTTP server (systemd LoadCredential= for secrets)
-│   ├── cmd/tb-inspect/            # TigerBeetle account inspector
-│   └── postgresql-migrations/     # Billing PostgreSQL schema
-└── src/platform/                  # Platform project (could be its own repo)
-    ├── go.mod
-    ├── cmd/forge-metal/           # CLI entry point (doctor, setup-domain, CI, fixtures)
-    ├── cmd/forgevm-init/          # PID 1 inside Firecracker VMs
-    ├── internal/
-    │   ├── clickhouse/            # ClickHouse client, wide event struct
-    │   ├── cloudflare/            # Cloudflare API client (DNS, zone lookup)
-    │   ├── config/                # Layered TOML config
-    │   ├── doctor/                # Dev environment health checks
-    │   ├── domain/                # Domain setup wizard
-    │   ├── ci/                    # Repo goldens, toolchain detection, Forgejo fixture e2e
-    │   ├── firecracker/           # Firecracker orchestrator (Go reference impl)
-    │   ├── latitude/              # Latitude.sh API client
-    │   ├── prompt/                # Shared Prompter interface + TTY implementation
-    │   └── provision/             # Server provisioning logic
+forge-metal/                            # Monorepo root
+├── go.work                             # Go workspace (all src/*/ Go modules)
+├── Makefile                            # Dev commands (wraps paths into src/)
+├── docs/                               # Cross-cutting architecture docs
+│
+│   ── Shared libraries ──────────────────────────────────────────────────
+│
+├── src/auth-middleware/                 # OIDC JWT validation (Go library)
+│   └── go.mod                          # github.com/forge-metal/auth-middleware
+├── src/billing/                        # Billing domain: Reserve/Settle/Void (Go library)
+│   └── go.mod                          # github.com/forge-metal/billing
+├── src/fast-sandbox/                   # Firecracker + ZFS VM orchestrator (Go library)
+│   ├── go.mod                          # github.com/forge-metal/fast-sandbox
+│   ├── orchestrator.go                 # Run(JobConfig) → JobResult
+│   ├── zvol.go                         # ZFS clone/destroy/snapshot/written
+│   ├── network.go                      # TAP + CIDR lease allocator
+│   ├── vmproto/                        # Host-guest vsock wire protocol
+│   └── cmd/fast-sandbox-init/          # Guest PID 1
+│
+│   ── Services ──────────────────────────────────────────────────────────
+│
+├── src/billing-service/                # Billing HTTP API (Go/Huma)
+│   ├── go.mod                          # imports: billing, auth-middleware
+│   ├── cmd/billing-service/            # systemd LoadCredential= for secrets
+│   ├── cmd/tb-inspect/                 # TigerBeetle account inspector
+│   └── migrations/                     # Billing PostgreSQL schema
+├── src/sandbox-rental-service/         # Sandbox product backend (Go/Huma) [planned]
+│   ├── go.mod                          # imports: fast-sandbox, billing (HTTP), auth-middleware
+│   ├── cmd/sandbox-rental-service/     # Job orchestration, billing integration
+│   └── migrations/                     # job_runs, job_logs PostgreSQL schemas
+│
+│   ── Frontends ─────────────────────────────────────────────────────────
+│
+├── src/rent-a-sandbox/                 # Customer-facing CI product (Next.js) [planned]
+│   ├── package.json                    # TanStack Start + TanStack DB + ElectricSQL
+│   └── app/                            # OIDC auth, job submission, live log viewer
+│
+│   ── Standalone tools ──────────────────────────────────────────────────
+│
+├── src/homestead-smelter/              # Firecracker VM guest/host telemetry (Zig)
+│   ├── build.zig
+│   └── src/                            # Guest heartbeat agent + host daemon
+│
+│   ── Platform ──────────────────────────────────────────────────────────
+│
+└── src/platform/                       # Infrastructure + deployment
+    ├── go.mod                          # imports: fast-sandbox (CI manager uses it)
+    ├── cmd/forge-metal/                # CLI: doctor, setup-domain, CI warm/exec, fixtures
+    ├── internal/ci/                    # CI domain: Warm/Exec, golden images, toolchain detection
     ├── ansible/
-    │   ├── playbooks/             # All orchestration: deploy, provision, CI, smelter-dev
-    │   └── roles/
-    │       ├── deploy_profile/    # Build + download + install all server binaries
-    │       ├── base/              # System config (ZFS, users, npm registry, sudoers)
-    │       ├── guest_rootfs/      # Build Firecracker guest rootfs
-    │       ├── billing_service/   # Billing service deploy + credentials
-    │       ├── cloudflare_dns/    # Cloudflare DNS A record management
-    │       ├── clickhouse/        # ClickHouse config + schema bootstrap
-    │       ├── otelcol/           # OTLP ingestion and export to ClickHouse
-    │       ├── hyperdx/           # HyperDX UI/API plus MongoDB-backed app state
-    │       ├── caddy/             # Edge proxy and TLS
-    │       ├── zfs/               # Pool creation, golden/ci datasets
-    │       ├── firecracker/       # KVM, jailer user, golden zvol, CI dataset
-    │       ├── verdaccio/         # Sealed npm registry mirror
-    │       └── forgejo/           # Git server + CI runner
-    ├── scripts/
-    │   └── build-guest-rootfs.sh  # Alpine rootfs builder for the generic guest image
-    ├── ci/
-    │   └── versions.json          # Pinned Alpine + Firecracker versions with SHA256
-    ├── terraform/                 # Latitude.sh provisioning
-    ├── migrations/                # ClickHouse schema (MergeTree + Replicated)
-    ├── dev-tools.json             # Pinned dev tool versions, URLs, SHA256
-    └── server-tools.json          # Pinned server binary versions, URLs, SHA256
+    │   ├── playbooks/                  # All orchestration (deploy, provision, CI, smelter-dev)
+    │   └── roles/                      # Flat directory — deployment is a platform concern
+    │       ├── deploy_profile/         # Build + download + install all server binaries
+    │       ├── base/                   # OS hardening, users, credstore, SSH
+    │       ├── nftables/               # Host firewall (forge-metal-firewall.target)
+    │       ├── zfs/                    # Pool creation, golden/ci datasets
+    │       ├── caddy/                  # Edge proxy, TLS, WAF, route allowlist
+    │       ├── postgresql/             # Shared PostgreSQL (one DB per service)
+    │       ├── clickhouse/             # ClickHouse config + schema bootstrap
+    │       ├── tigerbeetle/            # Financial ledger service
+    │       ├── otelcol/                # OTel Collector → ClickHouse
+    │       ├── billing_service/        # Billing service deploy + Zitadel auth project
+    │       ├── sandbox_rental_service/ # Sandbox product deploy [planned]
+    │       ├── rent_a_sandbox/         # Next.js frontend deploy [planned]
+    │       ├── forgejo/                # Git server + CI runner
+    │       ├── zitadel/                # Identity provider (OIDC)
+    │       ├── hyperdx/                # Observability UI + MongoDB
+    │       ├── verdaccio/              # Sealed npm registry mirror
+    │       ├── firecracker/            # KVM, jailer, golden zvol, smelter host
+    │       └── ...                     # guest_rootfs, ci_fixtures, wireguard, etc.
+    ├── terraform/                      # Latitude.sh provisioning
+    ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, etc.
+    ├── migrations/                     # ClickHouse schemas (platform-level)
+    ├── server-tools.json               # Pinned server binary versions + SHA256
+    └── dev-tools.json                  # Pinned dev tool versions + SHA256
 ```
 
 ## Firecracker CI Status
