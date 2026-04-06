@@ -60,3 +60,4 @@ src/platform/ci/output/sbom.txt
 .claude/scheduled_tasks.lock
 
 __pycache__
+src/sandbox-rental-service/sandbox-rental-service

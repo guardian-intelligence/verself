@@ -31,17 +31,17 @@ Required - Email Delivery (Resend only for now)
                               │(Next.js)  │ │(Go/Huma) │ │       │ │        │ │              │
                               └─────┬─────┘ └──┬───┬───┘ └──┬───┘ └───┬────┘ └──────────────┘
                                     │          │   │        │         │
-                              ┌─────▼──────────▼┐  │   OIDC JWKS     │
+                              ┌─────▼──────────▼┐  │   OIDC JWKS      │
                               │sandbox-rental-  │  │   (cached)       │
                               │service (Go/Huma)│  │        │         │
                               └──┬────┬────┬────┘  │        │         │
                                  │    │    │       │        │         │
-                    ┌────────────▼┐   │  ┌─▼───────▼──┐     │    ┌────▼─────────────┐
-                    │fast-sandbox │   │  │auth-        │     │    │forge-metal CLI   │
-                    │(Go library) │   │  │middleware   │     │    │(CI warm/exec)    │
-                    │ZFS+FC orch  │   │  │(Go library) │     │    │imports           │
-                    └──┬──────────┘   │  └─────────────┘     │    │fast-sandbox      │
-                       │              │                      │    └──────────────────┘
+                    ┌────────────▼┐   │  ┌─▼───────▼───┐    │    ┌────▼─────────────┐
+                    │fast-sandbox │   │  │auth-        │    │    │forge-metal CLI   │
+                    │(Go library) │   │  │middleware   │    │    │(CI warm/exec)    │
+                    │ZFS+FC orch  │   │  │(Go library) │    │    │imports           │
+                    └──┬──────────┘   │  └─────────────┘    │    │fast-sandbox      │
+                       │              │                     │    └──────────────────┘
               ┌────────▼──────┐       │
               │  Firecracker  │       │
               │  VMs (jailer) │       │                    Data Stores
@@ -52,16 +52,16 @@ Required - Email Delivery (Resend only for now)
               │  │ agent)   │ │       │    │               ◄── Zitadel event store   │
               │  └──────────┘ │       │    │               ◄── Forgejo metadata      │
               └───────────────┘       │    │                                         │
-                                      │    │  TigerBeetle ◄── billing ledger        │
+                                      │    │  TigerBeetle ◄── billing ledger         │
                                       │    │                   (Reserve/Settle/Void) │
                                       │    │                                         │
-                                      │    │  ClickHouse  ◄── OTel logs/traces      │
+                                      │    │  ClickHouse  ◄── OTel logs/traces       │
                                       ├───►│               ◄── billing metering      │
                                       │    │               ◄── CI wide events        │
                                       │    │               ◄── sandbox job logs      │
                                       │    │               ◄── deploy events         │
                                       │    │                                         │
-                                      │    │  MongoDB     ◄── HyperDX app state     │
+                                      │    │  MongoDB     ◄── HyperDX app state      │
                                       │    └─────────────────────────────────────────┘
                                       │
                               ┌───────▼───────┐
@@ -87,7 +87,7 @@ Billing is the entitlement layer. Services call the billing-service HTTP API to 
 ## Supply Chain Management
 
 * Git repos (including this one) are hosted on the deployed Forgejo instance at git.<domain_name>.com
-* We 
+* We self-host NPM via verdaccio
 
 ## Context
 
@@ -444,15 +444,15 @@ The current end-to-end proof is the controlled fixture suite under `src/platform
 
 ## Assistant Contract
 
-* Ground proposals, plans, API references, and all technical discussion in primary sources.
-* When proposing solutions, think from the perspective of the user of the system. The users of this repo will be sole operators of a single-person software company operating all services off a single bare metal box.
+* Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The users of this repo will be sole operators of a single-person software company operating all services off a single bare metal box (with upgrade path to 3 for higher availability).
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so its important to understand how everything connects.
-* You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM)
+* You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM), or are technically infeasible or "not even wrong".
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
 * You may be asked series of questions. Not all questions need to be answered individually. Consider the gestalt of the discussion and take a step back and address the core question underneath the questions.
 * You are not alone in this repo. Expect parallel changes in unrelated files by the user.
 * This repo is currently private and serves no customers or users. There is no backwards compatibility to maintain. This means: no compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover. 
 * Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
+* Avoid simplifying technical explanations. Details matter and the user cares about arcane versioning issues, subtle race conditions, preventing timing attacks, optimizing GC pressure, understanding when abstractions leak and so on. Simplicity should be saved for code and architecture.
 
 ## Tool Use Contract
 
