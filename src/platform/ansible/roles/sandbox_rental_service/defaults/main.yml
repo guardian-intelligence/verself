@@ -2,4 +2,5 @@
 sandbox_rental_service_subdomain: rent-a-sandbox
 sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ forge_metal_domain }}"
 sandbox_rental_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+sandbox_rental_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 sandbox_rental_service_auth_project_name: sandbox-rental
