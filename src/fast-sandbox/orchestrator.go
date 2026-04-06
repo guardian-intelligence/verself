@@ -1,4 +1,4 @@
-package firecracker
+package fastsandbox
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/forge-metal/forge-metal/internal/vmproto"
+	"github.com/forge-metal/fast-sandbox/vmproto"
 )
 
 // Config holds settings for the Firecracker orchestrator.

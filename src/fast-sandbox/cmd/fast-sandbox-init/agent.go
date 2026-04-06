@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/forge-metal/forge-metal/internal/vmproto"
+	"github.com/forge-metal/fast-sandbox/vmproto"
 )
 
 type outboundFrame struct {

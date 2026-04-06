@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge-metal/forge-metal/internal/firecracker"
+	fastsandbox "github.com/forge-metal/fast-sandbox"
 )
 
 func TestGuestArtifactManifestPathUsesKernelDirectory(t *testing.T) {
-	cfg := firecracker.Config{KernelPath: "/var/lib/ci/vmlinux"}
+	cfg := fastsandbox.Config{KernelPath: "/var/lib/ci/vmlinux"}
 	got := guestArtifactManifestPath(cfg)
 	want := "/var/lib/ci/guest-artifacts.json"
 	if got != want {
@@ -18,7 +18,7 @@ func TestGuestArtifactManifestPathUsesKernelDirectory(t *testing.T) {
 }
 
 func TestGuestArtifactManifestPathFallsBackToDefaultDir(t *testing.T) {
-	got := guestArtifactManifestPath(firecracker.Config{})
+	got := guestArtifactManifestPath(fastsandbox.Config{})
 	want := "/var/lib/ci/guest-artifacts.json"
 	if got != want {
 		t.Fatalf("guestArtifactManifestPath fallback: got %q want %q", got, want)

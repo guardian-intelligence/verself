@@ -1,4 +1,4 @@
-// forgevm-init is the PID 1 init process for Firecracker CI VMs.
+// fast-sandbox-init is the PID 1 init process for Firecracker CI VMs.
 //
 // It mounts a minimal Linux userspace, brings up loopback, waits for a host
 // vsock control connection, applies runtime network state from the host, runs

@@ -15,7 +15,7 @@ import (
 	ci "github.com/forge-metal/forge-metal/internal/ci"
 	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
 	"github.com/forge-metal/forge-metal/internal/config"
-	"github.com/forge-metal/forge-metal/internal/firecracker"
+	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/forge-metal/forge-metal/internal/supplychain"
 	"github.com/google/uuid"
 )
@@ -162,8 +162,8 @@ func ciExecCmd() *cobra.Command {
 	return cmd
 }
 
-func ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin string, vcpus, memoryMiB int, hostInterface, guestPoolCIDR, networkLeaseDir string) (firecracker.Config, error) {
-	cfg := firecracker.DefaultConfig()
+func ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin string, vcpus, memoryMiB int, hostInterface, guestPoolCIDR, networkLeaseDir string) (fastsandbox.Config, error) {
+	cfg := fastsandbox.DefaultConfig()
 	if pool != "" {
 		cfg.Pool = pool
 	}

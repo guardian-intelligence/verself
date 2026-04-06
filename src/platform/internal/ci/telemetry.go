@@ -10,20 +10,20 @@ import (
 
 	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
 	"github.com/forge-metal/forge-metal/internal/config"
-	"github.com/forge-metal/forge-metal/internal/firecracker"
+	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/google/uuid"
 )
 
 type emitExecTelemetryInput struct {
-	FirecrackerConfig firecracker.Config
+	FirecrackerConfig fastsandbox.Config
 	Request           ExecRequest
 	RunID             string
 	Manifest          *Manifest
 	Toolchain         *Toolchain
 	InstallNeeded     bool
 	GoldenSnapshot    string
-	Job               firecracker.JobConfig
-	JobResult         firecracker.JobResult
+	Job               fastsandbox.JobConfig
+	JobResult         fastsandbox.JobResult
 	CloneDuration     time.Duration
 	CreatedAt         time.Time
 	StartedAt         time.Time
@@ -34,7 +34,7 @@ type emitExecTelemetryInput struct {
 }
 
 type emitWarmTelemetryInput struct {
-	FirecrackerConfig         firecracker.Config
+	FirecrackerConfig         fastsandbox.Config
 	Request                   WarmRequest
 	RunID                     string
 	ParentRunID               string
@@ -42,8 +42,8 @@ type emitWarmTelemetryInput struct {
 	Toolchain                 *Toolchain
 	TargetDataset             string
 	PreviousDataset           string
-	Job                       firecracker.JobConfig
-	JobResult                 firecracker.JobResult
+	Job                       fastsandbox.JobConfig
+	JobResult                 fastsandbox.JobResult
 	CloneDuration             time.Duration
 	FilesystemCheckDuration   time.Duration
 	SnapshotPromotionDuration time.Duration
@@ -370,7 +370,7 @@ func buildWarmJobConfigJSON(input emitWarmTelemetryInput, manifestPath string, g
 	return string(data), nil
 }
 
-func phaseExitCodes(phases []firecracker.PhaseResult) map[string]int {
+func phaseExitCodes(phases []fastsandbox.PhaseResult) map[string]int {
 	if len(phases) == 0 {
 		return nil
 	}
@@ -381,7 +381,7 @@ func phaseExitCodes(phases []firecracker.PhaseResult) map[string]int {
 	return codes
 }
 
-func phaseExitCode(phases []firecracker.PhaseResult, phaseName string) int {
+func phaseExitCode(phases []fastsandbox.PhaseResult, phaseName string) int {
 	phaseName = strings.TrimSpace(phaseName)
 	if phaseName == "" {
 		return 0

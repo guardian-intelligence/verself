@@ -20,13 +20,13 @@
     chdir: "{{ guest_rootfs_smelter_dir }}"
   changed_when: true
 
-- name: Build forgevm-init (static, linux/amd64)
+- name: Build fast-sandbox-init (static, linux/amd64)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [go, build, "-ldflags=-s -w", -o, /tmp/forgevm-init, ./cmd/forgevm-init]
-    chdir: "{{ guest_rootfs_repo_root }}"
+    argv: [go, build, "-ldflags=-s -w", -o, /tmp/fast-sandbox-init, ./src/fast-sandbox/cmd/fast-sandbox-init]
+    chdir: "{{ guest_rootfs_monorepo_root }}"
   environment:
     CGO_ENABLED: "0"
     GOOS: linux
@@ -47,10 +47,10 @@
     dest: "{{ guest_rootfs_remote_tmp }}/versions.json"
     mode: "0644"
 
-- name: Upload forgevm-init
+- name: Upload fast-sandbox-init
   ansible.builtin.copy:
-    src: /tmp/forgevm-init
-    dest: "{{ guest_rootfs_remote_tmp }}/forgevm-init"
+    src: /tmp/fast-sandbox-init
+    dest: "{{ guest_rootfs_remote_tmp }}/fast-sandbox-init"
     mode: "0755"
 
 - name: Upload homestead-smelter-guest

@@ -5,14 +5,14 @@ set -euo pipefail
 # Standard Linux paths, standard SBOM.
 #
 # LEARNING: Nix rootfs had /nix/store/ symlink farms inside the guest. Alpine gives
-# standard paths (/usr/bin/node, /usr/bin/git) that work natively with forgevm-init's
+# standard paths (/usr/bin/node, /usr/bin/git) that work natively with fast-sandbox-init's
 # PATH resolution and chroot-based golden image baking.
 #
 # Two-layer architecture:
 #   Layer 1 (this script): base OS + packages + initdb -> rootfs.ext4
 #   Layer 2 (repo warm): repo checkout + prepare command + optional DB setup -> ZFS snapshot
 #
-# Requires: root, internet access, e2fsprogs. go only if no pre-built forgevm-init.
+# Requires: root, internet access, e2fsprogs. go only if no pre-built fast-sandbox-init.
 # Produces: ci/output/rootfs.ext4, ci/output/sbom.txt, ci/output/guest-artifacts.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,9 +41,9 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not in PATH" >&2; exit 1; }
 command -v mke2fs >/dev/null 2>&1 || { echo "ERROR: mke2fs (e2fsprogs) not in PATH" >&2; exit 1; }
 command -v dumpe2fs >/dev/null 2>&1 || { echo "ERROR: dumpe2fs (e2fsprogs) not in PATH" >&2; exit 1; }
-# go is only required if no pre-built forgevm-init exists
-if [[ ! -f "$SCRIPT_DIR/forgevm-init" ]] && ! command -v go >/dev/null 2>&1; then
-  echo "ERROR: no pre-built forgevm-init and go not in PATH" >&2; exit 1
+# go is only required if no pre-built fast-sandbox-init exists
+if [[ ! -f "$SCRIPT_DIR/fast-sandbox-init" ]] && ! command -v go >/dev/null 2>&1; then
+  echo "ERROR: no pre-built fast-sandbox-init and go not in PATH" >&2; exit 1
 fi
 
 # Read version pins
@@ -126,20 +126,20 @@ if ! chroot "$ROOTFS" /bin/sh -c "apk add --no-cache bun" >/dev/null 2>&1; then
 fi
 chroot "$ROOTFS" /bin/sh -c "corepack enable || true"
 
-# --- Install forgevm-init (static Go binary → /sbin/init) ---
+# --- Install fast-sandbox-init (static Go binary → /sbin/init) ---
 # If a pre-built binary exists next to the script (for example, scp'd by Makefile), use it.
 # Otherwise, build from source (requires Go project checkout).
 # LEARNING: Alpine creates /sbin/init as a busybox symlink. `cp` follows symlinks,
 # so without this rm, cp overwrites /bin/busybox instead of replacing the symlink.
 rm -f "$ROOTFS/sbin/init"
-if [[ -f "$SCRIPT_DIR/forgevm-init" ]]; then
-  echo "→ using pre-built forgevm-init"
-  cp "$SCRIPT_DIR/forgevm-init" "$ROOTFS/sbin/init"
-elif command -v go >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/go.mod" ]]; then
-  echo "→ building forgevm-init from source"
-  CGO_ENABLED=0 go build -ldflags='-s -w' -o "$ROOTFS/sbin/init" "$PROJECT_ROOT/cmd/forgevm-init"
+if [[ -f "$SCRIPT_DIR/fast-sandbox-init" ]]; then
+  echo "→ using pre-built fast-sandbox-init"
+  cp "$SCRIPT_DIR/fast-sandbox-init" "$ROOTFS/sbin/init"
+elif command -v go >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/../fast-sandbox/go.mod" ]]; then
+  echo "→ building fast-sandbox-init from source"
+  CGO_ENABLED=0 go build -ldflags='-s -w' -o "$ROOTFS/sbin/init" "$PROJECT_ROOT/../fast-sandbox/cmd/fast-sandbox-init"
 else
-  echo "ERROR: no pre-built forgevm-init and no Go project found at $PROJECT_ROOT" >&2
+  echo "ERROR: no pre-built fast-sandbox-init and no Go project found at $PROJECT_ROOT" >&2
   exit 1
 fi
 
@@ -181,7 +181,7 @@ GROUP
 
 echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
 cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
-# Registry is injected at runtime by forgevm-init.
+# Registry is injected at runtime by fast-sandbox-init.
 NPMRC
 
 # --- Create required directories ---
@@ -221,7 +221,7 @@ fi
 {
   echo
   echo "# custom_components"
-  echo "file path=/sbin/init component=forgevm-init sha256=$INIT_SHA256 bytes=$INIT_BYTES"
+  echo "file path=/sbin/init component=fast-sandbox-init sha256=$INIT_SHA256 bytes=$INIT_BYTES"
   if [[ "$SMELTER_GUEST_PRESENT" == "true" ]]; then
     echo "file path=/usr/local/bin/homestead-smelter-guest component=homestead-smelter-guest sha256=$SMELTER_GUEST_SHA256 bytes=$SMELTER_GUEST_BYTES"
   fi
