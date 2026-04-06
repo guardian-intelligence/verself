@@ -1,0 +1,380 @@
+---
+# Verify billing-service auth integration against live Zitadel and billing-service.
+#
+# Usage:
+#   cd ansible && ansible-playbook playbooks/verify-billing-auth.yml
+
+- name: Verify billing-service auth
+  hosts: infra
+  serial: 1
+  become: true
+  gather_facts: false
+  vars:
+    verify_billing_auth_project_name: billing
+    verify_billing_auth_machine_username: "billing-auth-verify-{{ inventory_hostname }}"
+    verify_billing_auth_machine_name: "billing auth verify {{ inventory_hostname }}"
+    verify_billing_auth_probe_user_pattern: "^(billing-auth-verify-.*|billing-smoke-.*)$"
+    verify_billing_auth_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
+    verify_billing_auth_zitadel_host: "auth.{{ forge_metal_domain }}"
+    verify_billing_auth_billing_base_url: "http://{{ services.billing.host }}:{{ services.billing.port }}"
+    verify_billing_auth_scope: >-
+      openid profile
+      urn:zitadel:iam:org:project:id:{{ verify_billing_auth_project_id }}:aud
+  tasks:
+    - name: Wait for Zitadel to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.zitadel.host }}"
+        port: "{{ services.zitadel.port }}"
+        timeout: 60
+
+    - name: Wait for billing-service to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.billing.host }}"
+        port: "{{ services.billing.port }}"
+        timeout: 60
+
+    - name: Read Zitadel admin PAT
+      ansible.builtin.slurp:
+        src: /etc/zitadel/admin.pat
+      register: verify_billing_auth_admin_pat_raw
+      no_log: true
+
+    - name: Set Zitadel admin PAT fact
+      ansible.builtin.set_fact:
+        verify_billing_auth_admin_pat: "{{ verify_billing_auth_admin_pat_raw.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Read billing-service systemd unit
+      ansible.builtin.slurp:
+        src: /etc/systemd/system/billing-service.service
+      register: verify_billing_auth_systemd_unit
+
+    - name: Set billing-service unit text fact
+      ansible.builtin.set_fact:
+        verify_billing_auth_systemd_unit_text: "{{ verify_billing_auth_systemd_unit.content | b64decode }}"
+
+    - name: Set billing-service auth config facts
+      ansible.builtin.set_fact:
+        verify_billing_auth_configured_issuer: >-
+          {{-
+            (
+              verify_billing_auth_systemd_unit_text
+              | regex_findall('Environment=BILLING_AUTH_ISSUER_URL=([^\n]+)')
+              | first
+              | default('', true)
+              | trim
+            )
+          -}}
+        verify_billing_auth_configured_audience: >-
+          {{-
+            (
+              verify_billing_auth_systemd_unit_text
+              | regex_findall('Environment=BILLING_AUTH_AUDIENCE=([^\n]+)')
+              | first
+              | default('', true)
+              | trim
+            )
+          -}}
+
+    - name: List Zitadel projects
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        body_format: json
+        body: {}
+        return_content: true
+      register: verify_billing_auth_projects
+      no_log: true
+
+    - name: Set billing Zitadel project fact
+      ansible.builtin.set_fact:
+        verify_billing_auth_project: >-
+          {{
+            (
+              verify_billing_auth_projects.json.result
+              | default([])
+              | selectattr('name', 'equalto', verify_billing_auth_project_name)
+              | list
+              | first
+            ) | default({})
+          }}
+
+    - name: Assert billing Zitadel project exists
+      ansible.builtin.assert:
+        that:
+          - verify_billing_auth_project != {}
+          - verify_billing_auth_project.id | default('', true) | length > 0
+        fail_msg: Billing Zitadel project was not found.
+
+    - name: Set billing project ID fact
+      ansible.builtin.set_fact:
+        verify_billing_auth_project_id: "{{ verify_billing_auth_project.id }}"
+
+    - name: Assert billing-service auth config matches billing project
+      ansible.builtin.assert:
+        that:
+          - verify_billing_auth_configured_issuer == 'https://auth.' ~ forge_metal_domain
+          - verify_billing_auth_configured_audience == verify_billing_auth_project_id
+        fail_msg: billing-service auth config does not match the billing Zitadel project.
+
+    - name: List Zitadel users before cleanup
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/management/v1/users/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        body_format: json
+        body: {}
+        return_content: true
+      register: verify_billing_auth_users_before_cleanup
+      no_log: true
+
+    - name: Set stale verification users fact
+      ansible.builtin.set_fact:
+        verify_billing_auth_stale_users: >-
+          {{
+            verify_billing_auth_users_before_cleanup.json.result
+            | default([])
+            | selectattr('machine', 'defined')
+            | selectattr('userName', 'match', verify_billing_auth_probe_user_pattern)
+            | list
+          }}
+
+    - name: Revoke stale verification user secrets
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ item.id }}/secret"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        status_code: [200, 400, 404]
+      loop: "{{ verify_billing_auth_stale_users }}"
+      loop_control:
+        label: "{{ item.userName }}"
+      no_log: true
+
+    - name: Deactivate stale verification users
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ item.id }}/deactivate"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        status_code: [200, 400, 404]
+      loop: "{{ verify_billing_auth_stale_users }}"
+      loop_control:
+        label: "{{ item.userName }}"
+
+    - name: Delete stale verification users
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ item.id }}"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        status_code: [200, 404]
+      loop: "{{ verify_billing_auth_stale_users }}"
+      loop_control:
+        label: "{{ item.userName }}"
+
+    - name: Verify billing auth probe
+      block:
+        - name: Create verification machine user
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/management/v1/users/machine"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            body_format: json
+            body:
+              userName: "{{ verify_billing_auth_machine_username }}"
+              name: "{{ verify_billing_auth_machine_name }}"
+              accessTokenType: ACCESS_TOKEN_TYPE_JWT
+            return_content: true
+          register: verify_billing_auth_machine_user
+          no_log: true
+
+        - name: Set verification machine user ID fact
+          ansible.builtin.set_fact:
+            verify_billing_auth_machine_user_id: "{{ verify_billing_auth_machine_user.json.userId }}"
+
+        - name: Create verification machine user secret
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ verify_billing_auth_machine_user_id }}/secret"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            status_code: 200
+            return_content: true
+          register: verify_billing_auth_machine_secret
+          no_log: true
+
+        - name: Grant verification machine user access to billing project
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/management/v1/users/{{ verify_billing_auth_machine_user_id }}/grants"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            body_format: json
+            body:
+              projectId: "{{ verify_billing_auth_project_id }}"
+              roleKeys: []
+            status_code: 200
+            return_content: true
+          register: verify_billing_auth_user_grant
+          no_log: true
+
+        - name: Set verification user grant ID fact
+          ansible.builtin.set_fact:
+            verify_billing_auth_user_grant_id: "{{ verify_billing_auth_user_grant.json.userGrantId }}"
+
+        - name: Request verification access token
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/oauth/v2/token"
+            method: POST
+            headers:
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            body_format: form-urlencoded
+            body:
+              grant_type: client_credentials
+              scope: "{{ verify_billing_auth_scope }}"
+            url_username: "{{ verify_billing_auth_machine_username }}"
+            url_password: "{{ verify_billing_auth_machine_secret.json.clientSecret }}"
+            force_basic_auth: true
+            return_content: true
+            status_code: 200
+          register: verify_billing_auth_token
+          no_log: true
+
+        - name: Assert verification token was issued
+          ansible.builtin.assert:
+            that:
+              - verify_billing_auth_token.json.access_token | default('', true) | length > 0
+              - verify_billing_auth_token.json.token_type | default('', true) == 'Bearer'
+            fail_msg: Failed to obtain a billing verification access token.
+
+        - name: Verify billing endpoint rejects unauthenticated request
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_billing_base_url }}/internal/billing/v1/orgs/1/balance"
+            method: GET
+            status_code: 401
+            return_content: true
+          register: verify_billing_auth_unauthenticated
+
+        - name: Assert unauthenticated response is an auth failure
+          ansible.builtin.assert:
+            that:
+              - verify_billing_auth_unauthenticated.json.error | default('') == 'unauthorized'
+            fail_msg: billing-service did not return the expected unauthenticated error payload.
+
+        - name: Verify billing endpoint accepts authenticated request
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_billing_base_url }}/internal/billing/v1/orgs/1/balance"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_token.json.access_token }}"
+            status_code: 200
+            return_content: true
+          register: verify_billing_auth_authenticated
+          no_log: true
+
+        - name: Assert authenticated billing response payload
+          ansible.builtin.assert:
+            that:
+              - verify_billing_auth_authenticated.json.org_id | default('') == '1'
+            fail_msg: billing-service accepted the token but returned an unexpected payload.
+
+        - name: Verify Stripe webhook bypasses bearer auth
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_billing_base_url }}/webhooks/stripe"
+            method: POST
+            headers:
+              Content-Type: application/json
+            body: "{}"
+            status_code: [200, 400, 401, 404, 405, 500]
+            return_content: true
+          register: verify_billing_auth_webhook_probe
+          failed_when: verify_billing_auth_webhook_probe.status == 401
+
+      always:
+        - name: Remove verification user grant
+          ansible.builtin.uri:
+            url: >-
+              {{ verify_billing_auth_zitadel_base_url }}/management/v1/users/{{
+              verify_billing_auth_machine_user_id }}/grants/{{ verify_billing_auth_user_grant_id }}
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            status_code: [200, 404]
+          when:
+            - verify_billing_auth_machine_user_id is defined
+            - verify_billing_auth_user_grant_id is defined
+
+        - name: Revoke verification machine user secret
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ verify_billing_auth_machine_user_id }}/secret"
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            status_code: [200, 400, 404]
+          when: verify_billing_auth_machine_user_id is defined
+          no_log: true
+
+        - name: Deactivate verification machine user
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ verify_billing_auth_machine_user_id }}/deactivate"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            status_code: [200, 400, 404]
+          when: verify_billing_auth_machine_user_id is defined
+
+        - name: Delete verification machine user
+          ansible.builtin.uri:
+            url: "{{ verify_billing_auth_zitadel_base_url }}/v2/users/{{ verify_billing_auth_machine_user_id }}"
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+              Host: "{{ verify_billing_auth_zitadel_host }}"
+            status_code: [200, 404]
+          when: verify_billing_auth_machine_user_id is defined
+
+    - name: List Zitadel users after verification cleanup
+      ansible.builtin.uri:
+        url: "{{ verify_billing_auth_zitadel_base_url }}/management/v1/users/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ verify_billing_auth_admin_pat }}"
+          Host: "{{ verify_billing_auth_zitadel_host }}"
+        body_format: json
+        body: {}
+        return_content: true
+      register: verify_billing_auth_users_after_cleanup
+      no_log: true
+
+    - name: Assert no verification machine users remain
+      vars:
+        remaining_probe_users: >-
+          {{
+            verify_billing_auth_users_after_cleanup.json.result
+            | default([])
+            | selectattr('machine', 'defined')
+            | selectattr('userName', 'match', verify_billing_auth_probe_user_pattern)
+            | map(attribute='userName')
+            | list
+          }}
+      ansible.builtin.assert:
+        that:
+          - remaining_probe_users | length == 0
+        fail_msg: >-
+          Verification machine users remain in Zitadel: {{ remaining_probe_users | join(', ') }}

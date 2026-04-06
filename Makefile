@@ -1,5 +1,5 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain \
+       hooks-install doctor setup-domain inventory-check verify-billing-auth \
        smelter-build \
        clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
@@ -10,6 +10,7 @@ FS       := src/fast-sandbox
 BS       := src/billing-service
 BL       := src/billing
 AM       := src/auth-middleware
+INVENTORY := $(FM)/ansible/inventory/hosts.ini
 
 build: ## Build the forge-metal Go binary
 	go build $(LDFLAGS) -o $(FM)/forge-metal ./$(FM)/cmd/forge-metal
@@ -61,14 +62,20 @@ doctor: build ## Check that all required dev tools are present and at the right 
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
 
-clickhouse-shell: ## Open an interactive clickhouse-client session on the worker
+inventory-check: ## Validate that the generated Ansible inventory exists
+	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
+
+verify-billing-auth: inventory-check ## Run the billing auth verification playbook
+	cd $(FM)/ansible && ansible-playbook playbooks/verify-billing-auth.yml
+
+clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
 
-clickhouse-query: ## Run a ClickHouse query on the worker: make clickhouse-query QUERY='SHOW TABLES' [DATABASE=forge_metal]
+clickhouse-query: inventory-check ## Run a ClickHouse query on the worker: make clickhouse-query QUERY='SHOW TABLES' [DATABASE=forge_metal]
 	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
 	cd $(FM) && ./scripts/clickhouse.sh $(if $(DATABASE),--database $(DATABASE),) --query "$(QUERY)"
 
-clickhouse-schemas: ## Print CREATE TABLE statements for all project tables
+clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all project tables
 	cd $(FM) && ./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
 
 edit-secrets: ## Open encrypted secrets in $$EDITOR via sops

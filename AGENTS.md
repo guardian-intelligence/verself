@@ -66,7 +66,7 @@ cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/t
 cd src/platform/ansible && ansible-playbook playbooks/provision.yml
 ```
 
-This provisions a bare metal server via OpenTofu and auto-generates `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
+This provisions a bare metal server via OpenTofu and auto-generates the gitignored `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
 
 ### 3. Deploy
 
@@ -96,8 +96,15 @@ Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let
 Use the Makefile wrappers instead of typing the SSH and password prefix by hand. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
 
 ```bash
+make inventory-check
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
 make clickhouse-shell
+```
+
+OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
+
+```bash
+make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
 ```
 
 ### TLS with a real domain (Cloudflare)
@@ -176,6 +183,8 @@ Compression codecs per column type:
 | `make tidy` | Run go mod tidy |
 | `make doctor` | Check that all required dev tools are present and at the right version |
 | `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
+| `make inventory-check` | Validate that the generated Ansible inventory exists |
+| `make verify-billing-auth` | Run the billing auth verification playbook |
 | `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
 | `make clickhouse-shell` | Open an interactive clickhouse-client session on the worker |
 | `make clickhouse-query` | Run a ClickHouse query on the worker |
@@ -203,6 +212,7 @@ All remote orchestration is done via Ansible playbooks. Run from the `src/platfo
 | `playbooks/smelter-dev.yml` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
+| `playbooks/verify-billing-auth.yml` | Create an ephemeral Zitadel machine user and verify billing auth end to end |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
 
