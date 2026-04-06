@@ -1,15 +1,26 @@
-# `internal/billing` Package Specification
+# Billing Domain And Service Specification
 
 Package `billing` is the financial core of forge-metal. It owns org financial
 provisioning, product pricing lookup, credit grant lifecycle, quota enforcement, Stripe cash
-collection integration, TigerBeetle balance enforcement, reconciliation, and the asynchronous
-worker contracts that connect those systems.
+collection integration, TigerBeetle balance enforcement, and reconciliation.
+
+`billing-service` is the transport and runtime boundary around that package. It owns HTTP,
+OpenAPI, generated-client distribution, auth, webhook ingress, worker execution, and
+operational endpoints.
 
 The package is product-agnostic. It does not know what a "sandbox" or "storefront" is. It
 knows about products, plans, subscriptions, per-product grants, metering dimensions, funding
 sources, and dunning state.
 
 This document is normative and self-contained.
+
+Three modules participate in the target billing architecture:
+
+| Module | Owns | Must not own |
+|--------|------|---------------|
+| `github.com/forge-metal/billing` | domain operations, invariants, pricing resolution, grant lifecycle, quota checks, TigerBeetle/PostgreSQL/ClickHouse coordination, Stripe API calls needed to create checkout/subscription sessions | `net/http`, Huma schemas, webhook signature verification, background worker loops, service DTOs, generated clients |
+| `github.com/forge-metal/billing-service` | Huma route registration, OpenAPI document, auth, Stripe webhook ingress, task worker runtime, health/readiness, operational commands | duplicated billing rules, handwritten service clients |
+| generated billing client | typed remote access to `billing-service` for other services | handwritten endpoint paths, duplicated request/response structs |
 
 Four systems participate in every non-trivial billing flow:
 
@@ -59,8 +70,57 @@ Verified upstream contracts as of 2026-04-04:
 
 ---
 
+## 0. Runtime Module Boundaries
+
+The target deployment topology is:
+
+```text
+                                      public HTTPS
+                                           |
+                                           v
+                                        Caddy
+                                           |
+                  +------------------------+------------------------+
+                  |                                                 |
+                  v                                                 v
+   POST /webhooks/stripe                                internal billing HTTP API
+     Stripe-signed only                             /internal/billing/v1/... + /openapi
+                  |                                                 |
+                  +------------------------+------------------------+
+                                           |
+                                           v
+                                  billing-service
+                        (Huma contract, auth, webhook ingress,
+                         task worker, ops endpoints, OpenAPI)
+                                           |
+                                           v
+                                      billing lib
+                         (domain rules, ledger logic, pricing,
+                          quotas, reconciliation primitives)
+                      +----------------+----------------+----------------+
+                      |                |                |                |
+                      v                v                v                v
+                 PostgreSQL       TigerBeetle      ClickHouse         Stripe
+```
+
+The sanctioned call paths are:
+
+1. Browser apps and internal frontend backends call `billing-service`.
+2. Other forge-metal services call `billing-service` through the generated billing client.
+3. Stripe calls only the webhook ingress owned by `billing-service`.
+4. Only code running inside `billing-service` may directly compose `billing` with transport
+   adapters. Cross-service imports of `billing` are not part of the public integration model.
+
+This split is deliberate:
+
+- `billing` is the semantic source of truth for money movement and entitlement decisions.
+- `billing-service` is the contract source of truth for cross-service integration.
+- The generated billing client is the only approved way for a remote service to talk to
+  billing over HTTP.
+
 ## Table of Contents
 
+0. [Runtime Module Boundaries](#0-runtime-module-boundaries)
 1. [PostgreSQL And ClickHouse Schema](#1-postgresql-and-clickhouse-schema)
 2. [Package API Surface](#2-package-api-surface)
 3. [TigerBeetle Integration Details](#3-tigerbeetle-integration-details)
@@ -639,6 +699,10 @@ CREATE UNIQUE INDEX idx_billing_events_stripe
     ON billing_events (stripe_event_id)
     WHERE stripe_event_id IS NOT NULL;
 
+CREATE UNIQUE INDEX idx_billing_events_credits_deposited_grant
+    ON billing_events (grant_id)
+    WHERE event_type = 'credits_deposited' AND grant_id IS NOT NULL;
+
 CREATE INDEX idx_billing_events_org
     ON billing_events (org_id, created_at);
 ```
@@ -748,7 +812,7 @@ The billing package only requires a mapping from that product-specific state to
 
 ## 2. Package API Surface
 
-Import path: `github.com/forge-metal/forge-metal/internal/billing`
+Import path: `github.com/forge-metal/billing`
 
 ### 2.1 Dependencies
 
@@ -1705,7 +1769,7 @@ Validated upstream facts:
 
 ### 4.1 Client Initialization
 
-The billing package uses the modern `stripe.Client` API:
+The billing runtime uses the modern `stripe.Client` API:
 
 ```go
 sc := stripe.NewClient(apiKey)
@@ -1715,7 +1779,7 @@ The package does not use the deprecated `client.API` pattern.
 
 ### 4.2 Webhook Verification
 
-Webhook verification is a thin wrapper over:
+Webhook verification in `billing-service` is a thin wrapper over:
 
 ```go
 event, err := webhook.ConstructEvent(payload, signatureHeader, secret)
@@ -2074,12 +2138,6 @@ type Config struct {
     // Stripe API key. Required. From STRIPE_SECRET_KEY env var.
     StripeSecretKey string
 
-    // Stripe webhook signing secret. Required. From STRIPE_WEBHOOK_SECRET env var.
-    StripeWebhookSecret string
-
-    // PostgreSQL connection string. Required. From BILLING_PG_DSN env var.
-    PgDSN string
-
     // TigerBeetle cluster addresses. Default: ["127.0.0.1:3320"].
     TigerBeetleAddresses []string
 
@@ -2108,9 +2166,13 @@ Configuration is loaded from the deployed credential file:
 
 Required environment variables:
 
+- `STRIPE_SECRET_KEY`
+
+`billing-service` owns the transport/runtime credentials that were removed from the
+domain package:
+
 - `BILLING_PG_DSN`
 - `STOREFRONT_PG_DSN`
-- `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 
 ### 6.3 Hot-Reloadable vs. Restart-Required
@@ -2120,8 +2182,6 @@ Required environment variables:
 | `ReservationWindowSecs` | No | Active reservations use window from creation time |
 | `PendingTimeoutSecs` | No | Baked into TigerBeetle transfers at creation |
 | `StripeSecretKey` | No | Stripe client is immutable |
-| `StripeWebhookSecret` | No | Key rotation during processing → false rejections |
-| `PgDSN` | No | Connection pool created once |
 | `TigerBeetleAddresses` | No | TigerBeetle client created once |
 | **Plan unit_rates** | **Yes** | Stored in PostgreSQL, read per-request |
 | **Plan overage_unit_rates** | **Yes** | Stored in PostgreSQL, read at reservation boundaries |
@@ -2239,14 +2299,17 @@ Key policies:
 
 ## 8. Integration Points
 
-### 8.1 VM Orchestrator (in-process Go calls)
+### 8.1 In-Process Domain Calls
 
-The orchestrator imports `internal/billing` directly. The billing lifecycle for a metered
-product:
+Direct imports of `billing` are reserved for code running inside the billing runtime boundary
+itself. In practice that means `billing-service` handlers, webhook dispatch, worker actions,
+and command entrypoints that are part of the billing deployment unit.
+
+The in-process metered billing lifecycle is:
 
 ```go
 // 1. Check quotas
-result, err := billing.CheckQuotas(ctx, orgID, "sandbox", map[string]float64{
+result, err := billingClient.CheckQuotas(ctx, orgID, "sandbox", map[string]float64{
     "vcpu":           float64(req.VCPUs),
     "gib":            float64(req.MemMiB) / 1024.0,
     "concurrent_vms": currentConcurrentVMs,
@@ -2256,7 +2319,7 @@ if !result.Allowed {
 }
 
 // 2. Reserve
-reservation, err := billing.Reserve(ctx, billing.ReserveRequest{
+reservation, err := billingClient.Reserve(ctx, billing.ReserveRequest{
     JobID:      jobID,
     OrgID:      orgID,
     ProductID:  "sandbox",
@@ -2273,12 +2336,36 @@ if errors.Is(err, billing.ErrOverageCeilingExceeded) {
 // 3. Boot VM, periodic Renew, Settle on exit
 ```
 
-The orchestrator does not know about plan rates. It passes resource dimensions; the
-billing package resolves rates from PostgreSQL.
+The caller does not know about plan rates. It passes resource dimensions; the billing package
+resolves rates from PostgreSQL.
 
-### 8.2 Stripe Webhook Handler
+Cross-service consumers must not import `billing` directly. A separate service that needs
+billing behavior calls `billing-service` through the generated billing client described in
+section 8.2.
 
-Next.js route → webhook verification → PostgreSQL task row → Go worker.
+### 8.2 Generated Billing Client For Remote Services
+
+Remote forge-metal services integrate with billing through the OpenAPI contract exported by
+`billing-service`.
+
+The OpenAPI document is the source artifact for:
+
+- generated Go client types and methods
+- CI drift detection between handlers and consumers
+- service-to-service contract review
+
+Normative rules:
+
+1. No forge-metal service may ship a handwritten HTTP client for billing.
+2. The generated client is produced from the checked-in `billing-service` OpenAPI document,
+   not scraped from a running authenticated server.
+3. `sandbox-rental-service` and future services use the generated client for metered
+   reservation lifecycle endpoints.
+4. The billing package's Go types are not the public transport schema for remote services.
+
+### 8.3 Stripe Webhook Handler
+
+`billing-service` webhook route → verification → PostgreSQL task row → Go worker.
 
 Normative task dispatch:
 
@@ -2295,7 +2382,7 @@ Normative task dispatch:
 the `idx_tasks_dead` index. A `forge-metal billing dlq` subcommand lists, retries, or
 acknowledges dead tasks.
 
-### 8.3 Cron Jobs
+### 8.4 Cron Jobs
 
 | Subcommand | Schedule | Action |
 |------------|----------|--------|
@@ -2306,9 +2393,20 @@ acknowledges dead tasks.
 | `forge-metal billing canary` | Every 5 minutes | Reserve → sleep → settle → verify |
 | `forge-metal billing dlq` | Manual | List/retry/acknowledge dead tasks |
 
-### 8.4 Next.js API Routes
+### 8.5 Billing Service HTTP Contract
 
-Thin Go HTTP API on localhost for balance and usage queries. Required read endpoints:
+`billing-service` is the sole HTTP surface for billing. Its Huma definition is the canonical
+cross-service contract and must produce the checked-in OpenAPI artifact used for generated
+clients.
+
+The contract has four endpoint classes:
+
+1. Read endpoints for product and account state
+2. Service-to-service metered lifecycle endpoints
+3. Browser-initiated Stripe session creation endpoints
+4. Operational endpoints and webhook ingress
+
+Required read endpoints:
 
 ```
 GET /internal/billing/v1/orgs/:org_id/balance
@@ -2317,6 +2415,43 @@ GET /internal/billing/v1/orgs/:org_id/subscriptions
 GET /internal/billing/v1/orgs/:org_id/grants?product_id=sandbox&active=true
 GET /internal/billing/v1/orgs/:org_id/usage?product_id=sandbox&since=<ts>&limit=<n>
 ```
+
+Required metered lifecycle endpoints for remote service consumers:
+
+```
+POST /internal/billing/v1/check-quotas
+POST /internal/billing/v1/reserve
+POST /internal/billing/v1/settle
+POST /internal/billing/v1/void
+```
+
+Required browser/session endpoints:
+
+```
+POST /internal/billing/v1/checkout
+POST /internal/billing/v1/subscribe
+```
+
+Required operational/runtime endpoints:
+
+```
+POST /webhooks/stripe
+POST /internal/billing/v1/ops/deposit-credits
+POST /internal/billing/v1/ops/expire-credits
+POST /internal/billing/v1/ops/reconcile
+POST /internal/billing/v1/ops/trust-tier-evaluate
+GET  /healthz
+GET  /readyz
+GET  /openapi
+```
+
+Transport ownership rules:
+
+- Request/response DTOs for these endpoints live with `billing-service`, not in `billing`.
+- Webhook signature verification lives with `billing-service`, not in `billing`.
+- Task claiming, dispatch, retry, and DLQ runtime live with `billing-service`, not in
+  `billing`.
+- The OpenAPI artifact is versioned with the `billing-service` source tree.
 
 ---
 
@@ -2345,12 +2480,106 @@ GET /internal/billing/v1/orgs/:org_id/usage?product_id=sandbox&since=<ts>&limit=
 | 19 | DepositCredits ordering | PostgreSQL insert first (serialization point), TigerBeetle last (Write Last, Read First) |
 | 20 | ULID dependency | Add `github.com/oklog/ulid/v2` `v2.1.0` |
 
-## Appendix B: Remaining Manual-Review Items
+## Appendix B: Transport Cutover Plan
+
+The refactor is a full cutover. Do not preserve parallel handwritten and generated client
+paths.
+
+### Phase 1: Contract Freeze
+
+Goal: define the service boundary before moving code.
+
+Required changes:
+
+- add the metered lifecycle endpoints (`reserve`, `settle`, `void`) to the Huma contract
+- define `healthz`, `readyz`, and OpenAPI export as first-class `billing-service` runtime
+  surfaces
+- define transport DTOs in `billing-service`
+- check in the generated OpenAPI artifact
+
+Exit criteria:
+
+- the OpenAPI document fully describes every route remote consumers are allowed to call
+- no remote consumer depends on undocumented billing endpoints
+
+### Phase 2: Transport Extraction
+
+Goal: move runtime concerns out of `billing`.
+
+Move out of `github.com/forge-metal/billing`:
+
+- Stripe webhook HTTP handler
+- webhook request verification and HTTP status mapping
+- worker loop, claim/complete/fail runtime, and task dispatch orchestration
+- API serialization row types and query DTOs
+
+Move into `github.com/forge-metal/billing-service`:
+
+- Huma handlers and request/response models
+- webhook ingress package
+- worker/runtime package
+- health/readiness probes
+
+Exit criteria:
+
+- `src/billing` contains no `net/http` handler entrypoints
+- `src/billing` contains no background worker loop
+- `src/billing` contains no service-shaped DTO package
+
+### Phase 3: Consumer Cutover
+
+Goal: make generated-client usage mandatory.
+
+Required changes:
+
+- generate the billing client from the checked-in OpenAPI document
+- replace `sandbox-rental-service`'s handwritten billing client with the generated client
+- remove handwritten URL/path construction from consumers
+
+Exit criteria:
+
+- `sandbox-rental-service` imports the generated billing client
+- no repo path contains a handwritten billing HTTP client
+
+### Phase 4: Domain Cleanup
+
+Goal: leave `billing` as a domain library only.
+
+Delete from `src/billing` after extraction:
+
+- `webhook.go`
+- `worker.go`
+- `server.go`
+
+Possible follow-on reshaping:
+
+- split `billing-service` internals into `transport`, `webhooks`, `worker`, and `ops`
+  packages for ownership clarity
+- collapse any billing types that exist only to satisfy transport JSON
+
+Exit criteria:
+
+- the only public API exported by `billing` is domain/application behavior
+- every remote integration path flows through `billing-service` and its generated client
+
+### Phase 5: Verification Bar
+
+The cutover is complete only when all of the following are true:
+
+- `billing-service` builds and serves the checked-in OpenAPI contract
+- generated client code is regenerated in CI and shows no drift
+- `sandbox-rental-service` exercises `reserve`, `settle`, and `void` through the generated
+  client against a live deployment
+- Stripe webhooks still flow through `billing-service` and complete the task/worker path
+- ClickHouse logs show successful live traces for the new service-to-service path with no
+  billing auth or transport errors
+
+## Appendix C: Remaining Manual-Review Items
 
 - The shared billing schema lives in the PostgreSQL database named `sandbox`.
 - The Ansible billing credentials publish both `BILLING_PG_DSN` and `STOREFRONT_PG_DSN`.
-  The storefront application integration should be reviewed when `internal/billing` is
-  implemented so the intended database ownership is explicit in code.
+  The storefront application integration should be reviewed when the billing package
+  is implemented so the intended database ownership is explicit in code.
 - **Per-member spending policy** is deferred. `actor_id` is recorded in metering rows so
   historical attribution is available when the feature is designed. The mechanism (tags,
   role-based budgets, per-user caps, Zitadel metadata-driven groups) is intentionally left

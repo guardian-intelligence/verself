@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/stripe/stripe-go/v85"
-	"github.com/stripe/stripe-go/v85/webhook"
 )
 
 // BillingCadence matches the PostgreSQL billing_cadence enum.
@@ -17,16 +16,6 @@ const (
 	CadenceMonthly BillingCadence = "monthly"
 	CadenceAnnual  BillingCadence = "annual"
 )
-
-// VerifyWebhook validates a Stripe webhook payload and signature.
-// Thin wrapper over webhook.ConstructEvent with DefaultTolerance (300s).
-func VerifyWebhook(payload []byte, signature string, secret string) (stripe.Event, error) {
-	event, err := webhook.ConstructEvent(payload, signature, secret)
-	if err != nil {
-		return stripe.Event{}, fmt.Errorf("%w: %v", ErrWebhookVerification, err)
-	}
-	return event, nil
-}
 
 // CreateCheckoutSession creates a Stripe Checkout session for a one-time
 // credit purchase. Returns the Checkout session URL for redirect.

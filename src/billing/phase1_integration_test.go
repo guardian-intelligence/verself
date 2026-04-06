@@ -33,9 +33,7 @@ func TestEnsureOrgStateMachine(t *testing.T) {
 	env := newPhase1TestEnv(t)
 
 	cfg := DefaultConfig()
-	cfg.PgDSN = env.pgDSN
 	cfg.StripeSecretKey = "sk_test_placeholder"
-	cfg.StripeWebhookSecret = "whsec_test_placeholder"
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 
@@ -442,7 +440,7 @@ func postgresMigrationPaths(t *testing.T) []string {
 		t.Fatal("resolve caller")
 	}
 
-	paths, err := filepath.Glob(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "postgresql-migrations", "[0-9][0-9][0-9]_*.up.sql")))
+	paths, err := filepath.Glob(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "billing-service", "postgresql-migrations", "[0-9][0-9][0-9]_*.up.sql")))
 	if err != nil {
 		t.Fatalf("glob postgres migrations: %v", err)
 	}

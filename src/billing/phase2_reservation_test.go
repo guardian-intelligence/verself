@@ -36,9 +36,7 @@ func newPhase2TestEnvWithMetering(t *testing.T, metering MeteringWriter, querier
 	cfg := DefaultConfig()
 	cfg.ReservationWindowSecs = 60
 	cfg.PendingTimeoutSecs = 600
-	cfg.PgDSN = env.pgDSN
 	cfg.StripeSecretKey = "sk_test_placeholder"
-	cfg.StripeWebhookSecret = "whsec_test_placeholder"
 	cfg.TigerBeetleAddresses = []string{env.tbAddress}
 	cfg.TigerBeetleClusterID = env.clusterID
 

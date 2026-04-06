@@ -2,6 +2,8 @@ package billing
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -31,6 +33,20 @@ type (
 // LSM tree benefits from.
 func NewGrantID() GrantID {
 	return GrantID(ulid.Make())
+}
+
+// String returns the grant ULID in its canonical text form.
+func (g GrantID) String() string {
+	return ulid.ULID(g).String()
+}
+
+// ParseGrantID parses a canonical ULID text value into a GrantID.
+func ParseGrantID(value string) (GrantID, error) {
+	parsed, err := ulid.ParseStrict(value)
+	if err != nil {
+		return GrantID{}, fmt.Errorf("parse grant id %q: %w", value, err)
+	}
+	return GrantID(parsed), nil
 }
 
 // grantHalfSwap builds a 16-byte Uint128 from a ULID by swapping its two
@@ -76,6 +92,29 @@ func CreditExpiryPostID(grant GrantID) TransferID {
 
 // Raw returns the underlying TigerBeetle Uint128 for direct TB API calls.
 func (a AccountID) Raw() types.Uint128 { return a.raw }
+
+// Raw returns the underlying TigerBeetle Uint128 for direct TB API calls.
+func (t TransferID) Raw() types.Uint128 { return t.raw }
+
+// String returns a stable hex encoding of the raw transfer ID bytes.
+func (t TransferID) String() string {
+	b := t.raw.Bytes()
+	return hex.EncodeToString(b[:])
+}
+
+// ParseTransferID parses a hex-encoded transfer ID from its raw 16-byte form.
+func ParseTransferID(value string) (TransferID, error) {
+	raw, err := hex.DecodeString(value)
+	if err != nil {
+		return TransferID{}, fmt.Errorf("parse transfer id %q: %w", value, err)
+	}
+	if len(raw) != 16 {
+		return TransferID{}, fmt.Errorf("parse transfer id %q: expected 16 bytes, got %d", value, len(raw))
+	}
+	var buf [16]byte
+	copy(buf[:], raw)
+	return TransferID{raw: types.BytesToUint128(buf)}, nil
+}
 
 // GrantULID recovers the original ULID from a grant account ID (reverses
 // the half-swap).
