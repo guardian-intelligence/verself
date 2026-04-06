@@ -40,8 +40,3 @@
   when: _forgejo_needs_seed | bool
   changed_when: true
   no_log: true
-
-- name: Remove legacy Forgejo admin credentials file from server
-  ansible.builtin.file:
-    path: /etc/forgejo/admin-credentials.txt
-    state: absent

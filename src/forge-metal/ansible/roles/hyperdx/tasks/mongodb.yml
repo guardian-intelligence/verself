@@ -35,12 +35,6 @@
     state: directory
     mode: "0755"
 
-- name: Remove legacy mongod nftables drop-in
-  ansible.builtin.file:
-    path: /etc/systemd/system/mongod.service.d/nftables.conf
-    state: absent
-  notify: restart mongod
-
 - name: Deploy mongod firewall dependency override
   ansible.builtin.copy:
     content: |

@@ -437,19 +437,6 @@
   when: "'PostgreSQL' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
-# Remove legacy "Billing API" dashboard (renamed to "Billing Service")         #
-# --------------------------------------------------------------------------- #
-
-- name: Delete legacy Billing API dashboard
-  ansible.builtin.uri:
-    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Billing API'] }}"
-    method: DELETE
-    headers:
-      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
-    status_code: [200, 204]
-  when: "'Billing API' in hyperdx_dashboards_dashboard_ids"
-
-# --------------------------------------------------------------------------- #
 # Billing Service dashboard                                                    #
 # --------------------------------------------------------------------------- #
 

@@ -39,8 +39,3 @@
   delay: 3
   register: hyperdx_seed_result
   until: hyperdx_seed_result is not failed
-
-- name: Remove legacy HyperDX admin credentials file from server
-  ansible.builtin.file:
-    path: "{{ hyperdx_config_dir }}/admin-credentials.txt"
-    state: absent
