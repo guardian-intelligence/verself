@@ -33,6 +33,9 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.billing.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
 
+        # Allow OIDC discovery and JWKS fetches against Zitadel's public issuer URL.
+        ip daddr {{ ansible_host }} tcp dport 443 accept
+
         # Allow Unix socket traffic (always passes output chain).
         meta l4proto != tcp meta l4proto != udp accept
 
