@@ -46,6 +46,9 @@
 		path /webhooks/stripe
 	}
 	handle @stripe_webhook {
+		request_body {
+			max_size 65536
+		}
 		reverse_proxy {{ services.billing.host }}:{{ services.billing.port }}
 	}
 	handle /webhooks/stripe {
