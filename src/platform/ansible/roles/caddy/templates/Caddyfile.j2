@@ -2,14 +2,27 @@
 	order coraza_waf first
 }
 
-(waf) {
+(waf_detection) {
 	coraza_waf {
 		load_owasp_crs
 		directives `
 			Include @coraza.conf-recommended
 			Include @crs-setup.conf.example
 			Include @owasp_crs/*.conf
-			SecRuleEngine {{ caddy_waf_mode }}
+			SecRuleEngine DetectionOnly
+			SecResponseBodyAccess Off
+		`
+	}
+}
+
+(waf_blocking) {
+	coraza_waf {
+		load_owasp_crs
+		directives `
+			Include @coraza.conf-recommended
+			Include @crs-setup.conf.example
+			Include @owasp_crs/*.conf
+			SecRuleEngine On
 			SecResponseBodyAccess Off
 		`
 	}
@@ -27,19 +40,19 @@
 
 {{ hyperdx_domain }} {
 	import access_log
-	import waf
+	import waf_detection
 	reverse_proxy {{ services.hyperdx.host }}:{{ services.hyperdx.app_port }}
 }
 
 {{ forgejo_domain }} {
 	import access_log
-	import waf
+	import waf_detection
 	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
 }
 
 {{ billing_service_domain }} {
 	import access_log
-	import waf
+	import waf_blocking
 
 	@stripe_webhook {
 		method POST
@@ -61,7 +74,7 @@
 
 {{ zitadel_domain }} {
 	import access_log
-	import waf
+	import waf_detection
 	reverse_proxy {{ services.zitadel.host }}:{{ services.zitadel.port }} {
 		transport http {
 			versions h2c
