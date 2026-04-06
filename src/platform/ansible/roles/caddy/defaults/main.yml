@@ -4,3 +4,7 @@
 # - billing blocks immediately at the edge
 # - HyperDX, Forgejo, and Zitadel remain DetectionOnly until they get
 #   route-specific exclusions or their own hardening passes
+
+# Stripe publishes webhook source IPs here. The billing edge uses them to
+# allow only Stripe-origin POSTs to /webhooks/stripe.
+caddy_stripe_webhook_ips_url: "https://stripe.com/files/ips/ips_webhooks.json"

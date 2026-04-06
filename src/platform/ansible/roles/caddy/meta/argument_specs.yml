@@ -9,6 +9,11 @@ argument_specs:
       - "Zitadel uses h2c (HTTP/2 cleartext) for gRPC on the same port."
       - "Service ports come from the services registry (group_vars/all/services.yml)."
     options:
+      caddy_stripe_webhook_ips_url:
+        type: str
+        default: https://stripe.com/files/ips/ips_webhooks.json
+        description: "Stripe-published webhook source IP feed used for the billing webhook allowlist."
+
       billing_service_domain:
         type: str
         required: true
