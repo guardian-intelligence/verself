@@ -155,6 +155,14 @@
     - /var/lib/ci/net
     - "{{ firecracker_net_lease_dir }}"
 
+- name: Allow Firecracker lease directory writes for service consumers
+  ansible.builtin.file:
+    path: "{{ firecracker_net_lease_dir }}"
+    state: directory
+    owner: root
+    group: "{{ firecracker_jailer_user }}"
+    mode: "0775"
+
 # --- Host networking (native nftables) ---
 
 - name: Resolve uplink interface for Firecracker NAT

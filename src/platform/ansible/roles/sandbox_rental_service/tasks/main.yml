@@ -23,7 +23,9 @@
   ansible.builtin.user:
     name: sandbox_rental
     group: sandbox_rental
-    groups: "{{ firecracker_smelter_ops_group }}"
+    groups:
+      - "{{ firecracker_smelter_ops_group }}"
+      - "{{ firecracker_jailer_user }}"
     append: true
     system: true
     shell: /usr/sbin/nologin
@@ -133,7 +135,7 @@
       Type=simple
       User=sandbox_rental
       Group=sandbox_rental
-      SupplementaryGroups={{ firecracker_smelter_ops_group }}
+      SupplementaryGroups={{ firecracker_smelter_ops_group }} {{ firecracker_jailer_user }}
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
@@ -151,7 +153,7 @@
       Environment=SANDBOX_FS_JAILER_ROOT=/srv/jailer
       Environment=SANDBOX_FS_HOST_INTERFACE=eth0
       Environment=SANDBOX_FS_GUEST_POOL_CIDR={{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}
-      Environment=SANDBOX_FS_NETWORK_LEASE_DIR=/var/lib/ci/leases
+      Environment=SANDBOX_FS_NETWORK_LEASE_DIR={{ firecracker_net_lease_dir }}
       Environment=SANDBOX_FS_JAILER_UID={{ firecracker_jailer_uid | default(10000) }}
       Environment=SANDBOX_FS_JAILER_GID={{ firecracker_jailer_gid | default(10000) }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
