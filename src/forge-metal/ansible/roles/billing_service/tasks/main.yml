@@ -1,0 +1,129 @@
+---
+# --- Verify binary ---
+
+- name: Verify billing-service binary exists in Nix profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/billing-service"
+  register: billing_service_binary
+  failed_when: not billing_service_binary.stat.exists
+
+# --- System user ---
+
+- name: Create billing system group
+  ansible.builtin.group:
+    name: billing
+    system: true
+
+- name: Create billing system user
+  ansible.builtin.user:
+    name: billing
+    group: billing
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+# --- nftables egress rules ---
+
+- name: Deploy billing-service nftables ruleset
+  ansible.builtin.template:
+    src: billing.nft.j2
+    dest: /etc/nftables.d/billing.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply billing-service nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Schema migrations ---
+
+- name: Include billing PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
+# --- Credentials ---
+
+- name: Include billing credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+# --- Stop and disable old billing-api unit if present ---
+
+- name: Check for legacy billing-api unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/billing-api.service
+  register: billing_service_legacy_unit
+
+- name: Stop and disable legacy billing-api unit
+  ansible.builtin.systemd:
+    name: billing-api
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  when: billing_service_legacy_unit.stat.exists
+
+- name: Remove legacy billing-api unit file
+  ansible.builtin.file:
+    path: /etc/systemd/system/billing-api.service
+    state: absent
+  when: billing_service_legacy_unit.stat.exists
+
+# --- systemd unit ---
+
+- name: Deploy billing-service systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Billing Service
+      After=forge-metal-firewall.target network.target postgresql.service tigerbeetle.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service tigerbeetle.service
+
+      [Service]
+      Type=simple
+      User=billing
+      Group=billing
+      LoadCredential=pg-dsn:/etc/credstore/billing/pg-dsn
+      LoadCredential=stripe-secret-key:/etc/credstore/billing/stripe-secret-key
+      LoadCredential=stripe-webhook-secret:/etc/credstore/billing/stripe-webhook-secret
+      LoadCredential=ch-password:/etc/credstore/billing/ch-password
+      Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+      Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
+      Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
+      ExecStart={{ fm_bin }}/billing-service
+      Restart=on-failure
+      RestartSec=5
+      ProtectSystem=strict
+      ProtectHome=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectControlGroups=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictNamespaces=true
+      LockPersonality=true
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/billing-service.service
+    mode: "0644"
+  notify:
+    - restart billing-service
+
+- name: Apply billing-service unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Enable and start ---
+
+- name: Enable and start billing-service
+  ansible.builtin.systemd:
+    name: billing-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Readiness gate ---
+
+- name: Wait for billing-service to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.billing.host }}"
+    port: "{{ services.billing.port }}"
+    timeout: 30

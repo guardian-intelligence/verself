@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: ansible-lint
         name: ansible-lint
-        entry: bash -lc 'cd ansible && ansible-lint playbooks roles'
+        entry: bash -lc 'cd src/forge-metal/ansible && ansible-lint playbooks roles'
         language: system
-        files: ^ansible/
+        files: ^src/forge-metal/ansible/
         pass_filenames: false

@@ -1,0 +1,13 @@
+---
+- name: Restart billing-service
+  listen: restart billing-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: billing-service
+    state: restarted
+
+- name: Reload nftables for billing-service
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

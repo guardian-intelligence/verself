@@ -38,7 +38,7 @@ Key focus areas for this project
 
 * You can run `make clickhouse-schemas` to read all of our ClickHouse tables, which contains a lot of useful ground truth.
 
-* Less important but useful if editing instructions: ./claude/CLAUDE.md is symlinked from AGENTS.md
+* Less important but useful if editing instructions: .claude/CLAUDE.md is symlinked from AGENTS.md
 
 ## CI Architecture
 
@@ -49,33 +49,33 @@ See README.md for more -- the repo started as a CI orchestrator but has since ev
 ### 1. Install dev tools
 
 ```bash
-cd ansible && ansible-playbook playbooks/setup-dev.yml
+cd src/forge-metal/ansible && ansible-playbook playbooks/setup-dev.yml
 ```
 
 ### 2. Provision bare metal
 
 ```bash
 # Create your tfvars (one-time)
-cp terraform/terraform.tfvars.example.json terraform/terraform.tfvars.json
-# Edit terraform/terraform.tfvars.json — set project_id to your Latitude.sh project
+cp src/forge-metal/terraform/terraform.tfvars.example.json src/forge-metal/terraform/terraform.tfvars.json
+# Edit terraform.tfvars.json — set project_id to your Latitude.sh project
 
 # Provision server + generate Ansible inventory
-cd ansible && ansible-playbook playbooks/provision.yml
+cd src/forge-metal/ansible && ansible-playbook playbooks/provision.yml
 ```
 
-This provisions a bare metal server via OpenTofu and auto-generates `ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
+This provisions a bare metal server via OpenTofu and auto-generates `src/forge-metal/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
 
 ### 3. Deploy
 
 ```bash
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
 Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 
 ```bash
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=... --tags caddy
 ```
 
@@ -83,8 +83,8 @@ cd ansible && ansible-playbook playbooks/dev-single-node.yml \
 
 ```bash
 # HyperDX admin credentials are in the SOPS-encrypted secrets file
-sops -d --extract '["hyperdx_admin_email_slug"]' ansible/group_vars/all/secrets.sops.yml
-sops -d --extract '["hyperdx_admin_password_base"]' ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_email_slug"]' src/forge-metal/ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_password_base"]' src/forge-metal/ansible/group_vars/all/secrets.sops.yml
 # Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
 ```
 
@@ -92,19 +92,18 @@ Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let
 
 ### 5. Query ClickHouse
 
-Use the repo wrapper instead of typing the SSH and password prefix by hand. It resolves the worker from `ansible/inventory/hosts.ini`, reads the ClickHouse password from SOPS, and invokes the stable worker path `/opt/forge-metal/profile/bin/clickhouse-client`.
+Use the Makefile wrappers instead of typing the SSH and password prefix by hand. They `cd` into `src/forge-metal/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
 
 ```bash
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
 make clickhouse-shell
-./scripts/clickhouse.sh --query 'SELECT count() FROM otel_logs'
 ```
 
 ### TLS with a real domain (Cloudflare)
 
 ```bash
 make setup-domain DOMAIN=anveio.com
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
@@ -130,11 +129,11 @@ The only `apt install` that remains is `zfsutils-linux` (kernel-dependent, must 
 ### Version Updates
 
 ```bash
-nix flake update                                              # update all packages
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
-  -e nix_server_profile_path=... --limit canary               # deploy to one node
-cd ansible && ansible-playbook playbooks/site.yml \
-  -e nix_server_profile_path=...                              # roll out fleet-wide
+nix flake update                                                          # update all packages
+cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
+  -e nix_server_profile_path=... --limit canary                           # deploy to one node
+cd src/forge-metal/ansible && ansible-playbook playbooks/site.yml \
+  -e nix_server_profile_path=...                                          # roll out fleet-wide
 ```
 
 ### Architecture
@@ -189,7 +188,7 @@ Compression codecs per column type:
 
 ## Ansible Playbooks
 
-All remote orchestration is done via Ansible playbooks. Run from the `ansible/` directory.
+All remote orchestration is done via Ansible playbooks. Run from the `src/forge-metal/ansible/` directory.
 
 | Playbook | Description |
 |----------|-------------|
@@ -233,8 +232,8 @@ The playbook is self-contained — it builds the Zig binary locally, uploads it,
 The server must have been deployed at least once with a valid golden image:
 
 ```bash
-cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-cd ansible && ansible-playbook playbooks/dev-single-node.yml \
+cd src/forge-metal/ansible && ansible-playbook playbooks/guest-rootfs.yml
+cd src/forge-metal/ansible && ansible-playbook playbooks/dev-single-node.yml \
   -e nix_server_profile_path=$(nix build .#server-profile --no-link --print-out-paths)
 ```
 
@@ -242,7 +241,7 @@ cd ansible && ansible-playbook playbooks/dev-single-node.yml \
 
 ```bash
 # Edit homestead-smelter/src/guest.zig, then:
-cd ansible && ansible-playbook playbooks/smelter-dev.yml
+cd src/forge-metal/ansible && ansible-playbook playbooks/smelter-dev.yml
 ```
 
 Expected output on success:
@@ -271,53 +270,67 @@ PASS: host agent observed live guest telemetry
 ## Project Structure
 
 ```
-forge-metal/
-├── cmd/forge-metal/       # CLI entry point (doctor, setup-domain, Firecracker CI, fixture suites)
-├── cmd/forgevm-init/      # PID 1 inside Firecracker VMs (mounts, network, fork+exec)
-├── internal/
-│   ├── clickhouse/        # ClickHouse client, wide event struct
-│   ├── cloudflare/        # Cloudflare API client (DNS, zone lookup)
-│   ├── config/            # Layered TOML config
-│   ├── doctor/            # Dev environment health checks
-│   ├── domain/            # Domain setup wizard
-│   ├── ci/                # Repo goldens, toolchain detection, Forgejo fixture e2e
-│   ├── firecracker/       # Firecracker orchestrator (Go reference impl, used by forge-metal)
-│   ├── latitude/          # Latitude.sh API client
-│   ├── prompt/            # Shared Prompter interface + TTY implementation
-│   └── provision/         # Server provisioning logic
-├── ansible/
-│   ├── playbooks/         # All orchestration: deploy, provision, CI fixtures, smelter-dev
-│   └── roles/
-│       ├── nix_deploy/    # Install Nix + push server profile closure
-│       ├── base/          # System config (ZFS, users, npm registry, sudoers)
-│       ├── guest_rootfs/  # Build Firecracker guest rootfs (local compile + remote build)
-│       ├── deploy_ci_artifacts/ # Stage built guest artifacts to /var/lib/ci/
-│       ├── cloudflare_dns/ # Cloudflare DNS A record management
-│       ├── clickhouse/    # ClickHouse config + schema bootstrap
-│       ├── otelcol/       # OTLP ingestion and export to ClickHouse
-│       ├── hyperdx/       # HyperDX UI/API plus MongoDB-backed app state
-│       ├── hyperdx_dashboards/ # HyperDX sources and dashboard synchronization
-│       ├── caddy/         # Edge proxy and TLS
-│       ├── zfs/           # Pool creation, golden/ci datasets
-│       ├── firecracker/   # KVM, jailer user, golden zvol, CI dataset
-│       ├── containerd/    # containerd + gVisor runsc (config only)
-│       ├── verdaccio/     # Sealed npm registry mirror (config only)
-│       ├── wireguard/     # Mesh networking (config only)
-│       └── forgejo/       # Git server + CI runner (config only)
-├── scripts/
-│   └── build-guest-rootfs.sh # Alpine rootfs builder for the generic guest image
-├── ci/
-│   └── versions.json      # Pinned Alpine + Firecracker versions with SHA256
-├── terraform/             # Latitude.sh provisioning
-├── migrations/            # ClickHouse schema (MergeTree + Replicated)
-├── internal/config/default.toml # Embedded defaults
-├── dev-tools.json         # Pinned dev tool versions, URLs, SHA256 (read by Ansible + doctor)
-└── flake.nix              # Server profile only (Nix builds deployed to bare metal, not for dev)
+forge-metal/                       # Monorepo root
+├── flake.nix                      # Nix server profile (builds from src/)
+├── go.work                        # Go workspace linking src/{forge-metal,billing,billing-service}
+├── Makefile                       # Dev commands (wraps paths into src/)
+├── homestead-smelter/             # Zig guest/host agent (standalone project)
+├── docs/                          # Cross-cutting architecture docs
+├── src/billing/                   # Billing domain library (standalone Go module)
+│   ├── go.mod                     # module github.com/forge-metal/billing
+│   ├── client.go                  # Core billing client
+│   ├── tigerbeetle.go             # TigerBeetle ledger operations
+│   ├── stripe.go                  # Stripe integration
+│   ├── clickhouse.go              # ClickHouse metering read/write
+│   └── ...                        # Types, errors, credit lifecycle, reconciliation
+├── src/billing-service/           # Billing HTTP service (standalone Go module)
+│   ├── go.mod                     # module github.com/forge-metal/billing-service
+│   ├── cmd/billing-service/       # Huma HTTP server (systemd LoadCredential= for secrets)
+│   ├── cmd/tb-inspect/            # TigerBeetle account inspector
+│   └── postgresql-migrations/     # Billing PostgreSQL schema
+└── src/forge-metal/               # Platform project (could be its own repo)
+    ├── go.mod
+    ├── cmd/forge-metal/           # CLI entry point (doctor, setup-domain, CI, fixtures)
+    ├── cmd/forgevm-init/          # PID 1 inside Firecracker VMs
+    ├── internal/
+    │   ├── clickhouse/            # ClickHouse client, wide event struct
+    │   ├── cloudflare/            # Cloudflare API client (DNS, zone lookup)
+    │   ├── config/                # Layered TOML config
+    │   ├── doctor/                # Dev environment health checks
+    │   ├── domain/                # Domain setup wizard
+    │   ├── ci/                    # Repo goldens, toolchain detection, Forgejo fixture e2e
+    │   ├── firecracker/           # Firecracker orchestrator (Go reference impl)
+    │   ├── latitude/              # Latitude.sh API client
+    │   ├── prompt/                # Shared Prompter interface + TTY implementation
+    │   └── provision/             # Server provisioning logic
+    ├── ansible/
+    │   ├── playbooks/             # All orchestration: deploy, provision, CI, smelter-dev
+    │   └── roles/
+    │       ├── nix_deploy/        # Install Nix + push server profile closure
+    │       ├── base/              # System config (ZFS, users, npm registry, sudoers)
+    │       ├── guest_rootfs/      # Build Firecracker guest rootfs
+    │       ├── billing_service/   # Billing service deploy + credentials
+    │       ├── cloudflare_dns/    # Cloudflare DNS A record management
+    │       ├── clickhouse/        # ClickHouse config + schema bootstrap
+    │       ├── otelcol/           # OTLP ingestion and export to ClickHouse
+    │       ├── hyperdx/           # HyperDX UI/API plus MongoDB-backed app state
+    │       ├── caddy/             # Edge proxy and TLS
+    │       ├── zfs/               # Pool creation, golden/ci datasets
+    │       ├── firecracker/       # KVM, jailer user, golden zvol, CI dataset
+    │       ├── verdaccio/         # Sealed npm registry mirror
+    │       └── forgejo/           # Git server + CI runner
+    ├── scripts/
+    │   └── build-guest-rootfs.sh  # Alpine rootfs builder for the generic guest image
+    ├── ci/
+    │   └── versions.json          # Pinned Alpine + Firecracker versions with SHA256
+    ├── terraform/                 # Latitude.sh provisioning
+    ├── migrations/                # ClickHouse schema (MergeTree + Replicated)
+    └── dev-tools.json             # Pinned dev tool versions, URLs, SHA256
 ```
 
 ## Firecracker CI Status
 
-The current end-to-end proof is the controlled fixture suite under `test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
+The current end-to-end proof is the controlled fixture suite under `src/forge-metal/test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
 
 ### Current platform decisions
 
