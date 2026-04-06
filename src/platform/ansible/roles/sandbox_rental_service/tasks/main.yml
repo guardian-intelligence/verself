@@ -182,6 +182,10 @@
 
 # --- Readiness gate ---
 
+- name: Set sandbox-rental listen port fact
+  ansible.builtin.set_fact:
+    sandbox_rental_service_listen_port: "{{ services.sandbox_rental.port }}"
+
 - name: Wait for sandbox-rental-service unit to be active
   ansible.builtin.service_facts:
   register: sandbox_rental_service_unit_active
@@ -196,9 +200,9 @@
 
 - name: Wait for sandbox-rental-service listener to be present
   ansible.builtin.command:
-    cmd: "ss -ltn '( sport = :{{ services.sandbox_rental.port }} )'"
+    cmd: "ss -ltn '( sport = :{{ sandbox_rental_service_listen_port }} )'"
   register: sandbox_rental_service_listener
   changed_when: false
   retries: 30
   delay: 1
-  until: sandbox_rental_service_listener.stdout is search(':' ~ (services.sandbox_rental.port | string))
+  until: sandbox_rental_service_listener.stdout is search(':' ~ (sandbox_rental_service_listen_port | string))
