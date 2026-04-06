@@ -5,6 +5,22 @@
 # - HyperDX, Forgejo, and Zitadel remain DetectionOnly until they get
 #   route-specific exclusions or their own hardening passes
 
-# Stripe publishes webhook source IPs here. The billing edge uses them to
-# allow only Stripe-origin POSTs to /webhooks/stripe.
-caddy_stripe_webhook_ips_url: "https://stripe.com/files/ips/ips_webhooks.json"
+# Stripe webhook IPs published at:
+# https://docs.stripe.com/ips#webhook-notifications
+# Update this list when Stripe updates their published set.
+caddy_stripe_webhook_ips:
+  - "3.18.12.63"
+  - "3.130.192.231"
+  - "13.235.14.237"
+  - "13.235.122.149"
+  - "18.211.135.69"
+  - "35.154.171.200"
+  - "52.15.183.38"
+  - "54.88.130.119"
+  - "54.88.130.237"
+  - "54.187.174.169"
+  - "54.187.205.235"
+  - "54.187.216.72"
+  - "35.157.207.129"
+  - "3.69.109.8"
+  - "3.120.168.93"
