@@ -303,16 +303,27 @@ fn execStartJailer(config: *const OpsConfig, req: proto.Request, resp: *[proto.m
         "{s}/firecracker/{s}/root/run/firecracker.sock",
         .{ chroot_base.value, job_id.value },
     ) catch return proto.errorResponse(resp, req.request_id, .internal_error, "api socket path too long");
+    var jail_root_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const jail_root_path = std.fmt.bufPrint(
+        &jail_root_path_buf,
+        "{s}/firecracker/{s}/root",
+        .{ chroot_base.value, job_id.value },
+    ) catch return proto.errorResponse(resp, req.request_id, .internal_error, "jail root path too long");
+    var jail_run_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const jail_run_path = std.fmt.bufPrint(&jail_run_path_buf, "{s}/run", .{jail_root_path}) catch
+        return proto.errorResponse(resp, req.request_id, .internal_error, "jail run path too long");
 
     waitForPathAbsolute(api_socket_path, 5 * std.time.ns_per_s) catch {
         std.posix.kill(@intCast(child.id), std.posix.SIG.KILL) catch {};
         return proto.errorResponse(resp, req.request_id, .operation_failed, "wait for api socket failed");
     };
 
-    var api_socket_path_z_buf: [std.fs.max_path_bytes:0]u8 = undefined;
-    const api_socket_path_z = std.fmt.bufPrintZ(&api_socket_path_z_buf, "{s}", .{api_socket_path}) catch
-        return proto.errorResponse(resp, req.request_id, .internal_error, "api socket path too long");
-    _ = std.posix.system.chmod(api_socket_path_z, 0o770);
+    chmodAbsolute(jail_root_path, 0o750) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "chmod jail root failed");
+    chmodAbsolute(jail_run_path, 0o770) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "chmod jail run failed");
+    chmodAbsolute(api_socket_path, 0o770) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "chmod api socket failed");
 
     return proto.okResponseWithU32(resp, req.request_id, @intCast(child.id));
 }
@@ -417,6 +428,14 @@ fn waitForPathAbsolute(path: []const u8, timeout_ns: u64) !void {
         return;
     }
     return error.PathNotFound;
+}
+
+fn chmodAbsolute(path: []const u8, mode: u32) !void {
+    var path_z_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+    const path_z = try std.fmt.bufPrintZ(&path_z_buf, "{s}", .{path});
+    if (std.posix.system.chmod(path_z, mode) != 0) {
+        return error.ChmodFailed;
+    }
 }
 
 const CmdResult = struct {
