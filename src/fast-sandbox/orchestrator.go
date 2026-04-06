@@ -305,7 +305,13 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		{"network", func() error {
 			return client.putNetworkInterface(ctx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
 		}},
-		{"vsock", func() error { return client.putVsock(ctx, vmproto.GuestCID, "/run/forge-control.sock") }},
+		{"vsock", func() error {
+			// Each VM needs a unique CID on the host. CID 0-2 are reserved
+			// (0=hypervisor, 1=reserved, 2=host). Derive from the network
+			// slot index which is already unique per concurrent VM.
+			cid := uint32(netSetup.Lease.SlotIndex) + 3
+			return client.putVsock(ctx, cid, "/run/forge-control.sock")
+		}},
 		{"entropy", func() error { return client.putEntropy(ctx) }},
 	}
 
