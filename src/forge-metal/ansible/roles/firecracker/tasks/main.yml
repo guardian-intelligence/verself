@@ -210,12 +210,12 @@
       - build
       - -Doptimize=ReleaseSafe
       - -Dtarget=x86_64-linux-musl
-    chdir: "{{ playbook_dir }}/../../../../homestead-smelter"
+    chdir: "{{ playbook_dir }}/../../../homestead-smelter"
   changed_when: false
 
 - name: Install homestead-smelter host binary
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../../homestead-smelter/zig-out/bin/homestead-smelter-host"
+    src: "{{ playbook_dir }}/../../../homestead-smelter/zig-out/bin/homestead-smelter-host"
     dest: "{{ firecracker_smelter_host_binary_path }}"
     owner: root
     group: root
