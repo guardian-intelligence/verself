@@ -161,7 +161,15 @@
     state: directory
     owner: root
     group: "{{ firecracker_jailer_user }}"
-    mode: "0775"
+    mode: "2775"
+
+- name: Normalize Firecracker lease lock file permissions
+  ansible.builtin.file:
+    path: "{{ firecracker_net_lease_dir }}/.lock"
+    state: touch
+    owner: root
+    group: "{{ firecracker_jailer_user }}"
+    mode: "0664"
 
 # --- Host networking (native nftables) ---
 

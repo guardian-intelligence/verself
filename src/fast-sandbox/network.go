@@ -273,7 +273,7 @@ func (a *Allocator) acquireLock(ctx context.Context) (*os.File, func() error, er
 	}
 
 	lockPath := filepath.Join(a.cfg.LeaseDir, ".lock")
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o664)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open network lock %s: %w", lockPath, err)
 	}
