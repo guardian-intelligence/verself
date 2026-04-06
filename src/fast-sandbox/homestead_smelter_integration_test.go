@@ -1,6 +1,6 @@
 //go:build integration
 
-package firecracker
+package fastsandbox
 
 import (
 	"bytes"
@@ -204,7 +204,7 @@ func buildHomesteadSmelterHostBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
-	smelterDir := filepath.Clean(filepath.Join(wd, "..", "..", "homestead-smelter"))
+	smelterDir := filepath.Clean(filepath.Join(wd, "..", "homestead-smelter"))
 
 	cmd := exec.Command("zig", "build", "-Doptimize=ReleaseSafe", "-Dtarget=x86_64-linux-musl")
 	cmd.Dir = smelterDir

@@ -1,4 +1,4 @@
-package firecracker
+package fastsandbox
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forge-metal/forge-metal/internal/vmproto"
+	"github.com/forge-metal/fast-sandbox/vmproto"
 )
 
 const maxBufferedGuestLogs = 10 * 1024 * 1024

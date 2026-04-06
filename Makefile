@@ -6,6 +6,7 @@
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 FM       := src/platform
+FS       := src/fast-sandbox
 BS       := src/billing-service
 BL       := src/billing
 
@@ -19,7 +20,7 @@ clean:
 	rm -f $(FM)/forge-metal
 
 test: ## Run unit tests
-	go test -race ./$(FM)/... ./$(BL)/... ./$(BS)/...
+	go test -race ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/...
 
 test-integration: ## Run all tests including ZFS integration (requires sudo + zfs)
 	@echo "Integration tests require root for ZFS pool operations."
@@ -28,7 +29,7 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
 lint:
-	golangci-lint run ./$(FM)/... ./$(BL)/... ./$(BS)/...
+	golangci-lint run ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/...
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
@@ -41,13 +42,14 @@ hooks-install:
 	pre-commit install
 
 fmt:
-	gofumpt -w $(FM) $(BL) $(BS)
+	gofumpt -w $(FM) $(FS) $(BL) $(BS)
 
 vet:
-	go vet ./$(FM)/... ./$(BL)/... ./$(BS)/...
+	go vet ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/...
 
 tidy:
 	cd $(FM) && go mod tidy
+	cd $(FS) && go mod tidy
 	cd $(BL) && go mod tidy
 	cd $(BS) && go mod tidy
 

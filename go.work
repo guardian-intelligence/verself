@@ -3,5 +3,6 @@ go 1.25.0
 use (
 	./src/billing
 	./src/billing-service
+	./src/fast-sandbox
 	./src/platform
 )

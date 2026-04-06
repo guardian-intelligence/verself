@@ -1,4 +1,4 @@
-package firecracker
+package fastsandbox
 
 import (
 	"encoding/json"
@@ -22,10 +22,10 @@ type VMMetrics struct {
 // metricsJSON matches the top-level structure of Firecracker's NDJSON
 // metrics output. We only parse the fields we care about.
 type metricsJSON struct {
-	APIServer   apiServerMetrics   `json:"api_server"`
-	BlockRootfs blockMetrics       `json:"block_rootfs"`
-	NetEth0     netMetrics         `json:"net_eth0"`
-	VCPU        vcpuMetrics        `json:"vcpu"`
+	APIServer   apiServerMetrics `json:"api_server"`
+	BlockRootfs blockMetrics     `json:"block_rootfs"`
+	NetEth0     netMetrics       `json:"net_eth0"`
+	VCPU        vcpuMetrics      `json:"vcpu"`
 }
 
 type apiServerMetrics struct {

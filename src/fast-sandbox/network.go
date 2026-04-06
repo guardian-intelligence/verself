@@ -1,4 +1,4 @@
-package firecracker
+package fastsandbox
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/forge-metal/forge-metal/internal/vmproto"
+	"github.com/forge-metal/fast-sandbox/vmproto"
 )
 
 const (

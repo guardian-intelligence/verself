@@ -1,4 +1,4 @@
-// Package firecracker manages Firecracker microVM lifecycle for CI jobs.
+// Package fastsandbox manages Firecracker microVM lifecycle for sandboxed jobs.
 //
 // It provides a single entry point: [Orchestrator.Run], which takes a
 // [JobConfig] and returns a [JobResult]. The full lifecycle is:
@@ -24,4 +24,4 @@
 //   - LIFO cleanup on any error, matching Clone.Release pattern.
 //   - The per-job runtime control plane is vsock only. MMDS is not part of the
 //     steady-state execution path, and serial is not authoritative.
-package firecracker
+package fastsandbox

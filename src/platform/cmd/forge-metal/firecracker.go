@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/forge-metal/forge-metal/internal/firecracker"
+	fastsandbox "github.com/forge-metal/fast-sandbox"
 )
 
 func firecrackerTestCmd() *cobra.Command {
@@ -59,7 +59,7 @@ Examples:
 				return fmt.Errorf("parse timeout: %w", err)
 			}
 
-			cfg := firecracker.DefaultConfig()
+			cfg := fastsandbox.DefaultConfig()
 			if pool != "" {
 				cfg.Pool = pool
 			}
@@ -89,11 +89,11 @@ Examples:
 				cfg.NetworkLeaseDir = networkLeaseDir
 			}
 
-			orch := firecracker.New(cfg, logger)
+			orch := fastsandbox.New(cfg, logger)
 
 			jobID := uuid.New().String()
 
-			job := firecracker.JobConfig{
+			job := fastsandbox.JobConfig{
 				JobID:      jobID,
 				RunCommand: args, // positional args after --
 				RunWorkDir: "/workspace",

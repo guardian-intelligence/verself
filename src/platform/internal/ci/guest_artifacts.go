@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/forge-metal/internal/firecracker"
+	fastsandbox "github.com/forge-metal/fast-sandbox"
 )
 
 const defaultGuestArtifactManifestDir = "/var/lib/ci"
@@ -38,7 +38,7 @@ type GuestArtifactManifest struct {
 	SmelterGuestBytes     uint64 `json:"homestead_smelter_guest_bytes,omitempty"`
 }
 
-func guestArtifactManifestPath(cfg firecracker.Config) string {
+func guestArtifactManifestPath(cfg fastsandbox.Config) string {
 	dir := filepath.Dir(cfg.KernelPath)
 	if dir == "" || dir == "." {
 		dir = defaultGuestArtifactManifestDir
