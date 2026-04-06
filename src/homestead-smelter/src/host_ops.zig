@@ -199,14 +199,10 @@ fn execSetupJail(config: *const OpsConfig, req: proto.Request, resp: *[proto.max
     const run_path = std.fmt.bufPrint(&run_path_buf, "{s}/run", .{jail_root.value}) catch
         return proto.errorResponse(resp, req.request_id, .internal_error, "path too long");
 
-    std.fs.makeDirAbsolute(jail_root.value) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return proto.errorResponse(resp, req.request_id, .operation_failed, "mkdir jail_root failed"),
-    };
-    std.fs.makeDirAbsolute(run_path) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return proto.errorResponse(resp, req.request_id, .operation_failed, "mkdir jail_root/run failed"),
-    };
+    makePathAbsolute(jail_root.value) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "mkdir jail_root failed");
+    makePathAbsolute(run_path) catch
+        return proto.errorResponse(resp, req.request_id, .operation_failed, "mkdir jail_root/run failed");
 
     // 2. Link/copy kernel.
     var kernel_dst_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -376,6 +372,24 @@ fn copyFileAbsolute(src: []const u8, dst: []const u8) !void {
     }
 }
 
+fn makePathAbsolute(path: []const u8) !void {
+    if (path.len == 0 or path[0] != '/') return error.NotAbsolutePath;
+    if (path.len == 1) return;
+
+    var idx: usize = 1;
+    while (idx <= path.len) : (idx += 1) {
+        if (idx < path.len and path[idx] != '/') continue;
+
+        const component_path = path[0..idx];
+        if (component_path.len <= 1) continue;
+
+        std.fs.makeDirAbsolute(component_path) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+    }
+}
+
 const CmdResult = struct {
     failed: bool,
     stderr_buf: [512]u8 = [_]u8{0} ** 512,
@@ -494,4 +508,19 @@ test "validateAbsolutePath rejects traversal" {
 test "validateAbsolutePath accepts valid" {
     const config = OpsConfig{ .pool_prefix = "forgepool", .jailer_root = "/srv/jailer" };
     try std.testing.expectEqual(@as(?[]const u8, null), validateAbsolutePath(&config, "/srv/jailer/firecracker/test/root"));
+}
+
+test "makePathAbsolute creates nested directories" {
+    const allocator = std.testing.allocator;
+    var dir = std.testing.tmpDir(.{});
+    defer dir.cleanup();
+
+    const root_path = try dir.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(root_path);
+
+    const nested = try std.fs.path.join(allocator, &.{ root_path, "firecracker", "job-id", "root", "run" });
+    defer allocator.free(nested);
+
+    try makePathAbsolute(nested);
+    try std.fs.accessAbsolute(nested, .{});
 }
