@@ -1,6 +1,5 @@
 # Binaries
-/forge-metal
-/billing-service
+src/forge-metal/forge-metal
 
 # Config (contains credentials)
 forge-metal.toml
@@ -43,8 +42,8 @@ result
 result-*
 
 # Zig
-homestead-smelter/.zig-cache/
-homestead-smelter/zig-out/
+src/homestead-smelter/.zig-cache/
+src/homestead-smelter/zig-out/
 
 # Reference repos (cloned for grep, not committed)
 docs/references/
