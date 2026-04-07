@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain inventory-check seed-demo smelter-build \
-       clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
+       traces clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
@@ -72,6 +72,9 @@ inventory-check: ## Validate that the generated Ansible inventory exists
 
 seed-demo: inventory-check ## Seed demo environment: human user + billing catalog + credits + auth verify
 	cd $(FM)/ansible && ansible-playbook playbooks/seed-demo.yml
+
+traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
+	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
