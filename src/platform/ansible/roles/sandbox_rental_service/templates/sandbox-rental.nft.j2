@@ -32,6 +32,7 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.clickhouse.native_port }} accept
         oifname "lo" tcp dport {{ services.billing.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
 
         # Allow Unix socket traffic (always passes output chain).
         meta l4proto != tcp meta l4proto != udp accept

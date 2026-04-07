@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
@@ -91,13 +92,57 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	// The OTel Log SDK automatically extracts trace_id and span_id from the
 	// context passed to slog.*Context methods, so callers get trace-log
 	// correlation for free.
+	//
+	// The resolveHandler wrapper fixes a gap in otelslog's convertValue:
+	// named string types (e.g. stripe.EventType) are slog KindAny values
+	// whose reflect.Kind is String, but the bridge only handles concrete
+	// string — not named types — so they render as "unhandled: (T) v".
 
-	logger = slog.New(otelslog.NewHandler(cfg.ServiceName,
+	logger = slog.New(&resolveHandler{otelslog.NewHandler(cfg.ServiceName,
 		otelslog.WithLoggerProvider(lp),
-	))
+	)})
 
 	shutdown = func(ctx context.Context) error {
 		return errors.Join(tp.Shutdown(ctx), lp.Shutdown(ctx))
 	}
 	return shutdown, logger, nil
+}
+
+// resolveHandler wraps an slog.Handler to coerce named string types
+// (reflect.Kind == String but not string) into plain slog.StringValue
+// before the otelslog bridge sees them.
+type resolveHandler struct {
+	slog.Handler
+}
+
+func (h *resolveHandler) Handle(ctx context.Context, r slog.Record) error {
+	resolved := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		resolved.AddAttrs(resolveAttr(a))
+		return true
+	})
+	return h.Handler.Handle(ctx, resolved)
+}
+
+func (h *resolveHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	ra := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		ra[i] = resolveAttr(a)
+	}
+	return &resolveHandler{h.Handler.WithAttrs(ra)}
+}
+
+func (h *resolveHandler) WithGroup(name string) slog.Handler {
+	return &resolveHandler{h.Handler.WithGroup(name)}
+}
+
+func resolveAttr(a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindAny {
+		if v := a.Value.Any(); v != nil {
+			if reflect.TypeOf(v).Kind() == reflect.String {
+				return slog.String(a.Key, reflect.ValueOf(v).String())
+			}
+		}
+	}
+	return a
 }

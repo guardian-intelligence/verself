@@ -78,6 +78,16 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, product
 	sessionParams.AddMetadata("org_id", orgIDStr)
 	sessionParams.AddMetadata("product_id", productID)
 
+	// Propagate metadata to the payment intent so payment_intent.succeeded
+	// webhooks carry org_id and product_id (Stripe does not inherit session
+	// metadata onto the PI automatically).
+	sessionParams.PaymentIntentData = &stripe.CheckoutSessionCreatePaymentIntentDataParams{
+		Metadata: map[string]string{
+			"org_id":     orgIDStr,
+			"product_id": productID,
+		},
+	}
+
 	session, err := c.stripe.V1CheckoutSessions.Create(ctx, sessionParams)
 	if err != nil {
 		return "", fmt.Errorf("create checkout session: stripe: %w", err)
