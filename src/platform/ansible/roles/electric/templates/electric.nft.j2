@@ -1,0 +1,9 @@
+# Electric sync service — loopback only, Caddy reverse proxy.
+table inet forge_metal_electric
+delete table inet forge_metal_electric
+table inet forge_metal_electric {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        tcp dport {{ services.electric.port }} iifname != "lo" drop
+    }
+}

@@ -1,0 +1,11 @@
+---
+- name: Restart rent-a-sandbox
+  ansible.builtin.systemd:
+    name: rent-a-sandbox
+    state: restarted
+    daemon_reload: true
+
+- name: Reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

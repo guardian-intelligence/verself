@@ -1,0 +1,7 @@
+---
+rent_a_sandbox_subdomain: rentasandbox
+rent_a_sandbox_domain: "{{ rent_a_sandbox_subdomain }}.{{ forge_metal_domain }}"
+rent_a_sandbox_install_dir: /opt/rent-a-sandbox
+rent_a_sandbox_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+rent_a_sandbox_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
+rent_a_sandbox_auth_project_name: sandbox-rental
