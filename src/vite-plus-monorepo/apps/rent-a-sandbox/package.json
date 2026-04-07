@@ -1,0 +1,34 @@
+{
+  "name": "@forge-metal/rent-a-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "start": "node .output/server/index.mjs",
+    "typecheck": "vp exec tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@forge-metal/ui": "workspace:*",
+    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "@tanstack/react-start": "catalog:",
+    "nitro": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

@@ -1,0 +1,38 @@
+packages:
+  - apps/*
+  - packages/*
+
+catalogMode: prefer
+
+catalog:
+  "@tailwindcss/vite": ^4
+  "@tanstack/react-query": ^5.75.0
+  "@tanstack/react-router": ^1.167.0
+  "@tanstack/react-start": ^1.166.0
+  "@types/node": ^22.19.17
+  "@types/react": ^19
+  "@types/react-dom": ^19
+  "@vitejs/plugin-react": ^6.0.1
+  class-variance-authority: ^0.7.1
+  clsx: ^2.1.1
+  nitro: ^3.0.260311-beta
+  react: ^19.0.0
+  react-dom: ^19.0.0
+  tailwind-merge: ^3.0.2
+  tailwindcss: ^4
+  typescript: ^5.9.3
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vitest: npm:@voidzero-dev/vite-plus-test@latest
+  vite-plus: ^0.1.16
+
+overrides:
+  vite: "catalog:"
+  vitest: "catalog:"
+
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"
