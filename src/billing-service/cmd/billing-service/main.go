@@ -129,7 +129,7 @@ func run() error {
 
 	workerDone := make(chan error, 1)
 	go func() {
-		workerDone <- app.RunWorker(workerCtx, 5*time.Second)
+		workerDone <- app.RunWorker(workerCtx, 1*time.Second)
 	}()
 
 	srv := &http.Server{
