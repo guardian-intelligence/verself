@@ -1,6 +1,5 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check verify-billing-auth \
-       seed-sandbox-billing-test-data smelter-build \
+       hooks-install doctor setup-domain inventory-check seed-demo smelter-build \
        clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -71,11 +70,8 @@ setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
 
-verify-billing-auth: inventory-check ## Run the billing auth verification playbook
-	cd $(FM)/ansible && ansible-playbook playbooks/verify-billing-auth.yml
-
-seed-sandbox-billing-test-data: inventory-check ## Seed sandbox billing catalog + prepaid credits for testing
-	cd $(FM)/ansible && ansible-playbook playbooks/seed-sandbox-billing-test-data.yml
+seed-demo: inventory-check ## Seed demo environment: human user + billing catalog + credits + auth verify
+	cd $(FM)/ansible && ansible-playbook playbooks/seed-demo.yml
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh

@@ -1,0 +1,438 @@
+---
+# Seed a complete demo environment for rent-a-sandbox end-to-end testing.
+#
+# Creates a human test user in Zitadel, grants it access to the sandbox-rental
+# project, seeds the billing catalog and prepaid credits, and verifies the
+# billing-service auth integration.
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/seed-demo.yml
+#
+# Cherry-pick:
+#   --tags user        Create/verify demo user only
+#   --tags billing     Seed billing catalog + credits only
+#   --tags verify      Verify billing auth integration only
+#
+# Override demo user credentials:
+#   -e seed_demo_user_email=alice@example.com -e seed_demo_user_password=MyP@ss1
+
+- name: Seed demo environment
+  hosts: infra
+  serial: 1
+  become: true
+  gather_facts: false
+  vars:
+    # --- Zitadel connection ---
+    seed_demo_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
+    seed_demo_zitadel_host: "auth.{{ forge_metal_domain }}"
+
+    # --- Demo user ---
+    seed_demo_user_email: "demo@{{ forge_metal_domain }}"
+    seed_demo_user_password: "SandboxDemo2026!#"
+    seed_demo_user_first_name: Demo
+    seed_demo_user_last_name: User
+    seed_demo_user_username: "demo"
+
+    # --- Sandbox-rental project ---
+    seed_demo_auth_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
+
+    # --- Billing catalog ---
+    seed_demo_product_id: sandbox
+    seed_demo_product_display_name: Sandbox
+    seed_demo_meter_unit: vcpu_second
+    seed_demo_billing_model: metered
+    seed_demo_plan_id: sandbox-default
+    seed_demo_plan_display_name: Sandbox PAYG
+    seed_demo_unit_rates:
+      vcpu: 325
+      gib: 40
+    seed_demo_overage_unit_rates: {}
+    seed_demo_quotas: {}
+    seed_demo_target_prepaid_units: 5000000
+    seed_demo_expires_after: 8760h
+
+    # --- Internal ---
+    seed_demo_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
+    seed_demo_helper_remote_path: /tmp/billing-seed
+    seed_demo_probe_user_pattern: "^(billing-auth-verify-.*|billing-smoke-.*)$"
+
+  tasks:
+    # ── Prerequisites ──────────────────────────────────────────────────────────
+
+    - name: Wait for Zitadel to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.zitadel.host }}"
+        port: "{{ services.zitadel.port }}"
+        timeout: 60
+      tags: [user, billing, verify]
+
+    - name: Wait for billing-service to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.billing.host }}"
+        port: "{{ services.billing.port }}"
+        timeout: 60
+      tags: [billing, verify]
+
+    - name: Read Zitadel admin PAT
+      ansible.builtin.slurp:
+        src: /etc/zitadel/admin.pat
+      register: seed_demo_admin_pat_raw
+      no_log: true
+      tags: [user, billing, verify]
+
+    - name: Set Zitadel admin PAT fact
+      ansible.builtin.set_fact:
+        seed_demo_admin_pat: "{{ seed_demo_admin_pat_raw.content | b64decode | trim }}"
+      no_log: true
+      tags: [user, billing, verify]
+
+    - name: Find sandbox-rental project
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_demo_auth_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_demo_project_search
+      no_log: true
+      tags: [user, billing, verify]
+
+    - name: Set project ID fact
+      ansible.builtin.set_fact:
+        seed_demo_project_id: "{{ seed_demo_project_search.json.result[0].id }}"
+      when: seed_demo_project_search.json.result is defined and seed_demo_project_search.json.result | length > 0
+      tags: [user, billing, verify]
+
+    - name: Assert sandbox-rental project exists
+      ansible.builtin.assert:
+        that: seed_demo_project_id is defined
+        fail_msg: "Sandbox-rental Zitadel project '{{ seed_demo_auth_project_name }}' not found. Run the full deploy first."
+      tags: [user, billing, verify]
+
+    # ── Demo user ──────────────────────────────────────────────────────────────
+
+    - name: Search for existing demo user
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/v2/users"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - emailQuery:
+                emailAddress: "{{ seed_demo_user_email }}"
+        return_content: true
+      register: seed_demo_user_search
+      tags: [user]
+
+    - name: Set existing user fact
+      ansible.builtin.set_fact:
+        seed_demo_existing_user: >-
+          {{
+            (seed_demo_user_search.json.result | default([]) | first) | default({})
+          }}
+      tags: [user]
+
+    - name: Create demo human user
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/v2/users/human"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          username: "{{ seed_demo_user_username }}"
+          profile:
+            givenName: "{{ seed_demo_user_first_name }}"
+            familyName: "{{ seed_demo_user_last_name }}"
+          email:
+            email: "{{ seed_demo_user_email }}"
+            isVerified: true
+          password:
+            password: "{{ seed_demo_user_password }}"
+            changeRequired: false
+        status_code: [200, 201]
+        return_content: true
+      register: seed_demo_user_created
+      when: seed_demo_existing_user.userId is not defined
+      tags: [user]
+
+    - name: Set demo user ID fact
+      ansible.builtin.set_fact:
+        seed_demo_user_id: >-
+          {{ seed_demo_user_created.json.userId | default(seed_demo_existing_user.userId) }}
+      tags: [user]
+
+    - name: Grant demo user access to sandbox-rental project
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/users/{{ seed_demo_user_id }}/grants"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          projectId: "{{ seed_demo_project_id }}"
+          roleKeys: []
+        status_code: [200, 409]
+      tags: [user]
+
+    - name: Get demo user org ID
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/users/{{ seed_demo_user_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        return_content: true
+      register: seed_demo_user_details
+      tags: [user, billing]
+
+    - name: Set org facts
+      ansible.builtin.set_fact:
+        seed_demo_org_id: "{{ seed_demo_user_details.json.user.details.resourceOwner }}"
+        seed_demo_org_name: "forge-metal"
+      tags: [user, billing]
+
+    - name: Print demo user credentials
+      ansible.builtin.debug:
+        msg:
+          - "Demo user ready for {{ seed_demo_zitadel_host }}"
+          - "  Email:    {{ seed_demo_user_email }}"
+          - "  Password: {{ seed_demo_user_password }}"
+          - "  Org ID:   {{ seed_demo_org_id }}"
+          - "  User ID:  {{ seed_demo_user_id }}"
+      tags: [user]
+
+    # ── Billing catalog + credits ──────────────────────────────────────────────
+
+    - name: Build billing seed helper on controller
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -o
+          - "{{ seed_demo_helper_local_path }}"
+          - ./src/billing-service/cmd/billing-seed
+      args:
+        chdir: "{{ playbook_dir }}/../../../.."
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      tags: [billing]
+
+    - name: Upload billing seed helper
+      ansible.builtin.copy:
+        src: "{{ seed_demo_helper_local_path }}"
+        dest: "{{ seed_demo_helper_remote_path }}"
+        mode: "0755"
+      tags: [billing]
+
+    - name: Run billing seed helper
+      ansible.builtin.command:
+        argv:
+          - "{{ seed_demo_helper_remote_path }}"
+          - --pg-dsn-file
+          - /etc/credstore/billing/pg-dsn
+          - --tb-address
+          - "{{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}"
+          - --tb-cluster-id
+          - "{{ billing_service_tigerbeetle_cluster_id | default(0, true) | string }}"
+          - --org-id
+          - "{{ seed_demo_org_id }}"
+          - --org-name
+          - "{{ seed_demo_org_name }}"
+          - --product-id
+          - "{{ seed_demo_product_id }}"
+          - --product-display-name
+          - "{{ seed_demo_product_display_name }}"
+          - --meter-unit
+          - "{{ seed_demo_meter_unit }}"
+          - --billing-model
+          - "{{ seed_demo_billing_model }}"
+          - --plan-id
+          - "{{ seed_demo_plan_id }}"
+          - --plan-display-name
+          - "{{ seed_demo_plan_display_name }}"
+          - --unit-rates-json
+          - "{{ seed_demo_unit_rates | to_json }}"
+          - --overage-unit-rates-json
+          - "{{ seed_demo_overage_unit_rates | to_json }}"
+          - --quotas-json
+          - "{{ seed_demo_quotas | to_json }}"
+          - --target-prepaid-units
+          - "{{ seed_demo_target_prepaid_units | string }}"
+          - --expires-after
+          - "{{ seed_demo_expires_after }}"
+      register: seed_demo_billing_result_raw
+      changed_when: (seed_demo_billing_result_raw.stdout | from_json).deposited_units | int > 0
+      tags: [billing]
+
+    - name: Parse billing seed result
+      ansible.builtin.set_fact:
+        seed_demo_billing_result: "{{ seed_demo_billing_result_raw.stdout | from_json }}"
+      tags: [billing]
+
+    - name: Print billing seed summary
+      ansible.builtin.debug:
+        msg:
+          - "Billing catalog seeded for org {{ seed_demo_billing_result.org_id }}"
+          - "  Product:         {{ seed_demo_product_id }}"
+          - "  Plan:            {{ seed_demo_plan_id }}"
+          - "  Prepaid before:  {{ seed_demo_billing_result.prepaid_before }}"
+          - "  Deposited:       {{ seed_demo_billing_result.deposited_units }}"
+          - "  Prepaid after:   {{ seed_demo_billing_result.prepaid_after }}"
+      tags: [billing]
+
+    - name: Remove billing seed helpers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ seed_demo_helper_remote_path }}"
+      tags: [billing]
+
+    - name: Remove local billing seed helper
+      ansible.builtin.file:
+        path: "{{ seed_demo_helper_local_path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      tags: [billing]
+
+    # ── Verify billing auth ────────────────────────────────────────────────────
+
+    - name: Verify billing auth integration
+      tags: [verify]
+      block:
+        - name: Create ephemeral verification machine user
+          ansible.builtin.uri:
+            url: "{{ seed_demo_zitadel_base_url }}/management/v1/users/machine"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_demo_admin_pat }}"
+              Host: "{{ seed_demo_zitadel_host }}"
+            body_format: json
+            body:
+              userName: "seed-demo-verify-{{ inventory_hostname }}"
+              name: "seed demo verify {{ inventory_hostname }}"
+              accessTokenType: ACCESS_TOKEN_TYPE_JWT
+            return_content: true
+          register: seed_demo_verify_user
+          no_log: true
+
+        - name: Create verification user secret
+          ansible.builtin.uri:
+            url: "{{ seed_demo_zitadel_base_url }}/v2/users/{{ seed_demo_verify_user.json.userId }}/secret"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_demo_admin_pat }}"
+              Host: "{{ seed_demo_zitadel_host }}"
+            status_code: 200
+            return_content: true
+          register: seed_demo_verify_secret
+          no_log: true
+
+        - name: Grant verification user access to sandbox-rental project
+          ansible.builtin.uri:
+            url: "{{ seed_demo_zitadel_base_url }}/management/v1/users/{{ seed_demo_verify_user.json.userId }}/grants"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_demo_admin_pat }}"
+              Host: "{{ seed_demo_zitadel_host }}"
+            body_format: json
+            body:
+              projectId: "{{ seed_demo_project_id }}"
+              roleKeys: []
+            status_code: 200
+          no_log: true
+
+        - name: Request verification access token
+          ansible.builtin.uri:
+            url: "{{ seed_demo_zitadel_base_url }}/oauth/v2/token"
+            method: POST
+            headers:
+              Host: "{{ seed_demo_zitadel_host }}"
+            body_format: form-urlencoded
+            body:
+              grant_type: client_credentials
+              scope: >-
+                openid profile
+                urn:zitadel:iam:user:resourceowner
+                urn:zitadel:iam:org:project:id:{{ seed_demo_project_id }}:aud
+            url_username: "seed-demo-verify-{{ inventory_hostname }}"
+            url_password: "{{ seed_demo_verify_secret.json.clientSecret }}"
+            force_basic_auth: true
+            return_content: true
+            status_code: 200
+          register: seed_demo_verify_token
+          no_log: true
+
+        - name: Verify sandbox-rental billing proxy rejects unauthenticated request
+          ansible.builtin.uri:
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            method: GET
+            status_code: 401
+          register: seed_demo_verify_unauthed
+
+        - name: Verify sandbox-rental billing proxy accepts authenticated request
+          ansible.builtin.uri:
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ seed_demo_verify_token.json.access_token }}"
+            status_code: 200
+            return_content: true
+          register: seed_demo_verify_authed
+          no_log: true
+
+        - name: Assert balance response has org_id
+          ansible.builtin.assert:
+            that:
+              - seed_demo_verify_authed.json.org_id | default('') | length > 0
+            fail_msg: "Billing proxy returned unexpected payload: {{ seed_demo_verify_authed.json }}"
+
+        - name: Print verification result
+          ansible.builtin.debug:
+            msg:
+              - "Auth verification passed"
+              - "  Org balance: {{ seed_demo_verify_authed.json.total_available | default(0) }} credits available"
+
+      always:
+        - name: Cleanup verification machine user
+          ansible.builtin.uri:
+            url: "{{ seed_demo_zitadel_base_url }}/v2/users/{{ seed_demo_verify_user.json.userId }}"
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ seed_demo_admin_pat }}"
+              Host: "{{ seed_demo_zitadel_host }}"
+            status_code: [200, 404]
+          when: seed_demo_verify_user is defined and seed_demo_verify_user.json.userId is defined
+
+    # ── Summary ────────────────────────────────────────────────────────────────
+
+    - name: Print demo environment summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================"
+          - " Demo environment ready"
+          - "============================================"
+          - ""
+          - " Login at: https://rentasandbox.{{ forge_metal_domain }}/"
+          - ""
+          - " Email:    {{ seed_demo_user_email }}"
+          - " Password: {{ seed_demo_user_password }}"
+          - ""
+          - " Org ID:   {{ seed_demo_org_id | default('(run with --tags user)') }}"
+          - " Credits:  {{ seed_demo_billing_result.prepaid_after | default('(run with --tags billing)') }}"
+          - "============================================"
