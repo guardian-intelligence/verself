@@ -4,6 +4,10 @@ Free Open-Source Software for a turnkey "software company in a box": fully self-
 
 Bootstrapping UX: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
 
+## Direction
+
+* Evolve our homestead-smelter to subsume fast-sandbox. One privileged Zig program running on the host that orchestrates a farm of Firecracker VMs with diff
+
 ## Deployment Topology
 
 This is a deploy-together system. Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.
@@ -267,9 +271,9 @@ forge-metal/                            # Monorepo root
 │
 │   ── Frontends ─────────────────────────────────────────────────────────
 │
-├── src/rent-a-sandbox/                 # Customer-facing CI product (TanStack Start)
-│   ├── package.json                    # TanStack Start + TanStack DB + ElectricSQL
-│   └── app/                            # OIDC auth, job submission, live log viewer
+├── src/vite-plus-monorepo/             # Vite+ workspace for frontend applications
+│   ├── apps/rent-a-sandbox/            # Customer-facing sandbox product frontend
+│   └── packages/ui/                    # Shared frontend UI package
 │
 │   ── Standalone tools ──────────────────────────────────────────────────
 │

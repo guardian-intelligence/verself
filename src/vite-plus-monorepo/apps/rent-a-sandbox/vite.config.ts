@@ -13,7 +13,12 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  plugins: [tailwindcss(), tanstackStart({ srcDirectory: "src" }), viteReact(), nitro()],
+  plugins: [
+    tailwindcss(),
+    tanstackStart({ srcDirectory: "src" }),
+    viteReact(),
+    nitro({ plugins: ["./plugins/observability.ts"] }),
+  ],
   test: {
     exclude: ["**/node_modules/**", "**/e2e/**", "**/*.spec.ts"],
     passWithNoTests: true,
