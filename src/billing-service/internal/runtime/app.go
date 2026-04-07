@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -33,6 +33,7 @@ type App struct {
 	Billing             *billing.Client
 	ReconcileQuerier    billing.ClickHouseQuerier
 	StripeWebhookSecret string
+	Logger              *slog.Logger
 
 	clock              func() time.Time
 	workerPollInterval time.Duration
@@ -46,6 +47,7 @@ func New(
 	billingClient *billing.Client,
 	reconcileQuerier billing.ClickHouseQuerier,
 	stripeWebhookSecret string,
+	logger *slog.Logger,
 ) *App {
 	app := &App{
 		PG:                  pg,
@@ -54,6 +56,7 @@ func New(
 		Billing:             billingClient,
 		ReconcileQuerier:    reconcileQuerier,
 		StripeWebhookSecret: stripeWebhookSecret,
+		Logger:              logger,
 		clock:               time.Now,
 	}
 	app.markWorkerActivity()
@@ -128,12 +131,12 @@ func (a *App) RunWorker(ctx context.Context, pollInterval time.Duration) error {
 		dispatchErr := a.dispatchTask(ctx, task)
 		if dispatchErr != nil {
 			if err := a.failTask(ctx, task, dispatchErr); err != nil {
-				log.Printf("billing: fail task transition task_id=%d err=%v", task.TaskID, err)
+				a.Logger.ErrorContext(ctx, "billing: fail task transition", "task_id", task.TaskID, "error", err)
 			}
 			continue
 		}
 		if err := a.completeTask(ctx, task); err != nil {
-			log.Printf("billing: complete task transition task_id=%d err=%v", task.TaskID, err)
+			a.Logger.ErrorContext(ctx, "billing: complete task transition", "task_id", task.TaskID, "error", err)
 		}
 	}
 }
@@ -161,7 +164,7 @@ func (a *App) WebhookHandler() http.Handler {
 			return
 		}
 
-		log.Printf("billing: queued stripe webhook event id=%s type=%s", event.ID, event.Type)
+		a.Logger.InfoContext(r.Context(), "billing: queued stripe webhook", "stripe_event_id", event.ID, "type", event.Type)
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -201,7 +204,7 @@ func (a *App) dispatchWebhookEvent(ctx context.Context, task claimedTask) error 
 	if err := a.handleWebhookEvent(ctx, event); err != nil {
 		return err
 	}
-	log.Printf("billing: processed stripe webhook event id=%s type=%s task_id=%d", event.ID, event.Type, task.TaskID)
+	a.Logger.InfoContext(ctx, "billing: processed stripe webhook", "stripe_event_id", event.ID, "type", event.Type, "task_id", task.TaskID)
 	return nil
 }
 

@@ -15,6 +15,15 @@
     owner: root
     mode: "0755"
 
+- name: Read Electric API secret for shape proxy auth
+  ansible.builtin.slurp:
+    src: /etc/credstore/electric/api-secret
+  register: caddy_electric_secret_raw
+
+- name: Set Electric secret fact
+  ansible.builtin.set_fact:
+    caddy_electric_api_secret: "{{ caddy_electric_secret_raw.content | b64decode | trim }}"
+
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:
     that: not (cloudflare_proxied | default(false) | bool)

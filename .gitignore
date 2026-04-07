@@ -61,3 +61,5 @@ src/platform/ci/output/sbom.txt
 
 __pycache__
 src/sandbox-rental-service/sandbox-rental-service
+
+node_modules

@@ -1,3 +1,50 @@
+
+## Quick Start
+
+### 1. Install dev tools
+
+```bash
+cd src/platform/ansible && ansible-playbook playbooks/setup-dev.yml
+```
+
+### 2. Provision bare metal
+
+```bash
+# Create your tfvars (one-time)
+cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/terraform.tfvars.json
+# Edit terraform.tfvars.json — set project_id to your Latitude.sh project
+
+# Provision server + generate Ansible inventory
+cd src/platform/ansible && ansible-playbook playbooks/provision.yml
+```
+
+This provisions a bare metal server via OpenTofu and auto-generates the gitignored `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
+
+### 3. Deploy
+
+```bash
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
+```
+
+Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
+
+```bash
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --tags caddy
+```
+
+### 4. Log in
+
+```bash
+# HyperDX admin credentials are in the SOPS-encrypted secrets file
+sops -d --extract '["hyperdx_admin_email_slug"]' src/platform/ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_password_base"]' src/platform/ansible/group_vars/all/secrets.sops.yml
+# Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
+```
+
+Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
+
+## CI
+
 The CI path is built around repo-specific golden images:
 
 1. start from a generic guest image

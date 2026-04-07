@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,10 +20,12 @@ import (
 	"github.com/stripe/stripe-go/v85"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
+	fmotel "github.com/forge-metal/otel"
 	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 )
 
@@ -47,6 +49,16 @@ func run() error {
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: "1.1.0"})
+	if err != nil {
+		return fmt.Errorf("otel init: %w", err)
+	}
+	defer otelShutdown(context.Background())
+	slog.SetDefault(logger)
 
 	pg, err := sql.Open("postgres", pgDSN)
 	if err != nil {
@@ -84,7 +96,7 @@ func run() error {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := meteringWriter.Close(flushCtx); err != nil {
-			log.Printf("billing: async metering shutdown: %v", err)
+			logger.ErrorContext(ctx, "billing: async metering shutdown", "error", err)
 		}
 	}()
 	meteringQuerier := billing.NewClickHouseMeteringQuerier(chConn, "forge_metal")
@@ -100,7 +112,7 @@ func run() error {
 		return fmt.Errorf("create billing client: %w", err)
 	}
 
-	app := billingruntime.New(pg, tbClient, chConn, billingClient, reconcileQuerier, webhookSecret)
+	app := billingruntime.New(pg, tbClient, chConn, billingClient, reconcileQuerier, webhookSecret, logger)
 
 	mux := http.NewServeMux()
 	billingapi.NewAPI(mux, app)
@@ -112,9 +124,6 @@ func run() error {
 		JWKSURL:   authJWKSURL,
 	})(mux)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
 
@@ -125,7 +134,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           billingHandler(mux, authHandler),
+		Handler:           otelhttp.NewHandler(billingHandler(mux, authHandler), "billing-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -134,11 +143,11 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("billing: shutdown: %v", err)
+			logger.ErrorContext(context.Background(), "billing: shutdown", "error", err)
 		}
 	}()
 
-	log.Printf("billing: listening on %s", listenAddr)
+	logger.Info("billing: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		workerCancel()
 		return fmt.Errorf("billing: listen: %w", err)
@@ -233,8 +242,16 @@ func isUnauthenticatedBillingPath(path string) bool {
 	if strings.HasPrefix(path, "/internal/billing/v1/ops/") {
 		return true
 	}
+	// Org-scoped reads and Stripe session creation — loopback-only (nftables
+	// blocks external access to port 4242). Called by sandbox-rental-service
+	// which enforces its own auth.
+	if strings.HasPrefix(path, "/internal/billing/v1/orgs/") {
+		return true
+	}
 	switch path {
 	case "/internal/billing/v1/check-quotas", "/internal/billing/v1/reserve", "/internal/billing/v1/settle", "/internal/billing/v1/void":
+		return true
+	case "/internal/billing/v1/checkout", "/internal/billing/v1/subscribe":
 		return true
 	default:
 		return false

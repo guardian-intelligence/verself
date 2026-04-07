@@ -6,19 +6,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/forge-metal/billing"
 	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 )
 
 const serviceVersion = "1.1.0"
+
+var tracer = otel.Tracer("billing-service")
 
 func NewAPI(mux *http.ServeMux, app *billingruntime.App) huma.API {
 	config := huma.DefaultConfig("Billing Service", serviceVersion)
@@ -546,10 +552,19 @@ func checkQuotas(app *billingruntime.App) func(context.Context, *quotaCheckInput
 		if err != nil {
 			return nil, err
 		}
+		ctx, span := tracer.Start(ctx, "billing.CheckQuotas",
+			trace.WithAttributes(
+				attribute.Int64("billing.org_id", int64(input.Body.OrgID)),
+				attribute.String("billing.product_id", input.Body.ProductID),
+			))
+		defer span.End()
 		result, callErr := client.CheckQuotas(ctx, billing.OrgID(input.Body.OrgID), input.Body.ProductID, input.Body.Usage)
 		if callErr != nil {
+			span.RecordError(callErr)
+			span.SetStatus(codes.Error, callErr.Error())
 			return nil, huma.Error500InternalServerError("check quotas", callErr)
 		}
+		span.SetAttributes(attribute.Bool("billing.allowed", result.Allowed))
 		out := &quotaCheckOutput{}
 		out.Body.Allowed = result.Allowed
 		for _, violation := range result.Violations {
@@ -560,7 +575,7 @@ func checkQuotas(app *billingruntime.App) func(context.Context, *quotaCheckInput
 				Current:   violation.Current,
 			})
 		}
-		log.Printf("billing: quota check org_id=%d product_id=%s allowed=%t violations=%d", input.Body.OrgID, input.Body.ProductID, result.Allowed, len(result.Violations))
+		slog.InfoContext(ctx, "billing: quota check", "org_id", input.Body.OrgID, "product_id", input.Body.ProductID, "allowed", result.Allowed, "violations", len(result.Violations))
 		return out, nil
 	}
 }
@@ -571,6 +586,14 @@ func reserve(app *billingruntime.App) func(context.Context, *reserveInput) (*res
 		if err != nil {
 			return nil, err
 		}
+		ctx, span := tracer.Start(ctx, "billing.Reserve",
+			trace.WithAttributes(
+				attribute.Int64("billing.job_id", input.Body.JobID),
+				attribute.Int64("billing.org_id", int64(input.Body.OrgID)),
+				attribute.String("billing.product_id", input.Body.ProductID),
+				attribute.String("billing.source_ref", input.Body.SourceRef),
+			))
+		defer span.End()
 		reservation, callErr := client.Reserve(ctx, billing.ReserveRequest{
 			JobID:      billing.JobID(input.Body.JobID),
 			OrgID:      billing.OrgID(input.Body.OrgID),
@@ -581,18 +604,20 @@ func reserve(app *billingruntime.App) func(context.Context, *reserveInput) (*res
 			Allocation: input.Body.Allocation,
 		})
 		if callErr != nil {
+			span.RecordError(callErr)
+			span.SetStatus(codes.Error, callErr.Error())
 			return nil, mapReserveError(callErr)
 		}
+		span.SetAttributes(attribute.Int("billing.window_seq", int(reservation.WindowSeq)))
 		out := &reserveOutput{}
 		out.Body.Reservation = reservationFromDomain(reservation)
-		log.Printf(
-			"billing: reserved org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d",
-			input.Body.OrgID,
-			input.Body.ProductID,
-			input.Body.JobID,
-			input.Body.SourceType,
-			input.Body.SourceRef,
-			reservation.WindowSeq,
+		slog.InfoContext(ctx, "billing: reserved",
+			"org_id", input.Body.OrgID,
+			"product_id", input.Body.ProductID,
+			"job_id", input.Body.JobID,
+			"source_type", input.Body.SourceType,
+			"source_ref", input.Body.SourceRef,
+			"window_seq", reservation.WindowSeq,
 		)
 		return out, nil
 	}
@@ -608,20 +633,29 @@ func settle(app *billingruntime.App) func(context.Context, *settleInput) (*statu
 		if convErr != nil {
 			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
 		}
+		ctx, span := tracer.Start(ctx, "billing.Settle",
+			trace.WithAttributes(
+				attribute.Int64("billing.job_id", int64(reservation.JobID)),
+				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
+				attribute.String("billing.product_id", reservation.ProductID),
+				attribute.Int("billing.actual_seconds", int(input.Body.ActualSeconds)),
+			))
+		defer span.End()
 		if callErr := client.Settle(ctx, &reservation, input.Body.ActualSeconds); callErr != nil {
+			span.RecordError(callErr)
+			span.SetStatus(codes.Error, callErr.Error())
 			return nil, huma.Error500InternalServerError("settle reservation", callErr)
 		}
 		out := &statusOutput{}
 		out.Body.Status = "settled"
-		log.Printf(
-			"billing: settled org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d actual_seconds=%d",
-			reservation.OrgID,
-			reservation.ProductID,
-			reservation.JobID,
-			reservation.SourceType,
-			reservation.SourceRef,
-			reservation.WindowSeq,
-			input.Body.ActualSeconds,
+		slog.InfoContext(ctx, "billing: settled",
+			"org_id", reservation.OrgID,
+			"product_id", reservation.ProductID,
+			"job_id", reservation.JobID,
+			"source_type", reservation.SourceType,
+			"source_ref", reservation.SourceRef,
+			"window_seq", reservation.WindowSeq,
+			"actual_seconds", input.Body.ActualSeconds,
 		)
 		return out, nil
 	}
@@ -637,19 +671,27 @@ func voidReservation(app *billingruntime.App) func(context.Context, *voidInput) 
 		if convErr != nil {
 			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
 		}
+		ctx, span := tracer.Start(ctx, "billing.Void",
+			trace.WithAttributes(
+				attribute.Int64("billing.job_id", int64(reservation.JobID)),
+				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
+				attribute.String("billing.product_id", reservation.ProductID),
+			))
+		defer span.End()
 		if callErr := client.Void(ctx, &reservation); callErr != nil {
+			span.RecordError(callErr)
+			span.SetStatus(codes.Error, callErr.Error())
 			return nil, huma.Error500InternalServerError("void reservation", callErr)
 		}
 		out := &statusOutput{}
 		out.Body.Status = "voided"
-		log.Printf(
-			"billing: voided org_id=%d product_id=%s job_id=%d source_type=%s source_ref=%s window_seq=%d",
-			reservation.OrgID,
-			reservation.ProductID,
-			reservation.JobID,
-			reservation.SourceType,
-			reservation.SourceRef,
-			reservation.WindowSeq,
+		slog.InfoContext(ctx, "billing: voided",
+			"org_id", reservation.OrgID,
+			"product_id", reservation.ProductID,
+			"job_id", reservation.JobID,
+			"source_type", reservation.SourceType,
+			"source_ref", reservation.SourceRef,
+			"window_seq", reservation.WindowSeq,
 		)
 		return out, nil
 	}

@@ -15,8 +15,13 @@ import (
 	billingclient "github.com/forge-metal/billing-client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+var tracer = otel.Tracer("sandbox-rental-service")
 
 // SandboxRunner abstracts the execution engine for sandbox jobs.
 // Production uses *fastsandbox.Orchestrator; tests use a fake.
@@ -70,14 +75,27 @@ type Service struct {
 // It returns the job ID immediately; the caller polls for completion.
 func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, runCommand string) (uuid.UUID, error) {
 	jobID := uuid.New()
+
+	ctx, span := tracer.Start(ctx, "job.Submit",
+		trace.WithAttributes(
+			attribute.String("job.id", jobID.String()),
+			attribute.Int64("job.org_id", int64(orgID)),
+			attribute.String("job.repo_url", repoURL),
+		))
+	defer span.End()
+
 	now := time.Now().UTC()
 	billingJobID, err := s.nextBillingJobID(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("allocate billing job id: %w", err)
 	}
 
 	currentConcurrent, err := s.countRunningJobs(ctx, orgID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("count running jobs: %w", err)
 	}
 
@@ -89,6 +107,8 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 
 	quotaResult, err := s.Billing.CheckQuotas(ctx, orgID, "sandbox", usage)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("billing check quotas: %w", err)
 	}
 	quotaViolations := 0
@@ -97,6 +117,8 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 	}
 	s.Logger.InfoContext(ctx, "billing quota check", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "allowed", quotaResult.Allowed, "violations", quotaViolations)
 	if !quotaResult.Allowed {
+		span.RecordError(ErrQuotaExceeded)
+		span.SetStatus(codes.Error, ErrQuotaExceeded.Error())
 		return uuid.Nil, ErrQuotaExceeded
 	}
 
@@ -105,11 +127,15 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 		"gib":  usage["gib"],
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("billing reserve: %w", err)
 	}
 	s.Logger.InfoContext(ctx, "billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq)
 	reservationJSON, err := json.Marshal(reservation)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("marshal billing reservation: %w", err)
 	}
 
@@ -123,9 +149,12 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
 			s.Logger.ErrorContext(ctx, "billing void after insert failure", "job_id", jobID, "error", voidErr)
 		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("insert job: %w", err)
 	}
 
+	span.SetAttributes(attribute.Int64("job.billing_job_id", billingJobID))
 	s.Logger.InfoContext(ctx, "job submitted", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "repo_url", repoURL)
 
 	// Run in background goroutine. Detach from request lifecycle but keep trace context.
@@ -136,6 +165,14 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 }
 
 func (s *Service) execute(ctx context.Context, jobID uuid.UUID, orgID uint64, userID, repoURL, runCommand string, reservation billingclient.Reservation) {
+	ctx, span := tracer.Start(ctx, "job.Execute",
+		trace.WithAttributes(
+			attribute.String("job.id", jobID.String()),
+			attribute.Int64("job.org_id", int64(orgID)),
+			attribute.String("job.repo_url", repoURL),
+		))
+	defer span.End()
+
 	startedAt := time.Now().UTC()
 
 	cmd := []string{"echo", "hello"}
@@ -159,6 +196,8 @@ func (s *Service) execute(ctx context.Context, jobID uuid.UUID, orgID uint64, us
 	exitCode := 0
 	if err != nil {
 		status = "failed"
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		s.Logger.ErrorContext(ctx, "job execution failed", "job_id", jobID, "error", err)
 		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
 			s.Logger.ErrorContext(ctx, "billing void", "job_id", jobID, "error", voidErr)
@@ -180,6 +219,12 @@ func (s *Service) execute(ctx context.Context, jobID uuid.UUID, orgID uint64, us
 			s.Logger.InfoContext(ctx, "billing settled", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq, "actual_seconds", actualSeconds, "exit_code", exitCode)
 		}
 	}
+
+	span.SetAttributes(
+		attribute.String("job.status", status),
+		attribute.Int("job.exit_code", exitCode),
+		attribute.Int64("job.duration_ms", durationMs),
+	)
 
 	var zfsWritten uint64
 	var stdoutBytes, stderrBytes uint64

@@ -86,3 +86,61 @@ zig build test  # staleness test verifies the checked-in file matches
 See [docs/protocol.md](docs/protocol.md) for the vector file format and conformance testing model.
 
 Read @homestead-smelter/docs/zig-coding/STYLE.md for coding guidance.
+
+
+
+## Developing homestead-smelter
+
+`smelter-dev.yml` is the fastest way to test homestead-smelter guest changes. It provides a ~10 second edit-test loop by hot-swapping the Zig binary into a dev golden zvol, bypassing the full rootfs rebuild (~90s).
+
+### What it does
+
+The playbook is self-contained — it builds the Zig binary locally, uploads it, then:
+
+1. Clones `forgepool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
+2. Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
+3. Snapshots as `smelter-dev-zvol@ready`
+4. Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
+5. Waits for the VM's vsock bridge socket to appear
+6. Waits for `homestead-smelter-host check-live` to observe the VM
+7. Prints `homestead-smelter-host snapshot` output for the live VM
+8. Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
+
+### Prerequisites
+
+The server must have been deployed at least once with a valid golden image:
+
+```bash
+cd src/platform/ansible && ansible-playbook playbooks/guest-rootfs.yml
+cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
+```
+
+### Usage
+
+```bash
+# Edit src/homestead-smelter/src/guest.zig, then:
+cd src/platform/ansible && ansible-playbook playbooks/smelter-dev.yml
+```
+
+Expected output on success:
+
+```
+→ building homestead-smelter guest (zig)
+→ uploading guest binary
+→ running smelter dev playbook
+→ dev golden ready: forgepool/smelter-dev-zvol@ready
+HELLO job_id=<job-id> stream_generation=3 host_seq=8 guest_seq=0 boot_id=<boot-id> mem_total_kb=2039556
+SAMPLE job_id=<job-id> stream_generation=3 host_seq=100 guest_seq=92 mem_available_kb=1935768 cpu_user_ticks=0
+SNAPSHOT_END host_seq=101
+PASS: host agent observed live guest telemetry
+```
+
+### How it compares to other targets
+
+| Playbook | Time | When to use |
+|----------|------|-------------|
+| `smelter-dev.yml` | ~10s | Iterating on guest Zig code |
+| `guest-rootfs.yml` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
+| `ci-fixtures-pass.yml` | ~3-5min | Re-run the positive fixture suite against the current host |
+| `ci-fixtures-fail.yml` | ~3-5min | Re-run the negative fixture suite against the current host |
+| `ci-fixtures-full.yml` | ~5min+ | Refresh guest artifacts, then run pass and fail suites together |
