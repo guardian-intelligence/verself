@@ -215,7 +215,7 @@ read the Makefile for other common task automation.
 | `playbooks/smelter-dev.yml` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
-| `playbooks/verify-billing-auth.yml` | Create an ephemeral Zitadel machine user and verify billing auth end to end |
+| `playbooks/seed-demo.yml` | Seed demo environment: human user, billing catalog, credits, auth verify (supports `--tags user,billing,verify`) |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
 
