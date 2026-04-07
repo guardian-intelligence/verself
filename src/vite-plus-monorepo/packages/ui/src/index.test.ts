@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import { baselineCapabilities, summarizeCapabilities } from "./index.tsx";
+import { cn } from "./index.tsx";
 
-describe("summarizeCapabilities", () => {
-  it("describes the configured baseline checks", () => {
-    expect(summarizeCapabilities(baselineCapabilities)).toBe("3 workspace checkpoints are live.");
+describe("cn", () => {
+  it("merges class names", () => {
+    expect(cn("px-2", "px-4")).toBe("px-4");
+  });
+
+  it("handles conditional classes", () => {
+    expect(cn("base", false && "hidden", "extra")).toBe("base extra");
   });
 });

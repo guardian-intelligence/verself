@@ -14,4 +14,8 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   plugins: [tailwindcss(), tanstackStart({ srcDirectory: "src" }), viteReact(), nitro()],
+  test: {
+    exclude: ["**/node_modules/**", "**/e2e/**", "**/*.spec.ts"],
+    passWithNoTests: true,
+  },
 });

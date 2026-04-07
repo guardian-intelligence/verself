@@ -1,9 +1,11 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
-  fmt: {},
+  fmt: {
+    ignorePatterns: ["**/routeTree.gen.ts"],
+  },
   lint: {
-    ignorePatterns: ["**/dist/**", "**/.output/**", "**/node_modules/**", "**/routeTree.gen.ts"],
+    ignorePatterns: ["**/dist/**", "**/.output/**", "**/node_modules/**", "**/routeTree.gen.ts", "**/e2e/**", "**/playwright.config.ts"],
     options: { typeAware: true, typeCheck: true },
   },
   test: {
@@ -13,7 +15,7 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "packages/**/*.test.tsx",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.output/**", "**/e2e/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.output/**", "**/e2e/**", "**/*.spec.ts"],
     environment: "node",
   },
   run: {
