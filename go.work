@@ -2,10 +2,7 @@ go 1.25.0
 
 use (
 	./src/auth-middleware
-	./src/billing
-	./src/billing-client
 	./src/billing-service
-	./src/e2e
 	./src/fast-sandbox
 	./src/otel
 	./src/platform

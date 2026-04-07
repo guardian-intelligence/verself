@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	billingclient "github.com/forge-metal/billing-client"
+	billingclient "github.com/forge-metal/billing-service/client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"

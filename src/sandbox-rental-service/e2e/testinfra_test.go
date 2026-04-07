@@ -86,7 +86,7 @@ func sopsSecretsPath() string {
 		panic("resolve caller for sops secrets path")
 	}
 	return filepath.Clean(filepath.Join(
-		filepath.Dir(file), "..", "platform", "ansible", "group_vars", "all", "secrets.sops.yml",
+		filepath.Dir(file), "..", "..", "platform", "ansible", "group_vars", "all", "secrets.sops.yml",
 	))
 }
 
@@ -199,7 +199,7 @@ func migrationPaths(t *testing.T, service, subdir string) []string {
 	if !ok {
 		t.Fatal("resolve caller")
 	}
-	pattern := filepath.Clean(filepath.Join(filepath.Dir(file), "..", service, subdir, "[0-9][0-9][0-9]_*.up.sql"))
+	pattern := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", service, subdir, "[0-9][0-9][0-9]_*.up.sql"))
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		t.Fatalf("glob %s: %v", pattern, err)
@@ -370,7 +370,7 @@ func clickHouseSchemaPaths(t *testing.T) []string {
 	if !ok {
 		t.Fatal("resolve caller")
 	}
-	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "platform", "migrations"))
+	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "platform", "migrations"))
 	schemas := []string{
 		filepath.Join(migrationsDir, "004_billing_metering.up.sql"),
 		filepath.Join(migrationsDir, "007_sandbox_job_logs.up.sql"),

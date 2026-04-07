@@ -8,7 +8,7 @@ import (
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 
-	"github.com/forge-metal/billing"
+	"github.com/forge-metal/billing-service/internal/billing"
 )
 
 func main() {

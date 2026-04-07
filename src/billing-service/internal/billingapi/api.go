@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/forge-metal/billing"
+	"github.com/forge-metal/billing-service/internal/billing"
 	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 )
 

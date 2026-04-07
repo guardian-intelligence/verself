@@ -18,7 +18,7 @@ import (
 	"github.com/stripe/stripe-go/v85/webhook"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 
-	"github.com/forge-metal/billing"
+	"github.com/forge-metal/billing-service/internal/billing"
 )
 
 const (
