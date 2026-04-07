@@ -5,7 +5,14 @@ export default defineConfig({
     ignorePatterns: ["**/routeTree.gen.ts"],
   },
   lint: {
-    ignorePatterns: ["**/dist/**", "**/.output/**", "**/node_modules/**", "**/routeTree.gen.ts", "**/e2e/**", "**/playwright.config.ts"],
+    ignorePatterns: [
+      "**/dist/**",
+      "**/.output/**",
+      "**/node_modules/**",
+      "**/routeTree.gen.ts",
+      "**/e2e/**",
+      "**/playwright.config.ts",
+    ],
     options: { typeAware: true, typeCheck: true },
   },
   test: {

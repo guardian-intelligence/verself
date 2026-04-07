@@ -1,6 +1,6 @@
 # Vite+ Rent-a-Sandbox Baseline
 
-This workspace is the staging area for moving `src/rent-a-sandbox/` onto Vite+ without doing the application port in the same change.
+This workspace is the canonical home for the frontend applications, including `apps/rent-a-sandbox`.
 
 ## Layout
 
@@ -18,4 +18,4 @@ vp run -r build
 vp run @forge-metal/rent-a-sandbox#dev
 ```
 
-`vp check`, `vp test run`, `vp run -r typecheck`, and `vp run -r build` are the baseline gates that need to stay green before the existing frontend is moved over.
+`vp check`, `vp test run`, `vp run -r typecheck`, and `vp run -r build` are the baseline gates for changes in this workspace.

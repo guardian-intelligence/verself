@@ -7,27 +7,64 @@
     group: "{{ ansible_user }}"
     mode: "0755"
 
+- name: Remove generated rent-a-sandbox artifacts before sync
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ rent_a_sandbox_install_dir }}/node_modules"
+    - "{{ rent_a_sandbox_install_dir }}/.output"
+    - "{{ rent_a_sandbox_install_dir }}/.tanstack"
+    - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/node_modules"
+    - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.output"
+    - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.tanstack"
+    - "{{ rent_a_sandbox_install_dir }}/packages/ui/node_modules"
+    - "{{ rent_a_sandbox_install_dir }}/packages/ui/dist"
+
 - name: Synchronize rent-a-sandbox source
+  delegate_to: localhost
+  become: false
   ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/../../../rent-a-sandbox/"
+    src: "{{ playbook_dir }}/../../../vite-plus-monorepo/"
     dest: "{{ rent_a_sandbox_install_dir }}/"
     delete: true
+    recursive: true
     rsync_opts:
       - "--exclude=node_modules"
       - "--exclude=.output"
+      - "--exclude=dist"
+      - "--exclude=.tanstack"
+      - "--exclude=playwright-report"
+      - "--exclude=test-results"
+      - "--exclude=HANDOFF_PROMPT.md"
+      - "--delete-excluded"
+      - "--no-owner"
+      - "--no-group"
 
-- name: Install npm dependencies
+- name: Install rent-a-sandbox workspace dependencies
+  become: false
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/npm install --legacy-peer-deps"
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - install
     chdir: "{{ rent_a_sandbox_install_dir }}"
   environment:
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
 
-- name: Build rent-a-sandbox
+- name: Build rent-a-sandbox workspace
+  become: false
   ansible.builtin.command:
-    cmd: "{{ fm_bin }}/npm run build"
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - exec
+      - vp
+      - run
+      - -r
+      - build
     chdir: "{{ rent_a_sandbox_install_dir }}"
   environment:
     PATH: "{{ fm_bin }}:/usr/bin:/bin"

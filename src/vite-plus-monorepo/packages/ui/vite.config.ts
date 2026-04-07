@@ -3,7 +3,8 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   pack: {
     dts: {
-      tsgo: true,
+      // Keep package builds reproducible on clean deploy hosts.
+      tsgo: false,
     },
     exports: true,
   },
