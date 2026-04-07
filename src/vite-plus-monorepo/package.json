@@ -1,0 +1,21 @@
+{
+  "name": "@forge-metal/vite-plus-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp run @forge-metal/rent-a-sandbox#dev",
+    "check": "vp check",
+    "typecheck": "vp run -r typecheck",
+    "test": "vp test run",
+    "build": "vp run -r build",
+    "ready": "vp check && vp test run && vp run -r typecheck && vp run -r build"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

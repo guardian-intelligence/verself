@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ore-50: #f8f4ee;
+  --color-ore-100: #efe2d0;
+  --color-ore-200: #e6caa0;
+  --color-ore-300: #d59a56;
+  --color-ore-400: #bd6a1d;
+  --color-ore-500: #934d10;
+  --color-ore-900: #321a0b;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background-color: #020617;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
