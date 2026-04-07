@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { fetchBalance, fetchSubscriptions, fetchGrants } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
 import { BalanceCard } from "~/components/balance-card";
+import { Skeleton } from "~/components/ui/skeleton";
 
 export const Route = createFileRoute("/billing/")({
   component: BillingPage,
@@ -11,34 +11,31 @@ export const Route = createFileRoute("/billing/")({
     purchased: search.purchased === true || search.purchased === "true",
     subscribed: search.subscribed === true || search.subscribed === "true",
   }),
+  beforeLoad: ({ search, context }) => {
+    if (search.purchased || search.subscribed) {
+      context.queryClient.invalidateQueries({ queryKey: keys.balance() });
+      context.queryClient.invalidateQueries({ queryKey: keys.subscriptions() });
+      context.queryClient.invalidateQueries({ queryKey: keys.grants(true) });
+    }
+  },
 });
 
 function BillingPage() {
   const { purchased, subscribed } = Route.useSearch();
-  const queryClient = useQueryClient();
 
-  // Immediately refetch after Stripe redirect
-  useEffect(() => {
-    if (purchased || subscribed) {
-      queryClient.invalidateQueries({ queryKey: keys.balance() });
-      queryClient.invalidateQueries({ queryKey: keys.subscriptions() });
-      queryClient.invalidateQueries({ queryKey: keys.grants(true) });
-    }
-  }, [purchased, subscribed, queryClient]);
-
-  const { data: balance } = useQuery({
+  const { data: balance, isPending: balancePending } = useQuery({
     queryKey: keys.balance(),
     queryFn: fetchBalance,
-    staleTime: purchased || subscribed ? 0 : 5_000,
+    staleTime: 5_000,
   });
 
-  const { data: subs } = useQuery({
+  const { data: subs, isPending: subsPending } = useQuery({
     queryKey: keys.subscriptions(),
     queryFn: fetchSubscriptions,
     staleTime: 30_000,
   });
 
-  const { data: grants } = useQuery({
+  const { data: grants, isPending: grantsPending } = useQuery({
     queryKey: keys.grants(true),
     queryFn: () => fetchGrants(true),
     staleTime: 30_000,
@@ -72,7 +69,7 @@ function BillingPage() {
         </div>
       )}
 
-      {balance && <BalanceCard balance={balance} />}
+      {balancePending ? <BalanceCardSkeleton /> : balance && <BalanceCard balance={balance} />}
 
       {/* Subscriptions */}
       <div>
@@ -90,7 +87,9 @@ function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {subs?.subscriptions?.length ? (
+              {subsPending ? (
+                <SkeletonRows cols={4} />
+              ) : subs?.subscriptions?.length ? (
                 subs.subscriptions.map((s) => (
                   <tr key={s.subscription_id}>
                     <td className="px-4 py-2 font-medium">{s.plan_id}</td>
@@ -134,7 +133,9 @@ function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {grants?.grants?.length ? (
+              {grantsPending ? (
+                <SkeletonRows cols={4} />
+              ) : grants?.grants?.length ? (
                 grants.grants.map((g) => (
                   <tr key={g.grant_id}>
                     <td className="px-4 py-2">{g.source}</td>
@@ -164,6 +165,35 @@ function BillingPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function BalanceCardSkeleton() {
+  return (
+    <div className="border border-border rounded-lg p-6 space-y-3">
+      <Skeleton className="h-4 w-32" />
+      <Skeleton className="h-10 w-44" />
+      <div className="flex gap-6 mt-3">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-24" />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonRows({ cols, rows = 2 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r}>
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c} className="px-4 py-2">
+              <Skeleton className="h-4 w-full max-w-[100px]" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
   );
 }
 

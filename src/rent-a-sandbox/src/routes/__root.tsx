@@ -1,13 +1,15 @@
 import {
+  ClientOnly,
   createRootRouteWithContext,
   HeadContent,
   Link,
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
-import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import { QueryClientProvider, useQuery, type QueryClient } from "@tanstack/react-query";
+import { type ReactNode } from "react";
 import { getUser, signIn, signOut, type User } from "~/lib/auth";
+import { keys } from "~/lib/query-keys";
 import "~/styles/globals.css";
 
 declare const process: { env: Record<string, string | undefined> } | undefined;
@@ -100,29 +102,22 @@ function Nav() {
           </Link>
         </div>
         <div className="ml-auto">
-          <AuthButton />
+          <ClientOnly fallback={null}>
+            <AuthButtonInner />
+          </ClientOnly>
         </div>
       </div>
     </nav>
   );
 }
 
-/** Client-only auth button. Uses useState/useEffect instead of useQuery
- *  to avoid the SSR crash (QueryClientProvider not mounted in root). */
-function AuthButton() {
-  const [user, setUser] = useState<User | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    getUser().then(setUser);
-    // Re-check auth state when the tab regains focus (silent renew may have fired).
-    const onFocus = () => getUser().then(setUser);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
-
-  if (!mounted) return null;
+function AuthButtonInner() {
+  const { data: user } = useQuery({
+    queryKey: keys.user(),
+    queryFn: getUser,
+    staleTime: Infinity,
+    refetchOnWindowFocus: true,
+  });
 
   if (!user) {
     return (

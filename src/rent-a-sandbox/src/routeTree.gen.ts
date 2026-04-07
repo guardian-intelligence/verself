@@ -14,6 +14,7 @@ import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as JobsIndexRouteImport } from './routes/jobs.index'
 import { Route as BillingIndexRouteImport } from './routes/billing.index'
+import { Route as JobsNewRouteImport } from './routes/jobs.new'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as BillingSubscribeRouteImport } from './routes/billing.subscribe'
 import { Route as BillingCreditsRouteImport } from './routes/billing.credits'
@@ -43,6 +44,11 @@ const BillingIndexRoute = BillingIndexRouteImport.update({
   path: '/billing/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JobsNewRoute = JobsNewRouteImport.update({
+  id: '/jobs/new',
+  path: '/jobs/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JobsJobIdRoute = JobsJobIdRouteImport.update({
   id: '/jobs/$jobId',
   path: '/jobs/$jobId',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
   '/billing/': typeof BillingIndexRoute
   '/jobs/': typeof JobsIndexRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
   '/billing': typeof BillingIndexRoute
   '/jobs': typeof JobsIndexRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
   '/billing/': typeof BillingIndexRoute
   '/jobs/': typeof JobsIndexRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
+    | '/jobs/new'
     | '/billing/'
     | '/jobs/'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
+    | '/jobs/new'
     | '/billing'
     | '/jobs'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
+    | '/jobs/new'
     | '/billing/'
     | '/jobs/'
   fileRoutesById: FileRoutesById
@@ -130,6 +142,7 @@ export interface RootRouteChildren {
   BillingCreditsRoute: typeof BillingCreditsRoute
   BillingSubscribeRoute: typeof BillingSubscribeRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
+  JobsNewRoute: typeof JobsNewRoute
   BillingIndexRoute: typeof BillingIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
 }
@@ -171,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BillingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/jobs/new': {
+      id: '/jobs/new'
+      path: '/jobs/new'
+      fullPath: '/jobs/new'
+      preLoaderRoute: typeof JobsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/jobs/$jobId': {
       id: '/jobs/$jobId'
       path: '/jobs/$jobId'
@@ -202,6 +222,7 @@ const rootRouteChildren: RootRouteChildren = {
   BillingCreditsRoute: BillingCreditsRoute,
   BillingSubscribeRoute: BillingSubscribeRoute,
   JobsJobIdRoute: JobsJobIdRoute,
+  JobsNewRoute: JobsNewRoute,
   BillingIndexRoute: BillingIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
 }

@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { getUser } from "~/lib/auth";
 import { fetchBalance } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
 import { BalanceCard } from "~/components/balance-card";
+import { Skeleton } from "~/components/ui/skeleton";
 
 export const Route = createFileRoute("/")({
   component: Dashboard,
@@ -12,38 +12,34 @@ export const Route = createFileRoute("/")({
     purchased: search.purchased === true || search.purchased === "true",
     subscribed: search.subscribed === true || search.subscribed === "true",
   }),
+  beforeLoad: ({ search, context }) => {
+    if (search.purchased || search.subscribed) {
+      context.queryClient.invalidateQueries({ queryKey: keys.balance() });
+      context.queryClient.invalidateQueries({ queryKey: keys.subscriptions() });
+      context.queryClient.invalidateQueries({ queryKey: keys.grants(true) });
+    }
+  },
 });
 
 function Dashboard() {
   const { purchased, subscribed } = Route.useSearch();
-  const queryClient = useQueryClient();
-  const [mounted, setMounted] = useState(false);
-  const [user, setUser] = useState<Awaited<ReturnType<typeof getUser>>>(null);
+  const hydrated = useHydrated();
 
-  useEffect(() => {
-    setMounted(true);
-    getUser().then(setUser);
-  }, []);
+  const { data: user } = useQuery({
+    queryKey: keys.user(),
+    queryFn: getUser,
+    enabled: hydrated,
+    staleTime: Infinity,
+  });
 
-  // Immediately refetch balance after Stripe redirect
-  useEffect(() => {
-    if ((purchased || subscribed) && mounted) {
-      queryClient.invalidateQueries({ queryKey: keys.balance() });
-      queryClient.invalidateQueries({ queryKey: keys.subscriptions() });
-      queryClient.invalidateQueries({ queryKey: keys.grants(true) });
-    }
-  }, [purchased, subscribed, mounted, queryClient]);
-
-  const { data: balance } = useQuery({
+  const { data: balance, isPending: balancePending } = useQuery({
     queryKey: keys.balance(),
     queryFn: fetchBalance,
     staleTime: 5_000,
-    enabled: mounted && !!user,
+    enabled: hydrated && !!user,
   });
 
-  if (!mounted) return null;
-
-  if (!user) {
+  if (!hydrated || !user) {
     return (
       <div className="space-y-8">
         <h1 className="text-2xl font-bold">Rent-a-Sandbox</h1>
@@ -87,19 +83,31 @@ function Dashboard() {
         </div>
       )}
 
-      {balance && <BalanceCard balance={balance} />}
-
-      {balance && balance.total_available <= 0 && (
-        <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 text-sm flex items-center justify-between">
-          <span>Your credit balance is empty. Purchase credits to create sandboxes.</span>
-          <Link
-            to="/billing/credits"
-            className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm whitespace-nowrap"
-          >
-            Buy Credits
-          </Link>
+      {balancePending ? (
+        <div className="border border-border rounded-lg p-6 space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-10 w-44" />
+          <div className="flex gap-6 mt-3">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+          </div>
         </div>
-      )}
+      ) : balance ? (
+        <>
+          <BalanceCard balance={balance} />
+          {balance.total_available <= 0 && (
+            <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 text-sm flex items-center justify-between">
+              <span>Your credit balance is empty. Purchase credits to create sandboxes.</span>
+              <Link
+                to="/billing/credits"
+                className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm whitespace-nowrap"
+              >
+                Buy Credits
+              </Link>
+            </div>
+          )}
+        </>
+      ) : null}
 
       <div className="grid md:grid-cols-2 gap-4">
         <Link

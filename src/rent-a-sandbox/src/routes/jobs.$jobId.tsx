@@ -1,10 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo, useEffect, useRef } from "react";
 import { fetchJob, type Job } from "~/lib/api";
 import { createJobLogsCollection, type ElectricJobLog } from "~/lib/collections";
-import { keys } from "~/lib/query-keys";
 
 export const Route = createFileRoute("/jobs/$jobId")({
   component: JobDetailPage,
@@ -12,23 +11,15 @@ export const Route = createFileRoute("/jobs/$jobId")({
 
 function JobDetailPage() {
   const { jobId } = Route.useParams();
-  const queryClient = useQueryClient();
 
   const { data: job, error } = useQuery({
-    queryKey: keys.job(jobId),
+    queryKey: ["jobs", jobId],
     queryFn: () => fetchJob(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === "running" ? 2_000 : false;
     },
   });
-
-  // When job completes, invalidate balance (credits consumed).
-  useEffect(() => {
-    if (job?.status === "completed" || job?.status === "failed") {
-      queryClient.invalidateQueries({ queryKey: keys.balance() });
-    }
-  }, [job?.status, queryClient]);
 
   if (error) {
     return (
