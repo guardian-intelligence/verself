@@ -105,6 +105,10 @@
       tags: [billing_service]
     - role: sandbox_rental_service
       tags: [sandbox_rental_service]
+    - role: electric
+      tags: [electric]
+    - role: rent_a_sandbox
+      tags: [rent_a_sandbox]
     - role: otelcol
       tags: [otelcol]
     - role: hyperdx

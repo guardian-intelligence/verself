@@ -1,0 +1,24 @@
+[Unit]
+Description=Electric Sync Service
+After=forge-metal-firewall.target network.target postgresql.service
+Requires=forge-metal-firewall.target
+Wants=postgresql.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/podman pull {{ electric_image }}
+ExecStart=/usr/bin/podman run --rm \
+  --name electric \
+  --network=host \
+  -e DATABASE_URL=postgresql://electric:{{ electric_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/sandbox_rental \
+  -e ELECTRIC_PORT={{ services.electric.port }} \
+  -e ELECTRIC_SECRET={{ electric_api_secret }} \
+  -e ELECTRIC_STORAGE_DIR=/data \
+  -v {{ electric_storage_dir }}:/data \
+  {{ electric_image }}
+ExecStop=/usr/bin/podman stop electric
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

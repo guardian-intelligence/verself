@@ -80,7 +80,7 @@
 	respond 404
 }
 
-{{ sandbox_rental_service_domain }} {
+{{ rent_a_sandbox_domain }} {
 	import access_log
 	import waf_detection
 
@@ -88,8 +88,15 @@
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
 	}
 
-	# Default deny — no other paths exposed publicly.
-	respond 404
+	handle /v1/shape {
+		uri query -secret
+		uri query +secret {{ caddy_electric_api_secret }}
+		reverse_proxy {{ services.electric.host }}:{{ services.electric.port }}
+	}
+
+	handle {
+		reverse_proxy {{ services.rent_a_sandbox.host }}:{{ services.rent_a_sandbox.port }}
+	}
 }
 
 {{ zitadel_domain }} {

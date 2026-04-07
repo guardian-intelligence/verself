@@ -1,0 +1,101 @@
+---
+- name: Wait for Zitadel readiness
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/healthz"
+    status_code: 200
+  register: rent_a_sandbox_zitadel_health
+  until: rent_a_sandbox_zitadel_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read Zitadel admin PAT
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: rent_a_sandbox_zitadel_pat_raw
+
+- name: Set Zitadel PAT fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_zitadel_pat: "{{ rent_a_sandbox_zitadel_pat_raw.content | b64decode | trim }}"
+
+- name: Search for sandbox-rental project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ rent_a_sandbox_auth_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: rent_a_sandbox_project_search
+
+- name: Set project ID fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_project_id: "{{ rent_a_sandbox_project_search.json.result[0].id }}"
+  when: rent_a_sandbox_project_search.json.result is defined and rent_a_sandbox_project_search.json.result | length > 0
+
+- name: Search for existing rent-a-sandbox app in project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ rent_a_sandbox_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: rent-a-sandbox
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: rent_a_sandbox_app_search
+  when: rent_a_sandbox_project_id is defined
+
+- name: Set existing app fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_app_exists: "{{ rent_a_sandbox_app_search.json.result is defined and rent_a_sandbox_app_search.json.result | length > 0 }}"
+    rent_a_sandbox_client_id: "{{ rent_a_sandbox_app_search.json.result[0].oidcConfig.clientId | default('') }}"
+  when: rent_a_sandbox_app_search is not skipped
+
+- name: Create rent-a-sandbox OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ rent_a_sandbox_project_id }}/apps/oidc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: rent-a-sandbox
+      redirectUris:
+        - "https://{{ rent_a_sandbox_domain }}/callback"
+      responseTypes:
+        - "OIDC_RESPONSE_TYPE_CODE"
+      grantTypes:
+        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+      appType: "OIDC_APP_TYPE_USER_AGENT"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      postLogoutRedirectUris:
+        - "https://{{ rent_a_sandbox_domain }}"
+      devMode: false
+      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+    status_code: 200
+  register: rent_a_sandbox_app_created
+  when: rent_a_sandbox_app_exists is defined and not rent_a_sandbox_app_exists | bool
+
+- name: Set client ID from created app
+  ansible.builtin.set_fact:
+    rent_a_sandbox_client_id: "{{ rent_a_sandbox_app_created.json.clientId }}"
+  when: rent_a_sandbox_app_created is not skipped and rent_a_sandbox_app_created is changed
+
+- name: Ensure env directory exists
+  ansible.builtin.file:
+    path: /etc/rent-a-sandbox
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"

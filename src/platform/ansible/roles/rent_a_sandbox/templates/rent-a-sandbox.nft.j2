@@ -1,0 +1,9 @@
+# Rent-a-sandbox frontend — loopback only, Caddy reverse proxy.
+table inet forge_metal_rent_a_sandbox
+delete table inet forge_metal_rent_a_sandbox
+table inet forge_metal_rent_a_sandbox {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        tcp dport {{ services.rent_a_sandbox.port }} iifname != "lo" drop
+    }
+}

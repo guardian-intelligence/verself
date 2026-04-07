@@ -45,6 +45,12 @@ services:
   sandbox_rental:
     host: "127.0.0.1"
     port: 4243
+  rent_a_sandbox:
+    host: "127.0.0.1"
+    port: 4244
+  electric:
+    host: "127.0.0.1"
+    port: 3010
   zitadel:
     host: "127.0.0.1"
     port: 8085
