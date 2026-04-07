@@ -15,7 +15,7 @@ import (
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 
-	"github.com/forge-metal/billing"
+	"github.com/forge-metal/billing-service/internal/billing"
 )
 
 const seedStripeSecret = "seed-test-dummy"

@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
-	"github.com/forge-metal/billing"
+	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
 	fmotel "github.com/forge-metal/otel"
 	billingruntime "github.com/forge-metal/billing-service/internal/runtime"

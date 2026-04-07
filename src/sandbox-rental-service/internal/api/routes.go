@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	auth "github.com/forge-metal/auth-middleware"
-	billingclient "github.com/forge-metal/billing-client"
+	billingclient "github.com/forge-metal/billing-service/client"
 
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )

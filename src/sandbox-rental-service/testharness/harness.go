@@ -14,7 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	auth "github.com/forge-metal/auth-middleware"
-	billingclient "github.com/forge-metal/billing-client"
+	billingclient "github.com/forge-metal/billing-service/client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"

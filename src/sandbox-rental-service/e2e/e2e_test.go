@@ -15,10 +15,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/stripe/stripe-go/v85"
 
-	"github.com/forge-metal/billing"
-	billingclient "github.com/forge-metal/billing-client"
+	billingclient "github.com/forge-metal/billing-service/client"
 	billingtestharness "github.com/forge-metal/billing-service/testharness"
 	rentaltestharness "github.com/forge-metal/sandbox-rental-service/testharness"
 )
@@ -48,24 +46,16 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 
 	// ---- 2. Billing service (in-process) ----
 
-	sc := stripe.NewClient(stripeKeys.SecretKey)
-	meteringSink := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
-	meteringWriter := billing.NewAsyncMeteringWriter(meteringSink, billing.AsyncMeteringWriterConfig{})
-
-	meteringQuerier := billing.NewClickHouseMeteringQuerier(chConn, "forge_metal")
-	reconcileQuerier := billing.NewClickHouseReconcileQuerier(chConn, "forge_metal")
-
-	billingCfg := billing.DefaultConfig()
-	billingCfg.StripeSecretKey = stripeKeys.SecretKey
-	billingCfg.TigerBeetleAddresses = []string{tbAddr}
-	billingCfg.TigerBeetleClusterID = tbClusterID
-
-	billingClient, err := billing.NewClient(tbClient, pg.billingDB, sc, meteringWriter, meteringQuerier, billingCfg)
-	if err != nil {
-		t.Fatalf("new billing client: %v", err)
-	}
-
-	billingServer := billingtestharness.NewServer(pg.billingDB, tbClient, chConn, billingClient, reconcileQuerier, logger)
+	billingServer := billingtestharness.NewServer(billingtestharness.Config{
+		PG:              pg.billingDB,
+		TBClient:        tbClient,
+		TBAddresses:     []string{tbAddr},
+		TBClusterID:     tbClusterID,
+		CHConn:          chConn,
+		CHDatabase:      "forge_metal",
+		StripeSecretKey: stripeKeys.SecretKey,
+		Logger:          logger,
+	})
 	defer billingServer.Close()
 	t.Logf("billing-service at %s", billingServer.URL)
 
@@ -75,7 +65,7 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 
 	// ---- 3. Seed test data ----
 
-	if err := billingClient.EnsureOrg(ctx, billing.OrgID(testOrgID), "E2E Test Org"); err != nil {
+	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org"); err != nil {
 		t.Fatalf("ensure org: %v", err)
 	}
 
@@ -100,15 +90,7 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 
 	const seedCredits uint64 = 5_000_000
 	expiresAt := time.Now().Add(24 * time.Hour)
-	taskID := billing.TaskID(time.Now().UnixNano())
-	created, err := billingClient.DepositCredits(ctx, &taskID, billing.CreditGrant{
-		OrgID:             billing.OrgID(testOrgID),
-		ProductID:         "sandbox",
-		Amount:            seedCredits,
-		Source:            "purchase",
-		StripeReferenceID: "e2e-test-seed",
-		ExpiresAt:         &expiresAt,
-	})
+	created, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "e2e-test-seed", expiresAt)
 	if err != nil {
 		t.Fatalf("deposit credits: %v", err)
 	}
@@ -116,14 +98,14 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 		t.Fatal("expected new grant, got idempotent replay")
 	}
 
-	balanceBefore, err := billingClient.GetOrgBalance(ctx, billing.OrgID(testOrgID))
+	balanceBefore, _, err := billingServer.GetBalance(ctx, testOrgID)
 	if err != nil {
 		t.Fatalf("get balance: %v", err)
 	}
-	if balanceBefore.CreditAvailable != seedCredits {
-		t.Fatalf("expected credit_available=%d, got %d", seedCredits, balanceBefore.CreditAvailable)
+	if balanceBefore != seedCredits {
+		t.Fatalf("expected credit_available=%d, got %d", seedCredits, balanceBefore)
 	}
-	t.Logf("balance before: credit_available=%d", balanceBefore.CreditAvailable)
+	t.Logf("balance before: credit_available=%d", balanceBefore)
 
 	// ---- 4. Sandbox rental service (in-process) ----
 
@@ -231,20 +213,20 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 
 	// ---- 9. Assert: TigerBeetle credits consumed ----
 
-	balanceAfter, err := billingClient.GetOrgBalance(ctx, billing.OrgID(testOrgID))
+	balanceAfter, _, err := billingServer.GetBalance(ctx, testOrgID)
 	if err != nil {
 		t.Fatalf("get balance after: %v", err)
 	}
-	if balanceAfter.CreditAvailable >= balanceBefore.CreditAvailable {
-		t.Fatalf("credits not consumed: before=%d after=%d", balanceBefore.CreditAvailable, balanceAfter.CreditAvailable)
+	if balanceAfter >= balanceBefore {
+		t.Fatalf("credits not consumed: before=%d after=%d", balanceBefore, balanceAfter)
 	}
-	consumed := balanceBefore.CreditAvailable - balanceAfter.CreditAvailable
+	consumed := balanceBefore - balanceAfter
 
 	// CostPerSec = 2*100 + 2*50 = 300, actualSeconds = 1 → 300 units
 	const expectedCost uint64 = 300
 	if consumed != expectedCost {
 		t.Fatalf("expected %d credits consumed, got %d (before=%d after=%d)",
-			expectedCost, consumed, balanceBefore.CreditAvailable, balanceAfter.CreditAvailable)
+			expectedCost, consumed, balanceBefore, balanceAfter)
 	}
 	t.Logf("credits consumed: %d (expected %d)", consumed, expectedCost)
 
@@ -262,7 +244,7 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 
 	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer flushCancel()
-	if err := meteringWriter.Close(flushCtx); err != nil {
+	if err := billingServer.FlushMetering(flushCtx); err != nil {
 		t.Logf("metering writer close (non-fatal): %v", err)
 	}
 	time.Sleep(500 * time.Millisecond) // allow CH to flush
@@ -295,5 +277,5 @@ func TestSandboxRentalFullFlow(t *testing.T) {
 	t.Logf("sandbox_job_events: %d", eventCount)
 
 	t.Logf("PASS: full sandbox rental flow verified (credits=%d->%d, consumed=%d, metering=%d, events=%d)",
-		balanceBefore.CreditAvailable, balanceAfter.CreditAvailable, consumed, meteringCount, eventCount)
+		balanceBefore, balanceAfter, consumed, meteringCount, eventCount)
 }
