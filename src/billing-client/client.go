@@ -146,6 +146,13 @@ func unexpected(op string, resp *http.Response, problem *ErrorModel) error {
 	return fmt.Errorf("%w: %s %s", ErrUnexpected, op, status)
 }
 
+// Generated returns the underlying generated client for direct access to all
+// billing-service endpoints. Use this for read-only proxy operations where
+// custom error mapping is unnecessary.
+func (c *ServiceClient) Generated() ClientWithResponsesInterface {
+	return c.inner
+}
+
 func statusCode(resp *http.Response) int {
 	if resp == nil {
 		return 0
