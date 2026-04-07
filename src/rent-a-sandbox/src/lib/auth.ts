@@ -38,7 +38,7 @@ export function getUserManager(): UserManager {
     redirect_uri: REDIRECT_URI,
     post_logout_redirect_uri: POST_LOGOUT_URI,
     response_type: "code",
-    scope: "openid profile email",
+    scope: "openid profile email urn:zitadel:iam:user:resourceowner",
     automaticSilentRenew: true,
     userStore: new WebStorageStateStore({ store: sessionStorage }),
   });
