@@ -93,7 +93,11 @@ func (a *App) Ready(ctx context.Context) error {
 	}
 	if a.workerPollInterval > 0 {
 		last := time.Unix(0, a.lastWorkerActivity.Load())
-		if last.IsZero() || a.clock().Sub(last) > 5*a.workerPollInterval {
+		staleThreshold := 5 * a.workerPollInterval
+		if staleThreshold < 5*time.Second {
+			staleThreshold = 5 * time.Second
+		}
+		if last.IsZero() || a.clock().Sub(last) > staleThreshold {
 			return fmt.Errorf("worker inactive since %s", last.UTC().Format(time.RFC3339))
 		}
 	}
