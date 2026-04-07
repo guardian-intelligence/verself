@@ -139,6 +139,18 @@ OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
 make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
 ```
 
+### 6. Debug with traces
+
+`make traces` pulls recent HTTP traces and structured logs from ClickHouse in a single command:
+
+```bash
+make traces                              # Last 5 min, all services
+make traces SERVICE=billing-service      # Filter to one service
+make traces MINUTES=30                   # Last 30 minutes
+make traces ERRORS=1                     # Errors only (4xx/5xx + ERROR/WARN logs)
+make traces SERVICE=sandbox-rental ERRORS=1  # Combine filters
+```
+
 ### TLS with a real domain (Cloudflare)
 
 ```bash
