@@ -5,7 +5,9 @@ use (
 	./src/billing
 	./src/billing-client
 	./src/billing-service
+	./src/e2e
 	./src/fast-sandbox
+	./src/otel
 	./src/platform
 	./src/sandbox-rental-service
 )

@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,13 +17,15 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"github.com/google/uuid"
 	_ "github.com/lib/pq"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
+	fmotel "github.com/forge-metal/otel"
 
+	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
 
@@ -37,7 +37,15 @@ func main() {
 }
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "sandbox-rental-service", ServiceVersion: "1.0.0"})
+	if err != nil {
+		return fmt.Errorf("otel init: %w", err)
+	}
+	defer otelShutdown(context.Background())
+	slog.SetDefault(logger)
 
 	// Secrets via systemd LoadCredential=.
 	pgDSN := requireCredential("pg-dsn")
@@ -120,7 +128,10 @@ func run() error {
 
 	// --- billing client ---
 
-	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(&http.Client{Timeout: 10 * time.Second}))
+	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(&http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   10 * time.Second,
+	}))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
@@ -141,9 +152,9 @@ func run() error {
 	// --- Huma API ---
 
 	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
+	humaAPI := humago.New(mux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
 
-	registerRoutes(api, jobService)
+	sandboxapi.RegisterRoutes(humaAPI, jobService, billingClient)
 
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
@@ -154,164 +165,27 @@ func run() error {
 	// All routes require auth (no webhooks or public ops endpoints).
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           authHandler,
+		Handler:           otelhttp.NewHandler(authHandler, "sandbox-rental-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// --- server lifecycle ---
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("sandbox-rental: shutdown: %v", err)
+			logger.ErrorContext(context.Background(), "sandbox-rental: shutdown", "error", err)
 		}
 	}()
 
-	log.Printf("sandbox-rental: listening on %s", listenAddr)
+	logger.Info("sandbox-rental: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		return fmt.Errorf("sandbox-rental: listen: %w", err)
 	}
 
 	return nil
-}
-
-// --- Huma route registration ---
-
-func registerRoutes(api huma.API, svc *jobs.Service) {
-	huma.Register(api, huma.Operation{
-		OperationID:   "submit-job",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/jobs",
-		Summary:       "Submit a new sandbox job",
-		DefaultStatus: 201,
-	}, submitJob(svc))
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-job",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/jobs/{job_id}",
-		Summary:     "Get job status and result",
-	}, getJob(svc))
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-job-logs",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/jobs/{job_id}/logs",
-		Summary:     "Get job log output",
-	}, getJobLogs(svc))
-}
-
-// --- typed inputs/outputs ---
-
-type submitJobInput struct {
-	Body struct {
-		RepoURL    string `json:"repo_url" required:"true" doc:"GitHub HTTPS URL of the repository"`
-		RunCommand string `json:"run_command,omitempty" doc:"Command to execute (default: echo hello)"`
-	}
-}
-
-type submitJobOutput struct {
-	Body struct {
-		JobID  string `json:"job_id"`
-		Status string `json:"status"`
-	}
-}
-
-type jobIDPath struct {
-	JobID string `path:"job_id" doc:"Job UUID"`
-}
-
-type getJobOutput struct {
-	Body jobs.JobRecord
-}
-
-type getJobLogsOutput struct {
-	Body struct {
-		JobID string `json:"job_id"`
-		Logs  string `json:"logs"`
-	}
-}
-
-// --- handler factories ---
-
-func submitJob(svc *jobs.Service) func(context.Context, *submitJobInput) (*submitJobOutput, error) {
-	return func(ctx context.Context, input *submitJobInput) (*submitJobOutput, error) {
-		identity := auth.FromContext(ctx)
-		if identity == nil {
-			return nil, huma.Error401Unauthorized("missing identity")
-		}
-
-		repoURL := strings.TrimSpace(input.Body.RepoURL)
-		if repoURL == "" {
-			return nil, huma.Error400BadRequest("repo_url is required")
-		}
-		if !strings.HasPrefix(repoURL, "https://") {
-			return nil, huma.Error400BadRequest("repo_url must be an HTTPS URL")
-		}
-
-		orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
-		}
-
-		jobID, err := svc.Submit(ctx, orgID, identity.Subject, repoURL, input.Body.RunCommand)
-		if err != nil {
-			if errors.Is(err, jobs.ErrQuotaExceeded) {
-				return nil, huma.Error429TooManyRequests("quota exceeded")
-			}
-			if errors.Is(err, billingclient.ErrPaymentRequired) {
-				return nil, huma.Error402PaymentRequired("insufficient balance")
-			}
-			return nil, huma.Error500InternalServerError("submit job", err)
-		}
-
-		out := &submitJobOutput{}
-		out.Body.JobID = jobID.String()
-		out.Body.Status = "running"
-		return out, nil
-	}
-}
-
-func getJob(svc *jobs.Service) func(context.Context, *jobIDPath) (*getJobOutput, error) {
-	return func(ctx context.Context, input *jobIDPath) (*getJobOutput, error) {
-		jobID, err := uuid.Parse(input.JobID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid job_id: " + err.Error())
-		}
-
-		job, err := svc.GetJob(ctx, jobID)
-		if err != nil {
-			return nil, huma.Error404NotFound("job not found")
-		}
-
-		out := &getJobOutput{}
-		out.Body = *job
-		return out, nil
-	}
-}
-
-func getJobLogs(svc *jobs.Service) func(context.Context, *jobIDPath) (*getJobLogsOutput, error) {
-	return func(ctx context.Context, input *jobIDPath) (*getJobLogsOutput, error) {
-		jobID, err := uuid.Parse(input.JobID)
-		if err != nil {
-			return nil, huma.Error400BadRequest("invalid job_id: " + err.Error())
-		}
-
-		logs, err := svc.GetJobLogs(ctx, jobID)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("get job logs", err)
-		}
-
-		out := &getJobLogsOutput{}
-		out.Body.JobID = jobID.String()
-		out.Body.Logs = logs
-		return out, nil
-	}
 }
 
 // --- credential helpers (systemd LoadCredential=) ---

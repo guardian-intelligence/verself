@@ -15,7 +15,14 @@ import (
 	billingclient "github.com/forge-metal/billing-client"
 	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// SandboxRunner abstracts the execution engine for sandbox jobs.
+// Production uses *fastsandbox.Orchestrator; tests use a fake.
+type SandboxRunner interface {
+	Run(ctx context.Context, job fastsandbox.JobConfig) (fastsandbox.JobResult, error)
+}
 
 var ErrQuotaExceeded = errors.New("sandbox-rental: quota exceeded")
 
@@ -44,6 +51,7 @@ type SandboxJobEvent struct {
 	StartedAt   time.Time `ch:"started_at"`
 	CompletedAt time.Time `ch:"completed_at"`
 	CreatedAt   time.Time `ch:"created_at"`
+	TraceID     string    `ch:"trace_id"`
 }
 
 // Service manages the sandbox job lifecycle.
@@ -51,7 +59,7 @@ type Service struct {
 	PG            *sql.DB
 	CH            driver.Conn
 	CHDatabase    string
-	Orchestrator  *fastsandbox.Orchestrator
+	Orchestrator  SandboxRunner
 	Billing       *billingclient.ServiceClient
 	BillingVCPUs  int
 	BillingMemMiB int
@@ -87,7 +95,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 	if quotaResult.Violations != nil {
 		quotaViolations = len(*quotaResult.Violations)
 	}
-	s.Logger.Info("billing quota check", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "allowed", quotaResult.Allowed, "violations", quotaViolations)
+	s.Logger.InfoContext(ctx, "billing quota check", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "allowed", quotaResult.Allowed, "violations", quotaViolations)
 	if !quotaResult.Allowed {
 		return uuid.Nil, ErrQuotaExceeded
 	}
@@ -99,7 +107,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("billing reserve: %w", err)
 	}
-	s.Logger.Info("billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq)
+	s.Logger.InfoContext(ctx, "billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq)
 	reservationJSON, err := json.Marshal(reservation)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal billing reservation: %w", err)
@@ -113,21 +121,21 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 	)
 	if err != nil {
 		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
-			s.Logger.Error("billing void after insert failure", "job_id", jobID, "error", voidErr)
+			s.Logger.ErrorContext(ctx, "billing void after insert failure", "job_id", jobID, "error", voidErr)
 		}
 		return uuid.Nil, fmt.Errorf("insert job: %w", err)
 	}
 
-	s.Logger.Info("job submitted", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "repo_url", repoURL)
+	s.Logger.InfoContext(ctx, "job submitted", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "repo_url", repoURL)
 
-	// Run in background goroutine.
-	go s.execute(jobID, orgID, userID, repoURL, runCommand, reservation)
+	// Run in background goroutine. Detach from request lifecycle but keep trace context.
+	execCtx := context.WithoutCancel(ctx)
+	go s.execute(execCtx, jobID, orgID, userID, repoURL, runCommand, reservation)
 
 	return jobID, nil
 }
 
-func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCommand string, reservation billingclient.Reservation) {
-	ctx := context.Background()
+func (s *Service) execute(ctx context.Context, jobID uuid.UUID, orgID uint64, userID, repoURL, runCommand string, reservation billingclient.Reservation) {
 	startedAt := time.Now().UTC()
 
 	cmd := []string{"echo", "hello"}
@@ -151,11 +159,11 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 	exitCode := 0
 	if err != nil {
 		status = "failed"
-		s.Logger.Error("job execution failed", "job_id", jobID, "error", err)
+		s.Logger.ErrorContext(ctx, "job execution failed", "job_id", jobID, "error", err)
 		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
-			s.Logger.Error("billing void", "job_id", jobID, "error", voidErr)
+			s.Logger.ErrorContext(ctx, "billing void", "job_id", jobID, "error", voidErr)
 		} else {
-			s.Logger.Info("billing voided", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq)
+			s.Logger.InfoContext(ctx, "billing voided", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq)
 		}
 	} else {
 		exitCode = result.ExitCode
@@ -167,9 +175,9 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 			actualSeconds = 1
 		}
 		if settleErr := s.Billing.Settle(ctx, reservation, actualSeconds); settleErr != nil {
-			s.Logger.Error("billing settle", "job_id", jobID, "error", settleErr)
+			s.Logger.ErrorContext(ctx, "billing settle", "job_id", jobID, "error", settleErr)
 		} else {
-			s.Logger.Info("billing settled", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq, "actual_seconds", actualSeconds, "exit_code", exitCode)
+			s.Logger.InfoContext(ctx, "billing settled", "job_id", jobID, "billing_job_id", reservation.JobId, "org_id", orgID, "window_seq", reservation.WindowSeq, "actual_seconds", actualSeconds, "exit_code", exitCode)
 		}
 	}
 
@@ -187,7 +195,7 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 		status, exitCode, durationMs, int64(zfsWritten), completedAt, jobID,
 	)
 	if pgErr != nil {
-		s.Logger.Error("update job record", "job_id", jobID, "error", pgErr)
+		s.Logger.ErrorContext(ctx, "update job record", "job_id", jobID, "error", pgErr)
 	}
 
 	// Dual-write logs to PG + ClickHouse.
@@ -196,6 +204,10 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 	}
 
 	// Write job telemetry to ClickHouse.
+	var traceID string
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		traceID = sc.TraceID().String()
+	}
 	s.writeJobEvent(ctx, SandboxJobEvent{
 		JobID:       jobID.String(),
 		OrgID:       orgID,
@@ -211,6 +223,7 @@ func (s *Service) execute(jobID uuid.UUID, orgID uint64, userID, repoURL, runCom
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
 		CreatedAt:   startedAt,
+		TraceID:     traceID,
 	})
 }
 
@@ -232,7 +245,7 @@ func (s *Service) writeLogChunks(ctx context.Context, jobID uuid.UUID, logs stri
 			jobID, seq, "stdout", []byte(chunk), createdAt,
 		)
 		if pgErr != nil {
-			s.Logger.Error("write log chunk to PG", "job_id", jobID, "seq", seq, "error", pgErr)
+			s.Logger.ErrorContext(ctx, "write log chunk to PG", "job_id", jobID, "seq", seq, "error", pgErr)
 		}
 
 		// ClickHouse write (feeds observability dashboards).
@@ -244,7 +257,7 @@ func (s *Service) writeLogChunks(ctx context.Context, jobID uuid.UUID, logs stri
 			CreatedAt: createdAt,
 		})
 		if chErr != nil {
-			s.Logger.Error("write log chunk to ClickHouse", "job_id", jobID, "seq", seq, "error", chErr)
+			s.Logger.ErrorContext(ctx, "write log chunk to ClickHouse", "job_id", jobID, "seq", seq, "error", chErr)
 		}
 
 		seq++
@@ -265,15 +278,15 @@ func (s *Service) writeLogChunkCH(ctx context.Context, row SandboxJobLog) error 
 func (s *Service) writeJobEvent(ctx context.Context, event SandboxJobEvent) {
 	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO "+s.CHDatabase+".sandbox_job_events")
 	if err != nil {
-		s.Logger.Error("prepare job event batch", "error", err)
+		s.Logger.ErrorContext(ctx, "prepare job event batch", "error", err)
 		return
 	}
 	if err := batch.AppendStruct(&event); err != nil {
-		s.Logger.Error("append job event", "error", err)
+		s.Logger.ErrorContext(ctx, "append job event", "error", err)
 		return
 	}
 	if err := batch.Send(); err != nil {
-		s.Logger.Error("send job event batch", "error", err)
+		s.Logger.ErrorContext(ctx, "send job event batch", "error", err)
 	}
 }
 
