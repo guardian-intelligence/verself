@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo } from "react";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { fetchJob, type Job } from "~/lib/api";
 import { createJobLogsCollection, type ElectricJobLog } from "~/lib/collections";
 
@@ -109,19 +110,14 @@ function LiveJobLogs({
   isRunning: boolean;
 }) {
   const collection = useMemo(() => createJobLogsCollection(jobId), [jobId]);
-  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } =
+    useStickToBottom();
 
   const { data: logChunks } = useLiveQuery(
     (q) => q.from({ l: collection }),
     [collection],
   );
-
-  // Auto-scroll to bottom when new logs arrive while running.
-  useEffect(() => {
-    if (isRunning && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [logChunks?.length, isRunning]);
 
   // Sort chunks by sequence number before concatenating.
   const logText = logChunks
@@ -134,10 +130,24 @@ function LiveJobLogs({
   return (
     <div>
       <h2 className="text-lg font-semibold mb-2">Logs</h2>
-      <pre className="bg-foreground/5 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto max-h-[600px] overflow-y-auto whitespace-pre-wrap">
-        {logText || (isRunning ? "Waiting for output..." : "No log output.")}
-        <div ref={logEndRef} />
-      </pre>
+      <div className="relative">
+        <pre
+          ref={scrollRef}
+          className="bg-foreground/5 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto max-h-[600px] overflow-y-auto whitespace-pre-wrap"
+        >
+          <div ref={contentRef}>
+            {logText || (isRunning ? "Waiting for output..." : "No log output.")}
+          </div>
+        </pre>
+        {!isAtBottom && logText && (
+          <button
+            onClick={() => scrollToBottom()}
+            className="absolute bottom-3 right-3 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs hover:opacity-90 shadow-md"
+          >
+            Scroll to bottom
+          </button>
+        )}
+      </div>
     </div>
   );
 }
