@@ -38,6 +38,9 @@ type App struct {
 	clock              func() time.Time
 	workerPollInterval time.Duration
 	lastWorkerActivity atomic.Int64
+	// workerWake is signaled after a task is enqueued so the worker wakes
+	// immediately instead of waiting for the next poll tick.
+	workerWake chan struct{}
 }
 
 func New(
@@ -58,6 +61,7 @@ func New(
 		StripeWebhookSecret: stripeWebhookSecret,
 		Logger:              logger,
 		clock:               time.Now,
+		workerWake:          make(chan struct{}, 1),
 	}
 	app.markWorkerActivity()
 	return app
@@ -97,6 +101,8 @@ func (a *App) Ready(ctx context.Context) error {
 }
 
 // RunWorker claims and executes billing tasks until ctx is cancelled.
+// It wakes immediately when signaled via workerWake (after task enqueue)
+// and falls back to polling every pollInterval as a safety net.
 func (a *App) RunWorker(ctx context.Context, pollInterval time.Duration) error {
 	a.workerPollInterval = pollInterval
 	a.markWorkerActivity()
@@ -122,6 +128,8 @@ func (a *App) RunWorker(ctx context.Context, pollInterval time.Duration) error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
+			case <-a.workerWake:
+				continue
 			case <-time.After(pollInterval):
 				continue
 			}
@@ -181,8 +189,6 @@ func (a *App) dispatchTask(ctx context.Context, task claimedTask) error {
 	switch task.TaskType {
 	case "stripe_webhook_event":
 		return a.dispatchWebhookEvent(ctx, task)
-	case "stripe_purchase_deposit":
-		return a.dispatchPurchaseDeposit(ctx, task)
 	case "stripe_subscription_credit_deposit":
 		return a.dispatchSubscriptionCreditDeposit(ctx, task)
 	case "stripe_licensed_charge":
@@ -201,44 +207,11 @@ func (a *App) dispatchWebhookEvent(ctx context.Context, task claimedTask) error 
 	if err := json.Unmarshal(task.Payload, &event); err != nil {
 		return fmt.Errorf("parse stripe webhook event payload: %w", err)
 	}
-	if err := a.handleWebhookEvent(ctx, event); err != nil {
+	if err := a.handleWebhookEvent(ctx, task, event); err != nil {
 		return err
 	}
 	a.Logger.InfoContext(ctx, "billing: processed stripe webhook", "stripe_event_id", event.ID, "type", event.Type, "task_id", task.TaskID)
 	return nil
-}
-
-func (a *App) dispatchPurchaseDeposit(ctx context.Context, task claimedTask) error {
-	var payload struct {
-		OrgID             string `json:"org_id"`
-		ProductID         string `json:"product_id"`
-		StripePIID        string `json:"stripe_payment_intent_id"`
-		AmountLedgerUnits int64  `json:"amount_ledger_units"`
-		ExpiresAt         string `json:"expires_at"`
-	}
-	if err := json.Unmarshal(task.Payload, &payload); err != nil {
-		return fmt.Errorf("parse purchase deposit payload: %w", err)
-	}
-
-	orgID, err := strconv.ParseUint(payload.OrgID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("parse org_id %q: %w", payload.OrgID, err)
-	}
-	expiresAt, err := time.Parse(time.RFC3339, payload.ExpiresAt)
-	if err != nil {
-		return fmt.Errorf("parse expires_at: %w", err)
-	}
-
-	taskID := billing.TaskID(task.TaskID)
-	_, err = a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
-		OrgID:             billing.OrgID(orgID),
-		ProductID:         payload.ProductID,
-		Amount:            uint64(payload.AmountLedgerUnits),
-		Source:            "purchase",
-		StripeReferenceID: payload.StripePIID,
-		ExpiresAt:         &expiresAt,
-	})
-	return err
 }
 
 func (a *App) dispatchSubscriptionCreditDeposit(ctx context.Context, task claimedTask) error {
@@ -364,12 +337,12 @@ func (a *App) dispatchTrustTierEvaluate(ctx context.Context, _ claimedTask) erro
 	return nil
 }
 
-func (a *App) handleWebhookEvent(ctx context.Context, event stripe.Event) error {
+func (a *App) handleWebhookEvent(ctx context.Context, task claimedTask, event stripe.Event) error {
 	switch event.Type {
 	case "checkout.session.completed":
 		return a.handleCheckoutSessionCompleted(ctx, event)
 	case "payment_intent.succeeded":
-		return a.handlePaymentIntentSucceeded(ctx, event)
+		return a.handlePaymentIntentSucceeded(ctx, task, event)
 	case "invoice.paid":
 		return a.handleInvoicePaid(ctx, event)
 	case "invoice.payment_failed":
@@ -418,7 +391,7 @@ func (a *App) handleCheckoutSessionCompleted(ctx context.Context, event stripe.E
 	return nil
 }
 
-func (a *App) handlePaymentIntentSucceeded(ctx context.Context, event stripe.Event) error {
+func (a *App) handlePaymentIntentSucceeded(ctx context.Context, task claimedTask, event stripe.Event) error {
 	piID := event.GetObjectValue("id")
 	if piID == "" {
 		return fmt.Errorf("payment_intent.succeeded: missing payment_intent id")
@@ -438,14 +411,21 @@ func (a *App) handlePaymentIntentSucceeded(ctx context.Context, event stripe.Eve
 	amountLedgerUnits := amountCents * 100_000
 	expiresAt := a.clock().UTC().AddDate(1, 0, 0)
 
-	payload := map[string]any{
-		"org_id":                   orgIDStr,
-		"product_id":               productID,
-		"stripe_payment_intent_id": piID,
-		"amount_ledger_units":      amountLedgerUnits,
-		"expires_at":               expiresAt.Format(time.RFC3339),
+	orgID, err := strconv.ParseUint(orgIDStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("payment_intent.succeeded: parse org_id %q: %w", orgIDStr, err)
 	}
-	return a.enqueueTask(ctx, "stripe_purchase_deposit", piID, payload)
+
+	taskID := billing.TaskID(task.TaskID)
+	_, err = a.Billing.DepositCredits(ctx, &taskID, billing.CreditGrant{
+		OrgID:             billing.OrgID(orgID),
+		ProductID:         productID,
+		Amount:            uint64(amountLedgerUnits),
+		Source:            "purchase",
+		StripeReferenceID: piID,
+		ExpiresAt:         &expiresAt,
+	})
+	return err
 }
 
 func (a *App) handleInvoicePaid(ctx context.Context, event stripe.Event) error {
@@ -699,6 +679,12 @@ func (a *App) enqueueRawTask(ctx context.Context, taskType, idempotencyKey strin
 	`, taskType, string(payloadJSON), idempotencyKey)
 	if err != nil {
 		return fmt.Errorf("enqueue task %s: %w", taskType, err)
+	}
+	// Wake the worker immediately. Non-blocking send — if the channel is
+	// already full the worker is either awake or about to poll.
+	select {
+	case a.workerWake <- struct{}{}:
+	default:
 	}
 	return nil
 }
