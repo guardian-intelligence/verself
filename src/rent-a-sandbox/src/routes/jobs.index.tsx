@@ -1,19 +1,16 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchBalance, submitJob } from "~/lib/api";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { fetchBalance } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
 import { useLiveQuery } from "@tanstack/react-db";
 import {
   createJobsCollection,
   type ElectricJob,
 } from "~/lib/collections";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/jobs/")({
   component: JobsPage,
-  validateSearch: (search: Record<string, unknown>) => ({
-    create: search.create === true,
-  }),
 });
 
 function JobsPage() {
@@ -37,7 +34,12 @@ function JobsPage() {
             New Sandbox
           </span>
         ) : (
-          <CreateSandboxDialog />
+          <Link
+            to="/jobs/new"
+            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
+          >
+            New Sandbox
+          </Link>
         )}
       </div>
 
@@ -64,92 +66,11 @@ function JobsPage() {
   );
 }
 
-function CreateSandboxDialog() {
-  const [open, setOpen] = useState(false);
-  const [repoUrl, setRepoUrl] = useState("");
-  const [runCommand, setRunCommand] = useState("");
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: () => submitJob(repoUrl, runCommand || undefined),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: keys.jobs() });
-      queryClient.invalidateQueries({ queryKey: keys.balance() });
-      setOpen(false);
-      navigate({ to: "/jobs/$jobId", params: { jobId: data.job_id } });
-    },
-  });
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
-      >
-        New Sandbox
-      </button>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md space-y-4">
-        <h2 className="text-lg font-semibold">Create Sandbox</h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium">Repository URL</label>
-            <input
-              type="url"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              placeholder="https://github.com/user/repo"
-              className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium">
-              Run command{" "}
-              <span className="text-muted-foreground">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={runCommand}
-              onChange={(e) => setRunCommand(e.target.value)}
-              placeholder="npm test"
-              className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={() => setOpen(false)}
-            className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => mutation.mutate()}
-            disabled={!repoUrl || mutation.isPending}
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
-          >
-            {mutation.isPending ? "Creating..." : "Create"}
-          </button>
-        </div>
-        {mutation.error && (
-          <p className="text-sm text-destructive">{mutation.error.message}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /** Live job table backed by Electric real-time sync.
  *  Only mounts once we have org_id (i.e. after auth + balance load),
  *  which naturally prevents SSR rendering. */
 function LiveJobTable({ orgId }: { orgId: string }) {
   const collection = useMemo(() => createJobsCollection(orgId), [orgId]);
-  const queryClient = useQueryClient();
 
   const { data: jobs } = useLiveQuery(
     (q) => q.from({ j: collection }),
@@ -168,16 +89,6 @@ function LiveJobTable({ orgId }: { orgId: string }) {
         : null,
     [jobs],
   );
-
-  // When Electric delivers a job status change, invalidate balance so it refetches.
-  const completedCount = jobs?.filter(
-    (j) => j.status === "completed" || j.status === "failed",
-  ).length;
-  useEffect(() => {
-    if (completedCount !== undefined && completedCount > 0) {
-      queryClient.invalidateQueries({ queryKey: keys.balance() });
-    }
-  }, [completedCount, queryClient]);
 
   if (!sortedJobs || sortedJobs.length === 0) {
     return (
