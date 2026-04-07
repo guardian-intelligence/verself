@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.output/
+.turbo/
+.vinxi/
+*.tsbuildinfo
+.env
+.env.local
+.env.production
+.DS_Store
+.tanstack
