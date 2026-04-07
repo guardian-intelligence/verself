@@ -9,38 +9,160 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as JobsIndexRouteImport } from './routes/jobs.index'
+import { Route as BillingIndexRouteImport } from './routes/billing.index'
+import { Route as JobsNewRouteImport } from './routes/jobs.new'
+import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
+import { Route as BillingSubscribeRouteImport } from './routes/billing.subscribe'
+import { Route as BillingCreditsRouteImport } from './routes/billing.credits'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CallbackRoute = CallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JobsIndexRoute = JobsIndexRouteImport.update({
+  id: '/jobs/',
+  path: '/jobs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingIndexRoute = BillingIndexRouteImport.update({
+  id: '/billing/',
+  path: '/billing/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsNewRoute = JobsNewRouteImport.update({
+  id: '/jobs/new',
+  path: '/jobs/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsJobIdRoute = JobsJobIdRouteImport.update({
+  id: '/jobs/$jobId',
+  path: '/jobs/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingSubscribeRoute = BillingSubscribeRouteImport.update({
+  id: '/billing/subscribe',
+  path: '/billing/subscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingCreditsRoute = BillingCreditsRouteImport.update({
+  id: '/billing/credits',
+  path: '/billing/credits',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/login': typeof LoginRoute
+  '/billing/credits': typeof BillingCreditsRoute
+  '/billing/subscribe': typeof BillingSubscribeRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
+  '/billing/': typeof BillingIndexRoute
+  '/jobs/': typeof JobsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/login': typeof LoginRoute
+  '/billing/credits': typeof BillingCreditsRoute
+  '/billing/subscribe': typeof BillingSubscribeRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
+  '/billing': typeof BillingIndexRoute
+  '/jobs': typeof JobsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/login': typeof LoginRoute
+  '/billing/credits': typeof BillingCreditsRoute
+  '/billing/subscribe': typeof BillingSubscribeRoute
+  '/jobs/$jobId': typeof JobsJobIdRoute
+  '/jobs/new': typeof JobsNewRoute
+  '/billing/': typeof BillingIndexRoute
+  '/jobs/': typeof JobsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/callback'
+    | '/login'
+    | '/billing/credits'
+    | '/billing/subscribe'
+    | '/jobs/$jobId'
+    | '/jobs/new'
+    | '/billing/'
+    | '/jobs/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/callback'
+    | '/login'
+    | '/billing/credits'
+    | '/billing/subscribe'
+    | '/jobs/$jobId'
+    | '/jobs/new'
+    | '/billing'
+    | '/jobs'
+  id:
+    | '__root__'
+    | '/'
+    | '/callback'
+    | '/login'
+    | '/billing/credits'
+    | '/billing/subscribe'
+    | '/jobs/$jobId'
+    | '/jobs/new'
+    | '/billing/'
+    | '/jobs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CallbackRoute: typeof CallbackRoute
+  LoginRoute: typeof LoginRoute
+  BillingCreditsRoute: typeof BillingCreditsRoute
+  BillingSubscribeRoute: typeof BillingSubscribeRoute
+  JobsJobIdRoute: typeof JobsJobIdRoute
+  JobsNewRoute: typeof JobsNewRoute
+  BillingIndexRoute: typeof BillingIndexRoute
+  JobsIndexRoute: typeof JobsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/callback': {
+      id: '/callback'
+      path: '/callback'
+      fullPath: '/callback'
+      preLoaderRoute: typeof CallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +170,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/jobs/': {
+      id: '/jobs/'
+      path: '/jobs'
+      fullPath: '/jobs/'
+      preLoaderRoute: typeof JobsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/': {
+      id: '/billing/'
+      path: '/billing'
+      fullPath: '/billing/'
+      preLoaderRoute: typeof BillingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs/new': {
+      id: '/jobs/new'
+      path: '/jobs/new'
+      fullPath: '/jobs/new'
+      preLoaderRoute: typeof JobsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs/$jobId': {
+      id: '/jobs/$jobId'
+      path: '/jobs/$jobId'
+      fullPath: '/jobs/$jobId'
+      preLoaderRoute: typeof JobsJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/subscribe': {
+      id: '/billing/subscribe'
+      path: '/billing/subscribe'
+      fullPath: '/billing/subscribe'
+      preLoaderRoute: typeof BillingSubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/credits': {
+      id: '/billing/credits'
+      path: '/billing/credits'
+      fullPath: '/billing/credits'
+      preLoaderRoute: typeof BillingCreditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CallbackRoute: CallbackRoute,
+  LoginRoute: LoginRoute,
+  BillingCreditsRoute: BillingCreditsRoute,
+  BillingSubscribeRoute: BillingSubscribeRoute,
+  JobsJobIdRoute: JobsJobIdRoute,
+  JobsNewRoute: JobsNewRoute,
+  BillingIndexRoute: BillingIndexRoute,
+  JobsIndexRoute: JobsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
