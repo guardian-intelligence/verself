@@ -5,32 +5,36 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "start": "node .output/server/index.mjs"
+    "start": "node .output/server/index.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
-    "@tanstack/react-start": "^1.166.0",
-    "@tanstack/react-router": "^1.167.0",
-    "@tanstack/react-query": "^5.75.0",
     "@tanstack/db": "^0.6.0",
-    "@tanstack/react-db": "^0.1.78",
     "@tanstack/electric-db-collection": "^0.2.43",
     "@tanstack/query-db-collection": "^1.0.31",
+    "@tanstack/react-db": "^0.1.78",
+    "@tanstack/react-query": "^5.75.0",
+    "@tanstack/react-router": "^1.167.0",
+    "@tanstack/react-start": "^1.166.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.475.0",
     "nitro": "^3.0.260311-beta",
     "oidc-client-ts": "^3.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.475.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "tailwind-merge": "^3.0.2"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.1",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4",
-    "tailwindcss": "^4",
-    "vite": "^8.0.0",
-    "typescript": "^5.9.3",
     "@types/react": "^19",
-    "@types/react-dom": "^19"
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
   }
 }
