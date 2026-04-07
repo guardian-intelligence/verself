@@ -145,10 +145,21 @@ receivers:
       - type: remove
         field: attributes.source
         if: attributes.source != nil
+  # App logs for billing-service and sandbox-rental flow through OTLP (via
+  # otelslog bridge), not journald. These receivers capture only systemd
+  # lifecycle messages (start/stop/crash) and pre-init fatal errors.
   journald/billing-service:
     units: [billing-service]
     resource:
       service.name: billing-service
+  journald/sandbox-rental:
+    units: [sandbox-rental-service]
+    resource:
+      service.name: sandbox-rental-service
+  journald/homestead-smelter:
+    units: [homestead-smelter-host]
+    resource:
+      service.name: homestead-smelter-host
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
@@ -193,7 +204,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -232,7 +243,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/zitadel, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/zitadel, journald/homestead-smelter, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:

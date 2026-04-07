@@ -28,7 +28,7 @@ Required - Email Delivery (Resend only for now)
                               ┌────────▼──┐ ┌─────▼────┐ ┌──▼───┐ ┌───▼────┐ ┌───▼──────────┐
                               │rent-a-    │ │billing-  │ │Zitadel│ │Forgejo │ │  HyperDX     │
                               │sandbox    │ │service   │ │(OIDC) │ │(git+CI)│ │  (obs UI)    │
-                              │(Next.js)  │ │(Go/Huma) │ │       │ │        │ │              │
+                              │(webapp)   │ │(Go/Huma) │ │       │ │        │ │              │
                               └─────┬─────┘ └──┬───┬───┘ └──┬───┘ └───┬────┘ └──────────────┘
                                     │          │   │        │         │
                               ┌─────▼──────────▼┐  │   OIDC JWKS      │
@@ -69,6 +69,12 @@ Required - Email Delivery (Resend only for now)
                               │  (webhooks)   │
                               └───────────────┘
 ```
+
+See src/platform/ansible/group_vars/all/services.yml for port assignments.
+
+Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each service's Ansible role to `/etc/credstore/{service}/` (root-owned, service-group-readable), and loaded at runtime via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`.
+
+Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services.
 
 ### Auth model
 
@@ -113,53 +119,9 @@ arch at a high level:
 
 * Less important but useful if editing instructions: .claude/CLAUDE.md is symlinked from AGENTS.md
 
-## CI Architecture
+## CI Architecture & Quickstart
 
 See README.md for more -- the repo started as a CI orchestrator but has since evolved.
-
-## Quick Start
-
-### 1. Install dev tools
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/setup-dev.yml
-```
-
-### 2. Provision bare metal
-
-```bash
-# Create your tfvars (one-time)
-cp src/platform/terraform/terraform.tfvars.example.json src/platform/terraform/terraform.tfvars.json
-# Edit terraform.tfvars.json — set project_id to your Latitude.sh project
-
-# Provision server + generate Ansible inventory
-cd src/platform/ansible && ansible-playbook playbooks/provision.yml
-```
-
-This provisions a bare metal server via OpenTofu and auto-generates the gitignored `src/platform/ansible/inventory/hosts.ini` from the outputs. The Latitude.sh auth token is read from SOPS-encrypted secrets.
-
-### 3. Deploy
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
-```
-
-Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --tags caddy
-```
-
-### 4. Log in
-
-```bash
-# HyperDX admin credentials are in the SOPS-encrypted secrets file
-sops -d --extract '["hyperdx_admin_email_slug"]' src/platform/ansible/group_vars/all/secrets.sops.yml
-sops -d --extract '["hyperdx_admin_password_base"]' src/platform/ansible/group_vars/all/secrets.sops.yml
-# Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
-```
-
-Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
 
 ### 5. Query ClickHouse
 
@@ -218,19 +180,6 @@ go build / xcaddy build   --> compile Go binaries on controller
 ansible-playbook           --> download static binaries, install apt packages, configure + enable services
 ```
 
-| Component | Port | Purpose |
-|-----------|------|---------|
-| Caddy | 443, 80 | Reverse proxy with automatic TLS + WAF |
-| Billing Service | 4242 | Billing HTTP API (Reserve/Settle/Void, Stripe webhooks) |
-| Forgejo | 3000 | Git server + CI runner |
-| Verdaccio | 4873 | Sealed npm registry mirror |
-| Zitadel | 8085 | Identity provider (OIDC) |
-| ClickHouse | 9000, 8123 | Wide event storage with optimized codecs |
-| TigerBeetle | 3320 | Financial ledger (double-entry accounting) |
-| PostgreSQL | 5432 | Application databases (one per service) |
-| HyperDX | 8080, 8000 | Observability UI + API |
-| OTel Collector | 4317, 4318 | OTLP telemetry ingestion |
-| MongoDB | 27017 | HyperDX app state |
 
 ### Wide Events
 
@@ -243,31 +192,11 @@ Compression codecs per column type:
 - Low-cardinality strings: `LowCardinality + ZSTD(3)`
 - Floats: `Gorilla + ZSTD(3)`
 
-## Makefile Targets (local only)
-
-| Target | Description |
-|--------|-------------|
-| `make build` | Build the `forge-metal` Go binary locally |
-| `make test` | Run Go tests |
-| `make test-integration` | Run all tests including ZFS integration (requires sudo + zfs) |
-| `make lint` | Run golangci-lint |
-| `make lint-ansible` | Run ansible-lint on playbooks and roles |
-| `make fmt` | Format Go code with gofumpt |
-| `make vet` | Run go vet |
-| `make tidy` | Run go mod tidy |
-| `make doctor` | Check that all required dev tools are present and at the right version |
-| `make setup-domain` | Configure Cloudflare domain (interactive wizard) |
-| `make inventory-check` | Validate that the generated Ansible inventory exists |
-| `make verify-billing-auth` | Run the billing auth verification playbook |
-| `make smelter-build` | Build homestead-smelter Zig host/guest binaries locally |
-| `make clickhouse-shell` | Open an interactive clickhouse-client session on the worker |
-| `make clickhouse-query` | Run a ClickHouse query on the worker |
-| `make clickhouse-schemas` | Print CREATE TABLE statements for all project tables |
-| `make edit-secrets` | Open encrypted secrets in $EDITOR via sops |
-
 ## Ansible Playbooks
 
 All remote orchestration is done via Ansible playbooks. Run from the `src/platform/ansible/` directory.
+
+read the Makefile for other common task automation.
 
 | Playbook | Description |
 |----------|-------------|
@@ -289,62 +218,6 @@ All remote orchestration is done via Ansible playbooks. Run from the `src/platfo
 | `playbooks/verify-billing-auth.yml` | Create an ephemeral Zitadel machine user and verify billing auth end to end |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
-
-## Developing homestead-smelter
-
-`smelter-dev.yml` is the fastest way to test homestead-smelter guest changes. It provides a ~10 second edit-test loop by hot-swapping the Zig binary into a dev golden zvol, bypassing the full rootfs rebuild (~90s).
-
-### What it does
-
-The playbook is self-contained — it builds the Zig binary locally, uploads it, then:
-
-1. Clones `forgepool/golden-zvol@ready` to a temporary `smelter-dev-zvol`
-2. Mounts the clone, replaces `/usr/local/bin/homestead-smelter-guest`, unmounts
-3. Snapshots as `smelter-dev-zvol@ready`
-4. Boots a Firecracker VM from the dev zvol via `forge-metal firecracker-test`
-5. Waits for the VM's vsock bridge socket to appear
-6. Waits for `homestead-smelter-host check-live` to observe the VM
-7. Prints `homestead-smelter-host snapshot` output for the live VM
-8. Prints PASS/FAIL, waits for VM exit, destroys the dev zvol
-
-### Prerequisites
-
-The server must have been deployed at least once with a valid golden image:
-
-```bash
-cd src/platform/ansible && ansible-playbook playbooks/guest-rootfs.yml
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
-```
-
-### Usage
-
-```bash
-# Edit src/homestead-smelter/src/guest.zig, then:
-cd src/platform/ansible && ansible-playbook playbooks/smelter-dev.yml
-```
-
-Expected output on success:
-
-```
-→ building homestead-smelter guest (zig)
-→ uploading guest binary
-→ running smelter dev playbook
-→ dev golden ready: forgepool/smelter-dev-zvol@ready
-HELLO job_id=<job-id> stream_generation=3 host_seq=8 guest_seq=0 boot_id=<boot-id> mem_total_kb=2039556
-SAMPLE job_id=<job-id> stream_generation=3 host_seq=100 guest_seq=92 mem_available_kb=1935768 cpu_user_ticks=0
-SNAPSHOT_END host_seq=101
-PASS: host agent observed live guest telemetry
-```
-
-### How it compares to other targets
-
-| Playbook | Time | When to use |
-|----------|------|-------------|
-| `smelter-dev.yml` | ~10s | Iterating on guest Zig code |
-| `guest-rootfs.yml` | ~90s | Changed forgevm-init, Alpine packages, or kernel |
-| `ci-fixtures-pass.yml` | ~3-5min | Re-run the positive fixture suite against the current host |
-| `ci-fixtures-fail.yml` | ~3-5min | Re-run the negative fixture suite against the current host |
-| `ci-fixtures-full.yml` | ~5min+ | Refresh guest artifacts, then run pass and fail suites together |
 
 ## Project Structure
 
@@ -425,25 +298,6 @@ forge-metal/                            # Monorepo root
     ├── server-tools.json               # Pinned server binary versions + SHA256
     └── dev-tools.json                  # Pinned dev tool versions + SHA256
 ```
-
-## Firecracker CI Status
-
-The current end-to-end proof is the controlled fixture suite under `src/platform/test/fixtures/`, executed via internal Forgejo Actions and `forge-metal ci warm/exec`.
-
-### Current platform decisions
-
-- `forge-metal` is the current primary, and soon to be replaced, Go binary for Forgejo + Firecracker CI execution.
-- Keep the guest base image generic and boring: Node/Next.js-capable substrate only (Node, corepack, pnpm, Bun, git, certs, common service binaries). Do not create a distinct base image per repo or per package manager version.
-- Put the optimization boundary at the **repo golden image**, not the base image. For each repo, do one cold bootstrap on the default branch in the same Firecracker environment used for CI, then snapshot that warmed state as the golden image.
-- Use ZFS zvol clones + Firecracker as the only copy-on-write strategy. Do not add OverlayFS layering on top.
-- Prefer a layered model conceptually: generic guest substrate + repo-specific golden + optional service state derived from the repo's default branch.
-- Treat package manager/toolchain detection as a routing problem, not an image explosion problem. Resolve package manager/version from repo metadata (`package.json.packageManager`, lockfiles, and standard version files), then activate the toolchain inside a small set of generic base images.
-- Support heuristics with explicit override. Auto-detect package manager, monorepo root, and common Node/Next.js signals, but keep a minimal manifest/override path for working directory, services, env, and install/build/test overrides.
-- Run requested services inside the same VM first. Sidecar VMs may come later; host-level shared databases/services are out of scope for untrusted CI.
-- For database-backed projects, the warm path should snapshot default-branch database state and apply only branch deltas at job time. Do not hardcode a single app-specific seed path into infrastructure.
-- Keep git local. Use internal Forgejo and local mirrors/fetches for repeatable tests rather than pulling live upstream repos into the verification path.
-- Define "little to no custom glue" strictly: workflow file and minimal manifest are acceptable; patching app source, hardcoded repo branches in infra, inline app-specific env hacks, and explicit helper-script calls from project workflows are not.
-- Verification for this phase: seed four controlled fixtures into internal Forgejo, cold-bootstrap each on `main`, snapshot each as a golden image, open a small PR, and prove the follow-up CI run succeeds from the golden path with no repo source patching.
 
 ## Assistant Contract
 

@@ -16,9 +16,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/forge-metal/fast-sandbox/vmproto"
 )
+
+var tracer = otel.Tracer("fast-sandbox")
 
 // Config holds settings for the Firecracker orchestrator.
 type Config struct {
@@ -151,6 +157,24 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 		return
 	}
 
+	ctx, span := tracer.Start(ctx, "fastsandbox.Run",
+		trace.WithAttributes(
+			attribute.String("job.id", job.JobID),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.SetAttributes(
+			attribute.Int("job.exit_code", result.ExitCode),
+			attribute.Int64("job.duration_ms", result.Duration.Milliseconds()),
+			attribute.Int64("job.zfs_written", int64(result.ZFSWritten)),
+		)
+		span.End()
+	}()
+
 	// --- 1. Verify golden snapshot ---
 	exists, checkErr := zfsSnapshotExists(ctx, o.goldenSnapshot())
 	if checkErr != nil {
@@ -194,6 +218,21 @@ func (o *Orchestrator) RunDataset(ctx context.Context, job JobConfig, dataset st
 
 func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (result JobResult, err error) {
 	start := time.Now()
+
+	ctx, span := tracer.Start(ctx, "fastsandbox.runDataset",
+		trace.WithAttributes(
+			attribute.String("job.id", job.JobID),
+			attribute.String("dataset", dataset),
+		),
+	)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	logger := o.logger.With("job_id", job.JobID, "dataset", dataset)
 
 	var cleanups []func()

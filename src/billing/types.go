@@ -147,6 +147,7 @@ type MeteringRow struct {
 	PromoUnits        uint64             `ch:"promo_units"`
 	RefundUnits       uint64             `ch:"refund_units"`
 	RecordedAt        time.Time          `ch:"recorded_at"`
+	TraceID           string             `ch:"trace_id"`
 }
 
 // MeteringWriter records metering rows durably enough for billing read paths and reconciliation.

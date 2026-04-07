@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS forge_metal.sandbox_job_events
     stderr_bytes UInt64                 CODEC(T64, ZSTD(3)),
     started_at   DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3)),
     completed_at DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3)),
-    created_at   DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3))
+    created_at   DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3)),
+    trace_id     String DEFAULT ''     CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)

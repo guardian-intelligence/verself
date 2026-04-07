@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type subscriptionPlan struct {
@@ -148,6 +149,9 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 	}
 
 	row := buildMeteringRow(reservation, actualSeconds, actualCost)
+	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
+		row.TraceID = sc.TraceID().String()
+	}
 	if err := c.metering.InsertMeteringRow(ctx, row); err != nil {
 		return fmt.Errorf("settle reservation: write metering row: %w", err)
 	}

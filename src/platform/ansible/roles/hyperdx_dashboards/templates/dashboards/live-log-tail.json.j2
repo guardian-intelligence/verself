@@ -1,0 +1,58 @@
+{
+  "name": "Live Log Tail",
+  "tags": ["observability"],
+  "tiles": [
+    {
+      "name": "Latest Logs (all services)",
+      "x": 0, "y": 0, "w": 12, "h": 14,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT Timestamp, ServiceName, SeverityText, Body, TraceId FROM default.otel_logs WHERE Timestamp >= now() - INTERVAL 5 MINUTE ORDER BY Timestamp DESC LIMIT 100"
+      }
+    },
+    {
+      "name": "Log Volume by Service (5m)",
+      "x": 0, "y": 14, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, ServiceName, count() as cnt FROM default.otel_logs WHERE $__timeFilter_ms(Timestamp) GROUP BY __hdx_time_bucket, ServiceName ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Error Rate by Service (5m)",
+      "x": 6, "y": 14, "w": 6, "h": 9,
+      "config": {
+        "configType": "sql",
+        "displayType": "line",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT $__timeInterval(Timestamp) as __hdx_time_bucket, ServiceName, countIf(SeverityText IN ('ERROR', 'FATAL')) as errors FROM default.otel_logs WHERE $__timeFilter_ms(Timestamp) GROUP BY __hdx_time_bucket, ServiceName HAVING errors > 0 ORDER BY __hdx_time_bucket",
+        "fillNulls": true
+      }
+    },
+    {
+      "name": "Recent Traces (multi-service)",
+      "x": 0, "y": 23, "w": 12, "h": 10,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT TraceId, groupArray(DISTINCT ServiceName) as services, count() as spans, min(Timestamp) as started, max(Timestamp) as ended, dateDiff('millisecond', min(Timestamp), max(Timestamp)) as duration_ms FROM default.otel_traces WHERE Timestamp >= now() - INTERVAL 30 MINUTE AND ServiceName IN ('billing-service', 'sandbox-rental-service', 'fast-sandbox') GROUP BY TraceId HAVING length(services) > 1 ORDER BY started DESC LIMIT 20"
+      }
+    },
+    {
+      "name": "Sandbox Job Timeline",
+      "x": 0, "y": 33, "w": 12, "h": 10,
+      "config": {
+        "configType": "sql",
+        "displayType": "table",
+        "connectionId": "{{ hyperdx_dashboards_connection_id }}",
+        "sqlTemplate": "SELECT e.job_id, e.status, e.duration_ms, e.exit_code, e.trace_id, m.billed_seconds, m.charge_units, e.created_at FROM forge_metal.sandbox_job_events e LEFT JOIN forge_metal.metering m ON e.job_id = m.source_ref ORDER BY e.created_at DESC LIMIT 20"
+      }
+    }
+  ]
+}

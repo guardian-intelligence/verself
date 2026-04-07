@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS forge_metal.metering (
     purchase_units     UInt64                               CODEC(T64, ZSTD(3)),
     promo_units        UInt64                               CODEC(T64, ZSTD(3)),
     refund_units       UInt64                               CODEC(T64, ZSTD(3)),
-    recorded_at        DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3))
+    recorded_at        DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3)),
+    trace_id           String DEFAULT ''                    CODEC(ZSTD(3))
 )
 ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq);
