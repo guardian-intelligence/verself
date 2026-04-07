@@ -267,7 +267,7 @@ forge-metal/                            # Monorepo root
 │
 │   ── Frontends ─────────────────────────────────────────────────────────
 │
-├── src/rent-a-sandbox/                 # Customer-facing CI product (Next.js) [planned]
+├── src/rent-a-sandbox/                 # Customer-facing CI product (TanStack Start)
 │   ├── package.json                    # TanStack Start + TanStack DB + ElectricSQL
 │   └── app/                            # OIDC auth, job submission, live log viewer
 │
@@ -297,7 +297,7 @@ forge-metal/                            # Monorepo root
     │       ├── otelcol/                # OTel Collector → ClickHouse
     │       ├── billing_service/        # Billing service deploy + Zitadel auth project
     │       ├── sandbox_rental_service/ # Sandbox product deploy [planned]
-    │       ├── rent_a_sandbox/         # Next.js frontend deploy [planned]
+    │       ├── rent_a_sandbox/         # TanStack Start frontend deploy [planned]
     │       ├── forgejo/                # Git server + CI runner
     │       ├── zitadel/                # Identity provider (OIDC)
     │       ├── hyperdx/                # Observability UI + MongoDB
