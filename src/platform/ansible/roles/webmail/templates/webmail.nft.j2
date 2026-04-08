@@ -1,0 +1,9 @@
+# Webmail frontend — loopback only, Caddy reverse proxy.
+table inet forge_metal_webmail
+delete table inet forge_metal_webmail
+table inet forge_metal_webmail {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        tcp dport {{ services.webmail.port }} iifname != "lo" drop
+    }
+}

@@ -8,30 +8,6 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 `vp` is a global binary that handles the full development lifecycle. Run `vp help` to print a list of commands and `vp <command> --help` for information about a specific command.
 
-### Start
-
-- create - Create a new project from a template
-- migrate - Migrate an existing project to Vite+
-- config - Configure hooks and agent integration
-- staged - Run linters on staged files
-- install (`i`) - Install dependencies
-- env - Manage Node.js versions
-
-### Develop
-
-- dev - Run the development server
-- check - Run format, lint, and TypeScript type checks
-- lint - Lint code
-- fmt - Format code
-- test - Run tests
-
-### Execute
-
-- run - Run monorepo tasks
-- exec - Execute a command from local `node_modules/.bin`
-- dlx - Execute a package binary without installing it as a dependency
-- cache - Manage the task cache
-
 ### Build
 
 - build - Build for production
@@ -69,20 +45,53 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 - **Import JavaScript modules from `vite-plus`:** Instead of importing from `vite` or `vitest`, all modules should be imported from the project's `vite-plus` dependency. For example, `import { defineConfig } from 'vite-plus';` or `import { expect, test, vi } from 'vite-plus/test';`. You must not install `vitest` to import test utilities.
 - **Type-Aware Linting:** There is no need to install `oxlint-tsgolint`, `vp lint --type-aware` works out of the box.
 
-## CI Integration
-
-For GitHub Actions, consider using [`voidzero-dev/setup-vp`](https://github.com/voidzero-dev/setup-vp) to replace separate `actions/setup-node`, package-manager setup, cache, and install steps with a single action.
-
-```yaml
-- uses: voidzero-dev/setup-vp@v1
-  with:
-    cache: true
-- run: vp check
-- run: vp test
-```
-
 ## Review Checklist for Agents
 
 - [ ] Run `vp install` after pulling remote changes and before getting started.
 - [ ] Run `vp check` and `vp test` to validate changes.
 <!--VITE PLUS END-->
+
+
+### External Data Sources
+
+Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Query data source — it's a separate reactive primitive. Do not bridge Electric into React Query with `useEffect`. They coexist: React Query for request/response API calls, Electric for live-streamed PG replication.
+
+## UI Components
+
+- `cn()` and `Skeleton` are in the shared `@forge-metal/ui` package (`packages/ui/`). Import as `import { cn, Skeleton } from "@forge-metal/ui"`.
+- App-specific components live in `src/components/` (e.g. `balance-card.tsx`).
+- shadcn-compatible theme tokens (OKLCH) are in `src/styles/app.css` via Tailwind v4's `@theme` directive.
+
+## Routing
+
+TanStack Router file-based routing. Route files go in `src/routes/`. The route tree is auto-generated — run `vp dlx @tanstack/router-cli generate` after adding or removing route files.
+
+`beforeLoad` has access to `context.queryClient` for route-level side effects (invalidation, prefetching). Prefer this over component-level `useEffect` for navigation-triggered logic.
+
+# TanStack DB (client-side reactive database)
+
+- task: "TanStack DB core concepts, createCollection, live queries, optimistic mutations"
+  load: "node_modules/@tanstack/db/skills/db-core/SKILL.md"
+- task: "setting up collections with createCollection, adapter selection, schemas, sync modes"
+  load: "node_modules/@tanstack/db/skills/db-core/collection-setup/SKILL.md"
+- task: "TanStack DB query builder, where, join, select, groupBy, orderBy, aggregates, operators"
+  load: "node_modules/@tanstack/db/skills/db-core/live-queries/SKILL.md"
+- task: "TanStack DB mutations, optimistic updates, createOptimisticAction, transactions"
+  load: "node_modules/@tanstack/db/skills/db-core/mutations-optimistic/SKILL.md"
+- task: "building custom TanStack DB sync adapters, SyncConfig, ChangeMessage format"
+  load: "node_modules/@tanstack/db/skills/db-core/custom-adapter/SKILL.md"
+- task: "integrating TanStack DB with meta-frameworks, SSR disabled routes, collection preloading"
+  load: "node_modules/@tanstack/db/skills/meta-framework/SKILL.md"
+- task: "React hooks for TanStack DB: useLiveQuery, useLiveSuspenseQuery, useLiveInfiniteQuery"
+  load: "node_modules/@tanstack/react-db/skills/react-db/SKILL.md"
+
+# TanStack Query (data fetching & caching)
+
+- task: "data fetching with TanStack Query, useQuery, useMutation, caching, invalidation, SSR"
+  load: ".claude/skills/tanstack-react-query.md"
+
+# Nitro (server runtime)
+
+- task: "configuring Nitro server runtime, deployment, server middleware"
+load: "apps/web/node_modules/nitro/skills/nitro/SKILL.md"
+<!-- intent-skills:end -->

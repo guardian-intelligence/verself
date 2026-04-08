@@ -1,0 +1,112 @@
+---
+- name: Create webmail install directory
+  ansible.builtin.file:
+    path: "{{ webmail_install_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Remove generated webmail artifacts before sync
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ webmail_install_dir }}/node_modules"
+    - "{{ webmail_install_dir }}/.output"
+    - "{{ webmail_install_dir }}/.tanstack"
+    - "{{ webmail_install_dir }}/apps/mail/node_modules"
+    - "{{ webmail_install_dir }}/apps/mail/.output"
+    - "{{ webmail_install_dir }}/apps/mail/.tanstack"
+    - "{{ webmail_install_dir }}/packages/ui/node_modules"
+    - "{{ webmail_install_dir }}/packages/ui/dist"
+
+- name: Synchronize webmail source
+  delegate_to: localhost
+  become: false
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
+    dest: "{{ webmail_install_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.output"
+      - "--exclude=dist"
+      - "--exclude=.tanstack"
+      - "--exclude=playwright-report"
+      - "--exclude=test-results"
+      - "--exclude=HANDOFF_PROMPT.md"
+      - "--delete-excluded"
+      - "--no-owner"
+      - "--no-group"
+
+- name: Install webmail workspace dependencies
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - install
+    chdir: "{{ webmail_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+
+- name: Build webmail workspace
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - exec
+      - vp
+      - run
+      - -r
+      - build
+    chdir: "{{ webmail_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart webmail
+
+- name: Set up Zitadel OIDC application
+  ansible.builtin.include_tasks: zitadel_app.yml
+
+- name: Deploy webmail environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/webmail/env
+    mode: "0640"
+    owner: root
+    group: "{{ ansible_user }}"
+  notify: Restart webmail
+
+- name: Deploy webmail systemd unit
+  ansible.builtin.template:
+    src: webmail.service.j2
+    dest: /etc/systemd/system/webmail.service
+    mode: "0644"
+  notify: Restart webmail
+
+- name: Deploy webmail nftables rules
+  ansible.builtin.template:
+    src: webmail.nft.j2
+    dest: /etc/nftables.d/webmail.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start webmail
+  ansible.builtin.systemd:
+    name: webmail
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for webmail to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.webmail.host }}"
+    port: "{{ services.webmail.port }}"
+    timeout: 30

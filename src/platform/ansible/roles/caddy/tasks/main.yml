@@ -24,6 +24,15 @@
   ansible.builtin.set_fact:
     caddy_electric_api_secret: "{{ caddy_electric_secret_raw.content | b64decode | trim }}"
 
+- name: Read Electric Mail API secret for shape proxy auth
+  ansible.builtin.slurp:
+    src: /etc/credstore/electric-mail/api-secret
+  register: caddy_electric_mail_secret_raw
+
+- name: Set Electric Mail secret fact
+  ansible.builtin.set_fact:
+    caddy_electric_mail_api_secret: "{{ caddy_electric_mail_secret_raw.content | b64decode | trim }}"
+
 - name: Require billing webhook DNS to remain DNS-only
   ansible.builtin.assert:
     that: not (cloudflare_proxied | default(false) | bool)

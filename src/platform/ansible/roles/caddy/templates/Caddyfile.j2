@@ -104,7 +104,13 @@
 	import waf_detection
 
 	handle /api/* {
-		respond 404
+		reverse_proxy {{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+	}
+
+	handle /v1/shape {
+		uri query -secret
+		uri query +secret {{ caddy_electric_mail_api_secret }}
+		reverse_proxy {{ services.electric_mail.host }}:{{ services.electric_mail.port }}
 	}
 
 	handle /jmap/session {
@@ -112,7 +118,7 @@
 	}
 
 	handle {
-		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+		reverse_proxy {{ services.webmail.host }}:{{ services.webmail.port }}
 	}
 }
 

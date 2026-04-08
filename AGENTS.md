@@ -102,6 +102,16 @@ Services that produce data for both real-time UX and long-term analytics use **a
 
 ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative but rejected — it is experimental and carries replication-slot coupling risks on a single node. The 3-node evolution of the system should introduce NATS JetStream or Kafka + Debezium for proper CDC, replacing application-level dual write with WAL-based streaming.
 
+### ElectricSQL gotchas
+
+Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `mailbox_service`) require three differentiators to avoid collisions:
+
+1. **`ELECTRIC_REPLICATION_STREAM_ID`** — controls the replication slot name suffix. Without it, both instances fight over `electric_slot_default`. Replication slots are cluster-wide, not per-database.
+2. **`ELECTRIC_INSTANCE_ID`** — controls the PostgreSQL advisory lock hash. Without it, both instances use the same default advisory lock and the second instance blocks forever on `waiting_on_lock`.
+3. **`RELEASE_NAME`** — Elixir/Erlang BEAM node name. Both instances run with `--network=host`, so their Erlang nodes collide on the same hostname. Without a distinct name, the second container exits with "the name electric@hostname seems to be in use by another Erlang node".
+
+Each Electric instance also needs its own publication (`CREATE PUBLICATION ... FOR TABLE ...`) with `REPLICA IDENTITY FULL` on all synced tables. The publication name is derived from the stream ID: `electric_publication_{stream_id}` (default: `electric_publication_default`). Since publications are per-database, the default name works if instances target different databases — but setting `ELECTRIC_REPLICATION_STREAM_ID` changes the expected publication name too.
+
 ### Entitlement
 
 Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Concurrent admission control is policy from PostgreSQL: `orgs.trust_tier` supplies fraud caps, `plans.quotas` supplies downward-only plan caps, and `CheckQuotas` is advisory only. Financial enforcement is TigerBeetle-backed spend caps: each billing period gets a fresh spend-cap account, `Reserve` runs a linked spend-cap probe+void with the grant reservation batch, and `Settle` posts the real spend-cap debit.

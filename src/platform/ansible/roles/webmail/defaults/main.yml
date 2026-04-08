@@ -1,0 +1,7 @@
+---
+webmail_domain: "{{ stalwart_subdomain | default('mail') }}.{{ forge_metal_domain }}"
+webmail_install_dir: /opt/webmail
+webmail_app_dir: "{{ webmail_install_dir }}/apps/mail"
+webmail_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+webmail_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
+webmail_auth_project_name: mailbox-service

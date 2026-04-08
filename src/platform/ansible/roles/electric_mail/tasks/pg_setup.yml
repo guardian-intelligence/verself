@@ -1,0 +1,55 @@
+---
+# Uses postgresql_admin_password from SOPS-decrypted group_vars (same as the postgresql role).
+
+- name: Create Electric Mail PostgreSQL role
+  community.postgresql.postgresql_user:
+    name: electric_mail
+    password: "{{ electric_mail_pg_password }}"
+    role_attr_flags: REPLICATION,LOGIN
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
+
+- name: Grant Electric Mail role read access to mailbox_service tables
+  community.postgresql.postgresql_privs:
+    database: mailbox_service
+    privs: SELECT
+    type: table
+    objs: mailbox_accounts,mailboxes,emails,email_mailboxes,email_bodies,threads
+    schema: public
+    role: electric_mail
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
+
+- name: Set REPLICA IDENTITY FULL on Electric Mail-synced tables
+  community.postgresql.postgresql_query:
+    db: mailbox_service
+    query: >-
+      ALTER TABLE mailbox_accounts REPLICA IDENTITY FULL;
+      ALTER TABLE mailboxes REPLICA IDENTITY FULL;
+      ALTER TABLE emails REPLICA IDENTITY FULL;
+      ALTER TABLE email_mailboxes REPLICA IDENTITY FULL;
+      ALTER TABLE email_bodies REPLICA IDENTITY FULL;
+      ALTER TABLE threads REPLICA IDENTITY FULL;
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
+
+- name: Create publication for Electric Mail on mailbox_service database
+  community.postgresql.postgresql_query:
+    db: mailbox_service
+    query: >-
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_mail') THEN
+          CREATE PUBLICATION electric_publication_mail FOR TABLE mailbox_accounts, mailboxes, emails, email_mailboxes, email_bodies, threads;
+        END IF;
+      END $$;
+    login_host: "{{ services.postgresql.host }}"
+    login_port: "{{ services.postgresql.port }}"
+    login_user: postgres
+    login_password: "{{ postgresql_admin_password }}"
