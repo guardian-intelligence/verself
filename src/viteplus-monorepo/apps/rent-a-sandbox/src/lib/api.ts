@@ -115,40 +115,91 @@ export function createSubscription(body: SubscribeRequest): Promise<{ url: strin
   }).then(jsonOrThrow<{ url: string }>);
 }
 
-// --- Jobs ---
+// --- Executions ---
 
-export interface Job {
-  id: string;
-  org_id: number;
-  user_id: string;
-  repo_url: string;
-  run_command?: string;
-  status: string;
+export interface Attempt {
+  attempt_id: string;
+  attempt_seq: number;
+  state: string;
+  orchestrator_job_id?: string;
+  billing_job_id?: number;
+  golden_snapshot?: string;
+  failure_reason?: string;
   exit_code?: number;
   duration_ms?: number;
   zfs_written?: number;
+  stdout_bytes?: number;
+  stderr_bytes?: number;
+  trace_id?: string;
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  updated_at: string;
 }
 
-export function submitJob(
-  repoURL: string,
-  runCommand?: string,
-): Promise<{ job_id: string; status: string }> {
-  return authFetch("/api/v1/jobs", {
+export interface BillingWindow {
+  attempt_id: string;
+  window_seq: number;
+  window_seconds: number;
+  actual_seconds?: number;
+  pricing_phase?: string;
+  state: string;
+  created_at: string;
+  settled_at?: string;
+}
+
+export interface Execution {
+  execution_id: string;
+  org_id: number;
+  actor_id: string;
+  kind: string;
+  provider?: string;
+  product_id: string;
+  status: string;
+  idempotency_key?: string;
+  repo?: string;
+  repo_url?: string;
+  ref?: string;
+  default_branch?: string;
+  run_command?: string;
+  commit_sha?: string;
+  workflow_path?: string;
+  workflow_job_name?: string;
+  provider_run_id?: string;
+  provider_job_id?: string;
+  latest_attempt: Attempt;
+  billing_windows?: BillingWindow[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepoExecutionRequest {
+  repo_url: string;
+  ref: string;
+}
+
+export function submitRepoExecution(
+  body: RepoExecutionRequest,
+): Promise<{ execution_id: string; attempt_id: string; status: string }> {
+  return authFetch("/api/v1/executions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repo_url: repoURL, run_command: runCommand }),
-  }).then(jsonOrThrow<{ job_id: string; status: string }>);
+    body: JSON.stringify({
+      kind: "repo_exec",
+      repo_url: body.repo_url,
+      ref: body.ref,
+    }),
+  }).then(jsonOrThrow<{ execution_id: string; attempt_id: string; status: string }>);
 }
 
-export function fetchJob(jobId: string): Promise<Job> {
-  return authFetch(`/api/v1/jobs/${jobId}`).then(jsonOrThrow<Job>);
+export function fetchExecution(executionId: string): Promise<Execution> {
+  return authFetch(`/api/v1/executions/${executionId}`).then(jsonOrThrow<Execution>);
 }
 
-export function fetchJobLogs(jobId: string): Promise<{ job_id: string; logs: string }> {
-  return authFetch(`/api/v1/jobs/${jobId}/logs`).then(
-    jsonOrThrow<{ job_id: string; logs: string }>,
+export function fetchExecutionLogs(
+  executionId: string,
+): Promise<{ execution_id: string; attempt_id: string; logs: string }> {
+  return authFetch(`/api/v1/executions/${executionId}/logs`).then(
+    jsonOrThrow<{ execution_id: string; attempt_id: string; logs: string }>,
   );
 }

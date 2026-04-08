@@ -4,8 +4,8 @@
 - name: Manage Electric PostgreSQL replication state
   vars:
     electric_publication_tables:
-      - jobs
-      - job_logs
+      - executions
+      - execution_logs
   module_defaults:
     community.postgresql.postgresql_user:
       login_host: "{{ services.postgresql.host }}"
