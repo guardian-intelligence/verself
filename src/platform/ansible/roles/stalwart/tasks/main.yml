@@ -1,0 +1,217 @@
+---
+# Stalwart Mail Server — receive-only SMTP + JMAP.
+# Binary provided by deploy_profile role (static download).
+
+# --- Verify binary ---
+
+- name: Verify stalwart binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/stalwart"
+  register: stalwart_binary
+  failed_when: not stalwart_binary.stat.exists
+
+# --- System user ---
+
+- name: Create stalwart system group
+  ansible.builtin.group:
+    name: stalwart
+    system: true
+
+- name: Create stalwart system user
+  ansible.builtin.user:
+    name: stalwart
+    group: stalwart
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+# --- nftables egress rules ---
+
+- name: Deploy stalwart nftables ruleset
+  ansible.builtin.template:
+    src: stalwart.nft.j2
+    dest: /etc/nftables.d/stalwart.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply stalwart nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Directories ---
+
+- name: Create stalwart directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: stalwart
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/stalwart, owner: root, mode: "0755" }
+    - { path: "{{ stalwart_data_dir }}", owner: stalwart, mode: "0750" }
+
+# --- Self-signed TLS placeholder ---
+# Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one
+# that will be replaced by the real ACME cert once Caddy obtains it.
+
+- name: Create stalwart TLS cert directory
+  ansible.builtin.file:
+    path: "{{ stalwart_tls_cert_dir }}"
+    state: directory
+    owner: root
+    group: stalwart
+    mode: "0750"
+
+- name: Check if TLS cert already exists
+  ansible.builtin.stat:
+    path: "{{ stalwart_tls_cert_dir }}/cert.pem"
+  register: stalwart_cert_check
+
+- name: Generate self-signed TLS placeholder
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1
+      -days 365 -nodes
+      -keyout {{ stalwart_tls_cert_dir }}/key.pem
+      -out {{ stalwart_tls_cert_dir }}/cert.pem
+      -subj "/CN={{ stalwart_domain }}"
+  when: not stalwart_cert_check.stat.exists
+  changed_when: true
+
+- name: Set TLS cert ownership
+  ansible.builtin.file:
+    path: "{{ stalwart_tls_cert_dir }}/{{ item }}"
+    owner: root
+    group: stalwart
+    mode: "0640"
+  loop:
+    - cert.pem
+    - key.pem
+  when: not stalwart_cert_check.stat.exists
+
+# --- DNS records ---
+
+- name: Include DNS record tasks
+  ansible.builtin.include_tasks: dns.yml
+
+# --- Credentials ---
+
+- name: Include credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+# --- Configuration ---
+
+- name: Deploy stalwart configuration
+  ansible.builtin.template:
+    src: stalwart.toml.j2
+    dest: /etc/stalwart/config.toml
+    owner: root
+    group: stalwart
+    mode: "0640"
+  notify: restart stalwart
+
+# --- systemd unit ---
+
+- name: Deploy stalwart systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Stalwart Mail Server
+      After=forge-metal-firewall.target network.target postgresql.service
+      Requires=forge-metal-firewall.target
+      Wants=postgresql.service
+
+      [Service]
+      Type=simple
+      User=stalwart
+      Group=stalwart
+      LoadCredential=admin-password:/etc/credstore/stalwart/admin-password
+      LoadCredential=pg-password:/etc/credstore/stalwart/pg-password
+      ExecStart={{ fm_bin }}/stalwart --config /etc/stalwart/config.toml
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+      AmbientCapabilities=CAP_NET_BIND_SERVICE
+      CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+      ProtectSystem=strict
+      ProtectHome=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectControlGroups=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictNamespaces=true
+      LockPersonality=true
+      ReadWritePaths={{ stalwart_data_dir }}
+      ReadOnlyPaths=/etc/stalwart {{ stalwart_tls_cert_dir }}
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/stalwart.service
+    mode: "0644"
+  notify:
+    - restart stalwart
+
+- name: Apply stalwart unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+# --- Enable and start ---
+
+- name: Enable and start stalwart
+  ansible.builtin.systemd:
+    name: stalwart
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# --- Readiness gate ---
+
+- name: Wait for stalwart HTTP to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.stalwart.host }}"
+    port: "{{ services.stalwart.http_port }}"
+    timeout: 120
+
+- name: Wait for stalwart SMTP to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.stalwart.host }}"
+    port: "{{ services.stalwart.smtp_port }}"
+    timeout: 120
+
+# --- Bootstrap domain via Management API ---
+# Stalwart returns 200 for all /api/principal/name/ lookups, using the response
+# body to distinguish found vs not-found. Check the JSON error field.
+
+- name: Check if domain exists in Stalwart
+  ansible.builtin.uri:
+    url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ forge_metal_domain }}"
+    method: GET
+    url_username: admin
+    url_password: "{{ stalwart_admin_password }}"
+    force_basic_auth: true
+    status_code: 200
+    return_content: true
+  register: stalwart_domain_check
+  no_log: true
+
+- name: Create domain in Stalwart
+  ansible.builtin.uri:
+    url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+    method: POST
+    url_username: admin
+    url_password: "{{ stalwart_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      type: domain
+      name: "{{ forge_metal_domain }}"
+      description: "Primary domain"
+    status_code: 200
+    return_content: true
+  when: stalwart_domain_check.json.error is defined
+  no_log: true
+
+# --- Cert sync timer (replaces self-signed with Caddy ACME cert) ---
+
+- name: Include cert sync tasks
+  ansible.builtin.include_tasks: cert_sync.yml

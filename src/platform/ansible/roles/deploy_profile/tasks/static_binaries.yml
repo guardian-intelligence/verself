@@ -121,6 +121,52 @@
     remote_src: true
     mode: "0755"
 
+# ── Stalwart Mail Server ─────────────────────────────────────────────────────
+
+- name: Download Stalwart archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.stalwart.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.stalwart.sha256 }}"
+    mode: "0644"
+
+- name: Extract Stalwart binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/stalwart-{{ deploy_profile_server_tools_pins.stalwart.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
+
+- name: Install Stalwart binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart.extract_binary }}"
+    dest: "{{ fm_bin }}/stalwart"
+    remote_src: true
+    mode: "0755"
+
+# ── Stalwart CLI ─────────────────────────────────────────────────────────────
+
+- name: Download Stalwart CLI archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.stalwart_cli.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.stalwart_cli.sha256 }}"
+    mode: "0644"
+
+- name: Extract Stalwart CLI binary
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/stalwart-cli-{{ deploy_profile_server_tools_pins.stalwart_cli.version }}.tar.gz"
+    dest: "{{ deploy_profile_staging_dir }}"
+    remote_src: true
+    creates: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
+
+- name: Install Stalwart CLI binary
+  ansible.builtin.copy:
+    src: "{{ deploy_profile_staging_dir }}/{{ deploy_profile_server_tools_pins.stalwart_cli.extract_binary }}"
+    dest: "{{ fm_bin }}/stalwart-cli"
+    remote_src: true
+    mode: "0755"
+
 # ── containerd ───────────────────────────────────────────────────────────────
 
 - name: Download containerd archive

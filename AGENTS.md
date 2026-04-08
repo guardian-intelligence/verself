@@ -26,6 +26,13 @@ Required - Email Delivery (Resend only for now)
 ## Service Architecture
 
 ```
+                              Internet (port 25)
+                                      │
+                              ┌───────▼───────┐
+                              │  Stalwart     │
+                              │  (SMTP+JMAP)  │───── OTLP ──┐
+                              └───────────────┘              │
+                                                             │
                                     ┌─────────────────────────────────────────────────────────┐
                                     │                     Caddy (TLS + WAF)                    │
                                     │   allowlist routing, Coraza WAF, Stripe IP allowlist     │
@@ -57,7 +64,8 @@ Required - Email Delivery (Resend only for now)
               │  │(Zig agent│ │       │    │               ◄── sandbox job_logs      │
               │  │ 60Hz)    │ │       │    │               ◄── Zitadel event store   │
               │  └──────────┘ │       │    │               ◄── Forgejo metadata      │
-              └───────────────┘       │    │                                         │
+              └───────────────┘       │    │               ◄── Stalwart mail store   │
+                                      │    │                                         │
                                       │    │  TigerBeetle ◄── billing ledger         │
                                       │    │                   (Reserve/Settle/Void) │
                                       │    │                                         │
@@ -97,6 +105,76 @@ ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative 
 ### Entitlement
 
 Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Concurrent admission control is policy from PostgreSQL: `orgs.trust_tier` supplies fraud caps, `plans.quotas` supplies downward-only plan caps, and `CheckQuotas` is advisory only. Financial enforcement is TigerBeetle-backed spend caps: each billing period gets a fresh spend-cap account, `Reserve` runs a linked spend-cap probe+void with the grant reservation batch, and `Settle` posts the real spend-cap debit.
+
+### Inbound mail
+
+Stalwart Mail Server (v0.15.5, Rust, AGPL-3.0) provides receive-only SMTP and JMAP on the single node. Outbound email stays with Resend. Stalwart binds directly to port 25 (not proxied through Caddy) and handles its own STARTTLS with certs synced from Caddy's ACME storage. The JMAP API and built-in webmail are served via Caddy at `mail.<domain>`.
+
+**Network path:** Internet → port 25 (Stalwart SMTP, STARTTLS) → local delivery → PostgreSQL. JMAP reads go through Caddy: `https://mail.<domain>/jmap` → `127.0.0.1:8090`.
+
+**Storage:** PostgreSQL database `stalwart` (user `stalwart`). All four store roles (data, blob, fts, lookup) and the internal directory map to this single database. Stalwart manages its own schema — no migration files in the repo.
+
+**Mailbox scheme:**
+- `ceo@<domain>` — operator, reserved
+- `<name>.agent@<domain>` — agent mailboxes (`bernoulli.agent`, `dijkstra.agent`, `lamport.agent`)
+
+Accounts are pre-created via Stalwart's Management REST API in `seed-demo.yml --tags stalwart`. No auto-provisioning on first login.
+
+**Authentication:** Internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before passing to the API (Stalwart stores `secrets` verbatim, verifies by prefix detection). Accounts require `roles: ["user"]` for JMAP access. Basic Auth is used for JMAP/API — Stalwart does not support `grant_type=password` on its OAuth endpoint.
+
+**Querying mail via JMAP:**
+
+```bash
+# List emails for an account
+curl -s -u bernoulli.agent:<password> \
+  https://mail.<domain>/jmap \
+  -H 'Content-Type: application/json' \
+  -d '{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+       "methodCalls":[
+         ["Email/query",{"limit":10,"sort":[{"property":"receivedAt","isAscending":false}]},"a"],
+         ["Email/get",{"#ids":{"resultOf":"a","name":"Email/query","path":"/ids"},
+                       "properties":["subject","receivedAt","from","bodyValues"],
+                       "fetchAllBodyValues":true},"b"]]}'
+
+# JMAP session discovery (shows capabilities, account IDs)
+curl -s -u bernoulli.agent:<password> https://mail.<domain>/jmap/session
+```
+
+**Management API (admin only, loopback):**
+
+```bash
+# List all principals
+curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal?limit=50
+
+# Create an account (password must be pre-hashed)
+HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'MyPassword', bcrypt.gensalt()).decode())")
+curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal \
+  -H 'Content-Type: application/json' \
+  -d "{\"type\":\"individual\",\"name\":\"user\",\"secrets\":[\"$HASH\"],
+       \"emails\":[\"user@<domain>\"],\"roles\":[\"user\"]}"
+
+# Check if a principal exists (API returns 200 for everything; check .error field)
+curl -s -u admin:<admin_password> http://127.0.0.1:8090/api/principal/name/user
+# Found: {"data":{"id":3,...}}   Not found: {"error":"notFound","item":"name"}
+```
+
+**Telemetry:** Native OTLP over gRPC to otelcol-contrib on `127.0.0.1:4317`. Traces and logs land in ClickHouse under `ServiceName = 'stalwart'`. Query with `make traces SERVICE=stalwart`.
+
+**TLS cert lifecycle:** Self-signed placeholder generated on first deploy. A systemd timer (`stalwart-cert-sync.timer`) runs every 12 hours and copies the real ACME cert from Caddy's storage (`/caddy/certificates/`) to `/etc/stalwart/certs/`, then reloads Stalwart. First real cert appears ~2 minutes after Caddy starts (post-DNS propagation).
+
+**Relevant files:**
+- `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
+- `roles/stalwart/templates/stalwart.toml.j2` — server config
+- `roles/stalwart/templates/stalwart.nft.j2` — egress firewall
+- `roles/stalwart/templates/stalwart-cert-sync.sh.j2` — cert sync script
+- `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
+- `playbooks/seed-demo.yml` (tag: `stalwart`) — mailbox provisioning
+
+**DNS records** (managed by Ansible):
+- `A mail.<domain> → <server_ip>` (cloudflare_dns role)
+- `MX <domain> → mail.<domain>` priority 10 (stalwart role dns.yml)
+- `TXT <domain>` — SPF record including the mail server (stalwart role dns.yml)
+- **Manual:** PTR record for `<server_ip> → mail.<domain>` (request from Latitude.sh)
 
 ## Supply Chain Management
 
@@ -170,7 +248,8 @@ Services get subdomains automatically:
 |-----------|---------|
 | `admin.<domain>` | ClickStack dashboard |
 | `git.<domain>` | Forgejo |
-| `auth<domain>` | Zitadel |
+| `auth.<domain>` | Zitadel |
+| `mail.<domain>` | Stalwart (JMAP API + webmail) |
 
 ### Server Profile
 
@@ -178,7 +257,7 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 - **Go binaries** (forge-metal, billing-service): built on the controller via `go build`, copied to server
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, forgejo-runner, otelcol-contrib, containerd, Node.js): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, forgejo-runner, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into fm_bin
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match running kernel).
@@ -225,7 +304,8 @@ read the Makefile for other common task automation.
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
-| `playbooks/seed-demo.yml` | Seed demo environment: human user, billing catalog, credits, auth verify (supports `--tags user,billing,verify`) |
+| `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL state and restart billing callers |
+| `playbooks/seed-demo.yml` | Seed demo environment: human user, billing catalog, credits, mailboxes, auth verify (supports `--tags user,billing,stalwart,verify`) |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
 
@@ -296,6 +376,7 @@ forge-metal/                            # Monorepo root
     │       ├── billing_service/        # Billing service deploy + Zitadel auth project
     │       ├── sandbox_rental_service/ # Sandbox product deploy [planned]
     │       ├── rent_a_sandbox/         # TanStack Start frontend deploy [planned]
+    │       ├── stalwart/              # Receive-only mail: SMTP + JMAP + cert sync
     │       ├── forgejo/                # Git server + CI runner
     │       ├── zitadel/                # Identity provider (OIDC)
     │       ├── hyperdx/                # Observability UI + MongoDB

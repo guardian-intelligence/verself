@@ -54,3 +54,7 @@ services:
   zitadel:
     host: "127.0.0.1"
     port: 8085
+  stalwart:
+    host: "127.0.0.1"
+    smtp_port: 25
+    http_port: 8090

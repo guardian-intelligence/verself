@@ -1,0 +1,10 @@
+---
+stalwart_subdomain: mail
+stalwart_domain: "{{ stalwart_subdomain }}.{{ forge_metal_domain }}"
+
+# Data directory for Stalwart (config, blobs if local fallback needed)
+stalwart_data_dir: /var/lib/stalwart
+
+# TLS certificate paths (synced from Caddy's ACME storage)
+stalwart_tls_cert_dir: /etc/stalwart/certs
+stalwart_caddy_cert_base: /caddy/certificates

@@ -19,7 +19,7 @@
     name: sandbox_rental
     group: sandbox_rental
     groups:
-      - "{{ firecracker_vm_orchestrator_socket_group }}"
+      - "{{ sandbox_rental_service_vm_orchestrator_socket_group }}"
     append: false
     system: true
     shell: /usr/sbin/nologin
@@ -137,7 +137,7 @@
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
       Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
-      Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ firecracker_vm_orchestrator_api_socket }}
+      Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ sandbox_rental_service_vm_orchestrator_socket }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5

@@ -1,0 +1,13 @@
+---
+- name: Restart stalwart
+  listen: restart stalwart
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: stalwart.service
+    state: restarted
+
+- name: Reload nftables for stalwart
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

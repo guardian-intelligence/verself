@@ -119,6 +119,7 @@
       [Unit]
       Description=Billing Service
       After=forge-metal-firewall.target network.target postgresql.service tigerbeetle.service
+      PartOf=tigerbeetle.service
       Requires=forge-metal-firewall.target
       Wants=postgresql.service tigerbeetle.service
 
