@@ -21,11 +21,13 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
 
-// SandboxRunner abstracts VM execution for tests. Identical method set to
-// jobs.SandboxRunner — Go structural typing means any value implementing
+// Runner abstracts VM execution for tests. Identical method set to
+// jobs.Runner — Go structural typing means any value implementing
 // this interface also satisfies the internal one.
-type SandboxRunner interface {
+type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
+	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
 // Config holds all dependencies for a test sandbox-rental-service.
@@ -33,7 +35,7 @@ type Config struct {
 	PG            *sql.DB
 	CH            driver.Conn
 	CHDatabase    string
-	Runner        SandboxRunner
+	Runner        Runner
 	Billing       *billingclient.ServiceClient
 	BillingVCPUs  int
 	BillingMemMiB int

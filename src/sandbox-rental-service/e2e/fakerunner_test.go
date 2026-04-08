@@ -4,6 +4,7 @@ package e2e_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
@@ -47,4 +48,12 @@ func (f *fakeRunner) Run(ctx context.Context, job vmorchestrator.JobConfig) (vmo
 		ZFSWritten:  4096, // simulated minimal COW write
 		StdoutBytes: uint64(len(logs)),
 	}, nil
+}
+
+func (f *fakeRunner) ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error) {
+	return vmorchestrator.JobStatus{}, errors.New("fakeRunner ExecRepo not implemented")
+}
+
+func (f *fakeRunner) WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error) {
+	return vmorchestrator.WarmGoldenResult{}, errors.New("fakeRunner WarmGolden not implemented")
 }

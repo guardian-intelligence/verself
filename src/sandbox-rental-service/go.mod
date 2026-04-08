@@ -9,6 +9,7 @@ require (
 	github.com/forge-metal/billing-service v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/forge-metal/vm-orchestrator v0.0.0
+	github.com/forge-metal/workload v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
@@ -68,4 +69,5 @@ replace (
 	github.com/forge-metal/billing-service => ../billing-service
 	github.com/forge-metal/otel => ../otel
 	github.com/forge-metal/vm-orchestrator => ../vm-orchestrator
+	github.com/forge-metal/workload => ../workload
 )
