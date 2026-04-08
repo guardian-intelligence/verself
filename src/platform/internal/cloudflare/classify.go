@@ -5,10 +5,10 @@ import "encoding/json"
 type TokenStatus int
 
 const (
-	TokenValid     TokenStatus = iota // zone visible, #dns_records:edit present
-	TokenInvalid                      // API rejected the token entirely
-	TokenWrongPerms                   // valid token, missing DNS edit
-	TokenWrongZone                    // valid token, can't see the zone
+	TokenValid      TokenStatus = iota // zone visible, #dns_records:edit present
+	TokenInvalid                       // API rejected the token entirely
+	TokenWrongPerms                    // valid token, missing DNS edit
+	TokenWrongZone                     // valid token, can't see the zone
 )
 
 type TokenCheck struct {

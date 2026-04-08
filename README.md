@@ -181,3 +181,9 @@ Those are fixture orchestration concerns, not workload execution concerns.
 --- A note on the future ---
 
 We will  want long-running VMs with developer tools installed for agents to work within with full unbounded permissions and access to  If they do something destructive to their sandbox we want to restore from a snapshots. If they attempt to exfiltrate secrets, we tightly controll egress and only provide encrypted secrets that must go through a layer for decryption (unless you can think of something better) If they attempt to perform a destructive action on production systems, we have a policy layer to prevent it.
+
+## Licensing
+
+This project is open-source. Most bundled server components (ClickHouse, TigerBeetle, Forgejo, PostgreSQL) use permissive or weak-copyleft licenses with no network-interaction obligations.
+
+**Stalwart Mail Server** is licensed under AGPL-3.0. If you run Stalwart unmodified (deployed as a pinned binary from `server-tools.json`), your obligation is to provide users with a link to the upstream source at `github.com/stalwartlabs/stalwart`. Your own application code that communicates with Stalwart over JMAP/SMTP/IMAP is a separate work and is not covered by AGPL. If you modify Stalwart's source and serve it over a network, you must make your modifications available to users who interact with it. Consult a lawyer if you are offering hosted email as a closed-source commercial product built on this stack.

@@ -184,10 +184,10 @@ func prependPath(t *testing.T, dir string) {
 func writeExecutable(t *testing.T, path, content string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -216,9 +216,9 @@ func TestWizard_AllConfigured(t *testing.T) {
 
 	dir := t.TempDir()
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	cfg := &config.Config{}
 	cfg.Latitude.AuthToken = "test-token"
@@ -287,9 +287,9 @@ func TestWizard_TokenMissing(t *testing.T) {
 
 	dir := t.TempDir()
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	cfg := &config.Config{}
 	// Token deliberately empty.
@@ -387,9 +387,9 @@ func TestWizard_InvalidTokenRetry(t *testing.T) {
 
 	dir := t.TempDir()
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	cfg := &config.Config{}
 	cfg.Latitude.AuthToken = "bad-token"
@@ -435,7 +435,7 @@ func TestWizard_ConfirmAbort(t *testing.T) {
 
 	dir := t.TempDir()
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 
 	cfg := &config.Config{}
 	cfg.Latitude.AuthToken = "test-token"
@@ -516,9 +516,9 @@ func TestWizard_FirstRunPromptsForRegionAndPlanDefaults(t *testing.T) {
 	withWorkingDir(t, dir)
 
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	binDir := filepath.Join(dir, "bin")
 	writeFakeTofu(t, binDir, filepath.Join(dir, "tofu-env.log"))
@@ -591,9 +591,9 @@ func TestWizard_SavedSelectionsSkipRegionAndPlanPrompts(t *testing.T) {
 	withWorkingDir(t, dir)
 
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	writeExecutable(t, filepath.Join(dir, "forge-metal.toml"), `[latitude]
 auth_token = "saved-token"
@@ -649,9 +649,9 @@ func TestWizard_ProvisionPassesTokenToTofu(t *testing.T) {
 	withWorkingDir(t, dir)
 
 	sshPub := filepath.Join(dir, "id_ed25519.pub")
-	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0644)
+	os.WriteFile(sshPub, []byte("ssh-ed25519 AAAA test@test"), 0o644)
 	tfDir := filepath.Join(dir, "terraform")
-	os.MkdirAll(tfDir, 0755)
+	os.MkdirAll(tfDir, 0o755)
 
 	logPath := filepath.Join(dir, "tofu-env.log")
 	binDir := filepath.Join(dir, "bin")

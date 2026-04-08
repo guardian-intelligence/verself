@@ -184,7 +184,7 @@ func (w *Wizard) resolveSSHKey() (string, error) {
 	if w.Prompter.Confirm("Generate a new ed25519 SSH key?") {
 		privPath := strings.TrimSuffix(pubPath, ".pub")
 		dir := filepath.Dir(privPath)
-		if err := os.MkdirAll(dir, 0700); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", fmt.Errorf("create ssh dir: %w", err)
 		}
 
@@ -334,7 +334,7 @@ func (w *Wizard) save(r resolved) error {
 	}
 
 	path := filepath.Join(tfDir, "terraform.tfvars.json")
-	if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 

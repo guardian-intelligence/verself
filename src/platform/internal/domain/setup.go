@@ -24,13 +24,13 @@ const (
 
 // Field holds the display and raw state of one form entry.
 type Field struct {
-	Index       int         // 1-based
-	Label       string      // "Domain", "API token"
-	Value       string      // display value (masked for token)
-	RawValue    string      // actual value (never printed)
+	Index       int    // 1-based
+	Label       string // "Domain", "API token"
+	Value       string // display value (masked for token)
+	RawValue    string // actual value (never printed)
 	Status      FieldStatus
-	StatusLabel string      // "saved", "valid", "missing", "invalid"
-	Changed     bool        // true if user set a new value this run
+	StatusLabel string // "saved", "valid", "missing", "invalid"
+	Changed     bool   // true if user set a new value this run
 }
 
 const totalFields = 2
@@ -402,5 +402,5 @@ func writeDomain(varsFile, domain string) error {
 		content = strings.TrimRight(content, "\n") + "\n" + newLine + "\n"
 	}
 
-	return os.WriteFile(varsFile, []byte(content), 0644)
+	return os.WriteFile(varsFile, []byte(content), 0o644)
 }

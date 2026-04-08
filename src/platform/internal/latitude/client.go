@@ -232,7 +232,8 @@ func planAvailableIn(regions []struct {
 	Locations struct {
 		Available []string `json:"available"`
 	} `json:"locations"`
-}, slug string) bool {
+}, slug string,
+) bool {
 	for _, r := range regions {
 		for _, loc := range r.Locations.Available {
 			if loc == slug {

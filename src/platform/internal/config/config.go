@@ -262,5 +262,5 @@ func SaveLatitude(token, project, region, plan string) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	return os.WriteFile(localFile, data, 0600)
+	return os.WriteFile(localFile, data, 0o600)
 }
