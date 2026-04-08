@@ -146,9 +146,28 @@
             bridge_socket: "{{ bridge_search.files[0].path }}"
             vm_job_id: "{{ bridge_search.files[0].path | regex_replace('^.*/firecracker/([^/]+)/root/run/forge-control\\.sock$', '\\1') }}"
 
+        - name: Wait for vm-orchestrator telemetry hello log in ClickHouse
+          ansible.builtin.shell: |
+            set -euo pipefail
+            CLICKHOUSE_PASSWORD="$(sed -n 's/^password = "\(.*\)"$/\1/p' /etc/forge-metal/config.toml)"
+            {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --query "
+              SELECT count()
+              FROM default.otel_logs
+              WHERE ServiceName = 'vm-orchestrator'
+                AND Body = 'guest telemetry hello received'
+                AND LogAttributes['job_id'] = '{{ vm_job_id }}'
+            "
+          args:
+            executable: /bin/bash
+          register: vm_orchestrator_telemetry_log
+          changed_when: false
+          retries: "{{ boot_timeout }}"
+          delay: 1
+          until: (vm_orchestrator_telemetry_log.stdout | trim | int) > 0
+
         - name: Boot smoke test passed
           ansible.builtin.debug:
-            msg: "PASS: vm booted from dev golden and exposed forge-control.sock for job {{ vm_job_id }}"
+            msg: "PASS: vm booted from dev golden, exposed forge-control.sock, and vm-orchestrator exported decoded telemetry for job {{ vm_job_id }}"
 
       always:
         - name: Wait for Firecracker VM to exit

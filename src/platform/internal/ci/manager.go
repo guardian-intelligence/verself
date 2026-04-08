@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,16 +14,10 @@ import (
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
-const (
-	lockfileHashRelPath = ".forge-metal/lockfile.sha256"
-	repoGoldensDataset  = "repo-goldens"
-)
-
-var repoGoldenStateRoot = "/var/lib/ci/repo-goldens"
-
 type Manager struct {
 	firecrackerConfig vmorchestrator.Config
 	logger            *slog.Logger
+	socketPath        string
 }
 
 type WarmRequest struct {
@@ -45,6 +38,7 @@ func NewManager(cfg vmorchestrator.Config, logger *slog.Logger) *Manager {
 	return &Manager{
 		firecrackerConfig: cfg,
 		logger:            logger,
+		socketPath:        vmorchestrator.DefaultSocketPath,
 	}
 }
 
@@ -61,19 +55,15 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 
 	createdAt := time.Now().UTC()
 	runID, parentRunID := warmRunIDs(req.RunID)
-	repoKey := sanitizeRepoKey(req.Repo)
-	targetDataset := m.nextRepoGoldenDataset(repoKey)
-	previousDataset, err := m.activeRepoGoldenDataset(repoKey)
-	if err != nil {
-		return err
-	}
-	logger := m.logger.With("repo", req.Repo, "run_id", runID, "dataset", targetDataset)
+	logger := m.logger.With("repo", req.Repo, "run_id", runID)
 
 	var (
 		manifest                  *Manifest
 		toolchain                 *Toolchain
 		job                       vmorchestrator.JobConfig
 		result                    vmorchestrator.JobResult
+		targetDataset             string
+		previousDataset           string
 		cloneDuration             time.Duration
 		filesystemCheckDuration   time.Duration
 		snapshotPromotionDuration time.Duration
@@ -113,128 +103,58 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 		}
 	}()
 
-	if err := ensureDataset(ctx, m.repoGoldensRootDataset()); err != nil {
-		return err
-	}
-	cloneStart := time.Now()
-	if err := zfsClone(ctx, m.baseGoldenSnapshot(), targetDataset); err != nil {
-		return err
-	}
-	cloneDuration = time.Since(cloneStart)
-	logger.Info("repo golden clone created", "clone_ms", cloneDuration.Milliseconds(), "base_snapshot", m.baseGoldenSnapshot(), "previous_dataset", previousDataset)
-
-	// Track mount state so the cleanup defer can unmount before destroying.
-	// ZFS destroy -f only force-unmounts ZFS-native mounts, not ext4-over-zvol
-	// VFS mounts, so we must unmount explicitly or the dataset leaks.
-	cleanupTargetDataset := true
-	var cleanupMountDir string
-	defer func() {
-		if !cleanupTargetDataset {
-			return
-		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), zfsTimeout)
-		defer cleanupCancel()
-		if cleanupMountDir != "" {
-			if umountErr := unmountDataset(cleanupCtx, cleanupMountDir); umountErr != nil {
-				logger.Warn("cleanup unmount failed", "mount", cleanupMountDir, "err", umountErr)
-			}
-			cleanupMountDir = ""
-		}
-		cleanupStart := time.Now()
-		if destroyErr := destroyDatasetRecursive(cleanupCtx, targetDataset); destroyErr != nil {
-			logger.Warn("failed to destroy warm target dataset", "err", destroyErr)
-			return
-		}
-		logger.Warn("destroyed warm target dataset after failed promotion", "cleanup_ms", time.Since(cleanupStart).Milliseconds())
-	}()
-
-	mountDir, err := mountDataset(ctx, targetDataset)
+	inspection, err := inspectRepoDefaultBranch(req.RepoURL, req.DefaultBranch)
 	if err != nil {
 		return err
 	}
-	cleanupMountDir = mountDir
+	defer cleanupInspection(inspection.Path)
 
-	workspace := filepath.Join(mountDir, "workspace")
-	if err := os.RemoveAll(workspace); err != nil {
-		return fmt.Errorf("clear workspace: %w", err)
-	}
-	if err := runGit("", nil, "clone", "--depth", "1", "--branch", req.DefaultBranch, req.RepoURL, workspace); err != nil {
-		return err
-	}
-
-	manifest, err = LoadManifest(workspace)
-	if err != nil {
-		return err
-	}
-	toolchain, err = DetectToolchain(workspace)
-	if err != nil {
-		return err
-	}
+	manifest = inspection.Manifest
+	toolchain = inspection.Toolchain
 	jobEnv, err := buildJobEnv(manifest)
 	if err != nil {
 		return err
 	}
-	if err := writeLockfileHash(workspace, toolchain); err != nil {
-		return err
-	}
-	commitSHA, err = gitHeadSHA(workspace)
-	if err != nil {
-		return err
-	}
-
+	commitSHA = inspection.CommitSHA
 	job = buildGuestJob(uuid.NewString(), manifest, toolchain, true, true, jobEnv)
-	if err := unmountDataset(ctx, mountDir); err != nil {
+
+	client, err := m.newClient(ctx)
+	if err != nil {
 		return err
 	}
-	cleanupMountDir = ""
+	defer client.Close()
 
-	orch := vmorchestrator.New(m.firecrackerConfig, m.logger)
 	startedAt = time.Now().UTC()
-	result, err = orch.RunDataset(ctx, job, targetDataset, false)
+	warmResult, err := client.WarmGolden(ctx, vmorchestrator.WarmGoldenRequest{
+		Config:          m.firecrackerConfig,
+		Repo:            req.Repo,
+		RepoURL:         req.RepoURL,
+		DefaultBranch:   req.DefaultBranch,
+		Job:             job,
+		LockfileRelPath: toolchain.LockfileRelPath,
+	})
 	if err != nil {
-		return fmt.Errorf("warm run failed: %w", err)
+		return err
+	}
+	result = warmResult.JobResult
+	targetDataset = warmResult.TargetDataset
+	previousDataset = warmResult.PreviousDataset
+	cloneDuration = warmResult.CloneDuration
+	filesystemCheckDuration = warmResult.FilesystemCheckDuration
+	snapshotPromotionDuration = warmResult.SnapshotPromotionDuration
+	previousDestroyDuration = warmResult.PreviousDestroyDuration
+	filesystemCheckOK = warmResult.FilesystemCheckOK
+	promoted = warmResult.Promoted
+	if strings.TrimSpace(warmResult.CommitSHA) != "" {
+		commitSHA = warmResult.CommitSHA
 	}
 	logger.Info("warm run finished", "exit_code", result.ExitCode, "duration_ms", result.Duration.Milliseconds(), "commit_sha", commitSHA)
-	if result.ExitCode != 0 {
+	if strings.TrimSpace(warmResult.ErrorMessage) != "" {
 		logs := strings.TrimSpace(formatJobLogs(result))
 		if logs == "" {
-			return fmt.Errorf("warm run exited with code %d", result.ExitCode)
+			return fmt.Errorf("%s", warmResult.ErrorMessage)
 		}
-		return fmt.Errorf("warm run exited with code %d\n%s", result.ExitCode, logs)
-	}
-
-	logger.Info("warm filesystem check starting", "dataset", targetDataset)
-	filesystemCheckStart := time.Now()
-	if err := checkFilesystem(ctx, targetDataset); err != nil {
-		filesystemCheckDuration = time.Since(filesystemCheckStart)
-		logger.Error("warm filesystem check failed", "dataset", targetDataset, "duration_ms", filesystemCheckDuration.Milliseconds(), "err", err)
-		return fmt.Errorf("warm filesystem check failed: %w", err)
-	}
-	filesystemCheckDuration = time.Since(filesystemCheckStart)
-	filesystemCheckOK = true
-	logger.Info("warm filesystem check passed", "dataset", targetDataset, "duration_ms", filesystemCheckDuration.Milliseconds())
-
-	logger.Info("promoting repo golden snapshot", "dataset", targetDataset)
-	snapshotPromotionStart := time.Now()
-	if err := replaceReadySnapshot(ctx, targetDataset); err != nil {
-		snapshotPromotionDuration = time.Since(snapshotPromotionStart)
-		return err
-	}
-	snapshotPromotionDuration = time.Since(snapshotPromotionStart)
-	if err := m.writeActiveRepoGoldenDataset(repoKey, targetDataset); err != nil {
-		return err
-	}
-	cleanupTargetDataset = false
-	promoted = true
-	logger.Info("repo golden promoted", "dataset", targetDataset, "promotion_ms", snapshotPromotionDuration.Milliseconds(), "previous_dataset", previousDataset)
-	if previousDataset != "" && previousDataset != targetDataset {
-		previousDestroyStart := time.Now()
-		if err := destroyDatasetRecursive(ctx, previousDataset); err != nil {
-			m.logger.Warn("failed to destroy previous repo golden", "repo", req.Repo, "dataset", previousDataset, "err", err)
-		} else {
-			previousDestroyDuration = time.Since(previousDestroyStart)
-			logger.Info("destroyed previous repo golden", "dataset", previousDataset, "duration_ms", previousDestroyDuration.Milliseconds())
-		}
+		return fmt.Errorf("%s\n%s", warmResult.ErrorMessage, logs)
 	}
 	return nil
 }
@@ -255,93 +175,68 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*vmorchestrator.Jo
 		runID = "ci-exec-" + uuid.NewString()
 	}
 
-	repoKey := sanitizeRepoKey(req.Repo)
-	repoDataset, err := m.activeRepoGoldenDataset(repoKey)
+	inspection, err := inspectRepoRef(req.RepoURL, req.Ref)
 	if err != nil {
 		return nil, err
 	}
-	if repoDataset == "" {
-		return nil, fmt.Errorf("repo golden for %s does not exist; run warm first", req.Repo)
-	}
-	snapshot := repoDataset + "@ready"
-	exists, err := snapshotExists(ctx, snapshot)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, fmt.Errorf("repo golden %s does not exist; run warm first", snapshot)
-	}
+	defer cleanupInspection(inspection.Path)
 
-	jobID := uuid.NewString()
-	jobDataset := fmt.Sprintf("%s/%s/%s", m.firecrackerConfig.Pool, m.firecrackerConfig.CIDataset, jobID)
-	cloneStart := time.Now()
-	if err := zfsClone(ctx, snapshot, jobDataset); err != nil {
-		return nil, err
-	}
-	cloneDuration := time.Since(cloneStart)
-
-	mountDir, err := mountDataset(ctx, jobDataset)
-	if err != nil {
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
-		return nil, err
-	}
-
-	// Unmount-then-destroy cleanup; same pattern as Warm().
-	execMounted := true
-	execCleanup := func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
-		defer cancel()
-		if execMounted {
-			if umountErr := unmountDataset(cleanupCtx, mountDir); umountErr != nil {
-				m.logger.Warn("exec cleanup unmount failed", "mount", mountDir, "err", umountErr)
-			}
-			execMounted = false
-		}
-		_ = destroyDatasetRecursive(cleanupCtx, jobDataset)
-	}
-
-	workspace := filepath.Join(mountDir, "workspace")
-	if err := fetchRef(workspace, req.Ref); err != nil {
-		execCleanup()
-		return nil, err
-	}
-	manifest, err := LoadManifest(workspace)
-	if err != nil {
-		execCleanup()
-		return nil, err
-	}
-	toolchain, err := DetectToolchain(workspace)
-	if err != nil {
-		execCleanup()
-		return nil, err
-	}
+	manifest := inspection.Manifest
+	toolchain := inspection.Toolchain
 	jobEnv, err := buildJobEnv(manifest)
 	if err != nil {
-		execCleanup()
 		return nil, err
 	}
-	commitSHA, err := gitHeadSHA(workspace)
-	if err != nil {
-		execCleanup()
-		return nil, err
-	}
-	installNeeded, err := lockfileChanged(workspace, toolchain)
-	if err != nil {
-		execCleanup()
-		return nil, err
-	}
+	commitSHA := inspection.CommitSHA
+	jobID := uuid.NewString()
+	jobTemplate := buildGuestJob(jobID, manifest, toolchain, true, false, jobEnv)
+	var cloneDuration time.Duration
 
-	job := buildGuestJob(jobID, manifest, toolchain, installNeeded, false, jobEnv)
-	if err := unmountDataset(ctx, mountDir); err != nil {
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
+	client, err := m.newClient(ctx)
+	if err != nil {
 		return nil, err
 	}
-	execMounted = false
+	defer client.Close()
 
-	orch := vmorchestrator.New(m.firecrackerConfig, m.logger)
 	startedAt := time.Now().UTC()
-	result, err := orch.RunDataset(ctx, job, jobDataset, true)
+	status, err := client.ExecRepo(ctx, vmorchestrator.RepoExecRequest{
+		Config:          m.firecrackerConfig,
+		Repo:            req.Repo,
+		RepoURL:         req.RepoURL,
+		Ref:             req.Ref,
+		JobTemplate:     jobTemplate,
+		LockfileRelPath: toolchain.LockfileRelPath,
+	})
 	completedAt := time.Now().UTC()
+	if err != nil {
+		return nil, err
+	}
+	if status.Result == nil {
+		if status.ErrorMessage == "" {
+			return nil, fmt.Errorf("repo exec %s returned no result", req.Repo)
+		}
+		return nil, fmt.Errorf("%s", status.ErrorMessage)
+	}
+	result := *status.Result
+	installNeeded := true
+	snapshot := ""
+	if status.RepoExec != nil {
+		installNeeded = status.RepoExec.InstallNeeded
+		snapshot = status.RepoExec.GoldenSnapshot
+		cloneDuration = status.RepoExec.CloneDuration
+		if strings.TrimSpace(status.RepoExec.CommitSHA) != "" {
+			commitSHA = status.RepoExec.CommitSHA
+		}
+	}
+	job := jobTemplate
+	if !installNeeded {
+		job.PrepareCommand = nil
+		job.PrepareWorkDir = ""
+	}
+	var runErr error
+	if status.ErrorMessage != "" {
+		runErr = fmt.Errorf("%s", status.ErrorMessage)
+	}
 	prNumber := prNumberFromRef(req.Ref)
 	if telemetryErr := emitExecTelemetry(m.logger, emitExecTelemetryInput{
 		FirecrackerConfig: m.firecrackerConfig,
@@ -359,48 +254,14 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*vmorchestrator.Jo
 		CompletedAt:       completedAt,
 		CommitSHA:         commitSHA,
 		PRNumber:          prNumber,
-		RunErr:            err,
+		RunErr:            runErr,
 	}); telemetryErr != nil {
 		m.logger.Warn("emit ci exec telemetry failed", "repo", req.Repo, "run_id", runID, "err", telemetryErr)
 	}
-	if err != nil {
-		return nil, err
+	if status.ErrorMessage != "" {
+		return &result, runErr
 	}
 	return &result, nil
-}
-
-func (m *Manager) baseGoldenSnapshot() string {
-	return fmt.Sprintf("%s/%s@ready", m.firecrackerConfig.Pool, m.firecrackerConfig.GoldenZvol)
-}
-
-func (m *Manager) repoGoldensRootDataset() string {
-	return fmt.Sprintf("%s/%s", m.firecrackerConfig.Pool, repoGoldensDataset)
-}
-
-func (m *Manager) nextRepoGoldenDataset(repoKey string) string {
-	return fmt.Sprintf("%s/%s-%d", m.repoGoldensRootDataset(), repoKey, time.Now().UTC().UnixNano())
-}
-
-func (m *Manager) repoGoldenStatePath(repoKey string) string {
-	return filepath.Join(repoGoldenStateRoot, repoKey+".dataset")
-}
-
-func (m *Manager) activeRepoGoldenDataset(repoKey string) (string, error) {
-	data, err := os.ReadFile(m.repoGoldenStatePath(repoKey))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("read repo golden state: %w", err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func (m *Manager) writeActiveRepoGoldenDataset(repoKey, dataset string) error {
-	if err := os.MkdirAll(repoGoldenStateRoot, 0o755); err != nil {
-		return fmt.Errorf("mkdir repo golden state root: %w", err)
-	}
-	return os.WriteFile(m.repoGoldenStatePath(repoKey), []byte(dataset+"\n"), 0o644)
 }
 
 func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool, env map[string]string) vmorchestrator.JobConfig {
@@ -452,6 +313,73 @@ func resolvedProfile(manifest *Manifest) RuntimeProfile {
 	return manifest.Profile
 }
 
+type inspectedRepo struct {
+	Path      string
+	Manifest  *Manifest
+	Toolchain *Toolchain
+	CommitSHA string
+}
+
+func (m *Manager) newClient(ctx context.Context) (*vmorchestrator.Client, error) {
+	return vmorchestrator.NewClient(ctx, m.socketPath)
+}
+
+func inspectRepoDefaultBranch(repoURL, branch string) (*inspectedRepo, error) {
+	tmp, err := os.MkdirTemp("", "forge-metal-ci-warm-*")
+	if err != nil {
+		return nil, fmt.Errorf("create warm inspection dir: %w", err)
+	}
+	if err := runGit("", nil, "clone", "--depth", "1", "--branch", branch, repoURL, tmp); err != nil {
+		cleanupInspection(tmp)
+		return nil, err
+	}
+	return inspectRepoPath(tmp)
+}
+
+func inspectRepoRef(repoURL, ref string) (*inspectedRepo, error) {
+	tmp, err := os.MkdirTemp("", "forge-metal-ci-exec-*")
+	if err != nil {
+		return nil, fmt.Errorf("create exec inspection dir: %w", err)
+	}
+	if err := runGit("", nil, "clone", "--no-checkout", "--depth", "1", repoURL, tmp); err != nil {
+		cleanupInspection(tmp)
+		return nil, err
+	}
+	if err := fetchRef(tmp, ref); err != nil {
+		cleanupInspection(tmp)
+		return nil, err
+	}
+	return inspectRepoPath(tmp)
+}
+
+func inspectRepoPath(repoRoot string) (*inspectedRepo, error) {
+	manifest, err := LoadManifest(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	toolchain, err := DetectToolchain(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	commitSHA, err := gitHeadSHA(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return &inspectedRepo{
+		Path:      repoRoot,
+		Manifest:  manifest,
+		Toolchain: toolchain,
+		CommitSHA: commitSHA,
+	}, nil
+}
+
+func cleanupInspection(path string) {
+	if path == "" {
+		return
+	}
+	_ = os.RemoveAll(path)
+}
+
 func fetchRef(repoRoot, ref string) error {
 	if err := runGit(repoRoot, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", "--depth", "1", "origin", ref); err != nil {
 		return err
@@ -460,52 +388,6 @@ func fetchRef(repoRoot, ref string) error {
 		return err
 	}
 	return nil
-}
-
-func lockfileChanged(repoRoot string, toolchain *Toolchain) (bool, error) {
-	lockfile := toolchain.LockfilePath(repoRoot)
-	if lockfile == "" {
-		return true, nil
-	}
-	current, err := ComputeFileSHA256(lockfile)
-	if err != nil {
-		return false, err
-	}
-	recordedPath := filepath.Join(repoRoot, lockfileHashRelPath)
-	recorded, err := os.ReadFile(recordedPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return true, nil
-		}
-		return false, err
-	}
-	return strings.TrimSpace(string(recorded)) != current, nil
-}
-
-func writeLockfileHash(repoRoot string, toolchain *Toolchain) error {
-	lockfile := toolchain.LockfilePath(repoRoot)
-	if lockfile == "" {
-		return nil
-	}
-	hash, err := ComputeFileSHA256(lockfile)
-	if err != nil {
-		return err
-	}
-	return writeFile(filepath.Join(repoRoot, lockfileHashRelPath), hash+"\n", 0o644)
-}
-
-func replaceReadySnapshot(ctx context.Context, dataset string) error {
-	snapshot := dataset + "@ready"
-	exists, err := snapshotExists(ctx, snapshot)
-	if err != nil {
-		return err
-	}
-	if exists {
-		if err := zfsDestroy(ctx, snapshot, false); err != nil {
-			return err
-		}
-	}
-	return zfsSnapshot(ctx, snapshot)
 }
 
 func jsonMarshalIndent(v any) ([]byte, error) {

@@ -148,6 +148,12 @@ func (o *Orchestrator) ciDatasetPrefix() string {
 
 // Run executes a CI job inside a Firecracker VM.
 func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult, err error) {
+	return o.RunObserved(ctx, job, nil)
+}
+
+// RunObserved executes a CI job inside a Firecracker VM and forwards live
+// guest events to observer when it is non-nil.
+func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer RunObserver) (result JobResult, err error) {
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 		return
@@ -196,7 +202,7 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 	cloneDuration := time.Since(cloneStart)
 	o.logger.Info("zvol cloned", "job_id", job.JobID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
 
-	result, err = o.runDataset(ctx, job, dataset, true)
+	result, err = o.runDataset(ctx, job, dataset, true, observer)
 	if err != nil {
 		return result, err
 	}
@@ -207,17 +213,24 @@ func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult
 // RunDataset executes a job against an existing zvol dataset. When destroyAfter
 // is true, the dataset is destroyed during cleanup.
 func (o *Orchestrator) RunDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (JobResult, error) {
+	return o.RunDatasetObserved(ctx, job, dataset, destroyAfter, nil)
+}
+
+// RunDatasetObserved executes a job against an existing zvol dataset. When
+// destroyAfter is true, the dataset is destroyed during cleanup.
+func (o *Orchestrator) RunDatasetObserved(ctx context.Context, job JobConfig, dataset string, destroyAfter bool, observer RunObserver) (JobResult, error) {
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 	}
 	if len(job.RunCommand) == 0 {
 		return JobResult{}, fmt.Errorf("job run command is required")
 	}
-	return o.runDataset(ctx, job, dataset, destroyAfter)
+	return o.runDataset(ctx, job, dataset, destroyAfter, observer)
 }
 
-func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (result JobResult, err error) {
+func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool, observer RunObserver) (result JobResult, err error) {
 	start := time.Now()
+	observer = normalizeRunObserver(observer)
 
 	ctx, span := tracer.Start(ctx, "vmorchestrator.runDataset",
 		trace.WithAttributes(
@@ -397,6 +410,18 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		return result, fmt.Errorf("chmod guest control socket: %w", chmodErr)
 	}
 
+	telemetryCtx, telemetryCancel := context.WithCancel(context.Background())
+	defer telemetryCancel()
+	var telemetryWg sync.WaitGroup
+	telemetryWg.Add(1)
+	go func() {
+		defer telemetryWg.Done()
+		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, job.JobID, observer, logger); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
+			logger.Warn("guest telemetry stream ended", "job_id", job.JobID, "err", telemetryErr)
+		}
+	}()
+	defer telemetryWg.Wait()
+
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailer.Wait() }()
 
@@ -405,6 +430,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		_ = jailer.Kill()
 		<-waitDone
 		jailerExited.Store(true)
+		telemetryCancel()
 		logWg.Wait()
 		result.SerialLogs = serialBuf.String()
 		return result, fmt.Errorf("connect guest control: %w", controlErr)
@@ -416,7 +442,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		err    error
 	}, 1)
 	go func() {
-		controlResult, err := control.run(job, netSetup.Lease, logger)
+		controlResult, err := control.run(job, netSetup.Lease, logger, observer)
 		controlDone <- struct {
 			result guestControlResult
 			err    error
@@ -445,6 +471,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 			_ = jailer.Kill()
 			<-waitDone
 			jailerExited.Store(true)
+			telemetryCancel()
 			logWg.Wait()
 			result.Logs = controlResult.logs
 			result.SerialLogs = serialBuf.String()
@@ -457,6 +484,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	case waitErr := <-waitDone:
 		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
 		jailerExited.Store(true)
+		telemetryCancel()
 		if waitErr != nil && controlRunErr == nil {
 			controlRunErr = fmt.Errorf("wait for VM exit: %w", waitErr)
 		}
@@ -468,6 +496,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		_ = jailer.Kill()
 		<-waitDone
 		jailerExited.Store(true)
+		telemetryCancel()
 		if controlRunErr == nil {
 			controlRunErr = fmt.Errorf("timed out waiting for VM exit after guest shutdown")
 		}

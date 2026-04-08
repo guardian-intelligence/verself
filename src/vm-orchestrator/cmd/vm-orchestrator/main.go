@@ -2,20 +2,26 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	fmotel "github.com/forge-metal/otel"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
+	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 	"go.opentelemetry.io/otel"
+	"google.golang.org/grpc"
 )
+
+const maxMessageSize = 32 << 20
 
 func main() {
 	if err := run(); err != nil {
@@ -25,8 +31,31 @@ func main() {
 }
 
 func run() error {
-	var listenUnix string
-	flag.StringVar(&listenUnix, "listen-unix", "/run/vm-orchestrator/api.sock", "Unix socket path for the vm-orchestrator API")
+	cfg := vmorchestrator.DefaultConfig()
+
+	var (
+		listenUnix         string
+		socketGroup        string
+		repoGoldenStateDir string
+	)
+
+	flag.StringVar(&listenUnix, "listen-unix", vmorchestrator.DefaultSocketPath, "Unix socket path for the vm-orchestrator API")
+	flag.StringVar(&socketGroup, "socket-group", "vm-clients", "Group that should own the Unix API socket")
+	flag.StringVar(&repoGoldenStateDir, "repo-golden-state-dir", vmorchestrator.DefaultRepoGoldenStateDir, "Directory containing active repo-golden state files")
+	flag.StringVar(&cfg.Pool, "pool", cfg.Pool, "ZFS pool used for VM datasets")
+	flag.StringVar(&cfg.GoldenZvol, "golden-zvol", cfg.GoldenZvol, "Base guest golden zvol name")
+	flag.StringVar(&cfg.CIDataset, "ci-dataset", cfg.CIDataset, "ZFS dataset for ephemeral VM jobs")
+	flag.StringVar(&cfg.KernelPath, "kernel-path", cfg.KernelPath, "Path to vmlinux on the host")
+	flag.StringVar(&cfg.FirecrackerBin, "firecracker-bin", cfg.FirecrackerBin, "Path to firecracker binary")
+	flag.StringVar(&cfg.JailerBin, "jailer-bin", cfg.JailerBin, "Path to jailer binary")
+	flag.StringVar(&cfg.JailerRoot, "jailer-root", cfg.JailerRoot, "Jailer chroot root directory")
+	flag.IntVar(&cfg.JailerUID, "jailer-uid", cfg.JailerUID, "UID used for the jailer process")
+	flag.IntVar(&cfg.JailerGID, "jailer-gid", cfg.JailerGID, "GID used for the jailer process")
+	flag.IntVar(&cfg.VCPUs, "vcpus", cfg.VCPUs, "Default vCPU count per VM")
+	flag.IntVar(&cfg.MemoryMiB, "memory-mib", cfg.MemoryMiB, "Default memory per VM in MiB")
+	flag.StringVar(&cfg.HostInterface, "host-interface", cfg.HostInterface, "Default uplink interface for guest egress")
+	flag.StringVar(&cfg.GuestPoolCIDR, "guest-pool-cidr", cfg.GuestPoolCIDR, "IPv4 pool reserved for Firecracker guests")
+	flag.StringVar(&cfg.NetworkLeaseDir, "network-lease-dir", cfg.NetworkLeaseDir, "Directory for persistent guest network leases")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -41,7 +70,7 @@ func run() error {
 
 	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{
 		ServiceName:    "vm-orchestrator",
-		ServiceVersion: "0.1.0",
+		ServiceVersion: "0.2.0",
 	})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -58,50 +87,65 @@ func run() error {
 		_ = os.Remove(listenUnix)
 	}()
 
+	if err := setSocketOwnership(listenUnix, socketGroup); err != nil {
+		return err
+	}
 	if err := os.Chmod(listenUnix, 0o660); err != nil {
 		return fmt.Errorf("chmod socket %s: %w", listenUnix, err)
 	}
 
+	server := grpc.NewServer(
+		grpc.MaxRecvMsgSize(maxMessageSize),
+		grpc.MaxSendMsgSize(maxMessageSize),
+	)
+	vmService := vmorchestrator.NewAPIServer(cfg, repoGoldenStateDir, logger)
+	vmrpc.RegisterVMServiceServer(server, vmService)
+
 	startupCtx, startupSpan := otel.Tracer("vm-orchestrator").Start(ctx, "daemon.startup")
-	slog.InfoContext(startupCtx, "vm-orchestrator listening", "socket", listenUnix)
+	slog.InfoContext(startupCtx, "vm-orchestrator listening", "socket", listenUnix, "socket_group", socketGroup)
 	startupSpan.End()
 
 	errCh := make(chan error, 1)
-	go acceptLoop(ctx, listener, logger, errCh)
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil && ctx.Err() == nil {
+			errCh <- fmt.Errorf("serve vm-orchestrator: %w", serveErr)
+		}
+	}()
 
 	select {
 	case <-ctx.Done():
 		shutdownCtx, shutdownSpan := otel.Tracer("vm-orchestrator").Start(context.Background(), "daemon.shutdown")
 		slog.InfoContext(shutdownCtx, "vm-orchestrator stopping")
 		shutdownSpan.End()
+
+		drainDone := make(chan struct{})
+		go func() {
+			server.GracefulStop()
+			close(drainDone)
+		}()
+
+		select {
+		case <-drainDone:
+		case <-time.After(5 * time.Second):
+			server.Stop()
+		}
 		return nil
 	case err := <-errCh:
 		return err
 	}
 }
 
-func acceptLoop(ctx context.Context, listener net.Listener, logger *slog.Logger, errCh chan<- error) {
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Temporary() {
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			select {
-			case errCh <- fmt.Errorf("accept vm-orchestrator socket: %w", err):
-			default:
-			}
-			return
-		}
-
-		go func(conn net.Conn) {
-			defer conn.Close()
-			logger.Info("accepted placeholder vm-orchestrator client", "remote", conn.RemoteAddr().String())
-		}(conn)
+func setSocketOwnership(path, groupName string) error {
+	group, err := user.LookupGroup(groupName)
+	if err != nil {
+		return fmt.Errorf("lookup socket group %s: %w", groupName, err)
 	}
+	gid, err := strconv.Atoi(group.Gid)
+	if err != nil {
+		return fmt.Errorf("parse gid for group %s: %w", groupName, err)
+	}
+	if err := os.Chown(path, -1, gid); err != nil {
+		return fmt.Errorf("chown socket %s to group %s: %w", path, groupName, err)
+	}
+	return nil
 }

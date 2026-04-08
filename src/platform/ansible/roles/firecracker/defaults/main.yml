@@ -19,3 +19,5 @@ firecracker_net_lease_dir: /var/lib/ci/net/leases
 firecracker_host_uplink_interface: ""
 firecracker_vm_orchestrator_binary_path: /usr/local/bin/vm-orchestrator
 firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
+firecracker_vm_orchestrator_socket_group: vm-clients
+firecracker_repo_golden_state_dir: /var/lib/ci/repo-goldens

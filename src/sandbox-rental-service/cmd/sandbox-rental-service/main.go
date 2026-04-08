@@ -58,22 +58,7 @@ func run() error {
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
-
-	// vm-orchestrator config
-	fsPool := envOr("SANDBOX_FS_POOL", "forgepool")
-	fsGoldenZvol := envOr("SANDBOX_FS_GOLDEN_ZVOL", "golden-zvol")
-	fsCIDataset := envOr("SANDBOX_FS_CI_DATASET", "ci")
-	fsKernelPath := envOr("SANDBOX_FS_KERNEL_PATH", "/var/lib/ci/vmlinux")
-	fsFCBin := envOr("SANDBOX_FS_FC_BIN", "/opt/forge-metal/profile/bin/firecracker")
-	fsJailerBin := envOr("SANDBOX_FS_JAILER_BIN", "/opt/forge-metal/profile/bin/jailer")
-	fsJailerRoot := envOr("SANDBOX_FS_JAILER_ROOT", "/srv/jailer")
-	fsJailerUID := envInt("SANDBOX_FS_JAILER_UID", 65534)
-	fsJailerGID := envInt("SANDBOX_FS_JAILER_GID", 65534)
-	fsVCPUs := envInt("SANDBOX_FS_VCPUS", 2)
-	fsMemoryMiB := envInt("SANDBOX_FS_MEMORY_MIB", 2048)
-	fsHostInterface := envOr("SANDBOX_FS_HOST_INTERFACE", "eth0")
-	fsGuestPoolCIDR := envOr("SANDBOX_FS_GUEST_POOL_CIDR", "10.100.0.0/24")
-	fsNetworkLeaseDir := envOr("SANDBOX_FS_NETWORK_LEASE_DIR", "/var/lib/ci/leases")
+	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
 
 	// --- open connections ---
 
@@ -99,24 +84,20 @@ func run() error {
 	}
 	defer func() { _ = chConn.Close() }()
 
-	// --- vm-orchestrator library ---
+	// --- vm-orchestrator client ---
 
-	orchestrator := vmorchestrator.New(vmorchestrator.Config{
-		Pool:            fsPool,
-		GoldenZvol:      fsGoldenZvol,
-		CIDataset:       fsCIDataset,
-		KernelPath:      fsKernelPath,
-		FirecrackerBin:  fsFCBin,
-		JailerBin:       fsJailerBin,
-		JailerRoot:      fsJailerRoot,
-		JailerUID:       fsJailerUID,
-		JailerGID:       fsJailerGID,
-		VCPUs:           fsVCPUs,
-		MemoryMiB:       fsMemoryMiB,
-		HostInterface:   fsHostInterface,
-		GuestPoolCIDR:   fsGuestPoolCIDR,
-		NetworkLeaseDir: fsNetworkLeaseDir,
-	}, logger)
+	orchestrator, err := vmorchestrator.NewClient(ctx, vmOrchestratorSocket)
+	if err != nil {
+		return fmt.Errorf("connect vm-orchestrator: %w", err)
+	}
+	defer orchestrator.Close()
+
+	capacityCtx, cancelCapacity := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelCapacity()
+	capacity, err := orchestrator.GetCapacity(capacityCtx)
+	if err != nil {
+		return fmt.Errorf("query vm-orchestrator capacity: %w", err)
+	}
 
 	// --- billing client ---
 
@@ -136,8 +117,8 @@ func run() error {
 		CHDatabase:    "forge_metal",
 		Orchestrator:  orchestrator,
 		Billing:       billingClient,
-		BillingVCPUs:  fsVCPUs,
-		BillingMemMiB: fsMemoryMiB,
+		BillingVCPUs:  int(capacity.VCPUsPerVM),
+		BillingMemMiB: int(capacity.MemoryMiBPerVM),
 		Logger:        logger,
 	}
 
