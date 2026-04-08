@@ -274,9 +274,9 @@ type usageOutput struct {
 
 type quotaCheckInput struct {
 	Body struct {
-		OrgID     uint64             `json:"org_id" required:"true" minimum:"1"`
-		ProductID string             `json:"product_id" required:"true" maxLength:"255"`
-		Usage     map[string]float64 `json:"usage" required:"true"`
+		OrgID           uint64 `json:"org_id" required:"true" minimum:"1"`
+		ProductID       string `json:"product_id" required:"true" maxLength:"255"`
+		ConcurrentCount uint64 `json:"concurrent_count" required:"true"`
 	}
 }
 
@@ -296,13 +296,14 @@ type quotaCheckOutput struct {
 
 type reserveInput struct {
 	Body struct {
-		JobID      int64              `json:"job_id" required:"true" minimum:"1"`
-		OrgID      uint64             `json:"org_id" required:"true" minimum:"1"`
-		ProductID  string             `json:"product_id" required:"true" maxLength:"255"`
-		ActorID    string             `json:"actor_id" required:"true" maxLength:"255"`
-		SourceType string             `json:"source_type" required:"true" maxLength:"255"`
-		SourceRef  string             `json:"source_ref" required:"true" maxLength:"255"`
-		Allocation map[string]float64 `json:"allocation" required:"true"`
+		JobID           int64              `json:"job_id" required:"true" minimum:"1"`
+		OrgID           uint64             `json:"org_id" required:"true" minimum:"1"`
+		ProductID       string             `json:"product_id" required:"true" maxLength:"255"`
+		ActorID         string             `json:"actor_id" required:"true" maxLength:"255"`
+		ConcurrentCount uint64             `json:"concurrent_count" required:"true"`
+		SourceType      string             `json:"source_type" required:"true" maxLength:"255"`
+		SourceRef       string             `json:"source_ref" required:"true" maxLength:"255"`
+		Allocation      map[string]float64 `json:"allocation" required:"true"`
 	}
 }
 
@@ -314,21 +315,22 @@ type grantLegJSON struct {
 }
 
 type reservationJSON struct {
-	JobID        int64              `json:"job_id"`
-	OrgID        uint64             `json:"org_id"`
-	ProductID    string             `json:"product_id"`
-	PlanID       string             `json:"plan_id"`
-	ActorID      string             `json:"actor_id"`
-	SourceType   string             `json:"source_type"`
-	SourceRef    string             `json:"source_ref"`
-	WindowSeq    uint32             `json:"window_seq"`
-	WindowSecs   uint32             `json:"window_secs"`
-	WindowStart  time.Time          `json:"window_start"`
-	PricingPhase string             `json:"pricing_phase"`
-	Allocation   map[string]float64 `json:"allocation"`
-	UnitRates    map[string]uint64  `json:"unit_rates"`
-	CostPerSec   uint64             `json:"cost_per_sec"`
-	GrantLegs    []grantLegJSON     `json:"grant_legs"`
+	JobID               int64              `json:"job_id"`
+	OrgID               uint64             `json:"org_id"`
+	ProductID           string             `json:"product_id"`
+	PlanID              string             `json:"plan_id"`
+	ActorID             string             `json:"actor_id"`
+	SourceType          string             `json:"source_type"`
+	SourceRef           string             `json:"source_ref"`
+	WindowSeq           uint32             `json:"window_seq"`
+	WindowSecs          uint32             `json:"window_secs"`
+	WindowStart         time.Time          `json:"window_start"`
+	PricingPhase        string             `json:"pricing_phase"`
+	Allocation          map[string]float64 `json:"allocation"`
+	UnitRates           map[string]uint64  `json:"unit_rates"`
+	CostPerSec          uint64             `json:"cost_per_sec"`
+	GrantLegs           []grantLegJSON     `json:"grant_legs"`
+	SpendCapPeriodStart *time.Time         `json:"spend_cap_period_start,omitempty"`
 }
 
 type reserveOutput struct {
@@ -558,7 +560,7 @@ func checkQuotas(app *billingruntime.App) func(context.Context, *quotaCheckInput
 				attribute.String("billing.product_id", input.Body.ProductID),
 			))
 		defer span.End()
-		result, callErr := client.CheckQuotas(ctx, billing.OrgID(input.Body.OrgID), input.Body.ProductID, input.Body.Usage)
+		result, callErr := client.CheckQuotas(ctx, billing.OrgID(input.Body.OrgID), input.Body.ProductID, input.Body.ConcurrentCount)
 		if callErr != nil {
 			span.RecordError(callErr)
 			span.SetStatus(codes.Error, callErr.Error())
@@ -595,13 +597,14 @@ func reserve(app *billingruntime.App) func(context.Context, *reserveInput) (*res
 			))
 		defer span.End()
 		reservation, callErr := client.Reserve(ctx, billing.ReserveRequest{
-			JobID:      billing.JobID(input.Body.JobID),
-			OrgID:      billing.OrgID(input.Body.OrgID),
-			ProductID:  input.Body.ProductID,
-			ActorID:    input.Body.ActorID,
-			SourceType: input.Body.SourceType,
-			SourceRef:  input.Body.SourceRef,
-			Allocation: input.Body.Allocation,
+			JobID:           billing.JobID(input.Body.JobID),
+			OrgID:           billing.OrgID(input.Body.OrgID),
+			ProductID:       input.Body.ProductID,
+			ActorID:         input.Body.ActorID,
+			ConcurrentCount: input.Body.ConcurrentCount,
+			SourceType:      input.Body.SourceType,
+			SourceRef:       input.Body.SourceRef,
+			Allocation:      input.Body.Allocation,
 		})
 		if callErr != nil {
 			span.RecordError(callErr)
@@ -843,9 +846,9 @@ func requirePG(app *billingruntime.App) (*sql.DB, error) {
 
 func mapReserveError(err error) error {
 	switch {
-	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrNoActiveSubscription), errors.Is(err, billing.ErrOverageCeilingExceeded):
+	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrNoActiveSubscription), errors.Is(err, billing.ErrSpendCapExceeded):
 		return huma.Error402PaymentRequired(err.Error())
-	case errors.Is(err, billing.ErrOrgSuspended):
+	case errors.Is(err, billing.ErrOrgSuspended), errors.Is(err, billing.ErrConcurrentLimitExceeded):
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, billing.ErrDimensionMismatch):
 		return huma.Error400BadRequest(err.Error())
@@ -856,20 +859,21 @@ func mapReserveError(err error) error {
 
 func reservationFromDomain(reservation billing.Reservation) reservationJSON {
 	out := reservationJSON{
-		JobID:        int64(reservation.JobID),
-		OrgID:        uint64(reservation.OrgID),
-		ProductID:    reservation.ProductID,
-		PlanID:       reservation.PlanID,
-		ActorID:      reservation.ActorID,
-		SourceType:   reservation.SourceType,
-		SourceRef:    reservation.SourceRef,
-		WindowSeq:    reservation.WindowSeq,
-		WindowSecs:   reservation.WindowSecs,
-		WindowStart:  reservation.WindowStart,
-		PricingPhase: string(reservation.PricingPhase),
-		Allocation:   reservation.Allocation,
-		UnitRates:    reservation.UnitRates,
-		CostPerSec:   reservation.CostPerSec,
+		JobID:               int64(reservation.JobID),
+		OrgID:               uint64(reservation.OrgID),
+		ProductID:           reservation.ProductID,
+		PlanID:              reservation.PlanID,
+		ActorID:             reservation.ActorID,
+		SourceType:          reservation.SourceType,
+		SourceRef:           reservation.SourceRef,
+		WindowSeq:           reservation.WindowSeq,
+		WindowSecs:          reservation.WindowSecs,
+		WindowStart:         reservation.WindowStart,
+		PricingPhase:        string(reservation.PricingPhase),
+		Allocation:          reservation.Allocation,
+		UnitRates:           reservation.UnitRates,
+		CostPerSec:          reservation.CostPerSec,
+		SpendCapPeriodStart: reservation.SpendCapPeriodStart,
 	}
 	for _, leg := range reservation.GrantLegs {
 		out.GrantLegs = append(out.GrantLegs, grantLegJSON{
@@ -884,20 +888,21 @@ func reservationFromDomain(reservation billing.Reservation) reservationJSON {
 
 func (reservation reservationJSON) toDomain() (billing.Reservation, error) {
 	out := billing.Reservation{
-		JobID:        billing.JobID(reservation.JobID),
-		OrgID:        billing.OrgID(reservation.OrgID),
-		ProductID:    reservation.ProductID,
-		PlanID:       reservation.PlanID,
-		ActorID:      reservation.ActorID,
-		SourceType:   reservation.SourceType,
-		SourceRef:    reservation.SourceRef,
-		WindowSeq:    reservation.WindowSeq,
-		WindowSecs:   reservation.WindowSecs,
-		WindowStart:  reservation.WindowStart,
-		PricingPhase: billing.PricingPhase(reservation.PricingPhase),
-		Allocation:   reservation.Allocation,
-		UnitRates:    reservation.UnitRates,
-		CostPerSec:   reservation.CostPerSec,
+		JobID:               billing.JobID(reservation.JobID),
+		OrgID:               billing.OrgID(reservation.OrgID),
+		ProductID:           reservation.ProductID,
+		PlanID:              reservation.PlanID,
+		ActorID:             reservation.ActorID,
+		SourceType:          reservation.SourceType,
+		SourceRef:           reservation.SourceRef,
+		WindowSeq:           reservation.WindowSeq,
+		WindowSecs:          reservation.WindowSecs,
+		WindowStart:         reservation.WindowStart,
+		PricingPhase:        billing.PricingPhase(reservation.PricingPhase),
+		Allocation:          reservation.Allocation,
+		UnitRates:           reservation.UnitRates,
+		CostPerSec:          reservation.CostPerSec,
+		SpendCapPeriodStart: reservation.SpendCapPeriodStart,
 	}
 	for _, leg := range reservation.GrantLegs {
 		grantID, err := billing.ParseGrantID(leg.GrantID)

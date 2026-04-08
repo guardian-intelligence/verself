@@ -164,10 +164,10 @@ type ProductBalanceOutputBody struct {
 // QuotaCheckInputBody defines model for QuotaCheckInputBody.
 type QuotaCheckInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string            `json:"$schema,omitempty"`
-	OrgId     int64              `json:"org_id"`
-	ProductId string             `json:"product_id"`
-	Usage     map[string]float64 `json:"usage"`
+	Schema          *string `json:"$schema,omitempty"`
+	ConcurrentCount int64   `json:"concurrent_count"`
+	OrgId           int64   `json:"org_id"`
+	ProductId       string  `json:"product_id"`
 }
 
 // QuotaCheckOutputBody defines model for QuotaCheckOutputBody.
@@ -204,34 +204,36 @@ type ReconcileOutputBody struct {
 
 // ReservationJSON defines model for ReservationJSON.
 type ReservationJSON struct {
-	ActorId      string             `json:"actor_id"`
-	Allocation   map[string]float64 `json:"allocation"`
-	CostPerSec   int64              `json:"cost_per_sec"`
-	GrantLegs    *[]GrantLegJSON    `json:"grant_legs"`
-	JobId        int64              `json:"job_id"`
-	OrgId        int64              `json:"org_id"`
-	PlanId       string             `json:"plan_id"`
-	PricingPhase string             `json:"pricing_phase"`
-	ProductId    string             `json:"product_id"`
-	SourceRef    string             `json:"source_ref"`
-	SourceType   string             `json:"source_type"`
-	UnitRates    map[string]int64   `json:"unit_rates"`
-	WindowSecs   int32              `json:"window_secs"`
-	WindowSeq    int32              `json:"window_seq"`
-	WindowStart  time.Time          `json:"window_start"`
+	ActorId             string             `json:"actor_id"`
+	Allocation          map[string]float64 `json:"allocation"`
+	CostPerSec          int64              `json:"cost_per_sec"`
+	GrantLegs           *[]GrantLegJSON    `json:"grant_legs"`
+	JobId               int64              `json:"job_id"`
+	OrgId               int64              `json:"org_id"`
+	PlanId              string             `json:"plan_id"`
+	PricingPhase        string             `json:"pricing_phase"`
+	ProductId           string             `json:"product_id"`
+	SourceRef           string             `json:"source_ref"`
+	SourceType          string             `json:"source_type"`
+	SpendCapPeriodStart *time.Time         `json:"spend_cap_period_start,omitempty"`
+	UnitRates           map[string]int64   `json:"unit_rates"`
+	WindowSecs          int32              `json:"window_secs"`
+	WindowSeq           int32              `json:"window_seq"`
+	WindowStart         time.Time          `json:"window_start"`
 }
 
 // ReserveInputBody defines model for ReserveInputBody.
 type ReserveInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string            `json:"$schema,omitempty"`
-	ActorId    string             `json:"actor_id"`
-	Allocation map[string]float64 `json:"allocation"`
-	JobId      int64              `json:"job_id"`
-	OrgId      int64              `json:"org_id"`
-	ProductId  string             `json:"product_id"`
-	SourceRef  string             `json:"source_ref"`
-	SourceType string             `json:"source_type"`
+	Schema          *string            `json:"$schema,omitempty"`
+	ActorId         string             `json:"actor_id"`
+	Allocation      map[string]float64 `json:"allocation"`
+	ConcurrentCount int64              `json:"concurrent_count"`
+	JobId           int64              `json:"job_id"`
+	OrgId           int64              `json:"org_id"`
+	ProductId       string             `json:"product_id"`
+	SourceRef       string             `json:"source_ref"`
+	SourceType      string             `json:"source_type"`
 }
 
 // ReserveOutputBody defines model for ReserveOutputBody.

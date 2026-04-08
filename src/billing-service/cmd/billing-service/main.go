@@ -25,8 +25,8 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
-	fmotel "github.com/forge-metal/otel"
 	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
+	fmotel "github.com/forge-metal/otel"
 )
 
 func main() {
@@ -99,7 +99,6 @@ func run() error {
 			logger.ErrorContext(ctx, "billing: async metering shutdown", "error", err)
 		}
 	}()
-	meteringQuerier := billing.NewClickHouseMeteringQuerier(chConn, "forge_metal")
 	reconcileQuerier := billing.NewClickHouseReconcileQuerier(chConn, "forge_metal")
 
 	cfg := billing.DefaultConfig()
@@ -107,7 +106,7 @@ func run() error {
 	cfg.TigerBeetleAddresses = tbAddresses
 	cfg.TigerBeetleClusterID = tbClusterID
 
-	billingClient, err := billing.NewClient(tbClient, pg, sc, meteringWriter, meteringQuerier, cfg)
+	billingClient, err := billing.NewClient(tbClient, pg, sc, meteringWriter, cfg)
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}

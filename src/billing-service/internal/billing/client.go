@@ -19,14 +19,13 @@ type Client struct {
 	pg       *sql.DB
 	stripe   *stripe.Client
 	metering MeteringWriter
-	querier  MeteringQuerier
 	cfg      Config
 	clock    func() time.Time
 }
 
 // NewClient constructs a billing Client. All dependencies are required;
 // the server must refuse to start without ClickHouse metering connectivity.
-func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering MeteringWriter, querier MeteringQuerier, cfg Config) (*Client, error) {
+func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering MeteringWriter, cfg Config) (*Client, error) {
 	if tbClient == nil {
 		return nil, fmt.Errorf("%w: tigerbeetle client is required", ErrInvalidConfig)
 	}
@@ -39,9 +38,6 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering Meter
 	if metering == nil {
 		return nil, fmt.Errorf("%w: metering writer is required", ErrInvalidConfig)
 	}
-	if querier == nil {
-		return nil, fmt.Errorf("%w: metering querier is required", ErrInvalidConfig)
-	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -51,7 +47,6 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering Meter
 		pg:       pg,
 		stripe:   sc,
 		metering: metering,
-		querier:  querier,
 		cfg:      cfg,
 		clock:    time.Now,
 	}

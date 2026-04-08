@@ -31,8 +31,8 @@ import (
 // stripeTestKeys holds Stripe test-mode credentials loaded from SOPS-encrypted
 // secrets. The test suite requires real Stripe test-mode keys — mocks are not used.
 type stripeTestKeys struct {
-	PublishableKey     string
-	SecretKey          string
+	PublishableKey    string
+	SecretKey         string
 	WebhookEndpointID string
 }
 
@@ -138,8 +138,8 @@ func requireStripeTestKeys(t *testing.T) stripeTestKeys {
 	}
 
 	return stripeTestKeys{
-		PublishableKey:     pk,
-		SecretKey:          sk,
+		PublishableKey:    pk,
+		SecretKey:         sk,
 		WebhookEndpointID: weID,
 	}
 }
@@ -182,7 +182,7 @@ func newBillingTestEnv(t *testing.T) billingTestEnv {
 	cfg.TigerBeetleAddresses = []string{tbAddr}
 	cfg.TigerBeetleClusterID = clusterID
 
-	client, err := NewClient(tbClient, pg, sc, noopMeteringWriter{}, noopMeteringQuerier{}, cfg)
+	client, err := NewClient(tbClient, pg, sc, noopMeteringWriter{}, cfg)
 	if err != nil {
 		t.Fatalf("new billing client: %v", err)
 	}
@@ -278,7 +278,7 @@ func postgresMigrationPaths(t *testing.T) []string {
 		t.Fatal("resolve caller")
 	}
 
-	paths, err := filepath.Glob(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "billing-service", "postgresql-migrations", "[0-9][0-9][0-9]_*.up.sql")))
+	paths, err := filepath.Glob(filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "postgresql-migrations", "[0-9][0-9][0-9]_*.up.sql")))
 	if err != nil {
 		t.Fatalf("glob postgres migrations: %v", err)
 	}
@@ -406,10 +406,4 @@ type noopMeteringWriter struct{}
 
 func (noopMeteringWriter) InsertMeteringRow(_ context.Context, _ MeteringRow) error {
 	return nil
-}
-
-type noopMeteringQuerier struct{}
-
-func (noopMeteringQuerier) SumDimension(_ context.Context, _ OrgID, _ string, _ string, _ time.Time) (float64, error) {
-	return 0, nil
 }

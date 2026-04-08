@@ -4,241 +4,200 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 )
 
-// quotaPolicy is the parsed form of plans.quotas JSONB.
-type quotaPolicy struct {
-	Limits []quotaLimit `json:"limits"`
-}
-
-type quotaLimit struct {
-	Dimension string `json:"dimension"`
-	Window    string `json:"window"`
-	Limit     uint64 `json:"limit"`
-}
-
-type quotaPolicySource string
-
 const (
-	quotaPolicySourceNone         quotaPolicySource = ""
-	quotaPolicySourceSubscription quotaPolicySource = "subscription"
-	quotaPolicySourceDefaultPlan  quotaPolicySource = "default_plan"
+	concurrentDimension = "concurrent_vms"
+	concurrentWindow    = "instant"
 )
 
-type loadedQuotaPolicy struct {
-	source      quotaPolicySource
-	limits      []quotaLimit
-	periodStart *time.Time
+type trustTierPolicy struct {
+	concurrentLimit *uint64
+	spendCapUnits   *uint64
 }
 
-// CheckQuotas verifies that an org's usage is within plan-defined quota limits.
-// Rolling windows are evaluated via ClickHouse. Instant windows are compared
-// in-process from the caller-supplied usage map. Fails closed if the metering
-// querier is not configured (§7.4).
-func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string, usage map[string]float64) (QuotaResult, error) {
+type planQuotaPolicy struct {
+	ConcurrentVMs *uint64 `json:"concurrent_vms,omitempty"`
+}
+
+type spendCapPolicy struct {
+	trustTierCapUnits *uint64
+	planCapUnits      *uint64
+	effectiveCapUnits *uint64
+	periodStart       *time.Time
+}
+
+var trustTierPolicies = map[string]trustTierPolicy{
+	"new": {
+		concurrentLimit: uint64Ptr(2),
+		spendCapUnits:   uint64Ptr(500),
+	},
+	"established": {
+		concurrentLimit: uint64Ptr(20),
+		spendCapUnits:   uint64Ptr(50000),
+	},
+	"enterprise": {
+		concurrentLimit: nil,
+		spendCapUnits:   nil,
+	},
+}
+
+// CheckQuotas is an advisory preflight read. Real enforcement happens in Reserve.
+func (c *Client) CheckQuotas(ctx context.Context, orgID OrgID, productID string, concurrentCount uint64) (QuotaResult, error) {
 	if err := ctx.Err(); err != nil {
 		return QuotaResult{}, err
 	}
 
-	policy, err := c.loadQuotaPolicy(ctx, orgID, productID)
+	_, trustPolicy, err := c.loadTrustTierPolicy(ctx, orgID)
 	if err != nil {
 		return QuotaResult{}, err
 	}
-	if len(policy.limits) == 0 {
+	activePlan, err := c.loadActiveSubscriptionPlan(ctx, orgID, productID)
+	if err != nil {
+		return QuotaResult{}, err
+	}
+	defaultPlan, err := c.loadDefaultPlan(ctx, orgID, productID)
+	if err != nil {
+		return QuotaResult{}, err
+	}
+
+	limit := effectiveConcurrentLimit(trustPolicy.concurrentLimit, activePlan, defaultPlan)
+	if limit == nil || concurrentCount <= *limit {
 		return QuotaResult{Allowed: true}, nil
 	}
 
-	now := c.clock().UTC()
-
-	// Separate TB-enforceable limits from ClickHouse-backed limits.
-	var tbLimits []quotaLimit
-	var chLimits []quotaLimit
-	for _, lim := range policy.limits {
-		switch lim.Window {
-		case "instant", "hour", "4h":
-			tbLimits = append(tbLimits, lim)
-		default:
-			chLimits = append(chLimits, lim)
-		}
-	}
-
-	// TigerBeetle path: atomic balance-conditional pending transfers.
-	tbViolations, err := c.attemptQuotaTransfers(ctx, orgID, productID, tbLimits, usage, now)
-	if err != nil {
-		return QuotaResult{}, fmt.Errorf("tb quota check: %w", err)
-	}
-
-	// ClickHouse path: rolling-window aggregation for long windows.
-	var chViolations []QuotaViolation
-	for _, lim := range chLimits {
-		since, err := windowSince(lim.Window, now, policy.periodStart)
-		if err != nil {
-			return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
-		}
-		current, err := c.querier.SumDimension(ctx, orgID, productID, lim.Dimension, since)
-		if err != nil {
-			return QuotaResult{}, fmt.Errorf("quota %s/%s: %w", lim.Dimension, lim.Window, err)
-		}
-		if uint64(current) >= lim.Limit {
-			chViolations = append(chViolations, QuotaViolation{
-				Dimension: lim.Dimension,
-				Window:    lim.Window,
-				Limit:     lim.Limit,
-				Current:   uint64(current),
-			})
-		}
-	}
-
-	violations := append(tbViolations, chViolations...)
-
-	result := QuotaResult{
-		Allowed:    len(violations) == 0,
-		Violations: violations,
-	}
-	if !result.Allowed {
-		orgIDStr := strconv.FormatUint(uint64(orgID), 10)
-		violationDetails := make([]map[string]interface{}, len(violations))
-		for i, v := range violations {
-			violationDetails[i] = map[string]interface{}{
-				"dimension": v.Dimension,
-				"window":    v.Window,
-				"limit":     v.Limit,
-				"current":   v.Current,
-			}
-		}
-		_, _ = c.pg.ExecContext(ctx, `
-			INSERT INTO billing_events (org_id, event_type, payload)
-			VALUES ($1, 'quota_exceeded', $2::jsonb)
-		`,
-			orgIDStr,
-			mustJSON(map[string]interface{}{
-				"product_id": productID,
-				"violations": violationDetails,
-			}),
-		)
-	}
-	return result, nil
+	return QuotaResult{
+		Allowed: false,
+		Violations: []QuotaViolation{{
+			Dimension: concurrentDimension,
+			Window:    concurrentWindow,
+			Limit:     *limit,
+			Current:   concurrentCount,
+		}},
+	}, nil
 }
 
-// loadQuotaPolicy resolves the active quota policy for an org/product.
-// It distinguishes "no applicable plan" from "plan exists but has no limits",
-// and only populates periodStart for subscription-backed policies.
-func (c *Client) loadQuotaPolicy(ctx context.Context, orgID OrgID, productID string) (loadedQuotaPolicy, error) {
-	orgIDText := strconv.FormatUint(uint64(orgID), 10)
-
-	policy, found, err := c.loadSubscriptionQuotaPolicy(ctx, orgIDText, productID)
-	if err != nil {
-		return loadedQuotaPolicy{}, err
-	}
-	if found {
-		return policy, nil
+func (c *Client) loadTrustTierPolicy(ctx context.Context, orgID OrgID) (string, trustTierPolicy, error) {
+	var trustTier string
+	if err := c.pg.QueryRowContext(ctx, `
+		SELECT trust_tier
+		FROM orgs
+		WHERE org_id = $1
+	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&trustTier); err != nil {
+		return "", trustTierPolicy{}, fmt.Errorf("load trust tier: %w", err)
 	}
 
-	policy, found, err = c.loadDefaultQuotaPolicy(ctx, productID)
-	if err != nil {
-		return loadedQuotaPolicy{}, err
+	policy, ok := trustTierPolicies[trustTier]
+	if !ok {
+		return "", trustTierPolicy{}, fmt.Errorf("load trust tier: unsupported trust tier %q", trustTier)
 	}
-	if found {
-		return policy, nil
-	}
-
-	return loadedQuotaPolicy{source: quotaPolicySourceNone}, nil
+	return trustTier, policy, nil
 }
 
-func (c *Client) loadSubscriptionQuotaPolicy(ctx context.Context, orgIDText, productID string) (loadedQuotaPolicy, bool, error) {
-	var quotasJSON sql.NullString
-	var periodStart sql.NullTime
-
-	err := c.pg.QueryRowContext(ctx, `
-		SELECT p.quotas::text, s.current_period_start
-		FROM subscriptions s
-		JOIN plans p ON p.plan_id = s.plan_id
-		WHERE s.org_id = $1
-		  AND s.product_id = $2
-		  AND s.status IN ('active', 'past_due', 'trialing')
-		ORDER BY s.subscription_id DESC
-		LIMIT 1
-	`, orgIDText, productID).Scan(&quotasJSON, &periodStart)
-	if errors.Is(err, sql.ErrNoRows) {
-		return loadedQuotaPolicy{}, false, nil
-	}
-	if err != nil {
-		return loadedQuotaPolicy{}, false, fmt.Errorf("load subscription plan quotas: %w", err)
-	}
-
-	policy, err := decodeQuotaPolicy(quotasJSON)
-	if err != nil {
-		return loadedQuotaPolicy{}, false, fmt.Errorf("parse subscription plan quotas: %w", err)
-	}
-	policy.source = quotaPolicySourceSubscription
-
-	if periodStart.Valid {
-		t := periodStart.Time.UTC()
-		policy.periodStart = &t
-	}
-
-	return policy, true, nil
+func effectiveConcurrentLimit(trustTierLimit *uint64, activePlan *subscriptionPlan, defaultPlan *plan) *uint64 {
+	return minOptionalUint64(trustTierLimit, planConcurrentLimit(activePlan, defaultPlan))
 }
 
-func (c *Client) loadDefaultQuotaPolicy(ctx context.Context, productID string) (loadedQuotaPolicy, bool, error) {
-	var quotasJSON sql.NullString
-
-	err := c.pg.QueryRowContext(ctx, `
-		SELECT p.quotas::text
-		FROM plans p
-		WHERE p.product_id = $1
-		  AND p.is_default
-		  AND p.active
-		LIMIT 1
-	`, productID).Scan(&quotasJSON)
-	if errors.Is(err, sql.ErrNoRows) {
-		return loadedQuotaPolicy{}, false, nil
-	}
-	if err != nil {
-		return loadedQuotaPolicy{}, false, fmt.Errorf("load default plan quotas: %w", err)
-	}
-
-	policy, err := decodeQuotaPolicy(quotasJSON)
-	if err != nil {
-		return loadedQuotaPolicy{}, false, fmt.Errorf("parse default plan quotas: %w", err)
-	}
-	policy.source = quotaPolicySourceDefaultPlan
-
-	return policy, true, nil
-}
-
-func decodeQuotaPolicy(raw sql.NullString) (loadedQuotaPolicy, error) {
-	if !raw.Valid || raw.String == "" {
-		return loadedQuotaPolicy{}, nil
-	}
-
-	var policy quotaPolicy
-	if err := json.Unmarshal([]byte(raw.String), &policy); err != nil {
-		return loadedQuotaPolicy{}, err
-	}
-
-	return loadedQuotaPolicy{limits: policy.Limits}, nil
-}
-
-// windowSince computes the lower bound for a rolling window query.
-func windowSince(window string, now time.Time, periodStart *time.Time) (time.Time, error) {
-	switch window {
-	case "month":
-		if periodStart == nil {
-			return time.Time{}, fmt.Errorf("month window requires a subscription with current_period_start")
-		}
-		return *periodStart, nil
-	case "week":
-		return now.Add(-7 * 24 * time.Hour), nil
-	case "4h":
-		return now.Add(-4 * time.Hour), nil
-	case "hour":
-		return now.Add(-1 * time.Hour), nil
+func planConcurrentLimit(activePlan *subscriptionPlan, defaultPlan *plan) *uint64 {
+	switch {
+	case activePlan != nil:
+		return activePlan.concurrentLimit
+	case defaultPlan != nil:
+		return defaultPlan.concurrentLimit
 	default:
-		return time.Time{}, fmt.Errorf("unsupported quota window %q", window)
+		return nil
 	}
+}
+
+func effectiveSpendCapPolicy(trustTierLimit *uint64, activePlan *subscriptionPlan) spendCapPolicy {
+	if activePlan == nil {
+		return spendCapPolicy{
+			trustTierCapUnits: copyUint64Ptr(trustTierLimit),
+		}
+	}
+
+	return spendCapPolicy{
+		trustTierCapUnits: copyUint64Ptr(trustTierLimit),
+		planCapUnits:      copyUint64Ptr(activePlan.spendCapUnits),
+		effectiveCapUnits: minOptionalUint64(trustTierLimit, activePlan.spendCapUnits),
+		periodStart:       copyTimePtr(activePlan.periodStart),
+	}
+}
+
+func concurrentLimitSource(effective, trustTierLimit, planLimit *uint64) string {
+	return limitSource(effective, trustTierLimit, planLimit)
+}
+
+func spendCapSource(effective, trustTierLimit, planLimit *uint64) string {
+	return limitSource(effective, trustTierLimit, planLimit)
+}
+
+func limitSource(effective, trustTierLimit, planLimit *uint64) string {
+	switch {
+	case effective == nil:
+		return ""
+	case trustTierLimit != nil && (planLimit == nil || *trustTierLimit <= *planLimit):
+		return "trust_tier"
+	case planLimit != nil:
+		return "plan"
+	default:
+		return "unknown"
+	}
+}
+
+func decodePlanQuotaPolicy(raw sql.NullString) (*uint64, error) {
+	if !raw.Valid || raw.String == "" {
+		return nil, nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw.String), &object); err != nil {
+		return nil, err
+	}
+	if _, legacy := object["limits"]; legacy {
+		return nil, fmt.Errorf("legacy quota policy schema no longer supported")
+	}
+
+	var policy planQuotaPolicy
+	if err := json.Unmarshal([]byte(raw.String), &policy); err != nil {
+		return nil, err
+	}
+	return copyUint64Ptr(policy.ConcurrentVMs), nil
+}
+
+func minOptionalUint64(left, right *uint64) *uint64 {
+	switch {
+	case left == nil && right == nil:
+		return nil
+	case left == nil:
+		return copyUint64Ptr(right)
+	case right == nil:
+		return copyUint64Ptr(left)
+	case *left <= *right:
+		return copyUint64Ptr(left)
+	default:
+		return copyUint64Ptr(right)
+	}
+}
+
+func copyUint64Ptr(v *uint64) *uint64 {
+	if v == nil {
+		return nil
+	}
+	return uint64Ptr(*v)
+}
+
+func copyTimePtr(v *time.Time) *time.Time {
+	if v == nil {
+		return nil
+	}
+	copied := v.UTC()
+	return &copied
+}
+
+func uint64Ptr(v uint64) *uint64 {
+	return &v
 }

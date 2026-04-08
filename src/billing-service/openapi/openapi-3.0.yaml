@@ -311,6 +311,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        concurrent_count:
+          format: int64
+          minimum: 0
+          type: integer
         org_id:
           format: int64
           minimum: 1
@@ -318,15 +322,10 @@ components:
         product_id:
           maxLength: 255
           type: string
-        usage:
-          additionalProperties:
-            format: double
-            type: number
-          type: object
       required:
         - org_id
         - product_id
-        - usage
+        - concurrent_count
       type: object
     QuotaCheckOutputBody:
       additionalProperties: false
@@ -440,6 +439,9 @@ components:
           type: string
         source_type:
           type: string
+        spend_cap_period_start:
+          format: date-time
+          type: string
         unit_rates:
           additionalProperties:
             format: int64
@@ -491,6 +493,10 @@ components:
             format: double
             type: number
           type: object
+        concurrent_count:
+          format: int64
+          minimum: 0
+          type: integer
         job_id:
           format: int64
           minimum: 1
@@ -513,6 +519,7 @@ components:
         - org_id
         - product_id
         - actor_id
+        - concurrent_count
         - source_type
         - source_ref
         - allocation

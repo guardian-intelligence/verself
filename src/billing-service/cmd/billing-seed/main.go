@@ -57,12 +57,6 @@ type noopMeteringWriter struct{}
 
 func (noopMeteringWriter) InsertMeteringRow(context.Context, billing.MeteringRow) error { return nil }
 
-type noopMeteringQuerier struct{}
-
-func (noopMeteringQuerier) SumDimension(context.Context, billing.OrgID, string, string, time.Time) (float64, error) {
-	return 0, nil
-}
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -110,7 +104,6 @@ func run() error {
 		pg,
 		stripe.NewClient(seedStripeSecret),
 		noopMeteringWriter{},
-		noopMeteringQuerier{},
 		billingCfg,
 	)
 	if err != nil {

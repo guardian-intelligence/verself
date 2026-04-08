@@ -37,11 +37,11 @@ type (
 	Reservation    = ReservationJSON
 )
 
-func (c *ServiceClient) CheckQuotas(ctx context.Context, orgID uint64, productID string, usage map[string]float64, reqEditors ...RequestEditorFn) (QuotaResult, error) {
+func (c *ServiceClient) CheckQuotas(ctx context.Context, orgID uint64, productID string, concurrentCount uint64, reqEditors ...RequestEditorFn) (QuotaResult, error) {
 	resp, err := c.inner.CheckQuotasWithResponse(ctx, CheckQuotasJSONRequestBody{
-		OrgId:     int64(orgID),
-		ProductId: productID,
-		Usage:     usage,
+		OrgId:           int64(orgID),
+		ProductId:       productID,
+		ConcurrentCount: int64(concurrentCount),
 	}, reqEditors...)
 	if err != nil {
 		return QuotaResult{}, err
@@ -58,19 +58,21 @@ func (c *ServiceClient) Reserve(
 	orgID uint64,
 	productID string,
 	actorID string,
+	concurrentCount uint64,
 	sourceType string,
 	sourceRef string,
 	allocation map[string]float64,
 	reqEditors ...RequestEditorFn,
 ) (Reservation, error) {
 	resp, err := c.inner.ReserveWithResponse(ctx, ReserveJSONRequestBody{
-		JobId:      jobID,
-		OrgId:      int64(orgID),
-		ProductId:  productID,
-		ActorId:    actorID,
-		SourceType: sourceType,
-		SourceRef:  sourceRef,
-		Allocation: allocation,
+		JobId:           jobID,
+		OrgId:           int64(orgID),
+		ProductId:       productID,
+		ActorId:         actorID,
+		ConcurrentCount: int64(concurrentCount),
+		SourceType:      sourceType,
+		SourceRef:       sourceRef,
+		Allocation:      allocation,
 	}, reqEditors...)
 	if err != nil {
 		return Reservation{}, err
