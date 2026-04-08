@@ -3,7 +3,8 @@ package forwarder
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/forge-metal/mailbox-service/internal/jmap"
 )
 
 const maxForwardBodyChars = 32000
@@ -61,7 +64,7 @@ type Runner struct {
 	creds          Credentials
 	logger         *slog.Logger
 	httpClient     *http.Client
-	stalwartAuth   string
+	jmapClient     *jmap.Client
 	ceoAddress     string
 	resendEndpoint string
 
@@ -73,42 +76,6 @@ type state struct {
 	SeenIDs []string `json:"seen_ids"`
 
 	seenSet map[string]struct{} `json:"-"`
-}
-
-type jmapSession struct {
-	Accounts map[string]json.RawMessage `json:"accounts"`
-}
-
-type emailAddress struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-type emailBodyPart struct {
-	PartID string `json:"partId"`
-}
-
-type emailBodyValue struct {
-	Value string `json:"value"`
-}
-
-type jmapEmail struct {
-	ID         string                    `json:"id"`
-	Subject    string                    `json:"subject"`
-	ReceivedAt string                    `json:"receivedAt"`
-	Preview    string                    `json:"preview"`
-	From       []emailAddress            `json:"from"`
-	To         []emailAddress            `json:"to"`
-	TextBody   []emailBodyPart           `json:"textBody"`
-	BodyValues map[string]emailBodyValue `json:"bodyValues"`
-}
-
-type queryResult struct {
-	IDs []string `json:"ids"`
-}
-
-type emailGetResult struct {
-	List []jmapEmail `json:"list"`
 }
 
 type resendSendRequest struct {
@@ -125,12 +92,17 @@ type resendSendResponse struct {
 
 func New(cfg Config, creds Credentials, logger *slog.Logger, httpClient *http.Client) *Runner {
 	ceoAddress := fmt.Sprintf("%s@%s", strings.TrimSpace(cfg.MailboxUser), strings.TrimSpace(cfg.LocalDomain))
+	jmapClient, _ := jmap.New(jmap.Config{
+		BaseURL:  cfg.StalwartBaseURL,
+		Username: strings.TrimSpace(cfg.MailboxUser),
+		Password: strings.TrimSpace(creds.MailboxPassword),
+	}, httpClient, httpClient)
 	return &Runner{
 		cfg:            cfg,
 		creds:          creds,
 		logger:         logger,
 		httpClient:     httpClient,
-		stalwartAuth:   basicAuth(strings.TrimSpace(cfg.MailboxUser), strings.TrimSpace(creds.MailboxPassword)),
+		jmapClient:     jmapClient,
 		ceoAddress:     ceoAddress,
 		resendEndpoint: "https://api.resend.com/emails",
 		status: Status{
@@ -279,138 +251,31 @@ func (r *Runner) sync(ctx context.Context, st *state) error {
 	return nil
 }
 
-func (r *Runner) latestEmails(ctx context.Context, limit int) ([]jmapEmail, error) {
-	accountID, err := r.accountID(ctx)
+func (r *Runner) latestEmails(ctx context.Context, limit int) ([]jmap.Email, error) {
+	accountID, err := r.jmapClient.AccountID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	queryBody := map[string]any{
-		"using": []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"},
-		"methodCalls": []any{
-			[]any{
-				"Email/query",
-				map[string]any{
-					"accountId": accountID,
-					"sort": []map[string]any{
-						{"property": "receivedAt", "isAscending": false},
-					},
-					"limit": limit,
-				},
-				"q",
-			},
-		},
-	}
-
-	var idsResp struct {
-		MethodResponses []json.RawMessage `json:"methodResponses"`
-	}
-	if err := r.jmap(ctx, queryBody, &idsResp); err != nil {
+	query, err := r.jmapClient.EmailQuery(ctx, accountID, 0, limit)
+	if err != nil {
 		return nil, fmt.Errorf("email query: %w", err)
 	}
-
-	idsPayload, err := decodeMethodPayload[queryResult](idsResp.MethodResponses, "Email/query")
-	if err != nil {
-		return nil, err
-	}
-	if len(idsPayload.IDs) == 0 {
+	if len(query.IDs) == 0 {
 		return nil, nil
 	}
 
-	ids := reverseStrings(idsPayload.IDs)
-	getBody := map[string]any{
-		"using": []string{"urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"},
-		"methodCalls": []any{
-			[]any{
-				"Email/get",
-				map[string]any{
-					"accountId": accountID,
-					"ids":       ids,
-					"properties": []string{
-						"id",
-						"subject",
-						"receivedAt",
-						"preview",
-						"from",
-						"to",
-						"textBody",
-						"bodyValues",
-					},
-					"fetchTextBodyValues": true,
-				},
-				"g",
-			},
-		},
-	}
-
-	var emailResp struct {
-		MethodResponses []json.RawMessage `json:"methodResponses"`
-	}
-	if err := r.jmap(ctx, getBody, &emailResp); err != nil {
+	ids := reverseStrings(query.IDs)
+	result, err := r.jmapClient.EmailGet(ctx, accountID, ids, jmap.EmailGetOptions{
+		FetchTextBodyValues: true,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("email get: %w", err)
 	}
-	payload, err := decodeMethodPayload[emailGetResult](emailResp.MethodResponses, "Email/get")
-	if err != nil {
-		return nil, err
-	}
-	return payload.List, nil
+	return result.List, nil
 }
 
-func (r *Runner) accountID(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.cfg.StalwartBaseURL, "/")+"/jmap/session", nil)
-	if err != nil {
-		return "", fmt.Errorf("build session request: %w", err)
-	}
-	req.Header.Set("Authorization", r.stalwartAuth)
-
-	var session jmapSession
-	if err := r.doJSON(req, &session); err != nil {
-		return "", fmt.Errorf("session request: %w", err)
-	}
-	for accountID := range session.Accounts {
-		return accountID, nil
-	}
-	return "", errors.New("no JMAP accounts returned")
-}
-
-func (r *Runner) jmap(ctx context.Context, body any, out any) error {
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("marshal jmap body: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.StalwartBaseURL, "/")+"/jmap", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("build jmap request: %w", err)
-	}
-	req.Header.Set("Authorization", r.stalwartAuth)
-	req.Header.Set("Content-Type", "application/json")
-	return r.doJSON(req, out)
-}
-
-func (r *Runner) doJSON(req *http.Request, out any) error {
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unexpected status %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	if out == nil {
-		return nil
-	}
-	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("decode json: %w", err)
-	}
-	return nil
-}
-
-func (r *Runner) forwardEmail(ctx context.Context, email jmapEmail) error {
+func (r *Runner) forwardEmail(ctx context.Context, email jmap.Email) error {
 	ctx, span := tracer.Start(ctx, "forwarder.forward-email", trace.WithAttributes(
 		attribute.String("email.id", email.ID),
 		attribute.String("email.subject", email.Subject),
@@ -446,10 +311,10 @@ func (r *Runner) forwardEmail(ctx context.Context, email jmapEmail) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(r.creds.ResendAPIKey))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotency-Key", "mailbox-service:"+email.ID)
+	req.Header.Set("Idempotency-Key", resendIdempotencyKey(email))
 
 	var resendResp resendSendResponse
-	if err := r.doJSON(req, &resendResp); err != nil {
+	if err := doJSON(r.httpClient, req, &resendResp); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("resend send email %s: %w", email.ID, err)
@@ -464,7 +329,7 @@ func (r *Runner) forwardEmail(ctx context.Context, email jmapEmail) error {
 	return nil
 }
 
-func (r *Runner) buildForwardBody(email jmapEmail) string {
+func (r *Runner) buildForwardBody(email jmap.Email) string {
 	body := firstTextBody(email)
 	if body == "" {
 		body = email.Preview
@@ -495,7 +360,7 @@ func (r *Runner) buildForwardBody(email jmapEmail) string {
 	return strings.Join(lines, "\n")
 }
 
-func (r *Runner) shouldSkip(email jmapEmail) bool {
+func (r *Runner) shouldSkip(email jmap.Email) bool {
 	return strings.EqualFold(firstAddress(email.From), r.cfg.FromAddress)
 }
 
@@ -603,33 +468,7 @@ func (s *state) markSeen(id string, limit int) {
 	s.SeenIDs = append([]string(nil), s.SeenIDs[drop:]...)
 }
 
-func decodeMethodPayload[T any](responses []json.RawMessage, expectedName string) (T, error) {
-	var zero T
-	for _, raw := range responses {
-		var parts []json.RawMessage
-		if err := json.Unmarshal(raw, &parts); err != nil {
-			return zero, fmt.Errorf("decode method response wrapper: %w", err)
-		}
-		if len(parts) < 2 {
-			return zero, errors.New("malformed method response")
-		}
-		var name string
-		if err := json.Unmarshal(parts[0], &name); err != nil {
-			return zero, fmt.Errorf("decode method name: %w", err)
-		}
-		if name != expectedName {
-			continue
-		}
-		var payload T
-		if err := json.Unmarshal(parts[1], &payload); err != nil {
-			return zero, fmt.Errorf("decode %s payload: %w", expectedName, err)
-		}
-		return payload, nil
-	}
-	return zero, fmt.Errorf("method response %s not found", expectedName)
-}
-
-func firstTextBody(email jmapEmail) string {
+func firstTextBody(email jmap.Email) string {
 	var parts []string
 	for _, part := range email.TextBody {
 		value := strings.TrimSpace(email.BodyValues[part.PartID].Value)
@@ -640,14 +479,14 @@ func firstTextBody(email jmapEmail) string {
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
-func firstAddress(addrs []emailAddress) string {
+func firstAddress(addrs []jmap.Address) string {
 	if len(addrs) == 0 {
 		return ""
 	}
 	return strings.TrimSpace(addrs[0].Email)
 }
 
-func formatAddresses(addrs []emailAddress) string {
+func formatAddresses(addrs []jmap.Address) string {
 	if len(addrs) == 0 {
 		return "(unknown)"
 	}
@@ -688,7 +527,38 @@ func reverseStrings(ids []string) []string {
 	return out
 }
 
-func basicAuth(user, password string) string {
-	token := user + ":" + password
-	return "Basic " + base64.StdEncoding.EncodeToString([]byte(token))
+func resendIdempotencyKey(email jmap.Email) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		email.ID,
+		email.ReceivedAt,
+		email.Subject,
+		firstAddress(email.From),
+		firstAddress(email.To),
+		firstTextBody(email),
+		email.Preview,
+	}, "\x00")))
+	return "mailbox-service:" + email.ID + ":" + hex.EncodeToString(sum[:12])
+}
+
+func doJSON(client *http.Client, req *http.Request, out any) error {
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode json: %w", err)
+	}
+	return nil
 }

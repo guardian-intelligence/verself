@@ -76,6 +76,12 @@
 - name: Apply mailbox-service nftables before proceeding
   ansible.builtin.meta: flush_handlers
 
+- name: Include mailbox-service PostgreSQL database tasks
+  ansible.builtin.include_tasks: database.yml
+
+- name: Include mailbox-service PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
 - name: Include mailbox-service credential tasks
   ansible.builtin.include_tasks: credentials.yml
 
@@ -109,27 +115,100 @@
     - mailbox_service_legacy_state.stat.exists
     - not mailbox_service_state.stat.exists
 
+- name: Wait for Zitadel before configuring mailbox-service auth
+  ansible.builtin.wait_for:
+    host: "{{ services.zitadel.host }}"
+    port: "{{ services.zitadel.port }}"
+    timeout: 60
+
+- name: Read Zitadel admin PAT for mailbox-service auth setup
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: mailbox_service_zitadel_admin_pat_raw
+  no_log: true
+
+- name: List Zitadel projects for mailbox-service auth
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: mailbox_service_zitadel_projects
+  no_log: true
+
+- name: Find mailbox-service auth project
+  ansible.builtin.set_fact:
+    mailbox_service_auth_project: >-
+      {{
+        (
+          mailbox_service_zitadel_projects.json.result
+          | selectattr('name', 'equalto', mailbox_service_auth_project_name)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create mailbox-service auth project if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ mailbox_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ mailbox_service_auth_project_name }}"
+    return_content: true
+  register: mailbox_service_auth_project_created
+  when: mailbox_service_auth_project == {}
+  no_log: true
+
+- name: Set mailbox-service auth audience
+  ansible.builtin.set_fact:
+    mailbox_service_auth_audience: >-
+      {{
+        mailbox_service_auth_project.id
+        | default(mailbox_service_auth_project_created.json.id, true)
+      }}
+
+- name: Assert mailbox-service auth audience is set
+  ansible.builtin.assert:
+    that: mailbox_service_auth_audience | default('', true) | length > 0
+    fail_msg: mailbox_service_auth_audience could not be resolved from Zitadel.
+
 - name: Deploy mailbox-service systemd unit
   ansible.builtin.copy:
     content: |
       [Unit]
       Description=Mailbox Service
-      After=forge-metal-firewall.target network.target stalwart.service
+      After=forge-metal-firewall.target network.target postgresql.service stalwart.service zitadel.service
       Requires=forge-metal-firewall.target
-      Wants=stalwart.service
+      Wants=postgresql.service stalwart.service zitadel.service
 
       [Service]
       Type=simple
       User=mailbox_service
       Group=mailbox_service
+      LoadCredential=pg-dsn:/etc/credstore/mailbox-service/pg-dsn
       LoadCredential=ceo-password:/etc/credstore/mailbox-service/ceo-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
       LoadCredential=resend-api-key:/etc/credstore/mailbox-service/resend-api-key
+      LoadCredential=stalwart-admin-password:/etc/credstore/mailbox-service/stalwart-admin-password
+      LoadCredential=stalwart-agent-password:/etc/credstore/mailbox-service/stalwart-agent-password
       Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
       Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
       Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
       Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ forge_metal_domain }}
+      Environment=MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL=2m
+      Environment=MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL=10m
+      Environment=MAILBOX_SERVICE_AUTH_ISSUER_URL={{ mailbox_service_auth_issuer_url }}
+      Environment=MAILBOX_SERVICE_AUTH_JWKS_URL={{ mailbox_service_auth_jwks_url }}
+      Environment=MAILBOX_SERVICE_AUTH_AUDIENCE={{ mailbox_service_auth_audience }}
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS={{ resend_sender_address }}
       Environment=MAILBOX_SERVICE_FORWARDER_FROM_NAME={{ resend_sender_name }}
       Environment=MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL=5s

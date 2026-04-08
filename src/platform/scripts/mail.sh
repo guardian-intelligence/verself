@@ -51,27 +51,41 @@ if [[ -n "${STALWART_PASSWORD:-}" ]]; then
   password="$STALWART_PASSWORD"
 else
   seed="$(sops -d --extract '["stalwart_agent_password"]' "$secrets_file")"
-  password="$(python3 - "$STALWART_USER" <<'PY' <<<"$seed"
+  password="$(python3 -c '
 import base64, hashlib, hmac, sys
 
 seed = sys.stdin.buffer.read().strip()
 user = sys.argv[1].encode()
 digest = hmac.new(seed, user, hashlib.sha256).digest()
 print("FmMail1!" + base64.urlsafe_b64encode(digest[:24]).decode().rstrip("="))
-PY
-)"
+' "$STALWART_USER" <<<"$seed")"
 fi
+
+request_payload="$(python3 -c '
+import json, sys
+
+password = sys.stdin.read().rstrip("\n")
+
+print(json.dumps({
+    "user": sys.argv[1],
+    "password": password,
+    "mode": sys.argv[2],
+    "email_id": sys.argv[3],
+    "limit": int(sys.argv[4]),
+}))
+' "$STALWART_USER" "$MODE" "$EMAIL_ID" "$LIMIT" <<<"$password")"
 
 # Build the python3 script to run on the remote host.
 # It queries JMAP with basic auth over loopback, then formats output.
 read -r -d '' REMOTE_SCRIPT << 'PYEOF' || true
 import json, sys, urllib.request, base64, re
 
-user = sys.argv[1]
-password = sys.argv[2]
-mode = sys.argv[3]
-email_id = sys.argv[4] if len(sys.argv) > 4 else ""
-limit = int(sys.argv[5]) if len(sys.argv) > 5 else 10
+payload = json.load(sys.stdin)
+user = payload["user"]
+password = payload["password"]
+mode = payload["mode"]
+email_id = payload.get("email_id", "")
+limit = int(payload.get("limit", 10))
 
 base = "http://127.0.0.1:8090"
 creds = base64.b64encode(f"{user}:{password}".encode()).decode()
@@ -168,4 +182,4 @@ elif mode == "code":
 PYEOF
 
 exec ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-  "python3 -c $(printf '%q' "$REMOTE_SCRIPT") $(printf '%q' "$STALWART_USER") $(printf '%q' "$password") $(printf '%q' "$MODE") $(printf '%q' "$EMAIL_ID") $(printf '%q' "$LIMIT")"
+  "python3 -c $(printf '%q' "$REMOTE_SCRIPT")" <<<"$request_payload"

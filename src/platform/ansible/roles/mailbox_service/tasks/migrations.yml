@@ -1,0 +1,193 @@
+---
+- name: Compute local mailbox-service PostgreSQL migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../../mailbox-service/migrations"
+    executable: /bin/bash
+  register: mailbox_service_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote mailbox-service PostgreSQL migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/mailbox-service-migrations/.applied-hash
+  register: mailbox_service_pg_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected mailbox-service tables
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d mailbox_service
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'mailbox_accounts';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: mailbox_service_pg_table_probe
+  changed_when: false
+  no_log: true
+
+- name: Apply mailbox-service PostgreSQL migrations
+  when: >-
+    mailbox_service_pg_migrations_remote_hash is failed
+    or (mailbox_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (mailbox_service_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (mailbox_service_pg_table_probe.stdout | trim) == '0'
+  block:
+    - name: Remove deployed mailbox-service migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/mailbox-service-migrations
+        state: absent
+
+    - name: Create deployed mailbox-service migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/mailbox-service-migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload mailbox-service PostgreSQL migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../mailbox-service/migrations/"
+        dest: /opt/forge-metal/mailbox-service-migrations/
+        mode: "0644"
+
+    - name: Stop mailbox-service before schema recreate
+      ansible.builtin.systemd:
+        name: mailbox-service
+        state: stopped
+      failed_when: false
+
+    - name: Terminate mailbox_service connections before recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'mailbox_service' AND pid <> pg_backend_pid();"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Drop mailbox_service database before schema recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "DROP DATABASE IF EXISTS mailbox_service;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create mailbox_service database
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE mailbox_service OWNER mailbox_service;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Apply mailbox-service PostgreSQL migration files
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U mailbox_service
+          -d mailbox_service
+          -v ON_ERROR_STOP=1
+          -f /opt/forge-metal/mailbox-service-migrations/{{ item }}
+      environment:
+        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../../mailbox-service/migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record mailbox-service PostgreSQL migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ mailbox_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/mailbox-service-migrations/.applied-hash
+        mode: "0644"
+
+- name: Reconcile mailbox-service object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d mailbox_service
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF to_regclass('public.mailbox_accounts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.mailbox_accounts OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.mailbox_bindings') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.mailbox_bindings OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.sync_state') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.sync_state OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.mailboxes') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.mailboxes OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.emails') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.emails OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.email_mailboxes') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.email_mailboxes OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.email_bodies') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.email_bodies OWNER TO mailbox_service';
+        END IF;
+        IF to_regclass('public.threads') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.threads OWNER TO mailbox_service';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO mailbox_service;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.mailbox_accounts,
+        public.mailbox_bindings,
+        public.sync_state,
+        public.mailboxes,
+        public.emails,
+        public.email_mailboxes,
+        public.email_bodies,
+        public.threads
+      TO mailbox_service;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true

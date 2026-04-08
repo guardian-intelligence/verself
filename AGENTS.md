@@ -255,31 +255,63 @@ forge-metal/                            # Monorepo root
 │
 ├── src/auth-middleware/                 # OIDC JWT validation (Go library)
 │   └── go.mod                          # github.com/forge-metal/auth-middleware
-├── src/billing/                        # Billing domain: Reserve/Settle/Void (Go library)
-│   └── go.mod                          # github.com/forge-metal/billing
-├── src/vm-orchestrator/                # Firecracker + ZFS VM orchestrator (Go library)
+├── src/otel/                           # Shared OTel bootstrap (Go library)
+│   └── otel.go                         # TracerProvider + MeterProvider init
+├── src/vm-orchestrator/                # Firecracker + ZFS VM orchestrator (Go, gRPC service + library)
 │   ├── go.mod                          # github.com/forge-metal/vm-orchestrator
-│   ├── orchestrator.go                 # Run(JobConfig) / RunDataset(JobConfig, dataset)
+│   ├── server.go                       # gRPC server (Unix socket)
+│   ├── api.go                          # Service API surface
+│   ├── client.go, client_types.go      # gRPC client
+│   ├── orchestrator.go                 # VM lifecycle: create, start, stop, destroy
 │   ├── zvol.go                         # ZFS clone/destroy/snapshot/written
 │   ├── network.go                      # TAP + CIDR lease allocator
+│   ├── repo_goldens.go                 # Golden image warming
+│   ├── telemetry_stream.go             # Guest telemetry aggregation
+│   ├── proto/                          # gRPC protobuf definitions
 │   ├── vmproto/                        # Host-guest vsock wire protocol
 │   └── cmd/vm-init/                    # Guest PID 1
 │
 │   ── Services ──────────────────────────────────────────────────────────
 │
 ├── src/billing-service/                # Billing HTTP API (Go/Huma)
-│   ├── go.mod                          # imports: billing, auth-middleware
-│   ├── cmd/billing-service/            # systemd LoadCredential= for secrets
-│   ├── cmd/tb-inspect/                 # TigerBeetle account inspector
-│   └── migrations/                     # Billing PostgreSQL schema
-├── src/sandbox-rental-service/         # Sandbox product backend (Go/Huma) [planned]
-│   ├── go.mod                          # imports: vm-orchestrator, billing (HTTP), auth-middleware
+│   ├── go.mod                          # imports: auth-middleware, otel
+│   ├── client/                         # Generated OpenAPI client (client.gen.go)
+│   ├── openapi/                        # OpenAPI v3.1 spec
+│   ├── cmd/
+│   │   ├── billing-service/            # Main binary, systemd LoadCredential= for secrets
+│   │   ├── billing-openapi/            # OpenAPI spec generator
+│   │   ├── billing-seed/               # Seed catalog, plans, credits
+│   │   └── tb-inspect/                 # TigerBeetle account inspector
+│   ├── internal/
+│   │   ├── billing/                    # Billing domain: Reserve/Settle/Void, grants, metering
+│   │   ├── billingapi/                 # Huma HTTP handlers
+│   │   └── runtime/                    # App lifecycle, PostgreSQL task worker
+│   ├── postgresql-migrations/          # Billing PostgreSQL schema
+│   └── testharness/                    # Test utilities
+├── src/sandbox-rental-service/         # Sandbox product backend (Go/Huma)
+│   ├── go.mod                          # imports: vm-orchestrator, billing-service/client, auth-middleware
 │   ├── cmd/sandbox-rental-service/     # Job orchestration, billing integration
-│   └── migrations/                     # job_runs, job_logs PostgreSQL schemas
+│   ├── internal/
+│   │   ├── api/                        # Huma HTTP handlers
+│   │   └── jobs/                       # Job execution logic
+│   ├── e2e/                            # End-to-end tests
+│   ├── migrations/                     # job_runs, job_logs PostgreSQL schemas
+│   └── testharness/                    # Test utilities
+├── src/mailbox-service/                # Inbound mail processing (Go/Huma)
+│   ├── go.mod                          # imports: auth-middleware, otel
+│   ├── cmd/
+│   │   ├── mailbox-service/            # Main JMAP-facing service
+│   │   ├── inbound-mail-forwarder/     # Sieve-based operator mail forwarding
+│   │   └── inbound-mail-proxy/         # JMAP session proxy
+│   └── internal/
+│       ├── api/                        # Huma HTTP handlers
+│       ├── app/                        # App lifecycle
+│       ├── forwarder/                  # Forwarding logic
+│       └── sessionproxy/               # JMAP session proxy logic
 │
 │   ── Frontends ─────────────────────────────────────────────────────────
 │
-├── src/viteplus-monorepo/              # Vite+ workspace for frontend applications
+├── src/viteplus-monorepo/              # Vite+ (released March 2026 https://viteplus.dev/guide/dev) workspace for frontend applications
 │   ├── apps/rent-a-sandbox/            # Customer-facing sandbox product frontend
 │   └── packages/ui/                    # Shared frontend UI package
 │
@@ -287,14 +319,26 @@ forge-metal/                            # Monorepo root
 │
 ├── src/vm-guest-telemetry/             # Firecracker VM guest telemetry agent (Zig)
 │   ├── build.zig
+│   ├── protocol/                       # Wire protocol spec
 │   └── src/                            # 60Hz /proc sampler, vsock 10790 streamer
 │
 │   ── Platform ──────────────────────────────────────────────────────────
 │
 └── src/platform/                       # Infrastructure + deployment
     ├── go.mod                          # imports: vm-orchestrator (CI manager uses it)
-    ├── cmd/forge-metal/                # CLI: doctor, setup-domain, CI warm/exec, fixtures
-    ├── internal/ci/                    # CI domain: Warm/Exec, golden images, toolchain detection
+    ├── cmd/
+    │   ├── forge-metal/                # CLI: doctor, setup-domain, CI warm/exec, fixtures (DEPRECATED, will be deleted after remaining functionality is extracted)
+    ├── internal/
+    │   ├── ci/                         # CI domain: Warm/Exec, golden images, toolchain detection
+    │   ├── clickhouse/                 # ClickHouse query helpers
+    │   ├── cloudflare/                 # DNS record management
+    │   ├── config/                     # Platform configuration
+    │   ├── doctor/                     # System health checks
+    │   ├── domain/                     # Domain setup logic
+    │   ├── latitude/                   # Latitude.sh API client
+    │   ├── prompt/                     # Interactive prompts
+    │   ├── provision/                  # Server provisioning
+    │   └── supplychain/                # NPM supply chain scanning
     ├── ansible/
     │   ├── playbooks/                  # All orchestration (deploy, provision, CI, vm-guest-telemetry-dev)
     │   └── roles/                      # Flat directory — deployment is a platform concern
@@ -307,18 +351,24 @@ forge-metal/                            # Monorepo root
     │       ├── clickhouse/             # ClickHouse config + schema bootstrap
     │       ├── tigerbeetle/            # Financial ledger service
     │       ├── otelcol/                # OTel Collector → ClickHouse
+    │       ├── electric/               # ElectricSQL sync service
     │       ├── billing_service/        # Billing service deploy + Zitadel auth project
-    │       ├── sandbox_rental_service/ # Sandbox product deploy [planned]
-    │       ├── rent_a_sandbox/         # TanStack Start frontend deploy [planned]
-    │       ├── stalwart/              # Receive-only mail: SMTP + JMAP + cert sync
+    │       ├── sandbox_rental_service/ # Sandbox product deploy
+    │       ├── mailbox_service/        # Mailbox service deploy
+    │       ├── rent_a_sandbox/         # TanStack Start frontend deploy
+    │       ├── stalwart/               # Receive-only mail: SMTP + JMAP + cert sync
+    │       ├── resend/                 # Outbound email delivery config
     │       ├── forgejo/                # Git server + CI runner
     │       ├── zitadel/                # Identity provider (OIDC)
     │       ├── hyperdx/                # Observability UI + MongoDB
     │       ├── verdaccio/              # Sealed npm registry mirror
     │       ├── firecracker/            # KVM, jailer, golden zvol, vm-orchestrator
+    │       ├── containerd/             # Container runtime
+    │       ├── cloudflare_dns/         # DNS record management
+    │       ├── dev_tools/              # Dev tool installation
     │       └── ...                     # guest_rootfs, ci_fixtures, wireguard, etc.
     ├── terraform/                      # Latitude.sh provisioning
-    ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, etc.
+    ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, traces.sh, mail.sh
     ├── migrations/                     # ClickHouse schemas (platform-level)
     ├── server-tools.json               # Pinned server binary versions + SHA256
     └── dev-tools.json                  # Pinned dev tool versions + SHA256

@@ -12,13 +12,17 @@ import (
 	"syscall"
 	"time"
 
+	auth "github.com/forge-metal/auth-middleware"
 	fmotel "github.com/forge-metal/otel"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/forge-metal/mailbox-service/internal/api"
 	"github.com/forge-metal/mailbox-service/internal/app"
 	"github.com/forge-metal/mailbox-service/internal/forwarder"
+	"github.com/forge-metal/mailbox-service/internal/mailstore"
 	"github.com/forge-metal/mailbox-service/internal/sessionproxy"
+	mailboxsync "github.com/forge-metal/mailbox-service/internal/sync"
 )
 
 var version = "dev"
@@ -37,6 +41,11 @@ type config struct {
 	ForwarderQueryLimit   int
 	ForwarderSeenLimit    int
 	ForwarderBootstrapMax int
+	SyncDiscoveryInterval time.Duration
+	SyncReconcileInterval time.Duration
+	AuthIssuerURL         string
+	AuthAudience          string
+	AuthJWKSURL           string
 }
 
 func main() {
@@ -66,14 +75,18 @@ func run() error {
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
+	transport := otelhttp.NewTransport(
+		http.DefaultTransport,
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return "http " + r.Method + " " + r.URL.Host
+		}),
+	)
 	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: otelhttp.NewTransport(
-			http.DefaultTransport,
-			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-				return "http " + r.Method + " " + r.URL.Host
-			}),
-		),
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
+	streamClient := &http.Client{
+		Transport: transport,
 	}
 
 	proxy, err := sessionproxy.New(sessionproxy.Config{
@@ -84,6 +97,18 @@ func run() error {
 		return fmt.Errorf("create session proxy: %w", err)
 	}
 
+	pgDSN, err := loadCredential("pg-dsn")
+	if err != nil {
+		return err
+	}
+	adminPassword, err := loadCredential("stalwart-admin-password")
+	if err != nil {
+		return err
+	}
+	agentPasswordSeed, err := loadCredential("stalwart-agent-password")
+	if err != nil {
+		return err
+	}
 	mailboxPassword, err := credentialOr("ceo-password", "")
 	if err != nil {
 		return err
@@ -97,6 +122,18 @@ func run() error {
 		return err
 	}
 
+	pgConfig, err := pgxpool.ParseConfig(pgDSN)
+	if err != nil {
+		return fmt.Errorf("parse pg-dsn: %w", err)
+	}
+	pgConfig.MaxConns = 8
+	pgPool, err := pgxpool.NewWithConfig(ctx, pgConfig)
+	if err != nil {
+		return fmt.Errorf("open pg pool: %w", err)
+	}
+	defer pgPool.Close()
+
+	store := mailstore.New(pgPool)
 	fwd := forwarder.New(forwarder.Config{
 		StalwartBaseURL: cfg.StalwartBaseURL,
 		MailboxUser:     cfg.MailboxUser,
@@ -114,10 +151,24 @@ func run() error {
 		ResendAPIKey:    resendAPIKey,
 	}, logger, httpClient)
 
-	service := app.New(cfg.StalwartBaseURL, cfg.PublicBaseURL, proxy, fwd)
+	syncManager := mailboxsync.New(mailboxsync.Config{
+		StalwartBaseURL:   cfg.StalwartBaseURL,
+		AdminPassword:     adminPassword,
+		AgentPasswordSeed: agentPasswordSeed,
+		DiscoveryInterval: cfg.SyncDiscoveryInterval,
+		ReconcileInterval: cfg.SyncReconcileInterval,
+	}, store, logger, httpClient, streamClient)
+
+	service := app.New(cfg.StalwartBaseURL, cfg.PublicBaseURL, proxy, fwd, store, syncManager)
 
 	mux := http.NewServeMux()
-	api.NewAPI(mux, version, cfg.ListenAddr, service)
+	_, protectedAPI := api.NewAPI(mux, version, cfg.ListenAddr, service)
+	authHandler := auth.Middleware(auth.Config{
+		IssuerURL: cfg.AuthIssuerURL,
+		Audience:  cfg.AuthAudience,
+		JWKSURL:   cfg.AuthJWKSURL,
+	})(protectedAPI)
+	mux.Handle("/api/v1/mail/", authHandler)
 	service.RegisterRoutes(mux)
 
 	server := &http.Server{
@@ -169,6 +220,34 @@ func loadConfig() (config, error) {
 		}
 		pollInterval = value
 	}
+	discoveryInterval := 2 * time.Minute
+	if raw := os.Getenv("MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL"); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil {
+			return config{}, fmt.Errorf("parse MAILBOX_SERVICE_SYNC_DISCOVERY_INTERVAL: %w", err)
+		}
+		discoveryInterval = value
+	}
+	reconcileInterval := 10 * time.Minute
+	if raw := os.Getenv("MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL"); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil {
+			return config{}, fmt.Errorf("parse MAILBOX_SERVICE_SYNC_RECONCILE_INTERVAL: %w", err)
+		}
+		reconcileInterval = value
+	}
+	authIssuerURL, err := requireEnv("MAILBOX_SERVICE_AUTH_ISSUER_URL")
+	if err != nil {
+		return config{}, err
+	}
+	authAudience, err := requireEnv("MAILBOX_SERVICE_AUTH_AUDIENCE")
+	if err != nil {
+		return config{}, err
+	}
+	authJWKSURL, err := requireEnv("MAILBOX_SERVICE_AUTH_JWKS_URL")
+	if err != nil {
+		return config{}, err
+	}
 
 	return config{
 		ListenAddr:            envOr("MAILBOX_SERVICE_LISTEN_ADDR", "127.0.0.1:4246"),
@@ -184,6 +263,11 @@ func loadConfig() (config, error) {
 		ForwarderQueryLimit:   100,
 		ForwarderSeenLimit:    1024,
 		ForwarderBootstrapMax: 100,
+		SyncDiscoveryInterval: discoveryInterval,
+		SyncReconcileInterval: reconcileInterval,
+		AuthIssuerURL:         authIssuerURL,
+		AuthAudience:          authAudience,
+		AuthJWKSURL:           authJWKSURL,
 	}, nil
 }
 

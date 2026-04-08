@@ -1,0 +1,50 @@
+---
+- name: Create mailbox_service PostgreSQL user
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -v ON_ERROR_STOP=1
+      -c "DO $$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'mailbox_service') THEN
+          CREATE ROLE mailbox_service LOGIN PASSWORD '{{ postgresql_mailbox_service_password }}';
+        ELSE
+          ALTER ROLE mailbox_service PASSWORD '{{ postgresql_mailbox_service_password }}';
+        END IF;
+      END $$;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
+
+- name: Check if mailbox_service database exists
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -tAc
+      "SELECT 'exists' FROM pg_database WHERE datname = 'mailbox_service';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: mailbox_service_db_check
+  changed_when: false
+  no_log: true
+
+- name: Create mailbox_service database if missing
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -v ON_ERROR_STOP=1
+      -c "CREATE DATABASE mailbox_service OWNER mailbox_service;"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  when: "'exists' not in mailbox_service_db_check.stdout"
+  changed_when: true
+  no_log: true
