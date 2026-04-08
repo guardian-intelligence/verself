@@ -1,0 +1,352 @@
+---
+# Tracer bullet: prove a Firecracker guest can emit a structured control event
+# back to the host over the existing vsock control channel, and that the
+# host-side orchestrator can route that event under the correct job identity.
+#
+# Surgical notes:
+# - This runs a temporary vm-orchestrator on a throwaway Unix socket instead of
+#   mutating the deployed daemon. The live service stays untouched.
+# - The guest event relay uses a local FIFO inside the guest so a workload can
+#   emit one structured event line. That is sufficient to prove correlation,
+#   but it is intentionally broader than the eventual runner-wrapper-only path.
+# - The dev golden is destroyed during teardown; no guest relay changes persist
+#   into the shared base image.
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/vm-guest-event-tracerbullet.yml
+
+- name: Build tracer-bullet binaries locally and upload them
+  hosts: all
+  gather_facts: false
+  vars:
+    vm_guest_event_tracer_vm_init_local: /tmp/vm-init-guest-event-tracer
+    vm_guest_event_tracer_server_local: /tmp/vm-orchestrator-guest-event-tracer
+    vm_guest_event_tracer_runner_local: /tmp/vm-run-guest-event-tracer
+    vm_guest_event_tracer_vm_init_remote: /tmp/vm-init-guest-event-tracer
+    vm_guest_event_tracer_server_remote: /tmp/vm-orchestrator-guest-event-tracer
+    vm_guest_event_tracer_runner_remote: /tmp/vm-run-guest-event-tracer
+  tasks:
+    - name: Build vm-init locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -ldflags=-s -w
+          - -o
+          - "{{ vm_guest_event_tracer_vm_init_local }}"
+          - ./src/vm-orchestrator/cmd/vm-init
+        chdir: "{{ playbook_dir }}/../../../.."
+      changed_when: true
+
+    - name: Build vm-orchestrator locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -ldflags=-s -w
+          - -o
+          - "{{ vm_guest_event_tracer_server_local }}"
+          - ./src/vm-orchestrator/cmd/vm-orchestrator
+        chdir: "{{ playbook_dir }}/../../../.."
+      changed_when: true
+
+    - name: Build vm-run locally
+      delegate_to: localhost
+      become: false
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -ldflags=-s -w
+          - -o
+          - "{{ vm_guest_event_tracer_runner_local }}"
+          - ./src/vm-orchestrator/cmd/vm-run
+        chdir: "{{ playbook_dir }}/../../../.."
+      changed_when: true
+
+    - name: Upload tracer vm-init
+      ansible.builtin.copy:
+        src: "{{ vm_guest_event_tracer_vm_init_local }}"
+        dest: "{{ vm_guest_event_tracer_vm_init_remote }}"
+        mode: "0755"
+
+    - name: Upload tracer vm-orchestrator
+      ansible.builtin.copy:
+        src: "{{ vm_guest_event_tracer_server_local }}"
+        dest: "{{ vm_guest_event_tracer_server_remote }}"
+        mode: "0755"
+
+    - name: Upload tracer vm-run
+      ansible.builtin.copy:
+        src: "{{ vm_guest_event_tracer_runner_local }}"
+        dest: "{{ vm_guest_event_tracer_runner_remote }}"
+        mode: "0755"
+
+- name: Run guest-event tracer bullet on a throwaway dev golden
+  hosts: all
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../roles/firecracker/defaults/main.yml
+  vars:
+    vm_guest_event_tracer_zvol_name: vm-guest-event-tracerbullet-zvol
+    vm_guest_event_tracer_zvol: "{{ firecracker_zfs_pool }}/{{ vm_guest_event_tracer_zvol_name }}"
+    vm_guest_event_tracer_snapshot: "{{ vm_guest_event_tracer_zvol }}@ready"
+    vm_guest_event_tracer_mount: /tmp/vm-guest-event-tracerbullet-mnt
+    vm_guest_event_tracer_vm_init_remote: /tmp/vm-init-guest-event-tracer
+    vm_guest_event_tracer_server_remote: /tmp/vm-orchestrator-guest-event-tracer
+    vm_guest_event_tracer_runner_remote: /tmp/vm-run-guest-event-tracer
+    vm_guest_event_tracer_socket: /tmp/vm-orchestrator-guest-event-tracer.sock
+    vm_guest_event_tracer_pidfile: /tmp/vm-orchestrator-guest-event-tracer.pid
+    vm_guest_event_tracer_log: /tmp/vm-orchestrator-guest-event-tracer.log
+  tasks:
+    - name: Run guest-event tracer bullet workflow
+      block:
+        - name: Ansible collection ansible.posix must be installed
+          delegate_to: localhost
+          become: false
+          ansible.builtin.command: ansible-galaxy collection list ansible.posix
+          changed_when: false
+          register: vm_guest_event_preflight_ap
+          failed_when: "'ansible.posix' not in vm_guest_event_preflight_ap.stdout"
+
+        - name: Verify base golden snapshot exists
+          ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready"
+          changed_when: false
+
+        - name: Verify uploaded tracer binaries exist
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ vm_guest_event_tracer_vm_init_remote }}"
+            - "{{ vm_guest_event_tracer_server_remote }}"
+            - "{{ vm_guest_event_tracer_runner_remote }}"
+          register: vm_guest_event_uploaded_bins
+
+        - name: Assert uploaded tracer binaries exist
+          ansible.builtin.assert:
+            that:
+              - (vm_guest_event_uploaded_bins.results | selectattr('stat.exists', 'equalto', false) | list | length) == 0
+            fail_msg: "one or more tracer binaries were not uploaded to /tmp on the host"
+
+        - name: Stop stale tracer orchestrator if present
+          ansible.builtin.shell: |
+            set -euo pipefail
+            if [[ -f {{ vm_guest_event_tracer_pidfile | quote }} ]]; then
+              pid="$(cat {{ vm_guest_event_tracer_pidfile | quote }})"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+            rm -f {{ vm_guest_event_tracer_pidfile | quote }} {{ vm_guest_event_tracer_socket | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Destroy old tracer zvol if present
+          ansible.builtin.command: "zfs destroy -r {{ vm_guest_event_tracer_zvol }}"
+          failed_when: false
+          changed_when: true
+
+        - name: Clone base golden to tracer zvol
+          ansible.builtin.command: >
+            zfs clone
+            {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready
+            {{ vm_guest_event_tracer_zvol }}
+          changed_when: true
+
+        - name: Wait for tracer zvol device node
+          ansible.builtin.command: udevadm settle
+          changed_when: false
+
+        - name: Create tracer mount point
+          ansible.builtin.file:
+            path: "{{ vm_guest_event_tracer_mount }}"
+            state: directory
+            mode: "0755"
+
+        - name: Mount tracer zvol
+          ansible.posix.mount:
+            src: "/dev/zvol/{{ vm_guest_event_tracer_zvol }}"
+            path: "{{ vm_guest_event_tracer_mount }}"
+            fstype: ext4
+            state: ephemeral
+
+        - name: Hot-swap tracer vm-init into guest rootfs
+          ansible.builtin.copy:
+            src: "{{ vm_guest_event_tracer_vm_init_remote }}"
+            dest: "{{ vm_guest_event_tracer_mount }}/sbin/init"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Unmount tracer zvol
+          ansible.posix.mount:
+            path: "{{ vm_guest_event_tracer_mount }}"
+            state: unmounted
+
+        - name: Snapshot tracer zvol
+          ansible.builtin.command: "zfs snapshot {{ vm_guest_event_tracer_snapshot }}"
+          changed_when: true
+
+        - name: Start temporary tracer orchestrator
+          ansible.builtin.shell: |
+            set -euo pipefail
+            rm -f {{ vm_guest_event_tracer_socket | quote }} {{ vm_guest_event_tracer_log | quote }}
+            nohup {{ vm_guest_event_tracer_server_remote | quote }} \
+              -listen-unix {{ vm_guest_event_tracer_socket | quote }} \
+              -socket-group {{ firecracker_vm_orchestrator_socket_group | quote }} \
+              -golden-zvol {{ vm_guest_event_tracer_zvol_name | quote }} \
+              -repo-golden-state-dir {{ firecracker_repo_golden_state_dir | quote }} \
+              > {{ vm_guest_event_tracer_log | quote }} 2>&1 &
+            echo $! > {{ vm_guest_event_tracer_pidfile | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Wait for temporary tracer orchestrator socket
+          ansible.builtin.wait_for:
+            path: "{{ vm_guest_event_tracer_socket }}"
+            state: present
+            timeout: 20
+
+        - name: Run VM guest-event tracer bullet
+          ansible.builtin.command:
+            argv:
+              - "{{ vm_guest_event_tracer_runner_remote }}"
+              - -api-socket
+              - "{{ vm_guest_event_tracer_socket }}"
+              - -golden-zvol
+              - "{{ vm_guest_event_tracer_zvol_name }}"
+              - -trace-guest-events
+              - -timeout
+              - 60s
+              - --
+              - sh
+              - -lc
+              - |
+                payload="$(
+                  printf '{"kind":"runner_job_claimed","attrs":{"attempt_id":"%s","provider_job_id":"42","provider_run_id":"99"}}' \
+                    "$FORGE_METAL_ATTEMPT_ID"
+                )"
+                printf '%s\n' "$payload" > "$FORGE_METAL_GUEST_EVENT_FIFO"
+                echo guest-event-written
+          register: vm_guest_event_run
+          changed_when: true
+
+        - name: Assemble tracer-bullet output text
+          ansible.builtin.set_fact:
+            vm_guest_event_output_text: >-
+              {{
+                (vm_guest_event_run.stdout | default(''))
+                ~
+                (vm_guest_event_run.stderr | default(''))
+              }}
+
+        - name: Create tracer-bullet output file
+          ansible.builtin.tempfile:
+            state: file
+            prefix: vm-guest-event-tracerbullet-
+            suffix: .out
+          register: vm_guest_event_output_file
+
+        - name: Persist tracer-bullet stdout for deterministic verification
+          ansible.builtin.copy:
+            content: "{{ vm_guest_event_output_text }}"
+            dest: "{{ vm_guest_event_output_file.path }}"
+            mode: "0600"
+
+        - name: Extract tracer-bullet job ID from captured output
+          ansible.builtin.shell: |
+            set -euo pipefail
+            sed -n 's/^Job ID:[[:space:]]*//p' {{ vm_guest_event_output_file.path | quote }} | head -n1
+          args:
+            executable: /bin/bash
+          changed_when: false
+          register: vm_guest_event_job_id_extract
+
+        - name: Record tracer-bullet job ID
+          ansible.builtin.set_fact:
+            vm_guest_event_job_id: "{{ vm_guest_event_job_id_extract.stdout | trim }}"
+
+        - name: Verify tracer-bullet output invariants
+          ansible.builtin.shell: |
+            set -euo pipefail
+            output={{ vm_guest_event_output_file.path | quote }}
+            job_id={{ vm_guest_event_job_id | quote }}
+
+            if [[ {{ vm_guest_event_run.rc | quote }} -ne 0 ]]; then
+              echo "vm-run exited non-zero" >&2
+              exit 1
+            fi
+            if [[ -z "$job_id" ]]; then
+              echo "job id extraction failed" >&2
+              exit 1
+            fi
+            if ! grep -Eq "Job ID:[[:space:]]+$job_id" "$output"; then
+              echo "missing Job ID line" >&2
+              exit 1
+            fi
+            if ! grep -Fq 'runner_job_claimed' "$output"; then
+              echo "missing runner_job_claimed event" >&2
+              exit 1
+            fi
+            if ! grep -Fq 'provider_job_id' "$output"; then
+              echo "missing provider_job_id attr" >&2
+              exit 1
+            fi
+            if ! grep -Fq 'provider_run_id' "$output"; then
+              echo "missing provider_run_id attr" >&2
+              exit 1
+            fi
+            if ! grep -Fq 'guest-event-written' "$output"; then
+              echo "missing guest workload output" >&2
+              exit 1
+            fi
+            if ! grep -Eq "\\[guest-event\\].*runner_job_claimed.*$job_id" "$output"; then
+              echo "missing correlated guest-event id echo" >&2
+              exit 1
+            fi
+          args:
+            executable: /bin/bash
+          changed_when: false
+          register: vm_guest_event_verify
+          failed_when: vm_guest_event_verify.rc != 0
+
+        - name: Guest-event tracer bullet passed
+          ansible.builtin.debug:
+            msg: >-
+              PASS: Firecracker guest emitted a structured control event and the
+              temporary vm-orchestrator streamed it back under job
+              {{ vm_guest_event_job_id }}.
+      always:
+        - name: Stop temporary tracer orchestrator
+          ansible.builtin.shell: |
+            set -euo pipefail
+            if [[ -f {{ vm_guest_event_tracer_pidfile | quote }} ]]; then
+              pid="$(cat {{ vm_guest_event_tracer_pidfile | quote }})"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+            rm -f {{ vm_guest_event_tracer_pidfile | quote }} {{ vm_guest_event_tracer_socket | quote }}
+          args:
+            executable: /bin/bash
+          failed_when: false
+          changed_when: true
+
+        - name: Destroy tracer zvol
+          ansible.builtin.command: "zfs destroy -r {{ vm_guest_event_tracer_zvol }}"
+          failed_when: false
+          changed_when: true
+
+        - name: Remove tracer-bullet output file
+          ansible.builtin.file:
+            path: "{{ vm_guest_event_output_file.path }}"
+            state: absent
+          failed_when: false
+          changed_when: true
+          when: vm_guest_event_output_file is defined

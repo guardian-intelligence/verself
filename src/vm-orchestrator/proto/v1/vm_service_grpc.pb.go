@@ -19,14 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_CreateJob_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/CreateJob"
-	VMService_GetJobStatus_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/GetJobStatus"
-	VMService_CancelJob_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/CancelJob"
-	VMService_StreamJobLogs_FullMethodName    = "/forge_metal.vm_orchestrator.v1.VMService/StreamJobLogs"
-	VMService_WarmGolden_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/WarmGolden"
-	VMService_StreamTelemetry_FullMethodName  = "/forge_metal.vm_orchestrator.v1.VMService/StreamTelemetry"
-	VMService_GetFleetSnapshot_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/GetFleetSnapshot"
-	VMService_GetCapacity_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_CreateJob_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/CreateJob"
+	VMService_GetJobStatus_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/GetJobStatus"
+	VMService_CancelJob_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/CancelJob"
+	VMService_StreamJobLogs_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/StreamJobLogs"
+	VMService_StreamGuestEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamGuestEvents"
+	VMService_WarmGolden_FullMethodName        = "/forge_metal.vm_orchestrator.v1.VMService/WarmGolden"
+	VMService_StreamTelemetry_FullMethodName   = "/forge_metal.vm_orchestrator.v1.VMService/StreamTelemetry"
+	VMService_GetFleetSnapshot_FullMethodName  = "/forge_metal.vm_orchestrator.v1.VMService/GetFleetSnapshot"
+	VMService_GetCapacity_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -37,6 +38,7 @@ type VMServiceClient interface {
 	GetJobStatus(ctx context.Context, in *GetJobStatusRequest, opts ...grpc.CallOption) (*GetJobStatusResponse, error)
 	CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error)
 	StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobLogChunk], error)
+	StreamGuestEvents(ctx context.Context, in *StreamGuestEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobGuestEvent], error)
 	WarmGolden(ctx context.Context, in *WarmGoldenRequest, opts ...grpc.CallOption) (*WarmGoldenResponse, error)
 	StreamTelemetry(ctx context.Context, in *StreamTelemetryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TelemetryEvent], error)
 	GetFleetSnapshot(ctx context.Context, in *GetFleetSnapshotRequest, opts ...grpc.CallOption) (*GetFleetSnapshotResponse, error)
@@ -100,6 +102,25 @@ func (c *vMServiceClient) StreamJobLogs(ctx context.Context, in *StreamJobLogsRe
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type VMService_StreamJobLogsClient = grpc.ServerStreamingClient[JobLogChunk]
 
+func (c *vMServiceClient) StreamGuestEvents(ctx context.Context, in *StreamGuestEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobGuestEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[1], VMService_StreamGuestEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamGuestEventsRequest, JobGuestEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type VMService_StreamGuestEventsClient = grpc.ServerStreamingClient[JobGuestEvent]
+
 func (c *vMServiceClient) WarmGolden(ctx context.Context, in *WarmGoldenRequest, opts ...grpc.CallOption) (*WarmGoldenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WarmGoldenResponse)
@@ -112,7 +133,7 @@ func (c *vMServiceClient) WarmGolden(ctx context.Context, in *WarmGoldenRequest,
 
 func (c *vMServiceClient) StreamTelemetry(ctx context.Context, in *StreamTelemetryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TelemetryEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[1], VMService_StreamTelemetry_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[2], VMService_StreamTelemetry_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +178,7 @@ type VMServiceServer interface {
 	GetJobStatus(context.Context, *GetJobStatusRequest) (*GetJobStatusResponse, error)
 	CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error)
 	StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[JobLogChunk]) error
+	StreamGuestEvents(*StreamGuestEventsRequest, grpc.ServerStreamingServer[JobGuestEvent]) error
 	WarmGolden(context.Context, *WarmGoldenRequest) (*WarmGoldenResponse, error)
 	StreamTelemetry(*StreamTelemetryRequest, grpc.ServerStreamingServer[TelemetryEvent]) error
 	GetFleetSnapshot(context.Context, *GetFleetSnapshotRequest) (*GetFleetSnapshotResponse, error)
@@ -182,6 +204,9 @@ func (UnimplementedVMServiceServer) CancelJob(context.Context, *CancelJobRequest
 }
 func (UnimplementedVMServiceServer) StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[JobLogChunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamJobLogs not implemented")
+}
+func (UnimplementedVMServiceServer) StreamGuestEvents(*StreamGuestEventsRequest, grpc.ServerStreamingServer[JobGuestEvent]) error {
+	return status.Error(codes.Unimplemented, "method StreamGuestEvents not implemented")
 }
 func (UnimplementedVMServiceServer) WarmGolden(context.Context, *WarmGoldenRequest) (*WarmGoldenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WarmGolden not implemented")
@@ -280,6 +305,17 @@ func _VMService_StreamJobLogs_Handler(srv interface{}, stream grpc.ServerStream)
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type VMService_StreamJobLogsServer = grpc.ServerStreamingServer[JobLogChunk]
+
+func _VMService_StreamGuestEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamGuestEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(VMServiceServer).StreamGuestEvents(m, &grpc.GenericServerStream[StreamGuestEventsRequest, JobGuestEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type VMService_StreamGuestEventsServer = grpc.ServerStreamingServer[JobGuestEvent]
 
 func _VMService_WarmGolden_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WarmGoldenRequest)
@@ -382,6 +418,11 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamJobLogs",
 			Handler:       _VMService_StreamJobLogs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "StreamGuestEvents",
+			Handler:       _VMService_StreamGuestEvents_Handler,
 			ServerStreams: true,
 		},
 		{

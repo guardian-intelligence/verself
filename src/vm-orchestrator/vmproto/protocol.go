@@ -29,6 +29,7 @@ const (
 	TypePhaseStart MessageType = "phase_start"
 	TypePhaseEnd   MessageType = "phase_end"
 	TypeLogChunk   MessageType = "log_chunk"
+	TypeGuestEvent MessageType = "guest_event"
 	TypeHeartbeat  MessageType = "heartbeat"
 	TypeResult     MessageType = "result"
 	TypeFatal      MessageType = "fatal"
@@ -85,6 +86,11 @@ type PhaseEnd struct {
 type LogChunk struct {
 	Stream string `json:"stream"`
 	Data   []byte `json:"data"`
+}
+
+type GuestEvent struct {
+	Kind  string            `json:"kind"`
+	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
 type Heartbeat struct{}

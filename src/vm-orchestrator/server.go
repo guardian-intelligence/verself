@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"github.com/forge-metal/vm-orchestrator/vmproto"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
@@ -40,6 +42,8 @@ type managedJob struct {
 	err        error
 	logSeq     uint64
 	logChunks  []jobLogChunk
+	eventSeq   uint64
+	events     []jobGuestEvent
 	hello      *TelemetryHello
 	sample     *TelemetrySample
 	lastUpdate time.Time
@@ -49,6 +53,12 @@ type managedJob struct {
 type jobLogChunk struct {
 	Seq   uint64
 	Chunk string
+}
+
+type jobGuestEvent struct {
+	Seq   uint64
+	Kind  string
+	Attrs map[string]string
 }
 
 type jobObserver struct {
@@ -166,6 +176,51 @@ func (s *APIServer) StreamJobLogs(req *vmrpc.StreamJobLogsRequest, stream vmrpc.
 
 		if terminal {
 			return stream.Send(&vmrpc.JobLogChunk{Terminal: true})
+		}
+		if !req.GetFollow() {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *APIServer) StreamGuestEvents(req *vmrpc.StreamGuestEventsRequest, stream vmrpc.VMService_StreamGuestEventsServer) error {
+	ctx, span := tracer.Start(stream.Context(), "rpc.StreamGuestEvents")
+	defer span.End()
+
+	record, err := s.lookupJob(req.GetJobId())
+	if err != nil {
+		return err
+	}
+
+	var sent int
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		events, terminal := record.guestEventSnapshot(sent)
+		for _, event := range events {
+			if err := stream.Send(&vmrpc.JobGuestEvent{
+				Seq:   event.Seq,
+				JobId: req.GetJobId(),
+				Kind:  event.Kind,
+				Attrs: cloneStringMap(event.Attrs),
+			}); err != nil {
+				return err
+			}
+			sent++
+		}
+
+		if terminal {
+			return stream.Send(&vmrpc.JobGuestEvent{
+				JobId:    req.GetJobId(),
+				Terminal: true,
+			})
 		}
 		if !req.GetFollow() {
 			return nil
@@ -629,6 +684,10 @@ func (o *jobObserver) OnGuestLogChunk(_ string, chunk string) {
 	o.job.appendLogChunk(chunk)
 }
 
+func (o *jobObserver) OnGuestEvent(_ string, event vmproto.GuestEvent) {
+	o.job.appendGuestEvent(event)
+}
+
 func (o *jobObserver) OnGuestPhaseStart(_ string, _ string) {}
 
 func (o *jobObserver) OnGuestPhaseEnd(_ string, _ PhaseResult) {}
@@ -683,6 +742,20 @@ func (j *managedJob) appendLogChunk(chunk string) {
 	})
 }
 
+func (j *managedJob) appendGuestEvent(event vmproto.GuestEvent) {
+	if strings.TrimSpace(event.Kind) == "" {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.eventSeq++
+	j.events = append(j.events, jobGuestEvent{
+		Seq:   j.eventSeq,
+		Kind:  strings.TrimSpace(event.Kind),
+		Attrs: cloneStringMap(event.Attrs),
+	})
+}
+
 func (j *managedJob) logSnapshot(offset int) ([]jobLogChunk, bool) {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
@@ -691,6 +764,16 @@ func (j *managedJob) logSnapshot(offset int) ([]jobLogChunk, bool) {
 	}
 	chunks := append([]jobLogChunk(nil), j.logChunks[offset:]...)
 	return chunks, j.state.Terminal()
+}
+
+func (j *managedJob) guestEventSnapshot(offset int) ([]jobGuestEvent, bool) {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	if offset >= len(j.events) {
+		return nil, j.state.Terminal()
+	}
+	events := append([]jobGuestEvent(nil), j.events[offset:]...)
+	return events, j.state.Terminal()
 }
 
 func (j *managedJob) protoStatus(includeOutput bool) *vmrpc.GetJobStatusResponse {

@@ -55,6 +55,14 @@ type JobStatus struct {
 	RepoExec     *RepoExecMetadata
 }
 
+type JobGuestEvent struct {
+	Seq      uint64
+	JobID    string
+	Kind     string
+	Attrs    map[string]string
+	Terminal bool
+}
+
 type WarmGoldenRequest struct {
 	Config          Config
 	Repo            string

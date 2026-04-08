@@ -875,6 +875,9 @@ So the correct interpretation of this decision is:
 
 - thread service-owned identity into the VM so any later signal can be tied back to the
   right attempt
+- do not make `sandbox-rental-service` depend on a VM-generated identity as its durable
+  correlation key; the microVM is operationally ephemeral, while `attempt_id` is the
+  stable control-plane identity
 - still design a reverse correlation path from the VM or provider back into the service
   once the runner has claimed work
 
