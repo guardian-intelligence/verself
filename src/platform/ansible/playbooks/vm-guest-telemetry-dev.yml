@@ -122,9 +122,9 @@
       block:
         - name: Boot Firecracker VM from dev golden (background)
           ansible.builtin.command: >
-            {{ fm_bin }}/forge-metal firecracker-test
-            --golden-zvol vm-guest-telemetry-dev-zvol
-            --timeout 60s
+            {{ fm_bin }}/vm-run
+            -golden-zvol vm-guest-telemetry-dev-zvol
+            -timeout 60s
             -- sleep {{ vm_sleep_seconds }}
           async: 60
           poll: 0
