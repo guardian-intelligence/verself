@@ -23,10 +23,12 @@ import (
 
 var tracer = otel.Tracer("sandbox-rental-service")
 
-// SandboxRunner abstracts the execution engine for sandbox jobs.
-// Production uses *vmorchestrator.Orchestrator; tests use a fake.
-type SandboxRunner interface {
+// Runner abstracts VM execution for direct sandbox jobs and repo-bound
+// workloads. Production uses *vmorchestrator.Client; tests use a fake.
+type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
+	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
 var ErrQuotaExceeded = errors.New("sandbox-rental: quota exceeded")
@@ -64,7 +66,7 @@ type Service struct {
 	PG            *sql.DB
 	CH            driver.Conn
 	CHDatabase    string
-	Orchestrator  SandboxRunner
+	Orchestrator  Runner
 	Billing       *billingclient.ServiceClient
 	BillingVCPUs  int
 	BillingMemMiB int
