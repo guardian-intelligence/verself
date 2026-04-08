@@ -3,6 +3,7 @@
 src/platform/forge-metal
 src/billing-service/billing-service
 src/billing-service/tb-inspect
+src/mailbox-service/mailbox-service
 
 # Config (contains credentials)
 forge-metal.toml
