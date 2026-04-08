@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { handleCallback } from "~/lib/auth";
+import { keys } from "~/lib/query-keys";
 
 export const Route = createFileRoute("/callback")({
   component: CallbackPage,
@@ -8,11 +9,13 @@ export const Route = createFileRoute("/callback")({
 
 function CallbackPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { error } = useQuery({
     queryKey: ["auth", "callback"],
     queryFn: async () => {
       const user = await handleCallback();
+      queryClient.setQueryData(keys.user(), user);
       void navigate({ to: "/", search: { purchased: false, subscribed: false }, replace: true });
       return user;
     },
