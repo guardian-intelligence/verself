@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
 # Mailbox service egress restrictions.
-# Loopback is required for Stalwart JMAP access. HTTPS and DNS are required for
-# operator forwarding through Resend.
+# Loopback is required for Stalwart JMAP, PostgreSQL, and Zitadel JWKS access.
+# HTTPS and DNS are still required for operator forwarding through Resend.
 
 table inet forge_metal_mailbox_service
 delete table inet forge_metal_mailbox_service

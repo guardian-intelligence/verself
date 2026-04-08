@@ -13,7 +13,7 @@
 #   --tags billing     Seed billing catalog + credits only
 #   --tags verify      Verify billing auth integration only
 #
-# Override demo user credentials:
+# Override or set the initial demo user password:
 #   -e seed_demo_user_email=alice@example.com -e seed_demo_user_password=MyP@ss1
 
 - name: Seed demo environment
@@ -28,10 +28,10 @@
 
     # --- Demo user ---
     seed_demo_user_email: "demo@{{ forge_metal_domain }}"
-    seed_demo_user_password: "SandboxDemo2026!#"
     seed_demo_user_first_name: Demo
     seed_demo_user_last_name: User
     seed_demo_user_username: "demo"
+    seed_demo_user_password_credstore_path: /etc/credstore/seed-demo/demo-user-password
 
     # --- Sandbox-rental project ---
     seed_demo_auth_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
@@ -158,6 +158,115 @@
           }}
       tags: [user]
 
+    - name: Create seed-demo credstore directory
+      ansible.builtin.file:
+        path: "{{ seed_demo_user_password_credstore_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: [user]
+
+    - name: Check stored demo user password
+      ansible.builtin.stat:
+        path: "{{ seed_demo_user_password_credstore_path }}"
+      register: seed_demo_user_password_file
+      no_log: true
+      tags: [user]
+
+    - name: Read stored demo user password
+      ansible.builtin.slurp:
+        src: "{{ seed_demo_user_password_credstore_path }}"
+      register: seed_demo_user_password_raw
+      when: seed_demo_user_password_file.stat.exists
+      no_log: true
+      tags: [user]
+
+    - name: Assert password source exists for existing demo user
+      ansible.builtin.assert:
+        that:
+          - seed_demo_user_password_file.stat.exists or (seed_demo_user_password | default('', true) | trim | length > 0)
+        fail_msg: >-
+          Demo user {{ seed_demo_user_email }} already exists but
+          {{ seed_demo_user_password_credstore_path }} is missing.
+          Re-run with -e seed_demo_user_password=... to bootstrap the stored
+          password file, or restore the stored password file.
+      when: seed_demo_existing_user.userId is defined
+      tags: [user]
+
+    - name: Assert provided demo password matches stored password
+      ansible.builtin.assert:
+        that:
+          - (seed_demo_user_password | default('', true) | trim) == (seed_demo_user_password_raw.content | b64decode | trim)
+        fail_msg: >-
+          Provided seed_demo_user_password does not match the stored password
+          in {{ seed_demo_user_password_credstore_path }} for existing demo user
+          {{ seed_demo_user_email }}.
+      when:
+        - seed_demo_existing_user.userId is defined
+        - seed_demo_user_password_file.stat.exists
+        - seed_demo_user_password | default('', true) | trim | length > 0
+      no_log: true
+      tags: [user]
+
+    - name: Generate demo user password
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import secrets, string
+            alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
+            while True:
+                password = "".join(secrets.choice(alphabet) for _ in range(24))
+                if (
+                    any(c.islower() for c in password)
+                    and any(c.isupper() for c in password)
+                    and any(c.isdigit() for c in password)
+                    and any(c in "!@#$%^&*()-_=+" for c in password)
+                ):
+                    print(password)
+                    break
+      register: seed_demo_generated_user_password
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      when:
+        - seed_demo_existing_user.userId is not defined
+        - seed_demo_user_password | default('', true) | trim | length == 0
+        - not seed_demo_user_password_file.stat.exists
+      no_log: true
+      tags: [user]
+
+    - name: Set effective demo user password
+      ansible.builtin.set_fact:
+        seed_demo_effective_user_password: >-
+          {{
+            (
+              seed_demo_user_password | default('', true) | trim
+            )
+            if (seed_demo_user_password | default('', true) | trim | length > 0)
+            else (
+              (seed_demo_user_password_raw.content | b64decode | trim)
+              if (seed_demo_user_password_file.stat.exists)
+              else (seed_demo_generated_user_password.stdout | trim)
+            )
+          }}
+      no_log: true
+      tags: [user]
+
+    - name: Persist demo user password
+      ansible.builtin.copy:
+        content: "{{ seed_demo_effective_user_password }}"
+        dest: "{{ seed_demo_user_password_credstore_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      when:
+        - seed_demo_existing_user.userId is not defined or not seed_demo_user_password_file.stat.exists
+      no_log: true
+      tags: [user]
+
     - name: Create demo human user
       ansible.builtin.uri:
         url: "{{ seed_demo_zitadel_base_url }}/v2/users/human"
@@ -175,12 +284,13 @@
             email: "{{ seed_demo_user_email }}"
             isVerified: true
           password:
-            password: "{{ seed_demo_user_password }}"
+            password: "{{ seed_demo_effective_user_password }}"
             changeRequired: false
         status_code: [200, 201]
         return_content: true
       register: seed_demo_user_created
       when: seed_demo_existing_user.userId is not defined
+      no_log: true
       tags: [user]
 
     - name: Set demo user ID fact
@@ -224,10 +334,10 @@
       ansible.builtin.debug:
         msg:
           - "Demo user ready for {{ seed_demo_zitadel_host }}"
-          - "  Email:    {{ seed_demo_user_email }}"
-          - "  Password: {{ seed_demo_user_password }}"
-          - "  Org ID:   {{ seed_demo_org_id }}"
-          - "  User ID:  {{ seed_demo_user_id }}"
+          - "  Email:         {{ seed_demo_user_email }}"
+          - "  Password file: {{ seed_demo_user_password_credstore_path }}"
+          - "  Org ID:        {{ seed_demo_org_id }}"
+          - "  User ID:       {{ seed_demo_user_id }}"
       tags: [user]
 
     # ── Billing catalog + credits ──────────────────────────────────────────────
@@ -524,6 +634,53 @@
         daemon_reload: true
       tags: [stalwart]
 
+    - name: Search for demo user for mailbox binding
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/v2/users"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - emailQuery:
+                emailAddress: "{{ seed_demo_user_email }}"
+        return_content: true
+      register: seed_demo_mailbox_binding_user_search
+      no_log: true
+      tags: [stalwart]
+
+    - name: Set mailbox binding user fact
+      ansible.builtin.set_fact:
+        seed_demo_mailbox_binding_user: >-
+          {{
+            (seed_demo_mailbox_binding_user_search.json.result | default([]) | first) | default({})
+          }}
+      tags: [stalwart]
+
+    - name: Upsert demo mailbox binding
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U mailbox_service
+          -d mailbox_service
+          -v ON_ERROR_STOP=1
+        stdin: |
+          INSERT INTO mailbox_bindings (subject, account_id, email_address)
+          VALUES ('{{ seed_demo_mailbox_binding_user.userId }}', 'ceo', '{{ seed_demo_user_email }}')
+          ON CONFLICT (subject) DO UPDATE
+          SET account_id = EXCLUDED.account_id,
+              email_address = EXCLUDED.email_address;
+      environment:
+        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
+      changed_when: false
+      no_log: true
+      when: seed_demo_mailbox_binding_user.userId is defined
+      tags: [stalwart]
+
     - name: Print mailbox summary
       ansible.builtin.debug:
         msg: >-
@@ -664,9 +821,9 @@
           - ""
           - " Login at: https://rentasandbox.{{ forge_metal_domain }}/"
           - ""
-          - " Email:    {{ seed_demo_user_email }}"
-          - " Password: {{ seed_demo_user_password }}"
+          - " Email:         {{ seed_demo_user_email }}"
+          - " Password file: {{ seed_demo_user_password_credstore_path }}"
           - ""
-          - " Org ID:   {{ seed_demo_org_id | default('(run with --tags user)') }}"
-          - " Credits:  {{ seed_demo_billing_result.prepaid_after | default('(run with --tags billing)') }}"
+          - " Org ID:        {{ seed_demo_org_id | default('(run with --tags user)') }}"
+          - " Credits:       {{ seed_demo_billing_result.prepaid_after | default('(run with --tags billing)') }}"
           - "============================================"

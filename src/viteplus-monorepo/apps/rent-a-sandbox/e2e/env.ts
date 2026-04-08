@@ -1,8 +1,18 @@
 // Test environment configuration. All values can be overridden via env vars.
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(
+      `${name} is required. Seed the demo user and provide the stored password explicitly.`,
+    );
+  }
+  return value;
+}
+
 export const env = {
   baseURL: process.env.BASE_URL || "https://rentasandbox.anveio.com",
   testEmail: process.env.TEST_EMAIL || "demo@anveio.com",
-  testPassword: process.env.TEST_PASSWORD || "SandboxDemo2026!#",
+  testPassword: requiredEnv("TEST_PASSWORD"),
   testUsername: process.env.TEST_USERNAME || "demo",
   testFirstName: process.env.TEST_FIRST_NAME || "Demo",
   testLastName: process.env.TEST_LAST_NAME || "User",
