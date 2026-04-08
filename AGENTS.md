@@ -88,7 +88,7 @@ See src/platform/ansible/group_vars/all/services.yml for port assignments.
 
 Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each service's Ansible role to `/etc/credstore/{service}/` (root-owned, service-group-readable), and loaded at runtime via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`.
 
-Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services.
+Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services; generate them from an OpenAPI specification.
 
 ### Auth model
 
@@ -279,7 +279,7 @@ forge-metal/                            # Monorepo root
 │
 │   ── Frontends ─────────────────────────────────────────────────────────
 │
-├── src/vite-plus-monorepo/             # Vite+ workspace for frontend applications
+├── src/viteplus-monorepo/              # Vite+ workspace for frontend applications
 │   ├── apps/rent-a-sandbox/            # Customer-facing sandbox product frontend
 │   └── packages/ui/                    # Shared frontend UI package
 │
