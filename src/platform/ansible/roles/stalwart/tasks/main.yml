@@ -50,6 +50,25 @@
     - { path: /etc/stalwart, owner: root, mode: "0755" }
     - { path: "{{ stalwart_data_dir }}", owner: stalwart, mode: "0750" }
 
+# --- Bootstrap resources ---
+# Stalwart v0.15.5 blocks startup while fetching these resources if they are
+# missing from local storage. Pin and stage them at deploy time so the service
+# never tries to reach GitHub during boot.
+
+- name: Download Stalwart webadmin bundle
+  ansible.builtin.get_url:
+    url: "{{ stalwart_webadmin_url }}"
+    dest: "{{ stalwart_webadmin_local_path }}"
+    checksum: "sha256:{{ stalwart_webadmin_sha256 }}"
+    mode: "0644"
+
+- name: Download Stalwart spam filter rules
+  ansible.builtin.get_url:
+    url: "{{ stalwart_spam_filter_url }}"
+    dest: "{{ stalwart_spam_filter_local_path }}"
+    checksum: "sha256:{{ stalwart_spam_filter_sha256 }}"
+    mode: "0644"
+
 # --- Self-signed TLS placeholder ---
 # Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one
 # that will be replaced by the real ACME cert once Caddy obtains it.
