@@ -8,5 +8,5 @@
       "~/*": ["./src/*"]
     }
   },
-  "include": ["src", "plugins", "vite.config.ts"]
+  "include": ["src", "plugins", "instrumentation.mts", "vite.config.ts"]
 }
