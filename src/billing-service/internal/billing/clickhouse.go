@@ -3,7 +3,6 @@ package billing
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -48,40 +47,9 @@ func (w *ClickHouseMeteringWriter) InsertMeteringRows(ctx context.Context, rows 
 	return nil
 }
 
-// ClickHouseMeteringQuerier implements MeteringQuerier using a ClickHouse connection.
-type ClickHouseMeteringQuerier struct {
-	conn     driver.Conn
-	database string
-}
-
-// NewClickHouseMeteringQuerier creates a metering querier backed by ClickHouse.
-func NewClickHouseMeteringQuerier(conn driver.Conn, database string) *ClickHouseMeteringQuerier {
-	return &ClickHouseMeteringQuerier{conn: conn, database: database}
-}
-
-// SumDimension returns the sum of a single dimension from the dimensions Map column.
-// Uses arrayElement(dimensions, key) with a parameterized key to avoid string
-// interpolation into the query — the dimension name goes through driver binding.
-func (q *ClickHouseMeteringQuerier) SumDimension(ctx context.Context, orgID OrgID, productID string, dimension string, since time.Time) (float64, error) {
-	var result float64
-	err := q.conn.QueryRow(ctx, fmt.Sprintf(`
-		SELECT sum(arrayElement(dimensions, $4))
-		FROM %s.metering
-		WHERE org_id = $1
-		  AND product_id = $2
-		  AND started_at >= $3
-	`, q.database),
-		strconv.FormatUint(uint64(orgID), 10), productID, since, dimension,
-	).Scan(&result)
-	if err != nil {
-		return 0, fmt.Errorf("sum dimension %q: %w", dimension, err)
-	}
-	return result, nil
-}
-
 // ClickHouseReconcileQuerier implements ClickHouseQuerier for reconciliation.
-// Separate from ClickHouseMeteringQuerier because reconciliation queries have
-// different shapes than hot-path queries.
+// Separate from the metering writer because reconciliation queries have a
+// different shape than the write path.
 type ClickHouseReconcileQuerier struct {
 	conn     driver.Conn
 	database string

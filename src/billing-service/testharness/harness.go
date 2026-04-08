@@ -47,7 +47,6 @@ func NewServer(cfg Config) *Server {
 	sc := stripe.NewClient(cfg.StripeSecretKey)
 	meteringSink := billing.NewClickHouseMeteringWriter(cfg.CHConn, cfg.CHDatabase)
 	meteringWriter := billing.NewAsyncMeteringWriter(meteringSink, billing.AsyncMeteringWriterConfig{})
-	meteringQuerier := billing.NewClickHouseMeteringQuerier(cfg.CHConn, cfg.CHDatabase)
 	reconcileQuerier := billing.NewClickHouseReconcileQuerier(cfg.CHConn, cfg.CHDatabase)
 
 	billingCfg := billing.DefaultConfig()
@@ -55,7 +54,7 @@ func NewServer(cfg Config) *Server {
 	billingCfg.TigerBeetleAddresses = cfg.TBAddresses
 	billingCfg.TigerBeetleClusterID = cfg.TBClusterID
 
-	billingClient, err := billing.NewClient(cfg.TBClient, cfg.PG, sc, meteringWriter, meteringQuerier, billingCfg)
+	billingClient, err := billing.NewClient(cfg.TBClient, cfg.PG, sc, meteringWriter, billingCfg)
 	if err != nil {
 		panic("testharness: create billing client: " + err.Error())
 	}

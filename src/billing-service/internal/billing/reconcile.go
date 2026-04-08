@@ -10,8 +10,8 @@ import (
 )
 
 // ClickHouseQuerier is the reconciliation-specific ClickHouse read interface.
-// Separate from MeteringQuerier because reconciliation queries have different
-// shapes than the hot-path quota/overage queries.
+// Separate from the metering write path because reconciliation queries have a
+// different shape than request-path reads and writes.
 type ClickHouseQuerier interface {
 	// SumChargeUnitsByOrg returns the total charge_units across all products
 	// for an org since the given timestamp.
@@ -52,7 +52,7 @@ func (r ReconcileResult) HasAlerts() bool {
 
 // Reconcile runs six named consistency checks across PostgreSQL, TigerBeetle,
 // and ClickHouse. It takes a separate ClickHouseQuerier parameter because
-// reconciliation queries don't overlap with hot-path MeteringQuerier queries.
+// reconciliation queries don't overlap with the request-path metering writes.
 //
 // Spec §5.3: the function is both an operational consistency checker and a
 // named verification suite.

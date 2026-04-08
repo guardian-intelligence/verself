@@ -182,67 +182,36 @@ func DisputeDebitID(task TaskID, grantIdx uint8) TransferID {
 	return TransferID{raw: types.BytesToUint128(id)}
 }
 
-// QuotaAccountID builds a deterministic account ID for a quota limit.
+// SpendCapAccountID builds a deterministic account ID for a period-scoped spend cap.
 // High u64: org_id (LSM locality — same org's accounts are adjacent).
-// Low u64: FNV-1a(product_id + "\x00" + dimension + "\x00" + window) with
-// the quota code discriminator in bytes 6-7 to avoid collisions with grant
-// or operator accounts.
-func QuotaAccountID(orgID OrgID, productID, dimension, window string) AccountID {
+// Low u64: FNV-1a(product_id + "\x00" + billing_period_key), with the spend-cap
+// discriminator stamped into bytes 6-7 to keep the namespace disjoint from grant
+// and operator accounts.
+func SpendCapAccountID(orgID OrgID, productID string, periodStart time.Time) AccountID {
 	h := fnv.New64a()
 	h.Write([]byte(productID))
 	h.Write([]byte{0})
-	h.Write([]byte(dimension))
-	h.Write([]byte{0})
-	h.Write([]byte(window))
+	var periodKey [4]byte
+	t := periodStart.UTC()
+	binary.LittleEndian.PutUint32(periodKey[:], uint32(t.Year())*12+uint32(t.Month()))
+	h.Write(periodKey[:])
 	hash := h.Sum64()
 
 	var id [16]byte
 	binary.LittleEndian.PutUint64(id[0:8], hash)
-	// Stamp quota code into bytes 6-7 to disambiguate from grant accounts.
-	binary.LittleEndian.PutUint16(id[6:8], AcctQuotaCode)
+	binary.LittleEndian.PutUint16(id[6:8], AcctSpendCapCode)
 	binary.LittleEndian.PutUint64(id[8:16], uint64(orgID))
 	return AccountID{raw: types.BytesToUint128(id)}
 }
 
-// OverageCapAccountID builds a deterministic account ID for an overage cap.
-// Same layout as QuotaAccountID but with OverageCapCode discriminator.
-func OverageCapAccountID(orgID OrgID, productID string) AccountID {
-	h := fnv.New64a()
-	h.Write([]byte(productID))
-	hash := h.Sum64()
-
-	var id [16]byte
-	binary.LittleEndian.PutUint64(id[0:8], hash)
-	binary.LittleEndian.PutUint16(id[6:8], AcctOverageCapCode)
-	binary.LittleEndian.PutUint64(id[8:16], uint64(orgID))
-	return AccountID{raw: types.BytesToUint128(id)}
-}
-
-// QuotaTransferID builds a unique transfer ID for a quota check pending transfer.
-// Low u64: FNV-1a(dimension) + kind discriminator + org_id XOR'd into bytes 6-7.
-// High u64: nanosecond timestamp for uniqueness (quota transfers are never posted
-// or voided by the application — they expire naturally).
-func QuotaTransferID(orgID OrgID, dimension string, nanoTS int64) TransferID {
-	h := fnv.New32a()
-	h.Write([]byte(dimension))
-
-	var id [16]byte
-	binary.LittleEndian.PutUint32(id[0:4], h.Sum32())
-	id[5] = uint8(KindQuotaCheck)
-	// Mix orgID into bytes 6-7 to prevent cross-org collisions at the same nanosecond.
-	binary.LittleEndian.PutUint16(id[6:8], uint16(orgID))
-	binary.LittleEndian.PutUint64(id[8:16], uint64(nanoTS))
-	return TransferID{raw: types.BytesToUint128(id)}
-}
-
-// OverageCapTransferID builds a transfer ID for overage cap operations.
+// SpendCapTransferID builds a transfer ID for spend-cap operations.
 // Uses bytes 6-7 as a discriminator to avoid collisions with VMTransferID
 // (which uses bytes 4-5 for grantIdx+kind, leaving bytes 6-7 as zero).
-func OverageCapTransferID(jobID JobID, windowSeq uint32, kind XferKind) TransferID {
+func SpendCapTransferID(jobID JobID, windowSeq uint32, kind XferKind) TransferID {
 	var id [16]byte
 	binary.LittleEndian.PutUint32(id[0:4], windowSeq)
 	id[5] = uint8(kind)
-	binary.LittleEndian.PutUint16(id[6:8], AcctOverageCapCode) // discriminator in bytes 6-7
+	binary.LittleEndian.PutUint16(id[6:8], AcctSpendCapCode) // discriminator in bytes 6-7
 	binary.LittleEndian.PutUint64(id[8:16], uint64(jobID))
 	return TransferID{raw: types.BytesToUint128(id)}
 }

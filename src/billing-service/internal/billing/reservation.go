@@ -1,14 +1,11 @@
 package billing
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"time"
 
@@ -23,11 +20,15 @@ type subscriptionPlan struct {
 	status           string
 	unitRates        map[string]uint64
 	overageUnitRates map[string]uint64
+	concurrentLimit  *uint64
+	spendCapUnits    *uint64
+	periodStart      *time.Time
 }
 
 type plan struct {
-	planID    string
-	unitRates map[string]uint64
+	planID          string
+	unitRates       map[string]uint64
+	concurrentLimit *uint64
 }
 
 type grantBalance struct {
@@ -49,13 +50,14 @@ func (c *Client) Renew(ctx context.Context, reservation *Reservation, actualSeco
 	}
 
 	next, err := c.reserveWindow(ctx, ReserveRequest{
-		JobID:      reservation.JobID,
-		OrgID:      reservation.OrgID,
-		ProductID:  reservation.ProductID,
-		ActorID:    reservation.ActorID,
-		Allocation: cloneFloat64Map(reservation.Allocation),
-		SourceType: reservation.SourceType,
-		SourceRef:  reservation.SourceRef,
+		JobID:           reservation.JobID,
+		OrgID:           reservation.OrgID,
+		ProductID:       reservation.ProductID,
+		ActorID:         reservation.ActorID,
+		Allocation:      cloneFloat64Map(reservation.Allocation),
+		ConcurrentCount: 0,
+		SourceType:      reservation.SourceType,
+		SourceRef:       reservation.SourceRef,
 	}, reservation.WindowSeq+1, reservation.WindowStart.Add(time.Duration(actualSeconds)*time.Second).UTC())
 	if err != nil {
 		return err
@@ -120,31 +122,19 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 		return fmt.Errorf("settle reservation: %w", err)
 	}
 
-	// Overage cap: void the check-pending, post the real debit for actual cost.
-	if reservation.CapCheckLeg != nil && reservation.PricingPhase == PricingPhaseOverage {
-		capAcctID := OverageCapAccountID(reservation.OrgID, reservation.ProductID)
+	if reservation.SpendCapPeriodStart != nil && reservation.PricingPhase == PricingPhaseOverage && actualCost > 0 {
+		capAcctID := SpendCapAccountID(reservation.OrgID, reservation.ProductID, *reservation.SpendCapPeriodStart)
 		sinkID := OperatorAccountID(AcctQuotaSink)
 
-		var capTransfers []types.Transfer
-		// Void the cap check pending transfer.
-		capTransfers = append(capTransfers, types.Transfer{
-			ID:        OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindVoid).raw,
-			PendingID: reservation.CapCheckLeg.TransferID.raw,
-			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
-		})
-		// Post the real overage debit for actual cost.
-		if actualCost > 0 {
-			capTransfers = append(capTransfers, types.Transfer{
-				ID:              OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindOverageCapDebit).raw,
-				DebitAccountID:  capAcctID.raw,
-				CreditAccountID: sinkID.raw,
-				Amount:          types.ToUint128(actualCost),
-				Ledger:          1,
-				Code:            uint16(KindOverageCapDebit),
-			})
-		}
-		if err := c.createTransfers(capTransfers); err != nil {
-			return fmt.Errorf("settle overage cap: %w", err)
+		if err := c.createTransfers([]types.Transfer{{
+			ID:              SpendCapTransferID(reservation.JobID, reservation.WindowSeq, KindSpendCapDebit).raw,
+			DebitAccountID:  capAcctID.raw,
+			CreditAccountID: sinkID.raw,
+			Amount:          types.ToUint128(actualCost),
+			Ledger:          1,
+			Code:            uint16(KindSpendCapDebit),
+		}}); err != nil {
+			return fmt.Errorf("settle spend cap: %w", err)
 		}
 	}
 
@@ -173,15 +163,6 @@ func (c *Client) Void(ctx context.Context, reservation *Reservation) error {
 		transfers = append(transfers, types.Transfer{
 			ID:        VMTransferID(reservation.JobID, reservation.WindowSeq, uint8(i), KindVoid).raw,
 			PendingID: leg.TransferID.raw,
-			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
-		})
-	}
-
-	// Also void the cap check pending if present.
-	if reservation.CapCheckLeg != nil {
-		transfers = append(transfers, types.Transfer{
-			ID:        OverageCapTransferID(reservation.JobID, reservation.WindowSeq, KindVoid).raw,
-			PendingID: reservation.CapCheckLeg.TransferID.raw,
 			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
 		})
 	}
@@ -224,6 +205,17 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 	if err != nil {
 		return Reservation{}, err
 	}
+	trustTier, trustPolicy, err := c.loadTrustTierPolicy(ctx, req.OrgID)
+	if err != nil {
+		return Reservation{}, err
+	}
+	if windowSeq == 0 {
+		concurrentLimit := effectiveConcurrentLimit(trustPolicy.concurrentLimit, activePlan, defaultPlan)
+		if concurrentLimit != nil && req.ConcurrentCount > *concurrentLimit {
+			c.recordConcurrentLimitExceededEvent(ctx, req.OrgID, req.ProductID, trustTier, req.ConcurrentCount, trustPolicy.concurrentLimit, planConcurrentLimit(activePlan, defaultPlan), concurrentLimit)
+			return Reservation{}, ErrConcurrentLimitExceeded
+		}
+	}
 
 	costPerSec, err := computeCostPerSecond(req.Allocation, unitRates)
 	if err != nil {
@@ -234,68 +226,34 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		return Reservation{}, fmt.Errorf("window cost: %w", err)
 	}
 
-	// §2.5 step 8: overage ceiling enforcement via TigerBeetle balance-conditional.
-	var capCheckLeg *GrantLeg
+	spendCap := spendCapPolicy{}
 	if phase == PricingPhaseOverage {
-		leg, err := c.enforceOverageCapTB(ctx, req.OrgID, req.ProductID, windowCost, req.JobID, windowSeq)
-		if err != nil {
-			return Reservation{}, err
-		}
-		capCheckLeg = leg
+		spendCap = effectiveSpendCapPolicy(trustPolicy.spendCapUnits, activePlan)
 	}
 
-	grantLegs, err := c.reserveGrantWaterfall(ctx, req.JobID, req.OrgID, windowSeq, phase, windowCost, eligible)
+	grantLegs, err := c.reserveGrantWaterfall(ctx, req.JobID, req.OrgID, req.ProductID, windowSeq, phase, windowCost, eligible, spendCap, trustTier)
 	if err != nil {
 		return Reservation{}, err
 	}
 
 	return Reservation{
-		JobID:        req.JobID,
-		OrgID:        req.OrgID,
-		ProductID:    req.ProductID,
-		PlanID:       planID,
-		ActorID:      req.ActorID,
-		SourceType:   req.SourceType,
-		SourceRef:    req.SourceRef,
-		WindowSeq:    windowSeq,
-		WindowSecs:   c.cfg.ReservationWindowSecs,
-		WindowStart:  windowStart.UTC(),
-		PricingPhase: phase,
-		Allocation:   cloneFloat64Map(req.Allocation),
-		UnitRates:    cloneUint64Map(unitRates),
-		CostPerSec:   costPerSec,
-		GrantLegs:    grantLegs,
-		CapCheckLeg:  capCheckLeg,
+		JobID:               req.JobID,
+		OrgID:               req.OrgID,
+		ProductID:           req.ProductID,
+		PlanID:              planID,
+		ActorID:             req.ActorID,
+		SourceType:          req.SourceType,
+		SourceRef:           req.SourceRef,
+		WindowSeq:           windowSeq,
+		WindowSecs:          c.cfg.ReservationWindowSecs,
+		WindowStart:         windowStart.UTC(),
+		PricingPhase:        phase,
+		Allocation:          cloneFloat64Map(req.Allocation),
+		UnitRates:           cloneUint64Map(unitRates),
+		CostPerSec:          costPerSec,
+		GrantLegs:           grantLegs,
+		SpendCapPeriodStart: spendCapPeriodStart(spendCap),
 	}, nil
-}
-
-// loadOverageCap reads the subscription's overage_cap_units and current_period_start.
-// Returns (nil, _, nil) if the subscription has no cap or no active subscription exists.
-func (c *Client) loadOverageCap(ctx context.Context, orgID OrgID, productID string) (*int64, time.Time, error) {
-	var capUnits sql.NullInt64
-	var periodStart time.Time
-
-	err := c.pg.QueryRowContext(ctx, `
-		SELECT overage_cap_units, current_period_start
-		FROM subscriptions
-		WHERE org_id = $1
-		  AND product_id = $2
-		  AND status IN ('active', 'past_due', 'trialing')
-		ORDER BY subscription_id DESC
-		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&capUnits, &periodStart)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, time.Time{}, nil
-	}
-	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("load overage cap: %w", err)
-	}
-
-	if !capUnits.Valid {
-		return nil, time.Time{}, nil
-	}
-	v := capUnits.Int64
-	return &v, periodStart.UTC(), nil
 }
 
 func (c *Client) ensureOrgNotSuspended(ctx context.Context, orgID OrgID) error {
@@ -322,6 +280,9 @@ func (c *Client) loadActiveSubscriptionPlan(ctx context.Context, orgID OrgID, pr
 		status           string
 		unitRatesJSON    []byte
 		overageRatesJSON []byte
+		quotasJSON       sql.NullString
+		overageCapUnits  sql.NullInt64
+		periodStart      sql.NullTime
 	)
 
 	err := c.pg.QueryRowContext(ctx, `
@@ -329,7 +290,10 @@ func (c *Client) loadActiveSubscriptionPlan(ctx context.Context, orgID OrgID, pr
 			s.plan_id,
 			s.status,
 			COALESCE(o.unit_rates, p.unit_rates)::text,
-			p.overage_unit_rates::text
+			p.overage_unit_rates::text,
+			COALESCE(o.quotas, p.quotas)::text,
+			s.overage_cap_units,
+			s.current_period_start
 		FROM subscriptions s
 		JOIN plans p ON p.plan_id = s.plan_id
 		LEFT JOIN org_pricing_overrides o
@@ -340,8 +304,8 @@ func (c *Client) loadActiveSubscriptionPlan(ctx context.Context, orgID OrgID, pr
 		  AND s.status IN ('active', 'past_due', 'trialing')
 		ORDER BY s.subscription_id DESC
 		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &status, &unitRatesJSON, &overageRatesJSON)
-	if errors.Is(err, sql.ErrNoRows) {
+	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &status, &unitRatesJSON, &overageRatesJSON, &quotasJSON, &overageCapUnits, &periodStart)
+	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
@@ -356,12 +320,29 @@ func (c *Client) loadActiveSubscriptionPlan(ctx context.Context, orgID OrgID, pr
 	if err != nil {
 		return nil, fmt.Errorf("decode overage unit rates for %s: %w", planID, err)
 	}
+	concurrentLimit, err := decodePlanQuotaPolicy(quotasJSON)
+	if err != nil {
+		return nil, fmt.Errorf("decode quotas for %s: %w", planID, err)
+	}
+
+	var spendCapUnits *uint64
+	if overageCapUnits.Valid {
+		spendCapUnits = uint64Ptr(uint64(overageCapUnits.Int64))
+	}
+	var periodStartPtr *time.Time
+	if periodStart.Valid {
+		t := periodStart.Time.UTC()
+		periodStartPtr = &t
+	}
 
 	return &subscriptionPlan{
 		planID:           planID,
 		status:           status,
 		unitRates:        unitRates,
 		overageUnitRates: overageUnitRates,
+		concurrentLimit:  concurrentLimit,
+		spendCapUnits:    spendCapUnits,
+		periodStart:      periodStartPtr,
 	}, nil
 }
 
@@ -369,12 +350,14 @@ func (c *Client) loadDefaultPlan(ctx context.Context, orgID OrgID, productID str
 	var (
 		planID        string
 		unitRatesJSON []byte
+		quotasJSON    sql.NullString
 	)
 
 	err := c.pg.QueryRowContext(ctx, `
 		SELECT
 			p.plan_id,
-			COALESCE(o.unit_rates, p.unit_rates)::text
+			COALESCE(o.unit_rates, p.unit_rates)::text,
+			COALESCE(o.quotas, p.quotas)::text
 		FROM plans p
 		LEFT JOIN org_pricing_overrides o
 		       ON o.org_id = $1
@@ -383,8 +366,8 @@ func (c *Client) loadDefaultPlan(ctx context.Context, orgID OrgID, productID str
 		  AND p.is_default
 		  AND p.active
 		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &unitRatesJSON)
-	if errors.Is(err, sql.ErrNoRows) {
+	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &unitRatesJSON, &quotasJSON)
+	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
@@ -395,10 +378,15 @@ func (c *Client) loadDefaultPlan(ctx context.Context, orgID OrgID, productID str
 	if err != nil {
 		return nil, fmt.Errorf("decode default plan rates for %s: %w", planID, err)
 	}
+	concurrentLimit, err := decodePlanQuotaPolicy(quotasJSON)
+	if err != nil {
+		return nil, fmt.Errorf("decode default plan quotas for %s: %w", planID, err)
+	}
 
 	return &plan{
-		planID:    planID,
-		unitRates: unitRates,
+		planID:          planID,
+		unitRates:       unitRates,
+		concurrentLimit: concurrentLimit,
 	}, nil
 }
 
@@ -541,96 +529,6 @@ func selectReservationPhase(activePlan *subscriptionPlan, defaultPlan *plan, gra
 	}
 }
 
-func (c *Client) reserveGrantWaterfall(ctx context.Context, jobID JobID, orgID OrgID, windowSeq uint32, phase PricingPhase, windowCost uint64, grants []grantBalance) ([]GrantLeg, error) {
-	if windowCost == 0 {
-		return nil, nil
-	}
-
-	sort.Slice(grants, func(i, j int) bool {
-		left := grants[i]
-		right := grants[j]
-		switch {
-		case left.expiresAt == nil && right.expiresAt != nil:
-			return false
-		case left.expiresAt != nil && right.expiresAt == nil:
-			return true
-		case left.expiresAt != nil && right.expiresAt != nil && !left.expiresAt.Equal(*right.expiresAt):
-			return left.expiresAt.Before(*right.expiresAt)
-		default:
-			return bytes.Compare(left.grantID[:], right.grantID[:]) < 0
-		}
-	})
-
-	phaseSinkAccount := phaseSinkAccountID(phase)
-	remainder := windowCost
-	grantLegs := make([]GrantLeg, 0, len(grants))
-
-	for i, grant := range grants {
-		if remainder == 0 {
-			break
-		}
-		if i > math.MaxUint8 {
-			return nil, fmt.Errorf("grant leg index %d exceeds max supported tigerbeetle grant_idx", i)
-		}
-
-		transferID := VMTransferID(jobID, windowSeq, uint8(i), KindReservation)
-		if err := c.createTransfers([]types.Transfer{{
-			ID:              transferID.raw,
-			DebitAccountID:  GrantAccountID(grant.grantID).raw,
-			CreditAccountID: phaseSinkAccount.raw,
-			Amount:          types.ToUint128(remainder),
-			Ledger:          1,
-			Code:            uint16(KindReservation),
-			Flags: types.TransferFlags{
-				Pending:        true,
-				BalancingDebit: true,
-			}.ToUint16(),
-			UserData64: uint64(orgID),
-			UserData32: windowSeq,
-			Timeout:    c.cfg.PendingTimeoutSecs,
-		}}); err != nil {
-			return nil, fmt.Errorf("create reservation leg %d: %w", i, err)
-		}
-
-		transfer, err := c.lookupTransfer(transferID)
-		if err != nil {
-			return nil, fmt.Errorf("lookup reservation leg %d: %w", i, err)
-		}
-
-		reservedAmount, err := uint128ToUint64(transfer.Amount)
-		if err != nil {
-			return nil, fmt.Errorf("reservation leg %d amount: %w", i, err)
-		}
-		if reservedAmount == 0 {
-			continue
-		}
-
-		grantLegs = append(grantLegs, GrantLeg{
-			GrantID:    grant.grantID,
-			TransferID: transferID,
-			Amount:     reservedAmount,
-			Source:     grant.source,
-		})
-		remainder -= reservedAmount
-	}
-
-	if remainder > 0 {
-		reservation := Reservation{
-			JobID:     jobID,
-			WindowSeq: windowSeq,
-			GrantLegs: grantLegs,
-		}
-		if len(grantLegs) > 0 {
-			if err := c.Void(ctx, &reservation); err != nil {
-				return nil, fmt.Errorf("%w: void partial reservation: %v", ErrInsufficientBalance, err)
-			}
-		}
-		return nil, ErrInsufficientBalance
-	}
-
-	return grantLegs, nil
-}
-
 func (c *Client) createTransfers(transfers []types.Transfer) error {
 	if len(transfers) == 0 {
 		return nil
@@ -738,6 +636,40 @@ func filterGrantBalances(grants []grantBalance, keep func(grantBalance) bool) []
 		}
 	}
 	return filtered
+}
+
+func spendCapPeriodStart(policy spendCapPolicy) *time.Time {
+	if policy.effectiveCapUnits == nil {
+		return nil
+	}
+	return copyTimePtr(policy.periodStart)
+}
+
+func (c *Client) recordConcurrentLimitExceededEvent(
+	ctx context.Context,
+	orgID OrgID,
+	productID string,
+	trustTier string,
+	concurrentCount uint64,
+	trustTierLimit *uint64,
+	planLimit *uint64,
+	effectiveLimit *uint64,
+) {
+	_, _ = c.pg.ExecContext(ctx, `
+		INSERT INTO billing_events (org_id, event_type, payload)
+		VALUES ($1, 'concurrent_limit_exceeded', $2::jsonb)
+	`,
+		strconv.FormatUint(uint64(orgID), 10),
+		mustJSON(map[string]any{
+			"product_id":       productID,
+			"trust_tier":       trustTier,
+			"concurrent_count": concurrentCount,
+			"limit_source":     concurrentLimitSource(effectiveLimit, trustTierLimit, planLimit),
+			"trust_tier_limit": trustTierLimit,
+			"plan_limit":       planLimit,
+			"effective_limit":  effectiveLimit,
+		}),
+	)
 }
 
 func computeCostPerSecond(allocation map[string]float64, unitRates map[string]uint64) (uint64, error) {

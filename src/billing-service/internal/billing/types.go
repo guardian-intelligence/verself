@@ -9,9 +9,8 @@ import (
 // TigerBeetle account codes. Type discrimination is via the code field
 // on the TigerBeetle account, not encoded in the account ID bits.
 const (
-	AcctGrantCode      uint16 = 9  // credit grants (fund flow)
-	AcctQuotaCode      uint16 = 10 // quota enforcement (rate limiting via pending timeout)
-	AcctOverageCapCode uint16 = 11 // overage ceiling enforcement
+	AcctGrantCode    uint16 = 9  // credit grants (fund flow)
+	AcctSpendCapCode uint16 = 11 // period-scoped spend cap enforcement
 )
 
 type OperatorAcctType uint16
@@ -40,9 +39,8 @@ const (
 	KindCreditExpiry        XferKind = 9
 	KindDepositConfirm      XferKind = 10
 	KindExpiryConfirm       XferKind = 11
-	KindQuotaCheck          XferKind = 12 // pending-only: expires after window, never posted
-	KindOverageCapCheck     XferKind = 13 // pending: voided after settlement posts real debit
-	KindOverageCapDebit     XferKind = 14 // posted: permanent overage consumption within period
+	KindSpendCapCheck       XferKind = 13 // linked probe+void at reserve time
+	KindSpendCapDebit       XferKind = 14 // posted: permanent spend-cap consumption within period
 )
 
 type PricingPhase string
@@ -102,7 +100,9 @@ type Reservation struct {
 	UnitRates    map[string]uint64
 	CostPerSec   uint64
 	GrantLegs    []GrantLeg
-	CapCheckLeg  *GrantLeg // overage cap pending transfer (voided at Settle, replaced by real debit)
+	// SpendCapPeriodStart identifies the billing period whose spend-cap account
+	// should be debited at settlement time. Nil means no spend cap applied.
+	SpendCapPeriodStart *time.Time
 }
 
 type QuotaResult struct {
@@ -118,13 +118,14 @@ type QuotaViolation struct {
 }
 
 type ReserveRequest struct {
-	JobID      JobID
-	OrgID      OrgID
-	ProductID  string
-	ActorID    string
-	Allocation map[string]float64
-	SourceType string // metering source type: "job", "request_batch", etc.
-	SourceRef  string // metering source reference: product-specific identifier
+	JobID           JobID
+	OrgID           OrgID
+	ProductID       string
+	ActorID         string
+	Allocation      map[string]float64
+	ConcurrentCount uint64
+	SourceType      string // metering source type: "job", "request_batch", etc.
+	SourceRef       string // metering source reference: product-specific identifier
 }
 
 // MeteringRow is one row in forge_metal.metering.
@@ -153,16 +154,6 @@ type MeteringRow struct {
 // MeteringWriter records metering rows durably enough for billing read paths and reconciliation.
 type MeteringWriter interface {
 	InsertMeteringRow(ctx context.Context, row MeteringRow) error
-}
-
-// MeteringQuerier reads aggregated metering data from ClickHouse.
-// After the TigerBeetle quota migration, only SumDimension is used on the hot
-// path (for week/month windows). Overage cap enforcement moved to TigerBeetle
-// balance-conditional transfers.
-type MeteringQuerier interface {
-	// SumDimension returns the sum of a single dimension from the dimensions Map column
-	// for all metering rows matching (orgID, productID) with started_at >= since.
-	SumDimension(ctx context.Context, orgID OrgID, productID string, dimension string, since time.Time) (float64, error)
 }
 
 type CreditGrant struct {
