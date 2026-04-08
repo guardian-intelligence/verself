@@ -689,6 +689,7 @@ For the first cut:
 - do not reuse `ubuntu-latest` while the guest remains Alpine and container support is unsettled
 - cap job timeout to 5 minutes until billing `renew` exists
 - treat CI spend as operator-org spend using the `platform` trust tier plan
+- do not build a warm VM pool yet; accept cold-start queue latency in exchange for a simpler first control plane
 
 ### Provider Capability Constraints
 
@@ -711,6 +712,25 @@ This creates a real decision point:
    - validate ephemeral or handle-based single-job execution
 
 The tracer bullet proved the runner seam. It did not eliminate the provider-version problem.
+
+### First-Pass Provider Compromise
+
+The current architectural decision is to stay on Forgejo `14.0.3` for the first pass and
+document the compromises explicitly.
+
+That means:
+
+- runner VMs cannot rely on provider-side ephemeral deletion
+- the service must explicitly clean stale runner rows after teardown
+- the service cannot target a specific queued job via the newer handle-oriented path
+- queue latency is acceptable for the first pass because no warm VM pool is being built yet
+
+This is a valid first cut, but it changes the product claim:
+
+- first pass goal: correct VM-backed Actions execution with clear operational compromises
+- not first pass goal: ideal job-per-VM ephemerality or low-latency autoscaling
+
+The implementation should leave surgical comments anywhere this compromise leaks into code.
 
 ## Golden Warming
 
@@ -745,7 +765,21 @@ For `forgejo_runner` workloads, the service should record summary facts only:
 - terminal status
 - runner name
 
-It should not try to duplicate the entire Actions log stream that Forgejo already owns.
+In addition, the runner VM's event stream should be echoed into ClickHouse. For the first
+pass, that means mirroring VM-visible runner stdout/stderr and service-side control-plane
+events into the same execution-oriented analytics plane.
+
+Two rules keep this sane:
+
+1. Forgejo remains the primary user-facing log surface for Actions runs.
+2. The ClickHouse copy is an operator and observability mirror, not the first source of
+   truth for step presentation semantics.
+
+Surgical note for later:
+
+- if forge-metal evolves toward tenant-controlled log sovereignty, the ClickHouse mirror
+  may stop being the right storage backend for provider log copies. At that point we may
+  need a separate multi-tenant log store with a clearer ownership and retention model.
 
 ## Reconciliation And Recovery
 
@@ -797,16 +831,54 @@ but it means `sandbox-rental-service` must be the durable source of truth.
 These are the remaining architectural questions that still need targeted experiments
 or code-reading before the design is final:
 
-1. Should the first VM-backed runner cut keep one warm standby VM per label, or can we
-   tolerate queue startup latency while using webhook hints or coarse polling?
-2. Can `forgejo-runner one-job` plus a pre-created runner file replace the daemon flow
-   cleanly on Forgejo `14.0.3`, or is a Forgejo upgrade the cleaner line in the sand?
-3. How should the service learn which exact Forgejo job a temporary runner claimed on
+1. How should the service learn which exact Forgejo job a VM-backed runner claimed on
    Forgejo `14.0.3`, where the newer handle-oriented path is unavailable?
-4. Which minimal guest/runtime additions are necessary to support the first useful set
-   of workflows without claiming general `ubuntu-latest` compatibility?
-5. Which summary fields belong in the unified ClickHouse `job_events` row for
-   `forgejo_runner`, given that Forgejo remains the source of truth for step-level logs?
+2. Is guest-to-service reporting via threaded control-plane metadata sufficient, or do we
+   need a provider-side query path to resolve job claim and completion robustly?
+3. Which exact runner and service log surfaces should be mirrored into ClickHouse for the
+   first pass, and how should they be tagged so future storage cutovers remain possible?
+
+## Current Decisions
+
+The following decisions are now fixed for the first implementation pass:
+
+1. No warm VM pool. Cold-start latency is accepted for now.
+2. No Forgejo upgrade gate. The first pass will run against Forgejo `14.0.3` and carry
+   explicit cleanup and correlation compromises.
+3. The service will thread control-plane metadata into the VM.
+4. Broad base-image compatibility is deferred. The label must stay honest.
+5. Runner and control-plane event logs will be mirrored into ClickHouse, with an explicit
+   note that future tenant log sovereignty may require a different storage backend.
+
+### Threaded VM Metadata
+
+Threading service metadata into the VM is the right move, but it is not a complete answer
+to provider correlation.
+
+What should be threaded in:
+
+- `execution_id`
+- `attempt_id`
+- `orchestrator_job_id`
+- `runner_name`
+- `org_id`
+- provider instance URL
+- a short-lived service callback token or equivalent correlation secret if guest reporting
+  is added
+
+What cannot be threaded in ahead of time:
+
+- the exact Forgejo job ID or run ID that the runner will claim, because that is not known
+  until after the provider assigns work
+
+So the correct interpretation of this decision is:
+
+- thread service-owned identity into the VM so any later signal can be tied back to the
+  right attempt
+- still design a reverse correlation path from the VM or provider back into the service
+  once the runner has claimed work
+
+That reverse path is now the main unresolved runner-supervisor detail.
 
 This document should evolve alongside the control-plane implementation. The next edits
 should happen after the schema refactor and after the first runner-supervisor experiment
