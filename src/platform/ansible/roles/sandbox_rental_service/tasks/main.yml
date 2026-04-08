@@ -19,8 +19,8 @@
     name: sandbox_rental
     group: sandbox_rental
     groups:
-      - "{{ firecracker_jailer_user }}"
-    append: true
+      - "{{ firecracker_vm_orchestrator_socket_group }}"
+    append: false
     system: true
     shell: /usr/sbin/nologin
     create_home: false
@@ -129,7 +129,6 @@
       Type=simple
       User=sandbox_rental
       Group=sandbox_rental
-      SupplementaryGroups={{ firecracker_jailer_user }}
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
@@ -138,18 +137,7 @@
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
       Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
-      Environment=SANDBOX_FS_POOL=forgepool
-      Environment=SANDBOX_FS_GOLDEN_ZVOL=golden-zvol
-      Environment=SANDBOX_FS_CI_DATASET=ci
-      Environment=SANDBOX_FS_KERNEL_PATH=/var/lib/ci/vmlinux
-      Environment=SANDBOX_FS_FC_BIN=/usr/local/bin/firecracker
-      Environment=SANDBOX_FS_JAILER_BIN=/usr/local/bin/jailer
-      Environment=SANDBOX_FS_JAILER_ROOT=/srv/jailer
-      Environment=SANDBOX_FS_HOST_INTERFACE=eth0
-      Environment=SANDBOX_FS_GUEST_POOL_CIDR={{ firecracker_guest_pool_cidr | default('172.16.0.0/16') }}
-      Environment=SANDBOX_FS_NETWORK_LEASE_DIR={{ firecracker_net_lease_dir }}
-      Environment=SANDBOX_FS_JAILER_UID={{ firecracker_jailer_uid | default(10000) }}
-      Environment=SANDBOX_FS_JAILER_GID={{ firecracker_jailer_gid | default(10000) }}
+      Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ firecracker_vm_orchestrator_api_socket }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5
@@ -161,6 +149,13 @@
       WantedBy=multi-user.target
     dest: /etc/systemd/system/sandbox-rental-service.service
     mode: "0644"
+  notify:
+    - restart sandbox-rental-service
+
+- name: Remove stale sandbox-rental-service systemd override
+  ansible.builtin.file:
+    path: /etc/systemd/system/sandbox-rental-service.service.d/override.conf
+    state: absent
   notify:
     - restart sandbox-rental-service
 

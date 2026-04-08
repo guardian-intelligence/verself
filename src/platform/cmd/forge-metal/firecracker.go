@@ -20,6 +20,7 @@ func firecrackerTestCmd() *cobra.Command {
 	var (
 		repo            string
 		commitSHA       string
+		apiSocket       string
 		pool            string
 		goldenZvol      string
 		kernelPath      string
@@ -89,7 +90,11 @@ Examples:
 				cfg.NetworkLeaseDir = networkLeaseDir
 			}
 
-			orch := vmorchestrator.New(cfg, logger)
+			client, err := vmorchestrator.NewClient(context.Background(), apiSocket)
+			if err != nil {
+				return err
+			}
+			defer client.Close()
 
 			jobID := uuid.New().String()
 
@@ -122,7 +127,7 @@ Examples:
 				"command", args,
 			)
 
-			result, err := orch.Run(ctx, job)
+			result, err := client.RunWithConfig(ctx, cfg, job)
 			if err != nil {
 				return fmt.Errorf("firecracker run: %w", err)
 			}
@@ -177,6 +182,7 @@ Examples:
 
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (metadata)")
 	cmd.Flags().StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
+	cmd.Flags().StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
 	cmd.Flags().StringVar(&pool, "pool", "", "ZFS pool name (default: forgepool)")
 	cmd.Flags().StringVar(&goldenZvol, "golden-zvol", "", "Golden zvol name (default: golden-zvol)")
 	cmd.Flags().StringVar(&kernelPath, "kernel", "", "Path to vmlinux (default: /var/lib/ci/vmlinux)")

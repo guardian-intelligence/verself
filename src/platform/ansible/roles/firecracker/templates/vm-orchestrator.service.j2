@@ -6,11 +6,30 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart={{ firecracker_vm_orchestrator_binary_path }} --listen-unix {{ firecracker_vm_orchestrator_api_socket }}
+ExecStart={{ firecracker_vm_orchestrator_binary_path }} \
+  --listen-unix {{ firecracker_vm_orchestrator_api_socket }} \
+  --socket-group {{ firecracker_vm_orchestrator_socket_group }} \
+  --repo-golden-state-dir {{ firecracker_repo_golden_state_dir }} \
+  --pool {{ firecracker_zfs_pool }} \
+  --golden-zvol {{ firecracker_golden_zvol }} \
+  --ci-dataset {{ firecracker_ci_dataset }} \
+  --kernel-path {{ firecracker_kernel_path }} \
+  --firecracker-bin /usr/local/bin/firecracker \
+  --jailer-bin /usr/local/bin/jailer \
+  --jailer-root {{ firecracker_jailer_root }} \
+  --jailer-uid {{ firecracker_jailer_uid }} \
+  --jailer-gid {{ firecracker_jailer_gid }} \
+  --vcpus 2 \
+  --memory-mib 2048 \
+{% if firecracker_host_uplink_interface | default('', true) | length > 0 %}
+  --host-interface {{ firecracker_host_uplink_interface }} \
+{% endif %}
+  --guest-pool-cidr {{ firecracker_guest_pool_cidr }} \
+  --network-lease-dir {{ firecracker_net_lease_dir }}
 Restart=always
 RestartSec=2
 RuntimeDirectory=vm-orchestrator
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 NoNewPrivileges=yes
 
 [Install]

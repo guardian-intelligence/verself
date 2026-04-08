@@ -103,3 +103,13 @@ argument_specs:
         type: path
         default: /run/vm-orchestrator/api.sock
         description: "Unix domain socket for the vm-orchestrator API."
+
+      firecracker_vm_orchestrator_socket_group:
+        type: str
+        default: vm-clients
+        description: "System group granted rw access to the vm-orchestrator Unix socket."
+
+      firecracker_repo_golden_state_dir:
+        type: path
+        default: /var/lib/ci/repo-goldens
+        description: "Directory storing active repo-golden dataset pointers for vm-orchestrator."

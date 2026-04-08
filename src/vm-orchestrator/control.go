@@ -33,12 +33,25 @@ type guestControl struct {
 }
 
 func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestControl, error) {
+	conn, reader, err := connectGuestBridge(ctx, udsPath, port)
+	if err != nil {
+		return nil, err
+	}
+
+	return &guestControl{
+		conn:   conn,
+		reader: reader,
+		codec:  vmproto.NewCodec(reader, conn),
+	}, nil
+}
+
+func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn, *bufio.Reader, error) {
 	for {
 		conn, err := net.DialTimeout("unix", udsPath, 250*time.Millisecond)
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("dial guest control %s: %w", udsPath, ctx.Err())
+				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, ctx.Err())
 			case <-time.After(50 * time.Millisecond):
 				continue
 			}
@@ -49,7 +62,7 @@ func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestC
 			conn.Close()
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("write guest control connect command: %w", ctx.Err())
+				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", ctx.Err())
 			case <-time.After(50 * time.Millisecond):
 				continue
 			}
@@ -60,7 +73,7 @@ func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestC
 			conn.Close()
 			select {
 			case <-ctx.Done():
-				return nil, fmt.Errorf("read guest control ack: %w", ctx.Err())
+				return nil, nil, fmt.Errorf("read guest bridge ack: %w", ctx.Err())
 			case <-time.After(50 * time.Millisecond):
 				continue
 			}
@@ -68,14 +81,10 @@ func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestC
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "OK ") {
 			conn.Close()
-			return nil, fmt.Errorf("unexpected guest control ack %q", line)
+			return nil, nil, fmt.Errorf("unexpected guest bridge ack %q", line)
 		}
 
-		return &guestControl{
-			conn:   conn,
-			reader: reader,
-			codec:  vmproto.NewCodec(reader, conn),
-		}, nil
+		return conn, reader, nil
 	}
 }
 
@@ -102,13 +111,14 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logger) (guestControlResult, error) {
+func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
 	var (
 		logBuf       strings.Builder
 		hello        vmproto.Hello
 		gotHello     bool
 		phaseResults []PhaseResult
 	)
+	observer = normalizeRunObserver(observer)
 
 	resultWithLogs := func() guestControlResult {
 		return guestControlResult{
@@ -162,8 +172,12 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 				return resultWithLogs(), err
 			}
 			appendLogChunk(&logBuf, msg.Data)
+			observer.OnGuestLogChunk(job.JobID, string(msg.Data))
 		case vmproto.TypeHeartbeat:
 		case vmproto.TypePhaseStart:
+			if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
+				observer.OnGuestPhaseStart(job.JobID, msg.Name)
+			}
 			if logger != nil {
 				if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
 					logger.Info("guest phase start", "phase", msg.Name, "job_id", job.JobID)
@@ -175,6 +189,11 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 				return resultWithLogs(), err
 			}
 			phaseResults = append(phaseResults, PhaseResult{
+				Name:       msg.Name,
+				ExitCode:   msg.ExitCode,
+				DurationMS: msg.DurationMS,
+			})
+			observer.OnGuestPhaseEnd(job.JobID, PhaseResult{
 				Name:       msg.Name,
 				ExitCode:   msg.ExitCode,
 				DurationMS: msg.DurationMS,
