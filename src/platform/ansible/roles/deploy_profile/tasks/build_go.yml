@@ -1,6 +1,6 @@
 ---
 # Build Go binaries on the Ansible controller and copy to the server.
-# Follows the delegate_to: localhost pattern from guest_rootfs and smelter-dev.
+# Follows the delegate_to: localhost pattern from guest_rootfs and vm-guest-telemetry-dev.
 
 - name: Build forge-metal binary
   delegate_to: localhost
