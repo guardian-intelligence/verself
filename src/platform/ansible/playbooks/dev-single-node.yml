@@ -125,6 +125,10 @@
       tags: [electric_mail]
     - role: webmail
       tags: [webmail]
+    - role: letters
+      tags: [letters]
+    - role: electric_letters
+      tags: [electric_letters]
     - role: hyperdx
       tags: [hyperdx]
     - role: verdaccio

@@ -122,6 +122,21 @@
 	}
 }
 
+{{ letters_domain }} {
+	import access_log
+	import waf_detection
+
+	handle /v1/shape {
+		uri query -secret
+		uri query +secret {{ caddy_electric_letters_api_secret }}
+		reverse_proxy {{ services.electric_letters.host }}:{{ services.electric_letters.port }}
+	}
+
+	handle {
+		reverse_proxy {{ services.letters.host }}:{{ services.letters.port }}
+	}
+}
+
 {{ zitadel_domain }} {
 	import access_log
 	import waf_detection
