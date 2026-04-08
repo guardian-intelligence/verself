@@ -3,6 +3,7 @@ package vmorchestrator
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -161,6 +162,37 @@ func (c *Client) GetJobStatus(ctx context.Context, jobID string, includeOutput b
 		return JobStatus{}, fmt.Errorf("get job status %s: %w", jobID, err)
 	}
 	return jobStatusFromProto(resp), nil
+}
+
+func (c *Client) StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(JobGuestEvent) error) error {
+	stream, err := c.client.StreamGuestEvents(ctx, &vmrpc.StreamGuestEventsRequest{
+		JobId:  jobID,
+		Follow: follow,
+	})
+	if err != nil {
+		return fmt.Errorf("stream guest events %s: %w", jobID, err)
+	}
+	for {
+		event, recvErr := stream.Recv()
+		if recvErr != nil {
+			if recvErr == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("recv guest event %s: %w", jobID, recvErr)
+		}
+		if handler == nil {
+			continue
+		}
+		if err := handler(JobGuestEvent{
+			Seq:      event.GetSeq(),
+			JobID:    event.GetJobId(),
+			Kind:     event.GetKind(),
+			Attrs:    cloneStringMap(event.GetAttrs()),
+			Terminal: event.GetTerminal(),
+		}); err != nil {
+			return err
+		}
+	}
 }
 
 func (c *Client) CancelJob(ctx context.Context, jobID string) (bool, error) {

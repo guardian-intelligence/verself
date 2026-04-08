@@ -33,16 +33,17 @@ func main() {
 
 func run() error {
 	var (
-		apiSocket       string
-		repo            string
-		commitSHA       string
-		goldenZvol      string
-		vcpus           int
-		memoryMiB       int
-		timeout         string
-		hostInterface   string
-		guestPoolCIDR   string
-		networkLeaseDir string
+		apiSocket        string
+		repo             string
+		commitSHA        string
+		goldenZvol       string
+		vcpus            int
+		memoryMiB        int
+		timeout          string
+		hostInterface    string
+		guestPoolCIDR    string
+		networkLeaseDir  string
+		traceGuestEvents bool
 	)
 
 	flag.StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
@@ -55,6 +56,7 @@ func run() error {
 	flag.StringVar(&hostInterface, "host-interface", "", "Host uplink interface for guest egress")
 	flag.StringVar(&guestPoolCIDR, "guest-pool-cidr", "", "IPv4 pool reserved for Firecracker guests")
 	flag.StringVar(&networkLeaseDir, "network-lease-dir", "", "Directory for persistent guest network leases")
+	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream structured guest events emitted over the control vsock")
 	flag.Parse()
 
 	args := flag.Args()
@@ -110,8 +112,9 @@ func run() error {
 		RunCommand: args,
 		RunWorkDir: "/workspace",
 		Env: map[string]string{
-			"CI":   "true",
-			"REPO": repo,
+			"CI":                     "true",
+			"REPO":                   repo,
+			"FORGE_METAL_ATTEMPT_ID": jobID,
 		},
 	}
 	if commitSHA != "" {
@@ -120,9 +123,49 @@ func run() error {
 
 	logger.Info("starting VM job", "job_id", jobID, "command", args)
 
-	result, err := client.RunWithConfig(ctx, cfg, job)
-	if err != nil {
-		return fmt.Errorf("vm run: %w", err)
+	var result vmorchestrator.JobResult
+	if traceGuestEvents {
+		startedJobID, err := client.StartDirectJobWithConfig(ctx, cfg, job)
+		if err != nil {
+			return fmt.Errorf("vm start: %w", err)
+		}
+		if startedJobID != jobID {
+			return fmt.Errorf("started job id mismatch: got %s want %s", startedJobID, jobID)
+		}
+
+		streamErrCh := make(chan error, 1)
+		go func() {
+			streamErrCh <- client.StreamGuestEvents(ctx, jobID, true, func(event vmorchestrator.JobGuestEvent) error {
+				if event.Terminal {
+					return nil
+				}
+				attrsJSON, err := json.Marshal(event.Attrs)
+				if err != nil {
+					return fmt.Errorf("marshal guest event attrs: %w", err)
+				}
+				fmt.Printf("[guest-event] seq=%d kind=%s attrs=%s\n", event.Seq, event.Kind, string(attrsJSON))
+				return nil
+			})
+		}()
+
+		status, err := client.WaitJob(ctx, jobID, true)
+		if err != nil {
+			return fmt.Errorf("vm wait: %w", err)
+		}
+		if status.Result == nil {
+			return fmt.Errorf("job %s completed without result", jobID)
+		}
+		result = *status.Result
+
+		if err := <-streamErrCh; err != nil {
+			return fmt.Errorf("guest event stream: %w", err)
+		}
+	} else {
+		runResult, err := client.RunWithConfig(ctx, cfg, job)
+		if err != nil {
+			return fmt.Errorf("vm run: %w", err)
+		}
+		result = runResult
 	}
 
 	fmt.Println()

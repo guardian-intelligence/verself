@@ -1430,6 +1430,134 @@ func (x *JobLogChunk) GetTerminal() bool {
 	return false
 }
 
+type StreamGuestEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamGuestEventsRequest) Reset() {
+	*x = StreamGuestEventsRequest{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamGuestEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamGuestEventsRequest) ProtoMessage() {}
+
+func (x *StreamGuestEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamGuestEventsRequest.ProtoReflect.Descriptor instead.
+func (*StreamGuestEventsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *StreamGuestEventsRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *StreamGuestEventsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+type JobGuestEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Attrs         map[string]string      `protobuf:"bytes,4,rep,name=attrs,proto3" json:"attrs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Terminal      bool                   `protobuf:"varint,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobGuestEvent) Reset() {
+	*x = JobGuestEvent{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobGuestEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobGuestEvent) ProtoMessage() {}
+
+func (x *JobGuestEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobGuestEvent.ProtoReflect.Descriptor instead.
+func (*JobGuestEvent) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *JobGuestEvent) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *JobGuestEvent) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *JobGuestEvent) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *JobGuestEvent) GetAttrs() map[string]string {
+	if x != nil {
+		return x.Attrs
+	}
+	return nil
+}
+
+func (x *JobGuestEvent) GetTerminal() bool {
+	if x != nil {
+		return x.Terminal
+	}
+	return false
+}
+
 type WarmGoldenRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	RuntimeConfig   *RuntimeConfig         `protobuf:"bytes,1,opt,name=runtime_config,json=runtimeConfig,proto3" json:"runtime_config,omitempty"`
@@ -1444,7 +1572,7 @@ type WarmGoldenRequest struct {
 
 func (x *WarmGoldenRequest) Reset() {
 	*x = WarmGoldenRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1456,7 +1584,7 @@ func (x *WarmGoldenRequest) String() string {
 func (*WarmGoldenRequest) ProtoMessage() {}
 
 func (x *WarmGoldenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1469,7 +1597,7 @@ func (x *WarmGoldenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WarmGoldenRequest.ProtoReflect.Descriptor instead.
 func (*WarmGoldenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WarmGoldenRequest) GetRuntimeConfig() *RuntimeConfig {
@@ -1533,7 +1661,7 @@ type WarmGoldenResponse struct {
 
 func (x *WarmGoldenResponse) Reset() {
 	*x = WarmGoldenResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1545,7 +1673,7 @@ func (x *WarmGoldenResponse) String() string {
 func (*WarmGoldenResponse) ProtoMessage() {}
 
 func (x *WarmGoldenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1558,7 +1686,7 @@ func (x *WarmGoldenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WarmGoldenResponse.ProtoReflect.Descriptor instead.
 func (*WarmGoldenResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WarmGoldenResponse) GetTargetDataset() string {
@@ -1652,7 +1780,7 @@ type TelemetryHello struct {
 
 func (x *TelemetryHello) Reset() {
 	*x = TelemetryHello{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1664,7 +1792,7 @@ func (x *TelemetryHello) String() string {
 func (*TelemetryHello) ProtoMessage() {}
 
 func (x *TelemetryHello) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1677,7 +1805,7 @@ func (x *TelemetryHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryHello.ProtoReflect.Descriptor instead.
 func (*TelemetryHello) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TelemetryHello) GetSeq() uint32 {
@@ -1750,7 +1878,7 @@ type TelemetrySample struct {
 
 func (x *TelemetrySample) Reset() {
 	*x = TelemetrySample{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1762,7 +1890,7 @@ func (x *TelemetrySample) String() string {
 func (*TelemetrySample) ProtoMessage() {}
 
 func (x *TelemetrySample) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1775,7 +1903,7 @@ func (x *TelemetrySample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetrySample.ProtoReflect.Descriptor instead.
 func (*TelemetrySample) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TelemetrySample) GetSeq() uint32 {
@@ -1927,7 +2055,7 @@ type StreamTelemetryRequest struct {
 
 func (x *StreamTelemetryRequest) Reset() {
 	*x = StreamTelemetryRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1939,7 +2067,7 @@ func (x *StreamTelemetryRequest) String() string {
 func (*StreamTelemetryRequest) ProtoMessage() {}
 
 func (x *StreamTelemetryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1952,7 +2080,7 @@ func (x *StreamTelemetryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamTelemetryRequest.ProtoReflect.Descriptor instead.
 func (*StreamTelemetryRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *StreamTelemetryRequest) GetJobId() string {
@@ -1978,7 +2106,7 @@ type TelemetryEvent struct {
 
 func (x *TelemetryEvent) Reset() {
 	*x = TelemetryEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1990,7 +2118,7 @@ func (x *TelemetryEvent) String() string {
 func (*TelemetryEvent) ProtoMessage() {}
 
 func (x *TelemetryEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2003,7 +2131,7 @@ func (x *TelemetryEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryEvent.ProtoReflect.Descriptor instead.
 func (*TelemetryEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TelemetryEvent) GetJobId() string {
@@ -2081,7 +2209,7 @@ type FleetVM struct {
 
 func (x *FleetVM) Reset() {
 	*x = FleetVM{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2093,7 +2221,7 @@ func (x *FleetVM) String() string {
 func (*FleetVM) ProtoMessage() {}
 
 func (x *FleetVM) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2106,7 +2234,7 @@ func (x *FleetVM) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetVM.ProtoReflect.Descriptor instead.
 func (*FleetVM) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FleetVM) GetJobId() string {
@@ -2152,7 +2280,7 @@ type GetFleetSnapshotRequest struct {
 
 func (x *GetFleetSnapshotRequest) Reset() {
 	*x = GetFleetSnapshotRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2164,7 +2292,7 @@ func (x *GetFleetSnapshotRequest) String() string {
 func (*GetFleetSnapshotRequest) ProtoMessage() {}
 
 func (x *GetFleetSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2177,7 +2305,7 @@ func (x *GetFleetSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetFleetSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
 }
 
 type GetFleetSnapshotResponse struct {
@@ -2189,7 +2317,7 @@ type GetFleetSnapshotResponse struct {
 
 func (x *GetFleetSnapshotResponse) Reset() {
 	*x = GetFleetSnapshotResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2201,7 +2329,7 @@ func (x *GetFleetSnapshotResponse) String() string {
 func (*GetFleetSnapshotResponse) ProtoMessage() {}
 
 func (x *GetFleetSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2214,7 +2342,7 @@ func (x *GetFleetSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetFleetSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetFleetSnapshotResponse) GetVms() []*FleetVM {
@@ -2232,7 +2360,7 @@ type GetCapacityRequest struct {
 
 func (x *GetCapacityRequest) Reset() {
 	*x = GetCapacityRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2244,7 +2372,7 @@ func (x *GetCapacityRequest) String() string {
 func (*GetCapacityRequest) ProtoMessage() {}
 
 func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2257,7 +2385,7 @@ func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityRequest.ProtoReflect.Descriptor instead.
 func (*GetCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
 }
 
 type GetCapacityResponse struct {
@@ -2274,7 +2402,7 @@ type GetCapacityResponse struct {
 
 func (x *GetCapacityResponse) Reset() {
 	*x = GetCapacityResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2286,7 +2414,7 @@ func (x *GetCapacityResponse) String() string {
 func (*GetCapacityResponse) ProtoMessage() {}
 
 func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2299,7 +2427,7 @@ func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityResponse.ProtoReflect.Descriptor instead.
 func (*GetCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetCapacityResponse) GetGuestPoolCidr() string {
@@ -2476,7 +2604,20 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\vJobLogChunk\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x14\n" +
 	"\x05chunk\x18\x02 \x01(\tR\x05chunk\x12\x1a\n" +
-	"\bterminal\x18\x03 \x01(\bR\bterminal\"\xa8\x02\n" +
+	"\bterminal\x18\x03 \x01(\bR\bterminal\"I\n" +
+	"\x18StreamGuestEventsRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\"\xf2\x01\n" +
+	"\rJobGuestEvent\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x15\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12N\n" +
+	"\x05attrs\x18\x04 \x03(\v28.forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntryR\x05attrs\x12\x1a\n" +
+	"\bterminal\x18\x05 \x01(\bR\bterminal\x1a8\n" +
+	"\n" +
+	"AttrsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x02\n" +
 	"\x11WarmGoldenRequest\x12T\n" +
 	"\x0eruntime_config\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.RuntimeConfigR\rruntimeConfig\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
@@ -2570,12 +2711,13 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12TelemetryFrameKind\x12$\n" +
 	" TELEMETRY_FRAME_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aTELEMETRY_FRAME_KIND_HELLO\x10\x01\x12\x1f\n" +
-	"\x1bTELEMETRY_FRAME_KIND_SAMPLE\x10\x022\xd2\a\n" +
+	"\x1bTELEMETRY_FRAME_KIND_SAMPLE\x10\x022\xd2\b\n" +
 	"\tVMService\x12p\n" +
 	"\tCreateJob\x120.forge_metal.vm_orchestrator.v1.CreateJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CreateJobResponse\x12y\n" +
 	"\fGetJobStatus\x123.forge_metal.vm_orchestrator.v1.GetJobStatusRequest\x1a4.forge_metal.vm_orchestrator.v1.GetJobStatusResponse\x12p\n" +
 	"\tCancelJob\x120.forge_metal.vm_orchestrator.v1.CancelJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CancelJobResponse\x12t\n" +
-	"\rStreamJobLogs\x124.forge_metal.vm_orchestrator.v1.StreamJobLogsRequest\x1a+.forge_metal.vm_orchestrator.v1.JobLogChunk0\x01\x12s\n" +
+	"\rStreamJobLogs\x124.forge_metal.vm_orchestrator.v1.StreamJobLogsRequest\x1a+.forge_metal.vm_orchestrator.v1.JobLogChunk0\x01\x12~\n" +
+	"\x11StreamGuestEvents\x128.forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest\x1a-.forge_metal.vm_orchestrator.v1.JobGuestEvent0\x01\x12s\n" +
 	"\n" +
 	"WarmGolden\x121.forge_metal.vm_orchestrator.v1.WarmGoldenRequest\x1a2.forge_metal.vm_orchestrator.v1.WarmGoldenResponse\x12{\n" +
 	"\x0fStreamTelemetry\x126.forge_metal.vm_orchestrator.v1.StreamTelemetryRequest\x1a..forge_metal.vm_orchestrator.v1.TelemetryEvent0\x01\x12\x85\x01\n" +
@@ -2595,7 +2737,7 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_proto_v1_vm_service_proto_goTypes = []any{
 	(JobState)(0),                    // 0: forge_metal.vm_orchestrator.v1.JobState
 	(TelemetryFrameKind)(0),          // 1: forge_metal.vm_orchestrator.v1.TelemetryFrameKind
@@ -2615,21 +2757,24 @@ var file_proto_v1_vm_service_proto_goTypes = []any{
 	(*CancelJobResponse)(nil),        // 15: forge_metal.vm_orchestrator.v1.CancelJobResponse
 	(*StreamJobLogsRequest)(nil),     // 16: forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
 	(*JobLogChunk)(nil),              // 17: forge_metal.vm_orchestrator.v1.JobLogChunk
-	(*WarmGoldenRequest)(nil),        // 18: forge_metal.vm_orchestrator.v1.WarmGoldenRequest
-	(*WarmGoldenResponse)(nil),       // 19: forge_metal.vm_orchestrator.v1.WarmGoldenResponse
-	(*TelemetryHello)(nil),           // 20: forge_metal.vm_orchestrator.v1.TelemetryHello
-	(*TelemetrySample)(nil),          // 21: forge_metal.vm_orchestrator.v1.TelemetrySample
-	(*StreamTelemetryRequest)(nil),   // 22: forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	(*TelemetryEvent)(nil),           // 23: forge_metal.vm_orchestrator.v1.TelemetryEvent
-	(*FleetVM)(nil),                  // 24: forge_metal.vm_orchestrator.v1.FleetVM
-	(*GetFleetSnapshotRequest)(nil),  // 25: forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	(*GetFleetSnapshotResponse)(nil), // 26: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	(*GetCapacityRequest)(nil),       // 27: forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),      // 28: forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	nil,                              // 29: forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
+	(*StreamGuestEventsRequest)(nil), // 18: forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
+	(*JobGuestEvent)(nil),            // 19: forge_metal.vm_orchestrator.v1.JobGuestEvent
+	(*WarmGoldenRequest)(nil),        // 20: forge_metal.vm_orchestrator.v1.WarmGoldenRequest
+	(*WarmGoldenResponse)(nil),       // 21: forge_metal.vm_orchestrator.v1.WarmGoldenResponse
+	(*TelemetryHello)(nil),           // 22: forge_metal.vm_orchestrator.v1.TelemetryHello
+	(*TelemetrySample)(nil),          // 23: forge_metal.vm_orchestrator.v1.TelemetrySample
+	(*StreamTelemetryRequest)(nil),   // 24: forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
+	(*TelemetryEvent)(nil),           // 25: forge_metal.vm_orchestrator.v1.TelemetryEvent
+	(*FleetVM)(nil),                  // 26: forge_metal.vm_orchestrator.v1.FleetVM
+	(*GetFleetSnapshotRequest)(nil),  // 27: forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
+	(*GetFleetSnapshotResponse)(nil), // 28: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
+	(*GetCapacityRequest)(nil),       // 29: forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),      // 30: forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	nil,                              // 31: forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
+	nil,                              // 32: forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
-	29, // 0: forge_metal.vm_orchestrator.v1.JobConfig.env:type_name -> forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
+	31, // 0: forge_metal.vm_orchestrator.v1.JobConfig.env:type_name -> forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
 	4,  // 1: forge_metal.vm_orchestrator.v1.JobResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
 	5,  // 2: forge_metal.vm_orchestrator.v1.JobResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
 	3,  // 3: forge_metal.vm_orchestrator.v1.DirectJobSpec.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
@@ -2642,37 +2787,40 @@ var file_proto_v1_vm_service_proto_depIdxs = []int32{
 	0,  // 10: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
 	6,  // 11: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
 	12, // 12: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.repo_exec:type_name -> forge_metal.vm_orchestrator.v1.RepoExecMetadata
-	3,  // 13: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
-	2,  // 14: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
-	6,  // 15: forge_metal.vm_orchestrator.v1.WarmGoldenResponse.job_result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
-	1,  // 16: forge_metal.vm_orchestrator.v1.TelemetryEvent.kind:type_name -> forge_metal.vm_orchestrator.v1.TelemetryFrameKind
-	20, // 17: forge_metal.vm_orchestrator.v1.TelemetryEvent.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	21, // 18: forge_metal.vm_orchestrator.v1.TelemetryEvent.sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	0,  // 19: forge_metal.vm_orchestrator.v1.FleetVM.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	20, // 20: forge_metal.vm_orchestrator.v1.FleetVM.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	21, // 21: forge_metal.vm_orchestrator.v1.FleetVM.latest_sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	24, // 22: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse.vms:type_name -> forge_metal.vm_orchestrator.v1.FleetVM
-	9,  // 23: forge_metal.vm_orchestrator.v1.VMService.CreateJob:input_type -> forge_metal.vm_orchestrator.v1.CreateJobRequest
-	11, // 24: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:input_type -> forge_metal.vm_orchestrator.v1.GetJobStatusRequest
-	14, // 25: forge_metal.vm_orchestrator.v1.VMService.CancelJob:input_type -> forge_metal.vm_orchestrator.v1.CancelJobRequest
-	16, // 26: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:input_type -> forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
-	18, // 27: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:input_type -> forge_metal.vm_orchestrator.v1.WarmGoldenRequest
-	22, // 28: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:input_type -> forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	25, // 29: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:input_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	27, // 30: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	10, // 31: forge_metal.vm_orchestrator.v1.VMService.CreateJob:output_type -> forge_metal.vm_orchestrator.v1.CreateJobResponse
-	13, // 32: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:output_type -> forge_metal.vm_orchestrator.v1.GetJobStatusResponse
-	15, // 33: forge_metal.vm_orchestrator.v1.VMService.CancelJob:output_type -> forge_metal.vm_orchestrator.v1.CancelJobResponse
-	17, // 34: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:output_type -> forge_metal.vm_orchestrator.v1.JobLogChunk
-	19, // 35: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:output_type -> forge_metal.vm_orchestrator.v1.WarmGoldenResponse
-	23, // 36: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:output_type -> forge_metal.vm_orchestrator.v1.TelemetryEvent
-	26, // 37: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:output_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	28, // 38: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	31, // [31:39] is the sub-list for method output_type
-	23, // [23:31] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	32, // 13: forge_metal.vm_orchestrator.v1.JobGuestEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
+	3,  // 14: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
+	2,  // 15: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
+	6,  // 16: forge_metal.vm_orchestrator.v1.WarmGoldenResponse.job_result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
+	1,  // 17: forge_metal.vm_orchestrator.v1.TelemetryEvent.kind:type_name -> forge_metal.vm_orchestrator.v1.TelemetryFrameKind
+	22, // 18: forge_metal.vm_orchestrator.v1.TelemetryEvent.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
+	23, // 19: forge_metal.vm_orchestrator.v1.TelemetryEvent.sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
+	0,  // 20: forge_metal.vm_orchestrator.v1.FleetVM.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
+	22, // 21: forge_metal.vm_orchestrator.v1.FleetVM.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
+	23, // 22: forge_metal.vm_orchestrator.v1.FleetVM.latest_sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
+	26, // 23: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse.vms:type_name -> forge_metal.vm_orchestrator.v1.FleetVM
+	9,  // 24: forge_metal.vm_orchestrator.v1.VMService.CreateJob:input_type -> forge_metal.vm_orchestrator.v1.CreateJobRequest
+	11, // 25: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:input_type -> forge_metal.vm_orchestrator.v1.GetJobStatusRequest
+	14, // 26: forge_metal.vm_orchestrator.v1.VMService.CancelJob:input_type -> forge_metal.vm_orchestrator.v1.CancelJobRequest
+	16, // 27: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:input_type -> forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
+	18, // 28: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
+	20, // 29: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:input_type -> forge_metal.vm_orchestrator.v1.WarmGoldenRequest
+	24, // 30: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:input_type -> forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
+	27, // 31: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:input_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
+	29, // 32: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	10, // 33: forge_metal.vm_orchestrator.v1.VMService.CreateJob:output_type -> forge_metal.vm_orchestrator.v1.CreateJobResponse
+	13, // 34: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:output_type -> forge_metal.vm_orchestrator.v1.GetJobStatusResponse
+	15, // 35: forge_metal.vm_orchestrator.v1.VMService.CancelJob:output_type -> forge_metal.vm_orchestrator.v1.CancelJobResponse
+	17, // 36: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:output_type -> forge_metal.vm_orchestrator.v1.JobLogChunk
+	19, // 37: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:output_type -> forge_metal.vm_orchestrator.v1.JobGuestEvent
+	21, // 38: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:output_type -> forge_metal.vm_orchestrator.v1.WarmGoldenResponse
+	25, // 39: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:output_type -> forge_metal.vm_orchestrator.v1.TelemetryEvent
+	28, // 40: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:output_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
+	30, // 41: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	33, // [33:42] is the sub-list for method output_type
+	24, // [24:33] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -2684,7 +2832,7 @@ func file_proto_v1_vm_service_proto_init() {
 		(*CreateJobRequest_DirectJob)(nil),
 		(*CreateJobRequest_RepoExec)(nil),
 	}
-	file_proto_v1_vm_service_proto_msgTypes[21].OneofWrappers = []any{
+	file_proto_v1_vm_service_proto_msgTypes[23].OneofWrappers = []any{
 		(*TelemetryEvent_Hello)(nil),
 		(*TelemetryEvent_Sample)(nil),
 	}
@@ -2694,7 +2842,7 @@ func file_proto_v1_vm_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   28,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

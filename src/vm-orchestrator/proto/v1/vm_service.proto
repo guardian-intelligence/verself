@@ -9,6 +9,7 @@ service VMService {
   rpc GetJobStatus(GetJobStatusRequest) returns (GetJobStatusResponse);
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
   rpc StreamJobLogs(StreamJobLogsRequest) returns (stream JobLogChunk);
+  rpc StreamGuestEvents(StreamGuestEventsRequest) returns (stream JobGuestEvent);
   rpc WarmGolden(WarmGoldenRequest) returns (WarmGoldenResponse);
   rpc StreamTelemetry(StreamTelemetryRequest) returns (stream TelemetryEvent);
   rpc GetFleetSnapshot(GetFleetSnapshotRequest) returns (GetFleetSnapshotResponse);
@@ -159,6 +160,19 @@ message JobLogChunk {
   uint64 seq = 1;
   string chunk = 2;
   bool terminal = 3;
+}
+
+message StreamGuestEventsRequest {
+  string job_id = 1;
+  bool follow = 2;
+}
+
+message JobGuestEvent {
+  uint64 seq = 1;
+  string job_id = 2;
+  string kind = 3;
+  map<string, string> attrs = 4;
+  bool terminal = 5;
 }
 
 message WarmGoldenRequest {

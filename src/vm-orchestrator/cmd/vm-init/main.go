@@ -23,8 +23,13 @@ const (
 	defaultWorkDir       = "/workspace"
 	postgresUID          = 70
 	postgresGID          = 70
+	runnerUID            = 1000
+	runnerGID            = 1000
 	vmGuestTelemetryBin  = "/usr/local/bin/vm-guest-telemetry"
 	vmGuestTelemetryPort = 10790
+	guestEventFIFOPath   = "/run/forge-metal/guest-events.fifo"
+	guestEventFIFOEnv    = "FORGE_METAL_GUEST_EVENT_FIFO"
+	jobIDEnv             = "FORGE_METAL_JOB_ID"
 )
 
 func main() {
