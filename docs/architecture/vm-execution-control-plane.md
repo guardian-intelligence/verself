@@ -255,6 +255,132 @@ These rules are important:
 5. Provider retries and webhook duplicates must dedupe at the execution layer, not at
    the VM layer.
 
+## Minimal Schema Recommendation
+
+The schema does not need to be large. For the first real cut, four PostgreSQL tables are
+enough:
+
+1. `executions`
+2. `execution_attempts`
+3. `execution_billing_windows`
+4. `execution_logs`
+
+That is enough to support:
+
+- direct sandbox jobs
+- repo execution
+- golden warming
+- a VM-backed Forgejo runner supervisor
+- billing reserve/settle now and renew later
+- recovery after restart
+
+No separate PostgreSQL event store is required for the first cut. ClickHouse remains the
+append-only summary plane.
+
+The important simplification is:
+
+- `execution_attempts` owns the real state machine
+- `executions` is mostly a stable identity record plus a denormalized view of the latest
+  attempt state
+
+That avoids building two independent state machines.
+
+### Suggested Minimum Columns
+
+The earlier sections listed a richer field set. The minimum viable implementation is smaller.
+
+#### `executions`
+
+| Column | Notes |
+|--------|-------|
+| `execution_id UUID PRIMARY KEY` | stable identity |
+| `org_id BIGINT NOT NULL` | billing/quota principal |
+| `actor_id TEXT NOT NULL` | user or system actor |
+| `kind TEXT NOT NULL` | `direct`, `repo_exec`, `warm_golden`, `forgejo_runner` |
+| `provider TEXT NOT NULL DEFAULT ''` | `forgejo` or empty |
+| `product_id TEXT NOT NULL` | initially `sandbox` |
+| `status TEXT NOT NULL` | projection of latest attempt |
+| `idempotency_key TEXT` | nullable but unique when present |
+| `repo TEXT NOT NULL DEFAULT ''` | logical repo key |
+| `repo_url TEXT NOT NULL DEFAULT ''` | clone URL |
+| `ref TEXT NOT NULL DEFAULT ''` | target ref |
+| `commit_sha TEXT NOT NULL DEFAULT ''` | pinned SHA when known |
+| `workflow_path TEXT NOT NULL DEFAULT ''` | provider metadata |
+| `workflow_job_name TEXT NOT NULL DEFAULT ''` | provider metadata |
+| `provider_run_id TEXT NOT NULL DEFAULT ''` | provider correlation |
+| `provider_job_id TEXT NOT NULL DEFAULT ''` | provider correlation |
+| `latest_attempt_id UUID` | nullable until first attempt exists |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+| `updated_at TIMESTAMPTZ NOT NULL` | audit |
+
+#### `execution_attempts`
+
+| Column | Notes |
+|--------|-------|
+| `attempt_id UUID PRIMARY KEY` | service-owned attempt identity |
+| `execution_id UUID NOT NULL REFERENCES executions` | parent |
+| `attempt_seq INT NOT NULL` | retry order |
+| `state TEXT NOT NULL` | control-plane state machine |
+| `orchestrator_job_id TEXT NOT NULL DEFAULT ''` | must equal attempt identity for service-owned workloads |
+| `billing_job_id BIGINT` | nullable until reserved |
+| `runner_name TEXT NOT NULL DEFAULT ''` | used for Forgejo runner attempts |
+| `golden_snapshot TEXT NOT NULL DEFAULT ''` | summary provenance |
+| `failure_reason TEXT NOT NULL DEFAULT ''` | machine-readable failure reason |
+| `exit_code INT` | nullable until terminal process outcome |
+| `duration_ms BIGINT` | nullable until complete |
+| `zfs_written BIGINT` | nullable until complete |
+| `stdout_bytes BIGINT` | nullable until complete |
+| `stderr_bytes BIGINT` | nullable until complete |
+| `trace_id TEXT NOT NULL DEFAULT ''` | observability correlation |
+| `provider_claimed_at TIMESTAMPTZ` | when provider job claim is known |
+| `started_at TIMESTAMPTZ` | VM execution start |
+| `completed_at TIMESTAMPTZ` | terminal timestamp |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+| `updated_at TIMESTAMPTZ NOT NULL` | audit |
+
+#### `execution_billing_windows`
+
+| Column | Notes |
+|--------|-------|
+| `attempt_id UUID NOT NULL REFERENCES execution_attempts` | parent |
+| `window_seq INT NOT NULL` | reservation order |
+| `reservation JSONB NOT NULL` | exact billing payload |
+| `window_seconds INT NOT NULL` | currently 300 |
+| `actual_seconds INT` | populated on settle |
+| `pricing_phase TEXT NOT NULL DEFAULT ''` | copied from billing reservation |
+| `state TEXT NOT NULL` | `reserved`, `settled`, `voided` |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+| `settled_at TIMESTAMPTZ` | audit |
+
+Recommended PK: `(attempt_id, window_seq)`.
+
+#### `execution_logs`
+
+This can stay close to the current `job_logs` shape:
+
+| Column | Notes |
+|--------|-------|
+| `attempt_id UUID NOT NULL REFERENCES execution_attempts` | parent attempt |
+| `seq INT NOT NULL` | per-attempt ordering |
+| `stream TEXT NOT NULL` | `stdout`, `stderr`, `system` |
+| `chunk BYTEA NOT NULL` | raw bytes |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+
+The same table can hold service-owned direct/repo logs. For `forgejo_runner`, this table
+should only hold control-plane logs if needed, not the full Actions step log stream that
+Forgejo already owns.
+
+### What Not To Add Yet
+
+Do not add these in the first cut unless a concrete implementation step forces it:
+
+- a separate `execution_events` PostgreSQL table
+- a separate `billing_reservations` table outside `execution_billing_windows`
+- a separate `runner_registrations` table
+- a generic workflow engine table set
+
+The first cut should stay compact.
+
 ## Workload Kinds
 
 | Kind | Trigger | Billing principal | Execution authority | Status/log authority |
@@ -311,6 +437,205 @@ The important boundary is:
 - Forgejo owns the workflow graph, step logs, status, secrets, reruns, and dispatch semantics.
 - `sandbox-rental-service` owns admission, billing, durable identity, lifecycle tracking,
   and teardown.
+
+## Attempt State Machine
+
+The state machine is straightforward if it lives only on `execution_attempts`.
+
+`executions.status` should be treated as a projection:
+
+- copy the latest attempt state for cheap queries
+- or collapse it into a smaller user-facing set like `queued`, `running`, `succeeded`,
+  `failed`, `canceled`, `lost`
+
+Do not invent a second independent state machine on `executions`.
+
+### Attempt States
+
+| State | Meaning |
+|-------|---------|
+| `queued` | the attempt row exists but no billing reservation has been recorded yet |
+| `reserved` | billing has reserved funds/capacity for this attempt |
+| `launching` | `vm-orchestrator` accepted the request and an `orchestrator_job_id` is persisted |
+| `running` | the VM is alive or the workload has clearly begun execution |
+| `finalizing` | the terminal VM outcome is known but billing finalization is not yet durably complete |
+| `succeeded` | terminal success and billing has been finalized |
+| `failed` | terminal failure and billing has been finalized or voided |
+| `canceled` | terminal cancellation and billing has been finalized or voided |
+| `lost` | the service cannot currently prove the VM's state and reconciliation is required |
+
+The important operational distinction is between:
+
+- execution outcome states: `succeeded`, `failed`, `canceled`
+- recovery state: `lost`
+- bookkeeping state: `finalizing`
+
+`finalizing` exists because VM completion and billing completion are separate side effects.
+Without it, a crash between those steps becomes ambiguous.
+
+### Allowed Transitions
+
+| From | To | Trigger |
+|------|----|---------|
+| `queued` | `reserved` | `billing.Reserve` succeeded and the first billing window row was inserted |
+| `queued` | `failed` | admission denied or reserve failed with no outstanding reservation |
+| `queued` | `canceled` | request canceled before reserve completed |
+| `reserved` | `launching` | orchestrator accepted the create request and job identity was persisted |
+| `reserved` | `canceled` | caller canceled before launch and reservation was voided |
+| `reserved` | `failed` | launch failed and reservation was voided |
+| `launching` | `running` | first positive execution signal arrived |
+| `launching` | `finalizing` | workload terminated before a separate running signal was observed |
+| `launching` | `canceled` | cancellation succeeded and billing was finalized |
+| `launching` | `lost` | service restart or substrate inconsistency left outcome unknown |
+| `running` | `finalizing` | terminal orchestrator or provider outcome observed |
+| `running` | `canceled` | cancellation completed and billing was finalized |
+| `running` | `lost` | service cannot determine whether the workload still exists |
+| `finalizing` | `succeeded` | billing settle succeeded for exit code `0` |
+| `finalizing` | `failed` | billing settle or void completed for non-zero exit or control-plane failure |
+| `finalizing` | `canceled` | billing finalize path completed for cancellation |
+| `finalizing` | `lost` | service crashed or reconciliation lost the finalize result |
+| `lost` | `running` | reconciler found the live orchestrator job again |
+| `lost` | `finalizing` | reconciler found a terminal workload outcome but billing was still unresolved |
+| `lost` | `succeeded` | reconciler proved success and finalized billing |
+| `lost` | `failed` | reconciler proved failure and finalized or voided billing |
+| `lost` | `canceled` | reconciler proved cancellation and finalized or voided billing |
+
+Anything else should be rejected as an invalid transition.
+
+### Transition Side Effects
+
+Each transition owns a small set of side effects.
+
+#### `queued -> reserved`
+
+- allocate `billing_job_id`
+- call `billing.Reserve`
+- insert `execution_billing_windows(window_seq=1, state='reserved')`
+- persist `state='reserved'`
+
+#### `reserved -> launching`
+
+- construct the `vm-orchestrator` request
+- set `orchestrator_job_id`
+- pass the attempt identity through as the job identity
+- persist `state='launching'`
+
+#### `launching -> running`
+
+The signal depends on workload kind:
+
+- `direct` / `repo_exec`: first non-pending job status, first log chunk, or first telemetry frame
+- `warm_golden`: entry into the run phase or any equivalent positive progress signal
+- `forgejo_runner`: runner process is alive in the VM; provider job claim may still be null
+
+Do not require provider claim before calling the attempt `running`. VM resource consumption
+has already started by then.
+
+#### `running -> finalizing`
+
+- persist terminal VM outcome and summary metrics
+- store `completed_at`
+- decide whether the billing path is `settle` or `void`
+- persist `state='finalizing'` before making the final billing call
+
+#### `finalizing -> terminal`
+
+- call `billing.Settle` or `billing.Void`
+- update the relevant billing window row
+- persist `succeeded`, `failed`, or `canceled`
+- dual-write the final summary to ClickHouse
+
+The terminal attempt state must only be written after billing has a durable answer.
+
+### Failure Classification
+
+The machine stays simpler if `failure_reason` carries detail and the number of states stays
+small.
+
+Examples:
+
+- `quota_exceeded`
+- `reserve_failed`
+- `launch_failed`
+- `orchestrator_not_found`
+- `vm_exit_nonzero`
+- `runner_registration_failed`
+- `billing_settle_failed`
+- `billing_void_failed`
+- `canceled_by_user`
+- `canceled_by_provider`
+
+That is better than inventing one state per failure mode.
+
+### Billing Window State Machine
+
+Billing windows have a much smaller state machine:
+
+| From | To | Trigger |
+|------|----|---------|
+| `reserved` | `settled` | `billing.Settle` succeeded |
+| `reserved` | `voided` | `billing.Void` succeeded |
+
+There is no reason to make this more elaborate until `renew` lands. When `renew` exists,
+new rows get appended with `window_seq + 1`; existing rows do not change shape.
+
+### Execution Status Projection
+
+The execution row should not try to model billing detail. It is the query surface.
+
+Suggested rule:
+
+- if the latest attempt is `queued`, `reserved`, or `launching`, execution is `queued`
+- if the latest attempt is `running` or `finalizing`, execution is `running`
+- otherwise execution copies the latest terminal attempt state
+
+That gives the website and operator tools a simple surface without erasing the finer-grained
+attempt transitions.
+
+### Cancellation Rules
+
+Cancellation must be explicit because the side effects differ by state.
+
+| Attempt state | Cancellation behavior |
+|---------------|-----------------------|
+| `queued` | mark `canceled`, no billing call needed |
+| `reserved` | call `billing.Void`, then mark `canceled` |
+| `launching` | call `vm-orchestrator.CancelJob`; if accepted, finalize billing and mark `canceled` |
+| `running` | call `vm-orchestrator.CancelJob`; if the provider owns status, also mark `failure_reason='canceled_by_provider'` when appropriate |
+| `finalizing` | reject duplicate cancel as a no-op |
+| terminal | no-op |
+| `lost` | record cancel intent and let reconciler finish the transition |
+
+### Recovery Rules
+
+The reconciler should operate on attempts, not executions.
+
+#### Attempt in `reserved`
+
+- if `orchestrator_job_id=''` and the row is stale, void billing and mark `failed`
+- if the create call may have happened but the write did not, this is a bug in the calling
+  transaction boundary; fix the write ordering rather than adding more states
+
+#### Attempt in `launching` or `running`
+
+- query `vm-orchestrator` by `orchestrator_job_id`
+- if found, update to `running` or `finalizing` based on returned status
+- if not found, move to `lost`
+
+#### Attempt in `finalizing`
+
+- read the last billing window
+- if it is still `reserved`, retry `Settle` or `Void`
+- once billing succeeds, transition to the correct terminal state
+
+#### Attempt in `lost`
+
+- try orchestrator lookup
+- if provider-owned metadata exists, query provider correlation surfaces if needed
+- if the workload is proven terminal, move through `finalizing` and into a terminal state
+- otherwise leave it `lost` and surface it operationally
+
+That is enough to make the machine implementable without turning it into a planning exercise.
 
 ## Why The Service Needs A Durable Attempt Identity
 
