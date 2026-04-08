@@ -178,257 +178,103 @@
 # --- Set admin password (idempotent — always update to match credential file) ---
 
 - name: Set postgres superuser password
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql -h /var/run/postgresql -U postgres -c
-      "ALTER USER postgres PASSWORD '{{ postgresql_admin_password }}';"
+  community.postgresql.postgresql_user:
+    name: postgres
+    password: "{{ postgresql_admin_password }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
   become: true
   become_user: postgres
-  changed_when: false
   no_log: true
 
-- name: Create billing PostgreSQL user if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "DO $$ BEGIN
-        CREATE USER billing WITH PASSWORD '{{ postgresql_billing_password }}' LOGIN;
-      EXCEPTION
-        WHEN duplicate_object THEN
-          NULL;
-      END $$;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
+- name: Ensure PostgreSQL roles and databases match desired state
+  vars:
+    postgresql_managed_roles:
+      - name: billing
+        password: "{{ postgresql_billing_password }}"
+        role_attr_flags: LOGIN
+      - name: sandbox_rental
+        password: "{{ postgresql_sandbox_rental_password }}"
+        role_attr_flags: LOGIN
+      - name: stalwart
+        password: "{{ stalwart_db_password }}"
+        role_attr_flags: LOGIN
+    postgresql_managed_databases:
+      - name: sandbox
+        owner: billing
+      - name: storefront
+        owner: billing
+      - name: sandbox_rental
+        owner: sandbox_rental
+      - name: stalwart
+        owner: stalwart
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_ping:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+  block:
+    - name: Ensure application PostgreSQL roles exist
+      community.postgresql.postgresql_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        role_attr_flags: "{{ item.role_attr_flags }}"
+      loop: "{{ postgresql_managed_roles }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
 
-- name: Sync billing PostgreSQL password
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER ROLE billing WITH PASSWORD '{{ postgresql_billing_password }}';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
+    - name: Ensure application PostgreSQL databases exist
+      community.postgresql.postgresql_db:
+        name: "{{ item.name }}"
+        owner: "{{ item.owner }}"
+        state: present
+      loop: "{{ postgresql_managed_databases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
 
-# PostgreSQL 16 has no CREATE DATABASE IF NOT EXISTS and disallows
-# CREATE DATABASE inside DO/transaction blocks, so we gate creation with an
-# existence query and create each database outside a transaction.
-- name: Check if billing databases exist
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -tAc
-      "SELECT 1 FROM pg_database WHERE datname = '{{ item }}';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  loop:
-    - sandbox
-    - storefront
-  register: postgresql_billing_db_checks
-  changed_when: false
-  no_log: true
+    - name: Ensure application PostgreSQL database ownership
+      community.postgresql.postgresql_owner:
+        obj_name: "{{ item.name }}"
+        obj_type: database
+        new_owner: "{{ item.owner }}"
+      loop: "{{ postgresql_managed_databases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
 
-- name: Create billing databases if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "CREATE DATABASE {{ item.item }} OWNER billing;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  loop: "{{ postgresql_billing_db_checks.results }}"
-  when: item.stdout | trim != '1'
-  changed_when: true
-  no_log: true
+    - name: Verify PostgreSQL connectivity
+      community.postgresql.postgresql_ping:
+      register: postgresql_ping_result
+      no_log: true
 
-- name: Ensure billing owns sandbox and storefront databases
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER DATABASE {{ item }} OWNER TO billing;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  loop:
-    - sandbox
-    - storefront
-  changed_when: false
-  no_log: true
-
-# --- Sandbox rental service ---
-
-- name: Create sandbox_rental PostgreSQL user if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "DO $$ BEGIN
-        CREATE USER sandbox_rental WITH PASSWORD '{{ postgresql_sandbox_rental_password }}' LOGIN;
-      EXCEPTION
-        WHEN duplicate_object THEN
-          NULL;
-      END $$;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-- name: Sync sandbox_rental PostgreSQL password
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER ROLE sandbox_rental WITH PASSWORD '{{ postgresql_sandbox_rental_password }}';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-- name: Check if sandbox_rental database exists
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -tAc
-      "SELECT 1 FROM pg_database WHERE datname = 'sandbox_rental';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: postgresql_sandbox_rental_db_check
-  changed_when: false
-  no_log: true
-
-- name: Create sandbox_rental database if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "CREATE DATABASE sandbox_rental OWNER sandbox_rental;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  when: postgresql_sandbox_rental_db_check.stdout | trim != '1'
-  changed_when: true
-  no_log: true
-
-- name: Ensure sandbox_rental owns sandbox_rental database
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER DATABASE sandbox_rental OWNER TO sandbox_rental;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-# --- Stalwart Mail Server ---
-
-- name: Create stalwart PostgreSQL user if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "DO $$ BEGIN
-        CREATE USER stalwart WITH PASSWORD '{{ stalwart_db_password }}' LOGIN;
-      EXCEPTION
-        WHEN duplicate_object THEN
-          NULL;
-      END $$;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-- name: Sync stalwart PostgreSQL password
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER ROLE stalwart WITH PASSWORD '{{ stalwart_db_password }}';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-- name: Check if stalwart database exists
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -tAc
-      "SELECT 1 FROM pg_database WHERE datname = 'stalwart';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: postgresql_stalwart_db_check
-  changed_when: false
-  no_log: true
-
-- name: Create stalwart database if missing
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "CREATE DATABASE stalwart OWNER stalwart;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  when: postgresql_stalwart_db_check.stdout | trim != '1'
-  changed_when: true
-  no_log: true
-
-- name: Ensure stalwart owns stalwart database
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "ALTER DATABASE stalwart OWNER TO stalwart;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
-
-# --- Connection smoke test ---
-
-- name: Verify TCP connection to PostgreSQL
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres
-      -c "SELECT 1 AS connected;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: postgresql_smoke_test
-  changed_when: false
-  failed_when: "'connected' not in postgresql_smoke_test.stdout"
+- name: Assert PostgreSQL connectivity succeeded
+  ansible.builtin.assert:
+    that: postgresql_ping_result.is_available | default(false)
+    fail_msg: >-
+      PostgreSQL connectivity check failed for
+      {{ services.postgresql.host }}:{{ services.postgresql.port }}.

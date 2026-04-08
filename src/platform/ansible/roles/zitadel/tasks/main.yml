@@ -29,50 +29,49 @@
 
 # --- PostgreSQL database and user ---
 
-- name: Create zitadel PostgreSQL user
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "DO $$ BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'zitadel') THEN
-          CREATE ROLE zitadel LOGIN PASSWORD '{{ zitadel_db_password }}';
-        ELSE
-          ALTER ROLE zitadel PASSWORD '{{ zitadel_db_password }}';
-        END IF;
-      END $$;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  changed_when: false
-  no_log: true
+- name: Ensure zitadel PostgreSQL role and database exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure zitadel PostgreSQL user exists
+      community.postgresql.postgresql_user:
+        name: zitadel
+        password: "{{ zitadel_db_password }}"
+        role_attr_flags: LOGIN
+      no_log: true
 
-- name: Create zitadel database
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "SELECT 'exists' FROM pg_database WHERE datname = 'zitadel';"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  register: zitadel_db_check
-  changed_when: false
+    - name: Ensure zitadel database exists
+      community.postgresql.postgresql_db:
+        name: zitadel
+        owner: zitadel
+        state: present
+      no_log: true
 
-- name: Create zitadel database if not exists
-  ansible.builtin.command:
-    cmd: >-
-      {{ fm_bin }}/psql
-      -h {{ services.postgresql.host }}
-      -p {{ services.postgresql.port }}
-      -U postgres -c
-      "CREATE DATABASE zitadel OWNER zitadel;"
-  environment:
-    PGPASSWORD: "{{ postgresql_admin_password }}"
-  when: "'exists' not in zitadel_db_check.stdout"
-  changed_when: true
+    - name: Ensure zitadel owns zitadel database
+      community.postgresql.postgresql_owner:
+        obj_name: zitadel
+        obj_type: database
+        new_owner: zitadel
+      no_log: true
 
 # --- Configuration ---
 

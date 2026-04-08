@@ -1,8 +1,10 @@
 ---
 collections:
   - name: ansible.posix
-    version: ">=2.1.0"
+    version: "2.1.0"
   - name: community.sops
-    version: ">=1.9.0"
+    version: "2.2.7"
   - name: community.general
-    version: ">=9.0.0"
+    version: "12.5.0"
+  - name: community.postgresql
+    version: "4.2.0"

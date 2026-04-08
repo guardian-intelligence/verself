@@ -1,51 +1,87 @@
 ---
 # Uses postgresql_admin_password from SOPS-decrypted group_vars (same as the postgresql role).
 
-- name: Create Electric PostgreSQL role
-  community.postgresql.postgresql_user:
-    name: electric
-    password: "{{ electric_pg_password }}"
-    role_attr_flags: REPLICATION,LOGIN
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
+- name: Manage Electric PostgreSQL replication state
+  vars:
+    electric_publication_tables:
+      - jobs
+      - job_logs
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_privs:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: sandbox_rental
+      trust_input: false
+    community.postgresql.postgresql_query:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: sandbox_rental
+    community.postgresql.postgresql_publication:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: sandbox_rental
+      trust_input: false
+  block:
+    - name: Create Electric PostgreSQL role
+      community.postgresql.postgresql_user:
+        name: electric
+        password: "{{ electric_pg_password }}"
+        role_attr_flags: REPLICATION,LOGIN
+      no_log: true
 
-- name: Grant Electric role read access to sandbox_rental tables
-  community.postgresql.postgresql_privs:
-    database: sandbox_rental
-    privs: SELECT
-    type: table
-    objs: jobs,job_logs
-    schema: public
-    role: electric
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
+    - name: Grant Electric role read access to sandbox_rental tables
+      community.postgresql.postgresql_privs:
+        privs: SELECT
+        type: table
+        objs: "{{ electric_publication_tables | join(',') }}"
+        schema: public
+        roles: electric
+      no_log: true
 
-- name: Set REPLICA IDENTITY FULL on Electric-synced tables
-  community.postgresql.postgresql_query:
-    db: sandbox_rental
-    query: >-
-      ALTER TABLE jobs REPLICA IDENTITY FULL;
-      ALTER TABLE job_logs REPLICA IDENTITY FULL;
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
+    - name: Discover Electric tables missing REPLICA IDENTITY FULL
+      community.postgresql.postgresql_query:
+        query: >-
+          SELECT c.relname
+          FROM pg_class AS c
+          JOIN pg_namespace AS n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relname = ANY(%s)
+            AND c.relreplident <> 'f'
+          ORDER BY c.relname
+        positional_args:
+          - "{{ electric_publication_tables }}"
+      register: electric_replica_identity_probe
+      changed_when: false
+      no_log: true
 
-- name: Create publication for Electric on sandbox_rental database
-  community.postgresql.postgresql_query:
-    db: sandbox_rental
-    query: >-
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default') THEN
-          CREATE PUBLICATION electric_publication_default FOR TABLE jobs, job_logs;
-        END IF;
-      END $$;
-    login_host: "{{ services.postgresql.host }}"
-    login_port: "{{ services.postgresql.port }}"
-    login_user: postgres
-    login_password: "{{ postgresql_admin_password }}"
+    - name: Ensure Electric-synced tables use REPLICA IDENTITY FULL
+      community.postgresql.postgresql_query:
+        query: "ALTER TABLE public.{{ item.relname }} REPLICA IDENTITY FULL"
+      loop: >-
+        {{
+          []
+          if electric_replica_identity_probe.query_result is mapping
+          else (electric_replica_identity_probe.query_result | default([]))
+        }}
+      loop_control:
+        label: "{{ item.relname }}"
+      no_log: true
+
+    - name: Ensure publication for Electric exists
+      community.postgresql.postgresql_publication:
+        name: electric_publication_default
+        owner: electric
+        tables: "{{ electric_publication_tables }}"
+      no_log: true

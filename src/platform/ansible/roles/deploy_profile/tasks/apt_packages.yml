@@ -21,6 +21,11 @@
     state: present
     update_cache: true
 
+- name: Install PostgreSQL Ansible module runtime dependency
+  ansible.builtin.apt:
+    name: python3-psycopg2
+    state: present
+
 # Disable the auto-started PostgreSQL cluster — we manage our own data directory.
 - name: Stop default PostgreSQL cluster
   ansible.builtin.command:
