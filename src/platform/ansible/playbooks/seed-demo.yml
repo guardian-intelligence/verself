@@ -11,6 +11,8 @@
 # Cherry-pick:
 #   --tags user        Create/verify demo user only
 #   --tags billing     Seed billing catalog + credits only
+#   --tags stalwart    Seed Stalwart mailboxes + bindings
+#   --tags dev-oidc    Create dev OIDC apps for local frontend development
 #   --tags verify      Verify billing auth integration only
 #
 # Override or set the initial demo user password:
@@ -80,7 +82,7 @@
         host: "{{ services.zitadel.host }}"
         port: "{{ services.zitadel.port }}"
         timeout: 60
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     - name: Wait for billing-service to be ready
       ansible.builtin.wait_for:
@@ -94,13 +96,13 @@
         src: /etc/zitadel/admin.pat
       register: seed_demo_admin_pat_raw
       no_log: true
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     - name: Set Zitadel admin PAT fact
       ansible.builtin.set_fact:
         seed_demo_admin_pat: "{{ seed_demo_admin_pat_raw.content | b64decode | trim }}"
       no_log: true
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     - name: Find sandbox-rental project
       ansible.builtin.uri:
@@ -118,19 +120,19 @@
         return_content: true
       register: seed_demo_project_search
       no_log: true
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     - name: Set project ID fact
       ansible.builtin.set_fact:
         seed_demo_project_id: "{{ seed_demo_project_search.json.result[0].id }}"
       when: seed_demo_project_search.json.result is defined and seed_demo_project_search.json.result | length > 0
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     - name: Assert sandbox-rental project exists
       ansible.builtin.assert:
         that: seed_demo_project_id is defined
         fail_msg: "Sandbox-rental Zitadel project '{{ seed_demo_auth_project_name }}' not found. Run the full deploy first."
-      tags: [user, billing, verify]
+      tags: [user, billing, verify, dev-oidc]
 
     # ── Demo user ──────────────────────────────────────────────────────────────
 
@@ -700,6 +702,124 @@
             )
           }}
       tags: [stalwart]
+
+    # ── Dev OIDC apps ──────────────────────────────────────────────────────────
+    # Creates devMode OIDC apps for local frontend development (HTTP redirect
+    # URIs). Production apps are created by each app's Ansible role.
+
+    - name: Find mailbox-service project for dev OIDC
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "mailbox-service"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_demo_mailbox_project_search
+      tags: [dev-oidc]
+
+    - name: Set dev OIDC project facts
+      ansible.builtin.set_fact:
+        seed_demo_dev_oidc_apps:
+          - name: rent-a-sandbox-dev
+            project_id: "{{ seed_demo_project_id }}"
+            port: 4244
+          - name: webmail-dev
+            project_id: "{{ (seed_demo_mailbox_project_search.json.result | default([]) | first | default({})).id | default('') }}"
+            port: 4245
+      tags: [dev-oidc]
+
+    - name: Search for existing dev OIDC apps
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/{{ item.project_id }}/apps/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ item.name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_demo_dev_oidc_search
+      loop: "{{ seed_demo_dev_oidc_apps }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.project_id | length > 0
+      tags: [dev-oidc]
+
+    - name: Create dev OIDC apps
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/{{ item.item.project_id }}/apps/oidc"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          name: "{{ item.item.name }}"
+          redirectUris:
+            - "http://127.0.0.1:{{ item.item.port }}/callback"
+          responseTypes:
+            - "OIDC_RESPONSE_TYPE_CODE"
+          grantTypes:
+            - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+          appType: "OIDC_APP_TYPE_USER_AGENT"
+          authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+          postLogoutRedirectUris:
+            - "http://127.0.0.1:{{ item.item.port }}"
+          devMode: true
+          accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+        status_code: 200
+      register: seed_demo_dev_oidc_created
+      loop: "{{ seed_demo_dev_oidc_search.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not skipped
+        - (item.json.result | default([]) | length) == 0
+      tags: [dev-oidc]
+
+    - name: Re-query dev OIDC apps for client IDs
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/{{ item.project_id }}/apps/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ item.name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_demo_dev_oidc_final
+      loop: "{{ seed_demo_dev_oidc_apps }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.project_id | length > 0
+      tags: [dev-oidc]
+
+    - name: Print dev OIDC summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.item.name }}:
+          AUTH_CLIENT_ID={{ (item.json.result | first).oidcConfig.clientId }}
+          (port {{ item.item.port }})
+      loop: "{{ seed_demo_dev_oidc_final.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item is not skipped and (item.json.result | default([]) | length) > 0
+      tags: [dev-oidc]
 
     # ── Verify billing auth ────────────────────────────────────────────────────
 
