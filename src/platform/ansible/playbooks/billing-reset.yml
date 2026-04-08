@@ -1,0 +1,26 @@
+---
+# Exhaustively wipe billing ledger state on an existing environment.
+#
+# This playbook recreates the TigerBeetle data file and the billing PostgreSQL
+# schema, then restarts the billing callers against the fresh ledger.
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/billing-reset.yml
+
+- name: Exhaustive billing ledger reset
+  hosts: all
+  become: true
+  force_handlers: true
+  vars:
+    billing_service_force_ledger_reset: true
+  roles:
+    - role: deploy_profile
+      tags: [deploy_profile]
+    - role: tigerbeetle
+      tags: [tigerbeetle]
+    - role: billing_service
+      tags: [billing_service]
+    - role: firecracker
+      tags: [firecracker]
+    - role: sandbox_rental_service
+      tags: [sandbox_rental_service]

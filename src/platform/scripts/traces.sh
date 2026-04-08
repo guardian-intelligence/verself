@@ -43,10 +43,15 @@ fi
 remote_host="$(grep -m1 'ansible_host=' "$inventory" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
 remote_user="$(grep -m1 'ansible_user=' "$inventory" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
 ch_password="$(sops -d --extract '["clickhouse_password"]' "$secrets_file")"
+ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
+
+if [[ -n "${SSH_OPTS:-}" ]]; then
+  read -r -a ssh_opts <<<"${SSH_OPTS}"
+fi
 
 # POST query to ClickHouse HTTP API via SSH — avoids all shell quoting issues.
 ch_query() {
-  ssh -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \
+  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
     "curl -sf 'http://127.0.0.1:8123/?user=default&password=${ch_password}' --data-binary @-" <<< "$1"
 }
 

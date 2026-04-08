@@ -109,6 +109,8 @@
       tags: [electric]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox]
+    - role: stalwart
+      tags: [stalwart]
     - role: otelcol
       tags: [otelcol]
     - role: hyperdx

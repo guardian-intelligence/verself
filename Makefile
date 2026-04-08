@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check seed-demo vm-guest-telemetry-build \
-       traces clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
+       hooks-install doctor setup-domain inventory-check seed-demo billing-reset vm-guest-telemetry-build \
+       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-code mail-read edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
@@ -73,6 +73,9 @@ inventory-check: ## Validate that the generated Ansible inventory exists
 seed-demo: inventory-check ## Seed demo environment: human user + billing catalog + credits + auth verify
 	cd $(FM)/ansible && ansible-playbook playbooks/seed-demo.yml
 
+billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
+	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
+
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)
 
@@ -85,6 +88,18 @@ clickhouse-query: inventory-check ## Run a ClickHouse query on the worker: make 
 
 clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all project tables
 	cd $(FM) && ./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
+
+mail: inventory-check ## List inbox: make mail [USER=bernoulli.agent] [N=10]
+	cd $(FM) && ./scripts/mail.sh $(if $(USER),-u $(USER),) $(if $(N),-n $(N),)
+
+mail-code: inventory-check ## Extract latest 2FA/verification code: make mail-code USER=bernoulli.agent
+	@test -n "$(USER)" || { echo "ERROR: USER is required (e.g. USER=bernoulli.agent)"; exit 1; }
+	cd $(FM) && ./scripts/mail.sh -u $(USER) -c
+
+mail-read: inventory-check ## Read a specific email: make mail-read USER=bernoulli.agent ID=eaaaaab
+	@test -n "$(USER)" || { echo "ERROR: USER is required"; exit 1; }
+	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail')"; exit 1; }
+	cd $(FM) && ./scripts/mail.sh -u $(USER) -r $(ID)
 
 edit-secrets: ## Open encrypted secrets in $$EDITOR via sops
 	sops $(FM)/ansible/group_vars/all/secrets.sops.yml

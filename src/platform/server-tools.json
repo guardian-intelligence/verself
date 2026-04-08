@@ -58,6 +58,20 @@
     "install_dir": "/opt/forge-metal/nodejs",
     "bin_symlinks": ["node", "npm", "npx", "corepack"]
   },
+  "stalwart": {
+    "version": "0.15.5",
+    "format": "tarball",
+    "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b",
+    "extract_binary": "stalwart"
+  },
+  "stalwart_cli": {
+    "version": "0.15.5",
+    "format": "tarball",
+    "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-cli-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9",
+    "extract_binary": "stalwart-cli"
+  },
   "caddy": {
     "version": "2.11.2",
     "format": "xcaddy_build",

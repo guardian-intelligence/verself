@@ -4,7 +4,7 @@ set -euo pipefail
 inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
 secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
 remote_path="${CLICKHOUSE_CLIENT_PATH:-/opt/forge-metal/profile/bin/clickhouse-client}"
-ssh_opts=(-o StrictHostKeyChecking=no)
+ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
 
 if [[ -n "${SSH_OPTS:-}" ]]; then
   read -r -a ssh_opts <<<"${SSH_OPTS}"

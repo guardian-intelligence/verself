@@ -1,0 +1,86 @@
+# Stalwart Mail Server configuration.
+# Managed by Ansible — do not edit manually.
+# Receive-only: no outbound relay, all delivery is local.
+
+[server]
+hostname = "{{ stalwart_domain }}"
+max-connections = 256
+
+# --- Listeners ---
+
+[server.listener."smtp"]
+bind = ["0.0.0.0:{{ services.stalwart.smtp_port }}"]
+protocol = "smtp"
+tls.implicit = false
+
+[server.listener."http"]
+bind = ["{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"]
+protocol = "http"
+tls.implicit = false
+
+# --- TLS ---
+# Certs synced from Caddy's ACME storage by stalwart-cert-sync.timer.
+# Self-signed placeholder deployed on first run; real cert replaces it
+# after Caddy obtains the ACME cert for {{ stalwart_domain }}.
+
+[certificate."default"]
+cert = "%{file:{{ stalwart_tls_cert_dir }}/cert.pem}%"
+private-key = "%{file:{{ stalwart_tls_cert_dir }}/key.pem}%"
+default = true
+
+# --- Storage ---
+
+[store."postgresql"]
+type = "postgresql"
+host = "{{ services.postgresql.host }}"
+port = {{ services.postgresql.port }}
+database = "stalwart"
+user = "stalwart"
+password = "%{file:/run/credentials/stalwart.service/pg-password}%"
+timeout = "15s"
+
+[store."postgresql".tls]
+enable = false
+
+[store."postgresql".pool]
+max-connections = 10
+
+[storage]
+data = "postgresql"
+blob = "postgresql"
+fts = "postgresql"
+lookup = "postgresql"
+directory = "internal"
+
+# --- Authentication ---
+
+[directory."internal"]
+type = "internal"
+store = "postgresql"
+
+# Fallback admin for Management API bootstrap.
+[authentication.fallback-admin]
+user = "admin"
+secret = "%{file:/run/credentials/stalwart.service/admin-password}%"
+
+# --- SMTP receive-only policy ---
+
+[session.rcpt]
+relay = false
+directory = "internal"
+
+# --- Telemetry: OpenTelemetry ---
+
+[tracer."otel"]
+type = "open-telemetry"
+transport = "grpc"
+endpoint = "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+level = "info"
+enable = true
+enable.log-exporter = true
+enable.span-exporter = true
+
+[metrics."open-telemetry"]
+transport = "grpc"
+endpoint = "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+interval = "30s"

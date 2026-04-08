@@ -1,0 +1,28 @@
+#!/usr/sbin/nft -f
+# Stalwart Mail Server egress restrictions.
+# Stalwart binds 0.0.0.0:25 (SMTP, public) and 127.0.0.1:{{ services.stalwart.http_port }} (HTTP, behind Caddy).
+# This table restricts the stalwart user's outbound traffic to only what's required.
+
+table inet forge_metal_stalwart
+delete table inet forge_metal_stalwart
+
+table inet forge_metal_stalwart {
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        # Only constrain packets originating from the stalwart user.
+        meta skuid != stalwart accept
+
+        # Loopback covers PostgreSQL, otelcol-contrib.
+        oifname "lo" accept
+
+        # Established/related (return traffic for accepted connections).
+        ct state established,related accept
+
+        # DNS resolution (DNSBL spam filter lookups).
+        tcp dport 53 accept
+        udp dport 53 accept
+
+        drop
+    }
+}

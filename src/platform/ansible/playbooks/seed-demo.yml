@@ -51,6 +51,16 @@
     seed_demo_target_prepaid_units: 5000000
     seed_demo_expires_after: 8760h
 
+    # --- Stalwart mailboxes ---
+    seed_demo_stalwart_domain: "mail.{{ forge_metal_domain }}"
+    seed_demo_agent_mailboxes:
+      - name: bernoulli.agent
+        description: "Bernoulli Agent"
+      - name: dijkstra.agent
+        description: "Dijkstra Agent"
+      - name: lamport.agent
+        description: "Lamport Agent"
+
     # --- Internal ---
     seed_demo_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
     seed_demo_helper_remote_path: /tmp/billing-seed
@@ -309,6 +319,131 @@
       delegate_to: localhost
       become: false
       tags: [billing]
+
+    # ── Stalwart mailboxes ───────────────────────────────────────────────────
+
+    - name: Wait for Stalwart to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.stalwart.host }}"
+        port: "{{ services.stalwart.http_port }}"
+        timeout: 60
+      tags: [stalwart]
+
+    - name: Hash operator password for Stalwart
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import sys, bcrypt; print(bcrypt.hashpw(sys.stdin.buffer.read().strip(), bcrypt.gensalt()).decode())"
+        stdin: "{{ seed_demo_user_password }}"
+      register: seed_demo_ceo_hash
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Hash agent password for Stalwart
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import sys, bcrypt; print(bcrypt.hashpw(sys.stdin.buffer.read().strip(), bcrypt.gensalt()).decode())"
+        stdin: "{{ stalwart_agent_password }}"
+      register: seed_demo_agent_hash
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Check if operator mailbox exists
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      register: seed_demo_ceo_check
+      no_log: true
+      tags: [stalwart]
+
+    - name: Create operator mailbox (ceo@)
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        method: POST
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          type: individual
+          name: "ceo"
+          description: "Operator"
+          secrets: ["{{ seed_demo_ceo_hash.stdout | trim }}"]
+          emails: ["ceo@{{ forge_metal_domain }}"]
+          roles: ["user"]
+          quota: 0
+        status_code: 200
+        return_content: true
+      when: seed_demo_ceo_check.json.error is defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Check if agent mailboxes exist
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.name }}"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      register: seed_demo_agent_checks
+      loop: "{{ seed_demo_agent_mailboxes }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      tags: [stalwart]
+
+    - name: Create agent mailboxes
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        method: POST
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          type: individual
+          name: "{{ item.item.name }}"
+          description: "{{ item.item.description }}"
+          secrets: ["{{ seed_demo_agent_hash.stdout | trim }}"]
+          emails: ["{{ item.item.name }}@{{ forge_metal_domain }}"]
+          roles: ["user"]
+          quota: 0
+        status_code: 200
+        return_content: true
+      loop: "{{ seed_demo_agent_checks.results }}"
+      loop_control:
+        label: "{{ item.item.name }}@{{ forge_metal_domain }}"
+      when: item.json.error is defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Print mailbox summary
+      ansible.builtin.debug:
+        msg:
+          - "Stalwart mailboxes created:"
+          - "  ceo@{{ forge_metal_domain }} (password: {{ seed_demo_user_password }})"
+          - "  bernoulli.agent@{{ forge_metal_domain }}"
+          - "  dijkstra.agent@{{ forge_metal_domain }}"
+          - "  lamport.agent@{{ forge_metal_domain }}"
+          - ""
+          - "  Webmail: https://{{ seed_demo_stalwart_domain }}"
+      tags: [stalwart]
 
     # ── Verify billing auth ────────────────────────────────────────────────────
 

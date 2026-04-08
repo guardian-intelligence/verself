@@ -32,12 +32,19 @@
   changed_when: false
   no_log: true
 
+- name: Determine whether billing ledger reset is required
+  ansible.builtin.set_fact:
+    billing_service_should_reset_ledger: >-
+      {{
+        billing_service_force_ledger_reset
+        or (billing_service_pg_migrations_remote_hash is failed)
+        or ((billing_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+           != (billing_service_pg_migrations_local_hash.stdout.split()[0] | trim))
+        or ((billing_service_pg_table_probe.stdout | trim) == '0')
+      }}
+
 - name: Apply billing PostgreSQL migrations
-  when: >-
-    billing_service_pg_migrations_remote_hash is failed
-    or (billing_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
-       != (billing_service_pg_migrations_local_hash.stdout.split()[0] | trim)
-    or (billing_service_pg_table_probe.stdout | trim) == '0'
+  when: billing_service_should_reset_ledger
   block:
     - name: Remove deployed PostgreSQL migrations directory
       ansible.builtin.file:
@@ -57,6 +64,15 @@
         src: "{{ playbook_dir }}/../../../billing-service/postgresql-migrations/"
         dest: /opt/forge-metal/postgresql-migrations/
         mode: "0644"
+
+    - name: Stop billing callers before billing ledger reset
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - sandbox-rental-service
+        - billing-service
+      failed_when: false
 
     - name: Stop TigerBeetle before billing ledger reset
       ansible.builtin.systemd:

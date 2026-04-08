@@ -1,0 +1,54 @@
+---
+# Sync TLS certificates from Caddy's ACME storage to Stalwart's cert directory.
+# Caddy auto-obtains certs for mail.<domain> via Let's Encrypt.
+# Stalwart needs its own copy for STARTTLS on port 25.
+
+- name: Create stalwart TLS cert directory
+  ansible.builtin.file:
+    path: "{{ stalwart_tls_cert_dir }}"
+    state: directory
+    owner: root
+    group: stalwart
+    mode: "0750"
+
+- name: Deploy cert sync script
+  ansible.builtin.template:
+    src: stalwart-cert-sync.sh.j2
+    dest: /usr/local/bin/stalwart-cert-sync
+    mode: "0755"
+
+- name: Deploy cert sync systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Sync Caddy TLS certs to Stalwart
+      After=caddy.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/stalwart-cert-sync
+    dest: /etc/systemd/system/stalwart-cert-sync.service
+    mode: "0644"
+
+- name: Deploy cert sync systemd timer
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Periodic TLS cert sync for Stalwart
+
+      [Timer]
+      OnBootSec=120
+      OnUnitActiveSec=12h
+      RandomizedDelaySec=300
+
+      [Install]
+      WantedBy=timers.target
+    dest: /etc/systemd/system/stalwart-cert-sync.timer
+    mode: "0644"
+
+- name: Enable cert sync timer
+  ansible.builtin.systemd:
+    name: stalwart-cert-sync.timer
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -1,0 +1,38 @@
+---
+# MX record: route inbound email for the root domain to the mail server.
+# The A record for mail.<domain> is handled by the cloudflare_dns role.
+
+- name: Create MX record for root domain
+  community.general.cloudflare_dns:
+    zone: "{{ forge_metal_domain }}"
+    record: "{{ forge_metal_domain }}"
+    type: MX
+    value: "{{ stalwart_domain }}"
+    priority: 10
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
+
+- name: Create combined SPF record for root domain
+  community.general.cloudflare_dns:
+    zone: "{{ forge_metal_domain }}"
+    record: "{{ forge_metal_domain }}"
+    type: TXT
+    value: "v=spf1 mx include:{{ resend_domain }} -all"
+    ttl: 1
+    proxied: false
+    solo: false
+    api_token: "{{ cloudflare_api_token }}"
+  delegate_to: localhost
+  become: false
+
+- name: Note about PTR record
+  ansible.builtin.debug:
+    msg: >-
+      MANUAL STEP: Request a PTR record from Latitude.sh for
+      {{ ansible_host }} -> {{ stalwart_domain }}.
+      This is required for reliable inbound SMTP delivery and
+      cannot be automated via Cloudflare.

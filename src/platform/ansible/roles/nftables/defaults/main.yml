@@ -1,6 +1,7 @@
 ---
 # Public-facing TCP ports (accessible from the internet).
 nftables_public_tcp_ports:
+  - 25
   - 80
   - 443
   - "{{ services.forgejo.ssh_port }}"

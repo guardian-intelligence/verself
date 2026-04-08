@@ -4,6 +4,7 @@ billing_service_tigerbeetle_data_file: /var/lib/tigerbeetle/data.tigerbeetle
 billing_service_tigerbeetle_cluster_id: 0
 billing_service_tigerbeetle_replica_id: 0
 billing_service_tigerbeetle_replica_count: 1
+billing_service_force_ledger_reset: false
 
 billing_service_subdomain: billing
 billing_service_domain: "{{ billing_service_subdomain }}.{{ forge_metal_domain }}"
