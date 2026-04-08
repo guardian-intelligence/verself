@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/forge-metal/workload"
 	"github.com/google/uuid"
 
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
@@ -265,45 +265,11 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*vmorchestrator.Jo
 }
 
 func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool, env map[string]string) vmorchestrator.JobConfig {
-	repoRoot := "/workspace"
-
-	runCommand := manifest.Run
-	if warm {
-		runCommand = manifest.ResolvedPrepare()
-	}
-	if toolchain != nil {
-		runCommand = toolchain.ResolveCommand(runCommand)
-	}
-
-	job := vmorchestrator.JobConfig{
-		JobID:      jobID,
-		RunCommand: cloneStringSlice(runCommand),
-		RunWorkDir: manifest.RepoWorkDir(),
-		Services:   cloneStringSlice(manifest.Services),
-		Env:        cloneStringMap(env),
-	}
-	switch resolvedProfile(manifest) {
-	case RuntimeProfileNode:
-		if installNeeded {
-			job.PrepareCommand = toolchain.InstallCommand()
-			job.PrepareWorkDir = repoRoot
-		}
-	}
-	return job
+	return workload.BuildGuestJob(jobID, manifest, toolchain, installNeeded, warm, env)
 }
 
 func buildJobEnv(manifest *Manifest) (map[string]string, error) {
-	env := map[string]string{
-		"CI": "true",
-	}
-	for _, name := range manifest.Env {
-		value, ok := os.LookupEnv(name)
-		if !ok {
-			return nil, fmt.Errorf("required env %s is not set", name)
-		}
-		env[name] = value
-	}
-	return env, nil
+	return workload.BuildJobEnv(manifest)
 }
 
 func resolvedProfile(manifest *Manifest) RuntimeProfile {
@@ -313,103 +279,30 @@ func resolvedProfile(manifest *Manifest) RuntimeProfile {
 	return manifest.Profile
 }
 
-type inspectedRepo struct {
-	Path      string
-	Manifest  *Manifest
-	Toolchain *Toolchain
-	CommitSHA string
-}
+type inspectedRepo = workload.Inspection
 
 func (m *Manager) newClient(ctx context.Context) (*vmorchestrator.Client, error) {
 	return vmorchestrator.NewClient(ctx, m.socketPath)
 }
 
 func inspectRepoDefaultBranch(repoURL, branch string) (*inspectedRepo, error) {
-	tmp, err := os.MkdirTemp("", "forge-metal-ci-warm-*")
-	if err != nil {
-		return nil, fmt.Errorf("create warm inspection dir: %w", err)
-	}
-	if err := runGit("", nil, "clone", "--depth", "1", "--branch", branch, repoURL, tmp); err != nil {
-		cleanupInspection(tmp)
-		return nil, err
-	}
-	return inspectRepoPath(tmp)
+	return workload.InspectRepoDefaultBranch(repoURL, branch)
 }
 
 func inspectRepoRef(repoURL, ref string) (*inspectedRepo, error) {
-	tmp, err := os.MkdirTemp("", "forge-metal-ci-exec-*")
-	if err != nil {
-		return nil, fmt.Errorf("create exec inspection dir: %w", err)
-	}
-	if err := runGit("", nil, "clone", "--no-checkout", "--depth", "1", repoURL, tmp); err != nil {
-		cleanupInspection(tmp)
-		return nil, err
-	}
-	if err := fetchRef(tmp, ref); err != nil {
-		cleanupInspection(tmp)
-		return nil, err
-	}
-	return inspectRepoPath(tmp)
+	return workload.InspectRepoRef(repoURL, ref)
 }
 
 func inspectRepoPath(repoRoot string) (*inspectedRepo, error) {
-	manifest, err := LoadManifest(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	toolchain, err := DetectToolchain(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	commitSHA, err := gitHeadSHA(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	return &inspectedRepo{
-		Path:      repoRoot,
-		Manifest:  manifest,
-		Toolchain: toolchain,
-		CommitSHA: commitSHA,
-	}, nil
+	return workload.InspectRepoPath(repoRoot)
 }
 
 func cleanupInspection(path string) {
-	if path == "" {
-		return
-	}
-	_ = os.RemoveAll(path)
-}
-
-func fetchRef(repoRoot, ref string) error {
-	if err := runGit(repoRoot, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", "--depth", "1", "origin", ref); err != nil {
-		return err
-	}
-	if err := runGit(repoRoot, nil, "checkout", "--force", "FETCH_HEAD"); err != nil {
-		return err
-	}
-	return nil
+	workload.CleanupInspection(path)
 }
 
 func jsonMarshalIndent(v any) ([]byte, error) {
 	return json.MarshalIndent(v, "", "  ")
-}
-
-func cloneStringSlice(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	return append([]string(nil), values...)
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(values))
-	for key, value := range values {
-		out[key] = value
-	}
-	return out
 }
 
 func formatJobLogs(result vmorchestrator.JobResult) string {
