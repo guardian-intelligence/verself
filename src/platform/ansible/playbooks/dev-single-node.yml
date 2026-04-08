@@ -30,6 +30,12 @@
       register: preflight_ap
       failed_when: "'ansible.posix' not in preflight_ap.stdout"
 
+    - name: Ansible collection community.postgresql must be installed
+      ansible.builtin.command: ansible-galaxy collection list community.postgresql
+      changed_when: false
+      register: preflight_cp
+      failed_when: "'community.postgresql' not in preflight_cp.stdout"
+
 - name: "Preflight: remote prerequisites"
   hosts: all
   gather_facts: false

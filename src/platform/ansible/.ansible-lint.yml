@@ -10,6 +10,7 @@ exclude_paths:
 enable_list:
   - no-default-ports
   - no-masterkey-cli
+  - no-psql-object-state
 
 warn_list:
   - experimental
