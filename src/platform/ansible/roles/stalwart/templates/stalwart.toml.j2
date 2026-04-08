@@ -48,6 +48,8 @@ local-keys = [
     "storage.directory",
     "certificate.*",
     "http.*",
+    "webadmin.*",
+    "spam-filter.resource",
 ]
 
 [http]
@@ -56,6 +58,13 @@ use-x-forwarded = true
 allowed-endpoint.0.if = "starts_with(url_path, '/api') && remote_ip != '127.0.0.1'"
 allowed-endpoint.0.then = "404"
 allowed-endpoint.1.else = "200"
+
+[webadmin]
+path = "{{ stalwart_data_dir }}"
+resource = "file://{{ stalwart_webadmin_local_path }}"
+
+[spam-filter]
+resource = "file://{{ stalwart_spam_filter_local_path }}"
 
 [store."postgresql"]
 type = "postgresql"

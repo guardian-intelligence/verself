@@ -18,6 +18,11 @@
     # SMTP session — accept local, no open relay.
     - key: session.rcpt.relay
       value: "false"
+    # We are not using ASN/Geo-enriched spam rules yet. Disable the periodic
+    # CDN refresh path to keep startup and steady-state logs quiet until that
+    # feature is wired into the product.
+    - key: asn.type
+      value: disabled
     # Metrics via OpenTelemetry.
     - key: metrics.open-telemetry.transport
       value: grpc
