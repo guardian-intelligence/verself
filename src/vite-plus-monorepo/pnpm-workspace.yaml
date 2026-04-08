@@ -12,10 +12,10 @@ catalog:
   "@playwright/test": ^1.59.1
   "@tailwindcss/vite": ^4
   "@tanstack/db": ^0.6.0
-  "@tanstack/electric-db-collection": ^0.2.43
+  "@tanstack/electric-db-collection": ^0.3.2
   "@tanstack/query-db-collection": ^1.0.31
   "@tanstack/react-db": ^0.1.78
-  "@tanstack/react-form": ^0.41.3
+  "@tanstack/react-form": ^1.28.6
   "@tanstack/react-query": ^5.75.0
   "@tanstack/react-router": ^1.167.0
   "@tanstack/react-start": ^1.166.0
