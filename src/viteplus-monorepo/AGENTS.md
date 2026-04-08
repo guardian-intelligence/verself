@@ -51,6 +51,62 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 - [ ] Run `vp check` and `vp test` to validate changes.
 <!--VITE PLUS END-->
 
+## Local Frontend Development
+
+Frontend apps (TanStack Start) run locally via `vp dev` with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).
+
+### Zitadel OIDC Architecture
+
+Only frontends need OIDC apps. Go backend services (mailbox-service, billing-service, sandbox-rental-service) validate JWTs that frontends already obtained — they don't have their own OIDC apps. A backend only needs the Zitadel **project ID** (as the `audience` claim to validate against).
+
+| Zitadel Project | OIDC Apps (frontends) | JWT Validators (backends) |
+|---|---|---|
+| `sandbox-rental` | rent-a-sandbox | sandbox-rental-service, billing-service |
+| `mailbox-service` | webmail | mailbox-service |
+
+### Dev Mode OIDC Apps
+
+Each frontend needs **two Zitadel OIDC applications**: one for production and one for local development. Zitadel's `devMode` toggle controls redirect URI enforcement:
+
+- **`devMode: false`** (production): HTTPS-only redirect URIs, exact match
+- **`devMode: true`** (development): HTTP allowed, glob patterns in redirect URIs (e.g., `http://localhost:*/callback`)
+
+Production OIDC apps are created automatically by each app's Ansible role (`zitadel_app.yml`). Dev OIDC apps are created once manually or via `seed-demo.yml`.
+
+For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
+
+| Frontend | Zitadel Project | Port | Dev Redirect URI |
+|---|---|---|---|
+| rent-a-sandbox | sandbox-rental | 4244 | `http://127.0.0.1:4244/callback` |
+| webmail | mailbox-service | 4245 | `http://127.0.0.1:4245/callback` |
+
+The dev app must have:
+- `appType: OIDC_APP_TYPE_USER_AGENT` (SPA, no server secret)
+- `authMethodType: OIDC_AUTH_METHOD_TYPE_NONE` (public client)
+- `devMode: true`
+- `accessTokenType: OIDC_TOKEN_TYPE_JWT` (so backend middleware can validate)
+- Redirect URI: `http://127.0.0.1:<port>/callback`
+- Post-logout URI: `http://127.0.0.1:<port>`
+
+### Running a frontend locally
+
+```bash
+# 1. SSH tunnels to remote services (run once, background)
+ssh -L 4246:127.0.0.1:4246 \
+    -L 3011:127.0.0.1:3011 \
+    -L 3010:127.0.0.1:3010 \
+    -L 4243:127.0.0.1:4243 \
+    fm-dev-w0 -N &
+
+# 2. Start the app with dev credentials
+cd apps/mail   # or apps/rent-a-sandbox
+AUTH_ISSUER_URL=https://auth.<domain> \
+AUTH_CLIENT_ID=<dev-oidc-client-id> \
+ELECTRIC_URL=http://127.0.0.1:3011 \
+vp dev
+```
+
+Open `http://127.0.0.1:<port>`. Vite HMR gives sub-second feedback on every file save. API calls and Electric shapes go through the SSH tunnels to real services.
 
 ### External Data Sources
 
