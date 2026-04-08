@@ -23,7 +23,7 @@ make clickhouse-shell
 The current database layout is:
 
 - `forge_metal.ci_events`
-- `forge_metal.smelter_rehearsals`
+- `forge_metal.vm_orchestrator_rehearsals`
 - `default.otel_logs`
 - `default.otel_traces`
 - `default.otel_metrics_gauge`

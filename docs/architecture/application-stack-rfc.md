@@ -751,7 +751,7 @@ Single-replica means no replication-based durability. Two complementary backup m
 
 ### Metering: ClickHouse (already deployed)
 
-Raw usage events already flow from smelter into ClickHouse as wide events. Billing extends this with one generic append-only table that records the billable source, the pricing phase selected at reservation time, and the funding-source breakdown that was actually settled.
+Raw usage events already flow from vm-orchestrator into ClickHouse as wide events. Billing extends this with one generic append-only table that records the billable source, the pricing phase selected at reservation time, and the funding-source breakdown that was actually settled.
 
 ClickHouse is the metering source of truth for audit and analytics. It retains full-resolution events permanently. TigerBeetle handles online balance enforcement; PostgreSQL handles product eligibility and grant attribution; ClickHouse provides the immutable execution record for reconciliation, customer usage pages, and dispute review.
 
@@ -1391,7 +1391,7 @@ No NATS, no Kafka, no Redis pub/sub. Current architecture has no fan-out pattern
 | OpenMeter | Requires Kafka. Overlaps with existing ClickHouse metering pipeline. |
 | Keycloak | 1.5-2 GB JVM footprint. Multi-tenant orgs bolted on in v25, not native. Zitadel covers the same OIDC/SAML surface in ~512 MB. |
 | Authentik | ~4 GB RAM (Python server + worker). Soft multi-tenancy via brands/domains — no first-class org model or org-admin delegation. |
-| Separate metering service | ClickHouse already ingests microsecond-resolution events from smelter. Adding a metering service creates a redundant event store. |
+| Separate metering service | ClickHouse already ingests microsecond-resolution events from vm-orchestrator. Adding a metering service creates a redundant event store. |
 
 ## Resource Budget
 

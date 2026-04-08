@@ -43,9 +43,7 @@ Thumbs.db
 # Build artifacts
 .build/
 
-# Zig
-src/homestead-smelter/.zig-cache/
-src/homestead-smelter/zig-out/
+# Zig (vm-guest-telemetry has a local .gitignore for .zig-cache and zig-out)
 
 # Reference repos (cloned for grep, not committed)
 docs/references/
