@@ -58,9 +58,9 @@ func (c *Client) do(method, path string, body interface{}) ([]byte, error) {
 
 // zonesResponse is the Cloudflare /zones API response.
 type zonesResponse struct {
-	Success bool          `json:"success"`
-	Errors  []cfError     `json:"errors"`
-	Result  []zoneResult  `json:"result"`
+	Success bool         `json:"success"`
+	Errors  []cfError    `json:"errors"`
+	Result  []zoneResult `json:"result"`
 }
 
 type cfError struct {

@@ -17,10 +17,10 @@ type GateConfig struct {
 
 // GateResult is the aggregate outcome of all scanners.
 type GateResult struct {
-	Pass            bool                   `json:"pass"`
-	Results         map[string]ScanResult  `json:"results"`
-	TarballsScanned int                    `json:"tarballs_scanned"`
-	Duration        time.Duration          `json:"duration_ns"`
+	Pass            bool                  `json:"pass"`
+	Results         map[string]ScanResult `json:"results"`
+	TarballsScanned int                   `json:"tarballs_scanned"`
+	Duration        time.Duration         `json:"duration_ns"`
 }
 
 // Summary returns a one-line description of the gate outcome.

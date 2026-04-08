@@ -32,8 +32,8 @@ func (m *mockPrompter) AskWithDefault(prompt, current string) string {
 	}
 	return a
 }
-func (m *mockPrompter) AskSecret(prompt string) string                      { return m.Ask(prompt) }
-func (m *mockPrompter) Confirm(prompt string) bool                          { return m.Ask(prompt) == "y" }
+func (m *mockPrompter) AskSecret(prompt string) string                       { return m.Ask(prompt) }
+func (m *mockPrompter) Confirm(prompt string) bool                           { return m.Ask(prompt) == "y" }
 func (m *mockPrompter) Select(prompt string, options []string) (int, string) { return 0, options[0] }
 
 // --- Helper to create a mock Cloudflare API server ---
@@ -102,7 +102,7 @@ func TestReadExistingDomain(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "main.yml")
-			os.WriteFile(path, []byte(tt.content), 0644)
+			os.WriteFile(path, []byte(tt.content), 0o644)
 
 			got := readExistingDomain(path)
 			if got != tt.want {
@@ -124,7 +124,7 @@ func TestWriteDomain_Replace(t *testing.T) {
 	path := filepath.Join(dir, "main.yml")
 
 	content := "forge_metal_version: \"0.1.0\"\nforge_metal_domain: \"old.com\"\n"
-	os.WriteFile(path, []byte(content), 0644)
+	os.WriteFile(path, []byte(content), 0o644)
 
 	if err := writeDomain(path, "new.com"); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestWriteDomain_Append(t *testing.T) {
 	path := filepath.Join(dir, "main.yml")
 
 	content := "forge_metal_version: \"0.1.0\"\n"
-	os.WriteFile(path, []byte(content), 0644)
+	os.WriteFile(path, []byte(content), 0o644)
 
 	if err := writeDomain(path, "example.com"); err != nil {
 		t.Fatal(err)
@@ -168,8 +168,8 @@ func setupTestFiles(t *testing.T, domain, token string) (varsFile, secretsFile s
 	if domain != "" {
 		varsContent += `forge_metal_domain: "` + domain + `"` + "\n"
 	}
-	os.WriteFile(varsFile, []byte(varsContent), 0644)
-	os.WriteFile(secretsFile, []byte("{}"), 0644)
+	os.WriteFile(varsFile, []byte(varsContent), 0o644)
+	os.WriteFile(secretsFile, []byte("{}"), 0o644)
 
 	return varsFile, secretsFile, dir
 }

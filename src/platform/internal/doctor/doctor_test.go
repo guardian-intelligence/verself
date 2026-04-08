@@ -50,7 +50,7 @@ func writeBinary(t *testing.T, dir, name, versionOutput string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	script := fmt.Sprintf("#!/bin/sh\necho '%s'\n", versionOutput)
-	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write binary %s: %v", name, err)
 	}
 	return path
@@ -74,7 +74,7 @@ func versionOutput(name, version string) string {
 func newBinDir(t *testing.T) string {
 	t.Helper()
 	binDir := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return binDir
@@ -247,7 +247,7 @@ func TestLoadManifestFrom(t *testing.T) {
 		"go": {"version": "1.25.8", "version_cmd": "go version"},
 		"sops": {"version": "3.12.2", "version_cmd": "sops --version"}
 	}`
-	if err := os.WriteFile(jsonPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(jsonPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

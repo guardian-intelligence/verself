@@ -393,7 +393,7 @@ func writeConfigMap(path string, raw map[string]any) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir %s: %w", filepath.Dir(path), err)
 	}
 
@@ -402,7 +402,7 @@ func writeConfigMap(path string, raw map[string]any) error {
 		return fmt.Errorf("marshal config %s: %w", path, err)
 	}
 
-	mode := os.FileMode(0600)
+	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
 	}
