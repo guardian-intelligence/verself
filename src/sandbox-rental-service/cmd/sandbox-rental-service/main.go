@@ -22,8 +22,8 @@ import (
 
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-service/client"
-	fastsandbox "github.com/forge-metal/fast-sandbox"
 	fmotel "github.com/forge-metal/otel"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
@@ -59,7 +59,7 @@ func run() error {
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
 
-	// fast-sandbox config
+	// vm-orchestrator config
 	fsPool := envOr("SANDBOX_FS_POOL", "forgepool")
 	fsGoldenZvol := envOr("SANDBOX_FS_GOLDEN_ZVOL", "golden-zvol")
 	fsCIDataset := envOr("SANDBOX_FS_CI_DATASET", "ci")
@@ -99,17 +99,9 @@ func run() error {
 	}
 	defer func() { _ = chConn.Close() }()
 
-	// --- fast-sandbox orchestrator ---
+	// --- vm-orchestrator library ---
 
-	var opsOpts []fastsandbox.Option
-	if opsSocket := os.Getenv("SANDBOX_SMELTER_OPS_SOCKET"); opsSocket != "" {
-		logger.Info("using smelter ops socket for privileged operations", "socket", opsSocket)
-		opsOpts = append(opsOpts, fastsandbox.WithPrivOps(&fastsandbox.SocketPrivOps{
-			SocketPath: opsSocket,
-		}))
-	}
-
-	orchestrator := fastsandbox.New(fastsandbox.Config{
+	orchestrator := vmorchestrator.New(vmorchestrator.Config{
 		Pool:            fsPool,
 		GoldenZvol:      fsGoldenZvol,
 		CIDataset:       fsCIDataset,
@@ -124,7 +116,7 @@ func run() error {
 		HostInterface:   fsHostInterface,
 		GuestPoolCIDR:   fsGuestPoolCIDR,
 		NetworkLeaseDir: fsNetworkLeaseDir,
-	}, logger, opsOpts...)
+	}, logger)
 
 	// --- billing client ---
 

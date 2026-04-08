@@ -15,7 +15,7 @@ import (
 
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-service/client"
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
@@ -25,7 +25,7 @@ import (
 // jobs.SandboxRunner — Go structural typing means any value implementing
 // this interface also satisfies the internal one.
 type SandboxRunner interface {
-	Run(ctx context.Context, job fastsandbox.JobConfig) (fastsandbox.JobResult, error)
+	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
 }
 
 // Config holds all dependencies for a test sandbox-rental-service.

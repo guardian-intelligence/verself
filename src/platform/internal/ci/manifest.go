@@ -19,10 +19,12 @@ const (
 	RuntimeProfileNode RuntimeProfile = "node"
 )
 
-var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-var supportedServices = map[string]struct{}{
-	"postgres": {},
-}
+var (
+	envNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	supportedServices = map[string]struct{}{
+		"postgres": {},
+	}
+)
 
 type Manifest struct {
 	Version  int            `toml:"version"`

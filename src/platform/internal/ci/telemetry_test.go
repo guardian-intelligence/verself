@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
 func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
@@ -29,7 +29,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			NodeVersion:           "22.14.0",
 		},
 		InstallNeeded: true,
-		Job: fastsandbox.JobConfig{
+		Job: vmorchestrator.JobConfig{
 			PrepareCommand: []string{"bun", "install", "--frozen-lockfile"},
 			PrepareWorkDir: "/workspace",
 			RunCommand:     []string{"bun", "run", "ci"},
@@ -37,7 +37,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			Services:       []string{"postgres"},
 			Env:            map[string]string{"DATABASE_URL": "postgres://fixture", "CI": "true"},
 		},
-		JobResult: fastsandbox.JobResult{
+		JobResult: vmorchestrator.JobResult{
 			BootToReadyDuration:  5 * time.Millisecond,
 			ServiceStartDuration: 147 * time.Millisecond,
 			PrepareDuration:      2 * time.Second,
@@ -46,7 +46,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 			Logs:                 "build ok\nError: FORGE_METAL_FIXTURE_EXPECTED_TEST_FAILURE\n",
 			StdoutBytes:          876,
 			StderrBytes:          13,
-			PhaseResults: []fastsandbox.PhaseResult{
+			PhaseResults: []vmorchestrator.PhaseResult{
 				{Name: "prepare", ExitCode: 0, DurationMS: 2000},
 				{Name: "run", ExitCode: 1, DurationMS: 11000},
 			},
@@ -137,7 +137,7 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 		Toolchain:       &Toolchain{PackageManager: PackageManagerBun, PackageManagerVersion: "1.2.20", NodeVersion: "22.14.0"},
 		TargetDataset:   "forgepool/repo-goldens/next-bun-monorepo-1",
 		PreviousDataset: "forgepool/repo-goldens/next-bun-monorepo-0",
-		Job: fastsandbox.JobConfig{
+		Job: vmorchestrator.JobConfig{
 			JobID:          "5c0e6fd6-d718-4b52-abcd-1234567890ab",
 			RunCommand:     []string{"bun", "run", "warm"},
 			RunWorkDir:     "/workspace",
@@ -145,7 +145,7 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 			PrepareWorkDir: "/workspace",
 			Env:            map[string]string{"CI": "true"},
 		},
-		JobResult: fastsandbox.JobResult{
+		JobResult: vmorchestrator.JobResult{
 			BootToReadyDuration:  5 * time.Millisecond,
 			PrepareDuration:      2 * time.Second,
 			RunDuration:          3 * time.Second,

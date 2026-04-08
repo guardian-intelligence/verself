@@ -1,0 +1,167 @@
+---
+# Hot-swap vm-guest-telemetry into a dev golden zvol, boot a Firecracker VM,
+# smoke-test the boot path, then tear down.
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/vm-guest-telemetry-dev.yml
+
+- name: Build and upload vm-guest-telemetry binary
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Build vm-guest-telemetry locally
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command:
+        argv: [zig, build, -Doptimize=ReleaseSafe]
+        chdir: "{{ playbook_dir }}/../../../vm-guest-telemetry"
+      changed_when: true
+
+    - name: Upload guest binary to server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../vm-guest-telemetry/zig-out/bin/vm-guest-telemetry"
+        dest: /tmp/vm-guest-telemetry
+        mode: "0755"
+
+- name: Hot-swap vm-guest-telemetry and probe in Firecracker VM
+  hosts: all
+  become: true
+  vars_files:
+    - ../roles/firecracker/defaults/main.yml
+  vars:
+    vm_guest_telemetry_dev_zvol: "{{ firecracker_zfs_pool }}/vm-guest-telemetry-dev-zvol"
+    vm_guest_telemetry_dev_snapshot: "{{ vm_guest_telemetry_dev_zvol }}@ready"
+    vm_guest_telemetry_dev_mnt: /tmp/vm-guest-telemetry-dev-mnt
+    vm_guest_telemetry_upload: /tmp/vm-guest-telemetry
+    vm_sleep_seconds: 8
+    boot_timeout: 20
+  tasks:
+
+    # ── Preflight ──────────────────────────────────────────────────────────
+
+    - name: Ansible collection ansible.posix must be installed
+      delegate_to: localhost
+      become: false
+      run_once: true
+      ansible.builtin.command: ansible-galaxy collection list ansible.posix
+      changed_when: false
+      register: preflight_ap
+      failed_when: "'ansible.posix' not in preflight_ap.stdout"
+
+    - name: Verify uploaded guest binary exists
+      ansible.builtin.stat:
+        path: "{{ vm_guest_telemetry_upload }}"
+      register: guest_bin
+      failed_when: not guest_bin.stat.exists
+
+    - name: Verify base golden snapshot exists
+      ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready"
+      changed_when: false
+
+    - name: Verify forge-metal is available
+      ansible.builtin.command: "{{ fm_bin }}/forge-metal --version"
+      changed_when: false
+
+    # ── Hot-swap binary into dev golden ───────────────────────────────────
+
+    - name: Destroy old dev zvol if present
+      ansible.builtin.command: "zfs destroy -r {{ vm_guest_telemetry_dev_zvol }}"
+      failed_when: false
+      changed_when: true
+
+    - name: Clone base golden to dev zvol
+      ansible.builtin.command: >
+        zfs clone
+        {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready
+        {{ vm_guest_telemetry_dev_zvol }}
+      changed_when: true
+
+    - name: Wait for dev zvol device node
+      ansible.builtin.command: udevadm settle
+      changed_when: false
+
+    - name: Create dev mount point
+      ansible.builtin.file:
+        path: "{{ vm_guest_telemetry_dev_mnt }}"
+        state: directory
+        mode: "0755"
+
+    - name: Mount dev zvol
+      ansible.posix.mount:
+        src: "/dev/zvol/{{ vm_guest_telemetry_dev_zvol }}"
+        path: "{{ vm_guest_telemetry_dev_mnt }}"
+        fstype: ext4
+        state: ephemeral
+
+    - name: Copy guest binary into dev rootfs
+      ansible.builtin.copy:
+        src: "{{ vm_guest_telemetry_upload }}"
+        dest: "{{ vm_guest_telemetry_dev_mnt }}/usr/local/bin/vm-guest-telemetry"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Unmount dev zvol
+      ansible.posix.mount:
+        path: "{{ vm_guest_telemetry_dev_mnt }}"
+        state: unmounted
+
+    - name: Snapshot dev zvol
+      ansible.builtin.command: "zfs snapshot {{ vm_guest_telemetry_dev_snapshot }}"
+      changed_when: true
+
+    - name: Dev golden ready
+      ansible.builtin.debug:
+        msg: "dev golden ready: {{ vm_guest_telemetry_dev_snapshot }}"
+
+    # ── Boot VM, probe, teardown ──────────────────────────────────────────
+
+    - name: Boot VM, probe, and tear down dev Firecracker instance
+      block:
+        - name: Boot Firecracker VM from dev golden (background)
+          ansible.builtin.command: >
+            {{ fm_bin }}/forge-metal firecracker-test
+            --golden-zvol vm-guest-telemetry-dev-zvol
+            --timeout 60s
+            -- sleep {{ vm_sleep_seconds }}
+          async: 60
+          poll: 0
+          register: firecracker_job
+
+        - name: Wait for vsock bridge socket
+          ansible.builtin.find:
+            paths: "{{ firecracker_jailer_root }}/firecracker"
+            patterns: "forge-control.sock"
+            recurse: true
+            file_type: any
+          register: bridge_search
+          until: bridge_search.files | length > 0
+          retries: "{{ boot_timeout }}"
+          delay: 1
+
+        - name: Record bridge socket path
+          ansible.builtin.set_fact:
+            bridge_socket: "{{ bridge_search.files[0].path }}"
+            vm_job_id: "{{ bridge_search.files[0].path | regex_replace('^.*/firecracker/([^/]+)/root/run/forge-control\\.sock$', '\\1') }}"
+
+        - name: Boot smoke test passed
+          ansible.builtin.debug:
+            msg: "PASS: vm booted from dev golden and exposed forge-control.sock for job {{ vm_job_id }}"
+
+      always:
+        - name: Wait for Firecracker VM to exit
+          ansible.builtin.async_status:
+            jid: "{{ firecracker_job.ansible_job_id }}"
+          register: firecracker_result
+          until: firecracker_result.finished
+          retries: 30
+          delay: 2
+          failed_when: false
+          when: firecracker_job is defined
+
+        - name: Destroy dev zvol
+          ansible.builtin.command: "zfs destroy -r {{ vm_guest_telemetry_dev_zvol }}"
+          failed_when: false
+          changed_when: true

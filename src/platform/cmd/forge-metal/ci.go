@@ -15,8 +15,8 @@ import (
 	ci "github.com/forge-metal/forge-metal/internal/ci"
 	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
 	"github.com/forge-metal/forge-metal/internal/config"
-	fastsandbox "github.com/forge-metal/fast-sandbox"
 	"github.com/forge-metal/forge-metal/internal/supplychain"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
 )
 
@@ -162,8 +162,8 @@ func ciExecCmd() *cobra.Command {
 	return cmd
 }
 
-func ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin string, vcpus, memoryMiB int, hostInterface, guestPoolCIDR, networkLeaseDir string) (fastsandbox.Config, error) {
-	cfg := fastsandbox.DefaultConfig()
+func ciFirecrackerConfig(pool, goldenZvol, kernelPath, fcBin, jailerBin string, vcpus, memoryMiB int, hostInterface, guestPoolCIDR, networkLeaseDir string) (vmorchestrator.Config, error) {
+	cfg := vmorchestrator.DefaultConfig()
 	if pool != "" {
 		cfg.Pool = pool
 	}
@@ -306,8 +306,8 @@ func emitScanTelemetry(logger *slog.Logger, cfg *config.Config, result supplycha
 		NodeID:               hostname,
 		Region:               cfg.Latitude.Region,
 		Plan:                 cfg.Latitude.Plan,
-		SupplyChainScanNs:   result.Duration.Nanoseconds(),
-		SupplyChainScanOK:   scanOK,
+		SupplyChainScanNs:    result.Duration.Nanoseconds(),
+		SupplyChainScanOK:    scanOK,
 		ScanAgeFindings:      uint16(findings["age"]),
 		ScanGuardDogFindings: uint16(findings["guarddog"]),
 		ScanJSXRayFindings:   uint16(findings["jsxray"]),

@@ -1,0 +1,13 @@
+.{
+    .name = .vm_guest_telemetry,
+    .version = "0.1.0",
+    .fingerprint = 0x5de1cf3dd4e7aba4, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "README.md",
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -123,12 +123,6 @@
     gid: "{{ firecracker_jailer_gid }}"
     state: present
 
-- name: Create smelter-ops group for privileged operations socket access
-  ansible.builtin.group:
-    name: "{{ firecracker_smelter_ops_group }}"
-    system: true
-    state: present
-
 - name: Create firecracker user
   ansible.builtin.user:
     name: "{{ firecracker_jailer_user }}"
@@ -215,58 +209,61 @@
     state: started
     daemon_reload: true
 
-- name: Verify Zig is available on controller for homestead-smelter build
+- name: Verify Go is available on controller for vm-orchestrator build
   delegate_to: localhost
   become: false
   run_once: true
-  ansible.builtin.command: zig version
+  ansible.builtin.command: go version
   changed_when: false
 
-- name: Build homestead-smelter host binary on controller
+- name: Build vm-orchestrator binary on controller
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
     argv:
-      - zig
+      - go
       - build
-      - -Doptimize=ReleaseSafe
-      - -Dtarget=x86_64-linux-musl
-    chdir: "{{ playbook_dir }}/../../../homestead-smelter"
+      - -ldflags=-s -w
+      - -o
+      - /tmp/vm-orchestrator
+      - ./src/vm-orchestrator/cmd/vm-orchestrator
+    chdir: "{{ playbook_dir }}/../../../.."
   changed_when: false
 
-- name: Install homestead-smelter host binary
+- name: Install vm-orchestrator binary
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../../../homestead-smelter/zig-out/bin/homestead-smelter-host"
-    dest: "{{ firecracker_smelter_host_binary_path }}"
+    src: /tmp/vm-orchestrator
+    dest: "{{ firecracker_vm_orchestrator_binary_path }}"
     owner: root
     group: root
     mode: "0755"
-  notify: restart homestead smelter
+  notify: restart vm-orchestrator
 
-- name: Install homestead-smelter host service
+- name: Install vm-orchestrator service
   ansible.builtin.template:
-    src: homestead-smelter-host.service.j2
-    dest: /etc/systemd/system/homestead-smelter-host.service
+    src: vm-orchestrator.service.j2
+    dest: /etc/systemd/system/vm-orchestrator.service
     mode: "0644"
-  notify: restart homestead smelter
+  notify: restart vm-orchestrator
 
-- name: Ensure homestead-smelter host service is enabled and started
+- name: Ensure vm-orchestrator service is enabled and started
   ansible.builtin.systemd:
-    name: homestead-smelter-host.service
+    name: vm-orchestrator.service
     enabled: true
     state: started
     daemon_reload: true
 
-- name: Flush homestead-smelter handlers
+- name: Flush vm-orchestrator handlers
   ansible.builtin.meta: flush_handlers
 
-- name: Verify homestead-smelter host service responds
-  ansible.builtin.command: >
-    {{ firecracker_smelter_host_binary_path }} snapshot
-    --control-uds {{ firecracker_smelter_control_socket }}
-  register: firecracker_smelter_snapshot
+- name: Verify vm-orchestrator API socket is present
+  ansible.builtin.command: test -S {{ firecracker_vm_orchestrator_api_socket }}
+  register: firecracker_vm_orchestrator_socket
   changed_when: false
+  retries: 30
+  delay: 1
+  until: firecracker_vm_orchestrator_socket.rc == 0
 
 # --- Guest artifact verification ---
 # Artifacts built by scripts/build-guest-rootfs.sh, pre-staged to /var/lib/ci/.

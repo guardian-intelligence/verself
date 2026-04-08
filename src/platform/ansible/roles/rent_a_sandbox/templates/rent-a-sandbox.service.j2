@@ -9,7 +9,7 @@ Type=simple
 User={{ ansible_user }}
 WorkingDirectory={{ rent_a_sandbox_app_dir }}
 EnvironmentFile=/etc/rent-a-sandbox/env
-ExecStart={{ fm_bin }}/node --import ./instrumentation.mjs .output/server/index.mjs
+ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
 Restart=on-failure
 RestartSec=5
 Environment=PATH={{ fm_bin }}:/usr/bin:/bin

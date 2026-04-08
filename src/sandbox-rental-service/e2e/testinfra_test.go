@@ -34,8 +34,8 @@ import (
 // ---------------------------------------------------------------------------
 
 type stripeTestKeys struct {
-	PublishableKey     string
-	SecretKey          string
+	PublishableKey    string
+	SecretKey         string
 	WebhookEndpointID string
 }
 

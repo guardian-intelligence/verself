@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 var repoGoldenStateRoot = "/var/lib/ci/repo-goldens"
 
 type Manager struct {
-	firecrackerConfig fastsandbox.Config
+	firecrackerConfig vmorchestrator.Config
 	logger            *slog.Logger
 }
 
@@ -41,7 +41,7 @@ type ExecRequest struct {
 	RunID   string
 }
 
-func NewManager(cfg fastsandbox.Config, logger *slog.Logger) *Manager {
+func NewManager(cfg vmorchestrator.Config, logger *slog.Logger) *Manager {
 	return &Manager{
 		firecrackerConfig: cfg,
 		logger:            logger,
@@ -72,8 +72,8 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	var (
 		manifest                  *Manifest
 		toolchain                 *Toolchain
-		job                       fastsandbox.JobConfig
-		result                    fastsandbox.JobResult
+		job                       vmorchestrator.JobConfig
+		result                    vmorchestrator.JobResult
 		cloneDuration             time.Duration
 		filesystemCheckDuration   time.Duration
 		snapshotPromotionDuration time.Duration
@@ -188,7 +188,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	}
 	cleanupMountDir = ""
 
-	orch := fastsandbox.New(m.firecrackerConfig, m.logger)
+	orch := vmorchestrator.New(m.firecrackerConfig, m.logger)
 	startedAt = time.Now().UTC()
 	result, err = orch.RunDataset(ctx, job, targetDataset, false)
 	if err != nil {
@@ -239,7 +239,7 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	return nil
 }
 
-func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*fastsandbox.JobResult, error) {
+func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*vmorchestrator.JobResult, error) {
 	if req.Repo == "" {
 		return nil, fmt.Errorf("repo is required")
 	}
@@ -338,7 +338,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) (*fastsandbox.JobRe
 	}
 	execMounted = false
 
-	orch := fastsandbox.New(m.firecrackerConfig, m.logger)
+	orch := vmorchestrator.New(m.firecrackerConfig, m.logger)
 	startedAt := time.Now().UTC()
 	result, err := orch.RunDataset(ctx, job, jobDataset, true)
 	completedAt := time.Now().UTC()
@@ -403,7 +403,7 @@ func (m *Manager) writeActiveRepoGoldenDataset(repoKey, dataset string) error {
 	return os.WriteFile(m.repoGoldenStatePath(repoKey), []byte(dataset+"\n"), 0o644)
 }
 
-func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool, env map[string]string) fastsandbox.JobConfig {
+func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, installNeeded bool, warm bool, env map[string]string) vmorchestrator.JobConfig {
 	repoRoot := "/workspace"
 
 	runCommand := manifest.Run
@@ -414,7 +414,7 @@ func buildGuestJob(jobID string, manifest *Manifest, toolchain *Toolchain, insta
 		runCommand = toolchain.ResolveCommand(runCommand)
 	}
 
-	job := fastsandbox.JobConfig{
+	job := vmorchestrator.JobConfig{
 		JobID:      jobID,
 		RunCommand: cloneStringSlice(runCommand),
 		RunWorkDir: manifest.RepoWorkDir(),
@@ -530,7 +530,7 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return out
 }
 
-func formatJobLogs(result fastsandbox.JobResult) string {
+func formatJobLogs(result vmorchestrator.JobResult) string {
 	guestLogs := strings.TrimSpace(result.Logs)
 	serialLogs := strings.TrimSpace(result.SerialLogs)
 	switch {

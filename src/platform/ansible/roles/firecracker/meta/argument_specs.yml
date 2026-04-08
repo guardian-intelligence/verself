@@ -1,11 +1,11 @@
 ---
 argument_specs:
   main:
-    short_description: "Firecracker host setup: KVM, jailer, golden zvol, smelter"
+    short_description: "Firecracker host setup: KVM, jailer, golden zvol, vm-orchestrator"
     description:
       - "Installs Firecracker + jailer from ci/versions.json, configures KVM,"
       - "creates the jailer user/group, sets up the golden zvol lifecycle,"
-      - "builds and deploys homestead-smelter-host, and verifies guest artifacts."
+      - "builds and deploys vm-orchestrator, and verifies guest artifacts."
     options:
       firecracker_zfs_pool:
         type: str
@@ -94,12 +94,12 @@ argument_specs:
         default: ""
         description: "Host network interface for guest NAT. Auto-detected if empty."
 
-      firecracker_smelter_host_binary_path:
+      firecracker_vm_orchestrator_binary_path:
         type: path
-        default: /usr/local/bin/homestead-smelter-host
-        description: "Install path for the homestead-smelter host agent binary."
+        default: /usr/local/bin/vm-orchestrator
+        description: "Install path for the vm-orchestrator host daemon binary."
 
-      firecracker_smelter_control_socket:
+      firecracker_vm_orchestrator_api_socket:
         type: path
-        default: /run/homestead-smelter/agent.sock
-        description: "Unix domain socket for homestead-smelter host control."
+        default: /run/vm-orchestrator/api.sock
+        description: "Unix domain socket for the vm-orchestrator API."

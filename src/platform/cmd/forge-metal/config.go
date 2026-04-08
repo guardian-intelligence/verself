@@ -263,10 +263,10 @@ func pathForScope(paths config.Paths, scope config.Scope) (string, error) {
 }
 
 func ensureConfigFile(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0600)
+	file, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("create config file: %w", err)
 	}

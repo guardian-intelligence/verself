@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
 func TestGuestArtifactManifestPathUsesKernelDirectory(t *testing.T) {
-	cfg := fastsandbox.Config{KernelPath: "/var/lib/ci/vmlinux"}
+	cfg := vmorchestrator.Config{KernelPath: "/var/lib/ci/vmlinux"}
 	got := guestArtifactManifestPath(cfg)
 	want := "/var/lib/ci/guest-artifacts.json"
 	if got != want {
@@ -18,7 +18,7 @@ func TestGuestArtifactManifestPathUsesKernelDirectory(t *testing.T) {
 }
 
 func TestGuestArtifactManifestPathFallsBackToDefaultDir(t *testing.T) {
-	got := guestArtifactManifestPath(fastsandbox.Config{})
+	got := guestArtifactManifestPath(vmorchestrator.Config{})
 	want := "/var/lib/ci/guest-artifacts.json"
 	if got != want {
 		t.Fatalf("guestArtifactManifestPath fallback: got %q want %q", got, want)
@@ -35,9 +35,9 @@ func TestLoadGuestArtifactManifest(t *testing.T) {
   "kernel_bytes": 3456,
   "package_count": 42,
   "init_sha256": "init-sha",
-  "homestead_smelter_guest_present": true,
-  "homestead_smelter_guest_sha256": "smelter-sha",
-  "homestead_smelter_guest_bytes": 7890
+  "vm_guest_telemetry_present": true,
+  "vm_guest_telemetry_sha256": "telemetry-sha",
+  "vm_guest_telemetry_bytes": 7890
 }`), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestLoadGuestArtifactManifest(t *testing.T) {
 	if manifest.RootfsTreeBytes != 1234 || manifest.RootfsUsedBytes != 2345 || manifest.KernelBytes != 3456 || manifest.PackageCount != 42 {
 		t.Fatalf("unexpected manifest: %+v", manifest)
 	}
-	if manifest.InitSHA256 != "init-sha" || !manifest.SmelterGuestPresent || manifest.SmelterGuestSHA256 != "smelter-sha" || manifest.SmelterGuestBytes != 7890 {
+	if manifest.InitSHA256 != "init-sha" || !manifest.VMGuestTelemetryPresent || manifest.VMGuestTelemetrySHA256 != "telemetry-sha" || manifest.VMGuestTelemetryBytes != 7890 {
 		t.Fatalf("unexpected manifest metadata: %+v", manifest)
 	}
 }

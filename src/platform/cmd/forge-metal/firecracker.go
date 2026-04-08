@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
 func firecrackerTestCmd() *cobra.Command {
@@ -59,7 +59,7 @@ Examples:
 				return fmt.Errorf("parse timeout: %w", err)
 			}
 
-			cfg := fastsandbox.DefaultConfig()
+			cfg := vmorchestrator.DefaultConfig()
 			if pool != "" {
 				cfg.Pool = pool
 			}
@@ -89,11 +89,11 @@ Examples:
 				cfg.NetworkLeaseDir = networkLeaseDir
 			}
 
-			orch := fastsandbox.New(cfg, logger)
+			orch := vmorchestrator.New(cfg, logger)
 
 			jobID := uuid.New().String()
 
-			job := fastsandbox.JobConfig{
+			job := vmorchestrator.JobConfig{
 				JobID:      jobID,
 				RunCommand: args, // positional args after --
 				RunWorkDir: "/workspace",

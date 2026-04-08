@@ -11,9 +11,9 @@
     state: restarted
     daemon_reload: true
 
-- name: Restart homestead smelter
-  listen: restart homestead smelter
+- name: Restart vm-orchestrator
+  listen: restart vm-orchestrator
   ansible.builtin.systemd:
-    name: homestead-smelter-host.service
+    name: vm-orchestrator.service
     state: restarted
     daemon_reload: true

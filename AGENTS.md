@@ -6,7 +6,7 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
 
 ## Direction
 
-* Evolve our homestead-smelter to subsume fast-sandbox. One privileged Zig program running on the host that orchestrates a farm of Firecracker VMs with diff
+* vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
 
 ## Deployment Topology
 
@@ -41,19 +41,19 @@ Required - Email Delivery (Resend only for now)
                               └──┬────┬────┬────┘  │        │         │
                                  │    │    │       │        │         │
                     ┌────────────▼┐   │  ┌─▼───────▼───┐    │    ┌────▼─────────────┐
-                    │fast-sandbox │   │  │auth-        │    │    │forge-metal CLI   │
-                    │(Go library) │   │  │middleware   │    │    │(CI warm/exec)    │
-                    │ZFS+FC orch  │   │  │(Go library) │    │    │imports           │
-                    └──┬──────────┘   │  └─────────────┘    │    │fast-sandbox      │
+                    │vm-          │   │  │auth-        │    │    │forge-metal CLI   │
+                    │orchestrator │   │  │middleware   │    │    │(CI warm/exec)    │
+                    │(Go daemon)  │   │  │(Go library) │    │    │imports           │
+                    └──┬──────────┘   │  └─────────────┘    │    │vm-orchestrator   │
                        │              │                     │    └──────────────────┘
               ┌────────▼──────┐       │
               │  Firecracker  │       │
               │  VMs (jailer) │       │                    Data Stores
               │  ┌──────────┐ │       │    ┌─────────────────────────────────────────┐
-              │  │homestead-│ │       │    │                                         │
-              │  │smelter   │ │       │    │  PostgreSQL ◄── billing schemas         │
-              │  │(Zig guest│ │       │    │               ◄── sandbox job_logs      │
-              │  │ agent)   │ │       │    │               ◄── Zitadel event store   │
+              │  │vm-guest- │ │       │    │                                         │
+              │  │telemetry │ │       │    │  PostgreSQL ◄── billing schemas         │
+              │  │(Zig agent│ │       │    │               ◄── sandbox job_logs      │
+              │  │ 60Hz)    │ │       │    │               ◄── Zitadel event store   │
               │  └──────────┘ │       │    │               ◄── Forgejo metadata      │
               └───────────────┘       │    │                                         │
                                       │    │  TigerBeetle ◄── billing ledger         │
@@ -94,7 +94,7 @@ ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative 
 
 ### Entitlement
 
-Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Quota enforcement queries ClickHouse rolling windows via the `MeteringQuerier` interface.
+Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Concurrent admission control is policy from PostgreSQL: `orgs.trust_tier` supplies fraud caps, `plans.quotas` supplies downward-only plan caps, and `CheckQuotas` is advisory only. Financial enforcement is TigerBeetle-backed spend caps: each billing period gets a fresh spend-cap account, `Reserve` runs a linked spend-cap probe+void with the grant reservation batch, and `Settle` posts the real spend-cap debit.
 
 ## Supply Chain Management
 
@@ -113,7 +113,7 @@ Key focus areas for this project
 arch at a high level:
 
 - We support only Ubuntu 24.04 on the bare metal box.
-- homestead-smelter is a guest agent + host Firecracker mVM agent written in Zig. The guest agent collects heartbeat health diagnostics and runs on each Firecracker VM, streaming data up continuously to the host agent, which then writes data to a socket for consumers.
+- vm-orchestrator is the privileged Go host daemon managing Firecracker VM lifecycle (ZFS, TAP, jailer) and aggregating guest telemetry. vm-guest-telemetry is the Zig guest agent streaming 60Hz health frames over vsock port 10790.
 - Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
 - Auth: Zitadel
 - Payments: Stripe + TigerBeetle + PostgreSQL
@@ -181,14 +181,6 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match running kernel).
 
-### Version Updates
-
-```bash
-# Edit src/platform/server-tools.json — update version, url, sha256
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --limit canary  # deploy to one node
-cd src/platform/ansible && ansible-playbook playbooks/site.yml                             # roll out fleet-wide
-```
-
 ### Architecture
 
 ```
@@ -228,7 +220,7 @@ read the Makefile for other common task automation.
 | `playbooks/ci-fixtures-pass.yml` | Run positive fixture suite |
 | `playbooks/ci-fixtures-fail.yml` | Run negative fixture suite |
 | `playbooks/ci-fixtures-full.yml` | Refresh artifacts, then run pass + fail suites |
-| `playbooks/smelter-dev.yml` | Hot-swap smelter guest, boot + probe in Firecracker VM (~10s) |
+| `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
 | `playbooks/seed-demo.yml` | Seed demo environment: human user, billing catalog, credits, auth verify (supports `--tags user,billing,verify`) |
@@ -249,13 +241,13 @@ forge-metal/                            # Monorepo root
 │   └── go.mod                          # github.com/forge-metal/auth-middleware
 ├── src/billing/                        # Billing domain: Reserve/Settle/Void (Go library)
 │   └── go.mod                          # github.com/forge-metal/billing
-├── src/fast-sandbox/                   # Firecracker + ZFS VM orchestrator (Go library)
-│   ├── go.mod                          # github.com/forge-metal/fast-sandbox
-│   ├── orchestrator.go                 # Run(JobConfig) → JobResult
+├── src/vm-orchestrator/                # Firecracker + ZFS VM orchestrator (Go library)
+│   ├── go.mod                          # github.com/forge-metal/vm-orchestrator
+│   ├── orchestrator.go                 # Run(JobConfig) / RunDataset(JobConfig, dataset)
 │   ├── zvol.go                         # ZFS clone/destroy/snapshot/written
 │   ├── network.go                      # TAP + CIDR lease allocator
 │   ├── vmproto/                        # Host-guest vsock wire protocol
-│   └── cmd/fast-sandbox-init/          # Guest PID 1
+│   └── cmd/vm-init/                    # Guest PID 1
 │
 │   ── Services ──────────────────────────────────────────────────────────
 │
@@ -265,7 +257,7 @@ forge-metal/                            # Monorepo root
 │   ├── cmd/tb-inspect/                 # TigerBeetle account inspector
 │   └── migrations/                     # Billing PostgreSQL schema
 ├── src/sandbox-rental-service/         # Sandbox product backend (Go/Huma) [planned]
-│   ├── go.mod                          # imports: fast-sandbox, billing (HTTP), auth-middleware
+│   ├── go.mod                          # imports: vm-orchestrator, billing (HTTP), auth-middleware
 │   ├── cmd/sandbox-rental-service/     # Job orchestration, billing integration
 │   └── migrations/                     # job_runs, job_logs PostgreSQL schemas
 │
@@ -277,18 +269,18 @@ forge-metal/                            # Monorepo root
 │
 │   ── Standalone tools ──────────────────────────────────────────────────
 │
-├── src/homestead-smelter/              # Firecracker VM guest/host telemetry (Zig)
+├── src/vm-guest-telemetry/             # Firecracker VM guest telemetry agent (Zig)
 │   ├── build.zig
-│   └── src/                            # Guest heartbeat agent + host daemon
+│   └── src/                            # 60Hz /proc sampler, vsock 10790 streamer
 │
 │   ── Platform ──────────────────────────────────────────────────────────
 │
 └── src/platform/                       # Infrastructure + deployment
-    ├── go.mod                          # imports: fast-sandbox (CI manager uses it)
+    ├── go.mod                          # imports: vm-orchestrator (CI manager uses it)
     ├── cmd/forge-metal/                # CLI: doctor, setup-domain, CI warm/exec, fixtures
     ├── internal/ci/                    # CI domain: Warm/Exec, golden images, toolchain detection
     ├── ansible/
-    │   ├── playbooks/                  # All orchestration (deploy, provision, CI, smelter-dev)
+    │   ├── playbooks/                  # All orchestration (deploy, provision, CI, vm-guest-telemetry-dev)
     │   └── roles/                      # Flat directory — deployment is a platform concern
     │       ├── deploy_profile/         # Build + download + install all server binaries
     │       ├── base/                   # OS hardening, users, credstore, SSH
@@ -306,7 +298,7 @@ forge-metal/                            # Monorepo root
     │       ├── zitadel/                # Identity provider (OIDC)
     │       ├── hyperdx/                # Observability UI + MongoDB
     │       ├── verdaccio/              # Sealed npm registry mirror
-    │       ├── firecracker/            # KVM, jailer, golden zvol, smelter host
+    │       ├── firecracker/            # KVM, jailer, golden zvol, vm-orchestrator
     │       └── ...                     # guest_rootfs, ci_fixtures, wireguard, etc.
     ├── terraform/                      # Latitude.sh provisioning
     ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, etc.
@@ -339,7 +331,7 @@ forge-metal/                            # Monorepo root
 * When providing a recommendation, consider different plausible options and provide a differentiated recommendation that leans towards a simpler solution that best fits the long term goal of this project.
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not speculate about host-level causes (resource exhaustion, network issues, etc.) without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to environmental factors.
-* Do not stop work short of verifying your changes with a live rehearsal of our CI infrastructure with fresh rebuild and redeploy.
+* Do not stop work short of verifying your changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them as needed. In fact, prefer to do that over time-consuming and tricky migrations during this early phase of development.
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
 * When editing byte-layouts, avoid piecemeal edits as that's how you end up with contradictions.

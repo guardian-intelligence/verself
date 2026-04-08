@@ -198,10 +198,10 @@ receivers:
       - type: remove
         field: attributes.span_id
         if: attributes.span_id != nil
-  journald/homestead-smelter:
-    units: [homestead-smelter-host]
+  journald/vm-orchestrator:
+    units: [vm-orchestrator]
     resource:
-      service.name: homestead-smelter-host
+      service.name: vm-orchestrator
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
@@ -246,7 +246,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "homestead-smelter.*", "tigerbeetle", "zitadel", "postgres"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -285,7 +285,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/zitadel, journald/homestead-smelter, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/zitadel, journald/vm-orchestrator, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
