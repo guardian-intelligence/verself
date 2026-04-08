@@ -25,7 +25,7 @@
   delegate_to: localhost
   become: false
   ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/../../../vite-plus-monorepo/"
+    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
     dest: "{{ rent_a_sandbox_install_dir }}/"
     delete: true
     recursive: true
