@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# Mailbox service egress restrictions.
+# Loopback is required for Stalwart JMAP access. HTTPS and DNS are required for
+# operator forwarding through Resend.
+
+table inet forge_metal_mailbox_service
+delete table inet forge_metal_mailbox_service
+
+table inet forge_metal_mailbox_service {
+    chain output {
+        type filter hook output priority filter; policy accept;
+
+        meta skuid != mailbox_service accept
+        oifname "lo" accept
+        ct state established,related accept
+        tcp dport 443 accept
+        tcp dport 53 accept
+        udp dport 53 accept
+        drop
+    }
+}

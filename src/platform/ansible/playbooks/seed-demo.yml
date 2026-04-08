@@ -60,6 +60,12 @@
         description: "Dijkstra Agent"
       - name: lamport.agent
         description: "Lamport Agent"
+    seed_demo_stalwart_disabled_permissions:
+      - email-send
+      - jmap-sieve-script-set
+      - jmap-sieve-script-validate
+      - sieve-put-script
+      - sieve-set-active
 
     # --- Internal ---
     seed_demo_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
@@ -329,31 +335,43 @@
         timeout: 60
       tags: [stalwart]
 
-    - name: Hash operator password for Stalwart
+    - name: Stop mailbox-service before mailbox reseed
+      ansible.builtin.systemd:
+        name: mailbox-service
+        state: stopped
+      failed_when: false
+      tags: [stalwart]
+
+    - name: Derive Stalwart mailbox passwords and hashes
       ansible.builtin.command:
         argv:
           - python3
           - -c
-          - "import sys, bcrypt; print(bcrypt.hashpw(sys.stdin.buffer.read().strip(), bcrypt.gensalt()).decode())"
-        stdin: "{{ seed_demo_user_password }}"
-      register: seed_demo_ceo_hash
+          - |
+            import base64, bcrypt, hashlib, hmac, json, sys
+            seed = sys.stdin.buffer.read().strip()
+            names = json.loads(sys.argv[1])
+            out = {}
+            for name in names:
+                digest = hmac.new(seed, name.encode(), hashlib.sha256).digest()
+                password = "FmMail1!" + base64.urlsafe_b64encode(digest[:24]).decode().rstrip("=")
+                out[name] = {
+                    "password": password,
+                    "hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+                }
+            print(json.dumps(out))
+          - "{{ (['ceo'] + (seed_demo_agent_mailboxes | map(attribute='name') | list)) | to_json }}"
+        stdin: "{{ stalwart_agent_password }}"
+      register: seed_demo_mailbox_credentials_raw
       changed_when: false
       delegate_to: localhost
       become: false
       no_log: true
       tags: [stalwart]
 
-    - name: Hash agent password for Stalwart
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - "import sys, bcrypt; print(bcrypt.hashpw(sys.stdin.buffer.read().strip(), bcrypt.gensalt()).decode())"
-        stdin: "{{ stalwart_agent_password }}"
-      register: seed_demo_agent_hash
-      changed_when: false
-      delegate_to: localhost
-      become: false
+    - name: Set Stalwart mailbox credentials fact
+      ansible.builtin.set_fact:
+        seed_demo_mailbox_credentials: "{{ seed_demo_mailbox_credentials_raw.stdout | from_json }}"
       no_log: true
       tags: [stalwart]
 
@@ -370,6 +388,18 @@
       no_log: true
       tags: [stalwart]
 
+    - name: Delete existing operator mailbox (ceo@)
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      when: seed_demo_ceo_check.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
     - name: Create operator mailbox (ceo@)
       ansible.builtin.uri:
         url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
@@ -382,13 +412,13 @@
           type: individual
           name: "ceo"
           description: "Operator"
-          secrets: ["{{ seed_demo_ceo_hash.stdout | trim }}"]
+          secrets: ["{{ seed_demo_mailbox_credentials['ceo'].hash }}"]
           emails: ["ceo@{{ forge_metal_domain }}"]
           roles: ["user"]
+          disabledPermissions: "{{ seed_demo_stalwart_disabled_permissions }}"
           quota: 0
         status_code: 200
         return_content: true
-      when: seed_demo_ceo_check.json.error is defined
       no_log: true
       tags: [stalwart]
 
@@ -408,6 +438,21 @@
       no_log: true
       tags: [stalwart]
 
+    - name: Delete existing agent mailboxes
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.item.name }}"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      loop: "{{ seed_demo_agent_checks.results }}"
+      loop_control:
+        label: "{{ item.item.name }}@{{ forge_metal_domain }}"
+      when: item.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
     - name: Create agent mailboxes
       ansible.builtin.uri:
         url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
@@ -420,121 +465,63 @@
           type: individual
           name: "{{ item.item.name }}"
           description: "{{ item.item.description }}"
-          secrets: ["{{ seed_demo_agent_hash.stdout | trim }}"]
+          secrets: ["{{ seed_demo_mailbox_credentials[item.item.name].hash }}"]
           emails: ["{{ item.item.name }}@{{ forge_metal_domain }}"]
           roles: ["user"]
+          disabledPermissions: "{{ seed_demo_stalwart_disabled_permissions }}"
           quota: 0
         status_code: 200
         return_content: true
       loop: "{{ seed_demo_agent_checks.results }}"
       loop_control:
         label: "{{ item.item.name }}@{{ forge_metal_domain }}"
-      when: item.json.error is defined
       no_log: true
       tags: [stalwart]
 
-    # ── Operator email forwarding ────────────────────────────────────────────
-    # Push a Sieve redirect script to ceo@ that forwards all inbound mail
-    # to the operator's personal address via Resend SMTP relay.
-    # Gated on stalwart_operator_forward_to being non-empty.
-
-    - name: Get ceo@ JMAP session for forwarding setup
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap/session"
-        method: GET
-        url_username: ceo
-        url_password: "{{ seed_demo_user_password }}"
-        force_basic_auth: true
-        return_content: true
-      register: seed_demo_ceo_session
+    - name: Deploy operator forwarder ceo-password credential
+      ansible.builtin.copy:
+        content: "{{ seed_demo_mailbox_credentials['ceo'].password }}"
+        dest: /etc/credstore/mailbox-service/ceo-password
+        owner: root
+        group: mailbox_service
+        mode: "0640"
       no_log: true
       when: stalwart_operator_forward_to | default('', true) | length > 0
       tags: [stalwart]
 
-    - name: Extract ceo@ JMAP account ID
-      ansible.builtin.set_fact:
-        seed_demo_ceo_acct: "{{ (seed_demo_ceo_session.json.accounts | dict2items | first).key }}"
+    - name: Deploy operator forwarder target credential
+      ansible.builtin.copy:
+        content: "{{ stalwart_operator_forward_to }}"
+        dest: /etc/credstore/mailbox-service/forward-to
+        owner: root
+        group: mailbox_service
+        mode: "0640"
       when: stalwart_operator_forward_to | default('', true) | length > 0
       tags: [stalwart]
 
-    - name: Upload Sieve redirect script blob
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap/upload/{{ seed_demo_ceo_acct }}/"
-        method: POST
-        url_username: ceo
-        url_password: "{{ seed_demo_user_password }}"
-        force_basic_auth: true
-        headers:
-          Content-Type: "application/sieve"
-        body: "require [\"redirect\", \"copy\"];\nredirect :copy \"{{ stalwart_operator_forward_to }}\";\n"
-        return_content: true
-      register: seed_demo_sieve_blob
-      no_log: true
+    - name: Remove operator forwarder credentials when forwarding is disabled
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/credstore/mailbox-service/ceo-password
+        - /etc/credstore/mailbox-service/forward-to
+      when: stalwart_operator_forward_to | default('', true) | length == 0
+      tags: [stalwart]
+
+    - name: Reset operator forwarder state
+      ansible.builtin.file:
+        path: /var/lib/mailbox-service/forwarder-state.json
+        state: absent
       when: stalwart_operator_forward_to | default('', true) | length > 0
       tags: [stalwart]
 
-    - name: Check existing Sieve scripts
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap"
-        method: POST
-        url_username: ceo
-        url_password: "{{ seed_demo_user_password }}"
-        force_basic_auth: true
-        body_format: json
-        body:
-          using:
-            - "urn:ietf:params:jmap:core"
-            - "urn:ietf:params:jmap:sieve"
-          methodCalls:
-            - - "SieveScript/query"
-              - accountId: "{{ seed_demo_ceo_acct }}"
-              - "q"
-            - - "SieveScript/get"
-              - accountId: "{{ seed_demo_ceo_acct }}"
-                "#ids":
-                  resultOf: "q"
-                  name: "SieveScript/query"
-                  path: "/ids"
-              - "g"
-        return_content: true
-      register: seed_demo_sieve_existing
-      no_log: true
-      when: stalwart_operator_forward_to | default('', true) | length > 0
-      tags: [stalwart]
-
-    - name: Find existing forward script ID
-      ansible.builtin.set_fact:
-        seed_demo_forward_script_id: >-
-          {{ (seed_demo_sieve_existing.json.methodResponses[1][1].list
-              | selectattr('name', 'equalto', 'forward')
-              | map(attribute='id') | list | first) | default('') }}
-      when: stalwart_operator_forward_to | default('', true) | length > 0
-      tags: [stalwart]
-
-    - name: Create or update Sieve forward script
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap"
-        method: POST
-        url_username: ceo
-        url_password: "{{ seed_demo_user_password }}"
-        force_basic_auth: true
-        body_format: json
-        body:
-          using:
-            - "urn:ietf:params:jmap:core"
-            - "urn:ietf:params:jmap:sieve"
-          methodCalls:
-            - - "SieveScript/set"
-              - accountId: "{{ seed_demo_ceo_acct }}"
-                "{{ 'update' if seed_demo_forward_script_id | length > 0 else 'create' }}":
-                  "{{ seed_demo_forward_script_id if seed_demo_forward_script_id | length > 0 else 'new-forward' }}":
-                    name: "forward"
-                    blobId: "{{ seed_demo_sieve_blob.json.blobId }}"
-                    isActive: true
-              - "s"
-        return_content: true
-      no_log: true
-      when: stalwart_operator_forward_to | default('', true) | length > 0
+    - name: Restart mailbox-service after mailbox reseed
+      ansible.builtin.systemd:
+        name: mailbox-service
+        enabled: true
+        state: restarted
+        daemon_reload: true
       tags: [stalwart]
 
     - name: Print mailbox summary
@@ -543,7 +530,7 @@
           {{
             [
               'Stalwart mailboxes created:',
-              '  ceo@' + forge_metal_domain + ' (password: ' + seed_demo_user_password + ')',
+              '  ceo@' + forge_metal_domain + ' (password derived from stalwart_agent_password)',
               '  bernoulli.agent@' + forge_metal_domain,
               '  dijkstra.agent@' + forge_metal_domain,
               '  lamport.agent@' + forge_metal_domain,

@@ -7,7 +7,7 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
 ## Direction
 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
-* Stalwart Mail Server for self-hosted email (receive-only, JMAP API for agent access). mail.<domain> frontend: clean-room TanStack + ElectricSQL implementation inspired by Bulwark (AGPL-3.0, Next.js 16, purpose-built JMAP client for Stalwart, ~243 stars), not a fork. Bulwark is the only production-quality JMAP-native webmail; we rewrite in our stack (TanStack Start + ElectricSQL) to avoid Next.js dependency and get real-time sync via Electric's Postgres-backed CRDT layer.
+* Stalwart inbound mail frontend: clean-room TanStack + ElectricSQL implementation inspired by Bulwark, not a fork. Bulwark is the only production-quality JMAP-native webmail; we rewrite in our stack (TanStack Start + ElectricSQL) to avoid Next.js dependency and get real-time sync via Electric's Postgres-backed CRDT layer.
 * Avoid CLIs. Things talk to each other over HTTP. We're moving to k3s soon.
 
 ## Deployment Topology
@@ -21,7 +21,7 @@ Exceptions:
 Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (will be done through `zfs send`, not LINSTOR + DRBD) [Backups not yet implemented]
 Required - Domain Registar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
-Required - Email Delivery (Resend only for now)
+Required - Email Delivery (Resend only for now, inbound done via Stalwart)
 
 ## Service Architecture
 

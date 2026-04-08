@@ -44,11 +44,22 @@ if [[ -z "$remote_host" || -z "$remote_user" ]]; then
   exit 1
 fi
 
-# Resolve password: agents use stalwart_agent_password, ceo uses seed demo password.
-if [[ "$STALWART_USER" == "ceo" ]]; then
-  password="${STALWART_CEO_PASSWORD:-SandboxDemo2026!#}"
+# Resolve mailbox password. All Stalwart mailboxes derive a unique password
+# from the shared seed in SOPS, so leaking one mailbox password does not
+# grant access to the others.
+if [[ -n "${STALWART_PASSWORD:-}" ]]; then
+  password="$STALWART_PASSWORD"
 else
-  password="$(sops -d --extract '["stalwart_agent_password"]' "$secrets_file")"
+  seed="$(sops -d --extract '["stalwart_agent_password"]' "$secrets_file")"
+  password="$(python3 - "$STALWART_USER" <<'PY' <<<"$seed"
+import base64, hashlib, hmac, sys
+
+seed = sys.stdin.buffer.read().strip()
+user = sys.argv[1].encode()
+digest = hmac.new(seed, user, hashlib.sha256).digest()
+print("FmMail1!" + base64.urlsafe_b64encode(digest[:24]).decode().rstrip("="))
+PY
+)"
 fi
 
 # Build the python3 script to run on the remote host.
