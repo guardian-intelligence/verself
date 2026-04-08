@@ -177,13 +177,29 @@ async function completeStripeCheckout(page: Page): Promise<void> {
     await page.waitForTimeout(1_000);
   }
 
-  // Fill the standard card form.
+  // Fill the standard card form. Stripe may show an email field above the card inputs.
+  const emailField = page.locator("#email");
+  if ((await emailField.count()) > 0 && (await emailField.isVisible())) {
+    await emailField.fill(env.testEmail);
+  }
+
   await page.locator("#cardNumber").waitFor({ state: "visible", timeout: 10_000 });
   await page.locator("#cardNumber").fill(env.stripeCard);
   await page.locator("#cardExpiry").fill(env.stripeExpiry);
   await page.locator("#cardCvc").fill(env.stripeCVC);
   await page.locator("#billingName").fill("Demo User");
-  await page.locator("#billingPostalCode").fill("10001");
+
+  // Stripe conditionally shows country dropdown and/or postal code.
+  // Select US if a country selector is visible, then fill postal code if it appears.
+  const countrySelect = page.locator("#billingCountry");
+  if ((await countrySelect.count()) > 0 && (await countrySelect.isVisible())) {
+    await countrySelect.selectOption("US");
+    await page.waitForTimeout(500);
+  }
+  const postalCode = page.locator("#billingPostalCode");
+  if ((await postalCode.count()) > 0 && (await postalCode.isVisible())) {
+    await postalCode.fill("10001");
+  }
 
   await page.getByRole("button", { name: /^Pay/ }).click();
   await page.waitForURL(/purchased=true/, { timeout: 60_000 });
