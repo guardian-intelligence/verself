@@ -115,6 +115,10 @@
       tags: [otelcol]
     - role: mailbox_service
       tags: [mailbox_service]
+    - role: electric_mail
+      tags: [electric_mail]
+    - role: webmail
+      tags: [webmail]
     - role: hyperdx
       tags: [hyperdx]
     - role: verdaccio

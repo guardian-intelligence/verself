@@ -1,0 +1,18 @@
+[Unit]
+Description=Webmail Frontend (TanStack Start)
+After=forge-metal-firewall.target network.target mailbox-service.service electric-mail.service
+Requires=forge-metal-firewall.target
+Wants=mailbox-service.service electric-mail.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ webmail_app_dir }}
+EnvironmentFile=/etc/webmail/env
+ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,99 @@
+---
+- name: Create Electric Mail storage directory
+  ansible.builtin.file:
+    path: "{{ electric_mail_storage_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create Electric Mail credstore directory
+  ansible.builtin.file:
+    path: /etc/credstore/electric-mail
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Check for existing Electric Mail PG password
+  ansible.builtin.stat:
+    path: /etc/credstore/electric-mail/pg-password
+  register: electric_mail_pg_password_file
+
+- name: Generate Electric Mail PG password
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    dest: /etc/credstore/electric-mail/pg-password
+    owner: root
+    group: root
+    mode: "0640"
+  when: not electric_mail_pg_password_file.stat.exists
+  no_log: true
+
+- name: Check for existing Electric Mail API secret
+  ansible.builtin.stat:
+    path: /etc/credstore/electric-mail/api-secret
+  register: electric_mail_api_secret_file
+
+- name: Generate Electric Mail API secret
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=48 chars=ascii_letters,digits') }}"
+    dest: /etc/credstore/electric-mail/api-secret
+    owner: root
+    group: root
+    mode: "0640"
+  when: not electric_mail_api_secret_file.stat.exists
+  no_log: true
+
+- name: Read Electric Mail PG password
+  ansible.builtin.slurp:
+    src: /etc/credstore/electric-mail/pg-password
+  register: electric_mail_pg_password_raw
+
+- name: Read Electric Mail API secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/electric-mail/api-secret
+  register: electric_mail_api_secret_raw
+
+- name: Set Electric Mail credential facts
+  ansible.builtin.set_fact:
+    electric_mail_pg_password: "{{ electric_mail_pg_password_raw.content | b64decode | trim }}"
+    electric_mail_api_secret: "{{ electric_mail_api_secret_raw.content | b64decode | trim }}"
+
+- name: Create Electric Mail PostgreSQL role and publication
+  ansible.builtin.include_tasks: pg_setup.yml
+
+- name: Pull Electric Mail container image
+  ansible.builtin.command:
+    cmd: "podman pull {{ electric_mail_image }}"
+  changed_when: true
+
+- name: Deploy Electric Mail systemd unit
+  ansible.builtin.template:
+    src: electric-mail.service.j2
+    dest: /etc/systemd/system/electric-mail.service
+    mode: "0644"
+  notify: Restart electric-mail
+
+- name: Deploy Electric Mail nftables rules
+  ansible.builtin.template:
+    src: electric-mail.nft.j2
+    dest: /etc/nftables.d/electric-mail.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start Electric Mail
+  ansible.builtin.systemd:
+    name: electric-mail
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Electric Mail to become healthy
+  ansible.builtin.uri:
+    url: "http://{{ services.electric_mail.host }}:{{ services.electric_mail.port }}/v1/health"
+    status_code: [200, 202]
+  register: electric_mail_health
+  until: electric_mail_health.status in [200, 202]
+  retries: 30
+  delay: 2

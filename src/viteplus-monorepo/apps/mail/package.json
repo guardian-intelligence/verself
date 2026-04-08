@@ -1,0 +1,47 @@
+{
+  "name": "@forge-metal/mail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "typecheck": "vp exec tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@forge-metal/ui": "workspace:*",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/auto-instrumentations-node": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
+    "@opentelemetry/resources": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "@opentelemetry/semantic-conventions": "catalog:",
+    "@tanstack/db": "catalog:",
+    "@tanstack/electric-db-collection": "catalog:",
+    "@tanstack/query-db-collection": "catalog:",
+    "@tanstack/react-db": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "@tanstack/react-start": "catalog:",
+    "dompurify": "^3.2.6",
+    "nitro": "catalog:",
+    "oidc-client-ts": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

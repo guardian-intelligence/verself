@@ -1,10 +1,12 @@
 # Inbound Mail
 
-Stalwart Mail Server (v0.15.5, Rust, AGPL-3.0) provides receive-only SMTP and JMAP on the single node. Outbound email stays with Resend. Stalwart serves two purposes: internal infrastructure (agent mailboxes for 2FA, invoices, testing) and future metered product (hosted email for operator's customers).
+Stalwart Mail Server (v0.15.5, Rust, AGPL-3.0) provides receive-only SMTP and JMAP on the single node. Outbound email stays with Resend. `mailbox-service` is the repo-owned mailbox layer that sits beside Stalwart: it rewrites public JMAP session discovery, keeps a normalized mailbox projection in PostgreSQL, exposes authenticated mailbox mutations for future webmail, and currently hosts the tactical operator-forwarding sidecar.
+
+Stalwart still serves two purposes: internal infrastructure (agent mailboxes for 2FA, invoices, testing) and future metered product (hosted email for operator's customers).
 
 ## Network topology
 
-Stalwart has two network paths — SMTP direct, HTTP through Caddy:
+Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy for the public HTTP surface, and `mailbox-service` for repo-owned mailbox behavior:
 
 ```
                     Internet
@@ -18,39 +20,52 @@ Stalwart has two network paths — SMTP direct, HTTP through Caddy:
               SMTP        (TLS + WAF)
                 │          │
                 │          │ mail.<domain>
-                │          ▼
-                │    Stalwart HTTP
-                │    127.0.0.1:8090
-                │    (JMAP + webmail + admin)
-                │          │
-                └────┬─────┘
-                     │
-                     ▼
-                PostgreSQL
-                db: stalwart
+                │          ├────────────── /jmap/session ─────► mailbox-service
+                │          │                                    127.0.0.1:4246
+                │          └────────────── everything else ───► Stalwart HTTP
+                │                                               127.0.0.1:8090
+                │
+                ├────────────── PostgreSQL db: stalwart
+                │
+                └────────────── mailbox-service ───────────────► PostgreSQL db: mailbox_service
+                                 (sync + write API + forwarder)  and Resend HTTPS
 ```
 
 **SMTP (port 25):** Stalwart binds `0.0.0.0:25` directly on the public interface. Caddy is an HTTP reverse proxy — it cannot proxy raw SMTP. Stalwart handles its own STARTTLS using certs synced from Caddy's ACME storage.
 
-**JMAP/Webmail (port 443):** The HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). Caddy reverse proxies `mail.<domain>` to it, applying TLS termination, Coraza WAF, and access logging — same as every other HTTP service.
+**JMAP (port 443):** Stalwart's HTTP listener binds `127.0.0.1:8090` (loopback only, not internet-accessible). Caddy reverse proxies `mail.<domain>` to it, applying TLS termination, Coraza WAF, and access logging — same as every other HTTP service. The only exception is `GET /jmap/session`, which is proxied through `mailbox-service` so the public session document advertises the external `https://` / `wss://` origin rather than Stalwart's internal loopback listener.
 
-**Management API:** Same HTTP listener (`127.0.0.1:8090`), `/api/` path prefix. Only reachable from the box itself since the listener is loopback-bound.
+**Management API:** Same HTTP listener (`127.0.0.1:8090`), `/api/` path prefix. It is intentionally blocked from the public edge: Caddy returns `404` for `/api/*`, and Stalwart's local `http.allowed-endpoint` rules also reject non-loopback `/api` requests. Operational access stays box-local.
+
+**Mailbox service:** `mailbox-service` binds `127.0.0.1:4246` and is not internet-accessible directly. Caddy only exposes the repo-owned mailbox API under `/api/v1/mail/*` on the webmail surface and the narrow `/jmap/session` rewrite on `mail.<domain>`.
 
 ## Security model
 
 Four layers:
 
-**1. nftables egress lockdown** (`stalwart.nft`): The `stalwart` system user can only make outbound connections to loopback (PostgreSQL on 5432, otelcol on 4317), DNS port 53 (DNSBL spam filter lookups), and port 465 (Resend SMTP relay for Sieve-initiated forwarding). All other egress is dropped.
+**1. Per-process nftables egress lockdown:** Stalwart itself can only talk to loopback and DNS. It no longer owns any relay or Resend credentials, and its old outbound queue settings are deleted during deploy. `mailbox-service` has its own tighter box-local rules for JMAP/PostgreSQL/JWKS access plus HTTPS egress for the tactical operator-forwarding path.
 
-**2. Receive-only SMTP** (`relay = false` in config): Stalwart rejects relay attempts from external SMTP clients — it only delivers to local mailboxes during inbound SMTP sessions. Server-side Sieve `redirect` rules can generate outbound mail that routes through the Resend relay (`queue.route.relay`), but this is not user-triggerable via SMTP — only admin-provisioned Sieve scripts can initiate outbound delivery.
+**2. Receive-only SMTP:** Stalwart rejects relay attempts from external SMTP clients and only performs local delivery during inbound SMTP sessions. Outbound relay is not configured in Stalwart. The only current outbound path is the separate operator-forwarding sidecar inside `mailbox-service`, which forwards a copy of `ceo@` mail through Resend's HTTPS API.
 
-**3. systemd hardening:** `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`.
+**3. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore and nftables profile.
 
-**4. HTTP loopback binding:** The JMAP API and Management API are not directly internet-accessible. External access routes through Caddy, which applies WAF rules and access logging. The admin endpoints require Basic Auth with the admin credential from credstore.
+**4. Public HTTP boundary at Caddy:** The JMAP API is not directly internet-accessible; external access routes through Caddy, which applies WAF rules and access logging. `/api/*` on `mail.<domain>` is hard-denied. The only repo-owned HTTP behavior on that host today is the JMAP session rewrite handled by `mailbox-service`.
 
 ## Storage
 
-PostgreSQL database `stalwart` (user `stalwart`). All four Stalwart store roles (data, blob, fts, lookup) and the internal directory map to this single database. Stalwart manages its own schema on first boot (~20s initialization) — no migration files in the repo.
+There are now two mail-adjacent PostgreSQL databases:
+
+- `stalwart` (user `stalwart`) — Stalwart's own store. All four Stalwart store roles (data, blob, fts, lookup) and the internal directory map to this single database. Stalwart manages its own schema on first boot (~20s initialization) — no migration files in the repo.
+- `mailbox_service` (user `mailbox_service`) — repo-owned normalized mailbox projection and auth binding state. The schema is managed in `src/mailbox-service/migrations/` and currently contains `mailbox_accounts`, `mailbox_bindings`, `sync_state`, `mailboxes`, `emails`, `email_mailboxes`, `email_bodies`, and `threads`.
+
+## Mailbox-service boundary
+
+`mailbox-service` is the boundary between Stalwart's JMAP protocol surface and the rest of the Forge Metal product:
+
+- It rewrites `/jmap/session` so clients see the public `https://mail.<domain>` / `wss://mail.<domain>` origin instead of Stalwart's internal `127.0.0.1:8090` listener.
+- It discovers Stalwart accounts through the local management API, derives per-account credentials, subscribes to JMAP EventSource, and applies `Mailbox/changes`, `Email/changes`, and `Thread/changes` into the `mailbox_service` PostgreSQL schema.
+- It exposes the authenticated mailbox write API (`/api/v1/mail/*`) for read/unread, flag, move, trash, and body hydration.
+- It also currently hosts the tactical `ceo@` operator-forwarding sidecar. That forwarding path is deliberately outside Stalwart because per-user Sieve forwarding was not reliable enough for the product path.
 
 ## Mailbox scheme
 
@@ -134,7 +149,7 @@ Managed by Ansible:
 
 Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands in the recipient's mailbox. Stalwart supports per-account Sieve scripts managed via JMAP (`urn:ietf:params:jmap:sieve`) or ManageSieve (port 4190, internal only).
 
-**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally.
+**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
 
 **Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Agent Sieve scripts would be provisioned alongside accounts in the seed playbook.
 
@@ -155,6 +170,8 @@ cd src/platform && ./scripts/mail.sh -u bernoulli.agent -r <JMAP_ID>  # Read ful
 
 ## Relevant files
 
+- `src/mailbox-service/` — repo-owned mailbox sync, write API, JMAP session rewrite, operator forwarder
+- `roles/mailbox_service/` — deploy + credstore + nftables + migrations for `mailbox-service`
 - `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
 - `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
 - `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
@@ -178,4 +195,4 @@ Stalwart is deployed as internal infrastructure today but is structured to becom
 
 Billing integration follows the same Reserve/Settle/Void pattern as sandbox rentals. AGPL-3.0 requires source availability for network-service users — a non-issue since the entire stack is FOSS.
 
-The built-in webmail is a temporary stopgap. The target UI is a clean-room TanStack Start + ElectricSQL implementation inspired by [Bulwark](https://github.com/bulwarkmail/webmail) (AGPL-3.0, purpose-built JMAP client for Stalwart). ElectricSQL's shape subscriptions replace Bulwark's manual optimistic updates, and the JMAP client interface (~1500 lines) is reimplemented against our stack.
+Stalwart's built-in webadmin is operational/admin-only and not the product webmail surface. The target UI is a clean-room TanStack Start + ElectricSQL implementation inspired by [Bulwark](https://github.com/bulwarkmail/webmail), but with a different boundary: JMAP stays server-side in `mailbox-service`. The browser reads mailbox state from the `mailbox_service` PostgreSQL projection via ElectricSQL and sends mutations back through `mailbox-service`'s authenticated HTTP API.

@@ -1,0 +1,27 @@
+[Unit]
+Description=Electric Sync Service (Mail)
+After=forge-metal-firewall.target network.target postgresql.service mailbox-service.service
+Requires=forge-metal-firewall.target
+Wants=postgresql.service mailbox-service.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/podman pull {{ electric_mail_image }}
+ExecStart=/usr/bin/podman run --rm \
+  --name electric-mail \
+  --network=host \
+  -e DATABASE_URL=postgresql://electric_mail:{{ electric_mail_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/mailbox_service \
+  -e ELECTRIC_PORT={{ services.electric_mail.port }} \
+  -e ELECTRIC_SECRET={{ electric_mail_api_secret }} \
+  -e ELECTRIC_STORAGE_DIR=/data \
+  -e ELECTRIC_INSTANCE_ID=electric-mail \
+  -e ELECTRIC_REPLICATION_STREAM_ID=mail \
+  -e RELEASE_NAME=electric_mail \
+  -v {{ electric_mail_storage_dir }}:/data \
+  {{ electric_mail_image }}
+ExecStop=/usr/bin/podman stop electric-mail
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

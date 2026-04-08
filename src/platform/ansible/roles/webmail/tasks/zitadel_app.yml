@@ -1,0 +1,101 @@
+---
+- name: Wait for Zitadel readiness
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/healthz"
+    status_code: 200
+  register: webmail_zitadel_health
+  until: webmail_zitadel_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read Zitadel admin PAT
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: webmail_zitadel_pat_raw
+
+- name: Set Zitadel PAT fact
+  ansible.builtin.set_fact:
+    webmail_zitadel_pat: "{{ webmail_zitadel_pat_raw.content | b64decode | trim }}"
+
+- name: Search for mailbox-service project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ webmail_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ webmail_auth_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: webmail_project_search
+
+- name: Set project ID fact
+  ansible.builtin.set_fact:
+    webmail_project_id: "{{ webmail_project_search.json.result[0].id }}"
+  when: webmail_project_search.json.result is defined and webmail_project_search.json.result | length > 0
+
+- name: Search for existing webmail app in project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ webmail_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ webmail_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: webmail
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: webmail_app_search
+  when: webmail_project_id is defined
+
+- name: Set existing app fact
+  ansible.builtin.set_fact:
+    webmail_app_exists: "{{ webmail_app_search.json.result is defined and webmail_app_search.json.result | length > 0 }}"
+    webmail_client_id: "{{ webmail_app_search.json.result[0].oidcConfig.clientId | default('') }}"
+  when: webmail_app_search is not skipped
+
+- name: Create webmail OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ webmail_project_id }}/apps/oidc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ webmail_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: webmail
+      redirectUris:
+        - "https://{{ webmail_domain }}/callback"
+      responseTypes:
+        - "OIDC_RESPONSE_TYPE_CODE"
+      grantTypes:
+        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+      appType: "OIDC_APP_TYPE_USER_AGENT"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      postLogoutRedirectUris:
+        - "https://{{ webmail_domain }}"
+      devMode: false
+      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+    status_code: 200
+  register: webmail_app_created
+  when: webmail_app_exists is defined and not webmail_app_exists | bool
+
+- name: Set client ID from created app
+  ansible.builtin.set_fact:
+    webmail_client_id: "{{ webmail_app_created.json.clientId }}"
+  when: webmail_app_created is not skipped and webmail_app_created is changed
+
+- name: Ensure env directory exists
+  ansible.builtin.file:
+    path: /etc/webmail
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"

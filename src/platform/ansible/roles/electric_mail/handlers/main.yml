@@ -1,0 +1,11 @@
+---
+- name: Restart electric-mail
+  ansible.builtin.systemd:
+    name: electric-mail
+    state: restarted
+    daemon_reload: true
+
+- name: Reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
