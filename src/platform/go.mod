@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/forge-metal/vm-orchestrator v0.0.0
+	github.com/forge-metal/workload v0.0.0
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.2
@@ -47,3 +48,5 @@ require (
 replace github.com/forge-metal/otel => ../otel
 
 replace github.com/forge-metal/vm-orchestrator => ../vm-orchestrator
+
+replace github.com/forge-metal/workload => ../workload
