@@ -314,10 +314,7 @@ func startClickHouseForE2E(t *testing.T) (chdriver.Conn, string) {
 	waitForTCP(t, address)
 	t.Logf("clickhouse ready on %s", address)
 
-	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{address},
-		Auth: clickhouse.Auth{Username: "default"},
-	})
+	conn, err := openClickHouseConn(address)
 	if err != nil {
 		t.Fatalf("open clickhouse: %v", err)
 	}
@@ -350,6 +347,13 @@ func startClickHouseForE2E(t *testing.T) (chdriver.Conn, string) {
 
 	t.Log("clickhouse: forge_metal database + schemas ready")
 	return conn, address
+}
+
+func openClickHouseConn(address string) (chdriver.Conn, error) {
+	return clickhouse.Open(&clickhouse.Options{
+		Addr: []string{address},
+		Auth: clickhouse.Auth{Username: "default"},
+	})
 }
 
 func findClickHouseBinary(t *testing.T) string {

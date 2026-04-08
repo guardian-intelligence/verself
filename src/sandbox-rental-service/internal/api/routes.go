@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -20,26 +19,26 @@ import (
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient) {
 	huma.Register(api, huma.Operation{
-		OperationID:   "submit-job",
+		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
-		Path:          "/api/v1/jobs",
-		Summary:       "Submit a new sandbox job",
+		Path:          "/api/v1/executions",
+		Summary:       "Submit a new execution",
 		DefaultStatus: 201,
-	}, submitJob(svc))
+	}, submitExecution(svc))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-job",
+		OperationID: "get-execution",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/jobs/{job_id}",
-		Summary:     "Get job status and result",
-	}, getJob(svc))
+		Path:        "/api/v1/executions/{execution_id}",
+		Summary:     "Get execution status and latest attempt",
+	}, getExecution(svc))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-job-logs",
+		OperationID: "get-execution-logs",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/jobs/{job_id}/logs",
-		Summary:     "Get job log output",
-	}, getJobLogs(svc))
+		Path:        "/api/v1/executions/{execution_id}/logs",
+		Summary:     "Get latest execution attempt log output",
+	}, getExecutionLogs(svc))
 
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
@@ -81,34 +80,31 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}, createBillingSubscription(billing))
 }
 
-// --- typed inputs/outputs ---
+type SubmitExecutionInput struct {
+	Body jobs.SubmitRequest
+}
 
-type SubmitJobInput struct {
+type SubmitExecutionOutput struct {
 	Body struct {
-		RepoURL    string `json:"repo_url" required:"true" doc:"GitHub HTTPS URL of the repository"`
-		RunCommand string `json:"run_command,omitempty" doc:"Command to execute (default: echo hello)"`
+		ExecutionID string `json:"execution_id"`
+		AttemptID   string `json:"attempt_id"`
+		Status      string `json:"status"`
 	}
 }
 
-type SubmitJobOutput struct {
+type ExecutionIDPath struct {
+	ExecutionID string `path:"execution_id" doc:"Execution UUID"`
+}
+
+type GetExecutionOutput struct {
+	Body jobs.ExecutionRecord
+}
+
+type GetExecutionLogsOutput struct {
 	Body struct {
-		JobID  string `json:"job_id"`
-		Status string `json:"status"`
-	}
-}
-
-type JobIDPath struct {
-	JobID string `path:"job_id" doc:"Job UUID"`
-}
-
-type GetJobOutput struct {
-	Body jobs.JobRecord
-}
-
-type GetJobLogsOutput struct {
-	Body struct {
-		JobID string `json:"job_id"`
-		Logs  string `json:"logs"`
+		ExecutionID string `json:"execution_id"`
+		AttemptID   string `json:"attempt_id"`
+		Logs        string `json:"logs"`
 	}
 }
 
@@ -155,33 +151,31 @@ type SubscribeInput struct {
 	}
 }
 
-// --- handler factories ---
-
-func requireOrgID(ctx context.Context) (int64, error) {
+func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
-		return 0, huma.Error401Unauthorized("missing identity")
+		return nil, huma.Error401Unauthorized("missing identity")
 	}
-	orgID, err := strconv.ParseInt(identity.OrgID, 10, 64)
+	return identity, nil
+}
+
+func requireOrgID(ctx context.Context) (uint64, error) {
+	identity, err := requireIdentity(ctx)
+	if err != nil {
+		return 0, err
+	}
+	orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
 	if err != nil {
 		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 	}
 	return orgID, nil
 }
 
-func submitJob(svc *jobs.Service) func(context.Context, *SubmitJobInput) (*SubmitJobOutput, error) {
-	return func(ctx context.Context, input *SubmitJobInput) (*SubmitJobOutput, error) {
-		identity := auth.FromContext(ctx)
-		if identity == nil {
-			return nil, huma.Error401Unauthorized("missing identity")
-		}
-
-		repoURL := strings.TrimSpace(input.Body.RepoURL)
-		if repoURL == "" {
-			return nil, huma.Error400BadRequest("repo_url is required")
-		}
-		if !strings.HasPrefix(repoURL, "https://") {
-			return nil, huma.Error400BadRequest("repo_url must be an HTTPS URL")
+func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
+	return func(ctx context.Context, input *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
@@ -189,56 +183,73 @@ func submitJob(svc *jobs.Service) func(context.Context, *SubmitJobInput) (*Submi
 			return nil, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 		}
 
-		jobID, err := svc.Submit(ctx, orgID, identity.Subject, repoURL, input.Body.RunCommand)
+		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, input.Body)
 		if err != nil {
-			if errors.Is(err, jobs.ErrQuotaExceeded) {
+			switch {
+			case errors.Is(err, jobs.ErrQuotaExceeded):
 				return nil, huma.Error429TooManyRequests("quota exceeded")
-			}
-			if errors.Is(err, billingclient.ErrPaymentRequired) {
+			case errors.Is(err, billingclient.ErrPaymentRequired):
 				return nil, huma.Error402PaymentRequired("insufficient balance")
+			default:
+				return nil, huma.Error500InternalServerError("submit execution", err)
 			}
-			return nil, huma.Error500InternalServerError("submit job", err)
 		}
 
-		out := &SubmitJobOutput{}
-		out.Body.JobID = jobID.String()
-		out.Body.Status = "running"
+		out := &SubmitExecutionOutput{}
+		out.Body.ExecutionID = executionID.String()
+		out.Body.AttemptID = attemptID.String()
+		out.Body.Status = jobs.StateReserved
 		return out, nil
 	}
 }
 
-func getJob(svc *jobs.Service) func(context.Context, *JobIDPath) (*GetJobOutput, error) {
-	return func(ctx context.Context, input *JobIDPath) (*GetJobOutput, error) {
-		jobID, err := uuid.Parse(input.JobID)
+func getExecution(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*GetExecutionOutput, error) {
+	return func(ctx context.Context, input *ExecutionIDPath) (*GetExecutionOutput, error) {
+		orgID, err := requireOrgID(ctx)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid job_id: " + err.Error())
+			return nil, err
+		}
+		executionID, err := uuid.Parse(input.ExecutionID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid execution_id: " + err.Error())
 		}
 
-		job, err := svc.GetJob(ctx, jobID)
+		execution, err := svc.GetExecution(ctx, orgID, executionID)
 		if err != nil {
-			return nil, huma.Error404NotFound("job not found")
+			if errors.Is(err, jobs.ErrExecutionMissing) {
+				return nil, huma.Error404NotFound("execution not found")
+			}
+			return nil, huma.Error500InternalServerError("get execution", err)
 		}
 
-		out := &GetJobOutput{}
-		out.Body = *job
+		out := &GetExecutionOutput{}
+		out.Body = *execution
 		return out, nil
 	}
 }
 
-func getJobLogs(svc *jobs.Service) func(context.Context, *JobIDPath) (*GetJobLogsOutput, error) {
-	return func(ctx context.Context, input *JobIDPath) (*GetJobLogsOutput, error) {
-		jobID, err := uuid.Parse(input.JobID)
+func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*GetExecutionLogsOutput, error) {
+	return func(ctx context.Context, input *ExecutionIDPath) (*GetExecutionLogsOutput, error) {
+		orgID, err := requireOrgID(ctx)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid job_id: " + err.Error())
+			return nil, err
+		}
+		executionID, err := uuid.Parse(input.ExecutionID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid execution_id: " + err.Error())
 		}
 
-		logs, err := svc.GetJobLogs(ctx, jobID)
+		attemptID, logs, err := svc.GetExecutionLogs(ctx, orgID, executionID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("get job logs", err)
+			if errors.Is(err, jobs.ErrExecutionMissing) {
+				return nil, huma.Error404NotFound("execution not found")
+			}
+			return nil, huma.Error500InternalServerError("get execution logs", err)
 		}
 
-		out := &GetJobLogsOutput{}
-		out.Body.JobID = jobID.String()
+		out := &GetExecutionLogsOutput{}
+		out.Body.ExecutionID = executionID.String()
+		out.Body.AttemptID = attemptID.String()
 		out.Body.Logs = logs
 		return out, nil
 	}
@@ -250,7 +261,7 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, err
 		}
-		resp, err := billing.Generated().GetOrgBalanceWithResponse(ctx, orgID)
+		resp, err := billing.Generated().GetOrgBalanceWithResponse(ctx, int64(orgID))
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -267,7 +278,7 @@ func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context
 		if err != nil {
 			return nil, err
 		}
-		resp, err := billing.Generated().ListSubscriptionsWithResponse(ctx, orgID)
+		resp, err := billing.Generated().ListSubscriptionsWithResponse(ctx, int64(orgID))
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -291,7 +302,7 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 		if input.Active {
 			params.Active = &input.Active
 		}
-		resp, err := billing.Generated().ListGrantsWithResponse(ctx, orgID, params)
+		resp, err := billing.Generated().ListGrantsWithResponse(ctx, int64(orgID), params)
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -309,7 +320,7 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 			return nil, err
 		}
 		resp, err := billing.Generated().CreateCheckoutWithResponse(ctx, billingclient.CreateCheckoutJSONRequestBody{
-			OrgId:       orgID,
+			OrgId:       int64(orgID),
 			ProductId:   input.Body.ProductID,
 			AmountCents: input.Body.AmountCents,
 			SuccessUrl:  input.Body.SuccessURL,
@@ -334,7 +345,7 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 			return nil, err
 		}
 		body := billingclient.CreateSubscriptionJSONRequestBody{
-			OrgId:      orgID,
+			OrgId:      int64(orgID),
 			PlanId:     input.Body.PlanID,
 			SuccessUrl: input.Body.SuccessURL,
 			CancelUrl:  input.Body.CancelURL,
