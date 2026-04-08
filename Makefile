@@ -61,9 +61,6 @@ tidy:
 	cd $(BC) && go mod tidy
 	cd $(SR) && go mod tidy
 
-doctor: build ## Check that all required dev tools are present and at the right version
-	cd $(FM) && ./forge-metal doctor
-
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
 
