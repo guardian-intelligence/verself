@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/mailbox-service/internal/mailstore"
 )
 
@@ -35,6 +36,14 @@ type mailBodyOutput struct {
 		TextBody  string `json:"text_body"`
 		HTMLBody  string `json:"html_body"`
 		FetchedAt string `json:"fetched_at"`
+	}
+}
+
+type mailAccountOutput struct {
+	Body struct {
+		AccountID    string `json:"account_id"`
+		EmailAddress string `json:"email_address"`
+		DisplayName  string `json:"display_name"`
 	}
 }
 
@@ -93,6 +102,13 @@ func registerMailRoutes(api huma.API, svc provider) {
 		Path:        "/api/v1/mail/emails/{email_id}/body",
 		Summary:     "Fetch and cache an email body",
 	}, fetchBody(svc))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "mail-account",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/mail/account",
+		Summary:     "Get the authenticated user's bound mailbox account",
+	}, accountInfo(svc))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "mail-sync-status",
@@ -182,6 +198,24 @@ func fetchBody(svc provider) func(context.Context, *mailEmailPathInput) (*mailBo
 		out.Body.TextBody = body.TextBody
 		out.Body.HTMLBody = body.HTMLBody
 		out.Body.FetchedAt = body.FetchedAt.UTC().Format(time.RFC3339)
+		return out, nil
+	}
+}
+
+func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailAccountOutput, error) {
+	return func(ctx context.Context, _ *mailboxServiceEmptyInput) (*mailAccountOutput, error) {
+		identity := auth.FromContext(ctx)
+		if identity == nil {
+			return nil, huma.Error401Unauthorized("missing identity")
+		}
+		account, err := svc.GetBoundAccount(ctx, identity.Subject)
+		if err != nil {
+			return nil, toHumaError("get bound account", err)
+		}
+		out := &mailAccountOutput{}
+		out.Body.AccountID = account.AccountID
+		out.Body.EmailAddress = account.EmailAddress
+		out.Body.DisplayName = account.DisplayName
 		return out, nil
 	}
 }

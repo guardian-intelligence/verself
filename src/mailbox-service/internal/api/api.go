@@ -15,6 +15,7 @@ type provider interface {
 	Ready(context.Context) error
 	Status() app.ServiceStatus
 	ResolveBoundAccount(context.Context, string) (string, error)
+	GetBoundAccount(context.Context, string) (mailstore.Account, error)
 	SetEmailSeen(context.Context, string, string, bool) error
 	SetEmailFlagged(context.Context, string, string, bool) error
 	MoveEmail(context.Context, string, string, string) error

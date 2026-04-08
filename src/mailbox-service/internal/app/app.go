@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -69,6 +70,17 @@ func (s *Service) Ready(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) GetBoundAccount(ctx context.Context, subject string) (mailstore.Account, error) {
+	if s.store == nil {
+		return mailstore.Account{}, fmt.Errorf("mailstore is not configured")
+	}
+	accountID, err := s.store.ResolveBinding(ctx, subject)
+	if err != nil {
+		return mailstore.Account{}, err
+	}
+	return s.store.LookupAccount(ctx, accountID)
 }
 
 func (s *Service) Status() ServiceStatus {
