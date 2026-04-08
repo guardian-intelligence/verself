@@ -15,15 +15,26 @@ catalog:
   "@tanstack/electric-db-collection": ^0.3.2
   "@tanstack/query-db-collection": ^1.0.31
   "@tanstack/react-db": ^0.1.78
+  "@tailwindcss/typography": ^0.5.16
   "@tanstack/react-form": ^1.28.6
   "@tanstack/react-query": ^5.75.0
   "@tanstack/react-router": ^1.167.0
   "@tanstack/react-start": ^1.166.0
+  "@tiptap/core": ^2
+  "@tiptap/extension-image": ^2
+  "@tiptap/extension-link": ^2
+  "@tiptap/extension-placeholder": ^2
+  "@tiptap/html": ^2
+  "@tiptap/pm": ^2
+  "@tiptap/react": ^2
+  "@tiptap/starter-kit": ^2
   "@types/node": ^22.19.17
   "@types/react": ^19
   "@types/react-dom": ^19
   "@vitejs/plugin-react": ^6.0.1
   clsx: ^2.1.1
+  jose: ^6
+  postgres: ^3
   nitro: ^3.0.260311-beta
   oidc-client-ts: ^3.1.0
   react: ^19.0.0
