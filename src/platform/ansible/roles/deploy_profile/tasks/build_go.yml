@@ -78,6 +78,25 @@
     GOARCH: amd64
   changed_when: true
 
+- name: Build mailbox-service binary
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - go
+      - build
+      - -ldflags=-s -w -X main.version={{ forge_metal_version | default('dev') }}
+      - -o
+      - "{{ deploy_profile_repo_root }}/src/mailbox-service/mailbox-service"
+      - ./src/mailbox-service/cmd/mailbox-service
+    chdir: "{{ deploy_profile_repo_root }}"
+  environment:
+    CGO_ENABLED: "0"
+    GOOS: linux
+    GOARCH: amd64
+  changed_when: true
+
 - name: Copy Go binaries to server
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -86,6 +105,7 @@
   register: deploy_profile_go_binary_copy_results
   loop:
     - { src: "{{ deploy_profile_repo_root }}/src/platform/forge-metal", name: forge-metal }
+    - { src: "{{ deploy_profile_repo_root }}/src/mailbox-service/mailbox-service", name: mailbox-service }
     - { src: "{{ deploy_profile_repo_root }}/src/billing-service/billing-service", name: billing-service }
     - { src: "{{ deploy_profile_repo_root }}/src/billing-service/tb-inspect", name: tb-inspect }
     - { src: "{{ deploy_profile_repo_root }}/src/sandbox-rental-service/sandbox-rental-service", name: sandbox-rental-service }
@@ -123,3 +143,20 @@
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_sandbox_rental_service_binary_copy.changed | default(false)
   notify: restart sandbox-rental-service
+
+- name: Set mailbox-service binary copy fact
+  ansible.builtin.set_fact:
+    deploy_profile_mailbox_service_binary_copy: >-
+      {{
+        (
+          deploy_profile_go_binary_copy_results.results
+          | selectattr('item.name', 'equalto', 'mailbox-service')
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Trigger mailbox-service restart when binary changed
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_mailbox_service_binary_copy.changed | default(false)
+  notify: restart mailbox-service

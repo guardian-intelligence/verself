@@ -134,14 +134,7 @@ Managed by Ansible:
 
 Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands in the recipient's mailbox. Stalwart supports per-account Sieve scripts managed via JMAP (`urn:ietf:params:jmap:sieve`) or ManageSieve (port 4190, internal only).
 
-**Operator forwarding:** The `ceo@` account has a Sieve `redirect :copy` script that forwards all inbound mail to the operator's personal address. The forwarded copy is relayed through Resend SMTP (`queue.route.relay`). This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), no forwarding is configured.
-
-```sieve
-require ["redirect", "copy"];
-redirect :copy "operator@personal.com";
-```
-
-The `:copy` flag keeps a local copy in the `ceo@` mailbox. Without it, the original would be consumed by the redirect.
+**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally.
 
 **Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Agent Sieve scripts would be provisioned alongside accounts in the seed playbook.
 
@@ -149,7 +142,7 @@ The `:copy` flag keeps a local copy in the `ceo@` mailbox. Without it, the origi
 
 Stalwart v0.15+ enforces a split between **local settings** (TOML file, read at startup) and **database settings** (stored in PostgreSQL, pushed via the Settings API). Server/listener/certificate/store/directory/auth/tracer config lives in TOML. Session/queue/metrics config is pushed post-startup by `tasks/settings.yml` via `POST /api/settings`.
 
-This matters for the outbound relay: `queue.route.relay.*` and `queue.strategy.route` are database settings — they cannot be defined in `stalwart.toml.j2`.
+This matters for any future Stalwart queue features: database-scoped keys such as `queue.*` cannot be defined in `stalwart.toml.j2`.
 
 ## Developer tooling
 

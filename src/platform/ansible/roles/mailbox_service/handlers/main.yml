@@ -1,0 +1,20 @@
+---
+- name: Check if mailbox-service unit exists
+  listen: restart mailbox-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/mailbox-service.service
+  register: mailbox_service_unit_file
+
+- name: Restart mailbox-service
+  listen: restart mailbox-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: mailbox-service
+    state: restarted
+  when: mailbox_service_unit_file.stat.exists
+
+- name: Reload nftables for mailbox-service
+  listen: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded

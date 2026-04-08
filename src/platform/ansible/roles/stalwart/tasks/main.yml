@@ -127,7 +127,6 @@
       Group=stalwart
       LoadCredential=admin-password:/etc/credstore/stalwart/admin-password
       LoadCredential=pg-password:/etc/credstore/stalwart/pg-password
-      LoadCredential=resend-api-key:/etc/credstore/stalwart/resend-api-key
       ExecStart={{ fm_bin }}/stalwart --config /etc/stalwart/config.toml
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure

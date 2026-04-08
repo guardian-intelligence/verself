@@ -1,47 +1,66 @@
 ---
-# Push database-scoped settings via the Stalwart Settings API.
-# These cannot live in the TOML config (local-only) — Stalwart v0.15+
-# enforces a split between local and database settings.
-#
-# The Settings API uses a typed operation format:
-#   POST /api/settings
-#   Body: [{"type":"insert","prefix":null,"values":[["key","value"]],"assertEmpty":false}]
+# Push database-scoped settings via the Stalwart CLI. These settings are stored
+# in Stalwart's database config layer, not in the local TOML bootstrap file.
 
-- name: Read Resend API key for relay config
-  ansible.builtin.slurp:
-    src: /etc/credstore/stalwart/resend-api-key
-  register: stalwart_resend_key_raw
+- name: Push database settings via stalwart-cli
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/stalwart-cli"
+      - -u
+      - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
+      - -c
+      - "admin:{{ stalwart_admin_password }}"
+      - server
+      - add-config
+      - "{{ item.key }}"
+      - "{{ item.value }}"
+  loop:
+    # SMTP session — accept local, no open relay.
+    - key: session.rcpt.relay
+      value: "false"
+    # Metrics via OpenTelemetry.
+    - key: metrics.open-telemetry.transport
+      value: grpc
+    - key: metrics.open-telemetry.endpoint
+      value: "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
+    - key: metrics.open-telemetry.interval
+      value: 30s
+  changed_when: false
   no_log: true
 
-- name: Push database settings via Settings API
-  ansible.builtin.uri:
-    url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/settings"
-    method: POST
-    url_username: admin
-    url_password: "{{ stalwart_admin_password }}"
-    force_basic_auth: true
-    body_format: json
-    body:
-      - type: insert
-        prefix:
-        assertEmpty: false
-        values:
-          # SMTP session — accept local, no open relay
-          - ["session.rcpt.relay", "false"]
-          - ["session.rcpt.directory", "'internal'"]
-          # Outbound relay via Resend SMTP (Sieve redirect)
-          - ["queue.route.relay.type", "relay"]
-          - ["queue.route.relay.address", "smtp.resend.com"]
-          - ["queue.route.relay.port", "465"]
-          - ["queue.route.relay.protocol", "smtp"]
-          - ["queue.route.relay.tls.implicit", "true"]
-          - ["queue.route.relay.auth.username", "resend"]
-          - ["queue.route.relay.auth.secret", "{{ stalwart_resend_key_raw.content | b64decode | trim }}"]
-          # Route local mail locally, everything else through Resend
-          - ["queue.strategy.route", "[{if = \"is_local_domain('*', rcpt_domain)\", then = \"'local'\"}, {else = \"'relay'\"}]"]
-          # Metrics via OpenTelemetry
-          - ["metrics.open-telemetry.transport", "grpc"]
-          - ["metrics.open-telemetry.endpoint", "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"]
-          - ["metrics.open-telemetry.interval", "30s"]
-    status_code: 200
+- name: Remove obsolete Stalwart relay and Sieve settings
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/stalwart-cli"
+      - -u
+      - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
+      - -c
+      - "admin:{{ stalwart_admin_password }}"
+      - server
+      - delete-config
+      - "{{ item }}"
+  loop:
+    - queue.route.relay
+    - queue.strategy.route
+    - remote.resend
+    - queue.outbound
+    - session.rcpt.directory
+    - session.data.script
+    - sieve.trusted.scripts.operator_forward
+    - sieve.trusted.scripts.operator_forward.contents
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Reload Stalwart configuration after settings update
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/stalwart-cli"
+      - -u
+      - "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}"
+      - -c
+      - "admin:{{ stalwart_admin_password }}"
+      - server
+      - reload-config
+  changed_when: false
   no_log: true

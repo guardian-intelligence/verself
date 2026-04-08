@@ -1,0 +1,193 @@
+---
+- name: Verify mailbox-service binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/mailbox-service"
+  register: mailbox_service_binary
+  failed_when: not mailbox_service_binary.stat.exists
+
+- name: Create mailbox_service system group
+  ansible.builtin.group:
+    name: mailbox_service
+    system: true
+
+- name: Create mailbox_service system user
+  ansible.builtin.user:
+    name: mailbox_service
+    group: mailbox_service
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Stop and disable legacy inbound-mail-forwarder
+  ansible.builtin.systemd:
+    name: inbound-mail-forwarder
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+
+- name: Stop and disable legacy inbound-mail-proxy
+  ansible.builtin.systemd:
+    name: inbound-mail-proxy
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove legacy inbound-mail-forwarder systemd unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/inbound-mail-forwarder.service
+    state: absent
+
+- name: Remove legacy inbound-mail-proxy systemd unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/inbound-mail-proxy.service
+    state: absent
+
+- name: Remove legacy inbound-mail-forwarder nftables ruleset
+  ansible.builtin.file:
+    path: /etc/nftables.d/inbound-mail-forwarder.nft
+    state: absent
+  notify: reload nftables
+
+- name: Remove legacy inbound-mail-proxy nftables ruleset
+  ansible.builtin.file:
+    path: /etc/nftables.d/inbound-mail-proxy.nft
+    state: absent
+  notify: reload nftables
+
+- name: Remove legacy inbound-mail-forwarder binary
+  ansible.builtin.file:
+    path: "{{ fm_bin }}/inbound-mail-forwarder"
+    state: absent
+
+- name: Remove legacy inbound-mail-proxy binary
+  ansible.builtin.file:
+    path: "{{ fm_bin }}/inbound-mail-proxy"
+    state: absent
+
+- name: Deploy mailbox-service nftables ruleset
+  ansible.builtin.template:
+    src: mailbox-service.nft.j2
+    dest: /etc/nftables.d/mailbox-service.nft
+    mode: "0644"
+  notify: reload nftables
+
+- name: Apply mailbox-service nftables before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Include mailbox-service credential tasks
+  ansible.builtin.include_tasks: credentials.yml
+
+- name: Create mailbox-service state directory
+  ansible.builtin.file:
+    path: /var/lib/mailbox-service
+    state: directory
+    owner: mailbox_service
+    group: mailbox_service
+    mode: "0750"
+
+- name: Check legacy inbound-mail state file
+  ansible.builtin.stat:
+    path: /var/lib/inbound-mail-forwarder/state.json
+  register: mailbox_service_legacy_state
+
+- name: Check mailbox-service state file
+  ansible.builtin.stat:
+    path: /var/lib/mailbox-service/forwarder-state.json
+  register: mailbox_service_state
+
+- name: Migrate legacy inbound-mail state into mailbox-service
+  ansible.builtin.copy:
+    src: /var/lib/inbound-mail-forwarder/state.json
+    dest: /var/lib/mailbox-service/forwarder-state.json
+    remote_src: true
+    owner: mailbox_service
+    group: mailbox_service
+    mode: "0640"
+  when:
+    - mailbox_service_legacy_state.stat.exists
+    - not mailbox_service_state.stat.exists
+
+- name: Deploy mailbox-service systemd unit
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Mailbox Service
+      After=forge-metal-firewall.target network.target stalwart.service
+      Requires=forge-metal-firewall.target
+      Wants=stalwart.service
+
+      [Service]
+      Type=simple
+      User=mailbox_service
+      Group=mailbox_service
+      LoadCredential=ceo-password:/etc/credstore/mailbox-service/ceo-password
+      LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
+      LoadCredential=resend-api-key:/etc/credstore/mailbox-service/resend-api-key
+      Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+      Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+      Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}
+      Environment=MAILBOX_SERVICE_STALWART_MAILBOX=ceo
+      Environment=MAILBOX_SERVICE_STALWART_LOCAL_DOMAIN={{ forge_metal_domain }}
+      Environment=MAILBOX_SERVICE_FORWARDER_FROM_ADDRESS={{ resend_sender_address }}
+      Environment=MAILBOX_SERVICE_FORWARDER_FROM_NAME={{ resend_sender_name }}
+      Environment=MAILBOX_SERVICE_FORWARDER_POLL_INTERVAL=5s
+      Environment=MAILBOX_SERVICE_FORWARDER_STATE_PATH=/var/lib/mailbox-service/forwarder-state.json
+      Environment=MAILBOX_SERVICE_OTLP_ENDPOINT={{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}
+      ExecStart={{ fm_bin }}/mailbox-service
+      Restart=always
+      RestartSec=5
+      ProtectSystem=strict
+      ProtectHome=true
+      ProtectKernelTunables=true
+      ProtectKernelModules=true
+      ProtectControlGroups=true
+      NoNewPrivileges=true
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictNamespaces=true
+      LockPersonality=true
+      ReadWritePaths=/var/lib/mailbox-service
+      PrivateTmp=true
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/mailbox-service.service
+    mode: "0644"
+  notify: restart mailbox-service
+
+- name: Apply mailbox-service unit changes before proceeding
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start mailbox-service
+  ansible.builtin.systemd:
+    name: mailbox-service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for mailbox-service listener to be present
+  ansible.builtin.wait_for:
+    host: "{{ services.mailbox_service.host }}"
+    port: "{{ services.mailbox_service.port }}"
+    timeout: 60
+
+- name: Wait for mailbox-service readiness
+  ansible.builtin.uri:
+    url: "http://{{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}/readyz"
+    method: GET
+    status_code: 200
+  register: mailbox_service_readyz
+  retries: 30
+  delay: 1
+  until: mailbox_service_readyz.status == 200
+
+- name: Remove legacy inbound-mail credstore directory
+  ansible.builtin.file:
+    path: /etc/credstore/inbound-mail-forwarder
+    state: absent
+
+- name: Remove legacy inbound-mail state directory
+  ansible.builtin.file:
+    path: /var/lib/inbound-mail-forwarder
+    state: absent

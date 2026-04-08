@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	./src/auth-middleware
 	./src/billing-service
+	./src/mailbox-service
 	./src/vm-orchestrator
 	./src/otel
 	./src/platform

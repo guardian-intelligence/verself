@@ -102,7 +102,18 @@
 {{ stalwart_domain }} {
 	import access_log
 	import waf_detection
-	reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+
+	handle /api/* {
+		respond 404
+	}
+
+	handle /jmap/session {
+		reverse_proxy {{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+	}
+
+	handle {
+		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+	}
 }
 
 {{ zitadel_domain }} {

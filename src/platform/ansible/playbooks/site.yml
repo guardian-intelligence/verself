@@ -136,8 +136,12 @@
       tags: [electric]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox]
+    - role: stalwart
+      tags: [stalwart]
     - role: otelcol
       tags: [otelcol]
+    - role: mailbox_service
+      tags: [mailbox_service]
     - role: hyperdx
       tags: [hyperdx]
     - role: verdaccio
