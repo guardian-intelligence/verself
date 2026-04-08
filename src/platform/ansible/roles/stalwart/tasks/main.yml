@@ -127,6 +127,7 @@
       Group=stalwart
       LoadCredential=admin-password:/etc/credstore/stalwart/admin-password
       LoadCredential=pg-password:/etc/credstore/stalwart/pg-password
+      LoadCredential=resend-api-key:/etc/credstore/stalwart/resend-api-key
       ExecStart={{ fm_bin }}/stalwart --config /etc/stalwart/config.toml
       ExecReload=/bin/kill -HUP $MAINPID
       Restart=on-failure
@@ -177,6 +178,11 @@
     host: "{{ services.stalwart.host }}"
     port: "{{ services.stalwart.smtp_port }}"
     timeout: 120
+
+# --- Database settings (session, relay, metrics) ---
+
+- name: Include database settings tasks
+  ansible.builtin.include_tasks: settings.yml
 
 # --- Bootstrap domain via Management API ---
 # Stalwart returns 200 for all /api/principal/name/ lookups, using the response

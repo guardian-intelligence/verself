@@ -63,13 +63,12 @@ store = "postgresql"
 user = "admin"
 secret = "%{file:/run/credentials/stalwart.service/admin-password}%"
 
-# --- SMTP receive-only policy ---
+# --- Settings below are local-only (TOML bootstrap) ---
+# session.*, remote.*, queue.*, metrics.* must be pushed via the Settings API
+# after startup — see tasks/settings.yml. Stalwart v0.15+ enforces this split:
+# https://stalw.art/docs/configuration/overview/#local-and-database-settings
 
-[session.rcpt]
-relay = false
-directory = "internal"
-
-# --- Telemetry: OpenTelemetry ---
+# --- Telemetry: OpenTelemetry (tracer is local-only, metrics is database) ---
 
 [tracer."otel"]
 type = "open-telemetry"
@@ -79,8 +78,3 @@ level = "info"
 enable = true
 enable.log-exporter = true
 enable.span-exporter = true
-
-[metrics."open-telemetry"]
-transport = "grpc"
-endpoint = "http://{{ services.otelcol.host }}:{{ services.otelcol.grpc_port }}"
-interval = "30s"

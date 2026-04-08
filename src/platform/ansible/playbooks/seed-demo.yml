@@ -433,16 +433,128 @@
       no_log: true
       tags: [stalwart]
 
+    # ── Operator email forwarding ────────────────────────────────────────────
+    # Push a Sieve redirect script to ceo@ that forwards all inbound mail
+    # to the operator's personal address via Resend SMTP relay.
+    # Gated on stalwart_operator_forward_to being non-empty.
+
+    - name: Get ceo@ JMAP session for forwarding setup
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap/session"
+        method: GET
+        url_username: ceo
+        url_password: "{{ seed_demo_user_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: seed_demo_ceo_session
+      no_log: true
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Extract ceo@ JMAP account ID
+      ansible.builtin.set_fact:
+        seed_demo_ceo_acct: "{{ (seed_demo_ceo_session.json.accounts | dict2items | first).key }}"
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Upload Sieve redirect script blob
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap/upload/{{ seed_demo_ceo_acct }}/"
+        method: POST
+        url_username: ceo
+        url_password: "{{ seed_demo_user_password }}"
+        force_basic_auth: true
+        headers:
+          Content-Type: "application/sieve"
+        body: "require [\"redirect\", \"copy\"];\nredirect :copy \"{{ stalwart_operator_forward_to }}\";\n"
+        return_content: true
+      register: seed_demo_sieve_blob
+      no_log: true
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Check existing Sieve scripts
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap"
+        method: POST
+        url_username: ceo
+        url_password: "{{ seed_demo_user_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          using:
+            - "urn:ietf:params:jmap:core"
+            - "urn:ietf:params:jmap:sieve"
+          methodCalls:
+            - - "SieveScript/query"
+              - accountId: "{{ seed_demo_ceo_acct }}"
+              - "q"
+            - - "SieveScript/get"
+              - accountId: "{{ seed_demo_ceo_acct }}"
+                "#ids":
+                  resultOf: "q"
+                  name: "SieveScript/query"
+                  path: "/ids"
+              - "g"
+        return_content: true
+      register: seed_demo_sieve_existing
+      no_log: true
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Find existing forward script ID
+      ansible.builtin.set_fact:
+        seed_demo_forward_script_id: >-
+          {{ (seed_demo_sieve_existing.json.methodResponses[1][1].list
+              | selectattr('name', 'equalto', 'forward')
+              | map(attribute='id') | list | first) | default('') }}
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Create or update Sieve forward script
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/jmap"
+        method: POST
+        url_username: ceo
+        url_password: "{{ seed_demo_user_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          using:
+            - "urn:ietf:params:jmap:core"
+            - "urn:ietf:params:jmap:sieve"
+          methodCalls:
+            - - "SieveScript/set"
+              - accountId: "{{ seed_demo_ceo_acct }}"
+                "{{ 'update' if seed_demo_forward_script_id | length > 0 else 'create' }}":
+                  "{{ seed_demo_forward_script_id if seed_demo_forward_script_id | length > 0 else 'new-forward' }}":
+                    name: "forward"
+                    blobId: "{{ seed_demo_sieve_blob.json.blobId }}"
+                    isActive: true
+              - "s"
+        return_content: true
+      no_log: true
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
     - name: Print mailbox summary
       ansible.builtin.debug:
-        msg:
-          - "Stalwart mailboxes created:"
-          - "  ceo@{{ forge_metal_domain }} (password: {{ seed_demo_user_password }})"
-          - "  bernoulli.agent@{{ forge_metal_domain }}"
-          - "  dijkstra.agent@{{ forge_metal_domain }}"
-          - "  lamport.agent@{{ forge_metal_domain }}"
-          - ""
-          - "  Webmail: https://{{ seed_demo_stalwart_domain }}"
+        msg: >-
+          {{
+            [
+              'Stalwart mailboxes created:',
+              '  ceo@' + forge_metal_domain + ' (password: ' + seed_demo_user_password + ')',
+              '  bernoulli.agent@' + forge_metal_domain,
+              '  dijkstra.agent@' + forge_metal_domain,
+              '  lamport.agent@' + forge_metal_domain,
+              ''
+            ]
+            + (
+              ['  Forwarding ceo@ -> ' + stalwart_operator_forward_to]
+              if stalwart_operator_forward_to | default('', true) | length > 0
+              else ['  Forwarding: disabled (set stalwart_operator_forward_to in group_vars)']
+            )
+          }}
       tags: [stalwart]
 
     # ── Verify billing auth ────────────────────────────────────────────────────
