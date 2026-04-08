@@ -1,0 +1,18 @@
+[Unit]
+Description=Letters Blog Frontend (TanStack Start)
+After=forge-metal-firewall.target network.target postgresql.service electric-letters.service
+Requires=forge-metal-firewall.target
+Wants=postgresql.service electric-letters.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+WorkingDirectory={{ letters_app_dir }}
+EnvironmentFile=/etc/letters/env
+ExecStart={{ fm_bin }}/node --import ./instrumentation.mts .output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+Environment=PATH={{ fm_bin }}:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target

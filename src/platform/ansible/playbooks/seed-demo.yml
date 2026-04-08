@@ -724,6 +724,23 @@
       register: seed_demo_mailbox_project_search
       tags: [dev-oidc]
 
+    - name: Find letters project for dev OIDC
+      ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "letters"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_demo_letters_project_search
+      tags: [dev-oidc]
+
     - name: Set dev OIDC project facts
       ansible.builtin.set_fact:
         seed_demo_dev_oidc_apps:
@@ -733,6 +750,9 @@
           - name: webmail-dev
             project_id: "{{ (seed_demo_mailbox_project_search.json.result | default([]) | first | default({})).id | default('') }}"
             port: 4245
+          - name: letters-dev
+            project_id: "{{ (seed_demo_letters_project_search.json.result | default([]) | first | default({})).id | default('') }}"
+            port: 4247
       tags: [dev-oidc]
 
     - name: Search for existing dev OIDC apps

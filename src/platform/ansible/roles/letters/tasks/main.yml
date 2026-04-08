@@ -1,0 +1,118 @@
+---
+- name: Include letters PostgreSQL database tasks
+  ansible.builtin.include_tasks: database.yml
+
+- name: Include letters PostgreSQL migration tasks
+  ansible.builtin.include_tasks: migrations.yml
+
+- name: Create letters install directory
+  ansible.builtin.file:
+    path: "{{ letters_install_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Remove generated letters artifacts before sync
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ letters_install_dir }}/node_modules"
+    - "{{ letters_install_dir }}/.output"
+    - "{{ letters_install_dir }}/.tanstack"
+    - "{{ letters_install_dir }}/apps/letters/node_modules"
+    - "{{ letters_install_dir }}/apps/letters/.output"
+    - "{{ letters_install_dir }}/apps/letters/.tanstack"
+    - "{{ letters_install_dir }}/packages/ui/node_modules"
+    - "{{ letters_install_dir }}/packages/ui/dist"
+
+- name: Synchronize letters source
+  delegate_to: localhost
+  become: false
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../../viteplus-monorepo/"
+    dest: "{{ letters_install_dir }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.output"
+      - "--exclude=dist"
+      - "--exclude=.tanstack"
+      - "--exclude=playwright-report"
+      - "--exclude=test-results"
+      - "--exclude=HANDOFF_PROMPT.md"
+      - "--delete-excluded"
+      - "--no-owner"
+      - "--no-group"
+
+- name: Install letters workspace dependencies
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - install
+    chdir: "{{ letters_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+
+- name: Build letters workspace
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - exec
+      - vp
+      - run
+      - -r
+      - build
+    chdir: "{{ letters_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart letters
+
+- name: Set up Zitadel OIDC application
+  ansible.builtin.include_tasks: zitadel_app.yml
+
+- name: Deploy letters environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/letters/env
+    mode: "0640"
+    owner: root
+    group: "{{ ansible_user }}"
+  notify: Restart letters
+
+- name: Deploy letters systemd unit
+  ansible.builtin.template:
+    src: letters.service.j2
+    dest: /etc/systemd/system/letters.service
+    mode: "0644"
+  notify: Restart letters
+
+- name: Deploy letters nftables rules
+  ansible.builtin.template:
+    src: letters.nft.j2
+    dest: /etc/nftables.d/letters.nft
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start letters
+  ansible.builtin.systemd:
+    name: letters
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for letters to be ready
+  ansible.builtin.wait_for:
+    host: "{{ services.letters.host }}"
+    port: "{{ services.letters.port }}"
+    timeout: 30

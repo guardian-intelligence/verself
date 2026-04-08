@@ -67,3 +67,9 @@ services:
   webmail:
     host: "127.0.0.1"
     port: 4245
+  letters:
+    host: "127.0.0.1"
+    port: 4247
+  electric_letters:
+    host: "127.0.0.1"
+    port: 3012

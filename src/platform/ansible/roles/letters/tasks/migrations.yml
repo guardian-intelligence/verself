@@ -1,0 +1,169 @@
+---
+- name: Compute local letters PostgreSQL migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../../viteplus-monorepo/apps/letters/migrations"
+    executable: /bin/bash
+  register: letters_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote letters PostgreSQL migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/letters-migrations/.applied-hash
+  register: letters_pg_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected letters tables
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d letters
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'posts';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: letters_pg_table_probe
+  changed_when: false
+  no_log: true
+
+- name: Apply letters PostgreSQL migrations
+  when: >-
+    letters_pg_migrations_remote_hash is failed
+    or (letters_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (letters_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (letters_pg_table_probe.stdout | trim) == '0'
+  block:
+    - name: Remove deployed letters migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/letters-migrations
+        state: absent
+
+    - name: Create deployed letters migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/letters-migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload letters PostgreSQL migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../viteplus-monorepo/apps/letters/migrations/"
+        dest: /opt/forge-metal/letters-migrations/
+        mode: "0644"
+
+    - name: Stop letters before schema recreate
+      ansible.builtin.systemd:
+        name: letters
+        state: stopped
+      failed_when: false
+
+    - name: Terminate letters connections before recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'letters' AND pid <> pg_backend_pid();"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Drop letters database before schema recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "DROP DATABASE IF EXISTS letters;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create letters database
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE letters OWNER letters;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Apply letters PostgreSQL migration files
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U letters
+          -d letters
+          -v ON_ERROR_STOP=1
+          -f /opt/forge-metal/letters-migrations/{{ item }}
+      environment:
+        PGPASSWORD: "{{ letters_pg_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../../viteplus-monorepo/apps/letters/migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record letters PostgreSQL migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ letters_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/letters-migrations/.applied-hash
+        mode: "0644"
+
+- name: Reconcile letters object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d letters
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF to_regclass('public.posts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.posts OWNER TO letters';
+        END IF;
+        IF to_regclass('public.claps') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.claps OWNER TO letters';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO letters;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.posts,
+        public.claps
+      TO letters;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true
