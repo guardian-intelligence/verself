@@ -40,9 +40,9 @@ Stalwart has two network paths — SMTP direct, HTTP through Caddy:
 
 Four layers:
 
-**1. nftables egress lockdown** (`stalwart.nft`): The `stalwart` system user can only make outbound connections to loopback (PostgreSQL on 5432, otelcol on 4317) and DNS port 53 (for DNSBL spam filter lookups). All other egress is dropped. Even a compromised Stalwart process cannot relay mail, exfiltrate data, or reach arbitrary endpoints.
+**1. nftables egress lockdown** (`stalwart.nft`): The `stalwart` system user can only make outbound connections to loopback (PostgreSQL on 5432, otelcol on 4317), DNS port 53 (DNSBL spam filter lookups), and port 465 (Resend SMTP relay for Sieve-initiated forwarding). All other egress is dropped.
 
-**2. Receive-only SMTP** (`relay = false` in config): Stalwart delivers to local mailboxes only. Attempts to use it as an open relay are rejected at the SMTP session level. Combined with the nftables egress drop, outbound mail is impossible through two independent mechanisms.
+**2. Receive-only SMTP** (`relay = false` in config): Stalwart rejects relay attempts from external SMTP clients — it only delivers to local mailboxes during inbound SMTP sessions. Server-side Sieve `redirect` rules can generate outbound mail that routes through the Resend relay (`queue.route.relay`), but this is not user-triggerable via SMTP — only admin-provisioned Sieve scripts can initiate outbound delivery.
 
 **3. systemd hardening:** `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`.
 
@@ -130,15 +130,47 @@ Managed by Ansible:
 
 **Manual step:** Request a PTR record from Latitude.sh for `<server_ip>` → `mail.<domain>`. Required for forward-confirmed reverse DNS (FCrDNS). Without it, Google and Microsoft may soft-reject or spam-folder inbound delivery. This cannot be automated via Cloudflare — it's controlled by the IP address owner.
 
+## Sieve filtering
+
+Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands in the recipient's mailbox. Stalwart supports per-account Sieve scripts managed via JMAP (`urn:ietf:params:jmap:sieve`) or ManageSieve (port 4190, internal only).
+
+**Operator forwarding:** The `ceo@` account has a Sieve `redirect :copy` script that forwards all inbound mail to the operator's personal address. The forwarded copy is relayed through Resend SMTP (`queue.route.relay`). This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), no forwarding is configured.
+
+```sieve
+require ["redirect", "copy"];
+redirect :copy "operator@personal.com";
+```
+
+The `:copy` flag keeps a local copy in the `ceo@` mailbox. Without it, the original would be consumed by the redirect.
+
+**Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Agent Sieve scripts would be provisioned alongside accounts in the seed playbook.
+
+## Configuration split
+
+Stalwart v0.15+ enforces a split between **local settings** (TOML file, read at startup) and **database settings** (stored in PostgreSQL, pushed via the Settings API). Server/listener/certificate/store/directory/auth/tracer config lives in TOML. Session/queue/metrics config is pushed post-startup by `tasks/settings.yml` via `POST /api/settings`.
+
+This matters for the outbound relay: `queue.route.relay.*` and `queue.strategy.route` are database settings — they cannot be defined in `stalwart.toml.j2`.
+
+## Developer tooling
+
+```bash
+cd src/platform && ./scripts/mail.sh                         # List ceo@ inbox
+cd src/platform && ./scripts/mail.sh -u bernoulli.agent      # List agent inbox
+cd src/platform && ./scripts/mail.sh -u bernoulli.agent -c   # Extract latest 2FA code
+cd src/platform && ./scripts/mail.sh -u bernoulli.agent -r <JMAP_ID>  # Read full email
+```
+
 ## Relevant files
 
 - `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
-- `roles/stalwart/templates/stalwart.toml.j2` — server config
+- `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
+- `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
 - `roles/stalwart/templates/stalwart.nft.j2` — egress firewall (per-user nftables)
 - `roles/stalwart/templates/stalwart-cert-sync.sh.j2` — ACME cert sync script
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `roles/stalwart/tasks/cert_sync.yml` — systemd timer + oneshot for cert sync
-- `playbooks/seed-demo.yml` (tag: `stalwart`) — mailbox provisioning
+- `playbooks/seed-demo.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
+- `scripts/mail.sh` — JMAP client for inbox listing, email reading, 2FA code extraction
 
 ## Product evolution
 

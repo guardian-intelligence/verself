@@ -17,6 +17,10 @@ resend_domain: "{{ resend_subdomain }}.{{ forge_metal_domain }}"
 resend_sender_address: "noreply@{{ resend_domain }}"
 resend_sender_name: forge-metal
 
+# Operator email forwarding — all mail to ceo@<domain> is forwarded here
+# via Resend SMTP relay. Required for turnkey operator notifications.
+stalwart_operator_forward_to: ""
+
 # WireGuard
 wireguard_interface: wg0
 wireguard_port: 51820

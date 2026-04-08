@@ -19,6 +19,9 @@ table inet forge_metal_stalwart {
         # Established/related (return traffic for accepted connections).
         ct state established,related accept
 
+        # Resend SMTP relay (implicit TLS).
+        tcp dport 465 accept
+
         # DNS resolution (DNSBL spam filter lookups).
         tcp dport 53 accept
         udp dport 53 accept
