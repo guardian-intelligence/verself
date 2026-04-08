@@ -32,10 +32,10 @@ func executeRoot(t *testing.T, paths config.Paths, args ...string) (string, erro
 func writeConfigFile(t *testing.T, path, contents string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -205,7 +205,7 @@ func TestConfigEditUsesEditorAndCreatesFile(t *testing.T) {
 	editorLog := filepath.Join(dir, "editor.log")
 	editor := filepath.Join(dir, "fake-editor.sh")
 	writeConfigFile(t, editor, "#!/usr/bin/env bash\nprintf '%s\\n' \"$1\" >> "+editorLog+"\n")
-	if err := os.Chmod(editor, 0755); err != nil {
+	if err := os.Chmod(editor, 0o755); err != nil {
 		t.Fatalf("chmod editor: %v", err)
 	}
 

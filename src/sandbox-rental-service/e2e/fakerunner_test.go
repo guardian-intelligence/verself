@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 )
 
 // fakeRunner implements jobs.SandboxRunner for e2e tests.
@@ -18,7 +18,7 @@ type fakeRunner struct {
 	err      error         // if set, Run returns this error
 }
 
-func (f *fakeRunner) Run(ctx context.Context, job fastsandbox.JobConfig) (fastsandbox.JobResult, error) {
+func (f *fakeRunner) Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error) {
 	delay := f.delay
 	if delay == 0 {
 		delay = 200 * time.Millisecond
@@ -27,11 +27,11 @@ func (f *fakeRunner) Run(ctx context.Context, job fastsandbox.JobConfig) (fastsa
 	select {
 	case <-time.After(delay):
 	case <-ctx.Done():
-		return fastsandbox.JobResult{}, ctx.Err()
+		return vmorchestrator.JobResult{}, ctx.Err()
 	}
 
 	if f.err != nil {
-		return fastsandbox.JobResult{}, f.err
+		return vmorchestrator.JobResult{}, f.err
 	}
 
 	logs := f.logs
@@ -39,7 +39,7 @@ func (f *fakeRunner) Run(ctx context.Context, job fastsandbox.JobConfig) (fastsa
 		logs = "hello from e2e\n"
 	}
 
-	return fastsandbox.JobResult{
+	return vmorchestrator.JobResult{
 		ExitCode:    f.exitCode,
 		Logs:        logs,
 		Duration:    delay,

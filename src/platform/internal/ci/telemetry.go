@@ -10,20 +10,20 @@ import (
 
 	ch "github.com/forge-metal/forge-metal/internal/clickhouse"
 	"github.com/forge-metal/forge-metal/internal/config"
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
 )
 
 type emitExecTelemetryInput struct {
-	FirecrackerConfig fastsandbox.Config
+	FirecrackerConfig vmorchestrator.Config
 	Request           ExecRequest
 	RunID             string
 	Manifest          *Manifest
 	Toolchain         *Toolchain
 	InstallNeeded     bool
 	GoldenSnapshot    string
-	Job               fastsandbox.JobConfig
-	JobResult         fastsandbox.JobResult
+	Job               vmorchestrator.JobConfig
+	JobResult         vmorchestrator.JobResult
 	CloneDuration     time.Duration
 	CreatedAt         time.Time
 	StartedAt         time.Time
@@ -34,7 +34,7 @@ type emitExecTelemetryInput struct {
 }
 
 type emitWarmTelemetryInput struct {
-	FirecrackerConfig         fastsandbox.Config
+	FirecrackerConfig         vmorchestrator.Config
 	Request                   WarmRequest
 	RunID                     string
 	ParentRunID               string
@@ -42,8 +42,8 @@ type emitWarmTelemetryInput struct {
 	Toolchain                 *Toolchain
 	TargetDataset             string
 	PreviousDataset           string
-	Job                       fastsandbox.JobConfig
-	JobResult                 fastsandbox.JobResult
+	Job                       vmorchestrator.JobConfig
+	JobResult                 vmorchestrator.JobResult
 	CloneDuration             time.Duration
 	FilesystemCheckDuration   time.Duration
 	SnapshotPromotionDuration time.Duration
@@ -370,7 +370,7 @@ func buildWarmJobConfigJSON(input emitWarmTelemetryInput, manifestPath string, g
 	return string(data), nil
 }
 
-func phaseExitCodes(phases []fastsandbox.PhaseResult) map[string]int {
+func phaseExitCodes(phases []vmorchestrator.PhaseResult) map[string]int {
 	if len(phases) == 0 {
 		return nil
 	}
@@ -381,7 +381,7 @@ func phaseExitCodes(phases []fastsandbox.PhaseResult) map[string]int {
 	return codes
 }
 
-func phaseExitCode(phases []fastsandbox.PhaseResult, phaseName string) int {
+func phaseExitCode(phases []vmorchestrator.PhaseResult, phaseName string) int {
 	phaseName = strings.TrimSpace(phaseName)
 	if phaseName == "" {
 		return 0

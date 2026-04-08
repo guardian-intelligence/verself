@@ -1,11 +1,11 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check seed-demo smelter-build \
+       hooks-install doctor setup-domain inventory-check seed-demo vm-guest-telemetry-build \
        traces clickhouse-shell clickhouse-query clickhouse-schemas edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 FM       := src/platform
-FS       := src/fast-sandbox
+VMO      := src/vm-orchestrator
 BS       := src/billing-service
 BL       := src/billing
 AM       := src/auth-middleware
@@ -16,14 +16,14 @@ INVENTORY := $(FM)/ansible/inventory/hosts.ini
 build: ## Build the forge-metal Go binary
 	go build $(LDFLAGS) -o $(FM)/forge-metal ./$(FM)/cmd/forge-metal
 
-smelter-build: ## Build the homestead-smelter Zig host/guest binaries
-	cd src/homestead-smelter && zig build -Doptimize=ReleaseSafe
+vm-guest-telemetry-build: ## Build the vm-guest-telemetry Zig binary
+	cd src/vm-guest-telemetry && zig build -Doptimize=ReleaseSafe
 
 clean:
 	rm -f $(FM)/forge-metal
 
 test: ## Run unit tests
-	go test -race ./$(FM)/... ./$(FS)/...
+	go test -race ./$(FM)/... ./$(VMO)/...
 	go test -race -parallel=1 ./$(BL)/...
 	go test -race ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
@@ -34,7 +34,7 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
 lint:
-	golangci-lint run ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
+	golangci-lint run ./$(FM)/... ./$(VMO)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
@@ -47,14 +47,14 @@ hooks-install:
 	pre-commit install
 
 fmt:
-	gofumpt -w $(FM) $(FS) $(BL) $(BS) $(AM) $(BC) $(SR)
+	gofumpt -w $(FM) $(VMO) $(BL) $(BS) $(AM) $(BC) $(SR)
 
 vet:
-	go vet ./$(FM)/... ./$(FS)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
+	go vet ./$(FM)/... ./$(VMO)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
 
 tidy:
 	cd $(FM) && go mod tidy
-	cd $(FS) && go mod tidy
+	cd $(VMO) && go mod tidy
 	cd $(BL) && go mod tidy
 	cd $(BS) && go mod tidy
 	cd $(AM) && go mod tidy

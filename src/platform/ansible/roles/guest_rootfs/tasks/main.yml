@@ -11,21 +11,21 @@
   ansible.builtin.command: zig version
   changed_when: false
 
-- name: Build homestead-smelter-guest (Zig)
+- name: Build vm-guest-telemetry (Zig)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
     argv: [zig, build, -Doptimize=ReleaseSafe]
-    chdir: "{{ guest_rootfs_smelter_dir }}"
+    chdir: "{{ guest_rootfs_vm_guest_telemetry_dir }}"
   changed_when: true
 
-- name: Build fast-sandbox-init (static, linux/amd64)
+- name: Build vm-init (static, linux/amd64)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [go, build, "-ldflags=-s -w", -o, /tmp/fast-sandbox-init, ./src/fast-sandbox/cmd/fast-sandbox-init]
+    argv: [go, build, "-ldflags=-s -w", -o, /tmp/vm-init, ./src/vm-orchestrator/cmd/vm-init]
     chdir: "{{ guest_rootfs_monorepo_root }}"
   environment:
     CGO_ENABLED: "0"
@@ -47,16 +47,16 @@
     dest: "{{ guest_rootfs_remote_tmp }}/versions.json"
     mode: "0644"
 
-- name: Upload fast-sandbox-init
+- name: Upload vm-init
   ansible.builtin.copy:
-    src: /tmp/fast-sandbox-init
-    dest: "{{ guest_rootfs_remote_tmp }}/fast-sandbox-init"
+    src: /tmp/vm-init
+    dest: "{{ guest_rootfs_remote_tmp }}/vm-init"
     mode: "0755"
 
-- name: Upload homestead-smelter-guest
+- name: Upload vm-guest-telemetry
   ansible.builtin.copy:
-    src: "{{ guest_rootfs_smelter_dir }}/zig-out/bin/homestead-smelter-guest"
-    dest: "{{ guest_rootfs_remote_tmp }}/homestead-smelter-guest"
+    src: "{{ guest_rootfs_vm_guest_telemetry_dir }}/zig-out/bin/vm-guest-telemetry"
+    dest: "{{ guest_rootfs_remote_tmp }}/vm-guest-telemetry"
     mode: "0755"
 
 # ── Build rootfs on remote ─────────────────────────────────────────────────

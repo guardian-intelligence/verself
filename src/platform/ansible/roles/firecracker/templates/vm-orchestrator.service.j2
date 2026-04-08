@@ -1,0 +1,17 @@
+[Unit]
+Description=vm-orchestrator Firecracker Host Daemon
+After=forge-metal-firewall.target network-online.target forge-metal-firecracker-network.service
+Requires=forge-metal-firewall.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart={{ firecracker_vm_orchestrator_binary_path }} --listen-unix {{ firecracker_vm_orchestrator_api_socket }}
+Restart=always
+RestartSec=2
+RuntimeDirectory=vm-orchestrator
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,5 @@ firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_net_lease_dir: /var/lib/ci/net/leases
 firecracker_host_uplink_interface: ""
-firecracker_smelter_host_binary_path: /usr/local/bin/homestead-smelter-host
-firecracker_smelter_control_socket: /run/homestead-smelter/agent.sock
-firecracker_smelter_ops_socket: /run/homestead-smelter/ops.sock
-firecracker_smelter_ops_group: smelter-ops
+firecracker_vm_orchestrator_binary_path: /usr/local/bin/vm-orchestrator
+firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock

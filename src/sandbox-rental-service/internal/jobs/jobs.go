@@ -13,7 +13,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	billingclient "github.com/forge-metal/billing-service/client"
-	fastsandbox "github.com/forge-metal/fast-sandbox"
+	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,9 +24,9 @@ import (
 var tracer = otel.Tracer("sandbox-rental-service")
 
 // SandboxRunner abstracts the execution engine for sandbox jobs.
-// Production uses *fastsandbox.Orchestrator; tests use a fake.
+// Production uses *vmorchestrator.Orchestrator; tests use a fake.
 type SandboxRunner interface {
-	Run(ctx context.Context, job fastsandbox.JobConfig) (fastsandbox.JobResult, error)
+	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
 }
 
 var ErrQuotaExceeded = errors.New("sandbox-rental: quota exceeded")
@@ -99,39 +99,24 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, userID, repoURL, run
 		return uuid.Nil, fmt.Errorf("count running jobs: %w", err)
 	}
 
-	usage := map[string]float64{
-		"vcpu":           float64(s.BillingVCPUs),
-		"gib":            float64(s.BillingMemMiB) / 1024.0,
-		"concurrent_vms": float64(currentConcurrent + 1),
+	concurrentCount := uint64(currentConcurrent + 1)
+	allocation := map[string]float64{
+		"vcpu": float64(s.BillingVCPUs),
+		"gib":  float64(s.BillingMemMiB) / 1024.0,
 	}
 
-	quotaResult, err := s.Billing.CheckQuotas(ctx, orgID, "sandbox", usage)
+	reservation, err := s.Billing.Reserve(ctx, billingJobID, orgID, "sandbox", userID, concurrentCount, "job", jobID.String(), allocation)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return uuid.Nil, fmt.Errorf("billing check quotas: %w", err)
-	}
-	quotaViolations := 0
-	if quotaResult.Violations != nil {
-		quotaViolations = len(*quotaResult.Violations)
-	}
-	s.Logger.InfoContext(ctx, "billing quota check", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "allowed", quotaResult.Allowed, "violations", quotaViolations)
-	if !quotaResult.Allowed {
-		span.RecordError(ErrQuotaExceeded)
-		span.SetStatus(codes.Error, ErrQuotaExceeded.Error())
-		return uuid.Nil, ErrQuotaExceeded
-	}
-
-	reservation, err := s.Billing.Reserve(ctx, billingJobID, orgID, "sandbox", userID, "job", jobID.String(), map[string]float64{
-		"vcpu": usage["vcpu"],
-		"gib":  usage["gib"],
-	})
-	if err != nil {
+		if errors.Is(err, billingclient.ErrForbidden) {
+			span.RecordError(ErrQuotaExceeded)
+			span.SetStatus(codes.Error, ErrQuotaExceeded.Error())
+			return uuid.Nil, ErrQuotaExceeded
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, fmt.Errorf("billing reserve: %w", err)
 	}
-	s.Logger.InfoContext(ctx, "billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq)
+	s.Logger.InfoContext(ctx, "billing reserved", "job_id", jobID, "billing_job_id", billingJobID, "org_id", orgID, "window_seq", reservation.WindowSeq, "concurrent_count", concurrentCount)
 	reservationJSON, err := json.Marshal(reservation)
 	if err != nil {
 		span.RecordError(err)
@@ -180,7 +165,7 @@ func (s *Service) execute(ctx context.Context, jobID uuid.UUID, orgID uint64, us
 		cmd = []string{"sh", "-c", runCommand}
 	}
 
-	jobCfg := fastsandbox.JobConfig{
+	jobCfg := vmorchestrator.JobConfig{
 		JobID:      jobID.String(),
 		RunCommand: cmd,
 		Env: map[string]string{
