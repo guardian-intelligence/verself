@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
-import { submitJob } from "~/lib/api";
+import { submitRepoExecution } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
 import { useState } from "react";
 
@@ -17,15 +17,18 @@ function NewJobPage() {
   const form = useForm({
     defaultValues: {
       repoUrl: "",
-      runCommand: "",
+      ref: "refs/heads/main",
     },
     onSubmit: async ({ value }) => {
       setSubmitError(null);
       try {
-        const data = await submitJob(value.repoUrl, value.runCommand || undefined);
+        const data = await submitRepoExecution({
+          repo_url: value.repoUrl,
+          ref: value.ref,
+        });
         void queryClient.invalidateQueries({ queryKey: keys.jobs() });
         void queryClient.invalidateQueries({ queryKey: keys.balance() });
-        void navigate({ to: "/jobs/$jobId", params: { jobId: data.job_id } });
+        void navigate({ to: "/jobs/$jobId", params: { jobId: data.execution_id } });
       } catch (err) {
         setSubmitError(err instanceof Error ? err.message : "Failed to create sandbox");
       }
@@ -41,6 +44,12 @@ function NewJobPage() {
         <h1 className="text-2xl font-bold">Create Sandbox</h1>
       </div>
 
+      <div className="max-w-xl text-sm text-muted-foreground">
+        This submits a repo-backed execution. The repository must contain a
+        <code className="mx-1">.forge-metal/ci.toml</code>
+        manifest while the Forgejo runner cutover is still in flight.
+      </div>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -54,12 +63,6 @@ function NewJobPage() {
           validators={{
             onChange: ({ value }) => {
               if (!value) return "Repository URL is required";
-              if (!value.startsWith("https://")) return "URL must start with https://";
-              try {
-                new URL(value);
-              } catch {
-                return "Must be a valid URL";
-              }
               return undefined;
             },
           }}
@@ -71,7 +74,7 @@ function NewJobPage() {
               </label>
               <input
                 id={field.name}
-                type="url"
+                type="text"
                 value={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={(e) => field.handleChange(e.target.value)}
@@ -85,11 +88,20 @@ function NewJobPage() {
           )}
         </form.Field>
 
-        <form.Field name="runCommand">
+        <form.Field
+          name="ref"
+          validators={{
+            onChange: ({ value }) => {
+              if (!value) return "Ref is required";
+              if (!value.startsWith("refs/")) return "Ref must look like refs/heads/main";
+              return undefined;
+            },
+          }}
+        >
           {(field) => (
             <div>
               <label htmlFor={field.name} className="text-sm font-medium">
-                Run command <span className="text-muted-foreground">(optional)</span>
+                Ref
               </label>
               <input
                 id={field.name}
@@ -97,9 +109,12 @@ function NewJobPage() {
                 value={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={(e) => field.handleChange(e.target.value)}
-                placeholder="npm test"
-                className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
+                placeholder="refs/heads/main"
+                className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm font-mono"
               />
+              {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+                <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
+              )}
             </div>
           )}
         </form.Field>

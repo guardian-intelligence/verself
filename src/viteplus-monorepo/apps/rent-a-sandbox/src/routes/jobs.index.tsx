@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchBalance } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
 import { useLiveQuery } from "@tanstack/react-db";
-import { createJobsCollection } from "~/lib/collections";
+import { createExecutionsCollection } from "~/lib/collections";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/jobs/")({
@@ -52,31 +52,27 @@ function JobsPage() {
         </div>
       )}
 
-      {balance?.org_id ? <LiveJobTable orgId={balance.org_id} /> : <JobTableSkeleton />}
+      {balance?.org_id ? <LiveExecutionTable orgId={balance.org_id} /> : <ExecutionTableSkeleton />}
     </div>
   );
 }
 
-/** Live job table backed by Electric real-time sync.
- *  Only mounts once we have org_id (i.e. after auth + balance load),
- *  which naturally prevents SSR rendering. */
-function LiveJobTable({ orgId }: { orgId: string }) {
-  const collection = useMemo(() => createJobsCollection(orgId), [orgId]);
+function LiveExecutionTable({ orgId }: { orgId: string }) {
+  const collection = useMemo(() => createExecutionsCollection(orgId), [orgId]);
 
-  const { data: jobs } = useLiveQuery((q) => q.from({ j: collection }), [collection]);
+  const { data: executions } = useLiveQuery((q) => q.from({ e: collection }), [collection]);
 
-  // Sort by created_at descending (most recent first).
-  const sortedJobs = useMemo(
+  const sortedExecutions = useMemo(
     () =>
-      jobs
-        ? [...jobs].sort(
+      executions
+        ? [...executions].sort(
             (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
           )
         : null,
-    [jobs],
+    [executions],
   );
 
-  if (!sortedJobs || sortedJobs.length === 0) {
+  if (!sortedExecutions || sortedExecutions.length === 0) {
     return (
       <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
         No sandboxes yet. Create one to get started.
@@ -91,34 +87,32 @@ function LiveJobTable({ orgId }: { orgId: string }) {
           <tr>
             <th className="text-left px-4 py-2 font-medium">ID</th>
             <th className="text-left px-4 py-2 font-medium">Repository</th>
+            <th className="text-left px-4 py-2 font-medium">Ref</th>
             <th className="text-left px-4 py-2 font-medium">Status</th>
-            <th className="text-left px-4 py-2 font-medium">Duration</th>
             <th className="text-left px-4 py-2 font-medium">Created</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {sortedJobs.map((job) => (
-            <tr key={job.id} className="hover:bg-accent/30">
+          {sortedExecutions.map((execution) => (
+            <tr key={execution.execution_id} className="hover:bg-accent/30">
               <td className="px-4 py-2">
                 <Link
                   to="/jobs/$jobId"
-                  params={{ jobId: job.id }}
+                  params={{ jobId: execution.execution_id }}
                   className="font-mono text-primary hover:underline"
                 >
-                  {job.id.slice(0, 8)}
+                  {execution.execution_id.slice(0, 8)}
                 </Link>
               </td>
               <td className="px-4 py-2 truncate max-w-[300px]">
-                {job.repo_url.replace("https://", "")}
+                {displayRepo(execution.repo, execution.repo_url)}
               </td>
+              <td className="px-4 py-2 font-mono">{execution.ref || execution.default_branch || "--"}</td>
               <td className="px-4 py-2">
-                <StatusBadge status={job.status} />
-              </td>
-              <td className="px-4 py-2 font-mono">
-                {job.duration_ms ? `${(Number(job.duration_ms) / 1000).toFixed(1)}s` : "--"}
+                <StatusBadge status={execution.status} />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
-                {new Date(job.created_at).toLocaleString()}
+                {new Date(execution.created_at).toLocaleString()}
               </td>
             </tr>
           ))}
@@ -130,10 +124,15 @@ function LiveJobTable({ orgId }: { orgId: string }) {
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
+    queued: "bg-yellow-100 text-yellow-800",
+    reserved: "bg-amber-100 text-amber-800",
+    launching: "bg-sky-100 text-sky-800",
     running: "bg-blue-100 text-blue-800",
-    completed: "bg-green-100 text-green-800",
+    finalizing: "bg-indigo-100 text-indigo-800",
+    succeeded: "bg-green-100 text-green-800",
     failed: "bg-red-100 text-red-800",
-    pending: "bg-yellow-100 text-yellow-800",
+    canceled: "bg-zinc-200 text-zinc-800",
+    lost: "bg-fuchsia-100 text-fuchsia-800",
   };
   return (
     <span
@@ -144,10 +143,16 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function JobTableSkeleton() {
+function ExecutionTableSkeleton() {
   return (
     <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
       Sign in to view your sandboxes.
     </div>
   );
+}
+
+function displayRepo(repo: string, repoURL: string): string {
+  if (repo) return repo;
+  if (!repoURL) return "--";
+  return repoURL.replace("https://", "");
 }

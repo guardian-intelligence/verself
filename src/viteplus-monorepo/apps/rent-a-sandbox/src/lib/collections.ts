@@ -7,62 +7,66 @@ import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 // TigerBeetle-derived and billing tables live in a separate PG database.
 const ELECTRIC_SHAPE_URL = "/v1/shape";
 
-// --- Job collection (real-time PG sync via Electric) ---
+// --- Execution collection (real-time PG sync via Electric) ---
 
-export interface ElectricJob {
-  id: string;
+export interface ElectricExecution {
+  execution_id: string;
   org_id: string;
-  user_id: string;
-  repo_url: string;
-  run_command: string | null;
+  actor_id: string;
+  kind: string;
+  provider: string;
+  product_id: string;
   status: string;
-  exit_code: number | null;
-  duration_ms: number | null;
-  zfs_written: number | null;
-  started_at: string | null;
-  completed_at: string | null;
+  repo: string;
+  repo_url: string;
+  ref: string;
+  default_branch: string;
+  run_command: string;
+  commit_sha: string;
+  latest_attempt_id: string;
   created_at: string;
+  updated_at: string;
 }
 
-export function createJobsCollection(orgId: string) {
-  return createCollection<ElectricJob>(
+export function createExecutionsCollection(orgId: string) {
+  return createCollection<ElectricExecution>(
     electricCollectionOptions({
-      id: `sync-jobs-${orgId}`,
+      id: `sync-executions-${orgId}`,
       shapeOptions: {
         url: ELECTRIC_SHAPE_URL,
         params: {
-          table: "jobs",
+          table: "executions",
           where: `org_id = '${orgId}'`,
         },
       },
-      getKey: (item: Record<string, unknown>) => String(item.id),
+      getKey: (item: Record<string, unknown>) => String(item.execution_id),
     }) as any,
   );
 }
 
-// --- Job log chunks (real-time streaming via Electric) ---
+// --- Execution log chunks (real-time streaming via Electric) ---
 
-export interface ElectricJobLog {
-  id: string;
-  job_id: string;
+export interface ElectricExecutionLog {
+  attempt_id: string;
   seq: number;
   stream: string;
   chunk: string;
   created_at: string;
 }
 
-export function createJobLogsCollection(jobId: string) {
-  return createCollection<ElectricJobLog>(
+export function createExecutionLogsCollection(attemptId: string) {
+  return createCollection<ElectricExecutionLog>(
     electricCollectionOptions({
-      id: `sync-job-logs-${jobId}`,
+      id: `sync-execution-logs-${attemptId}`,
       shapeOptions: {
         url: ELECTRIC_SHAPE_URL,
         params: {
-          table: "job_logs",
-          where: `job_id = '${jobId}'`,
+          table: "execution_logs",
+          where: `attempt_id = '${attemptId}'`,
         },
       },
-      getKey: (item: Record<string, unknown>) => String(item.id),
+      getKey: (item: Record<string, unknown>) =>
+        `${String(item.attempt_id)}:${String(item.seq)}`,
     }) as any,
   );
 }

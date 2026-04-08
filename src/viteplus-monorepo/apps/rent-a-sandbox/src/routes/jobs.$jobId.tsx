@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { fetchJob } from "~/lib/api";
-import { createJobLogsCollection } from "~/lib/collections";
+import { fetchExecution } from "~/lib/api";
+import { createExecutionLogsCollection } from "~/lib/collections";
 
 export const Route = createFileRoute("/jobs/$jobId")({
   component: JobDetailPage,
@@ -13,26 +13,28 @@ export const Route = createFileRoute("/jobs/$jobId")({
 function JobDetailPage() {
   const { jobId } = Route.useParams();
 
-  const { data: job, error } = useQuery({
+  const { data: execution, error } = useQuery({
     queryKey: ["jobs", jobId],
-    queryFn: () => fetchJob(jobId),
+    queryFn: () => fetchExecution(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "running" ? 2_000 : false;
+      return isActiveStatus(status) ? 2_000 : false;
     },
   });
 
   if (error) {
     return (
       <div className="py-12 text-center">
-        <p className="text-destructive">Failed to load job: {error.message}</p>
+        <p className="text-destructive">Failed to load sandbox: {error.message}</p>
       </div>
     );
   }
 
-  if (!job) {
+  if (!execution) {
     return <div className="py-12 text-center text-muted-foreground">Loading...</div>;
   }
+
+  const attempt = execution.latest_attempt;
 
   return (
     <div className="space-y-6">
@@ -41,34 +43,46 @@ function JobDetailPage() {
           Sandboxes
         </Link>
         <span className="text-muted-foreground">/</span>
-        <h1 className="text-xl font-bold font-mono">{job.id.slice(0, 8)}</h1>
-        <StatusBadge status={job.status} />
+        <h1 className="text-xl font-bold font-mono">{execution.execution_id.slice(0, 8)}</h1>
+        <StatusBadge status={execution.status} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <InfoCard label="Repository" value={job.repo_url.replace("https://", "")} />
+        <InfoCard label="Repository" value={displayRepo(execution.repo, execution.repo_url)} />
+        <InfoCard label="Ref" value={execution.ref || execution.default_branch || "--"} />
         <InfoCard
           label="Duration"
-          value={job.duration_ms ? `${(job.duration_ms / 1000).toFixed(1)}s` : "--"}
+          value={attempt.duration_ms ? `${(attempt.duration_ms / 1000).toFixed(1)}s` : "--"}
         />
-        <InfoCard label="Exit Code" value={String(job.exit_code ?? "--")} />
+        <InfoCard label="Exit Code" value={String(attempt.exit_code ?? "--")} />
         <InfoCard
           label="ZFS Written"
-          value={job.zfs_written ? formatBytes(job.zfs_written) : "--"}
+          value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
         />
+        <InfoCard label="Commit" value={execution.commit_sha || "--"} />
+        <InfoCard label="Kind" value={execution.kind} />
+        <InfoCard label="Attempt" value={attempt.attempt_id.slice(0, 8)} />
       </div>
 
-      <LiveJobLogs jobId={jobId} isRunning={job.status === "running"} />
+      <LiveExecutionLogs
+        attemptId={attempt.attempt_id}
+        isRunning={isActiveStatus(execution.status)}
+      />
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
+    queued: "bg-yellow-100 text-yellow-800",
+    reserved: "bg-amber-100 text-amber-800",
+    launching: "bg-sky-100 text-sky-800",
     running: "bg-blue-100 text-blue-800",
-    completed: "bg-green-100 text-green-800",
+    finalizing: "bg-indigo-100 text-indigo-800",
+    succeeded: "bg-green-100 text-green-800",
     failed: "bg-red-100 text-red-800",
-    pending: "bg-yellow-100 text-yellow-800",
+    canceled: "bg-zinc-200 text-zinc-800",
+    lost: "bg-fuchsia-100 text-fuchsia-800",
   };
   return (
     <span
@@ -88,16 +102,12 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Electric-backed live log viewer. Chunks stream in real-time via PG
- *  replication → Electric → browser. Falls back to "waiting" message. */
-function LiveJobLogs({ jobId, isRunning }: { jobId: string; isRunning: boolean }) {
-  const collection = useMemo(() => createJobLogsCollection(jobId), [jobId]);
+function LiveExecutionLogs({ attemptId, isRunning }: { attemptId: string; isRunning: boolean }) {
+  const collection = useMemo(() => createExecutionLogsCollection(attemptId), [attemptId]);
 
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
-
   const { data: logChunks } = useLiveQuery((q) => q.from({ l: collection }), [collection]);
 
-  // Sort chunks by sequence number before concatenating.
   const logText = logChunks
     ? [...logChunks]
         .sort((a, b) => Number(a.seq) - Number(b.seq))
@@ -127,6 +137,22 @@ function LiveJobLogs({ jobId, isRunning }: { jobId: string; isRunning: boolean }
         )}
       </div>
     </div>
+  );
+}
+
+function displayRepo(repo?: string, repoURL?: string): string {
+  if (repo) return repo;
+  if (!repoURL) return "--";
+  return repoURL.replace("https://", "");
+}
+
+function isActiveStatus(status?: string): boolean {
+  return (
+    status === "queued" ||
+    status === "reserved" ||
+    status === "launching" ||
+    status === "running" ||
+    status === "finalizing"
   );
 }
 

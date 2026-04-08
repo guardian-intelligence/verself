@@ -25,7 +25,7 @@
       -U postgres
       -d sandbox_rental
       -tAc
-      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'jobs';"
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'executions';"
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   register: sandbox_rental_service_pg_table_probe
@@ -144,24 +144,32 @@
     stdin: |
       DO $$
       BEGIN
-        IF to_regclass('public.jobs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.jobs OWNER TO sandbox_rental';
+        IF to_regclass('public.executions') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.executions OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.job_logs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.job_logs OWNER TO sandbox_rental';
+        IF to_regclass('public.execution_attempts') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_attempts OWNER TO sandbox_rental';
         END IF;
-        IF to_regclass('public.job_logs_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.job_logs_id_seq OWNER TO sandbox_rental';
+        IF to_regclass('public.execution_billing_windows') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_billing_windows OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_logs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_logs OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_billing_job_id_seq') IS NOT NULL THEN
+          EXECUTE 'ALTER SEQUENCE public.execution_billing_job_id_seq OWNER TO sandbox_rental';
         END IF;
       END
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO sandbox_rental;
       GRANT ALL PRIVILEGES ON TABLE
-        public.jobs,
-        public.job_logs
+        public.executions,
+        public.execution_attempts,
+        public.execution_billing_windows,
+        public.execution_logs
       TO sandbox_rental;
       GRANT ALL PRIVILEGES ON SEQUENCE
-        public.job_logs_id_seq
+        public.execution_billing_job_id_seq
       TO sandbox_rental;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
