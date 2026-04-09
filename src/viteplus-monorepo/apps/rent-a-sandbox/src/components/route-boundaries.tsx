@@ -35,7 +35,6 @@ export function AppRouteError({ error, reset }: ErrorComponentProps) {
             </button>
             <Link
               to="/"
-              search={{ purchased: false, subscribed: false }}
               className="rounded-md border border-border px-3 py-1.5 text-foreground hover:bg-accent"
             >
               Back to dashboard
@@ -55,7 +54,6 @@ export function AppNotFound(_props: NotFoundRouteProps) {
       action={
         <Link
           to="/"
-          search={{ purchased: false, subscribed: false }}
           className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
         >
           Return to dashboard

@@ -1,10 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
-import { createSubscriptionSession } from "~/server-fns/api";
-import { requireViewer } from "~/lib/protected-route";
+import { ErrorCallout } from "~/components/error-callout";
+import { useCreateSubscriptionSessionMutation } from "~/features/billing/mutations";
 
-export const Route = createFileRoute("/billing/subscribe")({
-  beforeLoad: ({ location }) => requireViewer(location.href),
+export const Route = createFileRoute("/_authenticated/billing/subscribe")({
   component: SubscribePage,
 });
 
@@ -30,20 +28,7 @@ const PLANS = [
 ];
 
 function SubscribePage() {
-  const mutation = useMutation({
-    mutationFn: (planId: string) =>
-      createSubscriptionSession({
-        data: {
-          plan_id: planId,
-          cadence: "monthly",
-          success_url: `${window.location.origin}/billing?subscribed=true`,
-          cancel_url: `${window.location.origin}/billing/subscribe`,
-        },
-      }),
-    onSuccess: (data) => {
-      window.location.href = data.url;
-    },
-  });
+  const mutation = useCreateSubscriptionSessionMutation();
 
   return (
     <div className="space-y-6">
@@ -61,6 +46,7 @@ function SubscribePage() {
             </div>
             <div className="text-2xl font-bold">{plan.price}</div>
             <button
+              type="button"
               onClick={() => mutation.mutate(plan.id)}
               disabled={mutation.isPending}
               className="mt-auto px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
@@ -71,7 +57,9 @@ function SubscribePage() {
         ))}
       </div>
 
-      {mutation.error && <p className="text-sm text-destructive">{mutation.error.message}</p>}
+      {mutation.error ? (
+        <ErrorCallout error={mutation.error} title="Subscription checkout failed" />
+      ) : null}
     </div>
   );
 }

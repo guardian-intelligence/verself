@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@forge-metal/ui";
 
 function errorMessage(error: unknown, fallback: string) {
@@ -14,7 +15,7 @@ export function ErrorCallout({
 }: {
   title?: string;
   error: unknown;
-  action?: React.ReactNode;
+  action?: ReactNode;
   className?: string;
 }) {
   return (

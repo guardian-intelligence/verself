@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
-import { getRepo, getRepoGenerations, getRepos } from "~/server-fns/api";
+import { getRepo, getRepoGenerations, getRepos, isSandboxRentalNotFound } from "~/server-fns/api";
 
 export function shouldPollRepo(state: string): boolean {
   return state === "importing" || state === "waiting_for_bootstrap" || state === "preparing";
@@ -38,7 +38,9 @@ export const repoGenerationsQuery = (repoId: string) =>
     refetchInterval: (query) => {
       const generations = query.state.data;
       if (!generations) return false;
-      return generations.some((generation) => shouldPollGeneration(generation.state)) ? 2_000 : false;
+      return generations.some((generation) => shouldPollGeneration(generation.state))
+        ? 2_000
+        : false;
     },
   });
 
@@ -69,19 +71,7 @@ export function canRefresh(repo: { compatibility_status: string; state: string }
 }
 
 export function canRun(repo: { active_golden_generation_id?: string; state: string }) {
-  return (repo.state === "ready" || repo.state === "degraded") && !!repo.active_golden_generation_id;
-}
-
-function sandboxRentalApiStatus(error: unknown): number | null {
-  if (error instanceof Error) {
-    const match = /^Sandbox rental API (\d+):/.exec(error.message);
-    if (match) {
-      return Number(match[1]);
-    }
-  }
-  return null;
-}
-
-export function isSandboxRentalNotFound(error: unknown) {
-  return sandboxRentalApiStatus(error) === 404;
+  return (
+    (repo.state === "ready" || repo.state === "degraded") && !!repo.active_golden_generation_id
+  );
 }

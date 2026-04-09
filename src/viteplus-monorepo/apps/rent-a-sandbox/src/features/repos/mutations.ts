@@ -1,16 +1,18 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { importRepo, refreshRepo, rescanRepo, submitRepoExecution } from "~/server-fns/api";
 
-export async function invalidateRepoQueries(queryClient: ReturnType<typeof useQueryClient>, repoId?: string) {
+export async function invalidateRepoQueries(queryClient: QueryClient, repoId?: string) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["repos"] }),
     queryClient.invalidateQueries({ queryKey: ["jobs"] }),
     queryClient.invalidateQueries({ queryKey: ["billing", "balance"] }),
+    ...(repoId ? [queryClient.invalidateQueries({ queryKey: ["repos", repoId] })] : []),
     ...(repoId
-      ? [queryClient.invalidateQueries({ queryKey: ["repos", repoId] })]
-      : []),
-    ...(repoId
-      ? [queryClient.invalidateQueries({ queryKey: ["repos", repoId, "generations"] })]
+      ? [
+          queryClient.invalidateQueries({
+            queryKey: ["repos", repoId, "generations"],
+          }),
+        ]
       : []),
   ]);
 }

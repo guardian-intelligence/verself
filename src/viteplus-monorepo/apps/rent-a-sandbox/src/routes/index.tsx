@@ -7,10 +7,6 @@ import { balanceQuery, loadBalance } from "~/features/billing/queries";
 import { getViewer } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    purchased: search.purchased === true || search.purchased === "true",
-    subscribed: search.subscribed === true || search.subscribed === "true",
-  }),
   loader: async ({ context }) => {
     const viewer = await getViewer();
     if (viewer) {
@@ -22,14 +18,13 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const { purchased, subscribed } = Route.useSearch();
   const { viewer } = Route.useLoaderData();
 
   if (!viewer) {
     return <GuestLanding />;
   }
 
-  return <MemberDashboard purchased={purchased} subscribed={subscribed} />;
+  return <MemberDashboard />;
 }
 
 function GuestLanding() {
@@ -65,24 +60,19 @@ function GuestLanding() {
         </Link>
         <Link
           to="/billing"
-          search={{ purchased: false, subscribed: false }}
           className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
         >
           <h3 className="mb-1 font-semibold">Billing</h3>
-          <p className="text-sm text-muted-foreground">Manage subscriptions, credits, and grants.</p>
+          <p className="text-sm text-muted-foreground">
+            Manage subscriptions, credits, and grants.
+          </p>
         </Link>
       </div>
     </div>
   );
 }
 
-function MemberDashboard({
-  purchased,
-  subscribed,
-}: {
-  purchased: boolean;
-  subscribed: boolean;
-}) {
+function MemberDashboard() {
   const { data: balance } = useSuspenseQuery(balanceQuery());
 
   return (
@@ -104,17 +94,6 @@ function MemberDashboard({
           </Link>
         </div>
       </div>
-
-      {purchased || subscribed ? (
-        <Callout
-          tone="success"
-          title={purchased ? "Credits purchased" : "Subscription activated"}
-        >
-          {purchased
-            ? "Credits purchased successfully. Your balance has been updated."
-            : "Subscription activated. Monthly credits will be deposited automatically."}
-        </Callout>
-      ) : null}
 
       <BalanceCard balance={balance} />
 
@@ -158,7 +137,6 @@ function MemberDashboard({
 
       <Link
         to="/billing"
-        search={{ purchased: false, subscribed: false }}
         className="block rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
       >
         <h3 className="mb-1 font-semibold">Billing</h3>

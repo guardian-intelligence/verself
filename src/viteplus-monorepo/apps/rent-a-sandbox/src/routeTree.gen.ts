@@ -12,16 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CallbackRouteImport } from './routes/callback'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ReposIndexRouteImport } from './routes/repos.index'
-import { Route as JobsIndexRouteImport } from './routes/jobs.index'
-import { Route as BillingIndexRouteImport } from './routes/billing.index'
-import { Route as ReposNewRouteImport } from './routes/repos.new'
-import { Route as ReposRepoIdRouteImport } from './routes/repos.$repoId'
-import { Route as JobsNewRouteImport } from './routes/jobs.new'
-import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
-import { Route as BillingSubscribeRouteImport } from './routes/billing.subscribe'
-import { Route as BillingCreditsRouteImport } from './routes/billing.credits'
+import { Route as AuthenticatedReposIndexRouteImport } from './routes/_authenticated/repos/index'
+import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
+import { Route as AuthenticatedBillingIndexRouteImport } from './routes/_authenticated/billing/index'
+import { Route as AuthenticatedReposNewRouteImport } from './routes/_authenticated/repos/new'
+import { Route as AuthenticatedReposRepoIdRouteImport } from './routes/_authenticated/repos/$repoId'
+import { Route as AuthenticatedJobsNewRouteImport } from './routes/_authenticated/jobs/new'
+import { Route as AuthenticatedJobsJobIdRouteImport } from './routes/_authenticated/jobs/$jobId'
+import { Route as AuthenticatedBillingSubscribeRouteImport } from './routes/_authenticated/billing/subscribe'
+import { Route as AuthenticatedBillingCreditsRouteImport } from './routes/_authenticated/billing/credits'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -38,102 +39,111 @@ const CallbackRoute = CallbackRouteImport.update({
   path: '/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReposIndexRoute = ReposIndexRouteImport.update({
+const AuthenticatedReposIndexRoute = AuthenticatedReposIndexRouteImport.update({
   id: '/repos/',
   path: '/repos/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const JobsIndexRoute = JobsIndexRouteImport.update({
+const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const BillingIndexRoute = BillingIndexRouteImport.update({
-  id: '/billing/',
-  path: '/billing/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReposNewRoute = ReposNewRouteImport.update({
+const AuthenticatedBillingIndexRoute =
+  AuthenticatedBillingIndexRouteImport.update({
+    id: '/billing/',
+    path: '/billing/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedReposNewRoute = AuthenticatedReposNewRouteImport.update({
   id: '/repos/new',
   path: '/repos/new',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const ReposRepoIdRoute = ReposRepoIdRouteImport.update({
-  id: '/repos/$repoId',
-  path: '/repos/$repoId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const JobsNewRoute = JobsNewRouteImport.update({
+const AuthenticatedReposRepoIdRoute =
+  AuthenticatedReposRepoIdRouteImport.update({
+    id: '/repos/$repoId',
+    path: '/repos/$repoId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedJobsNewRoute = AuthenticatedJobsNewRouteImport.update({
   id: '/jobs/new',
   path: '/jobs/new',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const JobsJobIdRoute = JobsJobIdRouteImport.update({
+const AuthenticatedJobsJobIdRoute = AuthenticatedJobsJobIdRouteImport.update({
   id: '/jobs/$jobId',
   path: '/jobs/$jobId',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const BillingSubscribeRoute = BillingSubscribeRouteImport.update({
-  id: '/billing/subscribe',
-  path: '/billing/subscribe',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BillingCreditsRoute = BillingCreditsRouteImport.update({
-  id: '/billing/credits',
-  path: '/billing/credits',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const AuthenticatedBillingSubscribeRoute =
+  AuthenticatedBillingSubscribeRouteImport.update({
+    id: '/billing/subscribe',
+    path: '/billing/subscribe',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedBillingCreditsRoute =
+  AuthenticatedBillingCreditsRouteImport.update({
+    id: '/billing/credits',
+    path: '/billing/credits',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/billing/credits': typeof BillingCreditsRoute
-  '/billing/subscribe': typeof BillingSubscribeRoute
-  '/jobs/$jobId': typeof JobsJobIdRoute
-  '/jobs/new': typeof JobsNewRoute
-  '/repos/$repoId': typeof ReposRepoIdRoute
-  '/repos/new': typeof ReposNewRoute
-  '/billing/': typeof BillingIndexRoute
-  '/jobs/': typeof JobsIndexRoute
-  '/repos/': typeof ReposIndexRoute
+  '/billing/credits': typeof AuthenticatedBillingCreditsRoute
+  '/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
+  '/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
+  '/jobs/new': typeof AuthenticatedJobsNewRoute
+  '/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
+  '/repos/new': typeof AuthenticatedReposNewRoute
+  '/billing/': typeof AuthenticatedBillingIndexRoute
+  '/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/repos/': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/billing/credits': typeof BillingCreditsRoute
-  '/billing/subscribe': typeof BillingSubscribeRoute
-  '/jobs/$jobId': typeof JobsJobIdRoute
-  '/jobs/new': typeof JobsNewRoute
-  '/repos/$repoId': typeof ReposRepoIdRoute
-  '/repos/new': typeof ReposNewRoute
-  '/billing': typeof BillingIndexRoute
-  '/jobs': typeof JobsIndexRoute
-  '/repos': typeof ReposIndexRoute
+  '/billing/credits': typeof AuthenticatedBillingCreditsRoute
+  '/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
+  '/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
+  '/jobs/new': typeof AuthenticatedJobsNewRoute
+  '/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
+  '/repos/new': typeof AuthenticatedReposNewRoute
+  '/billing': typeof AuthenticatedBillingIndexRoute
+  '/jobs': typeof AuthenticatedJobsIndexRoute
+  '/repos': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/billing/credits': typeof BillingCreditsRoute
-  '/billing/subscribe': typeof BillingSubscribeRoute
-  '/jobs/$jobId': typeof JobsJobIdRoute
-  '/jobs/new': typeof JobsNewRoute
-  '/repos/$repoId': typeof ReposRepoIdRoute
-  '/repos/new': typeof ReposNewRoute
-  '/billing/': typeof BillingIndexRoute
-  '/jobs/': typeof JobsIndexRoute
-  '/repos/': typeof ReposIndexRoute
+  '/_authenticated/billing/credits': typeof AuthenticatedBillingCreditsRoute
+  '/_authenticated/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
+  '/_authenticated/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
+  '/_authenticated/jobs/new': typeof AuthenticatedJobsNewRoute
+  '/_authenticated/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
+  '/_authenticated/repos/new': typeof AuthenticatedReposNewRoute
+  '/_authenticated/billing/': typeof AuthenticatedBillingIndexRoute
+  '/_authenticated/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/_authenticated/repos/': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -169,34 +179,27 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
     | '/callback'
     | '/login'
     | '/logout'
-    | '/billing/credits'
-    | '/billing/subscribe'
-    | '/jobs/$jobId'
-    | '/jobs/new'
-    | '/repos/$repoId'
-    | '/repos/new'
-    | '/billing/'
-    | '/jobs/'
-    | '/repos/'
+    | '/_authenticated/billing/credits'
+    | '/_authenticated/billing/subscribe'
+    | '/_authenticated/jobs/$jobId'
+    | '/_authenticated/jobs/new'
+    | '/_authenticated/repos/$repoId'
+    | '/_authenticated/repos/new'
+    | '/_authenticated/billing/'
+    | '/_authenticated/jobs/'
+    | '/_authenticated/repos/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   CallbackRoute: typeof CallbackRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
-  BillingCreditsRoute: typeof BillingCreditsRoute
-  BillingSubscribeRoute: typeof BillingSubscribeRoute
-  JobsJobIdRoute: typeof JobsJobIdRoute
-  JobsNewRoute: typeof JobsNewRoute
-  ReposRepoIdRoute: typeof ReposRepoIdRoute
-  ReposNewRoute: typeof ReposNewRoute
-  BillingIndexRoute: typeof BillingIndexRoute
-  JobsIndexRoute: typeof JobsIndexRoute
-  ReposIndexRoute: typeof ReposIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -222,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -229,86 +239,105 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/repos/': {
-      id: '/repos/'
+    '/_authenticated/repos/': {
+      id: '/_authenticated/repos/'
       path: '/repos'
       fullPath: '/repos/'
-      preLoaderRoute: typeof ReposIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedReposIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/jobs/': {
-      id: '/jobs/'
+    '/_authenticated/jobs/': {
+      id: '/_authenticated/jobs/'
       path: '/jobs'
       fullPath: '/jobs/'
-      preLoaderRoute: typeof JobsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedJobsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/billing/': {
-      id: '/billing/'
+    '/_authenticated/billing/': {
+      id: '/_authenticated/billing/'
       path: '/billing'
       fullPath: '/billing/'
-      preLoaderRoute: typeof BillingIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedBillingIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/repos/new': {
-      id: '/repos/new'
+    '/_authenticated/repos/new': {
+      id: '/_authenticated/repos/new'
       path: '/repos/new'
       fullPath: '/repos/new'
-      preLoaderRoute: typeof ReposNewRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedReposNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/repos/$repoId': {
-      id: '/repos/$repoId'
+    '/_authenticated/repos/$repoId': {
+      id: '/_authenticated/repos/$repoId'
       path: '/repos/$repoId'
       fullPath: '/repos/$repoId'
-      preLoaderRoute: typeof ReposRepoIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedReposRepoIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/jobs/new': {
-      id: '/jobs/new'
+    '/_authenticated/jobs/new': {
+      id: '/_authenticated/jobs/new'
       path: '/jobs/new'
       fullPath: '/jobs/new'
-      preLoaderRoute: typeof JobsNewRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedJobsNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/jobs/$jobId': {
-      id: '/jobs/$jobId'
+    '/_authenticated/jobs/$jobId': {
+      id: '/_authenticated/jobs/$jobId'
       path: '/jobs/$jobId'
       fullPath: '/jobs/$jobId'
-      preLoaderRoute: typeof JobsJobIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedJobsJobIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/billing/subscribe': {
-      id: '/billing/subscribe'
+    '/_authenticated/billing/subscribe': {
+      id: '/_authenticated/billing/subscribe'
       path: '/billing/subscribe'
       fullPath: '/billing/subscribe'
-      preLoaderRoute: typeof BillingSubscribeRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedBillingSubscribeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/billing/credits': {
-      id: '/billing/credits'
+    '/_authenticated/billing/credits': {
+      id: '/_authenticated/billing/credits'
       path: '/billing/credits'
       fullPath: '/billing/credits'
-      preLoaderRoute: typeof BillingCreditsRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthenticatedBillingCreditsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedBillingCreditsRoute: typeof AuthenticatedBillingCreditsRoute
+  AuthenticatedBillingSubscribeRoute: typeof AuthenticatedBillingSubscribeRoute
+  AuthenticatedJobsJobIdRoute: typeof AuthenticatedJobsJobIdRoute
+  AuthenticatedJobsNewRoute: typeof AuthenticatedJobsNewRoute
+  AuthenticatedReposRepoIdRoute: typeof AuthenticatedReposRepoIdRoute
+  AuthenticatedReposNewRoute: typeof AuthenticatedReposNewRoute
+  AuthenticatedBillingIndexRoute: typeof AuthenticatedBillingIndexRoute
+  AuthenticatedJobsIndexRoute: typeof AuthenticatedJobsIndexRoute
+  AuthenticatedReposIndexRoute: typeof AuthenticatedReposIndexRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedBillingCreditsRoute: AuthenticatedBillingCreditsRoute,
+  AuthenticatedBillingSubscribeRoute: AuthenticatedBillingSubscribeRoute,
+  AuthenticatedJobsJobIdRoute: AuthenticatedJobsJobIdRoute,
+  AuthenticatedJobsNewRoute: AuthenticatedJobsNewRoute,
+  AuthenticatedReposRepoIdRoute: AuthenticatedReposRepoIdRoute,
+  AuthenticatedReposNewRoute: AuthenticatedReposNewRoute,
+  AuthenticatedBillingIndexRoute: AuthenticatedBillingIndexRoute,
+  AuthenticatedJobsIndexRoute: AuthenticatedJobsIndexRoute,
+  AuthenticatedReposIndexRoute: AuthenticatedReposIndexRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   CallbackRoute: CallbackRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
-  BillingCreditsRoute: BillingCreditsRoute,
-  BillingSubscribeRoute: BillingSubscribeRoute,
-  JobsJobIdRoute: JobsJobIdRoute,
-  JobsNewRoute: JobsNewRoute,
-  ReposRepoIdRoute: ReposRepoIdRoute,
-  ReposNewRoute: ReposNewRoute,
-  BillingIndexRoute: BillingIndexRoute,
-  JobsIndexRoute: JobsIndexRoute,
-  ReposIndexRoute: ReposIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

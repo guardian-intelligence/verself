@@ -1,19 +1,16 @@
 import { useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { requireViewer } from "~/lib/protected-route";
+import { ErrorCallout } from "~/components/error-callout";
 import { useImportRepoMutation } from "~/features/repos/mutations";
 
-export const Route = createFileRoute("/repos/new")({
-  beforeLoad: ({ location }) => requireViewer(location.href),
+export const Route = createFileRoute("/_authenticated/repos/new")({
   component: NewRepoPage,
 });
 
 function NewRepoPage() {
   const navigate = useNavigate();
-  const importRepoMutation = useImportRepoMutation({
-    onSuccess: (repo) => {
-      void navigate({ to: "/repos/$repoId", params: { repoId: repo.repo_id } });
-    },
+  const importMutation = useImportRepoMutation((repoId) => {
+    void navigate({ to: "/repos/$repoId", params: { repoId } });
   });
 
   const form = useForm({
@@ -21,8 +18,8 @@ function NewRepoPage() {
       cloneUrl: "",
       defaultBranch: "main",
     },
-    onSubmit: ({ value }) => {
-      importRepoMutation.mutate({
+    onSubmit: async ({ value }) => {
+      await importMutation.mutateAsync({
         clone_url: value.cloneUrl,
         default_branch: value.defaultBranch,
       });
@@ -71,13 +68,13 @@ function NewRepoPage() {
                 type="text"
                 value={field.state.value}
                 onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
+                onChange={(event) => field.handleChange(event.target.value)}
                 placeholder="https://git.example.com/acme/repo.git"
                 className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
               />
-              {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+              {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
                 <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
-              )}
+              ) : null}
             </div>
           )}
         </form.Field>
@@ -93,7 +90,7 @@ function NewRepoPage() {
                 type="text"
                 value={field.state.value}
                 onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
+                onChange={(event) => field.handleChange(event.target.value)}
                 placeholder="main"
                 className="mt-1 w-full px-3 py-2 rounded-md border border-input bg-background text-sm font-mono"
               />
@@ -101,8 +98,8 @@ function NewRepoPage() {
           )}
         </form.Field>
 
-        {importRepoMutation.error ? (
-          <p className="text-sm text-destructive">{importRepoMutation.error.message}</p>
+        {importMutation.error ? (
+          <ErrorCallout error={importMutation.error} title="Import failed" />
         ) : null}
 
         <div className="rounded-md border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -116,10 +113,10 @@ function NewRepoPage() {
           {([canSubmit, isSubmitting]) => (
             <button
               type="submit"
-              disabled={!canSubmit || isSubmitting || importRepoMutation.isPending}
+              disabled={!canSubmit || isSubmitting || importMutation.isPending}
               className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
             >
-              {isSubmitting || importRepoMutation.isPending ? "Importing..." : "Import Repo"}
+              {isSubmitting || importMutation.isPending ? "Importing..." : "Import Repo"}
             </button>
           )}
         </form.Subscribe>

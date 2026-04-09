@@ -1,11 +1,18 @@
 export interface BillingFlashSearch {
-  purchased: boolean;
-  subscribed: boolean;
+  purchased?: boolean;
+  subscribed?: boolean;
 }
 
 export function parseBillingFlashSearch(search: Record<string, unknown>): BillingFlashSearch {
-  return {
-    purchased: search.purchased === true || search.purchased === "true",
-    subscribed: search.subscribed === true || search.subscribed === "true",
-  };
+  const flash: BillingFlashSearch = {};
+
+  if (search.purchased === true || search.purchased === "true") {
+    flash.purchased = true;
+  }
+
+  if (search.subscribed === true || search.subscribed === "true") {
+    flash.subscribed = true;
+  }
+
+  return flash;
 }
