@@ -1,4 +1,11 @@
-import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Navigate,
+  Outlet,
+  redirect,
+  useLocation,
+} from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 import {
@@ -21,7 +28,21 @@ export const Route = createFileRoute("/mail")({
       });
     }
   },
-  loader: () => getMailAccount(),
+  loader: async ({ location }) => {
+    const result = await getMailAccount();
+    if (
+      location.pathname === "/mail" &&
+      result.status === "ok" &&
+      result.account.default_mailbox_id
+    ) {
+      throw redirect({
+        to: "/mail/$mailboxId",
+        params: { mailboxId: result.account.default_mailbox_id },
+        replace: true,
+      });
+    }
+    return result;
+  },
   component: MailLayout,
 });
 
@@ -79,6 +100,8 @@ function MailLayout() {
 }
 
 function MailShell({ account }: { account: MailAccount }) {
+  const location = useLocation();
+  const isMailboxRoot = location.pathname === "/mail";
   const mailboxCollection = useMemo(
     () => createMailboxCollection(account.account_id),
     [account.account_id],
@@ -123,6 +146,18 @@ function MailShell({ account }: { account: MailAccount }) {
     return counts;
   }, [emailMailboxes, emails]);
 
+  const defaultMailboxID = account.default_mailbox_id ?? sortedMailboxes[0]?.id;
+
+  if (isMailboxRoot && defaultMailboxID) {
+    return (
+      <Navigate
+        to="/mail/$mailboxId"
+        params={{ mailboxId: defaultMailboxID }}
+        replace
+      />
+    );
+  }
+
   return (
     <div className="flex h-full">
       <aside className="w-60 shrink-0 border-r border-border overflow-y-auto bg-sidebar">
@@ -150,7 +185,13 @@ function MailShell({ account }: { account: MailAccount }) {
         </nav>
       </aside>
       <div className="flex-1 overflow-hidden">
-        <Outlet />
+        {isMailboxRoot ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            Loading mailbox...
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </div>
     </div>
   );

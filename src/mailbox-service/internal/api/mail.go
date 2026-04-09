@@ -41,9 +41,10 @@ type mailBodyOutput struct {
 
 type mailAccountOutput struct {
 	Body struct {
-		AccountID    string `json:"account_id"`
-		EmailAddress string `json:"email_address"`
-		DisplayName  string `json:"display_name"`
+		AccountID        string `json:"account_id"`
+		EmailAddress     string `json:"email_address"`
+		DisplayName      string `json:"display_name"`
+		DefaultMailboxID string `json:"default_mailbox_id,omitempty"`
 	}
 }
 
@@ -212,12 +213,29 @@ func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) 
 		if err != nil {
 			return nil, toHumaError("get bound account", err)
 		}
+		mailboxes, err := svc.ListMailboxes(ctx, account.AccountID)
+		if err != nil {
+			return nil, toHumaError("list mailboxes", err)
+		}
 		out := &mailAccountOutput{}
 		out.Body.AccountID = account.AccountID
 		out.Body.EmailAddress = account.EmailAddress
 		out.Body.DisplayName = account.DisplayName
+		out.Body.DefaultMailboxID = defaultMailboxID(mailboxes)
 		return out, nil
 	}
+}
+
+func defaultMailboxID(mailboxes []mailstore.Mailbox) string {
+	if len(mailboxes) == 0 {
+		return ""
+	}
+	for _, mailbox := range mailboxes {
+		if mailbox.Role == "inbox" {
+			return mailbox.ID
+		}
+	}
+	return mailboxes[0].ID
 }
 
 func syncStatus(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailSyncStatusOutput, error) {

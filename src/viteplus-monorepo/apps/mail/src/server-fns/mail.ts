@@ -41,6 +41,7 @@ export interface MailAccount {
   account_id: string;
   email_address: string;
   display_name: string;
+  default_mailbox_id?: string;
 }
 
 export type MailAccountResult =
