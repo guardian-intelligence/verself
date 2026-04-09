@@ -1,4 +1,4 @@
-import { beginLogin, createAuthConfig, finishLogin, getAuthSession, getAuthUser, logout } from "@forge-metal/auth-web";
+import { createAuthConfig } from "@forge-metal/auth-web";
 import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal/web-env";
 
 export const authConfig = createAuthConfig({
@@ -18,23 +18,3 @@ export const authConfig = createAuthConfig({
   defaultRedirectPath: "/",
   postLogoutRedirectPath: "/",
 });
-
-export function beginLettersLogin(redirectTo?: string | null) {
-  return beginLogin(authConfig, redirectTo);
-}
-
-export function finishLettersLogin() {
-  return finishLogin(authConfig);
-}
-
-export function getLettersAuthSession() {
-  return getAuthSession(authConfig);
-}
-
-export function getLettersAuthUser() {
-  return getAuthUser(authConfig);
-}
-
-export function logoutLetters() {
-  return logout(authConfig);
-}
