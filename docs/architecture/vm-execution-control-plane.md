@@ -397,6 +397,221 @@ Two clarifications matter:
 - `forgejo_runner` is different from `repo_exec`. The service is provisioning a VM that
   hosts the official runner. Forgejo still owns workflow semantics.
 
+## Repo Import And Golden Lifecycle
+
+The CI product needs one more durable model above executions:
+
+- a repo can be imported before it is ready for VM-backed CI
+- default-branch compatibility and golden preparation are asynchronous
+- a repo can stay healthy for PR runs while a new default-branch golden generation is
+  being prepared in the background
+
+For v1, the user-facing execution environment contract is intentionally narrow:
+
+- one supported runner profile slug: `forge-metal`
+- one supported runner label in workflow YAML: `forge-metal`
+- no user-facing Firecracker image selection
+
+This is the right abstraction boundary. Users should choose a forge-metal runner profile,
+not a raw guest rootfs or snapshot primitive. Internally, the single v1 profile still
+maps to a concrete base image, Firecracker config, and warming policy, but those stay
+provider-owned.
+
+### V1 Product Rules
+
+1. A repo must be imported before it can participate in VM-backed CI.
+2. The default branch is the source of truth for compatibility checks and golden refresh.
+3. A repo is only `ready` once it has at least one active golden generation for the
+   `forge-metal` profile.
+4. PR and branch CI runs consume the current active golden generation.
+5. A default-branch push creates a new background golden generation and does not replace
+   the currently active one until the new generation is `ready`.
+6. v1 supports only `runs-on: forge-metal`. Repos using other labels are not partially
+   supported; they remain in `action_required` until corrected.
+
+### Repo Lifecycle States
+
+The repo lifecycle is separate from execution attempts. It models product readiness, not
+one VM launch.
+
+| State | Meaning |
+|-------|---------|
+| `importing` | repo record exists but provider metadata and workflow scan have not completed |
+| `action_required` | workflows or repo settings are not compatible with forge-metal v1 |
+| `waiting_for_bootstrap` | workflows are compatible but no bootstrap golden build has been started yet |
+| `preparing` | a golden generation is currently being built from the default branch |
+| `ready` | the repo has an active ready golden and can accept CI runs |
+| `degraded` | the repo has an active older golden, but the latest refresh failed or is missing |
+| `failed` | the repo has no active ready golden and the latest bootstrap/refresh failed |
+| `archived` | repo is intentionally disabled from new forge-metal work |
+
+Suggested transitions:
+
+| From | To | Trigger |
+|------|----|---------|
+| `importing` | `action_required` | workflow scan found unsupported labels, no workflows, or other configuration blockers |
+| `importing` | `waiting_for_bootstrap` | workflow scan succeeded and repo is compatible |
+| `action_required` | `waiting_for_bootstrap` | user or rescan fixed compatibility issues |
+| `waiting_for_bootstrap` | `preparing` | first golden generation execution was created |
+| `preparing` | `ready` | first golden generation became active |
+| `preparing` | `failed` | first golden generation failed and no older active generation exists |
+| `ready` | `preparing` | default-branch push or manual refresh started a new generation |
+| `ready` | `degraded` | refresh failed but previous active golden still exists |
+| `degraded` | `preparing` | a new refresh starts |
+| `degraded` | `ready` | a new generation became active |
+| `failed` | `preparing` | operator or webhook queued a new bootstrap build |
+| any non-terminal | `archived` | repo was disabled by operator or user action |
+
+Operational notes:
+
+- `ready` means "safe to route CI here now", not "the most recent default-branch SHA has
+  already been baked."
+- `degraded` is important. It lets the product continue serving CI from the previous
+  active golden while making the refresh failure visible.
+- `failed` should be reserved for repos that currently have no usable golden at all.
+
+### Golden Generation States
+
+A golden generation is the repo-scoped warm image lineage for one runner profile. In v1
+that profile is always `forge-metal`, but the schema should still keep the profile slug.
+
+| State | Meaning |
+|-------|---------|
+| `queued` | generation row exists but the bootstrap execution has not reserved or launched yet |
+| `building` | the bootstrap execution is running |
+| `sanitizing` | VM execution finished and post-run filesystem cleanup/snapshot finalization is in progress |
+| `ready` | generation is complete and may be activated for future CI runs |
+| `failed` | bootstrap execution or sanitization failed |
+| `superseded` | a newer ready generation replaced this one as active |
+
+Suggested transitions:
+
+| From | To | Trigger |
+|------|----|---------|
+| `queued` | `building` | the bootstrap execution attempt entered `running` |
+| `queued` | `failed` | execution failed before meaningful build progress |
+| `building` | `sanitizing` | bootstrap execution completed and snapshot finalization began |
+| `building` | `failed` | bootstrap execution failed |
+| `sanitizing` | `ready` | snapshot finalized and activation transaction succeeded |
+| `sanitizing` | `failed` | sanitization or activation failed |
+| `ready` | `superseded` | a newer generation for the same repo/profile became active |
+
+Design rule:
+
+- only one generation per `(repo_id, runner_profile_slug)` may be active at a time
+- activation should be an atomic pointer flip on the repo row, not an in-place mutation
+  of older generations
+
+### Minimal Repo Schema
+
+The first pass only needs two new PostgreSQL tables plus a small amount of scan metadata.
+The important simplification is that a repo and its golden generations are durable product
+state, while actual VM launches continue to live in `executions` and `execution_attempts`.
+
+#### `repos`
+
+| Column | Notes |
+|--------|-------|
+| `repo_id UUID PRIMARY KEY` | stable forge-metal repo identity |
+| `org_id BIGINT NOT NULL` | owning customer org |
+| `provider TEXT NOT NULL` | initially `forgejo`, later `github` |
+| `provider_repo_id TEXT NOT NULL` | provider-native repo identifier |
+| `owner TEXT NOT NULL` | provider namespace or owner slug |
+| `name TEXT NOT NULL` | repo name |
+| `full_name TEXT NOT NULL` | denormalized `owner/name` |
+| `clone_url TEXT NOT NULL` | canonical clone URL |
+| `default_branch TEXT NOT NULL` | default branch name |
+| `runner_profile_slug TEXT NOT NULL DEFAULT 'forge-metal'` | future-proofing for later profiles |
+| `state TEXT NOT NULL` | repo lifecycle state |
+| `compatibility_status TEXT NOT NULL DEFAULT ''` | summary result of latest workflow scan |
+| `compatibility_summary JSONB NOT NULL DEFAULT '{}'::jsonb` | unsupported labels, workflow paths, other actionable findings |
+| `last_scanned_sha TEXT NOT NULL DEFAULT ''` | default-branch SHA used for latest compatibility decision |
+| `active_golden_generation_id UUID` | nullable until the first generation becomes active |
+| `last_ready_sha TEXT NOT NULL DEFAULT ''` | default-branch SHA baked into the active generation |
+| `last_error TEXT NOT NULL DEFAULT ''` | latest repo-level failure summary |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+| `updated_at TIMESTAMPTZ NOT NULL` | audit |
+| `archived_at TIMESTAMPTZ` | nullable lifecycle marker |
+
+Recommended indexes:
+
+- unique `(provider, provider_repo_id)`
+- unique `(org_id, provider, full_name)`
+- index on `(org_id, state, updated_at desc)`
+- index on `(active_golden_generation_id)` if not covered by FK usage patterns
+
+Notes:
+
+- `compatibility_summary` should be intentionally small and actionable, not a dump of
+  every parsed workflow detail.
+- `runner_profile_slug` stays in the row even though v1 has only one value, because repo
+  readiness is profile-dependent by design.
+
+#### `golden_generations`
+
+| Column | Notes |
+|--------|-------|
+| `golden_generation_id UUID PRIMARY KEY` | stable generation identity |
+| `repo_id UUID NOT NULL REFERENCES repos` | owning repo |
+| `runner_profile_slug TEXT NOT NULL` | `forge-metal` in v1 |
+| `source_ref TEXT NOT NULL` | usually `refs/heads/<default_branch>` |
+| `source_sha TEXT NOT NULL` | exact default-branch commit used to build this generation |
+| `state TEXT NOT NULL` | generation lifecycle state |
+| `trigger_reason TEXT NOT NULL DEFAULT ''` | `bootstrap`, `default_branch_push`, `manual_refresh` |
+| `execution_id UUID` | bootstrap execution record |
+| `attempt_id UUID` | latest attempt for the bootstrap execution |
+| `orchestrator_job_id TEXT NOT NULL DEFAULT ''` | substrate correlation for the active attempt |
+| `snapshot_ref TEXT NOT NULL DEFAULT ''` | repo-golden identifier returned by the substrate |
+| `activated_at TIMESTAMPTZ` | when this generation became active |
+| `superseded_at TIMESTAMPTZ` | when a newer generation replaced it |
+| `failure_reason TEXT NOT NULL DEFAULT ''` | machine-readable terminal failure classification |
+| `failure_detail TEXT NOT NULL DEFAULT ''` | short operator-facing explanation |
+| `created_at TIMESTAMPTZ NOT NULL` | audit |
+| `updated_at TIMESTAMPTZ NOT NULL` | audit |
+
+Recommended indexes:
+
+- index on `(repo_id, runner_profile_slug, created_at desc)`
+- partial unique index on `(repo_id, runner_profile_slug)` where `state='ready'` and
+  `activated_at is not null` if activation semantics rely on a single active generation
+- index on `(execution_id)` for joining bootstrap runs back to the control plane
+
+Notes:
+
+- `snapshot_ref` is the substrate-facing pointer that future `repo_exec` or runner-backed
+  CI uses indirectly. It should not be user-facing.
+- `execution_id` and `attempt_id` allow one bootstrap build to reuse the same control
+  plane, billing, and observability machinery as any other workload kind.
+- a generation should never be updated in place to point at a different `source_sha`;
+  create a new generation row instead.
+
+### Activation And Routing Rules
+
+These rules keep repo routing predictable:
+
+1. New CI runs route only against `repos.active_golden_generation_id`.
+2. A `ready` generation is not automatically active until the repo pointer flip succeeds.
+3. A failed refresh must not clear an existing active generation.
+4. Bootstrap failure on a repo with no active generation moves the repo to `failed`.
+5. Refresh failure on a repo with an existing active generation moves the repo to
+   `degraded`.
+
+For v1, the service should reject CI execution against repos in:
+
+- `importing`
+- `action_required`
+- `waiting_for_bootstrap`
+- `failed`
+- `archived`
+
+It may continue serving repos in:
+
+- `ready`
+- `degraded`
+
+That gives the user a simple mental model: import and bootstrap once, then CI is
+available unless the repo has never produced a usable golden.
+
 ## Control Flows
 
 ### Direct / Repo / Warm

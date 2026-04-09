@@ -143,24 +143,15 @@ importers:
 
   apps/letters:
     dependencies:
+      '@forge-metal/nitro-plugins':
+        specifier: workspace:*
+        version: link:../../packages/nitro-plugins
       '@forge-metal/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
-      '@opentelemetry/auto-instrumentations-node':
-        specifier: 'catalog:'
-        version: 0.72.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1))
-      '@opentelemetry/exporter-trace-otlp-http':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: 'catalog:'
-        version: 2.6.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-node':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
@@ -261,24 +252,15 @@ importers:
 
   apps/mail:
     dependencies:
+      '@forge-metal/nitro-plugins':
+        specifier: workspace:*
+        version: link:../../packages/nitro-plugins
       '@forge-metal/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
-      '@opentelemetry/auto-instrumentations-node':
-        specifier: 'catalog:'
-        version: 0.72.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1))
-      '@opentelemetry/exporter-trace-otlp-http':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: 'catalog:'
-        version: 2.6.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-node':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
@@ -352,24 +334,15 @@ importers:
 
   apps/rent-a-sandbox:
     dependencies:
+      '@forge-metal/nitro-plugins':
+        specifier: workspace:*
+        version: link:../../packages/nitro-plugins
       '@forge-metal/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       '@opentelemetry/api':
         specifier: 'catalog:'
         version: 1.9.1
-      '@opentelemetry/auto-instrumentations-node':
-        specifier: 'catalog:'
-        version: 0.72.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1))
-      '@opentelemetry/exporter-trace-otlp-http':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources':
-        specifier: 'catalog:'
-        version: 2.6.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-node':
-        specifier: 'catalog:'
-        version: 0.214.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
@@ -443,6 +416,37 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.1.16(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(@voidzero-dev/vite-plus-core@0.1.16(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)
+
+  packages/nitro-plugins:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      '@opentelemetry/auto-instrumentations-node':
+        specifier: 'catalog:'
+        version: 0.72.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1))
+      '@opentelemetry/exporter-trace-otlp-http':
+        specifier: 'catalog:'
+        version: 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources':
+        specifier: 'catalog:'
+        version: 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-node':
+        specifier: 'catalog:'
+        version: 0.214.0(@opentelemetry/api@1.9.1)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.19.17
+      nitro:
+        specifier: 'catalog:'
+        version: 3.0.260311-beta(jiti@2.6.1)(vite@8.0.6(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vite-plus:
+        specifier: 'catalog:'
+        version: 0.1.16(@opentelemetry/api@1.9.1)(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(vite@8.0.6(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(yaml@2.8.3)
 
   packages/ui:
     dependencies:
@@ -5888,6 +5892,56 @@ snapshots:
     optionalDependencies:
       jiti: 2.6.1
       vite: '@voidzero-dev/vite-plus-core@0.1.16(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3)'
+    transitivePeerDependencies:
+      - '@azure/app-configuration'
+      - '@azure/cosmos'
+      - '@azure/data-tables'
+      - '@azure/identity'
+      - '@azure/keyvault-secrets'
+      - '@azure/storage-blob'
+      - '@capacitor/preferences'
+      - '@deno/kv'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@netlify/blobs'
+      - '@netlify/runtime'
+      - '@planetscale/database'
+      - '@upstash/redis'
+      - '@vercel/blob'
+      - '@vercel/functions'
+      - '@vercel/kv'
+      - aws4fetch
+      - better-sqlite3
+      - chokidar
+      - drizzle-orm
+      - idb-keyval
+      - ioredis
+      - lru-cache
+      - miniflare
+      - mongodb
+      - mysql2
+      - sqlite3
+      - uploadthing
+
+  nitro@3.0.260311-beta(jiti@2.6.1)(vite@8.0.6(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)):
+    dependencies:
+      consola: 3.4.2
+      crossws: 0.4.4(srvx@0.11.15)
+      db0: 0.3.4
+      env-runner: 0.1.7
+      h3: 2.0.1-rc.20(crossws@0.4.4(srvx@0.11.15))
+      hookable: 6.1.0
+      nf3: 0.3.16
+      ocache: 0.1.4
+      ofetch: 2.0.0-alpha.3
+      ohash: 2.0.11
+      rolldown: 1.0.0-rc.13
+      srvx: 0.11.15
+      unenv: 2.0.0-rc.24
+      unstorage: 2.0.0-alpha.7(db0@0.3.4)(ofetch@2.0.0-alpha.3)
+    optionalDependencies:
+      jiti: 2.6.1
+      vite: 8.0.6(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
     transitivePeerDependencies:
       - '@azure/app-configuration'
       - '@azure/cosmos'

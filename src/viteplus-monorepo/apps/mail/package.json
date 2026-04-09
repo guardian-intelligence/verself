@@ -12,12 +12,9 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@forge-metal/nitro-plugins": "workspace:*",
     "@forge-metal/ui": "workspace:*",
     "@opentelemetry/api": "catalog:",
-    "@opentelemetry/auto-instrumentations-node": "catalog:",
-    "@opentelemetry/exporter-trace-otlp-http": "catalog:",
-    "@opentelemetry/resources": "catalog:",
-    "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
     "@tanstack/db": "catalog:",
     "@tanstack/electric-db-collection": "catalog:",

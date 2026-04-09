@@ -7,8 +7,54 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
 ## Direction
 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
-* Stalwart inbound mail frontend: clean-room TanStack + ElectricSQL implementation inspired by Bulwark, not a fork. Bulwark is the only production-quality JMAP-native webmail; we rewrite in our stack (TanStack Start + ElectricSQL) to avoid Next.js dependency and get real-time sync via Electric's Postgres-backed CRDT layer.
-* Avoid CLIs. Things talk to each other over HTTP. We're moving to k3s soon.
+* Avoid CLIs. Things talk to each other over HTTP. 
+* We're moving to k3s soon.
+
+* Improvements to our usage-based billing system with subscriptions + credits
+
+1. Temporal versioning on rates (the Stripe/Metronome lesson: append, don't
+  mutate)
+
+  Rate changes should be new rows with
+  an effective_at timestamp. This is what Stripe prices and Metronome rate
+  cards both do. The lookup becomes "the rate effective at the time of this
+  reservation."
+
+  2. Contract-level fields on the per-customer overlay (committed spend,
+  payment terms, temporal bounds)
+
+  org_pricing_overrides currently has org_id, plan_id, unit_rates, quotas,
+  notes. It needs: committed_monthly, payment_terms_days, effective_at,
+  ending_at, override_type (multiplier vs. overwrite). These are contract
+  fields, not pricing fields.
+
+  3. Invoice generation (the gap everyone has until they build it)
+
+  No billing system avoids this. Usage metering → aggregation → line items →
+  invoice document → payment collection. This is the only major new subsystem.
+
+  The question is whether org_pricing_overrides should be renamed to contracts
+   with added columns, or whether we keep it and add a separate contracts
+  table. The answer depends on whether a contract needs to be a separate
+  entity from a pricing override — and looking at the Metronome model, the
+  answer is yes: a contract binds commits, overrides, and payment terms
+  together as a single commercial arrangement. An org can have multiple
+  contracts over time (renewals, amendments). The override is a property of
+  the contract, not a standalone entity.
+
+  So the revised model is:
+
+  products                    — what to measure (unchanged)
+  plans                       — tier definition + list pricing (evolve:
+  temporal rates)
+  contracts                   — per-org commercial arrangement (new: absorbs
+  org_pricing_overrides)
+    └── committed spend, payment terms, discount multiplier, temporal bounds
+    └── per-product rate overrides (replaces org_pricing_overrides.unit_rates)
+  credit_grants               — prepaid balances (unchanged, add contract
+  linkage)
+  invoices + line_items       — generated monthly from metering (new)
+  product_entitlements        — tier-gated product access (new)
 
 ## Deployment Topology
 
@@ -101,16 +147,6 @@ Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which val
 Services that produce data for both real-time UX and long-term analytics use **application-level dual write**: the service writes to PostgreSQL (for live sync via ElectricSQL → TanStack DB in the browser) and to ClickHouse (for dashboards, metering, and historical queries) in the same request path. Consistency between the two stores is verified by periodic reconciliation (same pattern as billing's 6-check `Reconcile()`).
 
 ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative but rejected — it is experimental and carries replication-slot coupling risks on a single node. The 3-node evolution of the system should introduce NATS JetStream or Kafka + Debezium for proper CDC, replacing application-level dual write with WAL-based streaming.
-
-### ElectricSQL gotchas
-
-Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `mailbox_service`) require three differentiators to avoid collisions:
-
-1. **`ELECTRIC_REPLICATION_STREAM_ID`** — controls the replication slot name suffix. Without it, both instances fight over `electric_slot_default`. Replication slots are cluster-wide, not per-database.
-2. **`ELECTRIC_INSTANCE_ID`** — controls the PostgreSQL advisory lock hash. Without it, both instances use the same default advisory lock and the second instance blocks forever on `waiting_on_lock`.
-3. **`RELEASE_NAME`** — Elixir/Erlang BEAM node name. Both instances run with `--network=host`, so their Erlang nodes collide on the same hostname. Without a distinct name, the second container exits with "the name electric@hostname seems to be in use by another Erlang node".
-
-Each Electric instance also needs its own publication (`CREATE PUBLICATION ... FOR TABLE ...`) with `REPLICA IDENTITY FULL` on all synced tables. The publication name is derived from the stream ID: `electric_publication_{stream_id}` (default: `electric_publication_default`). Since publications are per-database, the default name works if instances target different databases — but setting `ELECTRIC_REPLICATION_STREAM_ID` changes the expected publication name too.
 
 ### Entitlement
 
@@ -263,7 +299,7 @@ forge-metal/                            # Monorepo root
 │
 │   ── Shared libraries ──────────────────────────────────────────────────
 │
-├── src/auth-middleware/                 # OIDC JWT validation (Go library)
+├── src/auth-middleware/                # OIDC JWT validation (Go library)
 │   └── go.mod                          # github.com/forge-metal/auth-middleware
 ├── src/otel/                           # Shared OTel bootstrap (Go library)
 │   └── otel.go                         # TracerProvider + MeterProvider init
@@ -361,7 +397,7 @@ forge-metal/                            # Monorepo root
     │       ├── clickhouse/             # ClickHouse config + schema bootstrap
     │       ├── tigerbeetle/            # Financial ledger service
     │       ├── otelcol/                # OTel Collector → ClickHouse
-    │       ├── electric/               # ElectricSQL sync service
+    │       ├── electric/               # ElectricSQL sync service -- we run it via Podman but that's because it's annoying to get the raw binary. We accept it for now since we will use Podman after k3s migration.
     │       ├── billing_service/        # Billing service deploy + Zitadel auth project
     │       ├── sandbox_rental_service/ # Sandbox product deploy
     │       ├── mailbox_service/        # Mailbox service deploy

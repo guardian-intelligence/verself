@@ -1,10 +1,15 @@
 import { createCollection } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 
-// Electric shape URL — proxied through Caddy at the same origin.
-// Electric syncs the mailbox_service database. The browser never talks JMAP;
-// it reads reactive Postgres rows via Electric shape subscriptions.
-const ELECTRIC_SHAPE_URL = "/v1/shape";
+// Electric requires an absolute shape URL. Keep the real sync path same-origin
+// in the browser, but return a harmless absolute fallback during SSR so the URL
+// parser never sees a bare relative path.
+function electricShapeURL(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return new URL("/v1/shape", window.location.origin).toString();
+  }
+  return "http://127.0.0.1/v1/shape";
+}
 
 // --- Mailbox collection ---
 
@@ -27,7 +32,7 @@ export function createMailboxCollection(accountId: string) {
     electricCollectionOptions({
       id: `sync-mailboxes-${accountId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "mailboxes",
           where: `account_id = '${accountId}'`,
@@ -70,7 +75,7 @@ export function createEmailCollection(accountId: string) {
     electricCollectionOptions({
       id: `sync-emails-${accountId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "emails",
           where: `account_id = '${accountId}'`,
@@ -95,7 +100,7 @@ export function createEmailMailboxCollection(accountId: string) {
     electricCollectionOptions({
       id: `sync-email-mailboxes-${accountId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "email_mailboxes",
           where: `account_id = '${accountId}'`,
@@ -122,7 +127,7 @@ export function createEmailBodyCollection(accountId: string, emailId: string) {
     electricCollectionOptions({
       id: `sync-email-body-${accountId}-${emailId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "email_bodies",
           where: `account_id = '${accountId}' AND email_id = '${emailId}'`,
@@ -148,7 +153,7 @@ export function createThreadCollection(accountId: string) {
     electricCollectionOptions({
       id: `sync-threads-${accountId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "threads",
           where: `account_id = '${accountId}'`,

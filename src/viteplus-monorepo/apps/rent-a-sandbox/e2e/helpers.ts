@@ -71,28 +71,33 @@ export async function ensureTestUserExists(): Promise<void> {
 }
 
 export async function ensureLoggedIn(page: Page): Promise<void> {
+  const balanceLabel = page.getByText("Available Credits", { exact: true });
+  const loginNameInput = page.locator("#loginName");
+  const loginRedirectButton = page.getByRole("button", { name: "click here" });
+
   await page.goto("/");
   await page.waitForLoadState("networkidle");
+  if (await balanceLabel.isVisible().catch(() => false)) {
+    return;
+  }
 
-  const dashboardHeading = page.getByRole("heading", { name: "Dashboard" });
-  const signInButton = page.getByRole("button", { name: "Sign in" });
-
+  await page.goto("/login");
   await Promise.race([
-    dashboardHeading.waitFor({ state: "visible", timeout: 10_000 }),
-    signInButton.waitFor({ state: "visible", timeout: 10_000 }),
+    balanceLabel.waitFor({ state: "visible", timeout: 15_000 }),
+    loginNameInput.waitFor({ state: "visible", timeout: 15_000 }),
+    loginRedirectButton.waitFor({ state: "visible", timeout: 15_000 }),
   ]);
+  if (await balanceLabel.isVisible().catch(() => false)) {
+    return;
+  }
+  if (await loginRedirectButton.isVisible().catch(() => false)) {
+    await Promise.all([
+      page.waitForURL(/auth\.anveio\.com|\/ui\/login/, { timeout: 30_000 }),
+      loginRedirectButton.click(),
+    ]);
+  }
 
-  if (await dashboardHeading.isVisible()) return;
-
-  // Arm the cross-origin wait before the click so Playwright does not miss the
-  // OIDC redirect when the browser navigates away quickly.
-  await Promise.all([
-    page.waitForURL(/auth\.anveio\.com|\/ui\/login/, { timeout: 30_000 }),
-    signInButton.click(),
-  ]);
-
-  const loginNameInput = page.locator("#loginName");
-  await loginNameInput.waitFor({ state: "visible", timeout: 10_000 });
+  await loginNameInput.waitFor({ state: "visible", timeout: 30_000 });
   await loginNameInput.fill(env.testEmail);
   await page.locator("button[type='submit']").click();
 
@@ -105,7 +110,7 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   ]);
 
   await page.waitForLoadState("networkidle");
-  await expect(dashboardHeading).toBeVisible({ timeout: 15_000 });
+  await expect(balanceLabel).toBeVisible({ timeout: 15_000 });
 }
 
 export async function readBalance(page: Page): Promise<number> {

@@ -13,6 +13,8 @@ test.use({
 });
 
 test.describe("Sandbox Repo Execution Live Verification", () => {
+  test.describe.configure({ timeout: 180_000 });
+
   test.beforeAll(async () => {
     await ensureTestUserExists();
   });
@@ -85,18 +87,9 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
       await expect(page).toHaveURL(new RegExp(`/jobs/${submitJSON.execution_id}`));
       await page.screenshot({ path: testInfo.outputPath("submitted.png"), fullPage: true });
 
-      await expect
-        .poll(
-          async () => {
-            await page.reload({ waitUntil: "networkidle" });
-            return page.getByText("succeeded", { exact: true }).isVisible().catch(() => false);
-          },
-          {
-            timeout: 180_000,
-            intervals: [2_000, 2_000, 5_000],
-          },
-        )
-        .toBeTruthy();
+      await expect(page.getByText("succeeded", { exact: true })).toBeVisible({
+        timeout: 180_000,
+      });
 
       await expect(page.locator("pre")).toContainText(env.verificationLogMarker, {
         timeout: 30_000,
@@ -112,6 +105,11 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
         expect(refreshedBalance).toBeLessThan(run.started_balance);
         run.finished_balance = refreshedBalance;
       }).toPass({ timeout: 60_000, intervals: [2_000, 5_000] });
+
+      await page.goto("/jobs", { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("link", { name: submitJSON.execution_id.slice(0, 8) })).toBeVisible({
+        timeout: 30_000,
+      });
 
       await page.screenshot({ path: testInfo.outputPath("completed.png"), fullPage: true });
     } catch (error) {
