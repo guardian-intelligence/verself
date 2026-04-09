@@ -1,11 +1,12 @@
 import { beginLogin, createAuthConfig, finishLogin, getAuthSession, getAuthUser, logout } from "@forge-metal/auth-web";
+import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal/web-env";
 
 export const authConfig = createAuthConfig({
   appName: "rent-a-sandbox",
-  issuerURL: process.env.AUTH_ISSUER_URL ?? "",
-  clientID: process.env.AUTH_CLIENT_ID ?? "",
-  sessionDatabaseURL: process.env.AUTH_DATABASE_URL ?? "",
-  sessionPassword: process.env.AUTH_SESSION_SECRET ?? "",
+  issuerURL: deriveAuthIssuerURL(),
+  clientID: requireEnv("AUTH_CLIENT_ID"),
+  sessionDatabaseURL: requireURLFromEnv("AUTH_DATABASE_URL"),
+  sessionPassword: requireEnv("AUTH_SESSION_SECRET"),
   scopes: [
     "openid",
     "profile",

@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { deriveAppBaseURL } from "@forge-metal/web-env";
 
 // E2E tests run against the live deployment.
 // Override via environment variables for different environments.
-const BASE_URL = process.env.BASE_URL || "https://rentasandbox.anveio.com";
+const BASE_URL = deriveAppBaseURL("rentasandbox");
 const RECORD_VERIFICATION_ARTIFACTS = process.env.FORGE_METAL_RECORD_ARTIFACTS === "1";
 
 export default defineConfig({
