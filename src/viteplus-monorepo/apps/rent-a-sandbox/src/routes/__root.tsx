@@ -31,11 +31,26 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
+      <ClientOnly fallback={null}>
+        <AuthBootstrap />
+      </ClientOnly>
       <RootDocument>
         <Outlet />
       </RootDocument>
     </QueryClientProvider>
   );
+}
+
+function AuthBootstrap() {
+  useQuery({
+    queryKey: keys.user(),
+    queryFn: getUser,
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+  });
+  return null;
 }
 
 function RootDocument({ children }: { children: ReactNode }) {

@@ -18,6 +18,7 @@ import { Route as JobsNewRouteImport } from './routes/jobs.new'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as BillingSubscribeRouteImport } from './routes/billing.subscribe'
 import { Route as BillingCreditsRouteImport } from './routes/billing.credits'
+import { Route as AuthSilentCallbackRouteImport } from './routes/auth.silent-callback'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -64,11 +65,17 @@ const BillingCreditsRoute = BillingCreditsRouteImport.update({
   path: '/billing/credits',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthSilentCallbackRoute = AuthSilentCallbackRouteImport.update({
+  id: '/auth/silent-callback',
+  path: '/auth/silent-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/auth/silent-callback': typeof AuthSilentCallbackRoute
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/auth/silent-callback': typeof AuthSilentCallbackRoute
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/auth/silent-callback': typeof AuthSilentCallbackRoute
   '/billing/credits': typeof BillingCreditsRoute
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/auth/silent-callback'
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/auth/silent-callback'
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/auth/silent-callback'
     | '/billing/credits'
     | '/billing/subscribe'
     | '/jobs/$jobId'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CallbackRoute: typeof CallbackRoute
   LoginRoute: typeof LoginRoute
+  AuthSilentCallbackRoute: typeof AuthSilentCallbackRoute
   BillingCreditsRoute: typeof BillingCreditsRoute
   BillingSubscribeRoute: typeof BillingSubscribeRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BillingCreditsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/silent-callback': {
+      id: '/auth/silent-callback'
+      path: '/auth/silent-callback'
+      fullPath: '/auth/silent-callback'
+      preLoaderRoute: typeof AuthSilentCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CallbackRoute: CallbackRoute,
   LoginRoute: LoginRoute,
+  AuthSilentCallbackRoute: AuthSilentCallbackRoute,
   BillingCreditsRoute: BillingCreditsRoute,
   BillingSubscribeRoute: BillingSubscribeRoute,
   JobsJobIdRoute: JobsJobIdRoute,

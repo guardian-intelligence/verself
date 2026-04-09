@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { signIn } from "~/lib/auth";
 
 export const Route = createFileRoute("/login")({
@@ -24,8 +25,15 @@ function LoginPage() {
 }
 
 function LoginRedirect() {
-  if (typeof window !== "undefined") {
-    void signIn();
-  }
+  useQuery({
+    queryKey: ["auth", "login"],
+    queryFn: async () => {
+      await signIn();
+      return true;
+    },
+    retry: false,
+    staleTime: Infinity,
+    enabled: typeof window !== "undefined",
+  });
   return null;
 }
