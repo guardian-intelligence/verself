@@ -1,1103 +1,566 @@
 # VM Execution Control Plane
 
-This document defines the target runtime boundary between `sandbox-rental-service`
-and `vm-orchestrator` for all Firecracker-backed execution in forge-metal.
+This document describes the VM execution architecture forge-metal is aiming to
+build.
 
-It covers four workload kinds:
+The central split is:
 
-1. direct sandbox commands
-2. repo-backed execution (`repo_exec`)
-3. default-branch golden warming (`warm_golden`)
-4. Forgejo Actions jobs executed by an official `forgejo-runner` living inside a VM
+- `sandbox-rental-service` is the policy, identity, and billing layer.
+- `vm-orchestrator` is the privileged Firecracker execution substrate.
 
-The central design rule is:
+`sandbox-rental-service` decides whether work may run, who it belongs to, how it
+is billed, and how it is reconciled. `vm-orchestrator` boots VMs, manages ZFS
+state, runs guest workloads, and reports execution results. It does not know
+about org policy, prices, quotas, grants, promotions, or provider product
+semantics.
 
-- `sandbox-rental-service` is the policy, identity, and billing boundary.
-- `vm-orchestrator` is the privileged execution substrate.
+## Product Model
 
-`vm-orchestrator` must not know about prices, grants, quotas, org policy, promotions,
-or provider-specific business rules. `sandbox-rental-service` must not own ZFS,
-Firecracker, TAP setup, jailer lifecycle, or any other privileged host concern.
+The CI product contract is intentionally narrow in v1.
 
-This document is a working architecture draft as of 2026-04-08.
+- Workflow YAML is the execution contract.
+- The only supported runner label is `forge-metal`.
+- The only supported runner profile slug is `forge-metal`.
+- That profile maps to a provider-managed base image, resource shape, and
+  warm-image policy.
+- Users do not select raw Firecracker images or snapshots.
+- A repo must be imported before it can run CI on forge-metal.
+- A repo becomes runnable only after forge-metal prepares a repo-scoped golden
+  from the default branch.
 
-## Why This Exists
+This is a Blacksmith-like contract, but with a Firecracker-specific warm-image
+pipeline behind it.
 
-The current repo has the right low-level substrate but the wrong control-plane split:
+## What Users Do
 
-- `vm-orchestrator` already exposes direct jobs, repo execution, golden warming,
-  status polling, cancellation, log streaming, telemetry streaming, and capacity
-  inspection.
-- `sandbox-rental-service` currently models only `repo_url + run_command`, launches
-  work in a background goroutine, and persists only a narrow `jobs` row.
-- The existing Forgejo integration still registers a host runner on
-  `ubuntu-latest:host` and shells out to the deprecated CLI CI path.
+1. Connect or import a repo.
+2. Update workflow jobs to use `runs-on: forge-metal`.
+3. Wait for forge-metal to prepare the first default-branch golden.
+4. Run future CI jobs against that active golden.
 
-The goal is to invert that relationship:
+Default-branch pushes refresh the golden in the background. PRs, branches, and
+manual CI runs continue using the currently active golden until the new
+generation is ready.
 
-- all policy decisions move up into `sandbox-rental-service`
-- all privileged VM execution stays down in `vm-orchestrator`
-- Forgejo remains the workflow engine for Actions
-- the official runner, not a repo webhook, is the execution seam for real Actions jobs
+## Core Principles
 
-## Design Goals
+- One durable execution identity is created before any remote side effect.
+- One concrete VM launch is represented by one attempt.
+- Billing is based on reserved capacity times wall-clock duration, not sampled
+  guest CPU usage.
+- A Firecracker VM is operationally ephemeral. The durable unit is the attempt,
+  not the VM.
+- Webhooks are used for repo lifecycle events such as golden refresh, not as the
+  execution seam for real Actions jobs.
+- Forgejo remains the workflow engine. The official `forgejo-runner` inside the
+  VM remains the runner for real Actions jobs.
+- ClickHouse stores append-only execution summaries, mirrored logs, and billing
+  evidence. PostgreSQL stores live control-plane state.
 
-- One service boundary for entitlement, admission control, and durable execution identity.
-- One privileged daemon for Firecracker, ZFS, TAP networking, jailer, and guest telemetry.
-- Real Forgejo Actions semantics by running the official `forgejo-runner` inside VMs.
-- A unified execution model for sandbox jobs, repo jobs, golden warming, and VM-backed CI.
-- Crash recovery and reconciliation that do not depend on in-memory goroutines.
-- Billing that is enforced by `sandbox-rental-service`, not leaked into `vm-orchestrator`.
-
-## Non-Goals
-
-- Putting billing logic into `vm-orchestrator`.
-- Treating repo webhooks as the primary transport for real Actions jobs.
-- Pretending the current Alpine guest is `ubuntu-latest`.
-- Solving broad base-image compatibility before the runner control plane exists.
-- Solving multi-window billing before the initial 5-minute cap is enforced in code.
-
-## Proven Facts
-
-These points are grounded in the current codebase and a live tracer bullet run
-completed on 2026-04-08.
-
-### 1. `vm-orchestrator` already has the right execution primitives
-
-The client and server already support:
-
-- direct VM jobs
-- repo execution against an active repo golden
-- default-branch golden warming
-- async job creation plus status polling
-- cancellation
-- log streaming
-- telemetry streaming
-- capacity snapshots
-
-This is the correct substrate boundary. The missing piece is the service control plane
-above it, not a new privileged daemon.
-
-### 2. `sandbox-rental-service` is still too small
-
-Today it:
-
-- reserves billing up front
-- inserts a narrow `jobs` row
-- starts a detached goroutine
-- calls `Orchestrator.Run`
-- settles or voids billing afterward
-
-That is sufficient for a short direct command, but not for:
-
-- repo-backed execution with durable state
-- golden warming
-- reconciliation after restart
-- provider callbacks
-- idempotency
-- long-lived or provider-owned execution flows
-
-### 3. The official Forgejo runner works inside a Firecracker VM
-
-The tracer bullet playbook at
-`src/platform/ansible/playbooks/forgejo-runner-vm-tracerbullet.yml` proved:
-
-- an official `forgejo-runner` binary can be injected into the guest rootfs
-- the guest can reach `https://git.anveio.com`
-- the runner can register against the live Forgejo instance
-- the runner daemon can stay healthy inside the VM
-- teardown can delete the temporary runner row and destroy the tracer zvol cleanly
-
-Important operational learnings from the tracer bullet:
-
-- the runner writes `.runner` relative to its current working directory, so the guest
-  process must run from `/home/runner` or another writable runner home
-- the current deployed Forgejo is `14.0.3`
-- the current deployed runner is `12.8.0`
-- the runner CLI exposes `one-job`, `register --ephemeral`, and `create-runner-file`
-- Forgejo `14.0.3` rejected ephemeral registration; the tracer bullet had to register
-  a normal runner and delete its row during teardown
-- `one-job --help` explicitly marks `--handle` as `Forgejo >= 15`
-
-These points materially shape the first control-plane design.
-
-### 4. A simple webhook is not the Actions execution seam
-
-A webhook can tell us that a repo event happened. It cannot replace the real runner path
-for:
-
-- reruns
-- `workflow_dispatch`
-- scheduled workflows
-- cancellation
-- provider-issued job tokens
-- native log and status transport
-- runner label matching
-
-Webhooks are still useful, but only for:
-
-- default-branch golden warming
-- idempotent provider-side side effects
-- optional autoscaling hints
-
-They are not the primary transport for real Actions execution.
-
-## Runtime Module Boundaries
+## Runtime Boundaries
 
 | Module | Owns | Must not own |
 |--------|------|---------------|
-| `vm-orchestrator` | Firecracker lifecycle, ZFS clone/snapshot/destroy, TAP networking, jailer setup, guest telemetry aggregation, repo golden state, direct/repo/warm execution primitives, capacity reporting | billing, org policy, auth, quotas, plan logic, promotions, provider API semantics |
-| `sandbox-rental-service` | authz, entitlement checks, billing reserve/settle later renew, durable execution identity, idempotency, provider correlation, control-plane state machine, reconciliation, unified API, ClickHouse summary dual-write | privileged VM lifecycle internals, direct ZFS operations, Firecracker microVM orchestration, workflow step execution semantics |
-| `billing-service` | product catalog, grants, quotas, spend caps, reserve/renew/settle/void, financial reconciliation | VM execution, provider orchestration, repo state |
-| Forgejo | workflow graph, secret injection, scheduler, native Actions logs/status, runner matching, reruns, `workflow_dispatch`, cron | VM lifecycle, billing, host quota enforcement outside runner labels |
+| `sandbox-rental-service` | authz, repo import state, compatibility checks, execution identity, attempt state machine, billing reserve/settle later renew, admission control, reconciliation, API surface, execution summaries | Firecracker internals, ZFS operations, TAP setup, jailer lifecycle |
+| `vm-orchestrator` | Firecracker lifecycle, ZFS clone/snapshot/destroy, TAP networking, guest agent protocol, direct jobs, repo execution, golden warming, runner VM boot, guest event relay | billing, quotas, org policy, repo import rules, provider business logic |
+| `billing-service` | plans, rates, grants, quota rules, reserve/settle/void later renew, financial reconciliation | VM lifecycle, repo state, provider integration |
+| Forgejo | workflow graph, scheduling, secrets, runner matching, reruns, dispatch, native Actions status and step logs | VM lifecycle, billing, org quota enforcement |
 
-A useful way to state the split is:
+## CI Model
 
-- `vm-orchestrator` answers "can I boot and run this VM workload safely?"
-- `sandbox-rental-service` answers "should this org be allowed to boot this VM workload, under which identity, and how should it be billed and reconciled?"
+There are two distinct CI concerns:
 
-## Durable Identity Model
+1. Repo readiness
+   - import repo
+   - scan workflows
+   - determine compatibility with `runs-on: forge-metal`
+   - prepare and activate a golden from the default branch
 
-The service must attach a durable identity to every VM-backed execution before it talks
-to `vm-orchestrator`.
+2. Job execution
+   - a Forgejo Actions job is assigned to a runner VM
+   - the runner VM uses the repo's active golden
+   - `sandbox-rental-service` applies policy and billing around that VM launch
 
-The current `jobs.id` row is not enough. We need two layers.
+The first concern is repo-scoped and asynchronous. The second is job-scoped and
+repeats for every execution.
 
-### Execution
+## Repo Lifecycle
 
-An `execution` is the stable, user-visible or provider-visible unit of work.
-
-Examples:
-
-- one direct sandbox launch from the website
-- one repo-backed execution request
-- one default-branch warm request
-- one VM-backed Forgejo job request or runner lease
-
-Suggested fields:
-
-| Field | Purpose |
-|-------|---------|
-| `execution_id UUID` | stable primary key owned by `sandbox-rental-service` |
-| `org_id BIGINT` | billing and quota principal |
-| `actor_id TEXT` | human or system actor that caused the execution |
-| `product_id TEXT` | initially `sandbox` |
-| `kind TEXT` | `direct`, `repo_exec`, `warm_golden`, `forgejo_runner` |
-| `provider TEXT` | `''`, `forgejo`, later others |
-| `idempotency_key TEXT` | dedupe for provider-driven or retried requests |
-| `repo TEXT` / `repo_url TEXT` | repo identity when relevant |
-| `ref TEXT` / `commit_sha TEXT` | pinned revision where known |
-| `workflow_path TEXT` / `workflow_job_name TEXT` | provider metadata for Actions jobs |
-| `provider_run_id TEXT` / `provider_job_id TEXT` | external correlation where available |
-| `status TEXT` | control-plane state, not just VM exit status |
-| `latest_attempt_id UUID` | current or last attempt |
-| `created_at`, `updated_at` | auditability |
-
-### Attempt
-
-An `attempt` is one concrete VM launch.
-
-One attempt maps to exactly one `vm-orchestrator` job identity and exactly one
-VM lifecycle. Retries create new attempts under the same execution.
-
-Suggested fields:
-
-| Field | Purpose |
-|-------|---------|
-| `attempt_id UUID` | per-launch identity |
-| `execution_id UUID` | parent execution |
-| `attempt_seq INT` | retry order |
-| `orchestrator_job_id TEXT` | must be set by the service, not invented later |
-| `billing_job_id BIGINT` | billing correlation |
-| `state TEXT` | `queued`, `reserved`, `launching`, `running`, `settling`, `succeeded`, `failed`, `canceled`, `lost` |
-| `runner_name TEXT` | unique provider-visible runner name when `kind='forgejo_runner'` |
-| `golden_snapshot TEXT` | repo golden generation used, if any |
-| `provider_claimed_at TIMESTAMPTZ` | when the provider bound the attempt to a job |
-| `started_at`, `completed_at` | lifecycle timestamps |
-| `exit_code INT` | terminal process result |
-| `failure_reason TEXT` | control-plane or runtime failure |
-| `duration_ms BIGINT` | wall time |
-| `zfs_written BIGINT` | substrate cost signal |
-| `stdout_bytes`, `stderr_bytes` | summary telemetry |
-| `trace_id TEXT` | observability correlation |
-
-### Billing Window
-
-An attempt may span one or more billing windows.
-
-Even before `renew` is implemented, the schema should leave room for it so the service
-does not need another identity migration later.
-
-Suggested fields:
-
-| Field | Purpose |
-|-------|---------|
-| `attempt_id UUID` | parent attempt |
-| `window_seq INT` | reserve order |
-| `reservation JSONB` | exact billing reservation payload |
-| `window_seconds INT` | reserved duration |
-| `actual_seconds INT` | settled duration |
-| `pricing_phase TEXT` | included, prepaid, overage, promo-backed, etc. |
-| `state TEXT` | `reserved`, `settled`, `voided`, later `renewed` |
-| `created_at`, `settled_at` | auditability |
-
-### Identity Rules
-
-These rules are important:
-
-1. `sandbox-rental-service` creates `execution_id` before any remote side effect.
-2. `sandbox-rental-service` creates `attempt_id` before billing reserve and before
-   calling `vm-orchestrator`.
-3. For service-owned callers, `attempt_id` must be passed into `vm-orchestrator` as
-   the job identity. Production code must not rely on `vm-orchestrator` auto-generating
-   job IDs.
-4. A lost VM must never imply a lost execution record.
-5. Provider retries and webhook duplicates must dedupe at the execution layer, not at
-   the VM layer.
-
-## Minimal Schema Recommendation
-
-The schema does not need to be large. For the first real cut, four PostgreSQL tables are
-enough:
-
-1. `executions`
-2. `execution_attempts`
-3. `execution_billing_windows`
-4. `execution_logs`
-
-That is enough to support:
-
-- direct sandbox jobs
-- repo execution
-- golden warming
-- a VM-backed Forgejo runner supervisor
-- billing reserve/settle now and renew later
-- recovery after restart
-
-No separate PostgreSQL event store is required for the first cut. ClickHouse remains the
-append-only summary plane.
-
-The important simplification is:
-
-- `execution_attempts` owns the real state machine
-- `executions` is mostly a stable identity record plus a denormalized view of the latest
-  attempt state
-
-That avoids building two independent state machines.
-
-### Suggested Minimum Columns
-
-The earlier sections listed a richer field set. The minimum viable implementation is smaller.
-
-#### `executions`
-
-| Column | Notes |
-|--------|-------|
-| `execution_id UUID PRIMARY KEY` | stable identity |
-| `org_id BIGINT NOT NULL` | billing/quota principal |
-| `actor_id TEXT NOT NULL` | user or system actor |
-| `kind TEXT NOT NULL` | `direct`, `repo_exec`, `warm_golden`, `forgejo_runner` |
-| `provider TEXT NOT NULL DEFAULT ''` | `forgejo` or empty |
-| `product_id TEXT NOT NULL` | initially `sandbox` |
-| `status TEXT NOT NULL` | projection of latest attempt |
-| `idempotency_key TEXT` | nullable but unique when present |
-| `repo TEXT NOT NULL DEFAULT ''` | logical repo key |
-| `repo_url TEXT NOT NULL DEFAULT ''` | clone URL |
-| `ref TEXT NOT NULL DEFAULT ''` | target ref |
-| `commit_sha TEXT NOT NULL DEFAULT ''` | pinned SHA when known |
-| `workflow_path TEXT NOT NULL DEFAULT ''` | provider metadata |
-| `workflow_job_name TEXT NOT NULL DEFAULT ''` | provider metadata |
-| `provider_run_id TEXT NOT NULL DEFAULT ''` | provider correlation |
-| `provider_job_id TEXT NOT NULL DEFAULT ''` | provider correlation |
-| `latest_attempt_id UUID` | nullable until first attempt exists |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-| `updated_at TIMESTAMPTZ NOT NULL` | audit |
-
-#### `execution_attempts`
-
-| Column | Notes |
-|--------|-------|
-| `attempt_id UUID PRIMARY KEY` | service-owned attempt identity |
-| `execution_id UUID NOT NULL REFERENCES executions` | parent |
-| `attempt_seq INT NOT NULL` | retry order |
-| `state TEXT NOT NULL` | control-plane state machine |
-| `orchestrator_job_id TEXT NOT NULL DEFAULT ''` | must equal attempt identity for service-owned workloads |
-| `billing_job_id BIGINT` | nullable until reserved |
-| `runner_name TEXT NOT NULL DEFAULT ''` | used for Forgejo runner attempts |
-| `golden_snapshot TEXT NOT NULL DEFAULT ''` | summary provenance |
-| `failure_reason TEXT NOT NULL DEFAULT ''` | machine-readable failure reason |
-| `exit_code INT` | nullable until terminal process outcome |
-| `duration_ms BIGINT` | nullable until complete |
-| `zfs_written BIGINT` | nullable until complete |
-| `stdout_bytes BIGINT` | nullable until complete |
-| `stderr_bytes BIGINT` | nullable until complete |
-| `trace_id TEXT NOT NULL DEFAULT ''` | observability correlation |
-| `provider_claimed_at TIMESTAMPTZ` | when provider job claim is known |
-| `started_at TIMESTAMPTZ` | VM execution start |
-| `completed_at TIMESTAMPTZ` | terminal timestamp |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-| `updated_at TIMESTAMPTZ NOT NULL` | audit |
-
-#### `execution_billing_windows`
-
-| Column | Notes |
-|--------|-------|
-| `attempt_id UUID NOT NULL REFERENCES execution_attempts` | parent |
-| `window_seq INT NOT NULL` | reservation order |
-| `reservation JSONB NOT NULL` | exact billing payload |
-| `window_seconds INT NOT NULL` | currently 300 |
-| `actual_seconds INT` | populated on settle |
-| `pricing_phase TEXT NOT NULL DEFAULT ''` | copied from billing reservation |
-| `state TEXT NOT NULL` | `reserved`, `settled`, `voided` |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-| `settled_at TIMESTAMPTZ` | audit |
-
-Recommended PK: `(attempt_id, window_seq)`.
-
-#### `execution_logs`
-
-This can stay close to the current `job_logs` shape:
-
-| Column | Notes |
-|--------|-------|
-| `attempt_id UUID NOT NULL REFERENCES execution_attempts` | parent attempt |
-| `seq INT NOT NULL` | per-attempt ordering |
-| `stream TEXT NOT NULL` | `stdout`, `stderr`, `system` |
-| `chunk BYTEA NOT NULL` | raw bytes |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-
-The same table can hold service-owned direct/repo logs. For `forgejo_runner`, this table
-should only hold control-plane logs if needed, not the full Actions step log stream that
-Forgejo already owns.
-
-### What Not To Add Yet
-
-Do not add these in the first cut unless a concrete implementation step forces it:
-
-- a separate `execution_events` PostgreSQL table
-- a separate `billing_reservations` table outside `execution_billing_windows`
-- a separate `runner_registrations` table
-- a generic workflow engine table set
-
-The first cut should stay compact.
-
-## Workload Kinds
-
-| Kind | Trigger | Billing principal | Execution authority | Status/log authority |
-|------|---------|-------------------|---------------------|----------------------|
-| `direct` | website API or internal API | requesting org | `vm-orchestrator` direct job | `sandbox-rental-service` |
-| `repo_exec` | website API or internal API | requesting org | `vm-orchestrator` repo exec | `sandbox-rental-service` |
-| `warm_golden` | default-branch push or operator action | operator org initially | `vm-orchestrator` warm golden | `sandbox-rental-service` |
-| `forgejo_runner` | runner supervisor | operator org initially | official `forgejo-runner` inside Firecracker VM | Forgejo for step logs and final job status; service for VM summary and billing |
-
-Two clarifications matter:
-
-- `warm_golden` is not a side effect hidden inside repo execution. It is a first-class
-  workload kind with its own identity and billing.
-- `forgejo_runner` is different from `repo_exec`. The service is provisioning a VM that
-  hosts the official runner. Forgejo still owns workflow semantics.
-
-## Repo Import And Golden Lifecycle
-
-The CI product needs one more durable model above executions:
-
-- a repo can be imported before it is ready for VM-backed CI
-- default-branch compatibility and golden preparation are asynchronous
-- a repo can stay healthy for PR runs while a new default-branch golden generation is
-  being prepared in the background
-
-For v1, the user-facing execution environment contract is intentionally narrow:
-
-- one supported runner profile slug: `forge-metal`
-- one supported runner label in workflow YAML: `forge-metal`
-- no user-facing Firecracker image selection
-
-This is the right abstraction boundary. Users should choose a forge-metal runner profile,
-not a raw guest rootfs or snapshot primitive. Internally, the single v1 profile still
-maps to a concrete base image, Firecracker config, and warming policy, but those stay
-provider-owned.
-
-### V1 Product Rules
-
-1. A repo must be imported before it can participate in VM-backed CI.
-2. The default branch is the source of truth for compatibility checks and golden refresh.
-3. A repo is only `ready` once it has at least one active golden generation for the
-   `forge-metal` profile.
-4. PR and branch CI runs consume the current active golden generation.
-5. A default-branch push creates a new background golden generation and does not replace
-   the currently active one until the new generation is `ready`.
-6. v1 supports only `runs-on: forge-metal`. Repos using other labels are not partially
-   supported; they remain in `action_required` until corrected.
-
-### Repo Lifecycle States
-
-The repo lifecycle is separate from execution attempts. It models product readiness, not
-one VM launch.
+Repo lifecycle state models product readiness, not a single VM launch.
 
 | State | Meaning |
 |-------|---------|
-| `importing` | repo record exists but provider metadata and workflow scan have not completed |
-| `action_required` | workflows or repo settings are not compatible with forge-metal v1 |
-| `waiting_for_bootstrap` | workflows are compatible but no bootstrap golden build has been started yet |
+| `importing` | repo record exists but metadata and workflow compatibility have not been resolved yet |
+| `action_required` | repo is not compatible with forge-metal v1, usually because workflows do not use `runs-on: forge-metal` |
+| `waiting_for_bootstrap` | repo is compatible but no bootstrap golden generation has started yet |
 | `preparing` | a golden generation is currently being built from the default branch |
-| `ready` | the repo has an active ready golden and can accept CI runs |
-| `degraded` | the repo has an active older golden, but the latest refresh failed or is missing |
-| `failed` | the repo has no active ready golden and the latest bootstrap/refresh failed |
+| `ready` | repo has an active ready golden and can serve CI |
+| `degraded` | repo still has an active older golden, but the latest refresh failed |
+| `failed` | repo has no active ready golden and the latest bootstrap or refresh failed |
 | `archived` | repo is intentionally disabled from new forge-metal work |
 
-Suggested transitions:
+### Repo State Transitions
 
 | From | To | Trigger |
 |------|----|---------|
-| `importing` | `action_required` | workflow scan found unsupported labels, no workflows, or other configuration blockers |
-| `importing` | `waiting_for_bootstrap` | workflow scan succeeded and repo is compatible |
-| `action_required` | `waiting_for_bootstrap` | user or rescan fixed compatibility issues |
-| `waiting_for_bootstrap` | `preparing` | first golden generation execution was created |
-| `preparing` | `ready` | first golden generation became active |
-| `preparing` | `failed` | first golden generation failed and no older active generation exists |
-| `ready` | `preparing` | default-branch push or manual refresh started a new generation |
-| `ready` | `degraded` | refresh failed but previous active golden still exists |
-| `degraded` | `preparing` | a new refresh starts |
+| `importing` | `action_required` | compatibility scan found unsupported labels, no workflows, or other blockers |
+| `importing` | `waiting_for_bootstrap` | compatibility scan succeeded |
+| `action_required` | `waiting_for_bootstrap` | workflows were corrected and the repo rescanned cleanly |
+| `waiting_for_bootstrap` | `preparing` | first golden generation was queued |
+| `preparing` | `ready` | first generation became active |
+| `preparing` | `failed` | bootstrap generation failed and no older active generation exists |
+| `ready` | `preparing` | default-branch push or manual refresh queued a new generation |
+| `ready` | `degraded` | refresh failed while an older active golden still exists |
+| `degraded` | `preparing` | another refresh started |
 | `degraded` | `ready` | a new generation became active |
-| `failed` | `preparing` | operator or webhook queued a new bootstrap build |
-| any non-terminal | `archived` | repo was disabled by operator or user action |
+| `failed` | `preparing` | a new bootstrap or refresh was queued |
+| any non-terminal | `archived` | repo was disabled |
 
-Operational notes:
+### Repo Routing Rules
 
-- `ready` means "safe to route CI here now", not "the most recent default-branch SHA has
-  already been baked."
-- `degraded` is important. It lets the product continue serving CI from the previous
-  active golden while making the refresh failure visible.
-- `failed` should be reserved for repos that currently have no usable golden at all.
+- Only repos in `ready` or `degraded` may serve CI runs.
+- `degraded` means the previous active golden is still usable.
+- `failed` means there is no usable active golden.
+- A failed refresh must never clear an existing active golden.
 
-### Golden Generation States
+## Golden Generation Lifecycle
 
-A golden generation is the repo-scoped warm image lineage for one runner profile. In v1
-that profile is always `forge-metal`, but the schema should still keep the profile slug.
+A golden generation represents one build of the active warm state for one repo
+and one runner profile. In v1 the profile is always `forge-metal`, but the
+schema keeps the profile slug so later profiles do not require a data model
+rewrite.
 
 | State | Meaning |
 |-------|---------|
-| `queued` | generation row exists but the bootstrap execution has not reserved or launched yet |
-| `building` | the bootstrap execution is running |
-| `sanitizing` | VM execution finished and post-run filesystem cleanup/snapshot finalization is in progress |
-| `ready` | generation is complete and may be activated for future CI runs |
+| `queued` | generation exists but its bootstrap execution has not started running yet |
+| `building` | bootstrap execution is running |
+| `sanitizing` | bootstrap execution finished and the filesystem is being sanitized before activation |
+| `ready` | generation is complete and may serve future CI runs |
 | `failed` | bootstrap execution or sanitization failed |
 | `superseded` | a newer ready generation replaced this one as active |
 
-Suggested transitions:
+### Generation State Transitions
 
 | From | To | Trigger |
 |------|----|---------|
-| `queued` | `building` | the bootstrap execution attempt entered `running` |
-| `queued` | `failed` | execution failed before meaningful build progress |
-| `building` | `sanitizing` | bootstrap execution completed and snapshot finalization began |
+| `queued` | `building` | bootstrap execution attempt entered `running` |
+| `queued` | `failed` | bootstrap failed before meaningful build progress |
+| `building` | `sanitizing` | bootstrap execution finished and snapshot finalization started |
 | `building` | `failed` | bootstrap execution failed |
-| `sanitizing` | `ready` | snapshot finalized and activation transaction succeeded |
+| `sanitizing` | `ready` | sanitization completed and repo activation pointer was updated |
 | `sanitizing` | `failed` | sanitization or activation failed |
-| `ready` | `superseded` | a newer generation for the same repo/profile became active |
+| `ready` | `superseded` | a newer generation became active |
 
-Design rule:
+### Generation Rules
 
-- only one generation per `(repo_id, runner_profile_slug)` may be active at a time
-- activation should be an atomic pointer flip on the repo row, not an in-place mutation
-  of older generations
+- Only one generation per `(repo, runner_profile_slug)` may be active at a time.
+- Activation is a pointer flip on the repo row, not an in-place mutation of an
+  older generation.
+- A generation is immutable with respect to its source revision. A new default
+  branch SHA creates a new generation row.
+- The active golden must be sanitized before activation. Raw post-run disk state
+  is not promoted directly.
 
-### Minimal Repo Schema
+## Execution Model
 
-The first pass only needs two new PostgreSQL tables plus a small amount of scan metadata.
-The important simplification is that a repo and its golden generations are durable product
-state, while actual VM launches continue to live in `executions` and `execution_attempts`.
+Repo lifecycle is not enough by itself. Every VM-backed operation still needs a
+durable execution model.
 
-#### `repos`
+The execution model is shared across:
 
-| Column | Notes |
-|--------|-------|
-| `repo_id UUID PRIMARY KEY` | stable forge-metal repo identity |
-| `org_id BIGINT NOT NULL` | owning customer org |
-| `provider TEXT NOT NULL` | initially `forgejo`, later `github` |
-| `provider_repo_id TEXT NOT NULL` | provider-native repo identifier |
-| `owner TEXT NOT NULL` | provider namespace or owner slug |
-| `name TEXT NOT NULL` | repo name |
-| `full_name TEXT NOT NULL` | denormalized `owner/name` |
-| `clone_url TEXT NOT NULL` | canonical clone URL |
-| `default_branch TEXT NOT NULL` | default branch name |
-| `runner_profile_slug TEXT NOT NULL DEFAULT 'forge-metal'` | future-proofing for later profiles |
-| `state TEXT NOT NULL` | repo lifecycle state |
-| `compatibility_status TEXT NOT NULL DEFAULT ''` | summary result of latest workflow scan |
-| `compatibility_summary JSONB NOT NULL DEFAULT '{}'::jsonb` | unsupported labels, workflow paths, other actionable findings |
-| `last_scanned_sha TEXT NOT NULL DEFAULT ''` | default-branch SHA used for latest compatibility decision |
-| `active_golden_generation_id UUID` | nullable until the first generation becomes active |
-| `last_ready_sha TEXT NOT NULL DEFAULT ''` | default-branch SHA baked into the active generation |
-| `last_error TEXT NOT NULL DEFAULT ''` | latest repo-level failure summary |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-| `updated_at TIMESTAMPTZ NOT NULL` | audit |
-| `archived_at TIMESTAMPTZ` | nullable lifecycle marker |
+- direct sandbox launches
+- repo-backed execution
+- golden bootstrap and refresh work
+- Forgejo runner VMs
 
-Recommended indexes:
+### Execution
 
-- unique `(provider, provider_repo_id)`
-- unique `(org_id, provider, full_name)`
-- index on `(org_id, state, updated_at desc)`
-- index on `(active_golden_generation_id)` if not covered by FK usage patterns
+An execution is the stable unit of work visible to the service and, where
+relevant, to providers or users.
 
-Notes:
+Examples:
 
-- `compatibility_summary` should be intentionally small and actionable, not a dump of
-  every parsed workflow detail.
-- `runner_profile_slug` stays in the row even though v1 has only one value, because repo
-  readiness is profile-dependent by design.
+- one sandbox run from the website
+- one golden bootstrap
+- one Forgejo runner VM lease
 
-#### `golden_generations`
+### Attempt
 
-| Column | Notes |
-|--------|-------|
-| `golden_generation_id UUID PRIMARY KEY` | stable generation identity |
-| `repo_id UUID NOT NULL REFERENCES repos` | owning repo |
-| `runner_profile_slug TEXT NOT NULL` | `forge-metal` in v1 |
-| `source_ref TEXT NOT NULL` | usually `refs/heads/<default_branch>` |
-| `source_sha TEXT NOT NULL` | exact default-branch commit used to build this generation |
-| `state TEXT NOT NULL` | generation lifecycle state |
-| `trigger_reason TEXT NOT NULL DEFAULT ''` | `bootstrap`, `default_branch_push`, `manual_refresh` |
-| `execution_id UUID` | bootstrap execution record |
-| `attempt_id UUID` | latest attempt for the bootstrap execution |
-| `orchestrator_job_id TEXT NOT NULL DEFAULT ''` | substrate correlation for the active attempt |
-| `snapshot_ref TEXT NOT NULL DEFAULT ''` | repo-golden identifier returned by the substrate |
-| `activated_at TIMESTAMPTZ` | when this generation became active |
-| `superseded_at TIMESTAMPTZ` | when a newer generation replaced it |
-| `failure_reason TEXT NOT NULL DEFAULT ''` | machine-readable terminal failure classification |
-| `failure_detail TEXT NOT NULL DEFAULT ''` | short operator-facing explanation |
-| `created_at TIMESTAMPTZ NOT NULL` | audit |
-| `updated_at TIMESTAMPTZ NOT NULL` | audit |
+An attempt is one concrete VM launch under an execution.
 
-Recommended indexes:
+One attempt maps to:
 
-- index on `(repo_id, runner_profile_slug, created_at desc)`
-- partial unique index on `(repo_id, runner_profile_slug)` where `state='ready'` and
-  `activated_at is not null` if activation semantics rely on a single active generation
-- index on `(execution_id)` for joining bootstrap runs back to the control plane
+- one service-owned `attempt_id`
+- one billing reservation flow
+- one `vm-orchestrator` job identity
+- one ephemeral Firecracker VM lifecycle
 
-Notes:
+Retries create new attempts under the same execution.
 
-- `snapshot_ref` is the substrate-facing pointer that future `repo_exec` or runner-backed
-  CI uses indirectly. It should not be user-facing.
-- `execution_id` and `attempt_id` allow one bootstrap build to reuse the same control
-  plane, billing, and observability machinery as any other workload kind.
-- a generation should never be updated in place to point at a different `source_sha`;
-  create a new generation row instead.
+### Billing Window
 
-### Activation And Routing Rules
+A billing window is one durable reserve/settle or reserve/void slice attached to
+an attempt.
 
-These rules keep repo routing predictable:
+In v1:
 
-1. New CI runs route only against `repos.active_golden_generation_id`.
-2. A `ready` generation is not automatically active until the repo pointer flip succeeds.
-3. A failed refresh must not clear an existing active generation.
-4. Bootstrap failure on a repo with no active generation moves the repo to `failed`.
-5. Refresh failure on a repo with an existing active generation moves the repo to
-   `degraded`.
-
-For v1, the service should reject CI execution against repos in:
-
-- `importing`
-- `action_required`
-- `waiting_for_bootstrap`
-- `failed`
-- `archived`
-
-It may continue serving repos in:
-
-- `ready`
-- `degraded`
-
-That gives the user a simple mental model: import and bootstrap once, then CI is
-available unless the repo has never produced a usable golden.
-
-## Control Flows
-
-### Direct / Repo / Warm
-
-These three flows are service-owned end to end.
-
-```text
-caller
-  -> sandbox-rental-service
-     -> create execution + attempt rows
-     -> billing Reserve
-     -> vm-orchestrator CreateJob / WarmGolden with attempt_id
-     -> poll or stream status/logs
-     -> billing Settle or Void
-     -> persist final summary + logs + ClickHouse event
-```
-
-For these flows, `sandbox-rental-service` is the primary status authority.
-
-### Forgejo Actions On VMs
-
-The control flow is different:
-
-```text
-Forgejo scheduler
-  -> VM-backed runner supervisor in sandbox-rental-service
-     -> create execution + attempt rows
-     -> billing Reserve
-     -> vm-orchestrator boots a VM whose guest command starts forgejo-runner
-     -> forgejo-runner claims one Actions job from Forgejo
-     -> Forgejo receives logs and final job result natively
-     -> sandbox-rental-service observes VM exit, settles billing, records summary,
-        and tears the VM down
-```
-
-The important boundary is:
-
-- Forgejo owns the workflow graph, step logs, status, secrets, reruns, and dispatch semantics.
-- `sandbox-rental-service` owns admission, billing, durable identity, lifecycle tracking,
-  and teardown.
+- reservations are single-window
+- the enforced cap is five minutes
+- the schema still leaves room for multi-window renew later
 
 ## Attempt State Machine
 
-The state machine is straightforward if it lives only on `execution_attempts`.
+The real state machine lives only on `execution_attempts`.
 
-`executions.status` should be treated as a projection:
-
-- copy the latest attempt state for cheap queries
-- or collapse it into a smaller user-facing set like `queued`, `running`, `succeeded`,
-  `failed`, `canceled`, `lost`
-
-Do not invent a second independent state machine on `executions`.
-
-### Attempt States
+`executions.status` is a projection of the latest attempt, not a second
+independent machine.
 
 | State | Meaning |
 |-------|---------|
-| `queued` | the attempt row exists but no billing reservation has been recorded yet |
-| `reserved` | billing has reserved funds/capacity for this attempt |
-| `launching` | `vm-orchestrator` accepted the request and an `orchestrator_job_id` is persisted |
-| `running` | the VM is alive or the workload has clearly begun execution |
-| `finalizing` | the terminal VM outcome is known but billing finalization is not yet durably complete |
-| `succeeded` | terminal success and billing has been finalized |
-| `failed` | terminal failure and billing has been finalized or voided |
-| `canceled` | terminal cancellation and billing has been finalized or voided |
-| `lost` | the service cannot currently prove the VM's state and reconciliation is required |
-
-The important operational distinction is between:
-
-- execution outcome states: `succeeded`, `failed`, `canceled`
-- recovery state: `lost`
-- bookkeeping state: `finalizing`
-
-`finalizing` exists because VM completion and billing completion are separate side effects.
-Without it, a crash between those steps becomes ambiguous.
+| `queued` | attempt exists but billing has not reserved yet |
+| `reserved` | billing reserved the first window |
+| `launching` | `vm-orchestrator` accepted the launch request |
+| `running` | the workload is clearly consuming VM resources |
+| `finalizing` | terminal workload outcome is known but billing is not durably closed yet |
+| `succeeded` | terminal success and billing is finalized |
+| `failed` | terminal failure and billing is finalized or voided |
+| `canceled` | terminal cancellation and billing is finalized or voided |
+| `lost` | the service cannot currently prove the workload outcome and reconciliation is required |
 
 ### Allowed Transitions
 
 | From | To | Trigger |
 |------|----|---------|
-| `queued` | `reserved` | `billing.Reserve` succeeded and the first billing window row was inserted |
-| `queued` | `failed` | admission denied or reserve failed with no outstanding reservation |
-| `queued` | `canceled` | request canceled before reserve completed |
-| `reserved` | `launching` | orchestrator accepted the create request and job identity was persisted |
-| `reserved` | `canceled` | caller canceled before launch and reservation was voided |
+| `queued` | `reserved` | `billing.Reserve` succeeded |
+| `queued` | `failed` | reserve or admission failed |
+| `queued` | `canceled` | request was canceled before reserve |
+| `reserved` | `launching` | `vm-orchestrator` accepted the launch |
 | `reserved` | `failed` | launch failed and reservation was voided |
+| `reserved` | `canceled` | caller canceled and reservation was voided |
 | `launching` | `running` | first positive execution signal arrived |
 | `launching` | `finalizing` | workload terminated before a separate running signal was observed |
-| `launching` | `canceled` | cancellation succeeded and billing was finalized |
-| `launching` | `lost` | service restart or substrate inconsistency left outcome unknown |
-| `running` | `finalizing` | terminal orchestrator or provider outcome observed |
-| `running` | `canceled` | cancellation completed and billing was finalized |
-| `running` | `lost` | service cannot determine whether the workload still exists |
-| `finalizing` | `succeeded` | billing settle succeeded for exit code `0` |
-| `finalizing` | `failed` | billing settle or void completed for non-zero exit or control-plane failure |
-| `finalizing` | `canceled` | billing finalize path completed for cancellation |
-| `finalizing` | `lost` | service crashed or reconciliation lost the finalize result |
-| `lost` | `running` | reconciler found the live orchestrator job again |
-| `lost` | `finalizing` | reconciler found a terminal workload outcome but billing was still unresolved |
+| `launching` | `canceled` | cancel completed and billing was finalized |
+| `launching` | `lost` | service can no longer prove workload state |
+| `running` | `finalizing` | terminal workload outcome was observed |
+| `running` | `canceled` | cancel completed and billing was finalized |
+| `running` | `lost` | service can no longer prove workload state |
+| `finalizing` | `succeeded` | billing settle succeeded for a successful outcome |
+| `finalizing` | `failed` | billing settle or void completed for a failed outcome |
+| `finalizing` | `canceled` | billing finalize path completed for a canceled outcome |
+| `finalizing` | `lost` | final outcome was interrupted before billing closure was persisted |
+| `lost` | `running` | reconciler found the live workload again |
+| `lost` | `finalizing` | reconciler found a terminal workload outcome with unresolved billing |
 | `lost` | `succeeded` | reconciler proved success and finalized billing |
 | `lost` | `failed` | reconciler proved failure and finalized or voided billing |
 | `lost` | `canceled` | reconciler proved cancellation and finalized or voided billing |
 
-Anything else should be rejected as an invalid transition.
+### Transition Rules
 
-### Transition Side Effects
+- `sandbox-rental-service` creates `execution_id` before any remote side effect.
+- `sandbox-rental-service` creates `attempt_id` before billing reserve.
+- `attempt_id` is passed into `vm-orchestrator` as the job identity for
+  service-owned launches.
+- Terminal attempt state is written only after billing has a durable answer.
+- A lost VM never implies a lost execution record.
 
-Each transition owns a small set of side effects.
+### Guest Correlation
 
-#### `queued -> reserved`
+The service threads service-owned identity into the guest environment and guest
+event path.
 
-- allocate `billing_job_id`
-- call `billing.Reserve`
-- insert `execution_billing_windows(window_seq=1, state='reserved')`
-- persist `state='reserved'`
-
-#### `reserved -> launching`
-
-- construct the `vm-orchestrator` request
-- set `orchestrator_job_id`
-- pass the attempt identity through as the job identity
-- persist `state='launching'`
-
-#### `launching -> running`
-
-The signal depends on workload kind:
-
-- `direct` / `repo_exec`: first non-pending job status, first log chunk, or first telemetry frame
-- `warm_golden`: entry into the run phase or any equivalent positive progress signal
-- `forgejo_runner`: runner process is alive in the VM; provider job claim may still be null
-
-Do not require provider claim before calling the attempt `running`. VM resource consumption
-has already started by then.
-
-#### `running -> finalizing`
-
-- persist terminal VM outcome and summary metrics
-- store `completed_at`
-- decide whether the billing path is `settle` or `void`
-- persist `state='finalizing'` before making the final billing call
-
-#### `finalizing -> terminal`
-
-- call `billing.Settle` or `billing.Void`
-- update the relevant billing window row
-- persist `succeeded`, `failed`, or `canceled`
-- dual-write the final summary to ClickHouse
-
-The terminal attempt state must only be written after billing has a durable answer.
-
-### Failure Classification
-
-The machine stays simpler if `failure_reason` carries detail and the number of states stays
-small.
-
-Examples:
-
-- `quota_exceeded`
-- `reserve_failed`
-- `launch_failed`
-- `orchestrator_not_found`
-- `vm_exit_nonzero`
-- `runner_registration_failed`
-- `billing_settle_failed`
-- `billing_void_failed`
-- `canceled_by_user`
-- `canceled_by_provider`
-
-That is better than inventing one state per failure mode.
-
-### Billing Window State Machine
-
-Billing windows have a much smaller state machine:
-
-| From | To | Trigger |
-|------|----|---------|
-| `reserved` | `settled` | `billing.Settle` succeeded |
-| `reserved` | `voided` | `billing.Void` succeeded |
-
-There is no reason to make this more elaborate until `renew` lands. When `renew` exists,
-new rows get appended with `window_seq + 1`; existing rows do not change shape.
-
-### Execution Status Projection
-
-The execution row should not try to model billing detail. It is the query surface.
-
-Suggested rule:
-
-- if the latest attempt is `queued`, `reserved`, or `launching`, execution is `queued`
-- if the latest attempt is `running` or `finalizing`, execution is `running`
-- otherwise execution copies the latest terminal attempt state
-
-That gives the website and operator tools a simple surface without erasing the finer-grained
-attempt transitions.
-
-### Cancellation Rules
-
-Cancellation must be explicit because the side effects differ by state.
-
-| Attempt state | Cancellation behavior |
-|---------------|-----------------------|
-| `queued` | mark `canceled`, no billing call needed |
-| `reserved` | call `billing.Void`, then mark `canceled` |
-| `launching` | call `vm-orchestrator.CancelJob`; if accepted, finalize billing and mark `canceled` |
-| `running` | call `vm-orchestrator.CancelJob`; if the provider owns status, also mark `failure_reason='canceled_by_provider'` when appropriate |
-| `finalizing` | reject duplicate cancel as a no-op |
-| terminal | no-op |
-| `lost` | record cancel intent and let reconciler finish the transition |
-
-### Recovery Rules
-
-The reconciler should operate on attempts, not executions.
-
-#### Attempt in `reserved`
-
-- if `orchestrator_job_id=''` and the row is stale, void billing and mark `failed`
-- if the create call may have happened but the write did not, this is a bug in the calling
-  transaction boundary; fix the write ordering rather than adding more states
-
-#### Attempt in `launching` or `running`
-
-- query `vm-orchestrator` by `orchestrator_job_id`
-- if found, update to `running` or `finalizing` based on returned status
-- if not found, move to `lost`
-
-#### Attempt in `finalizing`
-
-- read the last billing window
-- if it is still `reserved`, retry `Settle` or `Void`
-- once billing succeeds, transition to the correct terminal state
-
-#### Attempt in `lost`
-
-- try orchestrator lookup
-- if provider-owned metadata exists, query provider correlation surfaces if needed
-- if the workload is proven terminal, move through `finalizing` and into a terminal state
-- otherwise leave it `lost` and surface it operationally
-
-That is enough to make the machine implementable without turning it into a planning exercise.
-
-## Why The Service Needs A Durable Attempt Identity
-
-Without a service-owned attempt identity:
-
-- billing cannot be reconciled safely after restarts
-- the website cannot show accurate lifecycle state
-- provider retries cannot be deduped
-- logs and traces cannot be tied back to a stable record
-- a lost `vm-orchestrator` in-memory record becomes an orphaned financial operation
-
-The attempt record is the anchor that lets the service reconcile:
-
-- PG state
-- billing state
-- `vm-orchestrator` job state
-- provider-visible runner identity
-- ClickHouse summary events
-- any provider callback or outbox delivery
-
-## Runner Supervisor Architecture
-
-The VM-backed runner supervisor can begin life inside `sandbox-rental-service`.
-It is an internal component, not a separate privileged daemon.
-
-Its responsibilities are:
-
-- decide whether a new runner VM should exist for a given label
-- create the execution and attempt rows
-- reserve billing for the attempt
-- choose a unique runner name
-- arrange runner credentials or secrets
-- request a VM from `vm-orchestrator`
-- watch for terminal state
-- delete temporary runner registrations when required by provider limitations
-- settle or void billing
-- write summary telemetry and outbox events
-
-It does not:
-
-- interpret workflow YAML
-- schedule steps
-- stream step logs back to the provider itself
-- manipulate ZFS or Firecracker directly
-
-### First-Cut Contract For Runner VMs
-
-For the first cut:
-
-- use a dedicated label such as `forge-metal-vm:host`
-- do not reuse `ubuntu-latest` while the guest remains Alpine and container support is unsettled
-- cap job timeout to 5 minutes until billing `renew` exists
-- treat CI spend as operator-org spend using the `platform` trust tier plan
-- do not build a warm VM pool yet; accept cold-start queue latency in exchange for a simpler first control plane
-
-### Provider Capability Constraints
-
-The current live stack has real constraints that the architecture must acknowledge:
-
-| Capability | Runner `12.8.0` | Forgejo `14.0.3` | Architectural consequence |
-|------------|-----------------|------------------|---------------------------|
-| `register --ephemeral` | yes | no | a short-lived VM cannot rely on automatic runner deletion today |
-| `one-job --handle` | yes | no, help says Forgejo `>= 15` | the current server cannot target a specific queued attempt through this flag |
-| `create-runner-file --secret` | yes, deprecated | supported by docs for modern Forgejo | may be useful for pre-registration experiments but should not become permanent architecture without another validation pass |
-
-This creates a real decision point:
-
-1. temporary Forgejo 14 path:
-   - non-ephemeral registration
-   - explicit row cleanup after teardown
-   - likely coarse autoscaling or a standby VM approach
-2. preferred longer-term path:
-   - upgrade Forgejo before production runner cutover
-   - validate ephemeral or handle-based single-job execution
-
-The tracer bullet proved the runner seam. It did not eliminate the provider-version problem.
-
-### First-Pass Provider Compromise
-
-The current architectural decision is to stay on Forgejo `14.0.3` for the first pass and
-document the compromises explicitly.
-
-That means:
-
-- runner VMs cannot rely on provider-side ephemeral deletion
-- the service must explicitly clean stale runner rows after teardown
-- the service cannot target a specific queued job via the newer handle-oriented path
-- queue latency is acceptable for the first pass because no warm VM pool is being built yet
-
-This is a valid first cut, but it changes the product claim:
-
-- first pass goal: correct VM-backed Actions execution with clear operational compromises
-- not first pass goal: ideal job-per-VM ephemerality or low-latency autoscaling
-
-The implementation should leave surgical comments anywhere this compromise leaks into code.
-
-## Golden Warming
-
-Default-branch warming remains a first-class control-plane operation.
-
-Rules:
-
-- default-branch `push` triggers `warm_golden`
-- PRs and feature branches use `repo_exec` against the currently active golden
-- warm state must never contain customer secrets
-- repo golden generation remains an execution-substrate concern in `vm-orchestrator`
-- the service records which golden generation was used or produced
-
-Webhooks are appropriate here because warming is repo-event-driven and does not need to
-pretend it is an Actions job.
-
-## Observability
-
-The target observability split is:
-
-- PostgreSQL: authoritative live control-plane state
-- ClickHouse: append-only execution summaries, logs where appropriate, reconciliation evidence
-- Forgejo UI: native Actions step logs and job result for `forgejo_runner`
-- OpenTelemetry: spans and metrics for service/orchestrator internals
-
-For `forgejo_runner` workloads, the service should record summary facts only:
-
-- attempt identity
-- provider correlation IDs
-- billed duration
-- VM metrics
-- terminal status
-- runner name
-
-In addition, the runner VM's event stream should be echoed into ClickHouse. For the first
-pass, that means mirroring VM-visible runner stdout/stderr and service-side control-plane
-events into the same execution-oriented analytics plane.
-
-Two rules keep this sane:
-
-1. Forgejo remains the primary user-facing log surface for Actions runs.
-2. The ClickHouse copy is an operator and observability mirror, not the first source of
-   truth for step presentation semantics.
-
-Surgical note for later:
-
-- if forge-metal evolves toward tenant-controlled log sovereignty, the ClickHouse mirror
-  may stop being the right storage backend for provider log copies. At that point we may
-  need a separate multi-tenant log store with a clearer ownership and retention model.
-
-## Reconciliation And Recovery
-
-This architecture is only correct if it can recover from process death.
-
-Required reconciliation loops:
-
-1. reserved-but-not-launched attempts:
-   - if billing succeeded but `vm-orchestrator` was never called, void
-2. launched-but-unsettled attempts:
-   - if the VM terminated but billing is still reserved, settle or void exactly once
-3. missing orchestrator jobs:
-   - if PG says running but `vm-orchestrator` no longer knows the job, mark the attempt
-     as `lost` and run a targeted recovery path
-4. stale Forgejo runner rows:
-   - delete by runner name for any terminated temporary VM-backed runner
-5. provider callback/outbox rows:
-   - retry until delivered or explicitly dead-lettered
-
-The current in-memory job map in `vm-orchestrator` is acceptable as a substrate detail,
-but it means `sandbox-rental-service` must be the durable source of truth.
-
-## Security Constraints
-
-- The guest label must describe reality. An Alpine guest without the expected runtime
-  stack must not claim `ubuntu-latest`.
-- Provider secrets, billing state, and auth context belong in the service layer, not
-  in `vm-orchestrator`.
-- Any runner registration token or shared secret injected into a VM must live only in
-  a transient execution clone, never in a shared repo golden.
-- Webhook ingress must be HMAC-validated and idempotent.
-- Cross-org reads of execution metadata and logs must be enforced server-side.
-
-## Recommended Near-Term Sequence
-
-1. expand `sandbox-rental-service` PostgreSQL schema from `jobs` into `executions`,
-   `execution_attempts`, `execution_billing_windows`, and renamed log tables
-2. replace goroutine-only lifecycle handling with persisted state transitions
-3. wire direct, repo, and warm workloads onto the new model first
-4. build the runner supervisor on top of the same persisted attempt model
-5. enforce the 5-minute cap in code before any VM-backed CI cutover
-6. decide whether to tolerate Forgejo 14 temporary compromises or upgrade Forgejo before
-   the production runner cutover
-7. remove the host-runner path and deprecated CLI CI path only after the VM-backed path
-   is proven under the new service-owned model
-
-## Open Questions
-
-These are the remaining architectural questions that still need targeted experiments
-or code-reading before the design is final:
-
-1. How should the service learn which exact Forgejo job a VM-backed runner claimed on
-   Forgejo `14.0.3`, where the newer handle-oriented path is unavailable?
-2. Is guest-to-service reporting via threaded control-plane metadata sufficient, or do we
-   need a provider-side query path to resolve job claim and completion robustly?
-3. Which exact runner and service log surfaces should be mirrored into ClickHouse for the
-   first pass, and how should they be tagged so future storage cutovers remain possible?
-
-## Current Decisions
-
-The following decisions are now fixed for the first implementation pass:
-
-1. No warm VM pool. Cold-start latency is accepted for now.
-2. No Forgejo upgrade gate. The first pass will run against Forgejo `14.0.3` and carry
-   explicit cleanup and correlation compromises.
-3. The service will thread control-plane metadata into the VM.
-4. Broad base-image compatibility is deferred. The label must stay honest.
-5. Runner and control-plane event logs will be mirrored into ClickHouse, with an explicit
-   note that future tenant log sovereignty may require a different storage backend.
-
-### Threaded VM Metadata
-
-Threading service metadata into the VM is the right move, but it is not a complete answer
-to provider correlation.
-
-What should be threaded in:
+The important values are:
 
 - `execution_id`
 - `attempt_id`
 - `orchestrator_job_id`
-- `runner_name`
-- `org_id`
-- provider instance URL
-- a short-lived service callback token or equivalent correlation secret if guest reporting
-  is added
+- `runner_name` when the workload is a runner VM
 
-What cannot be threaded in ahead of time:
+This is enough to correlate guest-originated events back to the correct
+execution attempt. The provider's job or run identity is learned later, after
+the runner has claimed work, and is attached back onto the same execution and
+attempt records.
 
-- the exact Forgejo job ID or run ID that the runner will claim, because that is not known
-  until after the provider assigns work
+## Database Schema
 
-So the correct interpretation of this decision is:
+The first-pass schema is intentionally compact.
 
-- thread service-owned identity into the VM so any later signal can be tied back to the
-  right attempt
-- do not make `sandbox-rental-service` depend on a VM-generated identity as its durable
-  correlation key; the microVM is operationally ephemeral, while `attempt_id` is the
-  stable control-plane identity
-- still design a reverse correlation path from the VM or provider back into the service
-  once the runner has claimed work
+### `repos`
 
-That reverse path is now the main unresolved runner-supervisor detail.
+`repos` is the durable product record for an imported repository.
 
-This document should evolve alongside the control-plane implementation. The next edits
-should happen after the schema refactor and after the first runner-supervisor experiment
-against the new persisted attempt model.
+| Column | Type | Notes |
+|--------|------|-------|
+| `repo_id` | `uuid primary key` | stable forge-metal repo identity |
+| `org_id` | `bigint not null` | owning org |
+| `provider` | `text not null` | initially `forgejo`, later `github` |
+| `provider_repo_id` | `text not null` | provider-native repo identifier |
+| `owner` | `text not null` | namespace or owner slug |
+| `name` | `text not null` | repo name |
+| `full_name` | `text not null` | denormalized `owner/name` |
+| `clone_url` | `text not null` | canonical clone URL |
+| `default_branch` | `text not null` | branch used for compatibility and golden refresh |
+| `runner_profile_slug` | `text not null default 'forge-metal'` | future-proofing for later profiles |
+| `state` | `text not null` | repo lifecycle state |
+| `compatibility_status` | `text not null default ''` | summary of the latest compatibility decision |
+| `compatibility_summary` | `jsonb not null default '{}'::jsonb` | actionable findings such as unsupported labels and workflow paths |
+| `last_scanned_sha` | `text not null default ''` | default-branch SHA used for the latest scan |
+| `active_golden_generation_id` | `uuid` | current active generation pointer, nullable until ready |
+| `last_ready_sha` | `text not null default ''` | default-branch SHA baked into the active generation |
+| `last_error` | `text not null default ''` | latest repo-level failure summary |
+| `created_at` | `timestamptz not null` | audit |
+| `updated_at` | `timestamptz not null` | audit |
+| `archived_at` | `timestamptz` | nullable |
+
+Recommended indexes:
+
+- unique `(provider, provider_repo_id)`
+- unique `(org_id, provider, full_name)`
+- index `(org_id, state, updated_at desc)`
+
+### `golden_generations`
+
+`golden_generations` tracks bootstrap and refresh builds of repo-scoped warm
+state.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `golden_generation_id` | `uuid primary key` | stable generation identity |
+| `repo_id` | `uuid not null references repos(repo_id)` | owning repo |
+| `runner_profile_slug` | `text not null` | `forge-metal` in v1 |
+| `source_ref` | `text not null` | usually `refs/heads/<default_branch>` |
+| `source_sha` | `text not null` | exact default-branch commit used to build this generation |
+| `state` | `text not null` | generation lifecycle state |
+| `trigger_reason` | `text not null default ''` | `bootstrap`, `default_branch_push`, `manual_refresh` |
+| `execution_id` | `uuid` | execution record for the bootstrap or refresh work |
+| `attempt_id` | `uuid` | latest attempt for that execution |
+| `orchestrator_job_id` | `text not null default ''` | substrate correlation for the active attempt |
+| `snapshot_ref` | `text not null default ''` | substrate-facing golden identifier |
+| `activated_at` | `timestamptz` | when the generation became active |
+| `superseded_at` | `timestamptz` | when a newer generation replaced it |
+| `failure_reason` | `text not null default ''` | machine-readable terminal failure classification |
+| `failure_detail` | `text not null default ''` | short operator-facing explanation |
+| `created_at` | `timestamptz not null` | audit |
+| `updated_at` | `timestamptz not null` | audit |
+
+Recommended indexes:
+
+- index `(repo_id, runner_profile_slug, created_at desc)`
+- index `(execution_id)`
+- partial unique index on `(repo_id, runner_profile_slug)` where the generation is
+  the active ready generation
+
+### `executions`
+
+`executions` is the stable control-plane record for one unit of work.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `execution_id` | `uuid primary key` | stable identity |
+| `org_id` | `bigint not null` | billing principal |
+| `actor_id` | `text not null` | user or system actor |
+| `product_id` | `text not null` | initially `sandbox` |
+| `kind` | `text not null` | `direct`, `repo_exec`, `warm_golden`, `forgejo_runner` |
+| `provider` | `text not null default ''` | `forgejo`, later others |
+| `status` | `text not null` | projection of latest attempt |
+| `idempotency_key` | `text` | nullable but unique when present |
+| `repo_id` | `uuid` | nullable for non-repo work |
+| `repo` | `text not null default ''` | logical repo key or `owner/name` |
+| `repo_url` | `text not null default ''` | clone URL when relevant |
+| `ref` | `text not null default ''` | target ref |
+| `commit_sha` | `text not null default ''` | pinned SHA when known |
+| `workflow_path` | `text not null default ''` | provider metadata |
+| `workflow_job_name` | `text not null default ''` | provider metadata |
+| `provider_run_id` | `text not null default ''` | external correlation |
+| `provider_job_id` | `text not null default ''` | external correlation |
+| `latest_attempt_id` | `uuid` | nullable until first attempt exists |
+| `created_at` | `timestamptz not null` | audit |
+| `updated_at` | `timestamptz not null` | audit |
+
+### `execution_attempts`
+
+`execution_attempts` owns the real lifecycle state machine.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `attempt_id` | `uuid primary key` | service-owned attempt identity |
+| `execution_id` | `uuid not null references executions(execution_id)` | parent execution |
+| `attempt_seq` | `int not null` | retry order |
+| `state` | `text not null` | attempt lifecycle state |
+| `orchestrator_job_id` | `text not null default ''` | substrate job identity |
+| `billing_job_id` | `bigint` | nullable until reserve succeeds |
+| `runner_name` | `text not null default ''` | provider-visible runner name for runner VMs |
+| `golden_snapshot` | `text not null default ''` | snapshot provenance |
+| `failure_reason` | `text not null default ''` | machine-readable detail |
+| `exit_code` | `int` | nullable until terminal outcome |
+| `duration_ms` | `bigint` | nullable until completion |
+| `zfs_written` | `bigint` | nullable until completion |
+| `stdout_bytes` | `bigint` | nullable until completion |
+| `stderr_bytes` | `bigint` | nullable until completion |
+| `trace_id` | `text not null default ''` | observability correlation |
+| `provider_claimed_at` | `timestamptz` | when the provider bound the runner to a job |
+| `started_at` | `timestamptz` | when execution began |
+| `completed_at` | `timestamptz` | terminal timestamp |
+| `created_at` | `timestamptz not null` | audit |
+| `updated_at` | `timestamptz not null` | audit |
+
+### `execution_billing_windows`
+
+`execution_billing_windows` is the durable bridge between attempts and financial
+settlement.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `attempt_id` | `uuid not null references execution_attempts(attempt_id)` | parent attempt |
+| `window_seq` | `int not null` | reservation order |
+| `reservation` | `jsonb not null` | exact billing reservation payload |
+| `window_seconds` | `int not null` | reserved duration |
+| `actual_seconds` | `int` | populated on settle |
+| `pricing_phase` | `text not null default ''` | copied from billing |
+| `state` | `text not null` | `reserved`, `settled`, `voided` |
+| `created_at` | `timestamptz not null` | audit |
+| `settled_at` | `timestamptz` | audit |
+
+Primary key: `(attempt_id, window_seq)`.
+
+### `execution_logs`
+
+`execution_logs` stores ordered attempt log chunks.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `attempt_id` | `uuid not null references execution_attempts(attempt_id)` | parent attempt |
+| `seq` | `int not null` | per-attempt ordering |
+| `stream` | `text not null` | `stdout`, `stderr`, `system` |
+| `chunk` | `bytea not null` | raw bytes |
+| `created_at` | `timestamptz not null` | audit |
+
+For Forgejo runner VMs this table stores control-plane and mirrored runner logs,
+not the canonical provider step-log presentation.
+
+## Billing Model
+
+Billing is based on reserved capacity multiplied by wall-clock duration.
+
+For v1, the billable dimensions are:
+
+- `vcpu`
+- `gib`
+
+The billing sequence is:
+
+1. create execution and attempt
+2. call `billing.Reserve`
+3. persist `execution_billing_windows(window_seq=1, state='reserved')`
+4. launch the VM
+5. observe terminal outcome
+6. call `billing.Settle` or `billing.Void`
+7. persist the final attempt state and billing window state
+8. write the ClickHouse summary row
+
+Until `renew` exists in the service path:
+
+- CI attempts are capped at five minutes
+- crossing the cap is a control-plane failure, not a best-effort overrun
+
+## ClickHouse Model
+
+ClickHouse remains append-only and execution-oriented.
+
+It stores:
+
+- execution summary rows
+- billing metering rows written by `billing-service`
+- mirrored control-plane and runner logs where appropriate
+
+It does not replace PostgreSQL as the source of truth for live execution state.
+
+For CI, Forgejo remains the user-facing system of record for workflow step logs
+and final provider job state. ClickHouse stores an operator and analytics mirror.
+
+Surgical note for later:
+
+- if tenants need stronger control over provider log ownership and retention, the
+  mirrored log backend may need to move out of shared ClickHouse into a separate
+  multi-tenant log store
+
+## Control Flows
+
+### Repo Import And Bootstrap
+
+```text
+user or provider integration
+  -> sandbox-rental-service imports repo
+  -> service scans workflow files on default branch
+  -> repo enters action_required or waiting_for_bootstrap
+  -> service creates golden_generation + warm_golden execution
+  -> billing Reserve
+  -> vm-orchestrator builds sanitized repo golden
+  -> billing Settle or Void
+  -> service activates the generation on success
+```
+
+### Default-Branch Refresh
+
+```text
+default-branch push webhook
+  -> sandbox-rental-service creates a new golden_generation
+  -> service launches warm_golden execution
+  -> old active generation remains live
+  -> new generation activates only after ready
+```
+
+### CI Execution
+
+```text
+Forgejo scheduler
+  -> runner VM is provisioned through sandbox-rental-service
+  -> billing Reserve
+  -> vm-orchestrator boots a VM from the repo's active golden
+  -> official forgejo-runner inside the VM claims one job
+  -> Forgejo receives native job status and step logs
+  -> service observes attempt completion, settles billing, records summary, and tears down the VM
+```
+
+## Reconciliation
+
+The architecture is only correct if the service can recover from process death.
+
+Required reconciliation loops:
+
+1. reserved but not launched
+   - void stale reservations that never became real launches
+2. launched but not finalized
+   - settle or void exactly once after terminal workload outcome is known
+3. lost orchestrator jobs
+   - mark the attempt `lost` and run targeted recovery
+4. repo refresh drift
+   - keep old active generations live until a newer one is truly ready
+5. stale runner rows
+   - explicitly remove provider runner registrations when the current Forgejo
+     version cannot do provider-side ephemeral cleanup
+
+## Current v1 Constraints
+
+These constraints are part of the design, not hidden implementation details.
+
+- one supported runner profile slug: `forge-metal`
+- one supported workflow label: `forge-metal`
+- no warm VM pool yet
+- no user-facing custom base images yet
+- the label must stay honest and must not pretend the current guest is a
+  broader compatibility target than it really is
+- no multi-window billing yet
+- a hard five-minute cap on CI attempts until renew exists
+- current Forgejo runner lifecycle may require explicit stale-runner cleanup
+
+## Summary
+
+The architecture is:
+
+- repo import and golden management live in `sandbox-rental-service`
+- execution identity and billing live in `sandbox-rental-service`
+- Firecracker, ZFS, and guest orchestration live in `vm-orchestrator`
+- Forgejo remains the Actions workflow engine
+- one repo has one active golden for one supported v1 profile
+- every VM-backed launch is tracked as an execution attempt with durable billing
+  windows and append-only summary evidence
