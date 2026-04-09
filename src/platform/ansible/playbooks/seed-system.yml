@@ -920,6 +920,9 @@
           -d mailbox_service
           -v ON_ERROR_STOP=1
         stdin: |
+          DELETE FROM mailbox_bindings
+          WHERE account_id = 'ceo'
+            AND subject <> '{{ seed_system_users_state.ceo.user_id }}';
           INSERT INTO mailbox_bindings (subject, account_id, email_address)
           VALUES ('{{ seed_system_users_state.ceo.user_id }}', 'ceo', '{{ seed_system_users_state.ceo.email }}')
           ON CONFLICT (subject) DO UPDATE
@@ -929,7 +932,7 @@
         PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
       changed_when: false
       no_log: true
-      tags: [stalwart]
+      tags: [identity, stalwart]
 
     - name: Print mailbox summary
       ansible.builtin.debug:
