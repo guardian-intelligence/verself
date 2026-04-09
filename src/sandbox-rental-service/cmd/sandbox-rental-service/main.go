@@ -185,6 +185,23 @@ func run() error {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				reconcileCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := jobService.Reconcile(reconcileCtx); err != nil {
+					logger.ErrorContext(reconcileCtx, "sandbox-rental: reconcile", "error", err)
+				}
+				cancel()
+			}
+		}
+	}()
+
 	logger.Info("sandbox-rental: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		return fmt.Errorf("sandbox-rental: listen: %w", err)
