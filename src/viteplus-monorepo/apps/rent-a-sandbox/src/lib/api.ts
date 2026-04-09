@@ -153,6 +153,7 @@ export interface Attempt {
   state: string;
   orchestrator_job_id?: string;
   billing_job_id?: number;
+  runner_name?: string;
   golden_snapshot?: string;
   failure_reason?: string;
   exit_code?: number;
@@ -187,6 +188,8 @@ export interface Execution {
   product_id: string;
   status: string;
   idempotency_key?: string;
+  repo_id?: string;
+  golden_generation_id?: string;
   repo?: string;
   repo_url?: string;
   ref?: string;
@@ -204,21 +207,24 @@ export interface Execution {
 }
 
 export interface RepoExecutionRequest {
-  repo_url: string;
-  ref: string;
+  repo_id?: string;
+  repo_url?: string;
+  ref?: string;
 }
 
 export function submitRepoExecution(
   body: RepoExecutionRequest,
 ): Promise<{ execution_id: string; attempt_id: string; status: string }> {
+  const payload: Record<string, string> = {
+    kind: "repo_exec",
+  };
+  if (body.repo_id) payload.repo_id = body.repo_id;
+  if (body.repo_url) payload.repo_url = body.repo_url;
+  if (body.ref) payload.ref = body.ref;
   return authFetch("/api/v1/executions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      kind: "repo_exec",
-      repo_url: body.repo_url,
-      ref: body.ref,
-    }),
+    body: JSON.stringify(payload),
   }).then(jsonOrThrow<{ execution_id: string; attempt_id: string; status: string }>);
 }
 
@@ -232,4 +238,113 @@ export function fetchExecutionLogs(
   return authFetch(`/api/v1/executions/${executionId}/logs`).then(
     jsonOrThrow<{ execution_id: string; attempt_id: string; logs: string }>,
   );
+}
+
+// --- Repos ---
+
+export interface WorkflowScanIssue {
+  path: string;
+  job_id?: string;
+  reason: string;
+  labels?: string[];
+  details?: string;
+}
+
+export interface RepoCompatibilitySummary {
+  workflow_paths?: string[];
+  unsupported_labels?: string[];
+  issues?: WorkflowScanIssue[];
+}
+
+export interface Repo {
+  repo_id: string;
+  org_id: number;
+  provider: string;
+  provider_repo_id: string;
+  owner: string;
+  name: string;
+  full_name: string;
+  clone_url: string;
+  default_branch: string;
+  runner_profile_slug: string;
+  state: string;
+  compatibility_status: string;
+  compatibility_summary?: RepoCompatibilitySummary;
+  last_scanned_sha?: string;
+  active_golden_generation_id?: string;
+  last_ready_sha?: string;
+  last_error?: string;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string;
+}
+
+export interface GoldenGeneration {
+  golden_generation_id: string;
+  repo_id: string;
+  runner_profile_slug: string;
+  source_ref: string;
+  source_sha: string;
+  state: string;
+  trigger_reason: string;
+  execution_id?: string;
+  attempt_id?: string;
+  orchestrator_job_id?: string;
+  snapshot_ref?: string;
+  activated_at?: string;
+  superseded_at?: string;
+  failure_reason?: string;
+  failure_detail?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepoBootstrapRecord {
+  repo: Repo;
+  generation: GoldenGeneration;
+  execution_id: string;
+  attempt_id: string;
+  trigger_reason: string;
+}
+
+export interface ImportRepoRequest {
+  provider?: string;
+  provider_repo_id?: string;
+  owner?: string;
+  name?: string;
+  full_name?: string;
+  clone_url: string;
+  default_branch?: string;
+}
+
+export function importRepo(body: ImportRepoRequest): Promise<Repo> {
+  return authFetch("/api/v1/repos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(jsonOrThrow<Repo>);
+}
+
+export function fetchRepos(): Promise<Repo[]> {
+  return authFetch("/api/v1/repos").then(jsonOrThrow<Repo[]>);
+}
+
+export function fetchRepo(repoId: string): Promise<Repo> {
+  return authFetch(`/api/v1/repos/${repoId}`).then(jsonOrThrow<Repo>);
+}
+
+export function rescanRepo(repoId: string): Promise<Repo> {
+  return authFetch(`/api/v1/repos/${repoId}/rescan`, {
+    method: "POST",
+  }).then(jsonOrThrow<Repo>);
+}
+
+export function fetchRepoGenerations(repoId: string): Promise<GoldenGeneration[]> {
+  return authFetch(`/api/v1/repos/${repoId}/generations`).then(jsonOrThrow<GoldenGeneration[]>);
+}
+
+export function refreshRepo(repoId: string): Promise<RepoBootstrapRecord> {
+  return authFetch(`/api/v1/repos/${repoId}/refresh`, {
+    method: "POST",
+  }).then(jsonOrThrow<RepoBootstrapRecord>);
 }

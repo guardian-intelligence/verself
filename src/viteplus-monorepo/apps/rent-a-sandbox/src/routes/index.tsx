@@ -109,14 +109,26 @@ function Dashboard() {
 
       <div className="grid md:grid-cols-2 gap-4">
         <Link
+          to="/repos"
+          className="border border-border rounded-lg p-6 hover:bg-accent/50 transition-colors"
+        >
+          <h3 className="font-semibold mb-1">Repos</h3>
+          <p className="text-sm text-muted-foreground">
+            Import a repository, prepare its golden image, and track readiness
+          </p>
+        </Link>
+        <Link
           to="/jobs"
           className="border border-border rounded-lg p-6 hover:bg-accent/50 transition-colors"
         >
-          <h3 className="font-semibold mb-1">Sandboxes</h3>
+          <h3 className="font-semibold mb-1">Executions</h3>
           <p className="text-sm text-muted-foreground">
-            Create and monitor Firecracker CI sandboxes
+            Monitor repo executions, golden builds, and runner attempts
           </p>
         </Link>
+      </div>
+
+      <div className="grid md:grid-cols-1 gap-4">
         <Link
           to="/billing"
           search={{ purchased: false, subscribed: false }}

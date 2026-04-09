@@ -106,10 +106,16 @@ function Nav() {
             Dashboard
           </Link>
           <Link
+            to="/repos"
+            className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+          >
+            Repos
+          </Link>
+          <Link
             to="/jobs"
             className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
           >
-            Sandboxes
+            Executions
           </Link>
           <Link
             to="/billing"
