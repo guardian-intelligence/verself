@@ -439,7 +439,7 @@ async function refreshStoredSession(
 export async function beginLogin(
   config: AuthConfig,
   requestedRedirectTo?: string | null,
-): Promise<Response> {
+): Promise<string> {
   const metadata = await getProviderMetadata(config.issuerURL);
   const session = await getSessionManager(config);
   const state = randomToken();
@@ -470,7 +470,7 @@ export async function beginLogin(
     },
   });
 
-  return Response.redirect(authorizeURL.toString(), 302);
+  return authorizeURL.toString();
 }
 
 export async function finishLogin(config: AuthConfig): Promise<{
@@ -536,7 +536,7 @@ export async function finishLogin(config: AuthConfig): Promise<{
   }
 
   return {
-    redirectTo: pending.redirectTo,
+    redirectTo: new URL(pending.redirectTo, getBaseURL()).toString(),
     session: storedSession,
   };
 }
@@ -581,7 +581,7 @@ export async function requireAccessToken(config: AuthConfig): Promise<string> {
   return session.accessToken;
 }
 
-export async function logout(config: AuthConfig): Promise<Response> {
+export async function logout(config: AuthConfig): Promise<string> {
   const sessionManager = await getSessionManager(config);
   const sessionID = sessionManager.data.sessionID;
   const stored = sessionID ? await readStoredSession(config, sessionID) : null;
@@ -592,40 +592,16 @@ export async function logout(config: AuthConfig): Promise<Response> {
 
   const postLogoutRedirect = getAbsoluteURL(config.postLogoutRedirectPath);
   if (!stored?.idToken) {
-    return Response.redirect(postLogoutRedirect, 302);
+    return postLogoutRedirect;
   }
 
   const metadata = await getProviderMetadata(config.issuerURL);
   if (!metadata.end_session_endpoint) {
-    return Response.redirect(postLogoutRedirect, 302);
+    return postLogoutRedirect;
   }
 
   const logoutURL = new URL(metadata.end_session_endpoint);
   logoutURL.searchParams.set("id_token_hint", stored.idToken);
   logoutURL.searchParams.set("post_logout_redirect_uri", postLogoutRedirect);
-  return Response.redirect(logoutURL.toString(), 302);
+  return logoutURL.toString();
 }
-
-export const authSessionSchemaSQL = `
-CREATE TABLE IF NOT EXISTS auth_sessions (
-  session_id TEXT PRIMARY KEY,
-  app_name TEXT NOT NULL,
-  subject TEXT NOT NULL,
-  email TEXT,
-  display_name TEXT,
-  preferred_username TEXT,
-  org_id TEXT,
-  roles JSONB NOT NULL DEFAULT '[]'::jsonb,
-  user_claims JSONB NOT NULL DEFAULT '{}'::jsonb,
-  id_token TEXT,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT,
-  token_scope TEXT,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS auth_sessions_app_subject_idx
-  ON auth_sessions (app_name, subject);
-`;

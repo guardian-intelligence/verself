@@ -55,6 +55,11 @@
   register: rent_a_sandbox_app_search
   when: rent_a_sandbox_project_id is defined
 
+- name: Check rent-a-sandbox OIDC Web cutover marker
+  ansible.builtin.stat:
+    path: /etc/credstore/rent-a-sandbox/oidc-web-cutover
+  register: rent_a_sandbox_oidc_web_cutover_marker
+
 - name: Set existing app fact
   ansible.builtin.set_fact:
     rent_a_sandbox_existing_app: "{{ rent_a_sandbox_app_search.json.result | default([]) | first | default({}) }}"
@@ -64,14 +69,41 @@
     rent_a_sandbox_app_requires_recreate: >-
       {{
         (
-          (rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.appType
-          | default('')
-        ) != 'OIDC_APP_TYPE_WEB'
-        or
+          rent_a_sandbox_app_search.json.result is defined
+          and rent_a_sandbox_app_search.json.result | length > 0
+        )
+        and
         (
-          (rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
-          | default('')
-        ) != 'OIDC_AUTH_METHOD_TYPE_NONE'
+          not rent_a_sandbox_oidc_web_cutover_marker.stat.exists
+          or (
+            (rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
+            | default('')
+          ) != 'OIDC_AUTH_METHOD_TYPE_NONE'
+          or (
+            ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.redirectUris
+            | default([]) | sort)
+            != (["https://" ~ rent_a_sandbox_domain ~ "/callback"] | sort)
+          )
+          or (
+            ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.responseTypes
+            | default([]) | sort)
+            != (["OIDC_RESPONSE_TYPE_CODE"] | sort)
+          )
+          or (
+            ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.grantTypes
+            | default([]) | sort)
+            != (["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"] | sort)
+          )
+          or (
+            ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.postLogoutRedirectUris
+            | default([]) | sort)
+            != (["https://" ~ rent_a_sandbox_domain] | sort)
+          )
+          or (
+            (rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.accessTokenType
+            | default('')
+          ) != 'OIDC_TOKEN_TYPE_JWT'
+        )
       }}
   when: rent_a_sandbox_app_search is not skipped
 
@@ -89,38 +121,6 @@
     - rent_a_sandbox_app_exists is defined
     - rent_a_sandbox_app_exists | bool
     - rent_a_sandbox_app_requires_recreate | default(false) | bool
-    - rent_a_sandbox_app_id | default('', true) | length > 0
-  no_log: true
-
-- name: Update existing compatible rent-a-sandbox OIDC application
-  ansible.builtin.uri:
-    url: >-
-      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{
-      rent_a_sandbox_project_id }}/apps/{{ rent_a_sandbox_app_id }}/oidc_config
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      redirectUris:
-        - "https://{{ rent_a_sandbox_domain }}/callback"
-      responseTypes:
-        - "OIDC_RESPONSE_TYPE_CODE"
-      grantTypes:
-        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
-        - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
-      appType: "OIDC_APP_TYPE_WEB"
-      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
-      postLogoutRedirectUris:
-        - "https://{{ rent_a_sandbox_domain }}"
-      devMode: false
-      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
-    status_code: 200
-  when:
-    - rent_a_sandbox_app_exists is defined
-    - rent_a_sandbox_app_exists | bool
-    - not (rent_a_sandbox_app_requires_recreate | default(false) | bool)
     - rent_a_sandbox_app_id | default('', true) | length > 0
   no_log: true
 
@@ -157,10 +157,40 @@
     )
   no_log: true
 
-- name: Set client ID from created app
+- name: Re-query rent-a-sandbox OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ rent_a_sandbox_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: rent-a-sandbox
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: rent_a_sandbox_final_app_search
+  when: rent_a_sandbox_project_id is defined
+
+- name: Set final rent-a-sandbox app facts
   ansible.builtin.set_fact:
-    rent_a_sandbox_client_id: "{{ rent_a_sandbox_app_created.json.clientId }}"
-  when: rent_a_sandbox_app_created is not skipped and rent_a_sandbox_app_created is changed
+    rent_a_sandbox_app_id: "{{ (rent_a_sandbox_final_app_search.json.result | default([]) | first | default({})).id | default('') }}"
+    rent_a_sandbox_client_id: "{{ (rent_a_sandbox_final_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
+  when: rent_a_sandbox_final_app_search is not skipped
+
+- name: Persist rent-a-sandbox OIDC Web cutover marker
+  ansible.builtin.copy:
+    dest: /etc/credstore/rent-a-sandbox/oidc-web-cutover
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+    content: |
+      app_id={{ rent_a_sandbox_app_id }}
+      client_id={{ rent_a_sandbox_client_id }}
+      auth_method=OIDC_AUTH_METHOD_TYPE_NONE
+  when: rent_a_sandbox_client_id | default('', true) | length > 0
 
 - name: Ensure env directory exists
   ansible.builtin.file:

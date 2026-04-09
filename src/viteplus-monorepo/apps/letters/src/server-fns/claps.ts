@@ -30,9 +30,15 @@ export const clapPost = createServerFn({ method: "POST" })
           updated_at = now()
         RETURNING count
       `;
+      if (!clap) {
+        throw new Error(`Clap write failed for ${data.slug}`);
+      }
 
       // Read updated total from the post (trigger already fired)
       const [updated] = await sql`SELECT total_claps FROM posts WHERE id = ${post.id}`;
+      if (!updated) {
+        throw new Error(`Clap total read failed for ${data.slug}`);
+      }
 
       return {
         sessionCount: clap.count,

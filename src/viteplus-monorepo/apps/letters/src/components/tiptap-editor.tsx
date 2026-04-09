@@ -11,6 +11,7 @@ interface TiptapEditorProps {
 }
 
 export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
+  const parsedContent = parseContent(content);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -24,7 +25,6 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
         placeholder: "Tell your story...",
       }),
     ],
-    content: parseContent(content),
     onUpdate: ({ editor: e }) => {
       onChange(e.getJSON());
     },
@@ -33,6 +33,7 @@ export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
         class: "prose-letters focus:outline-none",
       },
     },
+    ...(parsedContent ? { content: parsedContent } : {}),
   });
 
   const addImage = useCallback(() => {

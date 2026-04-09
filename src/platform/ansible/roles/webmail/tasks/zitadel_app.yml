@@ -55,6 +55,11 @@
   register: webmail_app_search
   when: webmail_project_id is defined
 
+- name: Check webmail OIDC Web cutover marker
+  ansible.builtin.stat:
+    path: /etc/credstore/webmail/oidc-web-cutover
+  register: webmail_oidc_web_cutover_marker
+
 - name: Set existing app fact
   ansible.builtin.set_fact:
     webmail_existing_app: "{{ webmail_app_search.json.result | default([]) | first | default({}) }}"
@@ -64,14 +69,41 @@
     webmail_app_requires_recreate: >-
       {{
         (
-          (webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.appType
-          | default('')
-        ) != 'OIDC_APP_TYPE_WEB'
-        or
+          webmail_app_search.json.result is defined
+          and webmail_app_search.json.result | length > 0
+        )
+        and
         (
-          (webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
-          | default('')
-        ) != 'OIDC_AUTH_METHOD_TYPE_NONE'
+          not webmail_oidc_web_cutover_marker.stat.exists
+          or (
+            (webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
+            | default('')
+          ) != 'OIDC_AUTH_METHOD_TYPE_NONE'
+          or (
+            ((webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.redirectUris
+            | default([]) | sort)
+            != (["https://" ~ webmail_domain ~ "/callback"] | sort)
+          )
+          or (
+            ((webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.responseTypes
+            | default([]) | sort)
+            != (["OIDC_RESPONSE_TYPE_CODE"] | sort)
+          )
+          or (
+            ((webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.grantTypes
+            | default([]) | sort)
+            != (["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"] | sort)
+          )
+          or (
+            ((webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.postLogoutRedirectUris
+            | default([]) | sort)
+            != (["https://" ~ webmail_domain] | sort)
+          )
+          or (
+            (webmail_app_search.json.result | default([]) | first | default({})).oidcConfig.accessTokenType
+            | default('')
+          ) != 'OIDC_TOKEN_TYPE_JWT'
+        )
       }}
   when: webmail_app_search is not skipped
 
@@ -87,36 +119,6 @@
     - webmail_app_exists is defined
     - webmail_app_exists | bool
     - webmail_app_requires_recreate | default(false) | bool
-    - webmail_app_id | default('', true) | length > 0
-  no_log: true
-
-- name: Update existing compatible webmail OIDC application
-  ansible.builtin.uri:
-    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ webmail_project_id }}/apps/{{ webmail_app_id }}/oidc_config"
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ webmail_zitadel_pat }}"
-      Host: "auth.{{ forge_metal_domain }}"
-    body_format: json
-    body:
-      redirectUris:
-        - "https://{{ webmail_domain }}/callback"
-      responseTypes:
-        - "OIDC_RESPONSE_TYPE_CODE"
-      grantTypes:
-        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
-        - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
-      appType: "OIDC_APP_TYPE_WEB"
-      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
-      postLogoutRedirectUris:
-        - "https://{{ webmail_domain }}"
-      devMode: false
-      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
-    status_code: 200
-  when:
-    - webmail_app_exists is defined
-    - webmail_app_exists | bool
-    - not (webmail_app_requires_recreate | default(false) | bool)
     - webmail_app_id | default('', true) | length > 0
   no_log: true
 
@@ -153,10 +155,40 @@
     )
   no_log: true
 
-- name: Set client ID from created app
+- name: Re-query webmail OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ webmail_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ webmail_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: webmail
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: webmail_final_app_search
+  when: webmail_project_id is defined
+
+- name: Set final webmail app facts
   ansible.builtin.set_fact:
-    webmail_client_id: "{{ webmail_app_created.json.clientId }}"
-  when: webmail_app_created is not skipped and webmail_app_created is changed
+    webmail_app_id: "{{ (webmail_final_app_search.json.result | default([]) | first | default({})).id | default('') }}"
+    webmail_client_id: "{{ (webmail_final_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
+  when: webmail_final_app_search is not skipped
+
+- name: Persist webmail OIDC Web cutover marker
+  ansible.builtin.copy:
+    dest: /etc/credstore/webmail/oidc-web-cutover
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+    content: |
+      app_id={{ webmail_app_id }}
+      client_id={{ webmail_client_id }}
+      auth_method=OIDC_AUTH_METHOD_TYPE_NONE
+  when: webmail_client_id | default('', true) | length > 0
 
 - name: Ensure env directory exists
   ansible.builtin.file:

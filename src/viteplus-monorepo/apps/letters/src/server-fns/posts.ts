@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import postgres from "postgres";
+import { lettersAuthMiddleware } from "./auth";
 
 const DATABASE_URL = process.env.DATABASE_URL || "postgresql://letters:letters@127.0.0.1:5432/letters";
 
@@ -34,6 +35,7 @@ function estimateReadingTime(content: unknown): number {
 }
 
 export const createPost = createServerFn({ method: "POST" })
+  .middleware([lettersAuthMiddleware])
   .inputValidator(
     (data: { title: string; content?: unknown; subtitle?: string; cover_image_url?: string; tags?: string[]; author_name?: string }) => data,
   )
@@ -57,6 +59,7 @@ export const createPost = createServerFn({ method: "POST" })
         )
         RETURNING id, slug
       `;
+      if (!post) throw new Error("Post creation failed");
       return { id: post.id, slug: post.slug };
     } finally {
       await sql.end();
@@ -64,6 +67,7 @@ export const createPost = createServerFn({ method: "POST" })
   });
 
 export const updatePost = createServerFn({ method: "POST" })
+  .middleware([lettersAuthMiddleware])
   .inputValidator(
     (data: {
       slug: string;
@@ -79,23 +83,6 @@ export const updatePost = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = getDb();
     try {
-      const updates: Record<string, unknown> = { updated_at: new Date() };
-      if (data.title !== undefined) updates.title = data.title;
-      if (data.subtitle !== undefined) updates.subtitle = data.subtitle;
-      if (data.cover_image_url !== undefined) updates.cover_image_url = data.cover_image_url;
-      if (data.tags !== undefined) updates.tags = data.tags;
-      if (data.author_name !== undefined) updates.author_name = data.author_name;
-      if (data.newSlug !== undefined) updates.slug = data.newSlug;
-      if (data.content !== undefined) {
-        updates.content = JSON.stringify(data.content);
-        updates.reading_time_minutes = estimateReadingTime(data.content);
-      }
-
-      const setClauses = Object.keys(updates)
-        .map((k) => `${k} = $${k}`)
-        .join(", ");
-
-      // Use parameterized query to avoid SQL injection
       const [post] = await sql`
         UPDATE posts SET
           title = COALESCE(${data.title ?? null}, title),
@@ -118,6 +105,7 @@ export const updatePost = createServerFn({ method: "POST" })
   });
 
 export const deletePost = createServerFn({ method: "POST" })
+  .middleware([lettersAuthMiddleware])
   .inputValidator((data: { slug: string }) => data)
   .handler(async ({ data }) => {
     const sql = getDb();
@@ -131,6 +119,7 @@ export const deletePost = createServerFn({ method: "POST" })
   });
 
 export const publishPost = createServerFn({ method: "POST" })
+  .middleware([lettersAuthMiddleware])
   .inputValidator((data: { slug: string }) => data)
   .handler(async ({ data }) => {
     const sql = getDb();
@@ -148,6 +137,7 @@ export const publishPost = createServerFn({ method: "POST" })
   });
 
 export const unpublishPost = createServerFn({ method: "POST" })
+  .middleware([lettersAuthMiddleware])
   .inputValidator((data: { slug: string }) => data)
   .handler(async ({ data }) => {
     const sql = getDb();
