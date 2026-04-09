@@ -52,6 +52,7 @@ type Config struct {
 // Server is an in-process sandbox-rental-service for e2e tests.
 type Server struct {
 	*httptest.Server
+	service *jobs.Service
 }
 
 // NewServer constructs a sandbox-rental-service HTTP test server with auth
@@ -79,5 +80,12 @@ func NewServer(cfg Config) *Server {
 
 	authHandler := auth.Middleware(cfg.AuthCfg)(mux)
 	srv := httptest.NewServer(authHandler)
-	return &Server{Server: srv}
+	return &Server{Server: srv, service: svc}
+}
+
+func (s *Server) Reconcile(ctx context.Context) error {
+	if s == nil || s.service == nil {
+		return nil
+	}
+	return s.service.Reconcile(ctx)
 }
