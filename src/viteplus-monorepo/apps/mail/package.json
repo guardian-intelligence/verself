@@ -9,6 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "test:e2e": "vp exec playwright test",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/dompurify": "^3.2.0",
     "@types/node": "catalog:",
