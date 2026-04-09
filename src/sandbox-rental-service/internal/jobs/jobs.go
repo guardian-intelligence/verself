@@ -85,30 +85,31 @@ type SubmitRequest struct {
 }
 
 type ExecutionRecord struct {
-	ExecutionID     uuid.UUID       `json:"execution_id"`
-	OrgID           uint64          `json:"org_id"`
-	ActorID         string          `json:"actor_id"`
-	Kind            string          `json:"kind"`
-	Provider        string          `json:"provider,omitempty"`
-	ProductID       string          `json:"product_id"`
-	Status          string          `json:"status"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
-	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
-	RepoID          string          `json:"repo_id,omitempty"`
-	Repo            string          `json:"repo,omitempty"`
-	RepoURL         string          `json:"repo_url,omitempty"`
-	Ref             string          `json:"ref,omitempty"`
-	DefaultBranch   string          `json:"default_branch,omitempty"`
-	RunCommand      string          `json:"run_command,omitempty"`
-	CommitSHA       string          `json:"commit_sha,omitempty"`
-	WorkflowPath    string          `json:"workflow_path,omitempty"`
-	WorkflowJobName string          `json:"workflow_job_name,omitempty"`
-	ProviderRunID   string          `json:"provider_run_id,omitempty"`
-	ProviderJobID   string          `json:"provider_job_id,omitempty"`
-	LatestAttempt   AttemptRecord   `json:"latest_attempt"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	BillingWindows  []BillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID        uuid.UUID       `json:"execution_id"`
+	OrgID              uint64          `json:"org_id"`
+	ActorID            string          `json:"actor_id"`
+	Kind               string          `json:"kind"`
+	Provider           string          `json:"provider,omitempty"`
+	ProductID          string          `json:"product_id"`
+	Status             string          `json:"status"`
+	CorrelationID      string          `json:"correlation_id,omitempty"`
+	IdempotencyKey     string          `json:"idempotency_key,omitempty"`
+	RepoID             string          `json:"repo_id,omitempty"`
+	GoldenGenerationID string          `json:"golden_generation_id,omitempty"`
+	Repo               string          `json:"repo,omitempty"`
+	RepoURL            string          `json:"repo_url,omitempty"`
+	Ref                string          `json:"ref,omitempty"`
+	DefaultBranch      string          `json:"default_branch,omitempty"`
+	RunCommand         string          `json:"run_command,omitempty"`
+	CommitSHA          string          `json:"commit_sha,omitempty"`
+	WorkflowPath       string          `json:"workflow_path,omitempty"`
+	WorkflowJobName    string          `json:"workflow_job_name,omitempty"`
+	ProviderRunID      string          `json:"provider_run_id,omitempty"`
+	ProviderJobID      string          `json:"provider_job_id,omitempty"`
+	LatestAttempt      AttemptRecord   `json:"latest_attempt"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	BillingWindows     []BillingWindow `json:"billing_windows,omitempty"`
 }
 
 type AttemptRecord struct {
@@ -712,6 +713,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.correlation_id,
 			COALESCE(e.idempotency_key, ''),
 			COALESCE(e.repo_id::text, ''),
+			COALESCE(e.golden_generation_id::text, ''),
 			e.repo,
 			e.repo_url,
 			e.ref,
@@ -748,13 +750,14 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 	`, executionID, int64(orgID))
 
 	var (
-		record           ExecutionRecord
-		attempt          AttemptRecord
-		repoID           string
-		startedAt        sql.NullTime
-		completedAt      sql.NullTime
-		attemptCreatedAt sql.NullTime
-		attemptUpdatedAt sql.NullTime
+		record             ExecutionRecord
+		attempt            AttemptRecord
+		repoID             string
+		goldenGenerationID string
+		startedAt          sql.NullTime
+		completedAt        sql.NullTime
+		attemptCreatedAt   sql.NullTime
+		attemptUpdatedAt   sql.NullTime
 	)
 	if err := row.Scan(
 		&record.ExecutionID,
@@ -767,6 +770,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.CorrelationID,
 		&record.IdempotencyKey,
 		&repoID,
+		&goldenGenerationID,
 		&record.Repo,
 		&record.RepoURL,
 		&record.Ref,
@@ -807,6 +811,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		attempt.StartedAt = &startedAt.Time
 	}
 	record.RepoID = strings.TrimSpace(repoID)
+	record.GoldenGenerationID = strings.TrimSpace(goldenGenerationID)
 	if completedAt.Valid {
 		attempt.CompletedAt = &completedAt.Time
 	}
@@ -912,20 +917,24 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 		}
 		repoID = parsedRepoID
 	}
+	var goldenGenerationID any
+	if req.GoldenGenerationID != nil {
+		goldenGenerationID = *req.GoldenGenerationID
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO executions (
 			execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
-			idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
+			idempotency_key, repo_id, golden_generation_id, repo, repo_url, ref, default_branch, run_command,
 			workflow_path, workflow_job_name, provider_run_id, provider_job_id,
 			latest_attempt_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19,
-			$20, $21, $21
+			NULLIF($9, ''), $10, $11, $12, $13, $14, $15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $22
 		)
-	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
+	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, goldenGenerationID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
 		return err
 	}
 
@@ -1348,6 +1357,7 @@ func (s *Service) hydrateImportedRepoRequest(ctx context.Context, orgID uint64, 
 		if repo.ActiveGoldenGenerationID == nil {
 			return SubmitRequest{}, ErrRepoNotReady
 		}
+		req.GoldenGenerationID = repo.ActiveGoldenGenerationID
 	case KindWarmGolden:
 		// Warm builds are the mechanism that moves a compatible repo toward
 		// ready. Do not require an active generation here.

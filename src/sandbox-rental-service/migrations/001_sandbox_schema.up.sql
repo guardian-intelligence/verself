@@ -66,6 +66,7 @@ CREATE TABLE executions (
     correlation_id     TEXT        NOT NULL DEFAULT '',
     idempotency_key    TEXT,
     repo_id            UUID        REFERENCES repos(repo_id) ON DELETE SET NULL,
+    golden_generation_id UUID,
     repo               TEXT        NOT NULL DEFAULT '',
     repo_url           TEXT        NOT NULL DEFAULT '',
     ref                TEXT        NOT NULL DEFAULT '',
@@ -89,6 +90,7 @@ CREATE INDEX idx_executions_org_updated_at ON executions (org_id, updated_at DES
 CREATE INDEX idx_executions_status ON executions (status);
 CREATE INDEX idx_executions_correlation_id ON executions (correlation_id) WHERE correlation_id <> '';
 CREATE INDEX idx_executions_repo_id ON executions (repo_id) WHERE repo_id IS NOT NULL;
+CREATE INDEX idx_executions_golden_generation_id ON executions (golden_generation_id) WHERE golden_generation_id IS NOT NULL;
 
 CREATE TABLE execution_attempts (
     attempt_id            UUID        PRIMARY KEY,
@@ -176,5 +178,11 @@ CREATE UNIQUE INDEX idx_golden_generations_active
 ALTER TABLE repos
     ADD CONSTRAINT repos_active_golden_generation_id_fkey
     FOREIGN KEY (active_golden_generation_id)
+    REFERENCES golden_generations(golden_generation_id)
+    ON DELETE SET NULL;
+
+ALTER TABLE executions
+    ADD CONSTRAINT executions_golden_generation_id_fkey
+    FOREIGN KEY (golden_generation_id)
     REFERENCES golden_generations(golden_generation_id)
     ON DELETE SET NULL;
