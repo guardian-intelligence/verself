@@ -76,7 +76,20 @@ Accounts are pre-created via Stalwart's Management REST API in `seed-system.yml 
 
 ## Authentication
 
-Internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before passing to the Management API (Stalwart stores `secrets` verbatim and detects the hash algorithm by prefix). Accounts require `roles: ["user"]` for JMAP/IMAP access — without it, authentication succeeds but returns 403.
+Stalwart and the Forge Metal app tier do not share an auth system today.
+
+**Stalwart mailbox auth:** Stalwart uses its own internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before passing to the Management API (Stalwart stores `secrets` verbatim and detects the hash algorithm by prefix). Accounts require `roles: ["user"]` for JMAP/IMAP access — without it, authentication succeeds but returns 403.
+
+**Forge Metal product auth:** The webmail app authenticates humans with Zitadel, not with Stalwart. The browser signs into Zitadel, the frontend server keeps the OAuth session server-side, and `mailbox-service` resolves the caller's Zitadel `sub` claim through `mailbox_bindings` to find the mailbox account (`ceo`, `agents`, future customer mailbox, etc.).
+
+**Why two passwords exist today:** `ceo@<domain>` therefore has:
+
+- a Zitadel password for logging into repo-owned apps such as webmail, Forgejo, Letters, and rent-a-sandbox
+- a Stalwart mailbox password for direct mail-protocol access such as JMAP/IMAP/SMTP auth and for box-local operator tooling
+
+The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `make mail-passwords`.
+
+**Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account. `seed-system.yml` creates the CEO binding and refreshes it during both `--tags identity` and `--tags stalwart` runs so a rotated seeded user subject does not strand the webmail app on a stale binding.
 
 Basic Auth is used for both JMAP and the Management API. Stalwart does not support `grant_type=password` on its OAuth endpoint.
 

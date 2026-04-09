@@ -63,6 +63,8 @@ components:
           type: string
         account_id:
           type: string
+        default_mailbox_id:
+          type: string
         display_name:
           type: string
         email_address:

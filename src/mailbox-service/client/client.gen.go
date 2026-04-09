@@ -55,10 +55,11 @@ type ErrorModel struct {
 // MailAccountOutputBody defines model for MailAccountOutputBody.
 type MailAccountOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string `json:"$schema,omitempty"`
-	AccountId    string  `json:"account_id"`
-	DisplayName  string  `json:"display_name"`
-	EmailAddress string  `json:"email_address"`
+	Schema           *string `json:"$schema,omitempty"`
+	AccountId        string  `json:"account_id"`
+	DefaultMailboxId *string `json:"default_mailbox_id,omitempty"`
+	DisplayName      string  `json:"display_name"`
+	EmailAddress     string  `json:"email_address"`
 }
 
 // MailBodyOutputBody defines model for MailBodyOutputBody.

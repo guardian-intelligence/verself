@@ -11,8 +11,8 @@ test.describe("Webmail", () => {
   });
 
   test("displays mailbox list with Inbox after sign-in", async ({ page }) => {
-    // Should be on /mail after login
-    await expect(page).toHaveURL(/\/mail/);
+    // Should land on the first mailbox route after login.
+    await expect(page).toHaveURL(/\/mail\/[^/]+$/);
 
     // Sidebar should contain at least an Inbox link
     const sidebar = page.locator("aside nav");
