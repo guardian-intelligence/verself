@@ -76,23 +76,23 @@ export async function ensureTestUserExists(): Promise<void> {
 }
 
 export async function ensureLoggedIn(page: Page): Promise<void> {
-  const balanceLabel = page.getByText("Available Credits", { exact: true });
+  const balanceCard = page.getByTestId("balance-card");
   const loginNameInput = page.locator("#loginName");
   const loginRedirectButton = page.getByRole("button", { name: "click here" });
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  if (await balanceLabel.isVisible().catch(() => false)) {
+  if (await balanceCard.isVisible().catch(() => false)) {
     return;
   }
 
   await page.goto("/login");
   await Promise.race([
-    balanceLabel.waitFor({ state: "visible", timeout: 15_000 }),
+    balanceCard.waitFor({ state: "visible", timeout: 15_000 }),
     loginNameInput.waitFor({ state: "visible", timeout: 15_000 }),
     loginRedirectButton.waitFor({ state: "visible", timeout: 15_000 }),
   ]);
-  if (await balanceLabel.isVisible().catch(() => false)) {
+  if (await balanceCard.isVisible().catch(() => false)) {
     return;
   }
   if (await loginRedirectButton.isVisible().catch(() => false)) {
@@ -115,15 +115,11 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   ]);
 
   await page.waitForLoadState("networkidle");
-  await expect(balanceLabel).toBeVisible({ timeout: 15_000 });
+  await expect(balanceCard).toBeVisible({ timeout: 15_000 });
 }
 
 export async function readBalance(page: Page): Promise<number> {
-  const balanceText = page
-    .locator("div")
-    .filter({ hasText: /^Available Credits$/ })
-    .locator("..")
-    .locator(".text-4xl");
+  const balanceText = page.getByTestId("balance-total");
 
   await balanceText.waitFor({ state: "visible", timeout: 10_000 });
   const raw = await balanceText.textContent();

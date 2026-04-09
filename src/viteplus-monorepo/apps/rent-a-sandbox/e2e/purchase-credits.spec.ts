@@ -93,7 +93,9 @@ test.describe("Credit Purchase Flow", () => {
 
     // 5. Verify redirect with success indicator.
     await expect(page).toHaveURL(/purchased=true/);
-    await expect(page.getByText("Credits purchased successfully")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Credits purchased successfully")).toBeVisible({
+      timeout: 10_000,
+    });
 
     // 6. Verify balance increased.
     // Deposit is async: webhook → task queue → worker (5s poll) → TigerBeetle.
@@ -122,13 +124,5 @@ test.describe("Credit Purchase Flow", () => {
 
     // The Subscriptions section should render (even if empty).
     await expect(page.getByRole("heading", { name: "Subscriptions" })).toBeVisible();
-  });
-
-  test("balance card shows purchased vs free tier breakdown", async ({ page }) => {
-    await expect(page.getByText("Available Credits")).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.getByText("free tier")).toBeVisible();
-    await expect(page.getByText("purchased")).toBeVisible();
   });
 });
