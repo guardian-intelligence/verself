@@ -1,14 +1,31 @@
-import { getAccessToken } from "./auth";
+import { AuthenticationRequiredError, clearUser, getAccessToken, signIn } from "./auth";
 import { correlationCookieName, correlationHeaderName, readBrowserCookie } from "./correlation";
+
+async function requireAuthentication(): Promise<never> {
+  await clearUser();
+  if (typeof window !== "undefined") {
+    // Protected product APIs must fail closed. Redirect only the same-origin app
+    // shell, never the cross-origin OIDC discovery traffic.
+    window.setTimeout(() => {
+      void signIn();
+    }, 0);
+  }
+  throw new AuthenticationRequiredError();
+}
 
 async function authFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken();
+  const protectedAPI = path.startsWith("/api/v1/");
+  if (protectedAPI && !token) {
+    return requireAuthentication();
+  }
+
   const headers = new Headers(init?.headers);
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   headers.set("Accept", "application/json");
-  if (path.startsWith("/api/v1/")) {
+  if (protectedAPI) {
     const correlationID = readBrowserCookie(correlationCookieName);
     if (correlationID) {
       // Keep correlation on same-origin product APIs only. Cross-origin OIDC
@@ -16,7 +33,11 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
       headers.set(correlationHeaderName, correlationID);
     }
   }
-  return fetch(path, { ...init, headers });
+  const resp = await fetch(path, { ...init, headers });
+  if (protectedAPI && resp.status === 401) {
+    return requireAuthentication();
+  }
+  return resp;
 }
 
 async function jsonOrThrow<T>(resp: Response): Promise<T> {
