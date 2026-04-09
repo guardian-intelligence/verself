@@ -1,7 +1,16 @@
-import { beginLogin, createAuthConfig, finishLogin, getAuthSession, getAuthUser, logout } from "@forge-metal/auth-web";
+import "@tanstack/react-start/server-only";
+import {
+  beginLogin,
+  createAuthConfig,
+  finishLogin,
+  getAuthSession,
+  getAuthUser,
+  logout,
+  type AuthViewer,
+} from "@forge-metal/auth-web";
 import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal/web-env";
 
-export const authConfig = createAuthConfig({
+const authConfig = createAuthConfig({
   appName: "webmail",
   issuerURL: deriveAuthIssuerURL(),
   clientID: requireEnv("AUTH_CLIENT_ID"),
@@ -31,8 +40,20 @@ export function getWebmailAuthSession() {
   return getAuthSession(authConfig);
 }
 
-export function getWebmailAuthUser() {
-  return getAuthUser(authConfig);
+export async function getWebmailViewer(): Promise<AuthViewer | null> {
+  const user = await getAuthUser(authConfig);
+  if (!user) {
+    return null;
+  }
+
+  return {
+    sub: user.sub,
+    email: user.email,
+    name: user.name,
+    preferredUsername: user.preferredUsername,
+    orgID: user.orgID,
+    roles: user.roles,
+  };
 }
 
 export function logoutWebmail() {

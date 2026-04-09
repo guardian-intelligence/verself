@@ -54,6 +54,21 @@
         roles: electric_mail
       no_log: true
 
+    - name: Ensure Electric Mail owns mailbox_service shape tables
+      community.postgresql.postgresql_query:
+        query: "ALTER TABLE public.{{ item }} OWNER TO electric_mail"
+      loop: "{{ electric_mail_publication_tables }}"
+      no_log: true
+
+    - name: Grant mailbox_service full access to Electric Mail-owned shape tables
+      community.postgresql.postgresql_privs:
+        privs: ALL
+        type: table
+        objs: "{{ electric_mail_publication_tables | join(',') }}"
+        schema: public
+        roles: mailbox_service
+      no_log: true
+
     - name: Discover Electric Mail tables missing REPLICA IDENTITY FULL
       community.postgresql.postgresql_query:
         query: >-
