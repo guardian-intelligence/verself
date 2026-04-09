@@ -1,11 +1,11 @@
-import { deriveAppBaseURL, deriveAuthIssuerURL, deriveDemoEmail } from "@forge-metal/web-env";
+import { deriveAppBaseURL, deriveAuthIssuerURL, deriveSeededEmail } from "@forge-metal/web-env";
 
 // Test environment configuration. All values can be overridden via env vars.
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(
-      `${name} is required. Seed the demo user and provide the stored password explicitly.`,
+      `${name} is required. Seed the Acme user and provide the stored password explicitly.`,
     );
   }
   return value;
@@ -13,15 +13,15 @@ function requiredEnv(name: string): string {
 
 export const env = {
   baseURL: deriveAppBaseURL("rentasandbox"),
-  testEmail: deriveDemoEmail(),
+  testEmail: deriveSeededEmail(process.env, "acme-user"),
   testPassword: requiredEnv("TEST_PASSWORD"),
-  testUsername: process.env.TEST_USERNAME || "demo",
-  testFirstName: process.env.TEST_FIRST_NAME || "Demo",
+  testUsername: process.env.TEST_USERNAME || "acme-user",
+  testFirstName: process.env.TEST_FIRST_NAME || "Acme",
   testLastName: process.env.TEST_LAST_NAME || "User",
 
   // Zitadel admin PAT — optional. If set, the test will auto-provision the
   // test user via the Zitadel Management API. If not set, the user must
-  // already exist (e.g., via `make seed-demo`).
+  // already exist (e.g., via `make seed-system`).
   zitadelAdminPAT: process.env.ZITADEL_ADMIN_PAT || "",
   zitadelBaseURL: process.env.ZITADEL_BASE_URL?.trim() || deriveAuthIssuerURL(),
   zitadelProjectName: process.env.ZITADEL_PROJECT_NAME || "sandbox-rental",

@@ -77,7 +77,7 @@ Each frontend needs **two Zitadel OIDC applications**: one for production and on
 - **`devMode: false`** (production): HTTPS-only redirect URIs, exact match
 - **`devMode: true`** (development): HTTP allowed, glob patterns in redirect URIs (e.g., `http://localhost:*/callback`)
 
-Production OIDC apps are created automatically by each app's Ansible role (`zitadel_app.yml`). Dev OIDC apps are created once manually or via `seed-demo.yml`.
+Production OIDC apps are created automatically by each app's Ansible role (`zitadel_app.yml`). Dev OIDC apps are created once manually or via `seed-system.yml`.
 
 For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
 

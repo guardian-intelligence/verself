@@ -102,7 +102,7 @@ export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.
   return deriveHTTPSOrigin(appSubdomain, requireOperatorDomain("FORGE_METAL_DOMAIN", env));
 }
 
-export function deriveDemoEmail(env: EnvSource = process.env, localPart = "demo"): string {
+export function deriveSeededEmail(env: EnvSource = process.env, localPart = "acme-user"): string {
   const explicitEmail = readEnv(env, "TEST_EMAIL");
   if (explicitEmail) {
     return explicitEmail;

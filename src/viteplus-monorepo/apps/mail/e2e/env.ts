@@ -1,10 +1,10 @@
-import { deriveAppBaseURL, deriveAuthIssuerURL, deriveDemoEmail } from "@forge-metal/web-env";
+import { deriveAppBaseURL, deriveAuthIssuerURL, deriveSeededEmail } from "@forge-metal/web-env";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(
-      `${name} is required. Seed the demo user and provide the stored password explicitly.`,
+      `${name} is required. Seed the CEO user and provide the stored password explicitly.`,
     );
   }
   return value;
@@ -12,11 +12,11 @@ function requiredEnv(name: string): string {
 
 export const env = {
   baseURL: deriveAppBaseURL("mail"),
-  testEmail: deriveDemoEmail(),
+  testEmail: deriveSeededEmail(process.env, "ceo"),
   testPassword: requiredEnv("TEST_PASSWORD"),
-  testUsername: process.env.TEST_USERNAME || "demo",
-  testFirstName: process.env.TEST_FIRST_NAME || "Demo",
-  testLastName: process.env.TEST_LAST_NAME || "User",
+  testUsername: process.env.TEST_USERNAME || "ceo",
+  testFirstName: process.env.TEST_FIRST_NAME || "CEO",
+  testLastName: process.env.TEST_LAST_NAME || "Operator",
   inboxLocalPart: process.env.MAIL_INBOX_LOCAL_PART || "ceo",
 
   zitadelAdminPAT: process.env.ZITADEL_ADMIN_PAT || "",
