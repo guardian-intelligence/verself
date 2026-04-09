@@ -48,8 +48,8 @@ CREATE TABLE repos (
     archived_at                 TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX idx_repos_provider_repo_id
-    ON repos (provider, provider_repo_id);
+CREATE UNIQUE INDEX idx_repos_org_provider_repo_id
+    ON repos (org_id, provider, provider_repo_id);
 CREATE UNIQUE INDEX idx_repos_org_provider_full_name
     ON repos (org_id, provider, full_name);
 CREATE INDEX idx_repos_org_state_updated_at
@@ -141,8 +141,6 @@ CREATE TABLE execution_logs (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (attempt_id, seq)
 );
-
-CREATE INDEX idx_execution_logs_attempt_id_seq ON execution_logs (attempt_id, seq);
 
 CREATE TABLE golden_generations (
     golden_generation_id UUID        PRIMARY KEY,

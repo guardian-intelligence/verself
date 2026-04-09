@@ -290,7 +290,7 @@ receivers:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
     password: "{{ postgresql_admin_password }}"
-    databases: [sandbox]
+    databases: [sandbox_rental]
     collection_interval: 10s
     tls:
       insecure: true

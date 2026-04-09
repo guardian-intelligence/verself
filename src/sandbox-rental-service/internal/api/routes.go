@@ -337,13 +337,13 @@ func listRepoGenerations(svc *jobs.Service) func(context.Context, *RepoIDPath) (
 
 func refreshRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RefreshRepoOutput, error) {
 	return func(ctx context.Context, input *RepoIDPath) (*RefreshRepoOutput, error) {
-		identity, err := requireIdentity(ctx)
+		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
+		identity, err := requireIdentity(ctx)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
+			return nil, err
 		}
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {

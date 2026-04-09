@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -263,15 +262,3 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func envInt(key string, fallback int) int {
-	s := os.Getenv(key)
-	if s == "" {
-		return fallback
-	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s: %v\n", key, err)
-		os.Exit(1)
-	}
-	return v
-}

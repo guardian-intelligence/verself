@@ -284,6 +284,13 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID, reason string) error {
 	now := time.Now().UTC()
 	s.writeSystemLog(ctx, executionID, attemptID, "reconciler marked attempt lost reason=%s", strings.TrimSpace(reason))
+
+	// Void any reserved billing windows before marking lost.
+	// Without this, reserved credits leak permanently in TigerBeetle.
+	if err := s.voidReservedWindows(ctx, attemptID, now); err != nil {
+		return fmt.Errorf("void reserved windows for lost attempt %s: %w", attemptID, err)
+	}
+
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -307,6 +314,41 @@ func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID
 	return tx.Commit()
 }
 
+// voidReservedWindows loads and voids all billing windows still in 'reserved' state
+// for the given attempt. This ensures credits are returned to the org on lost attempts.
+func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, now time.Time) error {
+	rows, err := s.PG.QueryContext(ctx, `
+		SELECT window_seq, reservation
+		FROM execution_billing_windows
+		WHERE attempt_id = $1 AND state = 'reserved'
+	`, attemptID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			windowSeq       int
+			reservationJSON []byte
+		)
+		if err := rows.Scan(&windowSeq, &reservationJSON); err != nil {
+			return err
+		}
+		var reservation billingclient.Reservation
+		if err := json.Unmarshal(reservationJSON, &reservation); err != nil {
+			return fmt.Errorf("decode reservation window_seq=%d: %w", windowSeq, err)
+		}
+		if err := s.Billing.Void(ctx, reservation); err != nil {
+			return fmt.Errorf("void window_seq=%d: %w", windowSeq, err)
+		}
+		if err := s.markWindowVoided(ctx, attemptID, windowSeq, now); err != nil {
+			return fmt.Errorf("mark window_seq=%d voided: %w", windowSeq, err)
+		}
+	}
+	return rows.Err()
+}
+
 func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrator.JobStatus) reconcileCandidate {
 	candidate.CompletedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
 	if !candidate.StartedAt.Valid {
@@ -318,7 +360,7 @@ func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrat
 		if status.Result.Duration <= 0 {
 			candidate.DurationMs = candidate.CompletedAt.Time.Sub(candidate.StartedAt.Time).Milliseconds()
 		}
-		candidate.GoldenSnapshot = firstNonEmpty(candidate.GoldenSnapshot, "")
+		// GoldenSnapshot is already populated from the DB row; no override needed.
 	}
 	if status.ErrorMessage != "" {
 		candidate.FailureReason = status.ErrorMessage
