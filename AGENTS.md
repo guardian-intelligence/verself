@@ -356,14 +356,17 @@ forge-metal/                            # Monorepo root
 ├── src/mailbox-service/                # Inbound mail processing (Go/Huma)
 │   ├── go.mod                          # imports: auth-middleware, otel
 │   ├── cmd/
-│   │   ├── mailbox-service/            # Main JMAP-facing service
-│   │   ├── inbound-mail-forwarder/     # Sieve-based operator mail forwarding
-│   │   └── inbound-mail-proxy/         # JMAP session proxy
+│   │   ├── mailbox-openapi/            # OpenAPI spec generator
+│   │   ├── mailbox-service/            # Main HTTP + sync + forwarder binary
+│   │   └── mailbox-tool/               # Typed operator CLI over the generated client
 │   └── internal/
 │       ├── api/                        # Huma HTTP handlers
 │       ├── app/                        # App lifecycle
 │       ├── forwarder/                  # Forwarding logic
-│       └── sessionproxy/               # JMAP session proxy logic
+│       ├── jmap/                       # JMAP client/session helpers
+│       ├── mailstore/                  # PostgreSQL projection + mailbox bindings
+│       ├── sessionproxy/               # JMAP session proxy logic
+│       └── sync/                       # Stalwart discovery + mailbox reconciliation
 │
 │   ── Frontends ─────────────────────────────────────────────────────────
 │
