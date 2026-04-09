@@ -1,13 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { requireViewer } from "~/lib/protected-route";
-import { jobsBalanceQuery } from "~/features/jobs/queries";
-import { ExecutionListPanel } from "~/features/jobs/components";
 import { Callout } from "~/components/callout";
+import { ExecutionListPanel } from "~/features/jobs/components";
+import { loadJobsIndex } from "~/features/jobs/queries";
 
-export const Route = createFileRoute("/jobs/")({
-  beforeLoad: ({ location }) => requireViewer(location.href),
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(jobsBalanceQuery()),
+export const Route = createFileRoute("/_authenticated/jobs/")({
+  loader: ({ context }) => loadJobsIndex(context.queryClient),
   component: JobsPage,
 });
 

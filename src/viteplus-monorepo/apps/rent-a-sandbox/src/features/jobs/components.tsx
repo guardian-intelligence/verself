@@ -1,17 +1,12 @@
 import { useForm } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
-import { Skeleton } from "@forge-metal/ui";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
 import { type ElectricExecution } from "~/lib/collections";
-import {
-  formatExecutionRepo,
-  useExecutionLogs,
-  useExecutionRows,
-} from "./live";
+import { formatExecutionRepo, useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
 import {
@@ -19,10 +14,7 @@ import {
   validateExecutionRef,
   validateExecutionRepoUrl,
 } from "./validation";
-import {
-  useCreateExecutionMutation,
-  type CreateExecutionResult,
-} from "./mutations";
+import { useCreateExecutionMutation, type CreateExecutionResult } from "./mutations";
 
 export function ExecutionListPanel({ orgId }: { orgId: string }) {
   return (
@@ -40,7 +32,7 @@ function ExecutionListPanelContent({ orgId }: { orgId: string }) {
   }
 
   if (rows.isError) {
-    return <ExecutionListError />;
+    return <ExecutionListError status={rows.status} />;
   }
 
   if (rows.isEmpty) {
@@ -51,21 +43,7 @@ function ExecutionListPanelContent({ orgId }: { orgId: string }) {
 }
 
 export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
-  const executionQueryResult = useQuery(executionQuery(jobId));
-
-  if (executionQueryResult.isPending) {
-    return <ExecutionDetailLoading />;
-  }
-
-  if (executionQueryResult.isError) {
-    return <ExecutionDetailError error={executionQueryResult.error} />;
-  }
-
-  const execution = executionQueryResult.data;
-
-  if (!execution) {
-    return <ExecutionDetailMissing />;
-  }
+  const execution = useSuspenseQuery(executionQuery(jobId)).data;
 
   const attempt = execution.latest_attempt;
   const isRunning = isExecutionActiveStatus(execution.status);
@@ -73,16 +51,11 @@ export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link
-          to="/jobs"
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
+        <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
           Executions
         </Link>
         <span className="text-muted-foreground">/</span>
-        <h1 className="font-mono text-xl font-bold">
-          {execution.execution_id.slice(0, 8)}
-        </h1>
+        <h1 className="font-mono text-xl font-bold">{execution.execution_id.slice(0, 8)}</h1>
         <ExecutionStatusBadge status={execution.status} />
         {execution.repo_id && (
           <>
@@ -103,17 +76,10 @@ export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
           label="Repository"
           value={formatExecutionRepo(execution.repo, execution.repo_url)}
         />
-        <InfoCard
-          label="Ref"
-          value={execution.ref || execution.default_branch || "--"}
-        />
+        <InfoCard label="Ref" value={execution.ref || execution.default_branch || "--"} />
         <InfoCard
           label="Duration"
-          value={
-            attempt.duration_ms
-              ? `${(attempt.duration_ms / 1000).toFixed(1)}s`
-              : "--"
-          }
+          value={attempt.duration_ms ? `${(attempt.duration_ms / 1000).toFixed(1)}s` : "--"}
         />
         <InfoCard label="Exit Code" value={String(attempt.exit_code ?? "--")} />
         <InfoCard
@@ -126,10 +92,7 @@ export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
       </div>
 
       <ClientOnly fallback={<ExecutionLogsLoading isRunning={isRunning} />}>
-        <ExecutionLogsPanel
-          attemptId={attempt.attempt_id}
-          isRunning={isRunning}
-        />
+        <ExecutionLogsPanel attemptId={attempt.attempt_id} isRunning={isRunning} />
       </ClientOnly>
     </div>
   );
@@ -184,11 +147,8 @@ export function ExecutionSubmissionForm({
               placeholder="https://git.example.com/acme/repo.git"
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
-            {field.state.meta.isTouched &&
-            field.state.meta.errors.length > 0 ? (
-              <p className="mt-1 text-sm text-destructive">
-                {field.state.meta.errors[0]}
-              </p>
+            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
+              <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
             ) : null}
           </div>
         )}
@@ -214,32 +174,25 @@ export function ExecutionSubmissionForm({
               placeholder="refs/heads/main"
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
             />
-            {field.state.meta.isTouched &&
-            field.state.meta.errors.length > 0 ? (
-              <p className="mt-1 text-sm text-destructive">
-                {field.state.meta.errors[0]}
-              </p>
+            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
+              <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
             ) : null}
           </div>
         )}
       </form.Field>
 
       {mutation.error ? (
-        <p className="text-sm text-destructive">{mutation.error.message}</p>
+        <ErrorCallout title="Execution submission failed" error={mutation.error} />
       ) : null}
 
-      <form.Subscribe
-        selector={(state) => [state.canSubmit, state.isSubmitting]}
-      >
+      <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
         {([canSubmit, isSubmitting]) => (
           <button
             type="submit"
             disabled={!canSubmit || isSubmitting || mutation.isPending}
             className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
-            {mutation.isPending || isSubmitting
-              ? "Submitting..."
-              : "Submit Execution"}
+            {mutation.isPending || isSubmitting ? "Submitting..." : "Submit Execution"}
           </button>
         )}
       </form.Subscribe>
@@ -247,13 +200,7 @@ export function ExecutionSubmissionForm({
   );
 }
 
-function ExecutionLogsPanel({
-  attemptId,
-  isRunning,
-}: {
-  attemptId: string;
-  isRunning: boolean;
-}) {
+function ExecutionLogsPanel({ attemptId, isRunning }: { attemptId: string; isRunning: boolean }) {
   const logs = useExecutionLogs(attemptId);
 
   if (logs.isLoading || logs.isIdle) {
@@ -261,7 +208,7 @@ function ExecutionLogsPanel({
   }
 
   if (logs.isError) {
-    return <ExecutionLogsError isRunning={isRunning} />;
+    return <ExecutionLogsError status={logs.status} isRunning={isRunning} />;
   }
 
   if (logs.isEmpty) {
@@ -317,19 +264,14 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
 }
 
 function ExecutionListLoading() {
-  return (
-    <EmptyState
-      title="Loading executions"
-      body="Synchronizing the latest execution state."
-    />
-  );
+  return <EmptyState title="Loading executions" body="Synchronizing the latest execution state." />;
 }
 
-function ExecutionListError() {
+function ExecutionListError({ status }: { status: string }) {
   return (
     <ErrorCallout
       title="Could not load executions"
-      error="Could not load executions."
+      error={`Execution sync failed (${status}).`}
       action={
         <Link
           to="/jobs"
@@ -367,51 +309,6 @@ function ExecutionListEmpty() {
   );
 }
 
-function ExecutionDetailLoading() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-4 w-4" />
-        <Skeleton className="h-6 w-28" />
-        <Skeleton className="h-6 w-20" />
-      </div>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, index) => (
-          <Skeleton key={index} className="h-16 rounded-lg" />
-        ))}
-      </div>
-      <div className="rounded-lg border border-border p-6">
-        <div className="space-y-3">
-          <Skeleton className="mx-auto h-4 w-24" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExecutionDetailError({ error }: { error: unknown }) {
-  return <ErrorCallout title="Failed to load execution" error={error} />;
-}
-
-function ExecutionDetailMissing() {
-  return (
-    <EmptyState
-      title="Execution not found"
-      body="This execution may have been deleted."
-      action={
-        <Link
-          to="/jobs"
-          className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
-        >
-          Back to executions
-        </Link>
-      }
-    />
-  );
-}
-
 function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
@@ -423,13 +320,13 @@ function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
   );
 }
 
-function ExecutionLogsError({ isRunning }: { isRunning: boolean }) {
+function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: boolean }) {
   return (
     <div>
       <h2 className="mb-2 text-lg font-semibold">Logs</h2>
       <ErrorCallout
         title="Log stream unavailable"
-        error="Log stream unavailable."
+        error={`Log stream unavailable (${status}).`}
         action={
           <div className="text-xs text-muted-foreground">
             {isRunning
@@ -446,16 +343,13 @@ function ExecutionLogsEmpty({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
       <h2 className="mb-2 text-lg font-semibold">Logs</h2>
-      <Callout title="Logs">
-        {isRunning ? "Waiting for output..." : "No log output."}
-      </Callout>
+      <Callout title="Logs">{isRunning ? "Waiting for output..." : "No log output."}</Callout>
     </div>
   );
 }
 
 function ExecutionLogsBody({ logText }: { logText: string }) {
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } =
-    useStickToBottom();
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
 
   return (
     <div>

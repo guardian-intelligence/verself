@@ -1,10 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { requireViewer } from "~/lib/protected-route";
-import { ExecutionSubmissionForm } from "~/features/jobs/components";
 import { Callout } from "~/components/callout";
+import { ExecutionSubmissionForm } from "~/features/jobs/components";
 
-export const Route = createFileRoute("/jobs/new")({
-  beforeLoad: ({ location }) => requireViewer(location.href),
+export const Route = createFileRoute("/_authenticated/jobs/new")({
   component: NewJobPage,
 });
 
@@ -14,10 +12,7 @@ function NewJobPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link
-          to="/jobs"
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
+        <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
           &larr; Back
         </Link>
         <h1 className="text-2xl font-bold">Manual Execution</h1>
@@ -32,12 +27,12 @@ function NewJobPage() {
       </Callout>
 
       <ExecutionSubmissionForm
-        onSuccess={(execution) =>
-          navigate({
+        onSuccess={(execution) => {
+          void navigate({
             to: "/jobs/$jobId",
             params: { jobId: execution.execution_id },
-          })
-        }
+          });
+        }}
       />
     </div>
   );
