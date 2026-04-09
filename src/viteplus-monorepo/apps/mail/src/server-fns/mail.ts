@@ -4,6 +4,14 @@ import { webmailAuthMiddleware } from "./auth";
 
 const MAILBOX_SERVICE_BASE_URL = requireURLFromEnv("MAILBOX_SERVICE_BASE_URL");
 
+class MailboxAPIError extends Error {
+  status: number;
+  constructor(status: number, body: string) {
+    super(`Mailbox API ${status}: ${body}`);
+    this.status = status;
+  }
+}
+
 async function mailboxServiceRequest<T>(
   accessToken: string,
   path: string,
@@ -23,10 +31,7 @@ async function mailboxServiceRequest<T>(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    if (response.status === 404) {
-      throw new Error("Not found");
-    }
-    throw new Error(`Mailbox API ${response.status}: ${body}`);
+    throw new MailboxAPIError(response.status, body);
   }
 
   return response.json() as Promise<T>;
@@ -37,6 +42,11 @@ export interface MailAccount {
   email_address: string;
   display_name: string;
 }
+
+export type MailAccountResult =
+  | { status: "ok"; account: MailAccount }
+  | { status: "no_binding" }
+  | { status: "not_found" };
 
 export interface EmailBody {
   account_id: string;
@@ -53,15 +63,17 @@ interface MailMutationResponse {
 
 export const getMailAccount = createServerFn({ method: "GET" })
   .middleware([webmailAuthMiddleware])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<MailAccountResult> => {
     try {
-      return await mailboxServiceRequest<MailAccount>(
+      const account = await mailboxServiceRequest<MailAccount>(
         context.auth.accessToken,
         "/api/v1/mail/account",
       );
+      return { status: "ok", account };
     } catch (error) {
-      if (error instanceof Error && error.message === "Not found") {
-        return null;
+      if (error instanceof MailboxAPIError) {
+        if (error.status === 403) return { status: "no_binding" };
+        if (error.status === 404) return { status: "not_found" };
       }
       throw error;
     }

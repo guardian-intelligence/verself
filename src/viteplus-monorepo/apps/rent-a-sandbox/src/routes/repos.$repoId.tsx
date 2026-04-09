@@ -11,6 +11,7 @@ import {
 } from "~/server-fns/api";
 import { keys } from "~/lib/query-keys";
 import { requireViewer } from "~/lib/protected-route";
+import { RepoStateBadge, shortSHA } from "~/components/repo-state";
 
 export const Route = createFileRoute("/repos/$repoId")({
   beforeLoad: ({ location }) => requireViewer(location.href),
@@ -362,26 +363,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RepoStateBadge({ state }: { state: string }) {
-  const colors: Record<string, string> = {
-    importing: "bg-slate-100 text-slate-800",
-    action_required: "bg-amber-100 text-amber-900",
-    waiting_for_bootstrap: "bg-yellow-100 text-yellow-900",
-    preparing: "bg-sky-100 text-sky-900",
-    ready: "bg-green-100 text-green-900",
-    degraded: "bg-orange-100 text-orange-900",
-    failed: "bg-red-100 text-red-900",
-    archived: "bg-zinc-200 text-zinc-800",
-  };
-  return (
-    <span
-      className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[state] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {state.replaceAll("_", " ")}
-    </span>
-  );
-}
-
 function GenerationStateBadge({ state }: { state: string }) {
   const colors: Record<string, string> = {
     queued: "bg-yellow-100 text-yellow-900",
@@ -417,9 +398,4 @@ function shouldPollRepo(state: string): boolean {
 
 function shouldPollGeneration(state: string): boolean {
   return state === "queued" || state === "building" || state === "sanitizing";
-}
-
-function shortSHA(value?: string): string {
-  if (!value) return "--";
-  return value.slice(0, 12);
 }

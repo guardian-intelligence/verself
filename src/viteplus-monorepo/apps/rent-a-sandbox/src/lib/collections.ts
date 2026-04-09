@@ -1,15 +1,11 @@
 import { createCollection } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
-
-// Electric requires an absolute shape URL. Keep the real sync path same-origin
-// in the browser, but return a harmless absolute fallback during SSR so the URL
-// parser never sees a bare relative path.
-function electricShapeURL(): string {
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return new URL("/v1/shape", window.location.origin).toString();
-  }
-  return "http://127.0.0.1/v1/shape";
-}
+import {
+  electricEqualsWhere,
+  electricShapeURL,
+  requireDecimalID,
+  requireUUID,
+} from "@forge-metal/web-env";
 
 // --- Execution collection (real-time PG sync via Electric) ---
 
@@ -33,6 +29,7 @@ export interface ElectricExecution {
 }
 
 export function createExecutionsCollection(orgId: string) {
+  const validatedOrgID = requireDecimalID(orgId, "org_id");
   return createCollection<ElectricExecution>(
     electricCollectionOptions({
       id: `sync-executions-${orgId}`,
@@ -40,7 +37,7 @@ export function createExecutionsCollection(orgId: string) {
         url: electricShapeURL(),
         params: {
           table: "executions",
-          where: `org_id = '${orgId}'`,
+          where: electricEqualsWhere("org_id", validatedOrgID),
         },
       },
       getKey: (item: Record<string, unknown>) => String(item.execution_id),
@@ -59,6 +56,7 @@ export interface ElectricExecutionLog {
 }
 
 export function createExecutionLogsCollection(attemptId: string) {
+  const validatedAttemptID = requireUUID(attemptId, "attempt_id");
   return createCollection<ElectricExecutionLog>(
     electricCollectionOptions({
       id: `sync-execution-logs-${attemptId}`,
@@ -66,7 +64,7 @@ export function createExecutionLogsCollection(attemptId: string) {
         url: electricShapeURL(),
         params: {
           table: "execution_logs",
-          where: `attempt_id = '${attemptId}'`,
+          where: electricEqualsWhere("attempt_id", validatedAttemptID),
         },
       },
       getKey: (item: Record<string, unknown>) =>
