@@ -778,6 +778,22 @@
 
     - name: Create dev OIDC apps
       ansible.builtin.uri:
+        url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/{{ item.item.project_id }}/apps/{{ (item.json.result | first).id }}"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ seed_demo_admin_pat }}"
+          Host: "{{ seed_demo_zitadel_host }}"
+        status_code: 200
+      loop: "{{ seed_demo_dev_oidc_search.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not skipped
+        - (item.json.result | default([]) | length) > 0
+      tags: [dev-oidc]
+
+    - name: Create dev OIDC apps
+      ansible.builtin.uri:
         url: "{{ seed_demo_zitadel_base_url }}/management/v1/projects/{{ item.item.project_id }}/apps/oidc"
         method: POST
         headers:
@@ -792,7 +808,8 @@
             - "OIDC_RESPONSE_TYPE_CODE"
           grantTypes:
             - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
-          appType: "OIDC_APP_TYPE_USER_AGENT"
+            - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+          appType: "OIDC_APP_TYPE_WEB"
           authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
           postLogoutRedirectUris:
             - "http://127.0.0.1:{{ item.item.port }}"
@@ -805,7 +822,6 @@
         label: "{{ item.item.name }}"
       when:
         - item is not skipped
-        - (item.json.result | default([]) | length) == 0
       tags: [dev-oidc]
 
     - name: Re-query dev OIDC apps for client IDs
