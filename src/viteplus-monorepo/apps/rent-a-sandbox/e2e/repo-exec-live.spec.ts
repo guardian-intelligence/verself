@@ -113,19 +113,31 @@ test.describe("Sandbox Repo Import Live Verification", () => {
       await page.waitForLoadState("networkidle");
 
       await page.getByRole("button", { name: "Rescan" }).click();
-      await expect(page.getByText("waiting for bootstrap", { exact: true })).toBeVisible({
-        timeout: 60_000,
-      });
+      await expect
+        .poll(
+          () => readInfoCardValue(page, "Last scanned SHA"),
+          { timeout: 60_000 },
+        )
+        .toBe(refreshedRepoMeta.commit_sha.slice(0, 12));
+      await expect
+        .poll(
+          () => readRepoState(page),
+          { timeout: 30_000 },
+        )
+        .toBe("ready");
       await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
         timeout: 30_000,
       });
 
       await page.getByRole("button", { name: /^(Prepare|Refresh) Golden$/ }).click();
 
+      await expect
+        .poll(
+          () => readInfoRowValue(page, "Source SHA"),
+          { timeout: 300_000 },
+        )
+        .toBe(refreshedRepoMeta.commit_sha.slice(0, 12));
       await waitForRepoState(page, "ready");
-      await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
-        timeout: 60_000,
-      });
       const refreshedGolden = await readActiveGolden(page);
       run.refresh_generation_id = refreshedGolden.generation_id;
       run.refresh_execution_id = refreshedGolden.execution_id;
@@ -220,6 +232,20 @@ async function readInfoRowValue(page: Page, label: string): Promise<string> {
   const valueNode = labelNode.locator("xpath=following-sibling::span[1]");
   await expect(valueNode).toBeVisible({ timeout: 30_000 });
   return (await valueNode.textContent())?.trim() ?? "";
+}
+
+async function readInfoCardValue(page: Page, label: string): Promise<string> {
+  const labelNode = page.locator(`xpath=//div[normalize-space(text())='${label}']`).first();
+  const valueNode = labelNode.locator("xpath=following-sibling::div[1]");
+  await expect(valueNode).toBeVisible({ timeout: 30_000 });
+  return (await valueNode.textContent())?.trim() ?? "";
+}
+
+async function readRepoState(page: Page): Promise<string> {
+  const heading = page.getByRole("heading", { level: 1 }).first();
+  const stateNode = heading.locator("xpath=following-sibling::*[1]");
+  await expect(stateNode).toBeVisible({ timeout: 30_000 });
+  return (await stateNode.textContent())?.trim() ?? "";
 }
 
 function requireRouteID(urlOrPath: string, prefix: string): string {
