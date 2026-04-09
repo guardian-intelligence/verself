@@ -1,7 +1,7 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset vm-guest-telemetry-build \
-       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes mail-code mail-read edit-secrets \
-       verification-repo verify-sandbox-live
+       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes mail-code mail-read mail-send \
+       mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo verify-sandbox-live
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
