@@ -1,4 +1,4 @@
-import { createCollection } from "@tanstack/db";
+import { createCollection } from "@tanstack/react-db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import {
   electricAndWhere,
