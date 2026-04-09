@@ -33,9 +33,6 @@ catalogs:
     '@tailwindcss/vite':
       specifier: ^4
       version: 4.2.2
-    '@tanstack/db':
-      specifier: ^0.6.0
-      version: 0.6.3
     '@tanstack/electric-db-collection':
       specifier: ^0.3.2
       version: 0.3.2
@@ -159,9 +156,6 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.6.3(typescript@5.9.3)
       '@tanstack/electric-db-collection':
         specifier: 'catalog:'
         version: 0.3.2(typescript@5.9.3)
@@ -268,9 +262,6 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.6.3(typescript@5.9.3)
       '@tanstack/electric-db-collection':
         specifier: 'catalog:'
         version: 0.3.2(typescript@5.9.3)
@@ -356,9 +347,6 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
-      '@tanstack/db':
-        specifier: 'catalog:'
-        version: 0.6.3(typescript@5.9.3)
       '@tanstack/electric-db-collection':
         specifier: 'catalog:'
         version: 0.3.2(typescript@5.9.3)

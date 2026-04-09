@@ -20,7 +20,6 @@
     "@forge-metal/web-env": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
-    "@tanstack/db": "catalog:",
     "@tanstack/electric-db-collection": "catalog:",
     "@tanstack/query-db-collection": "catalog:",
     "@tanstack/react-db": "catalog:",
