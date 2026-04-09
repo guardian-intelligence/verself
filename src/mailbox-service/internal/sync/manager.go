@@ -2,9 +2,6 @@ package sync
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +19,7 @@ import (
 type Config struct {
 	StalwartBaseURL   string
 	AdminPassword     string
-	AgentPasswordSeed string
+	MailboxPasswords  map[string]string
 	DiscoveryInterval time.Duration
 	ReconcileInterval time.Duration
 }
@@ -134,15 +131,27 @@ func (m *Manager) Snapshot() Status {
 	return status
 }
 
+func (m *Manager) mailboxPassword(accountID string) (string, error) {
+	password, ok := m.cfg.MailboxPasswords[accountID]
+	if !ok || strings.TrimSpace(password) == "" {
+		return "", fmt.Errorf("no password configured for account %q", accountID)
+	}
+	return strings.TrimSpace(password), nil
+}
+
 func (m *Manager) AccountClient(ctx context.Context, accountID string) (*jmap.Client, mailstore.Account, error) {
 	account, err := m.store.LookupAccount(ctx, accountID)
+	if err != nil {
+		return nil, mailstore.Account{}, err
+	}
+	password, err := m.mailboxPassword(accountID)
 	if err != nil {
 		return nil, mailstore.Account{}, err
 	}
 	client, err := jmap.New(jmap.Config{
 		BaseURL:  m.cfg.StalwartBaseURL,
 		Username: accountID,
-		Password: deriveMailboxPassword(m.cfg.AgentPasswordSeed, accountID),
+		Password: password,
 	}, m.httpClient, m.streamClient)
 	if err != nil {
 		return nil, mailstore.Account{}, err
@@ -174,11 +183,16 @@ func (m *Manager) reconcileWorkers(ctx context.Context) error {
 			continue
 		}
 
+		password, err := m.mailboxPassword(accountID)
+		if err != nil {
+			return err
+		}
+
 		workerCtx, cancel := context.WithCancel(ctx)
 		worker := NewWorker(workerConfig{
 			Principal:         principal,
 			StalwartBaseURL:   m.cfg.StalwartBaseURL,
-			AgentPasswordSeed: m.cfg.AgentPasswordSeed,
+			MailboxPassword:   password,
 			ReconcileInterval: m.cfg.ReconcileInterval,
 			Store:             m.store,
 			Logger:            m.logger.With("mailbox_account", principal.AccountID),
@@ -286,13 +300,6 @@ func (m *Manager) setError(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.status.LastError = err.Error()
-}
-
-func deriveMailboxPassword(seed, accountID string) string {
-	mac := hmac.New(sha256.New, []byte(strings.TrimSpace(seed)))
-	mac.Write([]byte(accountID))
-	digest := mac.Sum(nil)
-	return "FmMail1!" + base64.RawURLEncoding.EncodeToString(digest[:24])
 }
 
 func shouldResync(err error) bool {

@@ -16,7 +16,7 @@ import (
 type workerConfig struct {
 	Principal         DiscoveryPrincipal
 	StalwartBaseURL   string
-	AgentPasswordSeed string
+	MailboxPassword   string
 	ReconcileInterval time.Duration
 	Store             *mailstore.Store
 	Logger            *slog.Logger
@@ -68,7 +68,7 @@ func (w *Worker) Run(ctx context.Context) {
 		client, err := jmap.New(jmap.Config{
 			BaseURL:  w.cfg.StalwartBaseURL,
 			Username: principal.AccountID,
-			Password: deriveMailboxPassword(w.cfg.AgentPasswordSeed, principal.AccountID),
+			Password: w.cfg.MailboxPassword,
 		}, w.cfg.HTTPClient, w.cfg.StreamClient)
 		if err != nil {
 			w.setError(err)

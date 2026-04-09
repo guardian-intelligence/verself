@@ -8,10 +8,11 @@ LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 FM       := src/platform
 VMO      := src/vm-orchestrator
 BS       := src/billing-service
-BL       := src/billing
 AM       := src/auth-middleware
-BC       := src/billing-client
 SR       := src/sandbox-rental-service
+MS       := src/mailbox-service
+OT       := src/otel
+WL       := src/workload
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 
 build: ## Build the forge-metal Go binary
@@ -24,9 +25,7 @@ clean:
 	rm -f $(FM)/forge-metal
 
 test: ## Run unit tests
-	go test -race ./$(FM)/... ./$(VMO)/...
-	go test -race -parallel=1 ./$(BL)/...
-	go test -race ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
+	go test -race ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
 
 test-integration: ## Run all tests including ZFS integration (requires sudo + zfs)
 	@echo "Integration tests require root for ZFS pool operations."
@@ -35,7 +34,7 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
 lint:
-	golangci-lint run ./$(FM)/... ./$(VMO)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
+	golangci-lint run ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
@@ -48,19 +47,20 @@ hooks-install:
 	pre-commit install
 
 fmt:
-	gofumpt -w $(FM) $(VMO) $(BL) $(BS) $(AM) $(BC) $(SR)
+	gofumpt -w $(FM) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT) $(WL)
 
 vet:
-	go vet ./$(FM)/... ./$(VMO)/... ./$(BL)/... ./$(BS)/... ./$(AM)/... ./$(BC)/... ./$(SR)/...
+	go vet ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
 
 tidy:
 	cd $(FM) && go mod tidy
 	cd $(VMO) && go mod tidy
-	cd $(BL) && go mod tidy
 	cd $(BS) && go mod tidy
 	cd $(AM) && go mod tidy
-	cd $(BC) && go mod tidy
 	cd $(SR) && go mod tidy
+	cd $(MS) && go mod tidy
+	cd $(OT) && go mod tidy
+	cd $(WL) && go mod tidy
 
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
@@ -96,17 +96,47 @@ clickhouse-query: inventory-check ## Run a ClickHouse query on the worker: make 
 clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all project tables
 	cd $(FM) && ./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
 
-mail: inventory-check ## List inbox: make mail [USER=bernoulli.agent] [N=10]
-	cd $(FM) && ./scripts/mail.sh $(if $(USER),-u $(USER),) $(if $(N),-n $(N),)
+MAILBOX_ARG = $(if $(MAILBOX),$(MAILBOX),$(if $(filter command line,$(origin USER)),$(USER),))
 
-mail-code: inventory-check ## Extract latest 2FA/verification code: make mail-code USER=bernoulli.agent
-	@test -n "$(USER)" || { echo "ERROR: USER is required (e.g. USER=bernoulli.agent)"; exit 1; }
-	cd $(FM) && ./scripts/mail.sh -u $(USER) -c
+mail: inventory-check ## List inbox (defaults to agents): make mail [MAILBOX=ceo] [N=10]
+	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) $(if $(N),-n $(N),)
 
-mail-read: inventory-check ## Read a specific email: make mail-read USER=bernoulli.agent ID=eaaaaab
-	@test -n "$(USER)" || { echo "ERROR: USER is required"; exit 1; }
+mail-code: inventory-check ## Extract latest 2FA/verification code (defaults to agents): make mail-code [MAILBOX=ceo]
+	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) -c
+
+mail-read: inventory-check ## Read a specific email (defaults to agents): make mail-read [MAILBOX=ceo] ID=eaaaaab
 	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail')"; exit 1; }
-	cd $(FM) && ./scripts/mail.sh -u $(USER) -r $(ID)
+	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) -r $(ID)
+
+mail-agents: inventory-check ## List the agents inbox: make mail-agents [N=10]
+	cd $(FM) && ./scripts/mail.sh -u agents $(if $(N),-n $(N),)
+
+mail-agents-read: inventory-check ## Read an email from agents inbox: make mail-agents-read ID=eaaaaab
+	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail-agents')"; exit 1; }
+	cd $(FM) && ./scripts/mail.sh -u agents -r $(ID)
+
+mail-send: inventory-check ## Send via Resend: make mail-send TO=agents SUBJECT='test' BODY='hello'
+	@test -n "$(TO)" || { echo "ERROR: TO is required (e.g. TO=agents or TO=ceo or TO=user@example.com)"; exit 1; }
+	@test -n "$(SUBJECT)" || { echo "ERROR: SUBJECT is required"; exit 1; }
+	@test -n "$(BODY)" || { echo "ERROR: BODY is required"; exit 1; }
+	cd $(FM) && ./scripts/mail-send.sh -t "$(TO)" -s "$(SUBJECT)" -b "$(BODY)"
+
+mail-send-agents: inventory-check ## Send via Resend to agents inbox: make mail-send-agents SUBJECT='test' BODY='hello'
+	@test -n "$(SUBJECT)" || { echo "ERROR: SUBJECT is required"; exit 1; }
+	@test -n "$(BODY)" || { echo "ERROR: BODY is required"; exit 1; }
+	cd $(FM) && ./scripts/mail-send.sh -t agents -s "$(SUBJECT)" -b "$(BODY)"
+
+mail-send-ceo: inventory-check ## Send via Resend to ceo inbox: make mail-send-ceo SUBJECT='test' BODY='hello'
+	@test -n "$(SUBJECT)" || { echo "ERROR: SUBJECT is required"; exit 1; }
+	@test -n "$(BODY)" || { echo "ERROR: BODY is required"; exit 1; }
+	cd $(FM) && ./scripts/mail-send.sh -t ceo -s "$(SUBJECT)" -b "$(BODY)"
+
+mail-passwords: inventory-check ## Show Stalwart mailbox passwords
+	@echo "ceo@$$(cd $(FM) && grep '^forge_metal_domain:' ansible/group_vars/all/main.yml | awk '{print $$2}' | tr -d '\"'):"
+	@cd $(FM) && sops -d --extract '["stalwart_ceo_password"]' ansible/group_vars/all/secrets.sops.yml
+	@echo ""
+	@echo "agents@$$(cd $(FM) && grep '^forge_metal_domain:' ansible/group_vars/all/main.yml | awk '{print $$2}' | tr -d '\"'):"
+	@cd $(FM) && sops -d --extract '["stalwart_agents_password"]' ansible/group_vars/all/secrets.sops.yml
 
 edit-secrets: ## Open encrypted secrets in $$EDITOR via sops
 	sops $(FM)/ansible/group_vars/all/secrets.sops.yml

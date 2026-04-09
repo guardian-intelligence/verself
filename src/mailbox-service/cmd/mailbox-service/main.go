@@ -105,13 +105,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	agentPasswordSeed, err := loadCredential("stalwart-agent-password")
+	ceoPassword, err := loadCredential("stalwart-ceo-password")
 	if err != nil {
 		return err
 	}
-	mailboxPassword, err := credentialOr("ceo-password", "")
+	agentsPassword, err := loadCredential("stalwart-agents-password")
 	if err != nil {
 		return err
+	}
+	mailboxPasswords := map[string]string{
+		"ceo":    ceoPassword,
+		"agents": agentsPassword,
 	}
 	forwardTo, err := credentialOr("forward-to", "")
 	if err != nil {
@@ -146,7 +150,7 @@ func run() error {
 		SeenLimit:       cfg.ForwarderSeenLimit,
 		BootstrapWindow: cfg.ForwarderBootstrapMax,
 	}, forwarder.Credentials{
-		MailboxPassword: mailboxPassword,
+		MailboxPassword: ceoPassword,
 		ForwardTo:       forwardTo,
 		ResendAPIKey:    resendAPIKey,
 	}, logger, httpClient)
@@ -154,7 +158,7 @@ func run() error {
 	syncManager := mailboxsync.New(mailboxsync.Config{
 		StalwartBaseURL:   cfg.StalwartBaseURL,
 		AdminPassword:     adminPassword,
-		AgentPasswordSeed: agentPasswordSeed,
+		MailboxPasswords:  mailboxPasswords,
 		DiscoveryInterval: cfg.SyncDiscoveryInterval,
 		ReconcileInterval: cfg.SyncReconcileInterval,
 	}, store, logger, httpClient, streamClient)

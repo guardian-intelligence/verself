@@ -2,14 +2,14 @@
 # Query Stalwart JMAP for inbox contents.
 #
 # Usage:
-#   ./scripts/mail.sh                            # List ceo@ inbox (recent 10)
-#   ./scripts/mail.sh -u bernoulli.agent         # List agent inbox
-#   ./scripts/mail.sh -u bernoulli.agent -n 20   # List 20 most recent
-#   ./scripts/mail.sh -u bernoulli.agent -c      # Extract latest verification/2FA code
-#   ./scripts/mail.sh -u bernoulli.agent -r ID   # Read full email by JMAP ID
+#   ./scripts/mail.sh                            # List agents@ inbox (recent 10)
+#   ./scripts/mail.sh -u ceo                     # List ceo@ inbox
+#   ./scripts/mail.sh -u ceo -n 20               # List 20 most recent from ceo@
+#   ./scripts/mail.sh -c                         # Extract latest verification/2FA code from agents@
+#   ./scripts/mail.sh -r ID                      # Read full email by JMAP ID from agents@
 set -euo pipefail
 
-STALWART_USER="ceo"
+STALWART_USER="agents"
 MODE="list"
 EMAIL_ID=""
 LIMIT=10
@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
     -r|--read) MODE="read"; EMAIL_ID="$2"; shift 2 ;;
     -n|--limit) LIMIT="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,7p' "$0" | sed 's/^# \?//'
+      sed -n '2,9p' "$0" | sed 's/^# \?//'
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -44,21 +44,16 @@ if [[ -z "$remote_host" || -z "$remote_user" ]]; then
   exit 1
 fi
 
-# Resolve mailbox password. All Stalwart mailboxes derive a unique password
-# from the shared seed in SOPS, so leaking one mailbox password does not
-# grant access to the others.
+# Resolve the selected mailbox password from SOPS unless explicitly overridden.
 if [[ -n "${STALWART_PASSWORD:-}" ]]; then
   password="$STALWART_PASSWORD"
+elif [[ "$STALWART_USER" == "agents" ]]; then
+  password="$(sops -d --extract '["stalwart_agents_password"]' "$secrets_file")"
+elif [[ "$STALWART_USER" == "ceo" ]]; then
+  password="$(sops -d --extract '["stalwart_ceo_password"]' "$secrets_file")"
 else
-  seed="$(sops -d --extract '["stalwart_agent_password"]' "$secrets_file")"
-  password="$(python3 -c '
-import base64, hashlib, hmac, sys
-
-seed = sys.stdin.buffer.read().strip()
-user = sys.argv[1].encode()
-digest = hmac.new(seed, user, hashlib.sha256).digest()
-print("FmMail1!" + base64.urlsafe_b64encode(digest[:24]).decode().rstrip("="))
-' "$STALWART_USER" <<<"$seed")"
+  echo "ERROR: unknown user '$STALWART_USER' (valid: agents, ceo)" >&2
+  exit 1
 fi
 
 request_payload="$(python3 -c '

@@ -180,7 +180,7 @@ Those are fixture orchestration concerns, not workload execution concerns.
 
 --- A note on the future ---
 
-We will  want long-running VMs with developer tools installed for agents to work within with full unbounded permissions and access to  If they do something destructive to their sandbox we want to restore from a snapshots. If they attempt to exfiltrate secrets, we tightly controll egress and only provide encrypted secrets that must go through a layer for decryption (unless you can think of something better) If they attempt to perform a destructive action on production systems, we have a policy layer to prevent it.
+We will want long-running VMs with developer tools installed for agents to work within, with full unbounded permissions and access to project source. If they do something destructive to their sandbox we want to restore from a snapshot. If they attempt to exfiltrate secrets, we tightly control egress and only provide encrypted secrets that must go through a layer for decryption. If they attempt to perform a destructive action on production systems, we have a policy layer to prevent it.
 
 ## Licensing
 

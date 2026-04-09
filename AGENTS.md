@@ -1,8 +1,8 @@
 # forge-metal
 
-Free Open-Source Software for a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMs. This is not a PaaS -- the user owns what they deploy.
+Free Open-Source Software for a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
 
-Bootstrapping UX: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB (frontends not yet implemented).
+Bootstrapping UX: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
 
 ## Direction
 
@@ -65,7 +65,7 @@ Hard product design requirement: everything must be self-hosted.
 Exceptions:
 
 Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (will be done through `zfs send`, not LINSTOR + DRBD) [Backups not yet implemented]
-Required - Domain Registar (Cloudflare only for now)
+Required - Domain Registrar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required - Email Delivery (Resend only for now, inbound done via Stalwart)
 
@@ -171,7 +171,7 @@ Key focus areas for this project
 
 * Secure by default, above and beyond most SaaS provided options. Security must be regularly audited and verified (still working on this)
 * Cheap -- the operator, when starting and operating their business. They only pay for compute and object storage which are commodity priced, not for DataDog's operating margin.
-* [aspirational, not yet fully implemented] Solves genuinely difficult problems faced by businesses - Lowering a price for a product should be easy and fast: when the oeprator of the company reduces the price of a metered product, customer billing pages should update, marketing pages' pricing sections should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
+* [aspirational, not yet fully implemented] Solves genuinely difficult problems faced by businesses - Lowering a price for a product should be easy and fast: when the operator of the company reduces the price of a metered product, customer billing pages should update, marketing pages' pricing sections should update, emails should go out to customers, end-of-month invoices should reflect usage at both old and new prices, metering should update at a specified effective_at field, customer support agents (not yet implemented) should be able to answer questions and query safe tables to pull information about recent price changes and the customer's spend history that may have impacted them. All of this should happen seamlessly via a combination of maintaining a robust system of record and deterministic workflows.
 * Observable - o11y 2.0. Logs, traces, and metrics are one thing: the Wide Event. ClickHouse can handle millions of writes per second, leverage that by instrumenting as much as possible. It's easier to reduce instrumentation that's unnecessary than it is to backfill gaps.
 
 arch at a high level:
@@ -191,7 +191,7 @@ arch at a high level:
 
 See README.md for more -- the repo started as a CI orchestrator but has since evolved.
 
-### 5. Query ClickHouse
+### Query ClickHouse
 
 Use the Makefile wrappers instead of typing the SSH and password prefix by hand. They `cd` into `src/platform/` and invoke `scripts/clickhouse.sh`, which resolves the worker from `ansible/inventory/hosts.ini` and reads the ClickHouse password from SOPS.
 
@@ -207,7 +207,7 @@ OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
 make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
 ```
 
-### 6. Debug with traces
+### Debug with traces
 
 `make traces` pulls recent HTTP traces and structured logs from ClickHouse in a single command:
 
@@ -269,7 +269,7 @@ Compression codecs per column type:
 
 All remote orchestration is done via Ansible playbooks. Run from the `src/platform/ansible/` directory.
 
-read the Makefile for other common task automation.
+Read the Makefile for other common task automation.
 
 | Playbook | Description |
 |----------|-------------|
@@ -427,7 +427,7 @@ forge-metal/                            # Monorepo root
 ## Assistant Contract
 
 * Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The users of this repo will be sole operators of a single-person software company operating all services off a single bare metal box (with upgrade path to 3 for higher availability).
-* When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so its important to understand how everything connects.
+* When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so it's important to understand how everything connects.
 * You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM), or are technically infeasible or "not even wrong".
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
 * You may be asked series of questions. Not all questions need to be answered individually. Consider the gestalt of the discussion and take a step back and address the core question underneath the questions.
@@ -440,7 +440,7 @@ forge-metal/                            # Monorepo root
 
 * When executing long-running tasks, execute them in the background and check in every 30 - 60 seconds.
 * Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`. No `nix develop` prefix needed.
-* Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to impelementing changes. The verification protocol should fail, and only then begin implementing until green.
+* Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 * Avoid using one off non-syntax-aware scripts to do large parallel changes or refactors. Use subagents for that class of tasks instead as unexpected edge cases are likely and judgement is often required.
 
 ## Output Contract
@@ -455,6 +455,7 @@ forge-metal/                            # Monorepo root
 
 ## Coding Contract
 
+* When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
 * Prefer Ansible over shell scripts, except in extreme bootstrap cases.
 * Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
 * Treat errors as data. Use tagged and structured errors to aid in control flow.
@@ -466,3 +467,4 @@ forge-metal/                            # Monorepo root
 * ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. Never use positional `batch.Append` — it silently corrupts data when columns are added or reordered.
 * ClickHouse queries must pass dynamic values (including Map keys) through driver parameter binding (`$1`, `$2`, ...); never interpolate values into query strings with `fmt.Sprintf` — use `arrayElement(map_col, $N)` instead of `map_col['{interpolated}']`.
 * ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden UInt8 column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (UInt8 over Int32 when the range fits).
+* Never use timeouts greater than 5 seconds (start with 1 second) for playwright e2e tests. Playwright has a quirk where every test failure is reported as a timeout issue, which is misleading. The underlying issue is the behavior/logic is wrong. NOT that some element or something else took too long to respond. Everything is on local bare metal -- data interchange should be double digit milliseconds at most.

@@ -50,18 +50,16 @@
       gib: 40
     seed_demo_overage_unit_rates: {}
     seed_demo_quotas: {}
-    seed_demo_target_prepaid_units: 5000000
+    seed_demo_platform_org_trust_tier: platform
+    seed_demo_prepaid_source: promo
+    seed_demo_target_prepaid_units: 1000000000000
+    seed_demo_platform_promotion_name: platform-showback
+    seed_demo_platform_promotion_percent: 100
     seed_demo_expires_after: 8760h
+    seed_demo_sandbox_env_path: /etc/forge-metal/sandbox-rental.env
 
     # --- Stalwart mailboxes ---
     seed_demo_stalwart_domain: "mail.{{ forge_metal_domain }}"
-    seed_demo_agent_mailboxes:
-      - name: bernoulli.agent
-        description: "Bernoulli Agent"
-      - name: dijkstra.agent
-        description: "Dijkstra Agent"
-      - name: lamport.agent
-        description: "Lamport Agent"
     seed_demo_stalwart_disabled_permissions:
       - email-send
       - jmap-sieve-script-set
@@ -82,7 +80,7 @@
         host: "{{ services.zitadel.host }}"
         port: "{{ services.zitadel.port }}"
         timeout: 60
-      tags: [user, billing, verify, dev-oidc]
+      tags: [user, billing, stalwart, verify, dev-oidc]
 
     - name: Wait for billing-service to be ready
       ansible.builtin.wait_for:
@@ -96,13 +94,13 @@
         src: /etc/zitadel/admin.pat
       register: seed_demo_admin_pat_raw
       no_log: true
-      tags: [user, billing, verify, dev-oidc]
+      tags: [user, billing, stalwart, verify, dev-oidc]
 
     - name: Set Zitadel admin PAT fact
       ansible.builtin.set_fact:
         seed_demo_admin_pat: "{{ seed_demo_admin_pat_raw.content | b64decode | trim }}"
       no_log: true
-      tags: [user, billing, verify, dev-oidc]
+      tags: [user, billing, stalwart, verify, dev-oidc]
 
     - name: Find sandbox-rental project
       ansible.builtin.uri:
@@ -380,6 +378,8 @@
           - "{{ seed_demo_org_id }}"
           - --org-name
           - "{{ seed_demo_org_name }}"
+          - --org-trust-tier
+          - "{{ seed_demo_platform_org_trust_tier }}"
           - --product-id
           - "{{ seed_demo_product_id }}"
           - --product-display-name
@@ -400,6 +400,12 @@
           - "{{ seed_demo_quotas | to_json }}"
           - --target-prepaid-units
           - "{{ seed_demo_target_prepaid_units | string }}"
+          - --prepaid-source
+          - "{{ seed_demo_prepaid_source }}"
+          - --promotion-name
+          - "{{ seed_demo_platform_promotion_name }}"
+          - --promotion-percent
+          - "{{ seed_demo_platform_promotion_percent | string }}"
           - --expires-after
           - "{{ seed_demo_expires_after }}"
       register: seed_demo_billing_result_raw
@@ -415,11 +421,98 @@
       ansible.builtin.debug:
         msg:
           - "Billing catalog seeded for org {{ seed_demo_billing_result.org_id }}"
+          - "  Trust tier:      {{ seed_demo_billing_result.org_trust_tier }}"
           - "  Product:         {{ seed_demo_product_id }}"
           - "  Plan:            {{ seed_demo_plan_id }}"
           - "  Prepaid before:  {{ seed_demo_billing_result.prepaid_before }}"
           - "  Deposited:       {{ seed_demo_billing_result.deposited_units }}"
           - "  Prepaid after:   {{ seed_demo_billing_result.prepaid_after }}"
+          - "  Promotion:       {{ seed_demo_platform_promotion_name }} ({{ seed_demo_platform_promotion_percent }}% off)"
+      tags: [billing]
+
+    - name: Ensure forge-metal config directory exists for sandbox webhook env
+      ansible.builtin.file:
+        path: "{{ seed_demo_sandbox_env_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [billing]
+
+    - name: Check existing sandbox webhook env file
+      ansible.builtin.stat:
+        path: "{{ seed_demo_sandbox_env_path }}"
+      register: seed_demo_sandbox_env_file
+      no_log: true
+      tags: [billing]
+
+    - name: Read existing sandbox webhook env file
+      ansible.builtin.slurp:
+        src: "{{ seed_demo_sandbox_env_path }}"
+      register: seed_demo_sandbox_env_raw
+      when: seed_demo_sandbox_env_file.stat.exists
+      no_log: true
+      tags: [billing]
+
+    - name: Extract existing sandbox webhook secret
+      ansible.builtin.set_fact:
+        seed_demo_sandbox_webhook_secret: >-
+          {{
+            (
+              seed_demo_sandbox_env_raw.content | b64decode
+              | regex_search('^SANDBOX_FORGEJO_WEBHOOK_SECRET=(.+)$', '\\1', multiline=True)
+              | first
+            ) | default('', true) | trim
+          }}
+      when: seed_demo_sandbox_env_file.stat.exists
+      no_log: true
+      tags: [billing]
+
+    - name: Generate sandbox webhook secret
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import secrets; print(secrets.token_hex(32))"
+      register: seed_demo_generated_webhook_secret
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      when: seed_demo_sandbox_webhook_secret | default('', true) | trim | length == 0
+      no_log: true
+      tags: [billing]
+
+    - name: Set effective sandbox webhook secret
+      ansible.builtin.set_fact:
+        seed_demo_effective_webhook_secret: >-
+          {{
+            (
+              seed_demo_sandbox_webhook_secret | default('', true) | trim
+            )
+            if (seed_demo_sandbox_webhook_secret | default('', true) | trim | length > 0)
+            else (seed_demo_generated_webhook_secret.stdout | trim)
+          }}
+      no_log: true
+      tags: [billing]
+
+    - name: Write sandbox webhook env file
+      ansible.builtin.copy:
+        content: |
+          SANDBOX_PLATFORM_ORG_ID={{ seed_demo_org_id }}
+          SANDBOX_FORGEJO_WEBHOOK_SECRET={{ seed_demo_effective_webhook_secret }}
+        dest: "{{ seed_demo_sandbox_env_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: seed_demo_sandbox_env_write
+      tags: [billing]
+
+    - name: Restart sandbox-rental-service after webhook env update # noqa: no-handler
+      ansible.builtin.systemd:
+        name: sandbox-rental-service
+        state: restarted
+        daemon_reload: true
+      when: seed_demo_sandbox_env_write.changed
       tags: [billing]
 
     - name: Remove billing seed helpers
@@ -454,36 +547,30 @@
       failed_when: false
       tags: [stalwart]
 
-    - name: Derive Stalwart mailbox passwords and hashes
+    - name: Compute bcrypt hashes for mailbox passwords
       ansible.builtin.command:
         argv:
           - python3
           - -c
           - |
-            import base64, bcrypt, hashlib, hmac, json, sys
-            seed = sys.stdin.buffer.read().strip()
-            names = json.loads(sys.argv[1])
+            import bcrypt, json, sys
+            passwords = json.loads(sys.stdin.read())
             out = {}
-            for name in names:
-                digest = hmac.new(seed, name.encode(), hashlib.sha256).digest()
-                password = "FmMail1!" + base64.urlsafe_b64encode(digest[:24]).decode().rstrip("=")
-                out[name] = {
-                    "password": password,
-                    "hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
-                }
+            for name, pw in passwords.items():
+                out[name] = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
             print(json.dumps(out))
-          - "{{ (['ceo'] + (seed_demo_agent_mailboxes | map(attribute='name') | list)) | to_json }}"
-        stdin: "{{ stalwart_agent_password }}"
-      register: seed_demo_mailbox_credentials_raw
+        stdin: >-
+          {{ {"ceo": stalwart_ceo_password, "agents": stalwart_agents_password} | to_json }}
+      register: seed_demo_mailbox_hashes_raw
       changed_when: false
       delegate_to: localhost
       become: false
       no_log: true
       tags: [stalwart]
 
-    - name: Set Stalwart mailbox credentials fact
+    - name: Set mailbox password hashes fact
       ansible.builtin.set_fact:
-        seed_demo_mailbox_credentials: "{{ seed_demo_mailbox_credentials_raw.stdout | from_json }}"
+        seed_demo_mailbox_hashes: "{{ seed_demo_mailbox_hashes_raw.stdout | from_json }}"
       no_log: true
       tags: [stalwart]
 
@@ -524,7 +611,7 @@
           type: individual
           name: "ceo"
           description: "Operator"
-          secrets: ["{{ seed_demo_mailbox_credentials['ceo'].hash }}"]
+          secrets: ["{{ seed_demo_mailbox_hashes['ceo'] }}"]
           emails: ["ceo@{{ forge_metal_domain }}"]
           roles: ["user"]
           disabledPermissions: "{{ seed_demo_stalwart_disabled_permissions }}"
@@ -534,38 +621,32 @@
       no_log: true
       tags: [stalwart]
 
-    - name: Check if agent mailboxes exist
+    - name: Check if agents mailbox exists
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.name }}"
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
         method: GET
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
         force_basic_auth: true
         status_code: 200
         return_content: true
-      register: seed_demo_agent_checks
-      loop: "{{ seed_demo_agent_mailboxes }}"
-      loop_control:
-        label: "{{ item.name }}"
+      register: seed_demo_agents_check
       no_log: true
       tags: [stalwart]
 
-    - name: Delete existing agent mailboxes
+    - name: Delete existing agents mailbox
       ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.item.name }}"
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
         method: DELETE
         url_username: admin
         url_password: "{{ stalwart_admin_password }}"
         force_basic_auth: true
         status_code: 200
-      loop: "{{ seed_demo_agent_checks.results }}"
-      loop_control:
-        label: "{{ item.item.name }}@{{ forge_metal_domain }}"
-      when: item.json.error is not defined
+      when: seed_demo_agents_check.json.error is not defined
       no_log: true
       tags: [stalwart]
 
-    - name: Create agent mailboxes
+    - name: Create agents mailbox (agents@)
       ansible.builtin.uri:
         url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
         method: POST
@@ -575,30 +656,91 @@
         body_format: json
         body:
           type: individual
-          name: "{{ item.item.name }}"
-          description: "{{ item.item.description }}"
-          secrets: ["{{ seed_demo_mailbox_credentials[item.item.name].hash }}"]
-          emails: ["{{ item.item.name }}@{{ forge_metal_domain }}"]
+          name: "agents"
+          description: "Shared agent mailbox"
+          secrets: ["{{ seed_demo_mailbox_hashes['agents'] }}"]
+          emails: ["agents@{{ forge_metal_domain }}"]
           roles: ["user"]
           disabledPermissions: "{{ seed_demo_stalwart_disabled_permissions }}"
           quota: 0
         status_code: 200
         return_content: true
-      loop: "{{ seed_demo_agent_checks.results }}"
-      loop_control:
-        label: "{{ item.item.name }}@{{ forge_metal_domain }}"
       no_log: true
       tags: [stalwart]
 
-    - name: Deploy operator forwarder ceo-password credential
-      ansible.builtin.copy:
-        content: "{{ seed_demo_mailbox_credentials['ceo'].password }}"
-        dest: /etc/credstore/mailbox-service/ceo-password
-        owner: root
-        group: mailbox_service
-        mode: "0640"
+    - name: Check if legacy agent mailboxes exist
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item }}"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      loop:
+        - bernoulli.agent
+        - dijkstra.agent
+        - lamport.agent
+      register: seed_demo_legacy_agent_checks
       no_log: true
-      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Delete legacy agent mailboxes
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.item }}"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      loop: "{{ seed_demo_legacy_agent_checks.results }}"
+      when: item.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Reset mailbox-service projection for reseeded mailboxes
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U mailbox_service
+          -d mailbox_service
+          -v ON_ERROR_STOP=1
+        stdin: |
+          DELETE FROM email_bodies
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM email_mailboxes
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM emails
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailboxes
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM threads
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM sync_state
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailbox_accounts
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailbox_bindings
+          WHERE account_id IN ('bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+      environment:
+        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
+      changed_when: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Restart Stalwart after mailbox reseed
+      ansible.builtin.systemd:
+        name: stalwart
+        state: restarted
+      tags: [stalwart]
+
+    - name: Wait for Stalwart after mailbox reseed
+      ansible.builtin.wait_for:
+        host: "{{ services.stalwart.host }}"
+        port: "{{ services.stalwart.http_port }}"
+        timeout: 60
       tags: [stalwart]
 
     - name: Deploy operator forwarder target credential
@@ -611,21 +753,30 @@
       when: stalwart_operator_forward_to | default('', true) | length > 0
       tags: [stalwart]
 
-    - name: Remove operator forwarder credentials when forwarding is disabled
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/credstore/mailbox-service/ceo-password
-        - /etc/credstore/mailbox-service/forward-to
-      when: stalwart_operator_forward_to | default('', true) | length == 0
-      tags: [stalwart]
-
-    - name: Reset operator forwarder state
+    - name: Reset operator forwarder state on reseed
       ansible.builtin.file:
         path: /var/lib/mailbox-service/forwarder-state.json
         state: absent
-      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Read deployed mailbox-service unit # noqa: command-instead-of-module
+      ansible.builtin.command:
+        cmd: systemctl cat mailbox-service.service
+      register: seed_demo_mailbox_service_unit
+      changed_when: false
+      failed_when: false
+      tags: [stalwart]
+
+    - name: Set split-credential mailbox-service support fact
+      ansible.builtin.set_fact:
+        seed_demo_mailbox_service_supports_split_credentials: >-
+          {{
+            seed_demo_mailbox_service_unit.rc == 0
+            and
+            ('LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password' in seed_demo_mailbox_service_unit.stdout)
+            and
+            ('LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password' in seed_demo_mailbox_service_unit.stdout)
+          }}
       tags: [stalwart]
 
     - name: Restart mailbox-service after mailbox reseed
@@ -634,6 +785,16 @@
         enabled: true
         state: restarted
         daemon_reload: true
+      when: seed_demo_mailbox_service_supports_split_credentials
+      tags: [stalwart]
+
+    - name: Note mailbox-service restart is deferred until deploy
+      ansible.builtin.debug:
+        msg: >-
+          mailbox-service remains stopped after mailbox reseed because the
+          deployed unit does not yet load split Stalwart credentials. Run the
+          mailbox_service deploy next.
+      when: not seed_demo_mailbox_service_supports_split_credentials
       tags: [stalwart]
 
     - name: Search for demo user for mailbox binding
@@ -689,10 +850,8 @@
           {{
             [
               'Stalwart mailboxes created:',
-              '  ceo@' + forge_metal_domain + ' (password derived from stalwart_agent_password)',
-              '  bernoulli.agent@' + forge_metal_domain,
-              '  dijkstra.agent@' + forge_metal_domain,
-              '  lamport.agent@' + forge_metal_domain,
+              '  ceo@' + forge_metal_domain,
+              '  agents@' + forge_metal_domain,
               ''
             ]
             + (
