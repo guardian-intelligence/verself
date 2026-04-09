@@ -49,6 +49,21 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}, rescanRepo(svc))
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-repo-generations",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/repos/{repo_id}/generations",
+		Summary:     "List golden generations for a repo",
+	}, listRepoGenerations(svc))
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "refresh-repo",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/repos/{repo_id}/refresh",
+		Summary:       "Queue a new golden generation for the repo",
+		DefaultStatus: 202,
+	}, refreshRepo(svc))
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",
@@ -128,6 +143,14 @@ type RepoOutput struct {
 
 type ListReposOutput struct {
 	Body []jobs.RepoRecord
+}
+
+type ListRepoGenerationsOutput struct {
+	Body []jobs.GoldenGenerationRecord
+}
+
+type RefreshRepoOutput struct {
+	Body jobs.RepoBootstrapRecord
 }
 
 type SubmitExecutionOutput struct {
@@ -287,6 +310,60 @@ func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutp
 	}
 }
 
+func listRepoGenerations(svc *jobs.Service) func(context.Context, *RepoIDPath) (*ListRepoGenerationsOutput, error) {
+	return func(ctx context.Context, input *RepoIDPath) (*ListRepoGenerationsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+		}
+		repo, err := svc.GetRepo(ctx, orgID, repoID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRepoMissing) {
+				return nil, huma.Error404NotFound("repo not found")
+			}
+			return nil, huma.Error500InternalServerError("get repo", err)
+		}
+		generations, err := svc.ListGoldenGenerations(ctx, repo.RepoID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list repo generations", err)
+		}
+		return &ListRepoGenerationsOutput{Body: generations}, nil
+	}
+}
+
+func refreshRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RefreshRepoOutput, error) {
+	return func(ctx context.Context, input *RepoIDPath) (*RefreshRepoOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
+		}
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+		}
+		record, err := svc.QueueRepoBootstrap(ctx, orgID, identity.Subject, repoID, jobs.GenerationTriggerManualRefresh)
+		if err != nil {
+			switch {
+			case errors.Is(err, jobs.ErrRepoMissing):
+				return nil, huma.Error404NotFound("repo not found")
+			case errors.Is(err, jobs.ErrRepoNotReady):
+				return nil, huma.Error409Conflict("repo is not ready")
+			default:
+				return nil, huma.Error500InternalServerError("refresh repo", err)
+			}
+		}
+		return &RefreshRepoOutput{Body: *record}, nil
+	}
+}
+
 func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
 	return func(ctx context.Context, input *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
 		identity, err := requireIdentity(ctx)
@@ -304,6 +381,8 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			switch {
 			case errors.Is(err, jobs.ErrQuotaExceeded):
 				return nil, huma.Error429TooManyRequests("quota exceeded")
+			case errors.Is(err, jobs.ErrRepoNotReady):
+				return nil, huma.Error409Conflict("repo is not ready")
 			case errors.Is(err, billingclient.ErrPaymentRequired):
 				return nil, huma.Error402PaymentRequired("insufficient balance")
 			default:

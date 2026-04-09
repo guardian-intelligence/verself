@@ -1,11 +1,10 @@
 // Package workload owns the transitional repo workload contract for VM jobs.
 //
-// Surgical note: this package still models repo-owned workload configuration via
-// `.forge-metal/ci.toml`. That is a deliberate compromise while forge-metal
-// moves from a CLI-driven CI path to a VM-backed Forgejo Actions runner. The
-// long-term target is runner-native workflow execution, but we still need one
-// shared source of truth for repo inspection and guest job construction during
-// the cutover.
+// Surgical note: a repo may still provide `.forge-metal/ci.toml`, but imported
+// repos no longer require it. When the manifest is absent we infer a minimal
+// Node-oriented contract from package metadata so repo bootstrap can proceed
+// without a forge-metal-specific file. The long-term target remains
+// runner-native workflow execution.
 package workload
 
 import (
@@ -77,6 +76,30 @@ func LoadManifest(repoRoot string) (*Manifest, error) {
 	return &m, nil
 }
 
+func InferManifest(repoRoot string, toolchain *Toolchain) (*Manifest, error) {
+	pkg, err := loadPackageJSON(filepath.Join(repoRoot, "package.json"))
+	if err != nil {
+		return nil, fmt.Errorf("read package.json for inferred manifest: %w", err)
+	}
+
+	run, ok := inferScriptCommand(toolchain, pkg.Scripts)
+	if !ok {
+		return nil, fmt.Errorf("infer manifest: package.json is missing a ci, test, or build script")
+	}
+
+	manifest := &Manifest{
+		Version: 1,
+		WorkDir: ".",
+		Prepare: cloneArgs(run),
+		Run:     cloneArgs(run),
+		Profile: RuntimeProfileAuto,
+	}
+	if err := manifest.Validate(); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
 func (m *Manifest) Validate() error {
 	if m.Version != 1 {
 		return fmt.Errorf("unsupported manifest version %d", m.Version)
@@ -142,4 +165,28 @@ func normalizeStringList(values []string) []string {
 func isSupportedService(name string) bool {
 	_, ok := supportedServices[name]
 	return ok
+}
+
+func inferScriptCommand(toolchain *Toolchain, scripts map[string]string) ([]string, bool) {
+	if len(scripts) == 0 {
+		return nil, false
+	}
+	for _, script := range []string{"ci", "test", "build"} {
+		if strings.TrimSpace(scripts[script]) == "" {
+			continue
+		}
+		return packageManagerRunCommand(toolchain, script), true
+	}
+	return nil, false
+}
+
+func packageManagerRunCommand(toolchain *Toolchain, script string) []string {
+	switch {
+	case toolchain != nil && toolchain.PackageManager == PackageManagerPNPM:
+		return []string{"pnpm", "run", script}
+	case toolchain != nil && toolchain.PackageManager == PackageManagerBun:
+		return []string{"bun", "run", script}
+	default:
+		return []string{"npm", "run", script}
+	}
 }

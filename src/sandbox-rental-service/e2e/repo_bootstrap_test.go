@@ -1,0 +1,566 @@
+package e2e_test
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	chdriver "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/golang-jwt/jwt/v5"
+
+	billingclient "github.com/forge-metal/billing-service/client"
+	billingtestharness "github.com/forge-metal/billing-service/testharness"
+	rentaltestharness "github.com/forge-metal/sandbox-rental-service/testharness"
+)
+
+type repoView struct {
+	RepoID                   string          `json:"repo_id"`
+	State                    string          `json:"state"`
+	CompatibilityStatus      string          `json:"compatibility_status"`
+	CompatibilitySummary     json.RawMessage `json:"compatibility_summary"`
+	LastScannedSHA           string          `json:"last_scanned_sha"`
+	ActiveGoldenGenerationID string          `json:"active_golden_generation_id"`
+	LastReadySHA             string          `json:"last_ready_sha"`
+	LastError                string          `json:"last_error"`
+}
+
+type goldenGenerationView struct {
+	GoldenGenerationID string `json:"golden_generation_id"`
+	State              string `json:"state"`
+	TriggerReason      string `json:"trigger_reason"`
+	ExecutionID        string `json:"execution_id"`
+	AttemptID          string `json:"attempt_id"`
+	SnapshotRef        string `json:"snapshot_ref"`
+	FailureReason      string `json:"failure_reason"`
+	FailureDetail      string `json:"failure_detail"`
+}
+
+type repoBootstrapEnv struct {
+	ctx           context.Context
+	pg            pgEnv
+	billingServer *billingtestharness.Server
+	rentalServer  *rentaltestharness.Server
+	authProvider  *testAuthProvider
+	queryCHConn   anyQueryRower
+	token         string
+	runner        *fakeRunner
+	balanceBefore uint64
+	repoPath      string
+	repoHead      string
+}
+
+type anyQueryRower interface {
+	QueryRow(context.Context, string, ...any) chdriver.Row
+}
+
+func TestImportRepoAPI_CompatibleWorkflowBootstrapsGolden(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{
+		delay:     400 * time.Millisecond,
+		logs:      "bootstrap complete\n",
+		commitSHA: "",
+	})
+	defer env.close()
+	env.runner.commitSHA = env.repoHead
+
+	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
+	if imported.CompatibilityStatus != "compatible" {
+		t.Fatalf("compatibility_status: got %q", imported.CompatibilityStatus)
+	}
+	if imported.State != "preparing" && imported.State != "ready" {
+		t.Fatalf("repo state after import: got %q", imported.State)
+	}
+
+	repo := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
+	if repo.ActiveGoldenGenerationID == "" {
+		t.Fatal("expected active_golden_generation_id")
+	}
+	if repo.LastReadySHA != env.repoHead {
+		t.Fatalf("expected last_ready_sha=%s, got %s", env.repoHead, repo.LastReadySHA)
+	}
+
+	generations := listRepoGenerations(t, env.ctx, env.rentalServer.URL, env.token, repo.RepoID)
+	if len(generations) != 1 {
+		t.Fatalf("expected 1 golden generation, got %d", len(generations))
+	}
+	generation := generations[0]
+	if generation.State != "ready" {
+		t.Fatalf("expected generation state=ready, got %q", generation.State)
+	}
+	if generation.TriggerReason != "bootstrap" {
+		t.Fatalf("expected trigger_reason=bootstrap, got %q", generation.TriggerReason)
+	}
+	if generation.AttemptID == "" || generation.ExecutionID == "" {
+		t.Fatalf("expected execution+attempt ids on generation, got execution=%q attempt=%q", generation.ExecutionID, generation.AttemptID)
+	}
+	if generation.SnapshotRef == "" {
+		t.Fatal("expected snapshot_ref on ready generation")
+	}
+
+	assertWarmGoldenExecutionProjection(t, env.ctx, env.pg.rentalDB, generation.ExecutionID, generation.AttemptID, env.repoHead)
+	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, generation.AttemptID)
+	assertWarmGoldenBillingSpent(t, env.ctx, env.billingServer, env.balanceBefore, 300)
+	flushBillingMetering(t, env.ctx, env.billingServer)
+	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, generation.ExecutionID, generation.AttemptID)
+}
+
+func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{
+		delay:     400 * time.Millisecond,
+		logs:      "bootstrap complete\n",
+		commitSHA: "",
+	})
+	defer env.close()
+	env.runner.commitSHA = env.repoHead
+
+	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
+	repo := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
+	originalGenerationID := repo.ActiveGoldenGenerationID
+	if originalGenerationID == "" {
+		t.Fatal("expected active generation after bootstrap")
+	}
+
+	env.runner.err = errors.New("forced refresh failure")
+	refresh := refreshRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, repo.RepoID)
+	if refresh.Generation.GoldenGenerationID == "" {
+		t.Fatal("expected refresh generation id")
+	}
+	if refresh.Generation.TriggerReason != "manual_refresh" {
+		t.Fatalf("expected manual_refresh trigger, got %q", refresh.Generation.TriggerReason)
+	}
+
+	degraded := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, repo.RepoID, "degraded")
+	if degraded.ActiveGoldenGenerationID != originalGenerationID {
+		t.Fatalf("expected active generation to remain %s, got %s", originalGenerationID, degraded.ActiveGoldenGenerationID)
+	}
+	if degraded.LastError == "" {
+		t.Fatal("expected repo last_error after failed refresh")
+	}
+
+	generations := listRepoGenerations(t, env.ctx, env.rentalServer.URL, env.token, repo.RepoID)
+	if len(generations) != 2 {
+		t.Fatalf("expected 2 golden generations, got %d", len(generations))
+	}
+	latest := generations[0]
+	if latest.GoldenGenerationID != refresh.Generation.GoldenGenerationID {
+		t.Fatalf("expected newest generation %s, got %s", refresh.Generation.GoldenGenerationID, latest.GoldenGenerationID)
+	}
+	if latest.State != "failed" {
+		t.Fatalf("expected failed refresh generation, got %q", latest.State)
+	}
+	if latest.AttemptID == "" {
+		t.Fatal("expected refresh attempt_id")
+	}
+	if latest.FailureReason == "" {
+		t.Fatal("expected refresh failure_reason")
+	}
+	var readyCount int
+	for _, generation := range generations {
+		if generation.State == "ready" {
+			readyCount++
+		}
+	}
+	if readyCount != 1 {
+		t.Fatalf("expected 1 still-ready generation, got %d", readyCount)
+	}
+
+	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, latest.AttemptID)
+	flushBillingMetering(t, env.ctx, env.billingServer)
+	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, latest.ExecutionID, latest.AttemptID)
+
+	var meteringCount uint64
+	orgIDStr := strconv.FormatUint(testOrgID, 10)
+	if err := env.queryCHConn.QueryRow(env.ctx,
+		"SELECT count() FROM forge_metal.metering WHERE org_id = $1 AND product_id = $2",
+		orgIDStr, "sandbox",
+	).Scan(&meteringCount); err != nil {
+		t.Fatalf("query metering count: %v", err)
+	}
+	if meteringCount != 2 {
+		t.Fatalf("expected 2 metering rows after bootstrap+failed refresh, got %d", meteringCount)
+	}
+}
+
+func startRepoBootstrapEnv(t *testing.T, runner *fakeRunner) *repoBootstrapEnv {
+	t.Helper()
+
+	ctx := context.Background()
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+
+	pg := startPostgresForE2E(t)
+	tbAddr, tbClient, tbClusterID := startTigerBeetleForE2E(t)
+	billingCHConn, chAddress := startClickHouseForE2E(t)
+	queryCHConn, err := openClickHouseConn(chAddress)
+	if err != nil {
+		t.Fatalf("open query clickhouse conn: %v", err)
+	}
+	authProvider := newTestAuthProvider(t)
+	stripeKeys := requireStripeTestKeys(t)
+	repoPath := createWorkflowRepo(t, map[string]string{
+		"package.json": `{
+  "name": "example",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "ci": "echo ok"
+  }
+}
+`,
+		".github/workflows/ci.yml": `
+name: ci
+on:
+  push:
+jobs:
+  build:
+    runs-on: forge-metal
+    steps:
+      - run: echo ok
+`,
+	})
+	git := mustLookPath(t, "git")
+	out, err := exec.Command(git, "-C", repoPath, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
+	}
+	repoHead := strings.TrimSpace(string(out))
+
+	billingServer := billingtestharness.NewServer(billingtestharness.Config{
+		PG:              pg.billingDB,
+		TBClient:        tbClient,
+		TBAddresses:     []string{tbAddr},
+		TBClusterID:     tbClusterID,
+		CHConn:          billingCHConn,
+		CHDatabase:      "forge_metal",
+		StripeSecretKey: stripeKeys.SecretKey,
+		Logger:          logger,
+	})
+
+	workerCtx, workerCancel := context.WithCancel(ctx)
+	go billingServer.RunWorker(workerCtx, 200*time.Millisecond)
+	t.Cleanup(workerCancel)
+
+	seedCredits := seedSandboxProductAndCredits(t, ctx, pg.billingDB, billingServer)
+
+	billingHTTPClient, err := billingclient.New(billingServer.URL)
+	if err != nil {
+		t.Fatalf("create billing HTTP client: %v", err)
+	}
+
+	rentalCHConn, err := openClickHouseConn(chAddress)
+	if err != nil {
+		t.Fatalf("open rental clickhouse conn: %v", err)
+	}
+	rentalServer := rentaltestharness.NewServer(rentaltestharness.Config{
+		PG:            pg.rentalDB,
+		CH:            rentalCHConn,
+		CHDatabase:    "forge_metal",
+		Runner:        runner,
+		Billing:       billingHTTPClient,
+		BillingVCPUs:  2,
+		BillingMemMiB: 2048,
+		AuthCfg:       authProvider.authConfig(testAudience),
+		Logger:        logger,
+	})
+
+	token := authProvider.signToken(t, jwt.MapClaims{
+		"iss":                                   authProvider.URL,
+		"sub":                                   testUserID,
+		"aud":                                   []string{testAudience},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID, 10),
+	})
+
+	return &repoBootstrapEnv{
+		ctx:           ctx,
+		pg:            pg,
+		billingServer: billingServer,
+		rentalServer:  rentalServer,
+		authProvider:  authProvider,
+		queryCHConn:   queryCHConn,
+		token:         token,
+		runner:        runner,
+		balanceBefore: seedCredits,
+		repoPath:      repoPath,
+		repoHead:      repoHead,
+	}
+}
+
+func (e *repoBootstrapEnv) close() {
+	e.rentalServer.Close()
+	e.billingServer.Close()
+	e.authProvider.Close()
+	type closer interface{ Close() error }
+	if conn, ok := e.queryCHConn.(closer); ok {
+		_ = conn.Close()
+	}
+}
+
+func seedSandboxProductAndCredits(t *testing.T, ctx context.Context, billingDB *sql.DB, billingServer *billingtestharness.Server) uint64 {
+	t.Helper()
+
+	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org"); err != nil {
+		t.Fatalf("ensure org: %v", err)
+	}
+
+	if _, err := billingDB.ExecContext(ctx, `
+		INSERT INTO products (product_id, display_name, meter_unit, billing_model)
+		VALUES ('sandbox', 'Sandbox', 'vcpu_second', 'metered')
+		ON CONFLICT DO NOTHING
+	`); err != nil {
+		t.Fatalf("insert product: %v", err)
+	}
+
+	if _, err := billingDB.ExecContext(ctx, `
+		INSERT INTO plans (plan_id, product_id, display_name, included_credits, unit_rates, is_default, active)
+		VALUES ('sandbox-default', 'sandbox', 'Sandbox PAYG', 0, '{"vcpu":100,"gib":50}'::jsonb, true, true)
+		ON CONFLICT DO NOTHING
+	`); err != nil {
+		t.Fatalf("insert plan: %v", err)
+	}
+
+	const seedCredits uint64 = 5_000_000
+	expiresAt := time.Now().Add(24 * time.Hour)
+	created, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "repo-bootstrap-seed", expiresAt)
+	if err != nil {
+		t.Fatalf("deposit credits: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new grant, got idempotent replay")
+	}
+	balanceBefore, _, err := billingServer.GetBalance(ctx, testOrgID)
+	if err != nil {
+		t.Fatalf("get balance: %v", err)
+	}
+	if balanceBefore != seedCredits {
+		t.Fatalf("expected credit_available=%d, got %d", seedCredits, balanceBefore)
+	}
+	return balanceBefore
+}
+
+func importRepoAgainstServer(t *testing.T, ctx context.Context, baseURL, token, repoPath string) repoView {
+	t.Helper()
+
+	body := map[string]any{
+		"provider":         "forgejo",
+		"provider_repo_id": "acme/example",
+		"owner":            "acme",
+		"name":             "example",
+		"full_name":        "acme/example",
+		"clone_url":        repoPath,
+		"default_branch":   "main",
+	}
+	return doJSONRequest[repoView](t, ctx, baseURL+"/api/v1/repos", token, http.MethodPost, body, http.StatusCreated)
+}
+
+func getRepoAgainstServer(t *testing.T, ctx context.Context, baseURL, token, repoID string) repoView {
+	t.Helper()
+	return doJSONRequest[repoView](t, ctx, baseURL+"/api/v1/repos/"+repoID, token, http.MethodGet, nil, http.StatusOK)
+}
+
+func listRepoGenerations(t *testing.T, ctx context.Context, baseURL, token, repoID string) []goldenGenerationView {
+	t.Helper()
+	return doJSONRequest[[]goldenGenerationView](t, ctx, baseURL+"/api/v1/repos/"+repoID+"/generations", token, http.MethodGet, nil, http.StatusOK)
+}
+
+type refreshRepoResponse struct {
+	Repo          repoView             `json:"repo"`
+	Generation    goldenGenerationView `json:"generation"`
+	ExecutionID   string               `json:"execution_id"`
+	AttemptID     string               `json:"attempt_id"`
+	TriggerReason string               `json:"trigger_reason"`
+}
+
+func refreshRepoAgainstServer(t *testing.T, ctx context.Context, baseURL, token, repoID string) refreshRepoResponse {
+	t.Helper()
+	return doJSONRequest[refreshRepoResponse](t, ctx, baseURL+"/api/v1/repos/"+repoID+"/refresh", token, http.MethodPost, nil, http.StatusAccepted)
+}
+
+func waitForRepoState(t *testing.T, ctx context.Context, baseURL, token, repoID, terminalState string) repoView {
+	t.Helper()
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		repo := getRepoAgainstServer(t, ctx, baseURL, token, repoID)
+		if repo.State == terminalState {
+			return repo
+		}
+		if repo.State == "failed" && terminalState != "failed" {
+			t.Fatalf("repo reached failed unexpectedly: last_error=%s", repo.LastError)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("repo did not reach %s before timeout", terminalState)
+	return repoView{}
+}
+
+func assertWarmGoldenExecutionProjection(t *testing.T, ctx context.Context, db *sql.DB, executionID, attemptID, commitSHA string) {
+	t.Helper()
+
+	var (
+		status          string
+		kind            string
+		latestAttemptID string
+		persistedCommit string
+		attemptState    string
+	)
+	if err := db.QueryRowContext(ctx, `
+		SELECT e.status, e.kind, e.latest_attempt_id::text, e.commit_sha, a.state
+		FROM executions e
+		JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
+		WHERE e.execution_id = $1
+	`, executionID).Scan(&status, &kind, &latestAttemptID, &persistedCommit, &attemptState); err != nil {
+		t.Fatalf("query warm execution projection: %v", err)
+	}
+	if status != "succeeded" {
+		t.Fatalf("expected warm execution status=succeeded, got %q", status)
+	}
+	if kind != "warm_golden" {
+		t.Fatalf("expected warm kind=warm_golden, got %q", kind)
+	}
+	if latestAttemptID != attemptID {
+		t.Fatalf("expected latest_attempt_id=%s, got %s", attemptID, latestAttemptID)
+	}
+	if persistedCommit != commitSHA {
+		t.Fatalf("expected persisted commit_sha=%s, got %s", commitSHA, persistedCommit)
+	}
+	if attemptState != "succeeded" {
+		t.Fatalf("expected attempt state=succeeded, got %q", attemptState)
+	}
+}
+
+func assertWarmGoldenBillingWindow(t *testing.T, ctx context.Context, db *sql.DB, attemptID string) {
+	t.Helper()
+
+	var (
+		state         string
+		windowSeconds int
+		actualSeconds int
+		pricingPhase  string
+	)
+	if err := db.QueryRowContext(ctx, `
+		SELECT state, window_seconds, actual_seconds, pricing_phase
+		FROM execution_billing_windows
+		WHERE attempt_id = $1 AND window_seq = 0
+	`, attemptID).Scan(&state, &windowSeconds, &actualSeconds, &pricingPhase); err != nil {
+		t.Fatalf("query warm billing window: %v", err)
+	}
+	if state != "settled" {
+		t.Fatalf("expected billing window state=settled, got %q", state)
+	}
+	if windowSeconds != 300 {
+		t.Fatalf("expected window_seconds=300, got %d", windowSeconds)
+	}
+	if actualSeconds != 1 {
+		t.Fatalf("expected actual_seconds=1, got %d", actualSeconds)
+	}
+	if pricingPhase == "" {
+		t.Fatal("expected non-empty pricing_phase")
+	}
+}
+
+func assertWarmGoldenBillingSpent(t *testing.T, ctx context.Context, billingServer *billingtestharness.Server, balanceBefore, expectedConsumed uint64) {
+	t.Helper()
+	balanceAfter, _, err := billingServer.GetBalance(ctx, testOrgID)
+	if err != nil {
+		t.Fatalf("get balance after warm golden: %v", err)
+	}
+	if balanceAfter >= balanceBefore {
+		t.Fatalf("expected credits consumed for warm golden: before=%d after=%d", balanceBefore, balanceAfter)
+	}
+	consumed := balanceBefore - balanceAfter
+	if consumed != expectedConsumed {
+		t.Fatalf("expected %d credits consumed, got %d", expectedConsumed, consumed)
+	}
+}
+
+func flushBillingMetering(t *testing.T, ctx context.Context, billingServer *billingtestharness.Server) {
+	t.Helper()
+	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer flushCancel()
+	if err := billingServer.FlushMetering(flushCtx); err != nil {
+		t.Logf("metering writer close (non-fatal): %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+}
+
+func assertWarmGoldenClickHouse(t *testing.T, ctx context.Context, ch anyQueryRower, executionID, attemptID string) {
+	t.Helper()
+
+	var meteringCount uint64
+	orgIDStr := strconv.FormatUint(testOrgID, 10)
+	if err := ch.QueryRow(ctx,
+		"SELECT count() FROM forge_metal.metering WHERE org_id = $1 AND product_id = $2 AND source_ref = $3",
+		orgIDStr, "sandbox", attemptID,
+	).Scan(&meteringCount); err != nil {
+		t.Fatalf("query warm metering: %v", err)
+	}
+	if meteringCount != 1 {
+		t.Fatalf("expected exactly 1 metering row for warm golden, got %d", meteringCount)
+	}
+
+	var eventCount uint64
+	if err := ch.QueryRow(ctx,
+		"SELECT count() FROM forge_metal.job_events WHERE org_id = $1 AND execution_id = $2 AND kind = 'warm_golden'",
+		testOrgID, executionID,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("query warm job_events: %v", err)
+	}
+	if eventCount != 1 {
+		t.Fatalf("expected exactly 1 warm_golden job_event, got %d", eventCount)
+	}
+}
+
+func doJSONRequest[T any](t *testing.T, ctx context.Context, url, token, method string, body any, wantStatus int) T {
+	t.Helper()
+
+	var reader *strings.Reader
+	if body == nil {
+		reader = strings.NewReader("")
+	} else {
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		reader = strings.NewReader(string(data))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request %s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != wantStatus {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected %d from %s %s, got %d: %s", wantStatus, method, url, resp.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return out
+}
