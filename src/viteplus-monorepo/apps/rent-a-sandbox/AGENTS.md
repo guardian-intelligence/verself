@@ -15,7 +15,7 @@ This codebase has zero `useEffect`. Do not introduce any. Every common `useEffec
 | `useEffect` to fetch data | `useQuery` from `@tanstack/react-query` |
 | `useEffect` + `useState(mounted)` for SSR hydration guard | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router` |
 | `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render |
-| `useEffect` to sync auth state from `oidc-client-ts` | `useQuery` with `enabled: hydrated`, `staleTime: Infinity`, `refetchOnWindowFocus: true` |
+| `useEffect` to trigger login/logout/callback auth flows | Route-level `beforeLoad` plus `@forge-metal/auth-web` server helpers |
 | `useEffect` to invalidate queries when external data changes | `onSuccess` / `onSettled` on the `useMutation` that caused the change |
 | `useEffect` for DOM interactions (scroll, focus, resize) | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
 
@@ -23,13 +23,14 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 ### Auth + Query Cache
 
-Auth state is browser-only (`oidc-client-ts` + `sessionStorage`). The OIDC callback in `src/routes/callback.tsx` writes the user directly into the React Query cache via `queryClient.setQueryData(keys.user(), user)` before navigating. This ensures the Dashboard immediately sees authenticated state without a stale cache miss. Never rely on query refetch for auth transitions — always `setQueryData`.
+Auth state is server-owned (`@forge-metal/auth-web` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser. Treat auth as route context and server function context.
 
 ### SSR + Loading States
 
 - Never treat `undefined` (query still loading) the same as `[]` (loaded but empty). Use `isPending` from `useQuery` to show `<Skeleton>` placeholders during loading. Show empty-state messages only after the query resolves.
 - `<Skeleton>` is exported from `@forge-metal/ui` (shadcn pattern: `animate-pulse rounded-md bg-primary/10`).
-- Gate auth-dependent UI behind `useHydrated()` or `<ClientOnly>`, not `useState(mounted)`.
+- Gate protected routes with `beforeLoad` / `requireViewer`, not `useHydrated()` or `<ClientOnly>`.
+- Reserve `<ClientOnly>` for browser-only leaf widgets, not auth or route protection.
 
 ### Query Keys
 

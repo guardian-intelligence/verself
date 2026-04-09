@@ -138,7 +138,11 @@ Go services are written with the Huma v2 framework (https://pkg.go.dev/github.co
 
 ### Auth model
 
-Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Frontends use OIDC code flow + PKCE directly with Zitadel. No auth proxy, no BFF session layer. Social login (Google/GitHub/Microsoft/Apple), MFA, and passkeys are Zitadel-side configuration — the middleware sees the same JWT regardless.
+Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
+
+TanStack Start frontends now use server-owned OAuth web sessions. The frontend server performs the Zitadel code exchange, stores access/refresh tokens server-side in the `frontend_auth_sessions` PostgreSQL database, and issues an HTTP-only session cookie to the browser. Server functions, loaders, and `beforeLoad` read that session and forward bearer tokens to Go services from the server side. Browser code does not read or persist Zitadel bearer tokens.
+
+Social login (Google/GitHub/Microsoft/Apple), MFA, and passkeys remain Zitadel-side configuration. Go services remain the security boundary for API authorization; frontend `beforeLoad` checks are for SSR gating and UX, not the final enforcement layer.
 
 **Single-node JWKS fetch path:** On a single bare-metal node, Go services fetch JWKS directly from Zitadel's loopback address (`http://127.0.0.1:8085/oauth/v2/keys`) using `oidc.ProviderConfig` with a split issuer/JWKS URL. The `IssuerURL` (`https://auth.<domain>`) validates the JWT `iss` claim; the `JWKSURL` controls where keys are fetched from. A Host-header-overriding HTTP transport sends `Host: auth.<domain>` on JWKS requests so Zitadel's instance router accepts them. This avoids routing JWKS fetches through Caddy (TLS termination, WAF, DNS resolution) and eliminates the need for port-443 and DNS egress rules in per-service nftables. The existing `oifname "lo" tcp dport 8085 accept` rule is sufficient only for the current single-node topology. On a 3-node topology, the JWKS URL and the per-service nftables egress rules both need to become topology-aware; the current loopback-only rule is not sufficient once Zitadel is remote.
 
