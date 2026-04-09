@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireURLFromEnv } from "@forge-metal/web-env";
 import { rentASandboxAuthMiddleware, verificationRunMiddleware } from "./auth";
 
-const SANDBOX_RENTAL_SERVICE_BASE_URL =
-  process.env.SANDBOX_RENTAL_SERVICE_BASE_URL || "http://127.0.0.1:4243";
+const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
 async function sandboxRentalServiceRequest<T>(

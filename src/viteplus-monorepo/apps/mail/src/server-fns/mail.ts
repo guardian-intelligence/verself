@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireURLFromEnv } from "@forge-metal/web-env";
 import { webmailAuthMiddleware } from "./auth";
 
-const MAILBOX_SERVICE_BASE_URL = process.env.MAILBOX_SERVICE_BASE_URL || "http://127.0.0.1:4246";
+const MAILBOX_SERVICE_BASE_URL = requireURLFromEnv("MAILBOX_SERVICE_BASE_URL");
 
 async function mailboxServiceRequest<T>(
   accessToken: string,

@@ -15,6 +15,7 @@
     "@forge-metal/auth-web": "workspace:*",
     "@forge-metal/nitro-plugins": "workspace:*",
     "@forge-metal/ui": "workspace:*",
+    "@forge-metal/web-env": "workspace:*",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
     "@tanstack/db": "catalog:",

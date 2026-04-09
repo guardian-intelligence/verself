@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import postgres from "postgres";
+import { requireURLFromEnv } from "@forge-metal/web-env";
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://letters:letters@127.0.0.1:5432/letters";
+const DATABASE_URL = requireURLFromEnv("DATABASE_URL");
 
 function getDb() {
   return postgres(DATABASE_URL, { max: 5 });

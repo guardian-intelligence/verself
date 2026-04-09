@@ -1,3 +1,5 @@
+import { deriveAppBaseURL, deriveAuthIssuerURL, deriveDemoEmail } from "@forge-metal/web-env";
+
 // Test environment configuration. All values can be overridden via env vars.
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -10,8 +12,8 @@ function requiredEnv(name: string): string {
 }
 
 export const env = {
-  baseURL: process.env.BASE_URL || "https://rentasandbox.anveio.com",
-  testEmail: process.env.TEST_EMAIL || "demo@anveio.com",
+  baseURL: deriveAppBaseURL("rentasandbox"),
+  testEmail: deriveDemoEmail(),
   testPassword: requiredEnv("TEST_PASSWORD"),
   testUsername: process.env.TEST_USERNAME || "demo",
   testFirstName: process.env.TEST_FIRST_NAME || "Demo",
@@ -21,7 +23,7 @@ export const env = {
   // test user via the Zitadel Management API. If not set, the user must
   // already exist (e.g., via `make seed-demo`).
   zitadelAdminPAT: process.env.ZITADEL_ADMIN_PAT || "",
-  zitadelBaseURL: process.env.ZITADEL_BASE_URL || "https://auth.anveio.com",
+  zitadelBaseURL: process.env.ZITADEL_BASE_URL?.trim() || deriveAuthIssuerURL(),
   zitadelProjectName: process.env.ZITADEL_PROJECT_NAME || "sandbox-rental",
 
   verificationRunID: process.env.VERIFICATION_RUN_ID || "",

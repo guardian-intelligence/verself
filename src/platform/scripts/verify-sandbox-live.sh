@@ -73,6 +73,7 @@ verification_repo_url="$(
 
 set +e
 TEST_PASSWORD="${demo_password}" \
+FORGE_METAL_DOMAIN="${domain}" \
 BASE_URL="${BASE_URL:-https://rentasandbox.${domain}}" \
 FORGE_METAL_RECORD_ARTIFACTS="1" \
 VERIFICATION_RUN_ID="${run_id}" \
