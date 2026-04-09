@@ -809,37 +809,7 @@
       no_log: true
       tags: [stalwart]
 
-    - name: Check if legacy agent mailboxes exist
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item }}"
-        method: GET
-        url_username: admin
-        url_password: "{{ stalwart_admin_password }}"
-        force_basic_auth: true
-        status_code: 200
-        return_content: true
-      loop:
-        - bernoulli.agent
-        - dijkstra.agent
-        - lamport.agent
-      register: seed_system_legacy_agent_checks
-      no_log: true
-      tags: [stalwart]
-
-    - name: Delete legacy agent mailboxes
-      ansible.builtin.uri:
-        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.item }}"
-        method: DELETE
-        url_username: admin
-        url_password: "{{ stalwart_admin_password }}"
-        force_basic_auth: true
-        status_code: 200
-      loop: "{{ seed_system_legacy_agent_checks.results }}"
-      when: item.json.error is not defined
-      no_log: true
-      tags: [stalwart]
-
-    - name: Reset mailbox-service projection for reseeded mailboxes
+    - name: Reset mailbox-service projection for seeded mailboxes
       ansible.builtin.command:
         cmd: >-
           {{ fm_bin }}/psql
@@ -850,19 +820,19 @@
           -v ON_ERROR_STOP=1
         stdin: |
           DELETE FROM email_bodies
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM email_mailboxes
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM emails
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM mailboxes
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM threads
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM sync_state
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM mailbox_accounts
-          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          WHERE account_id IN ('ceo', 'agents');
           DELETE FROM mailbox_bindings
           WHERE account_id <> 'ceo'
              OR subject <> '{{ seed_system_users_state.ceo.user_id }}'
