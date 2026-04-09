@@ -1,68 +1,40 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import {
-  createExecutionLogsCollection,
-  createExecutionsCollection,
-} from "~/lib/collections";
+import { createExecutionLogsCollection, createExecutionsCollection } from "~/lib/collections";
 
 export function useExecutionRows(orgId: string) {
   const collection = useMemo(() => createExecutionsCollection(orgId), [orgId]);
-
-  const liveQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ execution: collection })
-        .select(({ execution }) => execution)
-        .orderBy(({ execution }) => execution.created_at, "desc"),
-    [collection],
-  );
-
-  const executions = useMemo(
-    () => sortExecutions(liveQuery.data ?? []),
-    [liveQuery.data],
-  );
+  const liveQuery = useLiveQuery(collection);
+  const executions = useMemo(() => sortExecutions(liveQuery.data), [liveQuery.data]);
 
   return {
     ...liveQuery,
     executions,
-    isEmpty: Array.isArray(liveQuery.data) && liveQuery.data.length === 0,
+    isEmpty: executions.length === 0,
   };
 }
 
 export function useExecutionLogs(attemptId: string) {
-  const collection = useMemo(
-    () => createExecutionLogsCollection(attemptId),
-    [attemptId],
-  );
-
-  const liveQuery = useLiveQuery(
-    (q) =>
-      q
-        .from({ log: collection })
-        .select(({ log }) => log)
-        .orderBy(({ log }) => log.seq, "asc"),
-    [collection],
-  );
-
-  const logText = useMemo(
-    () => buildLogText(liveQuery.data ?? []),
-    [liveQuery.data],
-  );
+  const collection = useMemo(() => createExecutionLogsCollection(attemptId), [attemptId]);
+  const liveQuery = useLiveQuery(collection);
+  const orderedLogs = useMemo(() => sortLogChunks(liveQuery.data), [liveQuery.data]);
+  const logText = useMemo(() => buildLogText(orderedLogs), [orderedLogs]);
 
   return {
     ...liveQuery,
     logText,
-    isEmpty: Array.isArray(liveQuery.data) && liveQuery.data.length === 0,
+    isEmpty: orderedLogs.length === 0,
   };
 }
 
-export function sortExecutions<T extends { created_at: string }>(
-  executions: readonly T[],
-) {
+export function sortExecutions<T extends { created_at: string }>(executions: readonly T[]) {
   return [...executions].sort(
-    (a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
+}
+
+export function sortLogChunks<T extends { seq: number }>(chunks: readonly T[]) {
+  return [...chunks].sort((a, b) => a.seq - b.seq);
 }
 
 export function buildLogText(chunks: readonly { chunk: string }[]) {
