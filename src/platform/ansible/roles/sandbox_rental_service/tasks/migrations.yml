@@ -34,7 +34,8 @@
 
 - name: Apply sandbox-rental PostgreSQL migrations
   when: >-
-    sandbox_rental_service_pg_migrations_remote_hash is failed
+    sandbox_rental_service_force_schema_reset
+    or sandbox_rental_service_pg_migrations_remote_hash is failed
     or (sandbox_rental_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
        != (sandbox_rental_service_pg_migrations_local_hash.stdout.split()[0] | trim)
     or (sandbox_rental_service_pg_table_probe.stdout | trim) == '0'
