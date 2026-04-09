@@ -7,7 +7,7 @@ Wants=postgresql.service
 [Service]
 Type=simple
 ExecStartPre=/usr/bin/podman pull {{ electric_letters_image }}
-ExecStart=/usr/bin/podman run --rm \
+ExecStart=/usr/bin/podman run --rm --replace \
   --name electric-letters \
   --network=host \
   -e DATABASE_URL=postgresql://electric_letters:{{ electric_letters_pg_password }}@{{ services.postgresql.host }}:{{ services.postgresql.port }}/letters \
