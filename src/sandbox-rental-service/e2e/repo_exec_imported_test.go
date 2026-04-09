@@ -50,7 +50,7 @@ func TestSubmitExecutionAPI_ImportedRepoUsesActiveGolden(t *testing.T) {
 		requireWarm: true,
 	})
 	defer env.close()
-	env.runner.commitSHA = env.repoHead
+	env.runner.setCommitSHA(env.repoHead)
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	repo := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
@@ -134,7 +134,7 @@ func TestSubmitExecutionAPI_ImportedRepoRejectsPreparingRepo(t *testing.T) {
 		commitSHA: "",
 	})
 	defer env.close()
-	env.runner.commitSHA = env.repoHead
+	env.runner.setCommitSHA(env.repoHead)
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	if imported.State != "preparing" {

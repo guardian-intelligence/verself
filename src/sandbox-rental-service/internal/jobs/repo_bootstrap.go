@@ -38,6 +38,22 @@ func (s *Service) QueueRepoBootstrap(ctx context.Context, orgID uint64, actorID 
 	}
 
 	triggerReason = firstNonEmpty(strings.TrimSpace(triggerReason), GenerationTriggerBootstrap)
+	if existingGeneration, ok, err := s.GetInProgressGoldenGeneration(ctx, repo.RepoID); err != nil {
+		return nil, err
+	} else if ok {
+		updatedRepo, repoErr := s.GetRepo(ctx, orgID, repoID)
+		if repoErr != nil {
+			return nil, repoErr
+		}
+		return &RepoBootstrapRecord{
+			Repo:          updatedRepo,
+			Generation:    existingGeneration,
+			ExecutionID:   uuidFromPointer(existingGeneration.ExecutionID),
+			AttemptID:     uuidFromPointer(existingGeneration.AttemptID),
+			TriggerReason: existingGeneration.TriggerReason,
+		}, nil
+	}
+
 	generation, err := s.CreateGoldenGeneration(ctx, repoID, CreateGoldenGenerationRequest{
 		RunnerProfileSlug: repo.RunnerProfileSlug,
 		SourceRef:         "refs/heads/" + repo.DefaultBranch,
@@ -82,6 +98,13 @@ func (s *Service) QueueRepoBootstrap(ctx context.Context, orgID uint64, actorID 
 		AttemptID:     attemptID,
 		TriggerReason: triggerReason,
 	}, nil
+}
+
+func uuidFromPointer(value *uuid.UUID) uuid.UUID {
+	if value == nil {
+		return uuid.Nil
+	}
+	return *value
 }
 
 func (s *Service) finalizeWarmGoldenGeneration(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, outcome executionOutcome) error {

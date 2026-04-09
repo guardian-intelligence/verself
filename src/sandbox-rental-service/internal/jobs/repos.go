@@ -232,24 +232,53 @@ func (s *Service) RecordRepoCompatibility(ctx context.Context, repoID uuid.UUID,
 	result = normalizeRepoCompatibilityResult(result)
 	now := time.Now().UTC()
 	summary := normalizedSummary(result.CompatibilitySummary)
-	targetState := RepoStateActionRequired
-	if result.Compatible {
-		targetState = RepoStateWaitingForBootstrap
+	tx, err := s.PG.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		currentState string
+		currentError string
+		activeID     string
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state, last_error, COALESCE(active_golden_generation_id::text, '')
+		FROM repos
+		WHERE repo_id = $1
+		FOR UPDATE
+	`, repoID).Scan(&currentState, &currentError, &activeID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRepoMissing
+		}
+		return nil, fmt.Errorf("lock repo for compatibility update: %w", err)
 	}
 
-	res, err := s.PG.ExecContext(ctx, `
+	hasInProgressGeneration, err := repoHasInProgressGenerationTx(ctx, tx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	targetState := nextRepoStateForCompatibility(currentState, result.Compatible, strings.TrimSpace(activeID) != "", hasInProgressGeneration)
+	lastError := repoLastErrorAfterCompatibility(currentState, currentError, targetState, result.Compatible)
+
+	res, err := tx.ExecContext(ctx, `
 		UPDATE repos
 		SET compatibility_status = $2,
 		    compatibility_summary = $3::jsonb,
 		    last_scanned_sha = $4,
 		    state = $5,
-		    updated_at = $6
+		    last_error = $6,
+		    updated_at = $7
 		WHERE repo_id = $1
-	`, repoID, result.CompatibilityStatus, string(summary), strings.TrimSpace(result.LastScannedSHA), targetState, now)
+	`, repoID, result.CompatibilityStatus, string(summary), strings.TrimSpace(result.LastScannedSHA), targetState, lastError, now)
 	if err != nil {
 		return nil, fmt.Errorf("update repo compatibility: %w", err)
 	}
 	if err := ensureRowsAffected(res, ErrRepoMissing); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -303,6 +332,29 @@ func (s *Service) CreateGoldenGeneration(ctx context.Context, repoID uuid.UUID, 
 	return s.GetGoldenGeneration(ctx, repoID, generationID)
 }
 
+func (s *Service) UpdateRepoImportMetadata(ctx context.Context, repoID uuid.UUID, req ImportRepoRequest) error {
+	req, err := normalizeImportRepoRequest(req)
+	if err != nil {
+		return err
+	}
+	res, err := s.PG.ExecContext(ctx, `
+		UPDATE repos
+		SET provider = $2,
+		    provider_repo_id = $3,
+		    owner = $4,
+		    name = $5,
+		    full_name = $6,
+		    clone_url = $7,
+		    default_branch = $8,
+		    updated_at = $9
+		WHERE repo_id = $1
+	`, repoID, req.Provider, req.ProviderRepoID, req.Owner, req.Name, req.FullName, req.CloneURL, req.DefaultBranch, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("update repo import metadata: %w", err)
+	}
+	return ensureRowsAffected(res, ErrRepoMissing)
+}
+
 func (s *Service) GetGoldenGeneration(ctx context.Context, repoID, generationID uuid.UUID) (*GoldenGenerationRecord, error) {
 	row := s.PG.QueryRowContext(ctx, `
 		SELECT
@@ -335,6 +387,43 @@ func (s *Service) GetGoldenGeneration(ctx context.Context, repoID, generationID 
 		return nil, fmt.Errorf("scan golden generation: %w", err)
 	}
 	return record, nil
+}
+
+func (s *Service) GetInProgressGoldenGeneration(ctx context.Context, repoID uuid.UUID) (*GoldenGenerationRecord, bool, error) {
+	row := s.PG.QueryRowContext(ctx, `
+		SELECT
+			golden_generation_id,
+			repo_id,
+			runner_profile_slug,
+			source_ref,
+			source_sha,
+			state,
+			trigger_reason,
+			COALESCE(execution_id::text, ''),
+			COALESCE(attempt_id::text, ''),
+			orchestrator_job_id,
+			snapshot_ref,
+			activated_at,
+			superseded_at,
+			failure_reason,
+			failure_detail,
+			created_at,
+			updated_at
+		FROM golden_generations
+		WHERE repo_id = $1
+		  AND state IN ($2, $3, $4)
+		ORDER BY created_at DESC, updated_at DESC
+		LIMIT 1
+	`, repoID, GenerationStateQueued, GenerationStateBuilding, GenerationStateSanitizing)
+
+	record, err := scanGoldenGenerationRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("scan in-progress golden generation: %w", err)
+	}
+	return record, true, nil
 }
 
 func (s *Service) ListGoldenGenerations(ctx context.Context, repoID uuid.UUID) ([]GoldenGenerationRecord, error) {
@@ -832,4 +921,48 @@ func ensureRowsAffected(res sql.Result, notFound error) error {
 		return notFound
 	}
 	return nil
+}
+
+func repoHasInProgressGenerationTx(ctx context.Context, tx *sql.Tx, repoID uuid.UUID) (bool, error) {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM golden_generations
+			WHERE repo_id = $1
+			  AND state IN ($2, $3, $4)
+		)
+	`, repoID, GenerationStateQueued, GenerationStateBuilding, GenerationStateSanitizing).Scan(&exists); err != nil {
+		return false, fmt.Errorf("query in-progress golden generation: %w", err)
+	}
+	return exists, nil
+}
+
+func nextRepoStateForCompatibility(currentState string, compatible, hasActiveGolden, hasInProgressGeneration bool) string {
+	if currentState == RepoStateArchived {
+		return RepoStateArchived
+	}
+	if !compatible {
+		return RepoStateActionRequired
+	}
+	if hasInProgressGeneration {
+		return RepoStatePreparing
+	}
+	if hasActiveGolden {
+		if currentState == RepoStateDegraded {
+			return RepoStateDegraded
+		}
+		return RepoStateReady
+	}
+	return RepoStateWaitingForBootstrap
+}
+
+func repoLastErrorAfterCompatibility(currentState, currentError, targetState string, compatible bool) string {
+	if !compatible {
+		return ""
+	}
+	if targetState == RepoStateDegraded && currentState == RepoStateDegraded {
+		return currentError
+	}
+	return ""
 }

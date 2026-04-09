@@ -20,7 +20,7 @@ func TestSubmitExecutionAPI_ForgejoRunnerUsesRepoGolden(t *testing.T) {
 		commitSHA: "",
 	})
 	defer env.close()
-	env.runner.commitSHA = env.repoHead
+	env.runner.setCommitSHA(env.repoHead)
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	repo := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
@@ -51,21 +51,22 @@ func TestSubmitExecutionAPI_ForgejoRunnerUsesRepoGolden(t *testing.T) {
 		t.Fatalf("expected provider_job_id=job-456, got %q", execution.ProviderJobID)
 	}
 
+	lastConfig, lastJob := env.runner.lastInvocation()
 	expectedGoldenZvol := snapshotDatasetToGoldenZvol(activeGeneration.SnapshotRef)
-	if env.runner.lastConfig.GoldenZvol != expectedGoldenZvol {
-		t.Fatalf("expected forgejo runner golden zvol=%s, got %s", expectedGoldenZvol, env.runner.lastConfig.GoldenZvol)
+	if lastConfig.GoldenZvol != expectedGoldenZvol {
+		t.Fatalf("expected forgejo runner golden zvol=%s, got %s", expectedGoldenZvol, lastConfig.GoldenZvol)
 	}
-	if env.runner.lastJob.Env["FORGE_METAL_PROVIDER_RUN_ID"] != "run-123" {
-		t.Fatalf("provider run id env: got %q", env.runner.lastJob.Env["FORGE_METAL_PROVIDER_RUN_ID"])
+	if lastJob.Env["FORGE_METAL_PROVIDER_RUN_ID"] != "run-123" {
+		t.Fatalf("provider run id env: got %q", lastJob.Env["FORGE_METAL_PROVIDER_RUN_ID"])
 	}
-	if env.runner.lastJob.Env["FORGE_METAL_PROVIDER_JOB_ID"] != "job-456" {
-		t.Fatalf("provider job id env: got %q", env.runner.lastJob.Env["FORGE_METAL_PROVIDER_JOB_ID"])
+	if lastJob.Env["FORGE_METAL_PROVIDER_JOB_ID"] != "job-456" {
+		t.Fatalf("provider job id env: got %q", lastJob.Env["FORGE_METAL_PROVIDER_JOB_ID"])
 	}
-	if env.runner.lastJob.Env["FORGEJO_RUNNER_LABEL"] != "forge-metal" {
-		t.Fatalf("runner label env: got %q", env.runner.lastJob.Env["FORGEJO_RUNNER_LABEL"])
+	if lastJob.Env["FORGEJO_RUNNER_LABEL"] != "forge-metal" {
+		t.Fatalf("runner label env: got %q", lastJob.Env["FORGEJO_RUNNER_LABEL"])
 	}
-	if !strings.Contains(strings.Join(env.runner.lastJob.RunCommand, " "), "forgejo-runner") {
-		t.Fatalf("expected forgejo-runner command, got %q", strings.Join(env.runner.lastJob.RunCommand, " "))
+	if !strings.Contains(strings.Join(lastJob.RunCommand, " "), "forgejo-runner") {
+		t.Fatalf("expected forgejo-runner command, got %q", strings.Join(lastJob.RunCommand, " "))
 	}
 
 	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, submit.AttemptID)
