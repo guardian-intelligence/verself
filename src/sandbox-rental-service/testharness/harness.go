@@ -26,21 +26,27 @@ import (
 // this interface also satisfies the internal one.
 type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	RunWithConfig(ctx context.Context, cfg vmorchestrator.Config, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
 	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
 	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
 // Config holds all dependencies for a test sandbox-rental-service.
 type Config struct {
-	PG            *sql.DB
-	CH            driver.Conn
-	CHDatabase    string
-	Runner        Runner
-	Billing       *billingclient.ServiceClient
-	BillingVCPUs  int
-	BillingMemMiB int
-	AuthCfg       auth.Config
-	Logger        *slog.Logger
+	PG                        *sql.DB
+	CH                        driver.Conn
+	CHDatabase                string
+	Runner                    Runner
+	Billing                   *billingclient.ServiceClient
+	BillingVCPUs              int
+	BillingMemMiB             int
+	ForgejoURL                string
+	ForgejoRunnerLabel        string
+	ForgejoRunnerToken        string
+	ForgejoRunnerBinaryURL    string
+	ForgejoRunnerBinarySHA256 string
+	AuthCfg                   auth.Config
+	Logger                    *slog.Logger
 }
 
 // Server is an in-process sandbox-rental-service for e2e tests.
@@ -52,14 +58,19 @@ type Server struct {
 // middleware and all routes registered.
 func NewServer(cfg Config) *Server {
 	svc := &jobs.Service{
-		PG:            cfg.PG,
-		CH:            cfg.CH,
-		CHDatabase:    cfg.CHDatabase,
-		Orchestrator:  cfg.Runner,
-		Billing:       cfg.Billing,
-		BillingVCPUs:  cfg.BillingVCPUs,
-		BillingMemMiB: cfg.BillingMemMiB,
-		Logger:        cfg.Logger,
+		PG:                        cfg.PG,
+		CH:                        cfg.CH,
+		CHDatabase:                cfg.CHDatabase,
+		Orchestrator:              cfg.Runner,
+		Billing:                   cfg.Billing,
+		BillingVCPUs:              cfg.BillingVCPUs,
+		BillingMemMiB:             cfg.BillingMemMiB,
+		ForgejoURL:                cfg.ForgejoURL,
+		ForgejoRunnerLabel:        cfg.ForgejoRunnerLabel,
+		ForgejoRunnerToken:        cfg.ForgejoRunnerToken,
+		ForgejoRunnerBinaryURL:    cfg.ForgejoRunnerBinaryURL,
+		ForgejoRunnerBinarySHA256: cfg.ForgejoRunnerBinarySHA256,
+		Logger:                    cfg.Logger,
 	}
 
 	mux := http.NewServeMux()

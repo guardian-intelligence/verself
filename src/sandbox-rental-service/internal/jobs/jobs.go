@@ -27,9 +27,10 @@ import (
 var tracer = otel.Tracer("sandbox-rental-service")
 
 const (
-	KindDirect     = "direct"
-	KindRepoExec   = "repo_exec"
-	KindWarmGolden = "warm_golden"
+	KindDirect        = "direct"
+	KindRepoExec      = "repo_exec"
+	KindWarmGolden    = "warm_golden"
+	KindForgejoRunner = "forgejo_runner"
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -61,6 +62,7 @@ var (
 // workloads. Production uses *vmorchestrator.Client; tests use a fake.
 type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	RunWithConfig(ctx context.Context, cfg vmorchestrator.Config, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
 	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
 	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
@@ -82,6 +84,7 @@ type SubmitRequest struct {
 	ProviderJobID   string `json:"provider_job_id,omitempty"`
 
 	GoldenGenerationID *uuid.UUID `json:"-"`
+	GoldenSnapshotRef  string     `json:"-"`
 }
 
 type ExecutionRecord struct {
@@ -185,14 +188,19 @@ type JobEventRow struct {
 
 // Service manages execution submission, billing, and state transitions.
 type Service struct {
-	PG            *sql.DB
-	CH            driver.Conn
-	CHDatabase    string
-	Orchestrator  Runner
-	Billing       *billingclient.ServiceClient
-	BillingVCPUs  int
-	BillingMemMiB int
-	Logger        *slog.Logger
+	PG                        *sql.DB
+	CH                        driver.Conn
+	CHDatabase                string
+	Orchestrator              Runner
+	Billing                   *billingclient.ServiceClient
+	BillingVCPUs              int
+	BillingMemMiB             int
+	ForgejoURL                string
+	ForgejoRunnerLabel        string
+	ForgejoRunnerToken        string
+	ForgejoRunnerBinaryURL    string
+	ForgejoRunnerBinarySHA256 string
+	Logger                    *slog.Logger
 }
 
 type executionSnapshot struct {
@@ -362,6 +370,8 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		outcome, err = s.runRepoExec(runCtx, executionID, attemptID, req)
 	case KindWarmGolden:
 		outcome, err = s.runWarmGolden(runCtx, executionID, attemptID, req)
+	case KindForgejoRunner:
+		outcome, err = s.runForgejoRunner(runCtx, executionID, attemptID, req)
 	default:
 		err = fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
@@ -1321,6 +1331,14 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 			return SubmitRequest{}, fmt.Errorf("repo is required for warm_golden")
 		}
 		return req, nil
+	case KindForgejoRunner:
+		if req.RepoID == "" && req.RepoURL == "" {
+			return SubmitRequest{}, fmt.Errorf("repo_id or repo_url is required for forgejo_runner")
+		}
+		if req.ProviderRunID == "" {
+			return SubmitRequest{}, fmt.Errorf("provider_run_id is required for forgejo_runner")
+		}
+		return req, nil
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
@@ -1358,9 +1376,30 @@ func (s *Service) hydrateImportedRepoRequest(ctx context.Context, orgID uint64, 
 			return SubmitRequest{}, ErrRepoNotReady
 		}
 		req.GoldenGenerationID = repo.ActiveGoldenGenerationID
+		generation, err := s.GetGoldenGeneration(ctx, repo.RepoID, *repo.ActiveGoldenGenerationID)
+		if err != nil {
+			return SubmitRequest{}, err
+		}
+		req.GoldenSnapshotRef = generation.SnapshotRef
 	case KindWarmGolden:
 		// Warm builds are the mechanism that moves a compatible repo toward
 		// ready. Do not require an active generation here.
+	case KindForgejoRunner:
+		if repo.State != RepoStateReady && repo.State != RepoStateDegraded {
+			return SubmitRequest{}, ErrRepoNotReady
+		}
+		if repo.ActiveGoldenGenerationID == nil {
+			return SubmitRequest{}, ErrRepoNotReady
+		}
+		generation, err := s.GetGoldenGeneration(ctx, repo.RepoID, *repo.ActiveGoldenGenerationID)
+		if err != nil {
+			return SubmitRequest{}, err
+		}
+		if strings.TrimSpace(generation.SnapshotRef) == "" {
+			return SubmitRequest{}, ErrRepoNotReady
+		}
+		req.GoldenGenerationID = repo.ActiveGoldenGenerationID
+		req.GoldenSnapshotRef = generation.SnapshotRef
 	}
 
 	return req, nil

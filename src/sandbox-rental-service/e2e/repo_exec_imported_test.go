@@ -20,6 +20,7 @@ type attemptView struct {
 	ExitCode       int    `json:"exit_code"`
 	DurationMs     int64  `json:"duration_ms"`
 	GoldenSnapshot string `json:"golden_snapshot"`
+	RunnerName     string `json:"runner_name"`
 }
 
 type executionView struct {
@@ -28,6 +29,8 @@ type executionView struct {
 	Kind               string      `json:"kind"`
 	RepoID             string      `json:"repo_id"`
 	GoldenGenerationID string      `json:"golden_generation_id"`
+	ProviderRunID      string      `json:"provider_run_id"`
+	ProviderJobID      string      `json:"provider_job_id"`
 	Repo               string      `json:"repo"`
 	RepoURL            string      `json:"repo_url"`
 	Ref                string      `json:"ref"`

@@ -267,15 +267,20 @@ jobs:
 		t.Fatalf("open rental clickhouse conn: %v", err)
 	}
 	rentalServer := rentaltestharness.NewServer(rentaltestharness.Config{
-		PG:            pg.rentalDB,
-		CH:            rentalCHConn,
-		CHDatabase:    "forge_metal",
-		Runner:        runner,
-		Billing:       billingHTTPClient,
-		BillingVCPUs:  2,
-		BillingMemMiB: 2048,
-		AuthCfg:       authProvider.authConfig(testAudience),
-		Logger:        logger,
+		PG:                        pg.rentalDB,
+		CH:                        rentalCHConn,
+		CHDatabase:                "forge_metal",
+		Runner:                    runner,
+		Billing:                   billingHTTPClient,
+		BillingVCPUs:              2,
+		BillingMemMiB:             2048,
+		ForgejoURL:                "https://git.example.invalid",
+		ForgejoRunnerLabel:        "forge-metal",
+		ForgejoRunnerToken:        "runner-registration-token",
+		ForgejoRunnerBinaryURL:    "https://downloads.example.invalid/forgejo-runner",
+		ForgejoRunnerBinarySHA256: "90f0a8ea246748f2a89b03ba5f0688491ada6dc34fc01f6d9a33a7a891a38018",
+		AuthCfg:                   authProvider.authConfig(testAudience),
+		Logger:                    logger,
 	})
 
 	token := authProvider.signToken(t, jwt.MapClaims{
