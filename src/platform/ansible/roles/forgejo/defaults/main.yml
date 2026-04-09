@@ -12,8 +12,17 @@ forgejo_domain: "{{ forgejo_subdomain }}.{{ forge_metal_domain }}"
 # Forgejo runner does not support a true unbounded concurrency mode.
 forgejo_runner_capacity:
 
-# Admin user (seeded on first run via CLI)
-# Username and password generated at deploy time if not set.
-# forgejo_admin_user: ""
-# forgejo_admin_password: ""
-# forgejo_admin_email: ""
+# Zitadel OIDC integration
+forgejo_auth_project_name: forgejo
+forgejo_auth_source_name: Zitadel
+forgejo_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+forgejo_auth_claim_action_name: forgejo-groups-claim
+forgejo_auth_group_claim_name: forgejo_groups
+forgejo_auth_admin_group: forgejo_admin
+
+# Technical automation user for fixture seeding and repository bootstrap.
+forgejo_automation_username: forgejo-automation
+forgejo_automation_full_name: Forgejo Automation
+forgejo_automation_email: "forgejo-automation@{{ forge_metal_domain }}"
+forgejo_automation_token_name: forge-metal-automation
+forgejo_automation_token_scopes: all

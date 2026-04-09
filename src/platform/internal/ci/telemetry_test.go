@@ -12,7 +12,7 @@ import (
 func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 	input := emitExecTelemetryInput{
 		Request: ExecRequest{
-			Repo: "forge-admin-usj5/next-bun-monorepo",
+			Repo: "forgejo-automation/next-bun-monorepo",
 			Ref:  "refs/pull/82/head",
 		},
 		RunID: "fixtures-pass-20260401-063752",
@@ -126,8 +126,8 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 	input := emitWarmTelemetryInput{
 		Request: WarmRequest{
-			Repo:          "forge-admin-usj5/next-bun-monorepo",
-			RepoURL:       "http://127.0.0.1:3000/forge-admin-usj5/next-bun-monorepo.git",
+			Repo:          "forgejo-automation/next-bun-monorepo",
+			RepoURL:       "http://127.0.0.1:3000/forgejo-automation/next-bun-monorepo.git",
 			DefaultBranch: "main",
 			RunID:         "fixtures-pass-20260401-072318",
 		},

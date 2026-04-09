@@ -17,6 +17,34 @@ func (s *Service) ResolveBoundAccount(ctx context.Context, subject string) (stri
 	return s.store.ResolveBinding(ctx, subject)
 }
 
+func (s *Service) ListAccounts(ctx context.Context) ([]mailstore.Account, error) {
+	if s.store == nil {
+		return nil, fmt.Errorf("mailstore is not configured")
+	}
+	return s.store.ListAccounts(ctx)
+}
+
+func (s *Service) ListMailboxes(ctx context.Context, accountID string) ([]mailstore.Mailbox, error) {
+	if s.store == nil {
+		return nil, fmt.Errorf("mailstore is not configured")
+	}
+	return s.store.ListMailboxes(ctx, accountID)
+}
+
+func (s *Service) ListEmails(ctx context.Context, accountID, mailboxID string, limit int) ([]mailstore.Email, error) {
+	if s.store == nil {
+		return nil, fmt.Errorf("mailstore is not configured")
+	}
+	return s.store.ListEmails(ctx, accountID, mailboxID, limit)
+}
+
+func (s *Service) GetEmail(ctx context.Context, accountID, emailID string) (mailstore.Email, error) {
+	if s.store == nil {
+		return mailstore.Email{}, fmt.Errorf("mailstore is not configured")
+	}
+	return s.store.GetEmail(ctx, accountID, emailID)
+}
+
 func (s *Service) SetEmailSeen(ctx context.Context, accountID, emailID string, seen bool) error {
 	current, client, account, err := s.currentEmail(ctx, accountID, emailID)
 	if err != nil {

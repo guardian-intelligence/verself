@@ -71,6 +71,18 @@
     that: letters_project_id | default('', true) | length > 0
     fail_msg: letters_project_id could not be resolved from Zitadel.
 
+- name: Ensure letters project roles exist
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ letters_zitadel_pat }}"
+    zitadel_project_roles_project_id: "{{ letters_project_id }}"
+    zitadel_project_roles_definitions:
+      - key: letters_admin
+        display_name: Letters Admin
+        group: letters
+  when: letters_project_id | default('', true) | length > 0
+
 - name: Search for existing letters app in project
   ansible.builtin.uri:
     url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ letters_project_id }}/apps/_search"

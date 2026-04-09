@@ -38,6 +38,21 @@
     rent_a_sandbox_project_id: "{{ rent_a_sandbox_project_search.json.result[0].id }}"
   when: rent_a_sandbox_project_search.json.result is defined and rent_a_sandbox_project_search.json.result | length > 0
 
+- name: Ensure sandbox-rental project roles exist
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ rent_a_sandbox_zitadel_pat }}"
+    zitadel_project_roles_project_id: "{{ rent_a_sandbox_project_id }}"
+    zitadel_project_roles_definitions:
+      - key: org_admin
+        display_name: Org Admin
+        group: sandbox
+      - key: org_member
+        display_name: Org Member
+        group: sandbox
+  when: rent_a_sandbox_project_id is defined
+
 - name: Search for existing rent-a-sandbox app in project
   ansible.builtin.uri:
     url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ rent_a_sandbox_project_id }}/apps/_search"

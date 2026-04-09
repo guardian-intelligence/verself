@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
-import { createSubscriptionSession } from "~/server-fns/api";
+import { useCreateSubscriptionSessionMutation } from "~/features/billing/mutations";
 import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/billing/subscribe")({
@@ -30,16 +29,7 @@ const PLANS = [
 ];
 
 function SubscribePage() {
-  const mutation = useMutation({
-    mutationFn: (planId: string) =>
-      createSubscriptionSession({
-        data: {
-        plan_id: planId,
-        cadence: "monthly",
-        success_url: `${window.location.origin}/billing?subscribed=true`,
-        cancel_url: `${window.location.origin}/billing/subscribe`,
-        },
-      }),
+  const mutation = useCreateSubscriptionSessionMutation({
     onSuccess: (data) => {
       window.location.href = data.url;
     },
@@ -71,7 +61,7 @@ function SubscribePage() {
         ))}
       </div>
 
-      {mutation.error && <p className="text-sm text-destructive">{mutation.error.message}</p>}
+      {mutation.error ? <p className="text-sm text-destructive">{mutation.error.message}</p> : null}
     </div>
   );
 }

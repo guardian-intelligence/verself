@@ -1,0 +1,1265 @@
+---
+# Seed the default platform tenant plus a sample customer tenant.
+#
+# Creates:
+# - platform operator user: ceo@<domain>
+# - sample customer org: Acme Corp
+# - sample customer users: acme-admin@<domain>, acme-user@<domain>
+# - billing seed for both platform + Acme orgs
+# - Stalwart mailboxes + CEO mailbox binding
+# - optional dev OIDC apps and billing auth verification
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/seed-system.yml
+#
+# Cherry-pick:
+#   --tags identity    Create/update orgs, users, and project grants only
+#   --tags billing     Seed billing catalog + credits only
+#   --tags stalwart    Seed Stalwart mailboxes + bindings
+#   --tags dev-oidc    Create dev OIDC apps for local frontend development
+#   --tags verify      Verify billing auth integration only
+#
+# Password overrides:
+#   -e 'seed_system_password_overrides={"ceo":"...", "acme_admin":"...", "acme_user":"..."}'
+
+- name: Seed platform and sample customer tenants
+  hosts: infra
+  serial: 1
+  become: true
+  gather_facts: false
+  vars:
+    seed_system_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
+    seed_system_zitadel_host: "auth.{{ forge_metal_domain }}"
+
+    seed_system_password_overrides: {}
+    seed_system_credstore_dir: /etc/credstore/seed-system
+
+    seed_system_platform_org_name: forge-metal
+    seed_system_acme_org_name: "Acme Corp"
+
+    seed_system_sandbox_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
+    seed_system_letters_project_name: "{{ letters_auth_project_name | default('letters') }}"
+    seed_system_forgejo_project_name: "{{ forgejo_auth_project_name | default('forgejo') }}"
+
+    seed_system_users:
+      ceo:
+        key: ceo
+        org_key: platform
+        email: "ceo@{{ forge_metal_domain }}"
+        username: ceo
+        first_name: CEO
+        last_name: Operator
+        password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"
+      acme_admin:
+        key: acme_admin
+        org_key: acme
+        email: "acme-admin@{{ forge_metal_domain }}"
+        username: acme-admin
+        first_name: Acme
+        last_name: Admin
+        password_credstore_path: "{{ seed_system_credstore_dir }}/acme-admin-password"
+      acme_user:
+        key: acme_user
+        org_key: acme
+        email: "acme-user@{{ forge_metal_domain }}"
+        username: acme-user
+        first_name: Acme
+        last_name: User
+        password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"
+
+    seed_system_product_id: sandbox
+    seed_system_product_display_name: Sandbox
+    seed_system_meter_unit: vcpu_second
+    seed_system_billing_model: metered
+    seed_system_plan_id: sandbox-default
+    seed_system_plan_display_name: Sandbox PAYG
+    seed_system_unit_rates:
+      vcpu: 325
+      gib: 40
+    seed_system_overage_unit_rates: {}
+    seed_system_quotas: {}
+    seed_system_platform_target_prepaid_units: 1000000000000
+    seed_system_customer_target_prepaid_units: 5000000
+    seed_system_platform_promotion_name: platform-showback
+    seed_system_platform_promotion_percent: 100
+    seed_system_expires_after: 8760h
+    seed_system_sandbox_env_path: /etc/forge-metal/sandbox-rental.env
+    seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
+    seed_system_helper_remote_path: /tmp/billing-seed
+
+    seed_system_stalwart_disabled_permissions:
+      - email-send
+      - jmap-sieve-script-set
+      - jmap-sieve-script-validate
+      - sieve-put-script
+      - sieve-set-active
+
+  tasks:
+    - name: Wait for Zitadel to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.zitadel.host }}"
+        port: "{{ services.zitadel.port }}"
+        timeout: 60
+      tags: [identity, billing, stalwart, verify, dev-oidc]
+
+    - name: Wait for billing-service to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.billing.host }}"
+        port: "{{ services.billing.port }}"
+        timeout: 60
+      tags: [billing, verify]
+
+    - name: Read Zitadel admin PAT
+      ansible.builtin.slurp:
+        src: /etc/zitadel/admin.pat
+      register: seed_system_admin_pat_raw
+      no_log: true
+      tags: [identity, billing, stalwart, verify, dev-oidc]
+
+    - name: Set Zitadel admin PAT fact
+      ansible.builtin.set_fact:
+        seed_system_admin_pat: "{{ seed_system_admin_pat_raw.content | b64decode | trim }}"
+      no_log: true
+      tags: [identity, billing, stalwart, verify, dev-oidc]
+
+    - name: Find sandbox-rental project
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_system_sandbox_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_system_sandbox_project_search
+      no_log: true
+      tags: [identity, billing, verify, dev-oidc]
+
+    - name: Set sandbox-rental project ID fact
+      ansible.builtin.set_fact:
+        seed_system_sandbox_project_id: "{{ seed_system_sandbox_project_search.json.result[0].id }}"
+      when: seed_system_sandbox_project_search.json.result is defined and seed_system_sandbox_project_search.json.result | length > 0
+      tags: [identity, billing, verify, dev-oidc]
+
+    - name: Assert sandbox-rental project exists
+      ansible.builtin.assert:
+        that: seed_system_sandbox_project_id is defined
+        fail_msg: "Sandbox-rental Zitadel project '{{ seed_system_sandbox_project_name }}' not found. Run the full deploy first."
+      tags: [identity, billing, verify, dev-oidc]
+
+    - name: Find letters project
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_system_letters_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_system_letters_project_search
+      no_log: true
+      tags: [identity]
+
+    - name: Set letters project ID fact
+      ansible.builtin.set_fact:
+        seed_system_letters_project_id: "{{ seed_system_letters_project_search.json.result[0].id }}"
+      when: seed_system_letters_project_search.json.result is defined and seed_system_letters_project_search.json.result | length > 0
+      tags: [identity]
+
+    - name: Assert letters project exists
+      ansible.builtin.assert:
+        that: seed_system_letters_project_id is defined
+        fail_msg: "Letters Zitadel project '{{ seed_system_letters_project_name }}' not found. Run the full deploy first."
+      tags: [identity]
+
+    - name: Find Forgejo project
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_system_forgejo_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_system_forgejo_project_search
+      no_log: true
+      tags: [identity]
+
+    - name: Set Forgejo project ID fact
+      ansible.builtin.set_fact:
+        seed_system_forgejo_project_id: "{{ seed_system_forgejo_project_search.json.result[0].id }}"
+      when: seed_system_forgejo_project_search.json.result is defined and seed_system_forgejo_project_search.json.result | length > 0
+      tags: [identity]
+
+    - name: Assert Forgejo project exists
+      ansible.builtin.assert:
+        that: seed_system_forgejo_project_id is defined
+        fail_msg: "Forgejo Zitadel project '{{ seed_system_forgejo_project_name }}' not found. Run the full deploy first."
+      tags: [identity]
+
+    - name: List existing organizations
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/v2/organizations/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body: {}
+        return_content: true
+      register: seed_system_org_search
+      no_log: true
+      tags: [identity, billing]
+
+    - name: Set organization search facts
+      ansible.builtin.set_fact:
+        seed_system_platform_org_existing: >-
+          {{
+            (
+              seed_system_org_search.json.result
+              | default([])
+              | selectattr('name', 'equalto', seed_system_platform_org_name)
+              | list
+              | first
+            ) | default({})
+          }}
+        seed_system_acme_org_existing: >-
+          {{
+            (
+              seed_system_org_search.json.result
+              | default([])
+              | selectattr('name', 'equalto', seed_system_acme_org_name)
+              | list
+              | first
+            ) | default({})
+          }}
+      tags: [identity, billing]
+
+    - name: Assert platform organization exists
+      ansible.builtin.assert:
+        that: seed_system_platform_org_existing.id | default('', true) | length > 0
+        fail_msg: >-
+          Platform organization {{ seed_system_platform_org_name }} was not found
+          in Zitadel. Re-run the full deploy or reset Zitadel bootstrap first.
+      tags: [identity, billing]
+
+    - name: Create Acme organization
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/v2/organizations"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          name: "{{ seed_system_acme_org_name }}"
+        status_code: [200, 201]
+        return_content: true
+      register: seed_system_acme_org_created
+      when: seed_system_acme_org_existing == {}
+      no_log: true
+      tags: [identity, billing]
+
+    - name: Refresh organizations after Acme creation
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/v2/organizations/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body: {}
+        return_content: true
+      register: seed_system_org_search_final
+      no_log: true
+      tags: [identity, billing]
+
+    - name: Set organization facts
+      ansible.builtin.set_fact:
+        seed_system_orgs:
+          platform:
+            organization_id: >-
+              {{
+                (
+                  seed_system_org_search_final.json.result
+                  | default([])
+                  | selectattr('name', 'equalto', seed_system_platform_org_name)
+                  | map(attribute='id')
+                  | list
+                  | first
+                )
+              }}
+            name: "{{ seed_system_platform_org_name }}"
+          acme:
+            organization_id: >-
+              {{
+                (
+                  seed_system_org_search_final.json.result
+                  | default([])
+                  | selectattr('name', 'equalto', seed_system_acme_org_name)
+                  | map(attribute='id')
+                  | list
+                  | first
+                )
+              }}
+            name: "{{ seed_system_acme_org_name }}"
+      tags: [identity, billing]
+
+    - name: Assert organization IDs are set
+      ansible.builtin.assert:
+        that:
+          - seed_system_orgs.platform.organization_id | default('', true) | length > 0
+          - seed_system_orgs.acme.organization_id | default('', true) | length > 0
+        fail_msg: "Platform or Acme organization could not be resolved from Zitadel."
+      tags: [identity, billing]
+
+    - name: Create seed-system credstore directory
+      ansible.builtin.file:
+        path: "{{ seed_system_credstore_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      tags: [identity]
+
+    - name: Seed human users
+      ansible.builtin.include_tasks: tasks/seed-human-user.yml
+      loop: "{{ seed_system_users | dict2items | map(attribute='value') | list }}"
+      loop_control:
+        loop_var: seed_system_user
+        label: "{{ seed_system_user.email }}"
+      tags: [identity]
+
+    - name: Ensure CEO is platform organization owner
+      ansible.builtin.uri:
+        url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+          Connect-Protocol-Version: "1"
+        body_format: json
+        body:
+          userId: "{{ seed_system_users_state.ceo.user_id }}"
+          resource:
+            organizationId: "{{ seed_system_orgs.platform.organization_id }}"
+          roles:
+            - ORG_OWNER
+        status_code: [200, 409]
+      no_log: true
+      tags: [identity]
+
+    - name: Ensure Acme admin is Acme organization owner
+      ansible.builtin.uri:
+        url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+          Connect-Protocol-Version: "1"
+        body_format: json
+        body:
+          userId: "{{ seed_system_users_state.acme_admin.user_id }}"
+          resource:
+            organizationId: "{{ seed_system_orgs.acme.organization_id }}"
+          roles:
+            - ORG_OWNER
+        status_code: [200, 409]
+      no_log: true
+      tags: [identity]
+
+    - name: Grant seeded users project access
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/users/{{ seed_system_users_state[item.user_key].user_id }}/grants"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          projectId: "{{ item.project_id }}"
+          roleKeys: "{{ item.role_keys }}"
+        status_code: [200, 409]
+      loop:
+        - user_key: ceo
+          project_id: "{{ seed_system_sandbox_project_id }}"
+          role_keys: [org_admin]
+        - user_key: acme_admin
+          project_id: "{{ seed_system_sandbox_project_id }}"
+          role_keys: [org_admin]
+        - user_key: acme_user
+          project_id: "{{ seed_system_sandbox_project_id }}"
+          role_keys: [org_member]
+        - user_key: ceo
+          project_id: "{{ seed_system_letters_project_id }}"
+          role_keys: [letters_admin]
+        - user_key: ceo
+          project_id: "{{ seed_system_forgejo_project_id }}"
+          role_keys: [forgejo_admin]
+      loop_control:
+        label: "{{ item.user_key }} -> {{ item.project_id }}"
+      no_log: true
+      tags: [identity]
+
+    - name: Search for retired users
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/v2/users"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - emailQuery:
+                emailAddress: "{{ item }}"
+        return_content: true
+      loop:
+        - "demo@{{ forge_metal_domain }}"
+        - "admin@{{ forge_metal_domain }}"
+      register: seed_system_retired_user_search
+      no_log: true
+      tags: [identity, stalwart]
+
+    - name: Delete retired human users
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/v2/users/{{ (item.json.result | default([]) | first).userId }}"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        status_code: [200, 404]
+      loop: "{{ seed_system_retired_user_search.results }}"
+      when:
+        - (item.json.result | default([]) | length) > 0
+      no_log: true
+      tags: [identity]
+
+    - name: Remove retired seed-demo credstore directory
+      ansible.builtin.file:
+        path: /etc/credstore/seed-demo
+        state: absent
+      tags: [identity]
+
+    - name: Print seeded identities
+      ansible.builtin.debug:
+        msg:
+          - "Seed identities ready for {{ seed_system_zitadel_host }}"
+          - "  Platform org: {{ seed_system_orgs.platform.organization_id }}"
+          - "  CEO:          {{ seed_system_users_state.ceo.email }} ({{ seed_system_users_state.ceo.password_credstore_path }})"
+          - "  Acme org:     {{ seed_system_orgs.acme.organization_id }}"
+          - "  Acme admin:   {{ seed_system_users_state.acme_admin.email }} ({{ seed_system_users_state.acme_admin.password_credstore_path }})"
+          - "  Acme user:    {{ seed_system_users_state.acme_user.email }} ({{ seed_system_users_state.acme_user.password_credstore_path }})"
+          - "  Note: current auth/runtime still assumes one org per user; multi-org membership and org switching are not fully baked yet."
+      tags: [identity]
+
+    - name: Build billing seed helper on controller
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -o
+          - "{{ seed_system_helper_local_path }}"
+          - ./src/billing-service/cmd/billing-seed
+      args:
+        chdir: "{{ playbook_dir }}/../../../.."
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      tags: [billing]
+
+    - name: Upload billing seed helper
+      ansible.builtin.copy:
+        src: "{{ seed_system_helper_local_path }}"
+        dest: "{{ seed_system_helper_remote_path }}"
+        mode: "0755"
+      tags: [billing]
+
+    - name: Run billing seed helper for platform and Acme
+      ansible.builtin.command:
+        argv:
+          - "{{ seed_system_helper_remote_path }}"
+          - --pg-dsn-file
+          - /etc/credstore/billing/pg-dsn
+          - --tb-address
+          - "{{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}"
+          - --tb-cluster-id
+          - "{{ billing_service_tigerbeetle_cluster_id | default(0, true) | string }}"
+          - --org-id
+          - "{{ item.org_id }}"
+          - --org-name
+          - "{{ item.org_name }}"
+          - --org-trust-tier
+          - "{{ item.org_trust_tier }}"
+          - --product-id
+          - "{{ seed_system_product_id }}"
+          - --product-display-name
+          - "{{ seed_system_product_display_name }}"
+          - --meter-unit
+          - "{{ seed_system_meter_unit }}"
+          - --billing-model
+          - "{{ seed_system_billing_model }}"
+          - --plan-id
+          - "{{ seed_system_plan_id }}"
+          - --plan-display-name
+          - "{{ seed_system_plan_display_name }}"
+          - --unit-rates-json
+          - "{{ seed_system_unit_rates | to_json }}"
+          - --overage-unit-rates-json
+          - "{{ seed_system_overage_unit_rates | to_json }}"
+          - --quotas-json
+          - "{{ seed_system_quotas | to_json }}"
+          - --target-prepaid-units
+          - "{{ item.target_prepaid_units | string }}"
+          - --prepaid-source
+          - "{{ item.prepaid_source }}"
+          - --promotion-name
+          - "{{ item.promotion_name }}"
+          - --promotion-percent
+          - "{{ item.promotion_percent | string }}"
+          - --expires-after
+          - "{{ seed_system_expires_after }}"
+      loop:
+        - key: platform
+          org_id: "{{ seed_system_orgs.platform.organization_id }}"
+          org_name: "{{ seed_system_orgs.platform.name }}"
+          org_trust_tier: platform
+          target_prepaid_units: "{{ seed_system_platform_target_prepaid_units }}"
+          prepaid_source: promo
+          promotion_name: "{{ seed_system_platform_promotion_name }}"
+          promotion_percent: "{{ seed_system_platform_promotion_percent }}"
+        - key: acme
+          org_id: "{{ seed_system_orgs.acme.organization_id }}"
+          org_name: "{{ seed_system_orgs.acme.name }}"
+          org_trust_tier: established
+          target_prepaid_units: "{{ seed_system_customer_target_prepaid_units }}"
+          prepaid_source: purchase
+          promotion_name: ""
+          promotion_percent: 0
+      loop_control:
+        label: "{{ item.key }}"
+      register: seed_system_billing_result_raw
+      changed_when: >-
+        (
+          seed_system_billing_result_raw.results
+          | map(attribute='stdout')
+          | map('from_json')
+          | map(attribute='deposited_units')
+          | map('int')
+          | sum
+        ) > 0
+      tags: [billing]
+
+    - name: Parse billing seed results
+      ansible.builtin.set_fact:
+        seed_system_billing_results: >-
+          {{
+            dict(
+              seed_system_billing_result_raw.results
+              | map(attribute='item.key')
+              | zip(
+                  seed_system_billing_result_raw.results
+                  | map(attribute='stdout')
+                  | map('from_json')
+                )
+            )
+          }}
+      tags: [billing]
+
+    - name: Print billing seed summary
+      ansible.builtin.debug:
+        msg:
+          - "Platform billing seeded for {{ seed_system_billing_results.platform.org_id }}"
+          - "  Prepaid after: {{ seed_system_billing_results.platform.prepaid_after }}"
+          - "  Promotion:     {{ seed_system_platform_promotion_name }} ({{ seed_system_platform_promotion_percent }}% off)"
+          - "Acme billing seeded for {{ seed_system_billing_results.acme.org_id }}"
+          - "  Prepaid after: {{ seed_system_billing_results.acme.prepaid_after }}"
+      tags: [billing]
+
+    - name: Ensure forge-metal config directory exists for sandbox webhook env
+      ansible.builtin.file:
+        path: "{{ seed_system_sandbox_env_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: [billing]
+
+    - name: Check existing sandbox webhook env file
+      ansible.builtin.stat:
+        path: "{{ seed_system_sandbox_env_path }}"
+      register: seed_system_sandbox_env_file
+      no_log: true
+      tags: [billing]
+
+    - name: Read existing sandbox webhook env file
+      ansible.builtin.slurp:
+        src: "{{ seed_system_sandbox_env_path }}"
+      register: seed_system_sandbox_env_raw
+      when: seed_system_sandbox_env_file.stat.exists
+      no_log: true
+      tags: [billing]
+
+    - name: Extract existing sandbox webhook secret
+      ansible.builtin.set_fact:
+        seed_system_sandbox_webhook_secret: >-
+          {{
+            (
+              seed_system_sandbox_env_raw.content | b64decode
+              | regex_search('^SANDBOX_FORGEJO_WEBHOOK_SECRET=(.+)$', '\\1', multiline=True)
+              | first
+            ) | default('', true) | trim
+          }}
+      when: seed_system_sandbox_env_file.stat.exists
+      no_log: true
+      tags: [billing]
+
+    - name: Generate sandbox webhook secret
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import secrets; print(secrets.token_hex(32))"
+      register: seed_system_generated_webhook_secret
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      when: seed_system_sandbox_webhook_secret | default('', true) | trim | length == 0
+      no_log: true
+      tags: [billing]
+
+    - name: Set effective sandbox webhook secret
+      ansible.builtin.set_fact:
+        seed_system_effective_webhook_secret: >-
+          {{
+            (
+              seed_system_sandbox_webhook_secret | default('', true) | trim
+            )
+            if (seed_system_sandbox_webhook_secret | default('', true) | trim | length > 0)
+            else (seed_system_generated_webhook_secret.stdout | trim)
+          }}
+      no_log: true
+      tags: [billing]
+
+    - name: Write sandbox webhook env file
+      ansible.builtin.copy:
+        content: |
+          SANDBOX_PLATFORM_ORG_ID={{ seed_system_orgs.platform.organization_id }}
+          SANDBOX_FORGEJO_WEBHOOK_SECRET={{ seed_system_effective_webhook_secret }}
+        dest: "{{ seed_system_sandbox_env_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      register: seed_system_sandbox_env_write
+      tags: [billing]
+
+    - name: Restart sandbox-rental-service after webhook env update # noqa: no-handler
+      ansible.builtin.systemd:
+        name: sandbox-rental-service
+        state: restarted
+        daemon_reload: true
+      when: seed_system_sandbox_env_write.changed
+      tags: [billing]
+
+    - name: Remove billing seed helper from server
+      ansible.builtin.file:
+        path: "{{ seed_system_helper_remote_path }}"
+        state: absent
+      tags: [billing]
+
+    - name: Remove local billing seed helper
+      ansible.builtin.file:
+        path: "{{ seed_system_helper_local_path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      tags: [billing]
+
+    - name: Wait for Stalwart to be ready
+      ansible.builtin.wait_for:
+        host: "{{ services.stalwart.host }}"
+        port: "{{ services.stalwart.http_port }}"
+        timeout: 60
+      tags: [stalwart]
+
+    - name: Stop mailbox-service before mailbox reseed
+      ansible.builtin.systemd:
+        name: mailbox-service
+        state: stopped
+      failed_when: false
+      tags: [stalwart]
+
+    - name: Compute bcrypt hashes for mailbox passwords
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import bcrypt, json, sys
+            passwords = json.loads(sys.stdin.read())
+            out = {}
+            for name, pw in passwords.items():
+                out[name] = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+            print(json.dumps(out))
+        stdin: >-
+          {{ {"ceo": stalwart_ceo_password, "agents": stalwart_agents_password} | to_json }}
+      register: seed_system_mailbox_hashes_raw
+      changed_when: false
+      delegate_to: localhost
+      become: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Set mailbox password hashes fact
+      ansible.builtin.set_fact:
+        seed_system_mailbox_hashes: "{{ seed_system_mailbox_hashes_raw.stdout | from_json }}"
+      no_log: true
+      tags: [stalwart]
+
+    - name: Check if CEO mailbox exists
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      register: seed_system_ceo_check
+      no_log: true
+      tags: [stalwart]
+
+    - name: Delete existing CEO mailbox
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/ceo"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      when: seed_system_ceo_check.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Create CEO mailbox
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        method: POST
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          type: individual
+          name: ceo
+          description: "Forge Metal operator mailbox"
+          secrets: ["{{ seed_system_mailbox_hashes['ceo'] }}"]
+          emails: ["ceo@{{ forge_metal_domain }}"]
+          roles: ["user"]
+          disabledPermissions: "{{ seed_system_stalwart_disabled_permissions }}"
+          quota: 0
+        status_code: 200
+        return_content: true
+      no_log: true
+      tags: [stalwart]
+
+    - name: Check if agents mailbox exists
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      register: seed_system_agents_check
+      no_log: true
+      tags: [stalwart]
+
+    - name: Delete existing agents mailbox
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/agents"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      when: seed_system_agents_check.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Create agents mailbox
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal"
+        method: POST
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          type: individual
+          name: agents
+          description: "Shared agent mailbox"
+          secrets: ["{{ seed_system_mailbox_hashes['agents'] }}"]
+          emails: ["agents@{{ forge_metal_domain }}"]
+          roles: ["user"]
+          disabledPermissions: "{{ seed_system_stalwart_disabled_permissions }}"
+          quota: 0
+        status_code: 200
+        return_content: true
+      no_log: true
+      tags: [stalwart]
+
+    - name: Check if legacy agent mailboxes exist
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item }}"
+        method: GET
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+        return_content: true
+      loop:
+        - bernoulli.agent
+        - dijkstra.agent
+        - lamport.agent
+      register: seed_system_legacy_agent_checks
+      no_log: true
+      tags: [stalwart]
+
+    - name: Delete legacy agent mailboxes
+      ansible.builtin.uri:
+        url: "http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}/api/principal/{{ item.item }}"
+        method: DELETE
+        url_username: admin
+        url_password: "{{ stalwart_admin_password }}"
+        force_basic_auth: true
+        status_code: 200
+      loop: "{{ seed_system_legacy_agent_checks.results }}"
+      when: item.json.error is not defined
+      no_log: true
+      tags: [stalwart]
+
+    - name: Reset mailbox-service projection for reseeded mailboxes
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U mailbox_service
+          -d mailbox_service
+          -v ON_ERROR_STOP=1
+        stdin: |
+          DELETE FROM email_bodies
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM email_mailboxes
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM emails
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailboxes
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM threads
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM sync_state
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailbox_accounts
+          WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
+          DELETE FROM mailbox_bindings
+          WHERE account_id IN ('bernoulli.agent', 'dijkstra.agent', 'lamport.agent')
+             OR email_address IN ('demo@{{ forge_metal_domain }}', 'admin@{{ forge_metal_domain }}');
+      environment:
+        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
+      changed_when: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Restart Stalwart after mailbox reseed
+      ansible.builtin.systemd:
+        name: stalwart
+        state: restarted
+      tags: [stalwart]
+
+    - name: Wait for Stalwart after mailbox reseed
+      ansible.builtin.wait_for:
+        host: "{{ services.stalwart.host }}"
+        port: "{{ services.stalwart.http_port }}"
+        timeout: 60
+      tags: [stalwart]
+
+    - name: Deploy operator forwarder target credential
+      ansible.builtin.copy:
+        content: "{{ stalwart_operator_forward_to }}"
+        dest: /etc/credstore/mailbox-service/forward-to
+        owner: root
+        group: mailbox_service
+        mode: "0640"
+      when: stalwart_operator_forward_to | default('', true) | length > 0
+      tags: [stalwart]
+
+    - name: Reset operator forwarder state on reseed
+      ansible.builtin.file:
+        path: /var/lib/mailbox-service/forwarder-state.json
+        state: absent
+      tags: [stalwart]
+
+    - name: Read deployed mailbox-service unit # noqa: command-instead-of-module
+      ansible.builtin.command:
+        cmd: systemctl cat mailbox-service.service
+      register: seed_system_mailbox_service_unit
+      changed_when: false
+      failed_when: false
+      tags: [stalwart]
+
+    - name: Set split-credential mailbox-service support fact
+      ansible.builtin.set_fact:
+        seed_system_mailbox_service_supports_split_credentials: >-
+          {{
+            seed_system_mailbox_service_unit.rc == 0
+            and
+            ('LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password' in seed_system_mailbox_service_unit.stdout)
+            and
+            ('LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password' in seed_system_mailbox_service_unit.stdout)
+          }}
+      tags: [stalwart]
+
+    - name: Restart mailbox-service after mailbox reseed
+      ansible.builtin.systemd:
+        name: mailbox-service
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      when: seed_system_mailbox_service_supports_split_credentials
+      tags: [stalwart]
+
+    - name: Note mailbox-service restart is deferred until deploy
+      ansible.builtin.debug:
+        msg: >-
+          mailbox-service remains stopped after mailbox reseed because the
+          deployed unit does not yet load split Stalwart credentials. Run the
+          mailbox_service deploy next.
+      when: not seed_system_mailbox_service_supports_split_credentials
+      tags: [stalwart]
+
+    - name: Upsert CEO mailbox binding
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U mailbox_service
+          -d mailbox_service
+          -v ON_ERROR_STOP=1
+        stdin: |
+          INSERT INTO mailbox_bindings (subject, account_id, email_address)
+          VALUES ('{{ seed_system_users_state.ceo.user_id }}', 'ceo', '{{ seed_system_users_state.ceo.email }}')
+          ON CONFLICT (subject) DO UPDATE
+          SET account_id = EXCLUDED.account_id,
+              email_address = EXCLUDED.email_address;
+      environment:
+        PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
+      changed_when: false
+      no_log: true
+      tags: [stalwart]
+
+    - name: Print mailbox summary
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            [
+              'Stalwart mailboxes created:',
+              '  ceo@' + forge_metal_domain,
+              '  agents@' + forge_metal_domain,
+              ''
+            ]
+            + (
+              ['  Forwarding ceo@ -> ' + stalwart_operator_forward_to]
+              if stalwart_operator_forward_to | default('', true) | length > 0
+              else ['  Forwarding: disabled (set stalwart_operator_forward_to in group_vars)']
+            )
+          }}
+      tags: [stalwart]
+
+    - name: Find mailbox-service project for dev OIDC
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: mailbox-service
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_system_mailbox_project_search
+      tags: [dev-oidc]
+
+    - name: Set dev OIDC project facts
+      ansible.builtin.set_fact:
+        seed_system_dev_oidc_apps:
+          - name: rent-a-sandbox-dev
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            port: 4244
+          - name: webmail-dev
+            project_id: "{{ (seed_system_mailbox_project_search.json.result | default([]) | first | default({})).id | default('') }}"
+            port: 4245
+          - name: letters-dev
+            project_id: "{{ seed_system_letters_project_id }}"
+            port: 4247
+      tags: [dev-oidc]
+
+    - name: Search for existing dev OIDC apps
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ item.project_id }}/apps/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ item.name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_system_dev_oidc_search
+      loop: "{{ seed_system_dev_oidc_apps }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.project_id | length > 0
+      tags: [dev-oidc]
+
+    - name: Delete existing dev OIDC apps
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ item.item.project_id }}/apps/{{ (item.json.result | first).id }}"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        status_code: 200
+      loop: "{{ seed_system_dev_oidc_search.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not skipped
+        - (item.json.result | default([]) | length) > 0
+      tags: [dev-oidc]
+
+    - name: Create dev OIDC apps
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ item.item.project_id }}/apps/oidc"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          name: "{{ item.item.name }}"
+          redirectUris:
+            - "http://127.0.0.1:{{ item.item.port }}/callback"
+          responseTypes:
+            - OIDC_RESPONSE_TYPE_CODE
+          grantTypes:
+            - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
+            - OIDC_GRANT_TYPE_REFRESH_TOKEN
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
+          postLogoutRedirectUris:
+            - "http://127.0.0.1:{{ item.item.port }}"
+          devMode: true
+          accessTokenType: OIDC_TOKEN_TYPE_JWT
+        status_code: 200
+      register: seed_system_dev_oidc_created
+      loop: "{{ seed_system_dev_oidc_search.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not skipped
+      tags: [dev-oidc]
+
+    - name: Re-query dev OIDC apps for client IDs
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ item.project_id }}/apps/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ item.name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        status_code: 200
+      register: seed_system_dev_oidc_final
+      loop: "{{ seed_system_dev_oidc_apps }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.project_id | length > 0
+      tags: [dev-oidc]
+
+    - name: Print dev OIDC summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.item.name }}:
+          AUTH_CLIENT_ID={{ (item.json.result | first).oidcConfig.clientId }}
+          (port {{ item.item.port }})
+      loop: "{{ seed_system_dev_oidc_final.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item is not skipped and (item.json.result | default([]) | length) > 0
+      tags: [dev-oidc]
+
+    - name: Verify billing auth integration
+      tags: [verify]
+      block:
+        - name: Create ephemeral verification machine user
+          ansible.builtin.uri:
+            url: "{{ seed_system_zitadel_base_url }}/management/v1/users/machine"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_system_admin_pat }}"
+              Host: "{{ seed_system_zitadel_host }}"
+            body_format: json
+            body:
+              userName: "seed-system-verify-{{ inventory_hostname }}"
+              name: "seed system verify {{ inventory_hostname }}"
+              accessTokenType: ACCESS_TOKEN_TYPE_JWT
+            return_content: true
+          register: seed_system_verify_user
+          no_log: true
+
+        - name: Create verification user secret
+          ansible.builtin.uri:
+            url: "{{ seed_system_zitadel_base_url }}/v2/users/{{ seed_system_verify_user.json.userId }}/secret"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_system_admin_pat }}"
+              Host: "{{ seed_system_zitadel_host }}"
+            status_code: 200
+            return_content: true
+          register: seed_system_verify_secret
+          no_log: true
+
+        - name: Grant verification user access to sandbox-rental project
+          ansible.builtin.uri:
+            url: "{{ seed_system_zitadel_base_url }}/management/v1/users/{{ seed_system_verify_user.json.userId }}/grants"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ seed_system_admin_pat }}"
+              Host: "{{ seed_system_zitadel_host }}"
+            body_format: json
+            body:
+              projectId: "{{ seed_system_sandbox_project_id }}"
+              roleKeys:
+                - org_member
+            status_code: [200, 409]
+          no_log: true
+
+        - name: Request verification access token
+          ansible.builtin.uri:
+            url: "{{ seed_system_zitadel_base_url }}/oauth/v2/token"
+            method: POST
+            headers:
+              Host: "{{ seed_system_zitadel_host }}"
+            body_format: form-urlencoded
+            body:
+              grant_type: client_credentials
+              scope: >-
+                openid profile
+                urn:zitadel:iam:user:resourceowner
+                urn:zitadel:iam:org:project:id:{{ seed_system_sandbox_project_id }}:aud
+            url_username: "seed-system-verify-{{ inventory_hostname }}"
+            url_password: "{{ seed_system_verify_secret.json.clientSecret }}"
+            force_basic_auth: true
+            return_content: true
+            status_code: 200
+          register: seed_system_verify_token
+          no_log: true
+
+        - name: Wait for sandbox-rental-service before auth verification
+          ansible.builtin.wait_for:
+            host: "{{ services.sandbox_rental.host }}"
+            port: "{{ services.sandbox_rental.port }}"
+            timeout: 60
+
+        - name: Verify sandbox-rental billing proxy rejects unauthenticated request
+          ansible.builtin.uri:
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            method: GET
+            status_code: 401
+
+        - name: Verify sandbox-rental billing proxy accepts authenticated request
+          ansible.builtin.uri:
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ seed_system_verify_token.json.access_token }}"
+            status_code: 200
+            return_content: true
+          register: seed_system_verify_authed
+          no_log: true
+
+        - name: Assert balance response has org_id
+          ansible.builtin.assert:
+            that:
+              - seed_system_verify_authed.json.org_id | default('') | length > 0
+            fail_msg: "Billing proxy returned unexpected payload: {{ seed_system_verify_authed.json }}"
+
+        - name: Print verification result
+          ansible.builtin.debug:
+            msg:
+              - "Auth verification passed"
+              - "  Org balance: {{ seed_system_verify_authed.json.total_available | default(0) }} credits available"
+
+      always:
+        - name: Cleanup verification machine user
+          ansible.builtin.uri:
+            url: "{{ seed_system_zitadel_base_url }}/v2/users/{{ seed_system_verify_user.json.userId }}"
+            method: DELETE
+            headers:
+              Authorization: "Bearer {{ seed_system_admin_pat }}"
+              Host: "{{ seed_system_zitadel_host }}"
+            status_code: [200, 404]
+          when: seed_system_verify_user is defined and seed_system_verify_user.json.userId is defined
+
+    - name: Print seed-system summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================"
+          - " Seed system ready"
+          - "============================================"
+          - ""
+          - " Operator login: https://rentasandbox.{{ forge_metal_domain }}/"
+          - " CEO:            {{ seed_system_users_state.ceo.email }}"
+          - " CEO password:   {{ seed_system_users_state.ceo.password_credstore_path }}"
+          - ""
+          - " Acme admin:     {{ seed_system_users_state.acme_admin.email }}"
+          - " Acme password:  {{ seed_system_users_state.acme_admin.password_credstore_path }}"
+          - " Acme user:      {{ seed_system_users_state.acme_user.email }}"
+          - " User password:  {{ seed_system_users_state.acme_user.password_credstore_path }}"
+          - ""
+          - " Platform org:   {{ seed_system_orgs.platform.organization_id | default('(run with --tags identity)') }}"
+          - " Acme org:       {{ seed_system_orgs.acme.organization_id | default('(run with --tags identity)') }}"
+          - " Platform credits: {{ ((seed_system_billing_results | default({})).platform | default({})).prepaid_after | default('(run with --tags billing)') }}"
+          - " Acme credits:     {{ ((seed_system_billing_results | default({})).acme | default({})).prepaid_after | default('(run with --tags billing)') }}"
+          - ""
+          - " Note: users still have a single home org in runtime/auth paths today. Multi-org membership and org switching remain future work."
+          - "============================================"
