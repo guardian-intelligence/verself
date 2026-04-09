@@ -50,6 +50,21 @@
         roles: electric
       no_log: true
 
+    - name: Ensure Electric owns sandbox_rental shape tables
+      community.postgresql.postgresql_query:
+        query: "ALTER TABLE public.{{ item }} OWNER TO electric"
+      loop: "{{ electric_publication_tables }}"
+      no_log: true
+
+    - name: Grant sandbox_rental full access to Electric-owned shape tables
+      community.postgresql.postgresql_privs:
+        privs: ALL
+        type: table
+        objs: "{{ electric_publication_tables | join(',') }}"
+        schema: public
+        roles: sandbox_rental
+      no_log: true
+
     - name: Discover Electric tables missing REPLICA IDENTITY FULL
       community.postgresql.postgresql_query:
         query: >-
