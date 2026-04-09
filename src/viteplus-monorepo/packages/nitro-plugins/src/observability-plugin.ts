@@ -2,6 +2,9 @@ import { trace } from "@opentelemetry/api";
 import { definePlugin } from "nitro";
 import type { H3Event } from "nitro/h3";
 
+import { correlationMiddleware } from "./correlation-middleware.ts";
+import { correlationContextKey, correlationHeaderName } from "./correlation.ts";
+
 const requestStartKey = "forge_metal_request_started_at_ns";
 const verificationRunHeader = "x-forge-metal-verification-run";
 
@@ -34,6 +37,9 @@ function emitLog(
 export default definePlugin((nitroApp) => {
   nitroApp.hooks.hook("request", (event) => {
     const h3Event = event as H3Event;
+    // Keep correlation minting at the Nitro edge so same-origin app traffic
+    // gets a stable cookie without contaminating cross-origin OIDC requests.
+    void correlationMiddleware(h3Event);
     const context = h3Event.context as Record<string, unknown>;
     context[requestStartKey] = process.hrtime.bigint();
   });
@@ -52,9 +58,14 @@ export default definePlugin((nitroApp) => {
     const statusCode = h3Event.res.status ?? 200;
     const level = statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
 
+    const correlationID =
+      h3Event.req.headers.get(correlationHeaderName.toLowerCase()) ??
+      String(context[correlationContextKey] ?? "");
+
     emitLog(level, "http request completed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
+      fm_correlation_id: correlationID,
       verification_run_id: h3Event.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event.req.method,
       http_target: `${url.pathname}${url.search}`,
@@ -71,10 +82,16 @@ export default definePlugin((nitroApp) => {
     const spanContext = span?.spanContext();
     const h3Event = context.event as H3Event | undefined;
     const url = h3Event?.url;
+    const correlationID =
+      h3Event?.req.headers.get(correlationHeaderName.toLowerCase()) ??
+      String(
+        (h3Event?.context as Record<string, unknown> | undefined)?.[correlationContextKey] ?? "",
+      );
 
     emitLog("error", "nitro request failed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
+      fm_correlation_id: correlationID,
       verification_run_id: h3Event?.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event?.req.method ?? "",
       http_target: url ? `${url.pathname}${url.search}` : "",
