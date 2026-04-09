@@ -16,7 +16,6 @@ forgejo_runner_capacity:
 forgejo_auth_project_name: forgejo
 forgejo_auth_source_name: Zitadel
 forgejo_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
-forgejo_auth_claim_action_name: forgejo-groups-claim
 forgejo_auth_group_claim_name: forgejo_groups
 forgejo_auth_admin_group: forgejo_admin
 
