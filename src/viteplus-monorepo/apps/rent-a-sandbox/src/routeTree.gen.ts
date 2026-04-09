@@ -12,8 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ReposIndexRouteImport } from './routes/repos.index'
 import { Route as JobsIndexRouteImport } from './routes/jobs.index'
 import { Route as BillingIndexRouteImport } from './routes/billing.index'
+import { Route as ReposNewRouteImport } from './routes/repos.new'
+import { Route as ReposRepoIdRouteImport } from './routes/repos.$repoId'
 import { Route as JobsNewRouteImport } from './routes/jobs.new'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as BillingSubscribeRouteImport } from './routes/billing.subscribe'
@@ -35,6 +38,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReposIndexRoute = ReposIndexRouteImport.update({
+  id: '/repos/',
+  path: '/repos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JobsIndexRoute = JobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
@@ -43,6 +51,16 @@ const JobsIndexRoute = JobsIndexRouteImport.update({
 const BillingIndexRoute = BillingIndexRouteImport.update({
   id: '/billing/',
   path: '/billing/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReposNewRoute = ReposNewRouteImport.update({
+  id: '/repos/new',
+  path: '/repos/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReposRepoIdRoute = ReposRepoIdRouteImport.update({
+  id: '/repos/$repoId',
+  path: '/repos/$repoId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JobsNewRoute = JobsNewRouteImport.update({
@@ -80,8 +98,11 @@ export interface FileRoutesByFullPath {
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/jobs/new': typeof JobsNewRoute
+  '/repos/$repoId': typeof ReposRepoIdRoute
+  '/repos/new': typeof ReposNewRoute
   '/billing/': typeof BillingIndexRoute
   '/jobs/': typeof JobsIndexRoute
+  '/repos/': typeof ReposIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -92,8 +113,11 @@ export interface FileRoutesByTo {
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/jobs/new': typeof JobsNewRoute
+  '/repos/$repoId': typeof ReposRepoIdRoute
+  '/repos/new': typeof ReposNewRoute
   '/billing': typeof BillingIndexRoute
   '/jobs': typeof JobsIndexRoute
+  '/repos': typeof ReposIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -105,8 +129,11 @@ export interface FileRoutesById {
   '/billing/subscribe': typeof BillingSubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/jobs/new': typeof JobsNewRoute
+  '/repos/$repoId': typeof ReposRepoIdRoute
+  '/repos/new': typeof ReposNewRoute
   '/billing/': typeof BillingIndexRoute
   '/jobs/': typeof JobsIndexRoute
+  '/repos/': typeof ReposIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -119,8 +146,11 @@ export interface FileRouteTypes {
     | '/billing/subscribe'
     | '/jobs/$jobId'
     | '/jobs/new'
+    | '/repos/$repoId'
+    | '/repos/new'
     | '/billing/'
     | '/jobs/'
+    | '/repos/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -131,8 +161,11 @@ export interface FileRouteTypes {
     | '/billing/subscribe'
     | '/jobs/$jobId'
     | '/jobs/new'
+    | '/repos/$repoId'
+    | '/repos/new'
     | '/billing'
     | '/jobs'
+    | '/repos'
   id:
     | '__root__'
     | '/'
@@ -143,8 +176,11 @@ export interface FileRouteTypes {
     | '/billing/subscribe'
     | '/jobs/$jobId'
     | '/jobs/new'
+    | '/repos/$repoId'
+    | '/repos/new'
     | '/billing/'
     | '/jobs/'
+    | '/repos/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -156,8 +192,11 @@ export interface RootRouteChildren {
   BillingSubscribeRoute: typeof BillingSubscribeRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   JobsNewRoute: typeof JobsNewRoute
+  ReposRepoIdRoute: typeof ReposRepoIdRoute
+  ReposNewRoute: typeof ReposNewRoute
   BillingIndexRoute: typeof BillingIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
+  ReposIndexRoute: typeof ReposIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -183,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/repos/': {
+      id: '/repos/'
+      path: '/repos'
+      fullPath: '/repos/'
+      preLoaderRoute: typeof ReposIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/jobs/': {
       id: '/jobs/'
       path: '/jobs'
@@ -195,6 +241,20 @@ declare module '@tanstack/react-router' {
       path: '/billing'
       fullPath: '/billing/'
       preLoaderRoute: typeof BillingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repos/new': {
+      id: '/repos/new'
+      path: '/repos/new'
+      fullPath: '/repos/new'
+      preLoaderRoute: typeof ReposNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/repos/$repoId': {
+      id: '/repos/$repoId'
+      path: '/repos/$repoId'
+      fullPath: '/repos/$repoId'
+      preLoaderRoute: typeof ReposRepoIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/jobs/new': {
@@ -244,8 +304,11 @@ const rootRouteChildren: RootRouteChildren = {
   BillingSubscribeRoute: BillingSubscribeRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   JobsNewRoute: JobsNewRoute,
+  ReposRepoIdRoute: ReposRepoIdRoute,
+  ReposNewRoute: ReposNewRoute,
   BillingIndexRoute: BillingIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
+  ReposIndexRoute: ReposIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

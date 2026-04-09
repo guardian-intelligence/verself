@@ -22,27 +22,32 @@ function JobsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Sandboxes</h1>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">Executions</h1>
+          <p className="text-sm text-muted-foreground">
+            Repo runs, golden preparation attempts, and VM-backed runner jobs.
+          </p>
+        </div>
         {creditsExhausted ? (
           <span
             title="No credits remaining — purchase more at /billing/credits"
             className="px-4 py-2 rounded-md bg-muted text-muted-foreground text-sm cursor-not-allowed"
           >
-            New Sandbox
+            New Execution
           </span>
         ) : (
           <Link
             to="/jobs/new"
             className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
           >
-            New Sandbox
+            Manual Execution
           </Link>
         )}
       </div>
 
       {creditsExhausted && (
         <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 text-sm flex items-center justify-between">
-          <span>Your credit balance is empty. Purchase credits to create sandboxes.</span>
+          <span>Your credit balance is empty. Purchase credits to start executions.</span>
           <Link
             to="/billing/credits"
             className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm whitespace-nowrap"
@@ -81,7 +86,7 @@ function LiveExecutionTable({ orgId }: { orgId: string }) {
   if (!sortedExecutions || sortedExecutions.length === 0) {
     return (
       <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
-        No sandboxes yet. Create one to get started.
+        No executions yet. Import a repo or launch a manual execution to get started.
       </div>
     );
   }

@@ -40,11 +40,23 @@ function JobDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
-          Sandboxes
+          Executions
         </Link>
         <span className="text-muted-foreground">/</span>
         <h1 className="text-xl font-bold font-mono">{execution.execution_id.slice(0, 8)}</h1>
         <StatusBadge status={execution.status} />
+        {execution.repo_id && (
+          <>
+            <span className="text-muted-foreground">/</span>
+            <Link
+              to="/repos/$repoId"
+              params={{ repoId: execution.repo_id }}
+              className="text-sm text-primary hover:underline"
+            >
+              Repo
+            </Link>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
