@@ -57,7 +57,20 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 	if existing, ok, err := s.findRepoByExternalKey(ctx, orgID, req.Provider, req.ProviderRepoID, req.FullName); err != nil {
 		return nil, err
 	} else if ok {
-		return s.RescanRepo(ctx, orgID, existing.RepoID)
+		if err := s.UpdateRepoImportMetadata(ctx, existing.RepoID, req); err != nil {
+			return nil, err
+		}
+		repo, err := s.RescanRepo(ctx, orgID, existing.RepoID)
+		if err != nil {
+			return nil, err
+		}
+		if repo.State == RepoStateWaitingForBootstrap {
+			if _, err := s.QueueRepoBootstrap(ctx, orgID, "system:repo-import", repo.RepoID, GenerationTriggerBootstrap); err != nil {
+				return nil, err
+			}
+			return s.GetRepo(ctx, orgID, repo.RepoID)
+		}
+		return repo, nil
 	}
 
 	repo, err := s.CreateRepo(ctx, CreateRepoRequest{
@@ -108,6 +121,10 @@ func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID
 		})
 	}
 	return s.RecordRepoCompatibility(ctx, repoID, result)
+}
+
+func (s *Service) FindRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerRepoID, fullName string) (*RepoRecord, bool, error) {
+	return s.findRepoByExternalKey(ctx, orgID, provider, providerRepoID, fullName)
 }
 
 func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerRepoID, fullName string) (*RepoRecord, bool, error) {

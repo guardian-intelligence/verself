@@ -15,7 +15,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	auth "github.com/forge-metal/auth-middleware"
 	rentaltestharness "github.com/forge-metal/sandbox-rental-service/testharness"
 )
 
@@ -42,6 +41,55 @@ jobs:
 	}
 	if !strings.Contains(string(repo.CompatibilitySummary), "ubuntu-latest") {
 		t.Fatalf("compatibility_summary: got %s", repo.CompatibilitySummary)
+	}
+}
+
+func TestImportRepoAPI_AllowsSameProviderRepoAcrossOrgs(t *testing.T) {
+	repoPath := createWorkflowRepo(t, map[string]string{
+		".github/workflows/ci.yml": `
+name: ci
+on:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nope
+`,
+	})
+
+	ctx := context.Background()
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	pg := startPostgresForE2E(t)
+	authProvider := newTestAuthProvider(t)
+	defer authProvider.Close()
+
+	rentalServer := rentaltestharness.NewServer(rentaltestharness.Config{
+		PG:      pg.rentalDB,
+		AuthCfg: authProvider.authConfig(testAudience),
+		Logger:  logger,
+	})
+	defer rentalServer.Close()
+
+	orgOneToken := authProvider.signToken(t, jwt.MapClaims{
+		"iss":                                   authProvider.URL,
+		"sub":                                   testUserID,
+		"aud":                                   []string{testAudience},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID, 10),
+	})
+	orgTwoToken := authProvider.signToken(t, jwt.MapClaims{
+		"iss":                                   authProvider.URL,
+		"sub":                                   "user-2",
+		"aud":                                   []string{testAudience},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID+1, 10),
+	})
+
+	first := importRepoViaAPIWithToken(t, ctx, rentalServer.URL, orgOneToken, repoPath)
+	second := importRepoViaAPIWithToken(t, ctx, rentalServer.URL, orgTwoToken, repoPath)
+	if first.RepoID == second.RepoID {
+		t.Fatalf("expected distinct repo ids across orgs, got %s", first.RepoID)
 	}
 }
 
@@ -76,6 +124,12 @@ func importRepoViaAPI(t *testing.T, repoPath string) importedRepoView {
 		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID, 10),
 	})
 
+	return importRepoViaAPIWithToken(t, ctx, rentalServer.URL, token, repoPath)
+}
+
+func importRepoViaAPIWithToken(t *testing.T, ctx context.Context, baseURL, token, repoPath string) importedRepoView {
+	t.Helper()
+
 	body := map[string]any{
 		"provider":         "forgejo",
 		"provider_repo_id": "acme/example",
@@ -89,7 +143,7 @@ func importRepoViaAPI(t *testing.T, repoPath string) importedRepoView {
 	if err != nil {
 		t.Fatalf("marshal import body: %v", err)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, rentalServer.URL+"/api/v1/repos", strings.NewReader(string(data)))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/repos", strings.NewReader(string(data)))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -140,4 +194,3 @@ func createWorkflowRepo(t *testing.T, files map[string]string) string {
 	return root
 }
 
-var _ auth.Config

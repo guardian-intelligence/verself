@@ -50,6 +50,7 @@ func TestReconcile_ReservedAttemptVoidsWindow(t *testing.T) {
 		ExecutionState: "reserved",
 		AttemptState:   "reserved",
 		Reservation:    reservation,
+		WindowState:    "reserved",
 		UpdatedAt:      time.Now().UTC().Add(-time.Minute),
 	}); err != nil {
 		t.Fatalf("insert reserved reconciliation rows: %v", err)
@@ -136,6 +137,7 @@ func TestReconcile_FinalizingAttemptSettlesWindow(t *testing.T) {
 		ExecutionState: "finalizing",
 		AttemptState:   "finalizing",
 		Reservation:    reservation,
+		WindowState:    "reserved",
 		UpdatedAt:      completedAt,
 		StartedAt:      &startedAt,
 		CompletedAt:    &completedAt,
@@ -175,16 +177,154 @@ func TestReconcile_FinalizingAttemptSettlesWindow(t *testing.T) {
 	}
 }
 
+func TestReconcile_FinalizingSettledAttemptMarksTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
+	if err != nil {
+		t.Fatalf("create billing client: %v", err)
+	}
+
+	executionID := uuid.New()
+	attemptID := uuid.New()
+	reservation, err := billingHTTPClient.Reserve(
+		env.ctx,
+		9993,
+		testOrgID,
+		"sandbox",
+		testUserID,
+		1,
+		"execution_attempt",
+		attemptID.String(),
+		map[string]float64{"vcpu": 2, "gib": 2},
+	)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	startedAt := time.Now().UTC().Add(-time.Second)
+	completedAt := time.Now().UTC()
+	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
+		Kind:           "repo_exec",
+		ExecutionState: "finalizing",
+		AttemptState:   "finalizing",
+		Reservation:    reservation,
+		WindowState:    "settled",
+		UpdatedAt:      completedAt,
+		StartedAt:      &startedAt,
+		CompletedAt:    &completedAt,
+		DurationMs:     1000,
+		ExitCode:       0,
+	}); err != nil {
+		t.Fatalf("insert settled finalizing rows: %v", err)
+	}
+
+	if err := env.rentalServer.Reconcile(env.ctx); err != nil {
+		t.Fatalf("reconcile settled finalizing attempt: %v", err)
+	}
+
+	var executionState, attemptState, windowState string
+	if err := env.pg.rentalDB.QueryRowContext(env.ctx, `
+		SELECT e.status, a.state, w.state
+		FROM executions e
+		JOIN execution_attempts a ON a.execution_id = e.execution_id
+		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		WHERE e.execution_id = $1
+	`, executionID).Scan(&executionState, &attemptState, &windowState); err != nil {
+		t.Fatalf("query reconciled settled attempt: %v", err)
+	}
+	if executionState != "succeeded" || attemptState != "succeeded" || windowState != "settled" {
+		t.Fatalf("unexpected settled reconciliation state: execution=%s attempt=%s window=%s", executionState, attemptState, windowState)
+	}
+}
+
+func TestReconcile_FinalizingVoidedAttemptMarksFailed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
+	if err != nil {
+		t.Fatalf("create billing client: %v", err)
+	}
+
+	executionID := uuid.New()
+	attemptID := uuid.New()
+	reservation, err := billingHTTPClient.Reserve(
+		env.ctx,
+		9994,
+		testOrgID,
+		"sandbox",
+		testUserID,
+		1,
+		"execution_attempt",
+		attemptID.String(),
+		map[string]float64{"vcpu": 2, "gib": 2},
+	)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+
+	startedAt := time.Now().UTC().Add(-time.Second)
+	completedAt := time.Now().UTC()
+	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
+		Kind:           "repo_exec",
+		ExecutionState: "finalizing",
+		AttemptState:   "finalizing",
+		Reservation:    reservation,
+		WindowState:    "voided",
+		UpdatedAt:      completedAt,
+		StartedAt:      &startedAt,
+		CompletedAt:    &completedAt,
+		DurationMs:     1000,
+		ExitCode:       0,
+		FailureReason:  "billing_settle_failed",
+	}); err != nil {
+		t.Fatalf("insert voided finalizing rows: %v", err)
+	}
+
+	if err := env.rentalServer.Reconcile(env.ctx); err != nil {
+		t.Fatalf("reconcile voided finalizing attempt: %v", err)
+	}
+
+	var executionState, attemptState, windowState, failureReason string
+	if err := env.pg.rentalDB.QueryRowContext(env.ctx, `
+		SELECT e.status, a.state, w.state, a.failure_reason
+		FROM executions e
+		JOIN execution_attempts a ON a.execution_id = e.execution_id
+		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		WHERE e.execution_id = $1
+	`, executionID).Scan(&executionState, &attemptState, &windowState, &failureReason); err != nil {
+		t.Fatalf("query reconciled voided attempt: %v", err)
+	}
+	if executionState != "failed" || attemptState != "failed" || windowState != "voided" {
+		t.Fatalf("unexpected voided reconciliation state: execution=%s attempt=%s window=%s", executionState, attemptState, windowState)
+	}
+	if failureReason != "billing_settle_failed" {
+		t.Fatalf("expected failure_reason=billing_settle_failed, got %q", failureReason)
+	}
+}
+
 type reconcileInsertSpec struct {
 	Kind           string
 	ExecutionState string
 	AttemptState   string
 	Reservation    billingclient.Reservation
+	WindowState    string
 	UpdatedAt      time.Time
 	StartedAt      *time.Time
 	CompletedAt    *time.Time
 	DurationMs     int64
 	ExitCode       int
+	FailureReason  string
 }
 
 func insertReconcileAttemptRows(ctx context.Context, db *sql.DB, executionID, attemptID uuid.UUID, spec reconcileInsertSpec) error {
@@ -208,17 +348,17 @@ func insertReconcileAttemptRows(ctx context.Context, db *sql.DB, executionID, at
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_attempts (
-			attempt_id, execution_id, attempt_seq, state, billing_job_id, exit_code,
-			duration_ms, started_at, completed_at, created_at, updated_at
-		) VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $9)
-	`, attemptID, executionID, spec.AttemptState, spec.Reservation.JobId, spec.ExitCode, spec.DurationMs, spec.StartedAt, spec.CompletedAt, spec.UpdatedAt); err != nil {
+			attempt_id, execution_id, attempt_seq, state, billing_job_id, failure_reason,
+			exit_code, duration_ms, started_at, completed_at, created_at, updated_at
+		) VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+	`, attemptID, executionID, spec.AttemptState, spec.Reservation.JobId, spec.FailureReason, spec.ExitCode, spec.DurationMs, spec.StartedAt, spec.CompletedAt, spec.UpdatedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_billing_windows (
 			attempt_id, window_seq, reservation, window_seconds, pricing_phase, state, created_at
-		) VALUES ($1, 0, $2::jsonb, $3, $4, 'reserved', $5)
-	`, attemptID, string(reservationJSON), spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.UpdatedAt); err != nil {
+		) VALUES ($1, 0, $2::jsonb, $3, $4, $5, $6)
+	`, attemptID, string(reservationJSON), spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.WindowState, spec.UpdatedAt); err != nil {
 		return err
 	}
 

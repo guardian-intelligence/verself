@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -69,6 +70,14 @@ func run() error {
 	forgejoRunnerLabel := envOr("SANDBOX_FORGEJO_RUNNER_LABEL", jobs.RunnerProfileForgeMetal)
 	forgejoRunnerBinaryURL := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_URL", "")
 	forgejoRunnerBinarySHA256 := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_SHA256", "")
+	platformOrgID, err := parseOptionalUint64Env("SANDBOX_PLATFORM_ORG_ID", envOr("SANDBOX_PLATFORM_ORG_ID", ""))
+	if err != nil {
+		return err
+	}
+	forgejoWebhookSecret := envOr("SANDBOX_FORGEJO_WEBHOOK_SECRET", "")
+	if (platformOrgID == 0) != (strings.TrimSpace(forgejoWebhookSecret) == "") {
+		return fmt.Errorf("SANDBOX_PLATFORM_ORG_ID and SANDBOX_FORGEJO_WEBHOOK_SECRET must be set together")
+	}
 
 	// --- open connections ---
 
@@ -139,16 +148,22 @@ func run() error {
 
 	// --- Huma API ---
 
-	mux := http.NewServeMux()
-	humaAPI := humago.New(mux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
+	rootMux := http.NewServeMux()
+	privateMux := http.NewServeMux()
+	humaAPI := humago.New(privateMux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
 
 	sandboxapi.RegisterRoutes(humaAPI, jobService, billingClient)
+	sandboxapi.RegisterPublicRoutes(rootMux, jobService, sandboxapi.ForgejoWebhookConfig{
+		PlatformOrgID: platformOrgID,
+		ActorID:       "system:forgejo-webhook",
+		Secret:        forgejoWebhookSecret,
+	})
 
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
 		JWKSURL:   authJWKSURL,
-	})(mux)
+	})(privateMux)
 	verificationHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		runID := strings.TrimSpace(r.Header.Get(verificationRunHeader))
 		if runID != "" {
@@ -165,11 +180,10 @@ func run() error {
 		}
 		authHandler.ServeHTTP(w, r)
 	})
-
-	// All routes require auth (no webhooks or public ops endpoints).
+	rootMux.Handle("/", verificationHandler)
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(verificationHandler, "sandbox-rental-service"),
+		Handler:           otelhttp.NewHandler(rootMux, "sandbox-rental-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -262,3 +276,14 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+func parseOptionalUint64Env(key, raw string) (uint64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an unsigned integer: %w", key, err)
+	}
+	return value, nil
+}

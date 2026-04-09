@@ -53,6 +53,7 @@ type repoBootstrapEnv struct {
 	authProvider  *testAuthProvider
 	queryCHConn   anyQueryRower
 	token         string
+	webhookSecret string
 	runner        *fakeRunner
 	balanceBefore uint64
 	repoPath      string
@@ -74,7 +75,7 @@ func TestImportRepoAPI_CompatibleWorkflowBootstrapsGolden(t *testing.T) {
 		commitSHA: "",
 	})
 	defer env.close()
-	env.runner.commitSHA = env.repoHead
+	env.runner.setCommitSHA(env.repoHead)
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	if imported.CompatibilityStatus != "compatible" {
@@ -128,7 +129,7 @@ func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
 		commitSHA: "",
 	})
 	defer env.close()
-	env.runner.commitSHA = env.repoHead
+	env.runner.setCommitSHA(env.repoHead)
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	repo := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
@@ -137,7 +138,7 @@ func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
 		t.Fatal("expected active generation after bootstrap")
 	}
 
-	env.runner.err = errors.New("forced refresh failure")
+	env.runner.setError(errors.New("forced refresh failure"))
 	refresh := refreshRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, repo.RepoID)
 	if refresh.Generation.GoldenGenerationID == "" {
 		t.Fatal("expected refresh generation id")
@@ -195,6 +196,39 @@ func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
 	}
 	if meteringCount != 2 {
 		t.Fatalf("expected 2 metering rows after bootstrap+failed refresh, got %d", meteringCount)
+	}
+}
+
+func TestImportRepoAPI_ReimportReadyRepoDoesNotQueueSecondBootstrap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{
+		delay:     400 * time.Millisecond,
+		logs:      "bootstrap complete\n",
+		commitSHA: "",
+	})
+	defer env.close()
+	env.runner.setCommitSHA(env.repoHead)
+
+	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
+	ready := waitForRepoState(t, env.ctx, env.rentalServer.URL, env.token, imported.RepoID, "ready")
+	if ready.ActiveGoldenGenerationID == "" {
+		t.Fatal("expected active generation after bootstrap")
+	}
+
+	reimported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
+	if reimported.State != "ready" {
+		t.Fatalf("expected reimported repo to stay ready, got %q", reimported.State)
+	}
+	if reimported.ActiveGoldenGenerationID != ready.ActiveGoldenGenerationID {
+		t.Fatalf("expected active generation to remain %s, got %s", ready.ActiveGoldenGenerationID, reimported.ActiveGoldenGenerationID)
+	}
+
+	generations := listRepoGenerations(t, env.ctx, env.rentalServer.URL, env.token, ready.RepoID)
+	if len(generations) != 1 {
+		t.Fatalf("expected 1 generation after reimport, got %d", len(generations))
 	}
 }
 
@@ -272,6 +306,8 @@ jobs:
 		CHDatabase:                "forge_metal",
 		Runner:                    runner,
 		Billing:                   billingHTTPClient,
+		PlatformOrgID:             testOrgID,
+		ForgejoWebhookSecret:      "forgejo-webhook-secret",
 		BillingVCPUs:              2,
 		BillingMemMiB:             2048,
 		ForgejoURL:                "https://git.example.invalid",
@@ -299,6 +335,7 @@ jobs:
 		authProvider:  authProvider,
 		queryCHConn:   queryCHConn,
 		token:         token,
+		webhookSecret: "forgejo-webhook-secret",
 		runner:        runner,
 		balanceBefore: seedCredits,
 		repoPath:      repoPath,

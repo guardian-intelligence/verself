@@ -38,6 +38,8 @@ type Config struct {
 	CHDatabase                string
 	Runner                    Runner
 	Billing                   *billingclient.ServiceClient
+	PlatformOrgID             uint64
+	ForgejoWebhookSecret      string
 	BillingVCPUs              int
 	BillingMemMiB             int
 	ForgejoURL                string
@@ -74,12 +76,19 @@ func NewServer(cfg Config) *Server {
 		Logger:                    cfg.Logger,
 	}
 
-	mux := http.NewServeMux()
-	humaAPI := humago.New(mux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
+	rootMux := http.NewServeMux()
+	privateMux := http.NewServeMux()
+	humaAPI := humago.New(privateMux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
 	sandboxapi.RegisterRoutes(humaAPI, svc, cfg.Billing)
+	sandboxapi.RegisterPublicRoutes(rootMux, svc, sandboxapi.ForgejoWebhookConfig{
+		PlatformOrgID: cfg.PlatformOrgID,
+		ActorID:       "system:forgejo-webhook",
+		Secret:        cfg.ForgejoWebhookSecret,
+	})
 
-	authHandler := auth.Middleware(cfg.AuthCfg)(mux)
-	srv := httptest.NewServer(authHandler)
+	authHandler := auth.Middleware(cfg.AuthCfg)(privateMux)
+	rootMux.Handle("/", authHandler)
+	srv := httptest.NewServer(rootMux)
 	return &Server{Server: srv, service: svc}
 }
 
