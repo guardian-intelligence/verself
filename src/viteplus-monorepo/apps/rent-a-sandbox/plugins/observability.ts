@@ -1,8 +1,9 @@
 import { trace } from "@opentelemetry/api";
 import { definePlugin } from "nitro";
-import { getRequestHeader, getRequestURL, getResponseStatus, type H3Event } from "nitro/h3";
+import type { H3Event } from "nitro/h3";
 
 const requestStartKey = "forge_metal_request_started_at_ns";
+const verificationRunHeader = "x-forge-metal-verification-run";
 
 function emitLog(
   level: "debug" | "info" | "warn" | "error",
@@ -47,20 +48,21 @@ export default definePlugin((nitroApp) => {
         : 0;
     const span = trace.getActiveSpan();
     const spanContext = span?.spanContext();
-    const url = getRequestURL(h3Event);
-    const statusCode = getResponseStatus(h3Event);
+    const url = h3Event.url;
+    const statusCode = h3Event.res.status ?? 200;
     const level = statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
 
     emitLog(level, "http request completed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
+      verification_run_id: h3Event.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event.req.method,
       http_target: `${url.pathname}${url.search}`,
       url_path: url.pathname,
       http_status_code: statusCode,
       duration_ms: durationMs,
-      user_agent: getRequestHeader(h3Event, "user-agent") ?? "",
-      forwarded_for: getRequestHeader(h3Event, "x-forwarded-for") ?? "",
+      user_agent: h3Event.req.headers.get("user-agent") ?? "",
+      forwarded_for: h3Event.req.headers.get("x-forwarded-for") ?? "",
     });
   });
 
@@ -68,11 +70,12 @@ export default definePlugin((nitroApp) => {
     const span = trace.getActiveSpan();
     const spanContext = span?.spanContext();
     const h3Event = context.event as H3Event | undefined;
-    const url = h3Event ? getRequestURL(h3Event) : undefined;
+    const url = h3Event?.url;
 
     emitLog("error", "nitro request failed", {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
+      verification_run_id: h3Event?.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event?.req.method ?? "",
       http_target: url ? `${url.pathname}${url.search}` : "",
       url_path: url?.pathname ?? "",
