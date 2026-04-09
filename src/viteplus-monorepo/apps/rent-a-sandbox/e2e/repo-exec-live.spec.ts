@@ -95,7 +95,10 @@ test.describe("Sandbox Repo Import Live Verification", () => {
       run.bootstrap_execution_id = bootstrap.execution_id;
       run.bootstrap_source_sha = bootstrap.source_sha;
 
-      await page.screenshot({ path: testInfo.outputPath("repo-ready.png"), fullPage: true });
+      await page.screenshot({
+        path: testInfo.outputPath("repo-ready.png"),
+        fullPage: true,
+      });
 
       const firstExecution = await launchExecutionFromRepo(page);
       run.execution_id = firstExecution.execution_id;
@@ -114,7 +117,9 @@ test.describe("Sandbox Repo Import Live Verification", () => {
 
       await page.getByRole("button", { name: "Rescan" }).click();
       await expect
-        .poll(() => readInfoCardValue(page, "Last scanned SHA"), { timeout: 60_000 })
+        .poll(() => readInfoCardValue(page, "Last scanned SHA"), {
+          timeout: 60_000,
+        })
         .toBe(refreshedRepoMeta.commit_sha.slice(0, 12));
       await expect.poll(() => readRepoState(page), { timeout: 30_000 }).toBe("ready");
       await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
@@ -137,7 +142,9 @@ test.describe("Sandbox Repo Import Live Verification", () => {
       run.detail_url = `/jobs/${secondExecution.execution_id}`;
 
       await waitForExecutionSuccess(page, secondExecution.execution_id, env.verificationLogMarker);
-      await expect(page.getByText(refreshedRepoMeta.commit_sha)).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText(refreshedRepoMeta.commit_sha)).toBeVisible({
+        timeout: 30_000,
+      });
 
       run.terminal_observed_at = new Date().toISOString();
       run.status = "succeeded";
@@ -152,12 +159,17 @@ test.describe("Sandbox Repo Import Live Verification", () => {
 
       await page.goto("/jobs", { waitUntil: "domcontentloaded" });
       await expect(
-        page.getByRole("link", { name: secondExecution.execution_id.slice(0, 8) }),
+        page.getByRole("link", {
+          name: secondExecution.execution_id.slice(0, 8),
+        }),
       ).toBeVisible({
         timeout: 30_000,
       });
 
-      await page.screenshot({ path: testInfo.outputPath("completed.png"), fullPage: true });
+      await page.screenshot({
+        path: testInfo.outputPath("completed.png"),
+        fullPage: true,
+      });
     } catch (error) {
       run.status = "failed";
       run.error = error instanceof Error ? error.message : String(error);
