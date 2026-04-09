@@ -293,6 +293,15 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	}
 
 	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", executionID, "attempt_id", attemptID, "billing_job_id", billingJobID, "org_id", orgID, "kind", req.Kind, "window_seq", reservation.WindowSeq)
+	if verificationRunID := VerificationRunIDFromContext(ctx); verificationRunID != "" {
+		s.Logger.InfoContext(ctx, "execution verification correlation",
+			"verification_run_id", verificationRunID,
+			"execution_id", executionID,
+			"attempt_id", attemptID,
+			"org_id", orgID,
+			"kind", req.Kind,
+		)
+	}
 
 	execCtx := context.WithoutCancel(ctx)
 	go s.execute(execCtx, executionID, attemptID, orgID, actorID, req, reservation)
@@ -437,6 +446,15 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		CreatedAt:      outcome.StartedAt,
 		TraceID:        traceID,
 	})
+	s.Logger.InfoContext(ctx, "execution completed",
+		"verification_run_id", VerificationRunIDFromContext(ctx),
+		"execution_id", executionID,
+		"attempt_id", attemptID,
+		"state", outcome.State,
+		"actual_seconds", actualSeconds,
+		"charge_units", chargeUnits(reservation.CostPerSec, actualSeconds),
+		"pricing_phase", reservation.PricingPhase,
+	)
 }
 
 func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {

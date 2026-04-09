@@ -29,6 +29,8 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
 
+const verificationRunHeader = "X-Forge-Metal-Verification-Run"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -134,11 +136,18 @@ func run() error {
 		Audience:  authAudience,
 		JWKSURL:   authJWKSURL,
 	})(mux)
+	verificationHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		runID := strings.TrimSpace(r.Header.Get(verificationRunHeader))
+		if runID != "" {
+			r = r.WithContext(jobs.WithVerificationRunID(r.Context(), runID))
+		}
+		authHandler.ServeHTTP(w, r)
+	})
 
 	// All routes require auth (no webhooks or public ops endpoints).
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(authHandler, "sandbox-rental-service"),
+		Handler:           otelhttp.NewHandler(verificationHandler, "sandbox-rental-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
