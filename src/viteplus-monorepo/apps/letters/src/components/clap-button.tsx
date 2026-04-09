@@ -12,7 +12,7 @@ export function ClapButton({ slug, totalClaps: initialTotal }: ClapButtonProps) 
   const [displayTotal, setDisplayTotal] = useState(initialTotal);
   const [isAnimating, setIsAnimating] = useState(false);
   const pendingRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushClaps = useCallback(
     async (count: number) => {

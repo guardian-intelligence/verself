@@ -31,6 +31,30 @@
   ansible.builtin.set_fact:
     letters_pg_password: "{{ letters_pg_password_raw.content | b64decode | trim }}"
 
+- name: Check for existing letters auth session secret
+  ansible.builtin.stat:
+    path: /etc/credstore/letters/auth-session-secret
+  register: letters_auth_session_secret_file
+
+- name: Generate letters auth session secret
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+    dest: /etc/credstore/letters/auth-session-secret
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+  when: not letters_auth_session_secret_file.stat.exists
+  no_log: true
+
+- name: Read letters auth session secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/letters/auth-session-secret
+  register: letters_auth_session_secret_raw
+
+- name: Set letters auth session secret fact
+  ansible.builtin.set_fact:
+    letters_auth_session_secret: "{{ letters_auth_session_secret_raw.content | b64decode | trim }}"
+
 - name: Ensure letters PostgreSQL role and database exist
   module_defaults:
     community.postgresql.postgresql_user:

@@ -12,6 +12,7 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@forge-metal/auth-web": "workspace:*",
     "@forge-metal/nitro-plugins": "workspace:*",
     "@forge-metal/ui": "workspace:*",
     "@opentelemetry/api": "catalog:",
@@ -31,9 +32,7 @@
     "@tiptap/pm": "catalog:",
     "@tiptap/react": "catalog:",
     "@tiptap/starter-kit": "catalog:",
-    "jose": "catalog:",
     "nitro": "catalog:",
-    "oidc-client-ts": "catalog:",
     "postgres": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
