@@ -58,7 +58,8 @@ function PostPage() {
     );
   }
 
-  const totalClaps = typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
+  const totalClaps =
+    typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
 
   return (
     <>
@@ -69,11 +70,7 @@ function PostPage() {
       {/* Cover image */}
       {post.cover_image_url && (
         <div className="w-full max-h-[480px] overflow-hidden">
-          <img
-            src={post.cover_image_url}
-            alt=""
-            className="w-full h-full object-cover"
-          />
+          <img src={post.cover_image_url} alt="" className="w-full h-full object-cover" />
         </div>
       )}
 
@@ -86,9 +83,7 @@ function PostPage() {
           >
             {post.title}
           </h1>
-          {post.subtitle && (
-            <p className="text-xl text-muted-foreground mb-4">{post.subtitle}</p>
-          )}
+          {post.subtitle && <p className="text-xl text-muted-foreground mb-4">{post.subtitle}</p>}
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             {post.author_name && <span>{post.author_name}</span>}
             {post.author_name && <span aria-hidden>·</span>}

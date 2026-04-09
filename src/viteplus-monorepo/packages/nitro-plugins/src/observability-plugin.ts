@@ -8,6 +8,16 @@ import { correlationContextKey, correlationHeaderName } from "./correlation.ts";
 const requestStartKey = "forge_metal_request_started_at_ns";
 const verificationRunHeader = "x-forge-metal-verification-run";
 
+function correlationIDFromContext(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
 function emitLog(
   level: "debug" | "info" | "warn" | "error",
   msg: string,
@@ -39,7 +49,7 @@ export default definePlugin((nitroApp) => {
     const h3Event = event as H3Event;
     // Keep correlation minting at the Nitro edge so same-origin app traffic
     // gets a stable cookie without contaminating cross-origin OIDC requests.
-    void correlationMiddleware(h3Event);
+    correlationMiddleware(h3Event);
     const context = h3Event.context as Record<string, unknown>;
     context[requestStartKey] = process.hrtime.bigint();
   });
@@ -60,7 +70,7 @@ export default definePlugin((nitroApp) => {
 
     const correlationID =
       h3Event.req.headers.get(correlationHeaderName.toLowerCase()) ??
-      String(context[correlationContextKey] ?? "");
+      correlationIDFromContext(context[correlationContextKey]);
 
     emitLog(level, "http request completed", {
       trace_id: spanContext?.traceId ?? "",
@@ -84,8 +94,8 @@ export default definePlugin((nitroApp) => {
     const url = h3Event?.url;
     const correlationID =
       h3Event?.req.headers.get(correlationHeaderName.toLowerCase()) ??
-      String(
-        (h3Event?.context as Record<string, unknown> | undefined)?.[correlationContextKey] ?? "",
+      correlationIDFromContext(
+        (h3Event?.context as Record<string, unknown> | undefined)?.[correlationContextKey],
       );
 
     emitLog("error", "nitro request failed", {

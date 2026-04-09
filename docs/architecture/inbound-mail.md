@@ -72,7 +72,7 @@ There are now two mail-adjacent PostgreSQL databases:
 - `ceo@<domain>` — operator, reserved
 - `agents@<domain>` — shared agent mailbox
 
-Accounts are pre-created via Stalwart's Management REST API in `seed-demo.yml --tags stalwart`. No auto-provisioning on first OIDC or JMAP login.
+Accounts are pre-created via Stalwart's Management REST API in `seed-system.yml --tags stalwart`. No auto-provisioning on first OIDC or JMAP login.
 
 ## Authentication
 
@@ -80,23 +80,24 @@ Internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before 
 
 Basic Auth is used for both JMAP and the Management API. Stalwart does not support `grant_type=password` on its OAuth endpoint.
 
-## Querying mail via JMAP
+## Operator read API
 
 ```bash
-# List emails for an account
-curl -s -u agents:<password> \
-  https://mail.<domain>/jmap \
-  -H 'Content-Type: application/json' \
-  -d '{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
-       "methodCalls":[
-         ["Email/query",{"limit":10,"sort":[{"property":"receivedAt","isAscending":false}]},"a"],
-         ["Email/get",{"#ids":{"resultOf":"a","name":"Email/query","path":"/ids"},
-                       "properties":["subject","receivedAt","from","bodyValues"],
-                       "fetchAllBodyValues":true},"b"]]}'
+# List synced mailbox accounts over the local operator API
+curl -s http://127.0.0.1:4246/internal/mailbox/v1/accounts
 
-# JMAP session discovery (shows capabilities, account IDs)
-curl -s -u agents:<password> https://mail.<domain>/jmap/session
+# List recent synced emails for one account
+curl -s 'http://127.0.0.1:4246/internal/mailbox/v1/accounts/agents/emails?limit=10'
+
+# Read a specific email body for one account
+curl -s http://127.0.0.1:4246/internal/mailbox/v1/accounts/agents/emails/<EMAIL_ID>
 ```
+
+These endpoints are loopback-only and are intended for operator tooling. They read from `mailbox-service`'s PostgreSQL projection and fetch/cache the body through the existing sync/JMAP path when needed.
+
+## Querying mail via JMAP
+
+JMAP remains the Stalwart protocol boundary, but repo-owned tooling should prefer the operator API above instead of issuing ad hoc JMAP requests over SSH.
 
 ## Management API (admin only, loopback)
 
@@ -149,7 +150,7 @@ Managed by Ansible:
 
 Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands in the recipient's mailbox. Stalwart supports per-account Sieve scripts managed via JMAP (`urn:ietf:params:jmap:sieve`) or ManageSieve (port 4190, internal only).
 
-**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
+**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-system.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
 
 **Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Rules for the shared `agents@` account would be provisioned alongside the account in the seed playbook.
 
@@ -162,10 +163,11 @@ This matters for any future Stalwart queue features: database-scoped keys such a
 ## Developer tooling
 
 ```bash
-cd src/platform && ./scripts/mail.sh                     # List agents@ inbox
-cd src/platform && ./scripts/mail.sh -c                  # Extract latest 2FA code from agents@
-cd src/platform && ./scripts/mail.sh -r <JMAP_ID>        # Read full email from agents@
-cd src/platform && ./scripts/mail.sh -u ceo              # List ceo@ inbox
+make mail                              # List recent agents@ email
+make mail-read ID=eaaaaab              # Read one agents@ email
+make mail-code                         # Extract latest agents@ verification code
+make mail-mailboxes                    # Show agents@ mailbox ids/roles
+make mail MAILBOX=ceo                  # Switch to ceo@
 ```
 
 ## Relevant files
@@ -179,8 +181,10 @@ cd src/platform && ./scripts/mail.sh -u ceo              # List ceo@ inbox
 - `roles/stalwart/templates/stalwart-cert-sync.sh.j2` — ACME cert sync script
 - `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `roles/stalwart/tasks/cert_sync.yml` — systemd timer + oneshot for cert sync
-- `playbooks/seed-demo.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
-- `scripts/mail.sh` — JMAP client for inbox listing, email reading, 2FA code extraction
+- `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
+- `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface
+- `cmd/mailbox-tool/` — typed operator CLI over the generated mailbox-service client
+- `scripts/mail.sh` — thin wrapper around `cmd/mailbox-tool`
 
 ## Product evolution
 

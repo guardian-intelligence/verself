@@ -11,6 +11,11 @@ export const Route = createFileRoute("/editor")({
         search: { redirect: location.href },
       });
     }
+    if (!viewer.roles.includes("letters_admin")) {
+      throw redirect({
+        to: "/",
+      });
+    }
   },
   component: EditorLayout,
 });

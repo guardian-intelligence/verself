@@ -31,6 +31,24 @@ type Runner interface {
 	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
+// BillingClient abstracts the billing client dependency for tests.
+type BillingClient interface {
+	Reserve(
+		ctx context.Context,
+		jobID int64,
+		orgID uint64,
+		productID string,
+		actorID string,
+		concurrentCount uint64,
+		sourceType string,
+		sourceRef string,
+		allocation map[string]float64,
+		reqEditors ...billingclient.RequestEditorFn,
+	) (billingclient.Reservation, error)
+	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
+	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
+}
+
 // Config holds all dependencies for a test sandbox-rental-service.
 type Config struct {
 	PG                        *sql.DB
@@ -97,4 +115,11 @@ func (s *Server) Reconcile(ctx context.Context) error {
 		return nil
 	}
 	return s.service.Reconcile(ctx)
+}
+
+func (s *Server) SetBillingClient(client BillingClient) {
+	if s == nil || s.service == nil || client == nil {
+		return
+	}
+	s.service.Billing = client
 }

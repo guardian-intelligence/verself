@@ -156,10 +156,7 @@ export async function assertLoggedOut(page: Page): Promise<void> {
   await endSessionRequest;
 
   for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
-    if (
-      page.url().startsWith(env.baseURL)
-      && await signInLink.isVisible().catch(() => false)
-    ) {
+    if (page.url().startsWith(env.baseURL) && (await signInLink.isVisible().catch(() => false))) {
       break;
     }
     await page.waitForTimeout(pollIntervalMS);

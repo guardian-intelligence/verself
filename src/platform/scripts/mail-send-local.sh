@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/mail-send-local.sh -t ceo -s "Test subject" -b "hello"
-#   ./scripts/mail-send-local.sh -t demo@example.com -s "Test subject" < body.txt
+#   ./scripts/mail-send-local.sh -t user@example.com -s "Test subject" < body.txt
 set -euo pipefail
 
 TARGET=""

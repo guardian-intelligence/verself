@@ -13,6 +13,8 @@ export const authConfig = createAuthConfig({
     "email",
     "offline_access",
     "urn:zitadel:iam:user:resourceowner",
+    "urn:iam:org:project:roles",
+    "urn:zitadel:iam:org:projects:roles",
   ],
   callbackPath: "/callback",
   defaultRedirectPath: "/",

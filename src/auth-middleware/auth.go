@@ -23,11 +23,19 @@ var identityKey contextKey
 
 // Identity is attached to the request context after successful validation.
 type Identity struct {
-	Subject string         // Zitadel user or service account ID.
-	OrgID   string         // Organization/resource owner ID when present.
-	Roles   []string       // Project-scoped roles.
-	Email   string         // Email, if present in the token.
-	Raw     map[string]any // All claims, for extensibility.
+	Subject         string           // Zitadel user or service account ID.
+	OrgID           string           // Organization/resource owner ID when present.
+	Roles           []string         // Flat project-scoped roles for current single-org callers.
+	RoleAssignments []RoleAssignment // Structured role assignments for future multi-org callers.
+	Email           string           // Email, if present in the token.
+	Raw             map[string]any   // All claims, for extensibility.
+}
+
+type RoleAssignment struct {
+	ProjectID     string
+	Role          string
+	OrganizationID string
+	OrganizationName string
 }
 
 // Config for the middleware.
@@ -87,11 +95,12 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			}
 
 			identity := &Identity{
-				Subject: idToken.Subject,
-				OrgID:   extractOrgID(rawClaims),
-				Roles:   extractRoles(rawClaims),
-				Email:   stringClaim(rawClaims, "email"),
-				Raw:     rawClaims,
+				Subject:         idToken.Subject,
+				OrgID:           extractOrgID(rawClaims),
+				Roles:           extractRoles(rawClaims),
+				RoleAssignments: extractRoleAssignments(rawClaims),
+				Email:           stringClaim(rawClaims, "email"),
+				Raw:             rawClaims,
 			}
 
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey, identity)))
@@ -279,6 +288,63 @@ func extractRoles(claims map[string]any) []string {
 	}
 	sort.Strings(roles)
 	return roles
+}
+
+func extractRoleAssignments(claims map[string]any) []RoleAssignment {
+	var assignments []RoleAssignment
+
+	for key, value := range claims {
+		switch {
+		case key == "urn:zitadel:iam:org:project:roles":
+			assignments = append(assignments, collectRoleAssignments("", value)...)
+		case strings.HasPrefix(key, "urn:zitadel:iam:org:project:") && strings.HasSuffix(key, ":roles"):
+			projectID := strings.TrimSuffix(strings.TrimPrefix(key, "urn:zitadel:iam:org:project:"), ":roles")
+			assignments = append(assignments, collectRoleAssignments(projectID, value)...)
+		}
+	}
+
+	if len(assignments) == 0 {
+		return nil
+	}
+
+	sort.Slice(assignments, func(i, j int) bool {
+		left := assignments[i]
+		right := assignments[j]
+		switch {
+		case left.ProjectID != right.ProjectID:
+			return left.ProjectID < right.ProjectID
+		case left.OrganizationID != right.OrganizationID:
+			return left.OrganizationID < right.OrganizationID
+		default:
+			return left.Role < right.Role
+		}
+	})
+	return assignments
+}
+
+func collectRoleAssignments(projectID string, value any) []RoleAssignment {
+	roleMap, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	assignments := make([]RoleAssignment, 0, len(roleMap))
+	for role, organizationsValue := range roleMap {
+		organizations, ok := organizationsValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		for organizationID, organizationNameValue := range organizations {
+			organizationName, _ := organizationNameValue.(string)
+			assignments = append(assignments, RoleAssignment{
+				ProjectID:        projectID,
+				Role:             role,
+				OrganizationID:   organizationID,
+				OrganizationName: organizationName,
+			})
+		}
+	}
+	return assignments
 }
 
 func collectRoles(dst map[string]struct{}, value any) {

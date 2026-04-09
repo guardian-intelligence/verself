@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
 import { BalanceCard } from "~/components/balance-card";
-import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
-import { loadBalance } from "~/features/billing/queries";
+import { createCheckoutSession, getBalance } from "~/server-fns/api";
 import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/billing/credits")({
   beforeLoad: ({ location }) => requireViewer(location.href),
-  loader: ({ context }) => loadBalance(context.queryClient),
+  loader: () => getBalance(),
   component: CreditsPage,
 });
 
@@ -19,7 +19,17 @@ const CREDIT_PACKS = [
 
 function CreditsPage() {
   const balance = Route.useLoaderData();
-  const mutation = useCreateCheckoutSessionMutation({
+
+  const mutation = useMutation({
+    mutationFn: (amountCents: number) =>
+      createCheckoutSession({
+        data: {
+          product_id: "sandbox",
+          amount_cents: amountCents,
+          success_url: `${window.location.origin}/billing?purchased=true`,
+          cancel_url: `${window.location.origin}/billing/credits`,
+        },
+      }),
     onSuccess: (data) => {
       window.location.href = data.url;
     },
@@ -32,9 +42,7 @@ function CreditsPage() {
         Buy additional credits to top up your balance. Credits are added instantly.
       </p>
 
-      <div className="max-w-md">
-        <BalanceCard balance={balance} />
-      </div>
+      {balance && <BalanceCard balance={balance} />}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {CREDIT_PACKS.map((pack) => (
@@ -50,7 +58,7 @@ function CreditsPage() {
         ))}
       </div>
 
-      {mutation.error ? <p className="text-sm text-destructive">{mutation.error.message}</p> : null}
+      {mutation.error && <p className="text-sm text-destructive">{mutation.error.message}</p>}
     </div>
   );
 }

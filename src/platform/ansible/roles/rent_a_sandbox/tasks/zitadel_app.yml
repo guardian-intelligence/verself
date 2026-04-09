@@ -45,11 +45,11 @@
     zitadel_project_roles_admin_pat: "{{ rent_a_sandbox_zitadel_pat }}"
     zitadel_project_roles_project_id: "{{ rent_a_sandbox_project_id }}"
     zitadel_project_roles_definitions:
-      - key: org_admin
-        display_name: Org Admin
+      - key: sandbox_org_admin
+        display_name: Sandbox Org Admin
         group: sandbox
-      - key: org_member
-        display_name: Org Member
+      - key: sandbox_org_member
+        display_name: Sandbox Org Member
         group: sandbox
   when: rent_a_sandbox_project_id is defined
 

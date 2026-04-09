@@ -35,8 +35,7 @@ export function createMailboxCollection(accountId: string) {
           where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
-      getKey: (item: Record<string, unknown>) =>
-        `${String(item.account_id)}:${String(item.id)}`,
+      getKey: (item: Record<string, unknown>) => `${String(item.account_id)}:${String(item.id)}`,
     }) as any,
   );
 }
@@ -79,8 +78,7 @@ export function createEmailCollection(accountId: string) {
           where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
-      getKey: (item: Record<string, unknown>) =>
-        `${String(item.account_id)}:${String(item.id)}`,
+      getKey: (item: Record<string, unknown>) => `${String(item.account_id)}:${String(item.id)}`,
     }) as any,
   );
 }
@@ -164,8 +162,7 @@ export function createThreadCollection(accountId: string) {
           where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
-      getKey: (item: Record<string, unknown>) =>
-        `${String(item.account_id)}:${String(item.id)}`,
+      getKey: (item: Record<string, unknown>) => `${String(item.account_id)}:${String(item.id)}`,
     }) as any,
   );
 }

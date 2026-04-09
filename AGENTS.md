@@ -9,6 +9,10 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
 * Avoid CLIs. Things talk to each other over HTTP. 
 * We're moving to k3s soon.
+* Broad direction: every service should do the following:
+        1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into our policy and billing abstractions.
+        2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment.
+        NOTE: this philosophy is not yet upheld today, but it's something to keep in mind as we upgrade the codebase.
 
 * Improvements to our usage-based billing system with subscriptions + credits
 
@@ -140,7 +144,9 @@ Go services are written with the Huma v2 framework (https://pkg.go.dev/github.co
 
 Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
 
-TanStack Start frontends now use server-owned OAuth web sessions. The frontend server performs the Zitadel code exchange, stores access/refresh tokens server-side in the `frontend_auth_sessions` PostgreSQL database, and issues an HTTP-only session cookie to the browser. Server functions, loaders, and `beforeLoad` read that session and forward bearer tokens to Go services from the server side. Browser code does not read or persist Zitadel bearer tokens.
+Auth at the web application level is treated *only* as a UX concern. Authentication and authorization is performed by services validating JWTs and calling out to Zitadel, and sometimes at the DB level where possible. Any violation of this principle is to be treated as a critical security concern and should be raised + fixed.
+
+TanStack Start frontends use server-owned OAuth web sessions. The frontend server performs the Zitadel code exchange, stores access/refresh tokens server-side in the `frontend_auth_sessions` PostgreSQL database, and issues an HTTP-only session cookie to the browser. Server functions, loaders, and `beforeLoad` read that session and forward bearer tokens to Go services from the server side. Browser code does not read or persist Zitadel bearer tokens.
 
 Social login (Google/GitHub/Microsoft/Apple), MFA, and passkeys remain Zitadel-side configuration. Go services remain the security boundary for API authorization; frontend `beforeLoad` checks are for SSR gating and UX, not the final enforcement layer.
 

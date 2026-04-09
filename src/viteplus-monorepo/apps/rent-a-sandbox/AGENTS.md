@@ -10,14 +10,14 @@ Lives at `src/viteplus-monorepo/apps/rent-a-sandbox/` within a pnpm workspace ma
 
 This codebase has zero `useEffect`. Do not introduce any. Every common `useEffect` pattern has a proper TanStack replacement:
 
-| Anti-pattern | Correct replacement |
-|---|---|
-| `useEffect` to fetch data | `useQuery` from `@tanstack/react-query` |
-| `useEffect` + `useState(mounted)` for SSR hydration guard | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router` |
-| `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render |
-| `useEffect` to trigger login/logout/callback auth flows | Route-level `beforeLoad` plus `@forge-metal/auth-web` server helpers |
-| `useEffect` to invalidate queries when external data changes | `onSuccess` / `onSettled` on the `useMutation` that caused the change |
-| `useEffect` for DOM interactions (scroll, focus, resize) | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
+| Anti-pattern                                                                      | Correct replacement                                                                                                          |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `useEffect` to fetch data                                                         | `useQuery` from `@tanstack/react-query`                                                                                      |
+| `useEffect` + `useState(mounted)` for SSR hydration guard                         | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router`                                                              |
+| `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render                                           |
+| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@forge-metal/auth-web` server helpers                                                         |
+| `useEffect` to invalidate queries when external data changes                      | `onSuccess` / `onSettled` on the `useMutation` that caused the change                                                        |
+| `useEffect` for DOM interactions (scroll, focus, resize)                          | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
 
 The one exception: `useEffect` is acceptable for DOM manipulation that has no library equivalent (and you've checked). Even then, prefer a community hook (e.g. from `usehooks-ts` or similar) over a hand-rolled `useEffect`.
 

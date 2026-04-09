@@ -1,6 +1,6 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check seed-demo billing-reset verification-reset vm-guest-telemetry-build \
-       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-code mail-read edit-secrets \
+       hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset vm-guest-telemetry-build \
+       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes mail-code mail-read edit-secrets \
        verification-repo verify-sandbox-live
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -68,8 +68,8 @@ setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
 
-seed-demo: inventory-check ## Seed demo environment: human user + billing catalog + credits + auth verify
-	cd $(FM)/ansible && ansible-playbook playbooks/seed-demo.yml
+seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
+	cd $(FM)/ansible && ansible-playbook playbooks/seed-system.yml
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
@@ -98,22 +98,21 @@ clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all pro
 
 MAILBOX_ARG = $(if $(MAILBOX),$(MAILBOX),$(if $(filter command line,$(origin USER)),$(USER),))
 
-mail: inventory-check ## List inbox (defaults to agents): make mail [MAILBOX=ceo] [N=10]
-	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) $(if $(N),-n $(N),)
+mail: inventory-check ## List recent emails (defaults to agents): make mail [MAILBOX=ceo] [N=10]
+	cd $(FM) && ./scripts/mail.sh list $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),) $(if $(N),--limit $(N),)
+
+mail-accounts: inventory-check ## List synced mailbox accounts
+	cd $(FM) && ./scripts/mail.sh accounts
+
+mail-mailboxes: inventory-check ## List mailboxes for an account (defaults to agents): make mail-mailboxes [MAILBOX=ceo]
+	cd $(FM) && ./scripts/mail.sh mailboxes $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)
 
 mail-code: inventory-check ## Extract latest 2FA/verification code (defaults to agents): make mail-code [MAILBOX=ceo]
-	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) -c
+	cd $(FM) && ./scripts/mail.sh code $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)
 
 mail-read: inventory-check ## Read a specific email (defaults to agents): make mail-read [MAILBOX=ceo] ID=eaaaaab
 	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail')"; exit 1; }
-	cd $(FM) && ./scripts/mail.sh $(if $(MAILBOX_ARG),-u $(MAILBOX_ARG),) -r $(ID)
-
-mail-agents: inventory-check ## List the agents inbox: make mail-agents [N=10]
-	cd $(FM) && ./scripts/mail.sh -u agents $(if $(N),-n $(N),)
-
-mail-agents-read: inventory-check ## Read an email from agents inbox: make mail-agents-read ID=eaaaaab
-	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail-agents')"; exit 1; }
-	cd $(FM) && ./scripts/mail.sh -u agents -r $(ID)
+	cd $(FM) && ./scripts/mail.sh read $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),) --id $(ID)
 
 mail-send: inventory-check ## Send via Resend: make mail-send TO=agents SUBJECT='test' BODY='hello'
 	@test -n "$(TO)" || { echo "ERROR: TO is required (e.g. TO=agents or TO=ceo or TO=user@example.com)"; exit 1; }

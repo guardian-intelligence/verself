@@ -8,9 +8,19 @@ export interface AuthUser {
   email: string | null;
   name: string | null;
   preferredUsername: string | null;
+  // Current runtime still assumes one active org per user even though Zitadel
+  // can issue multi-org assignments.
   orgID: string | null;
   roles: string[];
+  roleAssignments: AuthRoleAssignment[];
   claims: Record<string, unknown>;
+}
+
+export interface AuthRoleAssignment {
+  projectID: string | null;
+  orgID: string;
+  orgName: string | null;
+  role: string;
 }
 
 export interface AuthConfig {
@@ -88,6 +98,7 @@ export interface AuthViewer {
   preferredUsername: string | null;
   orgID: string | null;
   roles: string[];
+  roleAssignments: AuthRoleAssignment[];
 }
 
 interface TokenResponse {
@@ -111,13 +122,16 @@ class OIDCExchangeError extends Error {
   body: string | null;
   isNetworkError: boolean;
 
-  constructor(message: string, options: {
-    status?: number | null;
-    oauthError?: string | null;
-    oauthDescription?: string | null;
-    body?: string | null;
-    isNetworkError?: boolean;
-  } = {}) {
+  constructor(
+    message: string,
+    options: {
+      status?: number | null;
+      oauthError?: string | null;
+      oauthDescription?: string | null;
+      body?: string | null;
+      isNetworkError?: boolean;
+    } = {},
+  ) {
     super(message);
     this.name = "OIDCExchangeError";
     this.status = options.status ?? null;
@@ -132,6 +146,8 @@ interface RefreshResult {
   session: AuthSession | null;
   revoked: boolean;
 }
+
+const pendingLoginTTL = 5 * 60 * 1000;
 
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -154,10 +170,7 @@ export function createAuthConfig(config: AuthConfig): AuthConfig {
       config.sessionDatabaseURL,
       `${config.appName} sessionDatabaseURL`,
     ),
-    sessionPassword: requiredNonEmpty(
-      config.sessionPassword,
-      `${config.appName} sessionPassword`,
-    ),
+    sessionPassword: requiredNonEmpty(config.sessionPassword, `${config.appName} sessionPassword`),
     sessionCookieName: config.sessionCookieName ?? `${config.appName}-session`,
     sessionMaxAgeSeconds: config.sessionMaxAgeSeconds ?? 60 * 60 * 24 * 30,
     refreshLeewaySeconds: config.refreshLeewaySeconds ?? 60,
@@ -180,12 +193,9 @@ function getSQL(databaseURL: string) {
 async function getProviderMetadata(issuerURL: string): Promise<ProviderMetadata> {
   let metadataPromise = metadataCache.get(issuerURL);
   if (!metadataPromise) {
-    metadataPromise = fetch(
-      new URL("/.well-known/openid-configuration", issuerURL).toString(),
-      {
-        headers: { Accept: "application/json" },
-      },
-    ).then(async (response) => {
+    metadataPromise = fetch(new URL("/.well-known/openid-configuration", issuerURL).toString(), {
+      headers: { Accept: "application/json" },
+    }).then(async (response) => {
       if (!response.ok) {
         throw new Error(
           `OIDC discovery failed for ${issuerURL}: ${response.status} ${await response.text()}`,
@@ -296,18 +306,13 @@ async function exchangeToken(
       oauthBody = null;
     }
     const messageDetail =
-      oauthBody?.error_description ??
-      oauthBody?.error ??
-      (body || response.statusText);
-    throw new OIDCExchangeError(
-      `OIDC token exchange failed: ${response.status} ${messageDetail}`,
-      {
-        status: response.status,
-        oauthError: oauthBody?.error ?? null,
-        oauthDescription: oauthBody?.error_description ?? null,
-        body,
-      },
-    );
+      oauthBody?.error_description ?? oauthBody?.error ?? (body || response.statusText);
+    throw new OIDCExchangeError(`OIDC token exchange failed: ${response.status} ${messageDetail}`, {
+      status: response.status,
+      oauthError: oauthBody?.error ?? null,
+      oauthDescription: oauthBody?.error_description ?? null,
+      body,
+    });
   }
   return response.json() as Promise<TokenResponse>;
 }
@@ -321,11 +326,70 @@ function logAuthEvent(level: "warn" | "error", event: string, fields: Record<str
 }
 
 function extractRoles(payload: JWTPayload): string[] {
-  const candidate = payload["urn:zitadel:iam:org:project:roles"];
-  if (!candidate || typeof candidate !== "object") {
-    return [];
+  const roles = new Set<string>();
+  for (const [claim, value] of Object.entries(payload)) {
+    if (
+      claim !== "urn:zitadel:iam:org:project:roles" &&
+      !/^urn:zitadel:iam:org:project:[^:]+:roles$/.test(claim)
+    ) {
+      continue;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+    for (const role of Object.keys(value as Record<string, unknown>)) {
+      roles.add(role);
+    }
   }
-  return Object.keys(candidate as Record<string, unknown>).sort();
+  return [...roles].sort();
+}
+
+function extractRoleAssignments(payload: JWTPayload): AuthRoleAssignment[] {
+  const assignments: AuthRoleAssignment[] = [];
+
+  for (const [key, value] of Object.entries(payload)) {
+    let projectID: string | null = null;
+    if (key === "urn:zitadel:iam:org:project:roles") {
+      projectID = null;
+    } else if (
+      key.startsWith("urn:zitadel:iam:org:project:") &&
+      key.endsWith(":roles")
+    ) {
+      projectID = key.slice("urn:zitadel:iam:org:project:".length, -":roles".length);
+    } else {
+      continue;
+    }
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+
+    for (const [role, organizations] of Object.entries(value as Record<string, unknown>)) {
+      if (!organizations || typeof organizations !== "object" || Array.isArray(organizations)) {
+        continue;
+      }
+      for (const [orgID, orgName] of Object.entries(organizations as Record<string, unknown>)) {
+        assignments.push({
+          projectID,
+          orgID,
+          orgName: typeof orgName === "string" ? orgName : null,
+          role,
+        });
+      }
+    }
+  }
+
+  return assignments.sort((left, right) => {
+    const projectOrder = (left.projectID ?? "").localeCompare(right.projectID ?? "");
+    if (projectOrder !== 0) {
+      return projectOrder;
+    }
+    const orgOrder = left.orgID.localeCompare(right.orgID);
+    if (orgOrder !== 0) {
+      return orgOrder;
+    }
+    return left.role.localeCompare(right.role);
+  });
 }
 
 function buildUserSnapshot(idTokenClaims: JWTPayload, accessTokenClaims: JWTPayload): AuthUser {
@@ -344,7 +408,7 @@ function buildUserSnapshot(idTokenClaims: JWTPayload, accessTokenClaims: JWTPayl
   const name =
     typeof idTokenClaims.name === "string"
       ? idTokenClaims.name
-      : preferredUsername ?? email ?? idTokenClaims.sub ?? null;
+      : (preferredUsername ?? email ?? idTokenClaims.sub ?? null);
   const orgID =
     typeof accessTokenClaims["urn:zitadel:iam:user:resourceowner:id"] === "string"
       ? (accessTokenClaims["urn:zitadel:iam:user:resourceowner:id"] as string)
@@ -357,6 +421,7 @@ function buildUserSnapshot(idTokenClaims: JWTPayload, accessTokenClaims: JWTPayl
     preferredUsername,
     orgID,
     roles: extractRoles(accessTokenClaims),
+    roleAssignments: extractRoleAssignments(accessTokenClaims),
     claims: {
       ...accessTokenClaims,
       ...idTokenClaims,
@@ -381,6 +446,7 @@ function rowToAuthSession(row: StoredAuthSessionRow): AuthSession {
       preferredUsername: row.preferred_username,
       orgID: row.org_id,
       roles: row.roles ?? [],
+      roleAssignments: extractRoleAssignments((row.user_claims ?? {}) as JWTPayload),
       claims: row.user_claims ?? {},
     },
   };
@@ -394,6 +460,7 @@ function toAuthViewer(user: AuthUser): AuthViewer {
     preferredUsername: user.preferredUsername,
     orgID: user.orgID,
     roles: user.roles,
+    roleAssignments: user.roleAssignments,
   };
 }
 
@@ -536,7 +603,11 @@ async function refreshStoredSession(
       status: oidcError.status,
       oauth_error: oidcError.oauthError,
       oauth_error_description: oidcError.oauthDescription,
-      failure_type: revoked ? "revoked_or_invalid" : oidcError.isNetworkError ? "network" : "upstream",
+      failure_type: revoked
+        ? "revoked_or_invalid"
+        : oidcError.isNetworkError
+          ? "network"
+          : "upstream",
       token_expires_at: stored.expiresAt.toISOString(),
       body: oidcError.body,
     });
@@ -577,10 +648,7 @@ export async function beginLogin(
   const state = randomToken();
   const nonce = randomToken();
   const codeVerifier = randomToken(48);
-  const redirectTo = sanitizeRedirectTarget(
-    requestedRedirectTo,
-    config.defaultRedirectPath,
-  );
+  const redirectTo = sanitizeRedirectTarget(requestedRedirectTo, config.defaultRedirectPath);
   const authorizeURL = new URL(metadata.authorization_endpoint);
   authorizeURL.searchParams.set("client_id", config.clientID);
   authorizeURL.searchParams.set("redirect_uri", getAbsoluteURL(config.callbackPath));
@@ -626,6 +694,10 @@ export async function finishLogin(config: AuthConfig): Promise<{
   const pending = session.data.login;
   if (!pending) {
     throw new Error("OIDC callback is missing login transaction state");
+  }
+  if (!Number.isFinite(pending.createdAt) || Date.now() - pending.createdAt > pendingLoginTTL) {
+    await session.clear();
+    throw new Error("OIDC callback login transaction expired");
   }
   if (pending.state !== state) {
     throw new Error("OIDC callback state mismatch");

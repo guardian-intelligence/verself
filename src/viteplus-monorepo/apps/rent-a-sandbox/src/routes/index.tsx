@@ -1,6 +1,9 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BalanceCard } from "~/components/balance-card";
-import { getBalance } from "~/server-fns/api";
+import { Callout } from "~/components/callout";
+import { EmptyState } from "~/components/empty-state";
+import { balanceQuery, loadBalance } from "~/features/billing/queries";
 import { getViewer } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/")({
@@ -8,39 +11,79 @@ export const Route = createFileRoute("/")({
     purchased: search.purchased === true || search.purchased === "true",
     subscribed: search.subscribed === true || search.subscribed === "true",
   }),
-  loader: async () => {
+  loader: async ({ context }) => {
     const viewer = await getViewer();
-    if (!viewer) {
-      return {
-        viewer: null,
-        balance: null,
-      };
+    if (viewer) {
+      await loadBalance(context.queryClient);
     }
-    return {
-      viewer,
-      balance: await getBalance(),
-    };
+    return { viewer };
   },
   component: Dashboard,
 });
 
 function Dashboard() {
   const { purchased, subscribed } = Route.useSearch();
-  const { viewer, balance } = Route.useLoaderData();
+  const { viewer } = Route.useLoaderData();
 
   if (!viewer) {
-    return (
-      <div className="space-y-8">
-        <h1 className="text-2xl font-bold">Rent-a-Sandbox</h1>
-        <div className="border border-border rounded-lg p-8 text-center space-y-3">
-          <p className="text-lg text-muted-foreground">Firecracker CI sandboxes on bare metal.</p>
-          <p className="text-muted-foreground">
-            Sign in to view your credit balance and run sandboxes.
-          </p>
-        </div>
-      </div>
-    );
+    return <GuestLanding />;
   }
+
+  return <MemberDashboard purchased={purchased} subscribed={subscribed} />;
+}
+
+function GuestLanding() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold">Rent-a-Sandbox</h1>
+        <p className="text-sm text-muted-foreground">Firecracker CI sandboxes on bare metal.</p>
+      </div>
+
+      <EmptyState
+        title="Sign in to manage sandboxes"
+        body="View your credit balance, import repos, and run sandboxed executions from one place."
+        action={
+          <a
+            href={`/login?redirect=${encodeURIComponent("/")}`}
+            className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
+          >
+            Sign in
+          </a>
+        }
+      />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Link
+          to="/repos"
+          className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
+        >
+          <h3 className="mb-1 font-semibold">Repos</h3>
+          <p className="text-sm text-muted-foreground">
+            Import a repository, prepare its golden image, and track readiness.
+          </p>
+        </Link>
+        <Link
+          to="/billing"
+          search={{ purchased: false, subscribed: false }}
+          className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
+        >
+          <h3 className="mb-1 font-semibold">Billing</h3>
+          <p className="text-sm text-muted-foreground">Manage subscriptions, credits, and grants.</p>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function MemberDashboard({
+  purchased,
+  subscribed,
+}: {
+  purchased: boolean;
+  subscribed: boolean;
+}) {
+  const { data: balance } = useSuspenseQuery(balanceQuery());
 
   return (
     <div className="space-y-8">
@@ -49,75 +92,78 @@ function Dashboard() {
         <div className="flex gap-3">
           <Link
             to="/billing/subscribe"
-            className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
+            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
           >
             Subscribe
           </Link>
           <Link
             to="/billing/credits"
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
+            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
           >
             Buy Credits
           </Link>
         </div>
       </div>
 
-      {(purchased || subscribed) && (
-        <div className="border border-success/50 bg-success/5 rounded-lg p-4 text-sm">
+      {purchased || subscribed ? (
+        <Callout
+          tone="success"
+          title={purchased ? "Credits purchased" : "Subscription activated"}
+        >
           {purchased
-            ? "Credits purchased successfully! Your balance has been updated."
-            : "Subscription activated! Monthly credits will be deposited automatically."}
-        </div>
-      )}
-
-      {balance ? (
-        <>
-          <BalanceCard balance={balance} />
-          {balance.total_available <= 0 && (
-            <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 text-sm flex items-center justify-between">
-              <span>Your credit balance is empty. Purchase credits to create sandboxes.</span>
-              <Link
-                to="/billing/credits"
-                className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm whitespace-nowrap"
-              >
-                Buy Credits
-              </Link>
-            </div>
-          )}
-        </>
+            ? "Credits purchased successfully. Your balance has been updated."
+            : "Subscription activated. Monthly credits will be deposited automatically."}
+        </Callout>
       ) : null}
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <BalanceCard balance={balance} />
+
+      {balance.total_available <= 0 ? (
+        <Callout
+          tone="warning"
+          title="Credit balance is empty"
+          action={
+            <Link
+              to="/billing/credits"
+              className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+            >
+              Buy Credits
+            </Link>
+          }
+        >
+          Purchase credits to create sandboxes.
+        </Callout>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2">
         <Link
           to="/repos"
-          className="border border-border rounded-lg p-6 hover:bg-accent/50 transition-colors"
+          className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
         >
-          <h3 className="font-semibold mb-1">Repos</h3>
+          <h3 className="mb-1 font-semibold">Repos</h3>
           <p className="text-sm text-muted-foreground">
-            Import a repository, prepare its golden image, and track readiness
+            Import a repository, prepare its golden image, and track readiness.
           </p>
         </Link>
         <Link
           to="/jobs"
-          className="border border-border rounded-lg p-6 hover:bg-accent/50 transition-colors"
+          className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
         >
-          <h3 className="font-semibold mb-1">Executions</h3>
+          <h3 className="mb-1 font-semibold">Executions</h3>
           <p className="text-sm text-muted-foreground">
-            Monitor repo executions, golden builds, and runner attempts
+            Monitor repo executions, golden builds, and runner attempts.
           </p>
         </Link>
       </div>
 
-      <div className="grid md:grid-cols-1 gap-4">
-        <Link
-          to="/billing"
-          search={{ purchased: false, subscribed: false }}
-          className="border border-border rounded-lg p-6 hover:bg-accent/50 transition-colors"
-        >
-          <h3 className="font-semibold mb-1">Billing</h3>
-          <p className="text-sm text-muted-foreground">Manage subscriptions, credits, and grants</p>
-        </Link>
-      </div>
+      <Link
+        to="/billing"
+        search={{ purchased: false, subscribed: false }}
+        className="block rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
+      >
+        <h3 className="mb-1 font-semibold">Billing</h3>
+        <p className="text-sm text-muted-foreground">Manage subscriptions, credits, and grants.</p>
+      </Link>
     </div>
   );
 }

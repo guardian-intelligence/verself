@@ -7,10 +7,7 @@ import { PostCard } from "~/components/post-card";
 export const Route = createFileRoute("/")({
   component: HomePage,
   head: () => ({
-    meta: [
-      { title: "Letters" },
-      { name: "description", content: "Thoughts and ideas" },
-    ],
+    meta: [{ title: "Letters" }, { name: "description", content: "Thoughts and ideas" }],
   }),
 });
 
@@ -21,7 +18,9 @@ function HomePage() {
   const sortedPosts = useMemo(() => {
     if (!posts) return [];
     return [...(posts as ElectricPost[])].sort(
-      (a, b) => new Date(b.published_at ?? b.created_at).getTime() - new Date(a.published_at ?? a.created_at).getTime(),
+      (a, b) =>
+        new Date(b.published_at ?? b.created_at).getTime() -
+        new Date(a.published_at ?? a.created_at).getTime(),
     );
   }, [posts]);
 

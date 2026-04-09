@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -129,6 +131,184 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 	if meteringCount != 1 {
 		t.Fatalf("expected 1 metering row from webhook execution, got %d", meteringCount)
 	}
+}
+
+func TestForgejoWebhook_InvalidSignatureReturnsUnauthorized(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	respBody, status := postForgejoWebhook(
+		t,
+		env.rentalServer.URL,
+		[]byte(`{"action":"opened"}`),
+		"pull_request",
+		"delivery-invalid-signature",
+		signForgejoWebhook([]byte(`{"action":"opened"}`), "wrong-secret"),
+	)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("expected 401 from invalid signature, got %d", status)
+	}
+	if !strings.Contains(respBody, "invalid forgejo signature") {
+		t.Fatalf("expected invalid signature error, got %q", respBody)
+	}
+}
+
+func TestForgejoWebhook_MissingEventHeaderReturnsBadRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	body := []byte(`{"action":"opened"}`)
+	respBody, status := postForgejoWebhook(
+		t,
+		env.rentalServer.URL,
+		body,
+		"",
+		"delivery-missing-event",
+		signForgejoWebhook(body, env.webhookSecret),
+	)
+	if status != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing event header, got %d", status)
+	}
+	if !strings.Contains(respBody, "missing forgejo event headers") {
+		t.Fatalf("expected missing header error, got %q", respBody)
+	}
+}
+
+func TestForgejoWebhook_MissingDeliveryHeaderReturnsBadRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	body := []byte(`{"action":"opened"}`)
+	respBody, status := postForgejoWebhook(
+		t,
+		env.rentalServer.URL,
+		body,
+		"pull_request",
+		"",
+		signForgejoWebhook(body, env.webhookSecret),
+	)
+	if status != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing delivery header, got %d", status)
+	}
+	if !strings.Contains(respBody, "missing forgejo event headers") {
+		t.Fatalf("expected missing header error, got %q", respBody)
+	}
+}
+
+func TestForgejoWebhook_UnsupportedEventIsIgnored(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	body := []byte(`{"repository":{"full_name":"acme/example"}}`)
+	respBody, status := postForgejoWebhook(
+		t,
+		env.rentalServer.URL,
+		body,
+		"star",
+		"delivery-ignored",
+		signForgejoWebhook(body, env.webhookSecret),
+	)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200 for unsupported event, got %d body=%q", status, respBody)
+	}
+
+	var ignored struct {
+		Status     string `json:"status"`
+		Event      string `json:"event"`
+		DeliveryID string `json:"delivery_id"`
+		Message    string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(respBody), &ignored); err != nil {
+		t.Fatalf("decode ignored webhook response: %v", err)
+	}
+	if ignored.Status != "ignored" {
+		t.Fatalf("expected ignored status, got %q", ignored.Status)
+	}
+	if ignored.Event != "star" {
+		t.Fatalf("expected event=star, got %q", ignored.Event)
+	}
+	if ignored.DeliveryID != "delivery-ignored" {
+		t.Fatalf("expected delivery_id=delivery-ignored, got %q", ignored.DeliveryID)
+	}
+}
+
+func TestForgejoWebhook_BodyTooLargeReturnsRequestEntityTooLarge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	defer env.close()
+
+	body := bytes.Repeat([]byte("a"), (1<<20)+1)
+	respBody, status := postForgejoWebhook(
+		t,
+		env.rentalServer.URL,
+		body,
+		"pull_request",
+		"delivery-too-large",
+		"",
+	)
+	if status != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 for oversized body, got %d", status)
+	}
+	if !strings.Contains(respBody, "request body too large") {
+		t.Fatalf("expected oversized body error, got %q", respBody)
+	}
+}
+
+func postForgejoWebhook(
+	t *testing.T,
+	baseURL string,
+	body []byte,
+	eventType string,
+	deliveryID string,
+	signature string,
+) (string, int) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/webhooks/forgejo", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build webhook request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if eventType != "" {
+		req.Header.Set("X-Forgejo-Event", eventType)
+	}
+	if deliveryID != "" {
+		req.Header.Set("X-Forgejo-Delivery", deliveryID)
+	}
+	if signature != "" {
+		req.Header.Set("X-Forgejo-Signature", signature)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post webhook: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read webhook response: %v", err)
+	}
+	return string(respBody), resp.StatusCode
 }
 
 func signForgejoWebhook(body []byte, secret string) string {
