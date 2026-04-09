@@ -112,7 +112,9 @@ function NewPostPage() {
       </div>
 
       {/* Editor */}
-      <Suspense fallback={<div className="py-12 text-center text-muted-foreground">Loading editor...</div>}>
+      <Suspense
+        fallback={<div className="py-12 text-center text-muted-foreground">Loading editor...</div>}
+      >
         <TiptapEditor content={content} onChange={setContent} />
       </Suspense>
     </div>

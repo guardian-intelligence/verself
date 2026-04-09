@@ -54,16 +54,16 @@ VERIFICATION_REPO_REVISION="${run_id}-seed" \
     --tags deploy_profile,clickhouse,billing_service,sandbox_rental_service,electric,frontend_auth_sessions,rent_a_sandbox,otelcol,forgejo
   wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
   # verification-reset restarts the service stack; wait for the loopback API
-  # before seed-demo starts probing authz behavior against sandbox-rental.
+  # before seed-system starts probing authz behavior against sandbox-rental.
   wait_for_loopback_api "sandbox-rental-service" "http://127.0.0.1:4243/api/v1/billing/balance" "401"
-  ansible-playbook -i inventory/hosts.ini playbooks/seed-demo.yml
+  ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
 )
 
 wait_for_public_site "${BASE_URL:-https://rentasandbox.${domain}}"
 
-demo_password="$(
+acme_user_password="$(
   ssh -o IPQoS=none -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \
-    "sudo cat /etc/credstore/seed-demo/demo-user-password"
+    "sudo cat /etc/credstore/seed-system/acme-user-password"
 )"
 
 verification_repo_url="$(
@@ -72,7 +72,7 @@ verification_repo_url="$(
 )"
 
 set +e
-TEST_PASSWORD="${demo_password}" \
+TEST_PASSWORD="${acme_user_password}" \
 FORGE_METAL_DOMAIN="${domain}" \
 BASE_URL="${BASE_URL:-https://rentasandbox.${domain}}" \
 FORGE_METAL_RECORD_ARTIFACTS="1" \

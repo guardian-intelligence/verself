@@ -1,96 +1,48 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  getRepo,
-  getRepoGenerations,
-  refreshRepo,
-  rescanRepo,
-  submitRepoExecution,
-  type Repo,
-  type RepoCompatibilitySummary,
-} from "~/server-fns/api";
-import { keys } from "~/lib/query-keys";
-import { requireViewer } from "~/lib/protected-route";
+import { Suspense } from "react";
 import { RepoStateBadge, shortSHA } from "~/components/repo-state";
+import { RepoDetailLoadingState, RepoErrorBanner } from "~/features/repos/components";
+import {
+  loadRepoDetail,
+  repoGenerationsQuery,
+  repoQuery,
+} from "~/features/repos/queries";
+import {
+  useRefreshRepoMutation,
+  useRescanRepoMutation,
+  useRunRepoExecutionMutation,
+} from "~/features/repos/mutations";
+import { requireViewer } from "~/lib/protected-route";
+import type { Repo, RepoCompatibilitySummary } from "~/server-fns/api";
 
 export const Route = createFileRoute("/repos/$repoId")({
   beforeLoad: ({ location }) => requireViewer(location.href),
-  loader: async ({ params }) => ({
-    repo: await getRepo({ data: { repoId: params.repoId } }),
-    generations: await getRepoGenerations({ data: { repoId: params.repoId } }),
-  }),
+  loader: ({ context, params }) => loadRepoDetail(context.queryClient, params.repoId),
   component: RepoDetailPage,
 });
 
 function RepoDetailPage() {
+  return (
+    <Suspense fallback={<RepoDetailLoadingState />}>
+      <RepoDetailContent />
+    </Suspense>
+  );
+}
+
+function RepoDetailContent() {
   const { repoId } = Route.useParams();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const initialData = Route.useLoaderData();
-
-  const repoQuery = useQuery({
-    queryKey: keys.repo(repoId),
-    queryFn: () => getRepo({ data: { repoId } }),
-    initialData: initialData.repo,
-    refetchInterval: (query) => {
-      const repo = query.state.data;
-      return repo && shouldPollRepo(repo.state) ? 2_000 : false;
-    },
-  });
-
-  const generationsQuery = useQuery({
-    queryKey: keys.repoGenerations(repoId),
-    queryFn: () => getRepoGenerations({ data: { repoId } }),
-    initialData: initialData.generations,
-    refetchInterval: (query) => {
-      const generations = query.state.data;
-      return generations && generations.some((generation) => shouldPollGeneration(generation.state))
-        ? 2_000
-        : false;
-    },
-  });
-
-  const invalidateRepo = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: keys.repos() }),
-      queryClient.invalidateQueries({ queryKey: keys.repo(repoId) }),
-      queryClient.invalidateQueries({ queryKey: keys.repoGenerations(repoId) }),
-      queryClient.invalidateQueries({ queryKey: keys.jobs() }),
-    ]);
-  };
-
-  const rescanMutation = useMutation({
-    mutationFn: () => rescanRepo({ data: { repoId } }),
-    onSuccess: invalidateRepo,
-  });
-
-  const refreshMutation = useMutation({
-    mutationFn: () => refreshRepo({ data: { repoId } }),
-    onSuccess: invalidateRepo,
-  });
-
-  const runMutation = useMutation({
-    mutationFn: async () => submitRepoExecution({ data: { repo_id: repoId } }),
-    onSuccess: async (data) => {
-      await invalidateRepo();
+  const { data: repo } = useSuspenseQuery(repoQuery(repoId));
+  const { data: generations } = useSuspenseQuery(repoGenerationsQuery(repoId));
+  const rescanMutation = useRescanRepoMutation(repoId);
+  const refreshMutation = useRefreshRepoMutation(repoId);
+  const runMutation = useRunRepoExecutionMutation(repoId, {
+    onSuccess: (data) => {
       void navigate({ to: "/jobs/$jobId", params: { jobId: data.execution_id } });
     },
   });
 
-  if (repoQuery.error) {
-    return (
-      <div className="py-12 text-center">
-        <p className="text-destructive">Failed to load repo: {repoQuery.error.message}</p>
-      </div>
-    );
-  }
-
-  const repo = repoQuery.data;
-  if (!repo) {
-    return <div className="py-12 text-center text-muted-foreground">Loading repo...</div>;
-  }
-
-  const generations = generationsQuery.data ?? [];
   const activeGeneration = generations.find(
     (generation) => generation.golden_generation_id === repo.active_golden_generation_id,
   );
@@ -143,10 +95,10 @@ function RepoDetailPage() {
         </div>
       </div>
 
-      {rescanMutation.error && <ErrorBanner message={rescanMutation.error.message} />}
-      {refreshMutation.error && <ErrorBanner message={refreshMutation.error.message} />}
-      {runMutation.error && <ErrorBanner message={runMutation.error.message} />}
-      {repo.last_error ? <ErrorBanner message={repo.last_error} /> : null}
+      {rescanMutation.error ? <RepoErrorBanner message={rescanMutation.error.message} /> : null}
+      {refreshMutation.error ? <RepoErrorBanner message={refreshMutation.error.message} /> : null}
+      {runMutation.error ? <RepoErrorBanner message={runMutation.error.message} /> : null}
+      {repo.last_error ? <RepoErrorBanner message={repo.last_error} /> : null}
 
       <div className="grid md:grid-cols-4 gap-4">
         <InfoCard label="Provider" value={repo.provider} />
@@ -156,7 +108,9 @@ function RepoDetailPage() {
         <InfoCard label="Last ready SHA" value={shortSHA(repo.last_ready_sha)} />
         <InfoCard
           label="Active golden"
-          value={repo.active_golden_generation_id ? repo.active_golden_generation_id.slice(0, 8) : "--"}
+          value={
+            repo.active_golden_generation_id ? repo.active_golden_generation_id.slice(0, 8) : "--"
+          }
         />
         <InfoCard label="Compatibility" value={repo.compatibility_status || "--"} />
         <InfoCard label="Updated" value={new Date(repo.updated_at).toLocaleString()} />
@@ -181,14 +135,21 @@ function RepoDetailPage() {
           <div className="border border-border rounded-lg p-4">
             {activeGeneration ? (
               <div className="space-y-3 text-sm">
-                <InfoRow label="Generation" value={activeGeneration.golden_generation_id.slice(0, 8)} />
+                <InfoRow
+                  label="Generation"
+                  value={activeGeneration.golden_generation_id.slice(0, 8)}
+                />
                 <InfoRow label="State" value={activeGeneration.state} />
                 <InfoRow label="Source ref" value={activeGeneration.source_ref} />
                 <InfoRow label="Source SHA" value={shortSHA(activeGeneration.source_sha)} />
                 <InfoRow label="Snapshot" value={activeGeneration.snapshot_ref || "--"} />
                 <InfoRow
                   label="Activated"
-                  value={activeGeneration.activated_at ? new Date(activeGeneration.activated_at).toLocaleString() : "--"}
+                  value={
+                    activeGeneration.activated_at
+                      ? new Date(activeGeneration.activated_at).toLocaleString()
+                      : "--"
+                  }
                 />
               </div>
             ) : (
@@ -239,7 +200,9 @@ function RepoDetailPage() {
               ) : (
                 generations.map((generation) => (
                   <tr key={generation.golden_generation_id}>
-                    <td className="px-4 py-2 font-mono">{generation.golden_generation_id.slice(0, 8)}</td>
+                    <td className="px-4 py-2 font-mono">
+                      {generation.golden_generation_id.slice(0, 8)}
+                    </td>
                     <td className="px-4 py-2">
                       <GenerationStateBadge state={generation.state} />
                     </td>
@@ -307,7 +270,10 @@ function CompatibilityPanel({ summary }: { summary: RepoCompatibilitySummary | u
           <div className="space-y-2">
             <h3 className="font-medium text-sm">Issues</h3>
             {issues.map((issue, index) => (
-              <div key={`${issue.path}-${issue.job_id}-${index}`} className="rounded-md border border-border p-3 text-sm">
+              <div
+                key={`${issue.path}-${issue.job_id}-${index}`}
+                className="rounded-md border border-border p-3 text-sm"
+              >
                 <div className="font-medium">
                   {issue.path || "workflow"} {issue.job_id ? `· ${issue.job_id}` : ""}
                 </div>
@@ -333,14 +299,6 @@ function CompatibilityPanel({ summary }: { summary: RepoCompatibilitySummary | u
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="border border-destructive/50 bg-destructive/5 rounded-lg p-4 text-sm text-destructive">
-      {message}
     </div>
   );
 }
@@ -389,13 +347,7 @@ function canRefresh(repo: Repo): boolean {
 }
 
 function canRun(repo: Repo): boolean {
-  return (repo.state === "ready" || repo.state === "degraded") && !!repo.active_golden_generation_id;
-}
-
-function shouldPollRepo(state: string): boolean {
-  return state === "importing" || state === "waiting_for_bootstrap" || state === "preparing";
-}
-
-function shouldPollGeneration(state: string): boolean {
-  return state === "queued" || state === "building" || state === "sanitizing";
+  return (
+    (repo.state === "ready" || repo.state === "degraded") && !!repo.active_golden_generation_id
+  );
 }

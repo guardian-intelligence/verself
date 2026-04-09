@@ -1,8 +1,7 @@
 export type EnvSource = Record<string, string | undefined>;
 type LocationLike = { origin?: string };
 
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digitsPattern = /^\d+$/;
 const electricOpaqueIDPattern = /^[A-Za-z0-9._:-]+$/;
 
@@ -100,10 +99,7 @@ export function deriveAppBaseURL(appSubdomain: string, env: EnvSource = process.
   if (explicitBaseURL) {
     return parseAbsoluteURL(explicitBaseURL, "BASE_URL");
   }
-  return deriveHTTPSOrigin(
-    appSubdomain,
-    requireOperatorDomain("FORGE_METAL_DOMAIN", env),
-  );
+  return deriveHTTPSOrigin(appSubdomain, requireOperatorDomain("FORGE_METAL_DOMAIN", env));
 }
 
 export function deriveDemoEmail(env: EnvSource = process.env, localPart = "demo"): string {

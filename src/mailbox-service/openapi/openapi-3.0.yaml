@@ -1,0 +1,763 @@
+components:
+  schemas:
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          nullable: true
+          type: array
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          example: https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          example: 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          example: Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          example: https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    MailAccountOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/MailAccountOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        account_id:
+          type: string
+        display_name:
+          type: string
+        email_address:
+          type: string
+      required:
+        - account_id
+        - email_address
+        - display_name
+      type: object
+    MailBodyOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/MailBodyOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        account_id:
+          type: string
+        email_id:
+          type: string
+        fetched_at:
+          type: string
+        html_body:
+          type: string
+        text_body:
+          type: string
+      required:
+        - account_id
+        - email_id
+        - text_body
+        - html_body
+        - fetched_at
+      type: object
+    MailMoveInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/MailMoveInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        mailbox_id:
+          type: string
+      required:
+        - mailbox_id
+      type: object
+    MailMutationOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/MailMutationOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        email_id:
+          type: string
+        status:
+          type: string
+      required:
+        - status
+        - email_id
+      type: object
+    MailSyncStatusOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/MailSyncStatusOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status: {}
+      required:
+        - status
+      type: object
+    OperatorAccount:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        display_name:
+          type: string
+        email_address:
+          type: string
+        jmap_account_id:
+          type: string
+        principal_type:
+          type: string
+        synced_at:
+          type: string
+      required:
+        - account_id
+        - jmap_account_id
+        - email_address
+        - display_name
+        - principal_type
+        - synced_at
+      type: object
+    OperatorAccountsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/OperatorAccountsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        accounts:
+          items:
+            $ref: "#/components/schemas/OperatorAccount"
+          nullable: true
+          type: array
+      required:
+        - accounts
+      type: object
+    OperatorAddress:
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+      required:
+        - name
+        - email
+      type: object
+    OperatorEmail:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        cc:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+        email_id:
+          type: string
+        from_email:
+          type: string
+        from_name:
+          type: string
+        has_attachment:
+          type: boolean
+        is_answered:
+          type: boolean
+        is_draft:
+          type: boolean
+        is_flagged:
+          type: boolean
+        is_seen:
+          type: boolean
+        keywords:
+          additionalProperties:
+            type: boolean
+          type: object
+        mailbox_ids:
+          items:
+            type: string
+          nullable: true
+          type: array
+        preview:
+          type: string
+        received_at:
+          type: string
+        reply_to:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+        sent_at:
+          type: string
+        size:
+          format: int64
+          type: integer
+        subject:
+          type: string
+        synced_at:
+          type: string
+        thread_id:
+          type: string
+        to:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+      required:
+        - account_id
+        - email_id
+        - thread_id
+        - mailbox_ids
+        - keywords
+        - subject
+        - from_name
+        - from_email
+        - to
+        - cc
+        - reply_to
+        - preview
+        - has_attachment
+        - size
+        - received_at
+        - sent_at
+        - is_seen
+        - is_flagged
+        - is_answered
+        - is_draft
+        - synced_at
+      type: object
+    OperatorEmailDetail:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/OperatorEmailDetail.json
+          format: uri
+          readOnly: true
+          type: string
+        account_id:
+          type: string
+        cc:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+        email_id:
+          type: string
+        fetched_at:
+          type: string
+        from_email:
+          type: string
+        from_name:
+          type: string
+        has_attachment:
+          type: boolean
+        html_body:
+          type: string
+        is_answered:
+          type: boolean
+        is_draft:
+          type: boolean
+        is_flagged:
+          type: boolean
+        is_seen:
+          type: boolean
+        keywords:
+          additionalProperties:
+            type: boolean
+          type: object
+        mailbox_ids:
+          items:
+            type: string
+          nullable: true
+          type: array
+        preview:
+          type: string
+        received_at:
+          type: string
+        reply_to:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+        sent_at:
+          type: string
+        size:
+          format: int64
+          type: integer
+        subject:
+          type: string
+        synced_at:
+          type: string
+        text_body:
+          type: string
+        thread_id:
+          type: string
+        to:
+          items:
+            $ref: "#/components/schemas/OperatorAddress"
+          nullable: true
+          type: array
+      required:
+        - account_id
+        - email_id
+        - thread_id
+        - mailbox_ids
+        - keywords
+        - subject
+        - from_name
+        - from_email
+        - to
+        - cc
+        - reply_to
+        - preview
+        - has_attachment
+        - size
+        - received_at
+        - sent_at
+        - is_seen
+        - is_flagged
+        - is_answered
+        - is_draft
+        - synced_at
+        - text_body
+        - html_body
+        - fetched_at
+      type: object
+    OperatorEmailsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/OperatorEmailsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        emails:
+          items:
+            $ref: "#/components/schemas/OperatorEmail"
+          nullable: true
+          type: array
+      required:
+        - emails
+      type: object
+    OperatorMailbox:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        parent_id:
+          type: string
+        role:
+          type: string
+        sort_order:
+          format: int64
+          type: integer
+        synced_at:
+          type: string
+        total_emails:
+          format: int64
+          type: integer
+        total_threads:
+          format: int64
+          type: integer
+        unread_emails:
+          format: int64
+          type: integer
+        unread_threads:
+          format: int64
+          type: integer
+      required:
+        - account_id
+        - id
+        - name
+        - parent_id
+        - role
+        - sort_order
+        - total_emails
+        - unread_emails
+        - total_threads
+        - unread_threads
+        - synced_at
+      type: object
+    OperatorMailboxesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4246/schemas/OperatorMailboxesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        mailboxes:
+          items:
+            $ref: "#/components/schemas/OperatorMailbox"
+          nullable: true
+          type: array
+      required:
+        - mailboxes
+      type: object
+info:
+  title: Mailbox Service
+  version: dev
+openapi: 3.0.3
+paths:
+  /api/v1/mail/account:
+    get:
+      operationId: mail-account
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailAccountOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get the authenticated user's bound mailbox account
+  /api/v1/mail/emails/{email_id}/body:
+    get:
+      operationId: mail-body
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailBodyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Fetch and cache an email body
+  /api/v1/mail/emails/{email_id}/flag:
+    post:
+      operationId: mail-flag
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Flag an email
+  /api/v1/mail/emails/{email_id}/move:
+    post:
+      operationId: mail-move
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MailMoveInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Move an email to another mailbox
+  /api/v1/mail/emails/{email_id}/read:
+    post:
+      operationId: mail-mark-read
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mark an email as read
+  /api/v1/mail/emails/{email_id}/trash:
+    post:
+      operationId: mail-trash
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Move an email to trash
+  /api/v1/mail/emails/{email_id}/unflag:
+    post:
+      operationId: mail-unflag
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Unflag an email
+  /api/v1/mail/emails/{email_id}/unread:
+    post:
+      operationId: mail-mark-unread
+      parameters:
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailMutationOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mark an email as unread
+  /api/v1/mail/sync/status:
+    get:
+      operationId: mail-sync-status
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailSyncStatusOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mailbox sync status
+  /internal/mailbox/v1/accounts:
+    get:
+      operationId: operator-list-accounts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorAccountsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List synced mailbox accounts for operator tooling
+  /internal/mailbox/v1/accounts/{account_id}/emails:
+    get:
+      operationId: operator-list-emails
+      parameters:
+        - in: path
+          name: account_id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: mailbox_id
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorEmailsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List synced emails for an account
+  /internal/mailbox/v1/accounts/{account_id}/emails/{email_id}:
+    get:
+      operationId: operator-get-email
+      parameters:
+        - in: path
+          name: account_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: email_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorEmailDetail"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read an email body for an account
+  /internal/mailbox/v1/accounts/{account_id}/mailboxes:
+    get:
+      operationId: operator-list-mailboxes
+      parameters:
+        - in: path
+          name: account_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperatorMailboxesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List synced mailboxes for an account
+servers:
+  - url: http://127.0.0.1:4246

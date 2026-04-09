@@ -1,6 +1,14 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Suspense } from "react";
 import { BalanceCard } from "~/components/balance-card";
-import { getBalance, getGrants, getSubscriptions } from "~/server-fns/api";
+import { BillingBanner, TableEmptyRow } from "~/features/billing/components";
+import {
+  activeGrantsQuery,
+  balanceQuery,
+  loadBillingPage,
+  subscriptionsQuery,
+} from "~/features/billing/queries";
 import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/billing/")({
@@ -9,21 +17,23 @@ export const Route = createFileRoute("/billing/")({
     subscribed: search.subscribed === true || search.subscribed === "true",
   }),
   beforeLoad: ({ location }) => requireViewer(location.href),
-  loader: async () => ({
-    balance: await getBalance(),
-    subscriptions: await getSubscriptions(),
-    grants: await getGrants({ data: { active: true } }),
-  }),
+  loader: ({ context }) => loadBillingPage(context.queryClient),
   component: BillingPage,
 });
 
 function BillingPage() {
+  return (
+    <Suspense fallback={<BillingLoadingState />}>
+      <BillingPageContent />
+    </Suspense>
+  );
+}
+
+function BillingPageContent() {
   const { purchased, subscribed } = Route.useSearch();
-  const {
-    balance,
-    subscriptions,
-    grants,
-  } = Route.useLoaderData();
+  const { data: balance } = useSuspenseQuery(balanceQuery());
+  const { data: subscriptions } = useSuspenseQuery(subscriptionsQuery());
+  const { data: grants } = useSuspenseQuery(activeGrantsQuery());
 
   return (
     <div className="space-y-8">
@@ -46,11 +56,11 @@ function BillingPage() {
       </div>
 
       {(purchased || subscribed) && (
-        <div className="border border-success/50 bg-success/5 rounded-lg p-4 text-sm">
+        <BillingBanner>
           {purchased
             ? "Credits purchased successfully! Your balance has been updated."
             : "Subscription activated! Monthly credits will be deposited automatically."}
-        </div>
+        </BillingBanner>
       )}
 
       <BalanceCard balance={balance} />
@@ -84,11 +94,7 @@ function BillingPage() {
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                    No active subscriptions.
-                  </td>
-                </tr>
+                <TableEmptyRow colSpan={4}>No active subscriptions.</TableEmptyRow>
               )}
             </tbody>
           </table>
@@ -120,15 +126,21 @@ function BillingPage() {
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                    No active credit grants.
-                  </td>
-                </tr>
+                <TableEmptyRow colSpan={4}>No active credit grants.</TableEmptyRow>
               )}
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BillingLoadingState() {
+  return (
+    <div className="space-y-8">
+      <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
+        Loading billing summary...
       </div>
     </div>
   );

@@ -29,7 +29,6 @@ src/platform/ansible/inventory/hosts.ini
 *.test
 *.out
 vendor/
-go.work.sum
 
 # IDE
 .idea/

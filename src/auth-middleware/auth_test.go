@@ -86,6 +86,38 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 				t.Fatalf("unexpected roles: got %v want %v", identity.Roles, expectedRoles)
 			}
 		}
+		expectedAssignments := []RoleAssignment{
+			{
+				OrganizationID:   "org-456",
+				OrganizationName: "billing",
+				Role:             "admin",
+			},
+			{
+				OrganizationID:   "org-456",
+				OrganizationName: "billing",
+				ProjectID:        "999",
+				Role:             "editor",
+			},
+			{
+				OrganizationID:   "org-456",
+				OrganizationName: "billing",
+				Role:             "viewer",
+			},
+			{
+				OrganizationID:   "org-456",
+				OrganizationName: "billing",
+				ProjectID:        "999",
+				Role:             "viewer",
+			},
+		}
+		if len(identity.RoleAssignments) != len(expectedAssignments) {
+			t.Fatalf("unexpected role assignments length: got %#v want %#v", identity.RoleAssignments, expectedAssignments)
+		}
+		for i, assignment := range expectedAssignments {
+			if identity.RoleAssignments[i] != assignment {
+				t.Fatalf("unexpected role assignments: got %#v want %#v", identity.RoleAssignments, expectedAssignments)
+			}
+		}
 		if _, ok := identity.Raw["amr"]; !ok {
 			t.Fatal("expected raw amr claim")
 		}

@@ -31,9 +31,9 @@ test.describe("Sandbox Repo Import Live Verification", () => {
     context,
   }, testInfo) => {
     const verificationRunID =
-      env.verificationRunID || `sandbox-live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const runJSONPath =
-      env.verificationRunJSONPath || testInfo.outputPath("verification-run.json");
+      env.verificationRunID ||
+      `sandbox-live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runJSONPath = env.verificationRunJSONPath || testInfo.outputPath("verification-run.json");
 
     await installVerificationOverlay(page, verificationRunID);
 
@@ -114,17 +114,9 @@ test.describe("Sandbox Repo Import Live Verification", () => {
 
       await page.getByRole("button", { name: "Rescan" }).click();
       await expect
-        .poll(
-          () => readInfoCardValue(page, "Last scanned SHA"),
-          { timeout: 60_000 },
-        )
+        .poll(() => readInfoCardValue(page, "Last scanned SHA"), { timeout: 60_000 })
         .toBe(refreshedRepoMeta.commit_sha.slice(0, 12));
-      await expect
-        .poll(
-          () => readRepoState(page),
-          { timeout: 30_000 },
-        )
-        .toBe("ready");
+      await expect.poll(() => readRepoState(page), { timeout: 30_000 }).toBe("ready");
       await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
         timeout: 30_000,
       });
@@ -132,10 +124,7 @@ test.describe("Sandbox Repo Import Live Verification", () => {
       await page.getByRole("button", { name: /^(Prepare|Refresh) Golden$/ }).click();
 
       await expect
-        .poll(
-          () => readInfoRowValue(page, "Source SHA"),
-          { timeout: 300_000 },
-        )
+        .poll(() => readInfoRowValue(page, "Source SHA"), { timeout: 300_000 })
         .toBe(refreshedRepoMeta.commit_sha.slice(0, 12));
       await waitForRepoState(page, "ready");
       const refreshedGolden = await readActiveGolden(page);
@@ -162,7 +151,9 @@ test.describe("Sandbox Repo Import Live Verification", () => {
       }).toPass({ timeout: 60_000, intervals: [2_000, 5_000] });
 
       await page.goto("/jobs", { waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("link", { name: secondExecution.execution_id.slice(0, 8) })).toBeVisible({
+      await expect(
+        page.getByRole("link", { name: secondExecution.execution_id.slice(0, 8) }),
+      ).toBeVisible({
         timeout: 30_000,
       });
 
@@ -219,7 +210,9 @@ async function readActiveGolden(page: Page): Promise<{
   execution_id: string;
   source_sha: string;
 }> {
-  const executionHref = await page.getByRole("link", { name: "View bootstrap execution" }).getAttribute("href");
+  const executionHref = await page
+    .getByRole("link", { name: "View bootstrap execution" })
+    .getAttribute("href");
   return {
     generation_id: await readInfoRowValue(page, "Generation"),
     execution_id: executionHref ? requireRouteID(executionHref, "/jobs/") : "",

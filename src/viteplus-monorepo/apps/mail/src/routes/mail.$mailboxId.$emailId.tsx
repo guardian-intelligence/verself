@@ -46,15 +46,9 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
     staleTime: 5 * 60_000,
   });
 
-  const emailCollection = useMemo(
-    () => createEmailCollection(accountId),
-    [accountId],
-  );
+  const emailCollection = useMemo(() => createEmailCollection(accountId), [accountId]);
 
-  const { data: emails } = useLiveQuery(
-    (q) => q.from({ e: emailCollection }),
-    [emailCollection],
-  );
+  const { data: emails } = useLiveQuery((q) => q.from({ e: emailCollection }), [emailCollection]);
 
   const email = useMemo(
     () => (emails as ElectricEmail[] | undefined)?.find((e) => e.id === emailId) ?? null,
@@ -74,7 +68,13 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
         <div className="text-center space-y-2">
-          <svg viewBox="0 0 24 24" className="w-10 h-10 mx-auto opacity-30" fill="none" stroke="currentColor" strokeWidth="1">
+          <svg
+            viewBox="0 0 24 24"
+            className="w-10 h-10 mx-auto opacity-30"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+          >
             <path d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
           </svg>
           <p className="text-sm">Select an email to read</p>
@@ -84,11 +84,9 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
   }
 
   const handleFlag = () => {
-    void (
-      email.is_flagged
-        ? unflagEmail({ data: { emailId: email.id } })
-        : flagEmail({ data: { emailId: email.id } })
-    );
+    void (email.is_flagged
+      ? unflagEmail({ data: { emailId: email.id } })
+      : flagEmail({ data: { emailId: email.id } }));
   };
 
   const handleTrash = () => {
@@ -139,17 +137,33 @@ function EmailToolbar({
       >
         {email.is_flagged ? (
           <svg viewBox="0 0 20 20" className="w-4 h-4 text-warning" fill="currentColor">
-            <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd" />
+            <path
+              fillRule="evenodd"
+              d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z"
+              clipRule="evenodd"
+            />
           </svg>
         ) : (
-          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg
+            viewBox="0 0 24 24"
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
             <path d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
           </svg>
         )}
       </ToolbarButton>
 
       <ToolbarButton onClick={onTrash} title="Move to Trash">
-        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <svg
+          viewBox="0 0 24 24"
+          className="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
           <path d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
         </svg>
       </ToolbarButton>
@@ -219,16 +233,8 @@ function EmailHeader({ email }: { email: ElectricEmail }) {
             )}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5 space-y-0.5">
-            {toList.length > 0 && (
-              <p>
-                to {toList.map((r) => r.name || r.email).join(", ")}
-              </p>
-            )}
-            {ccList.length > 0 && (
-              <p>
-                cc {ccList.map((r) => r.name || r.email).join(", ")}
-              </p>
-            )}
+            {toList.length > 0 && <p>to {toList.map((r) => r.name || r.email).join(", ")}</p>}
+            {ccList.length > 0 && <p>cc {ccList.map((r) => r.name || r.email).join(", ")}</p>}
           </div>
         </div>
       </div>
@@ -241,21 +247,104 @@ function EmailBodyRenderer({ body }: { body: EmailBody }) {
     const clean = DOMPurify.sanitize(body.html_body, {
       USE_PROFILES: { html: true },
       ALLOWED_TAGS: [
-        "a", "abbr", "address", "article", "b", "bdi", "bdo", "blockquote",
-        "br", "caption", "center", "cite", "code", "col", "colgroup", "dd",
-        "del", "details", "dfn", "div", "dl", "dt", "em", "figcaption",
-        "figure", "font", "footer", "h1", "h2", "h3", "h4", "h5", "h6",
-        "header", "hr", "i", "img", "ins", "kbd", "li", "main", "mark",
-        "nav", "ol", "p", "pre", "q", "rp", "rt", "ruby", "s", "samp",
-        "section", "small", "span", "strong", "style", "sub", "summary",
-        "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time",
-        "tr", "u", "ul", "var", "wbr",
+        "a",
+        "abbr",
+        "address",
+        "article",
+        "b",
+        "bdi",
+        "bdo",
+        "blockquote",
+        "br",
+        "caption",
+        "center",
+        "cite",
+        "code",
+        "col",
+        "colgroup",
+        "dd",
+        "del",
+        "details",
+        "dfn",
+        "div",
+        "dl",
+        "dt",
+        "em",
+        "figcaption",
+        "figure",
+        "font",
+        "footer",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hr",
+        "i",
+        "img",
+        "ins",
+        "kbd",
+        "li",
+        "main",
+        "mark",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "q",
+        "rp",
+        "rt",
+        "ruby",
+        "s",
+        "samp",
+        "section",
+        "small",
+        "span",
+        "strong",
+        "style",
+        "sub",
+        "summary",
+        "sup",
+        "table",
+        "tbody",
+        "td",
+        "tfoot",
+        "th",
+        "thead",
+        "time",
+        "tr",
+        "u",
+        "ul",
+        "var",
+        "wbr",
       ],
       ALLOWED_ATTR: [
-        "align", "alt", "border", "cellpadding", "cellspacing", "class",
-        "color", "colspan", "dir", "face", "height", "href", "hspace",
-        "lang", "rowspan", "size", "src", "style", "summary", "target",
-        "title", "valign", "vspace", "width",
+        "align",
+        "alt",
+        "border",
+        "cellpadding",
+        "cellspacing",
+        "class",
+        "color",
+        "colspan",
+        "dir",
+        "face",
+        "height",
+        "href",
+        "hspace",
+        "lang",
+        "rowspan",
+        "size",
+        "src",
+        "style",
+        "summary",
+        "target",
+        "title",
+        "valign",
+        "vspace",
+        "width",
       ],
       ALLOW_DATA_ATTR: false,
     });

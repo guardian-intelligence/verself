@@ -1,10 +1,5 @@
-import {
-  electricEqualsWhere,
-  electricShapeURL,
-  requireDecimalID,
-  requireUUID,
-} from "@forge-metal/web-env";
-import { createElectricCollection } from "./electric";
+import { electricEqualsWhere, requireDecimalID, requireUUID } from "@forge-metal/web-env";
+import { createElectricShapeCollection } from "./electric";
 
 // --- Execution collection (real-time PG sync via Electric) ---
 
@@ -29,15 +24,10 @@ export interface ElectricExecution {
 
 export function createExecutionsCollection(orgId: string) {
   const validatedOrgID = requireDecimalID(orgId, "org_id");
-  return createElectricCollection<ElectricExecution>({
+  return createElectricShapeCollection<ElectricExecution>({
     id: `sync-executions-${orgId}`,
-    shapeOptions: {
-      url: electricShapeURL(),
-      params: {
-        table: "executions",
-        where: electricEqualsWhere("org_id", validatedOrgID),
-      },
-    },
+    table: "executions",
+    where: electricEqualsWhere("org_id", validatedOrgID),
     getKey: (item) => item.execution_id,
   });
 }
@@ -54,15 +44,10 @@ export interface ElectricExecutionLog {
 
 export function createExecutionLogsCollection(attemptId: string) {
   const validatedAttemptID = requireUUID(attemptId, "attempt_id");
-  return createElectricCollection<ElectricExecutionLog>({
+  return createElectricShapeCollection<ElectricExecutionLog>({
     id: `sync-execution-logs-${attemptId}`,
-    shapeOptions: {
-      url: electricShapeURL(),
-      params: {
-        table: "execution_logs",
-        where: electricEqualsWhere("attempt_id", validatedAttemptID),
-      },
-    },
+    table: "execution_logs",
+    where: electricEqualsWhere("attempt_id", validatedAttemptID),
     getKey: (item) => `${item.attempt_id}:${item.seq}`,
   });
 }

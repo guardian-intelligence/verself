@@ -34,13 +34,13 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.
 	publicConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	publicAPI := humago.New(mux, publicConfig)
 	registerPublicRoutes(publicAPI, svc)
+	registerOperatorRoutes(publicAPI, svc)
 
 	privateMux := http.NewServeMux()
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
 	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	registerMailRoutes(privateAPI, svc)
-	registerOperatorRoutes(privateAPI, svc)
 
 	return publicAPI, privateMux
 }

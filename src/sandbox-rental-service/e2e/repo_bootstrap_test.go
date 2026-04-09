@@ -49,6 +49,7 @@ type repoBootstrapEnv struct {
 	ctx           context.Context
 	pg            pgEnv
 	billingServer *billingtestharness.Server
+	billingClient *billingclient.ServiceClient
 	rentalServer  *rentaltestharness.Server
 	authProvider  *testAuthProvider
 	queryCHConn   anyQueryRower
@@ -331,6 +332,7 @@ jobs:
 		ctx:           ctx,
 		pg:            pg,
 		billingServer: billingServer,
+		billingClient: billingHTTPClient,
 		rentalServer:  rentalServer,
 		authProvider:  authProvider,
 		queryCHConn:   queryCHConn,

@@ -29,10 +29,7 @@ function EmailListPane({ accountId, mailboxId }: { accountId: string; mailboxId:
     [accountId],
   );
 
-  const emailCollection = useMemo(
-    () => createEmailCollection(accountId),
-    [accountId],
-  );
+  const emailCollection = useMemo(() => createEmailCollection(accountId), [accountId]);
 
   const { data: emailMailboxes } = useLiveQuery(
     (q) => q.from({ em: emailMailboxCollection }),
@@ -59,7 +56,13 @@ function EmailListPane({ accountId, mailboxId }: { accountId: string; mailboxId:
       <div className="w-[360px] shrink-0 border-r border-border overflow-y-auto bg-card">
         {emails.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground px-4">
-            <svg viewBox="0 0 24 24" className="w-12 h-12 mb-3 opacity-40" fill="none" stroke="currentColor" strokeWidth="1">
+            <svg
+              viewBox="0 0 24 24"
+              className="w-12 h-12 mb-3 opacity-40"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1"
+            >
               <path d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
             </svg>
             <p className="text-sm">No emails in this folder</p>
@@ -95,17 +98,21 @@ function EmailRow({ email, mailboxId }: { email: ElectricEmail; mailboxId: strin
     >
       <div className="flex items-start gap-3">
         {/* Sender avatar */}
-        <div className={`
+        <div
+          className={`
           w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0 mt-0.5
           ${isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}
-        `}>
+        `}
+        >
           {initial}
         </div>
 
         <div className="flex-1 min-w-0">
           {/* Top row: sender + date */}
           <div className="flex items-baseline gap-2">
-            <span className={`flex-1 truncate text-sm ${isUnread ? "font-semibold text-foreground" : "text-foreground/80"}`}>
+            <span
+              className={`flex-1 truncate text-sm ${isUnread ? "font-semibold text-foreground" : "text-foreground/80"}`}
+            >
               {senderName}
             </span>
             <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
@@ -114,10 +121,20 @@ function EmailRow({ email, mailboxId }: { email: ElectricEmail; mailboxId: strin
           </div>
 
           {/* Subject line */}
-          <div className={`truncate text-sm mt-0.5 ${isUnread ? "text-foreground" : "text-foreground/70"}`}>
+          <div
+            className={`truncate text-sm mt-0.5 ${isUnread ? "text-foreground" : "text-foreground/70"}`}
+          >
             {email.is_flagged && (
-              <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 text-warning inline mr-1 -mt-0.5" fill="currentColor">
-                <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd" />
+              <svg
+                viewBox="0 0 20 20"
+                className="w-3.5 h-3.5 text-warning inline mr-1 -mt-0.5"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z"
+                  clipRule="evenodd"
+                />
               </svg>
             )}
             {email.subject || "(no subject)"}
@@ -130,9 +147,7 @@ function EmailRow({ email, mailboxId }: { email: ElectricEmail; mailboxId: strin
         </div>
 
         {/* Unread indicator */}
-        {isUnread && (
-          <div className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />
-        )}
+        {isUnread && <div className="w-2 h-2 rounded-full bg-primary shrink-0 mt-2" />}
       </div>
     </Link>
   );

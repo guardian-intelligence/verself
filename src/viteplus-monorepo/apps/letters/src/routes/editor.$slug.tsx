@@ -2,7 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createAllPostsCollection, type ElectricPost } from "~/lib/collections";
-import { updatePost, publishPost, unpublishPost, deletePost, getPostBySlug } from "~/server-fns/posts";
+import {
+  updatePost,
+  publishPost,
+  unpublishPost,
+  deletePost,
+  getPostBySlug,
+} from "~/server-fns/posts";
 
 const TiptapEditor = lazy(() =>
   import("~/components/tiptap-editor").then((m) => ({ default: m.TiptapEditor })),
@@ -177,7 +183,8 @@ function EditPostPage() {
         </span>
         {isPublished && post.published_at && (
           <span>
-            {" "}· Published{" "}
+            {" "}
+            · Published{" "}
             {new Date(post.published_at).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
@@ -234,7 +241,11 @@ function EditPostPage() {
 
       {/* Editor */}
       {initialized && (
-        <Suspense fallback={<div className="py-12 text-center text-muted-foreground">Loading editor...</div>}>
+        <Suspense
+          fallback={
+            <div className="py-12 text-center text-muted-foreground">Loading editor...</div>
+          }
+        >
           <TiptapEditor content={content} onChange={setContent} />
         </Suspense>
       )}

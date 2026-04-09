@@ -64,7 +64,11 @@ function Nav() {
   return (
     <nav className="border-b border-border">
       <div className="max-w-3xl mx-auto px-6 flex items-center h-14 gap-6">
-        <Link to="/" className="text-xl font-bold tracking-tight" style={{ fontFamily: "'Playfair Display', serif" }}>
+        <Link
+          to="/"
+          className="text-xl font-bold tracking-tight"
+          style={{ fontFamily: "'Playfair Display', serif" }}
+        >
           Letters
         </Link>
         <div className="ml-auto flex items-center gap-4">
@@ -93,7 +97,10 @@ function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> 
 
   if (!viewer) {
     return (
-      <a href={loginHref} className="px-3 py-1.5 rounded-md border border-border hover:bg-muted text-sm">
+      <a
+        href={loginHref}
+        className="px-3 py-1.5 rounded-md border border-border hover:bg-muted text-sm"
+      >
         Sign in
       </a>
     );

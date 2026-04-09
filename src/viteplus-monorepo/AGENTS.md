@@ -55,14 +55,20 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 
 Frontend apps (TanStack Start) run locally via `vp dev` with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).
 
+Avoid `as` assertions. Prefer `satisfies`.
+
+Functional core, imperative shell. Parse at the boundaries once. Know the shape of the data you're working with rather than doing imperative null checks.
+
+Avoid useState -- sync small bits of imperative state to search params. For truly bespoke state management, use useReducer.
+
 ### Zitadel OIDC Architecture
 
 Only frontends need OIDC apps. Go backend services (mailbox-service, billing-service, sandbox-rental-service) validate JWTs that frontends already obtained — they don't have their own OIDC apps. A backend only needs the Zitadel **project ID** (as the `audience` claim to validate against).
 
-| Zitadel Project | OIDC Apps (frontends) | JWT Validators (backends) |
-|---|---|---|
-| `sandbox-rental` | rent-a-sandbox | sandbox-rental-service, billing-service |
-| `mailbox-service` | webmail | mailbox-service |
+| Zitadel Project   | OIDC Apps (frontends) | JWT Validators (backends)               |
+| ----------------- | --------------------- | --------------------------------------- |
+| `sandbox-rental`  | rent-a-sandbox        | sandbox-rental-service, billing-service |
+| `mailbox-service` | webmail               | mailbox-service                         |
 
 ### Dev Mode OIDC Apps
 
@@ -75,12 +81,13 @@ Production OIDC apps are created automatically by each app's Ansible role (`zita
 
 For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
 
-| Frontend | Zitadel Project | Port | Dev Redirect URI |
-|---|---|---|---|
-| rent-a-sandbox | sandbox-rental | 4244 | `http://127.0.0.1:4244/callback` |
-| webmail | mailbox-service | 4245 | `http://127.0.0.1:4245/callback` |
+| Frontend       | Zitadel Project | Port | Dev Redirect URI                 |
+| -------------- | --------------- | ---- | -------------------------------- |
+| rent-a-sandbox | sandbox-rental  | 4244 | `http://127.0.0.1:4244/callback` |
+| webmail        | mailbox-service | 4245 | `http://127.0.0.1:4245/callback` |
 
 The dev app must have:
+
 - `appType: OIDC_APP_TYPE_USER_AGENT` (SPA, no server secret)
 - `authMethodType: OIDC_AUTH_METHOD_TYPE_NONE` (public client)
 - `devMode: true`
@@ -152,7 +159,6 @@ TanStack Router file-based routing. Route files go in `src/routes/`. The route t
 load: "apps/web/node_modules/nitro/skills/nitro/SKILL.md"
 <!-- intent-skills:end -->
 
-
 ### ElectricSQL gotchas
 
 Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `mailbox_service`) require three differentiators to avoid collisions:
@@ -162,4 +168,3 @@ Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandb
 3. **`RELEASE_NAME`** — Elixir/Erlang BEAM node name. Both instances run with `--network=host`, so their Erlang nodes collide on the same hostname. Without a distinct name, the second container exits with "the name electric@hostname seems to be in use by another Erlang node".
 
 Each Electric instance also needs its own publication (`CREATE PUBLICATION ... FOR TABLE ...`) with `REPLICA IDENTITY FULL` on all synced tables. The publication name is derived from the stream ID: `electric_publication_{stream_id}` (default: `electric_publication_default`). Since publications are per-database, the default name works if instances target different databases — but setting `ELECTRIC_REPLICATION_STREAM_ID` changes the expected publication name too.
-

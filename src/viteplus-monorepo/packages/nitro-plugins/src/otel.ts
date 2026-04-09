@@ -16,9 +16,10 @@ function logSdkError(msg: string, error: unknown): void {
 }
 
 export async function initOtel(serviceName: string): Promise<void> {
-  const otlpEndpoint = (
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://127.0.0.1:4318"
-  ).replace(/\/+$/, "");
+  const otlpEndpoint = (process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://127.0.0.1:4318").replace(
+    /\/+$/,
+    "",
+  );
   const tracesEndpoint =
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
 
@@ -35,7 +36,7 @@ export async function initOtel(serviceName: string): Promise<void> {
     ],
   });
 
-  await sdk.start();
+  sdk.start();
 
   let shuttingDown = false;
 

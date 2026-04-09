@@ -5,6 +5,25 @@ import { rentASandboxAuthMiddleware, verificationRunMiddleware } from "./auth";
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
+export class SandboxRentalApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly path: string,
+    public readonly body: string,
+  ) {
+    super(`Sandbox rental API ${status}: ${body}`);
+    this.name = "SandboxRentalApiError";
+  }
+}
+
+export function isSandboxRentalApiError(error: unknown): error is SandboxRentalApiError {
+  return error instanceof SandboxRentalApiError;
+}
+
+export function isSandboxRentalNotFound(error: unknown): error is SandboxRentalApiError {
+  return error instanceof SandboxRentalApiError && error.status === 404;
+}
+
 async function sandboxRentalServiceRequest<T>(
   accessToken: string,
   path: string,
@@ -28,7 +47,7 @@ async function sandboxRentalServiceRequest<T>(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`Sandbox rental API ${response.status}: ${body}`);
+    throw new SandboxRentalApiError(response.status, path, body);
   }
 
   return response.json() as Promise<T>;
@@ -307,7 +326,11 @@ export const submitRepoExecution = createServerFn({ method: "POST" })
   .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
   .inputValidator((data: RepoExecutionRequest) => data)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<{ execution_id: string; attempt_id: string; status: string }>(
+    return sandboxRentalServiceRequest<{
+      execution_id: string;
+      attempt_id: string;
+      status: string;
+    }>(
       context.auth.accessToken,
       "/api/v1/executions",
       {

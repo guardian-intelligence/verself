@@ -34,7 +34,5 @@ export function TiptapRenderer({ content, className }: TiptapRendererProps) {
 
   const html = generateHTML(doc as any, extensions);
 
-  return (
-    <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
-  );
+  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }

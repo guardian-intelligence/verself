@@ -131,46 +131,52 @@ export async function readBalance(page: Page): Promise<number> {
   return parseInt(raw.replace(/[^0-9-]/g, ""), 10);
 }
 
-export async function installVerificationOverlay(page: Page, verificationRunID: string): Promise<void> {
-  await page.addInitScript(({ runID }) => {
-    const overlayId = "__forge_metal_verification_overlay";
+export async function installVerificationOverlay(
+  page: Page,
+  verificationRunID: string,
+): Promise<void> {
+  await page.addInitScript(
+    ({ runID }) => {
+      const overlayId = "__forge_metal_verification_overlay";
 
-    function renderOverlay() {
-      let el = document.getElementById(overlayId);
-      if (!el) {
-        el = document.createElement("div");
-        el.id = overlayId;
-        Object.assign(el.style, {
-          position: "fixed",
-          right: "12px",
-          bottom: "12px",
-          zIndex: "2147483647",
-          padding: "8px 10px",
-          borderRadius: "8px",
-          background: "rgba(0, 0, 0, 0.82)",
-          color: "#fff",
-          font: "12px/1.4 Menlo, Monaco, monospace",
-          pointerEvents: "none",
-          whiteSpace: "pre",
-          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-        });
-        document.documentElement.appendChild(el);
+      function renderOverlay() {
+        let el = document.getElementById(overlayId);
+        if (!el) {
+          el = document.createElement("div");
+          el.id = overlayId;
+          Object.assign(el.style, {
+            position: "fixed",
+            right: "12px",
+            bottom: "12px",
+            zIndex: "2147483647",
+            padding: "8px 10px",
+            borderRadius: "8px",
+            background: "rgba(0, 0, 0, 0.82)",
+            color: "#fff",
+            font: "12px/1.4 Menlo, Monaco, monospace",
+            pointerEvents: "none",
+            whiteSpace: "pre",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+          });
+          document.documentElement.appendChild(el);
+        }
+        el.textContent = `forge-metal verification\n${runID}\n${new Date().toISOString()}`;
       }
-      el.textContent = `forge-metal verification\n${runID}\n${new Date().toISOString()}`;
-    }
 
-    const install = () => {
-      renderOverlay();
-      window.setInterval(renderOverlay, 1000);
-    };
+      const install = () => {
+        renderOverlay();
+        window.setInterval(renderOverlay, 1000);
+      };
 
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", install, { once: true });
-      return;
-    }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", install, { once: true });
+        return;
+      }
 
-    install();
-  }, { runID: verificationRunID });
+      install();
+    },
+    { runID: verificationRunID },
+  );
 }
 
 export interface VerificationRepoMeta {
@@ -183,7 +189,9 @@ export interface VerificationRepoMeta {
   commit_sha: string;
 }
 
-export async function pushVerificationRepoRevision(revision: string): Promise<VerificationRepoMeta> {
+export async function pushVerificationRepoRevision(
+  revision: string,
+): Promise<VerificationRepoMeta> {
   const scriptPath = fileURLToPath(
     new URL("../../../../platform/scripts/ensure-verification-repo.sh", import.meta.url),
   );

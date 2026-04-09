@@ -90,6 +90,11 @@ func forgejoWebhookHandler(svc *jobs.Service, cfg ForgejoWebhookConfig) http.Han
 
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
@@ -154,7 +159,7 @@ func processForgejoWebhook(
 			Event:      eventType,
 			DeliveryID: deliveryID,
 			Message:    "unsupported forgejo event",
-		}, http.StatusAccepted, nil
+		}, http.StatusOK, nil
 	}
 }
 
@@ -319,4 +324,3 @@ func validForgejoSignature(secret string, body []byte, provided string) bool {
 func forgejoWebhookIdempotencyKey(eventType, deliveryID string) string {
 	return "forgejo-webhook:" + strings.TrimSpace(eventType) + ":" + strings.TrimSpace(deliveryID)
 }
-

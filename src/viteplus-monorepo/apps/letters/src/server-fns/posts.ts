@@ -38,7 +38,14 @@ function estimateReadingTime(content: unknown): number {
 export const createPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(
-    (data: { title: string; content?: unknown; subtitle?: string; cover_image_url?: string; tags?: string[]; author_name?: string }) => data,
+    (data: {
+      title: string;
+      content?: unknown;
+      subtitle?: string;
+      cover_image_url?: string;
+      tags?: string[];
+      author_name?: string;
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sql = getDb();

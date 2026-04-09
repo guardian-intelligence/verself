@@ -108,7 +108,10 @@ function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> 
 
   if (!viewer) {
     return (
-      <a href={loginHref} className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-sm">
+      <a
+        href={loginHref}
+        className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-sm"
+      >
         Sign in
       </a>
     );
