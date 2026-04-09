@@ -26,9 +26,6 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
     const runJSONPath =
       env.verificationRunJSONPath || testInfo.outputPath("verification-run.json");
 
-    await context.setExtraHTTPHeaders({
-      [verificationRunHeader]: verificationRunID,
-    });
     await installVerificationOverlay(page, verificationRunID);
 
     const run = {
@@ -48,19 +45,30 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
     };
     try {
       await ensureLoggedIn(page);
+      await context.setExtraHTTPHeaders({
+        [verificationRunHeader]: verificationRunID,
+      });
       run.started_balance = await readBalance(page);
 
       await page.goto("/jobs/new");
+      await page.waitForLoadState("networkidle");
       await expect(page.getByRole("heading", { name: "Create Sandbox" })).toBeVisible();
 
-      await page.getByLabel("Repository URL").fill(env.verificationRepoURL);
-      await page.getByLabel("Ref").fill(env.verificationRepoRef);
+      const repoInput = page.getByLabel("Repository URL");
+      const refInput = page.getByLabel("Ref");
+      const submitButton = page.getByRole("button", { name: "Create Sandbox" });
+
+      await repoInput.fill(env.verificationRepoURL);
+      await refInput.fill(env.verificationRepoRef);
+      await expect(repoInput).toHaveValue(env.verificationRepoURL);
+      await expect(refInput).toHaveValue(env.verificationRepoRef);
+      await expect(submitButton).toBeEnabled();
 
       const submitResponsePromise = page.waitForResponse(
         (resp) => resp.url().includes("/api/v1/executions") && resp.request().method() === "POST",
       );
 
-      await page.getByRole("button", { name: "Create Sandbox" }).click();
+      await submitButton.click();
       const submitResponse = await submitResponsePromise;
       expect(submitResponse.ok()).toBeTruthy();
 

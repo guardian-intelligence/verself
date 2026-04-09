@@ -19,8 +19,11 @@ remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\
 
 "${script_dir}/ensure-verification-repo.sh" "${artifact_dir}/repo.json"
 
-make verification-reset
-make seed-demo
+(
+  cd "${platform_root}/ansible"
+  ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  ansible-playbook -i inventory/hosts.ini playbooks/seed-demo.yml
+)
 
 demo_password="$(
   ssh -o IPQoS=none -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \

@@ -37,3 +37,10 @@
       tags: [rent_a_sandbox]
     - role: otelcol
       tags: [otelcol]
+  handlers:
+    - name: Ignore mailbox-service restart during verification reset
+      listen: restart mailbox-service
+      ansible.builtin.systemd:
+        name: mailbox-service
+        state: restarted
+      failed_when: false

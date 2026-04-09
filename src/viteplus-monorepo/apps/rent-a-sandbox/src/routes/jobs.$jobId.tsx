@@ -1,10 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useLiveQuery } from "@tanstack/react-db";
-import { useMemo } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { fetchExecution } from "~/lib/api";
-import { createExecutionLogsCollection } from "~/lib/collections";
+import { fetchExecution, fetchExecutionLogs } from "~/lib/api";
 
 export const Route = createFileRoute("/jobs/$jobId")({
   component: JobDetailPage,
@@ -103,17 +100,18 @@ function InfoCard({ label, value }: { label: string; value: string }) {
 }
 
 function LiveExecutionLogs({ attemptId, isRunning }: { attemptId: string; isRunning: boolean }) {
-  const collection = useMemo(() => createExecutionLogsCollection(attemptId), [attemptId]);
-
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
-  const { data: logChunks } = useLiveQuery((q) => q.from({ l: collection }), [collection]);
+  const executionID = Route.useParams().jobId;
+  const { data: logs } = useQuery({
+    queryKey: ["execution-logs", executionID, attemptId],
+    queryFn: () => fetchExecutionLogs(executionID),
+    // execution_logs stores bytea chunks. Electric sync currently does not
+    // preserve a browser-friendly string shape for those chunks, so we fetch
+    // decoded text through the service until the log transport is redesigned.
+    refetchInterval: isRunning ? 2_000 : false,
+  });
 
-  const logText = logChunks
-    ? [...logChunks]
-        .sort((a, b) => Number(a.seq) - Number(b.seq))
-        .map((c) => (typeof c.chunk === "string" ? c.chunk : ""))
-        .join("")
-    : "";
+  const logText = logs?.attempt_id === attemptId ? logs.logs : "";
 
   return (
     <div>

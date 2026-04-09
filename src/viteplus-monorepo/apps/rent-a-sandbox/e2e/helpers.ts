@@ -84,8 +84,12 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
 
   if (await dashboardHeading.isVisible()) return;
 
-  await signInButton.click();
-  await page.waitForURL(/auth\.|\/ui\/login/, { timeout: 15_000 });
+  // Arm the cross-origin wait before the click so Playwright does not miss the
+  // OIDC redirect when the browser navigates away quickly.
+  await Promise.all([
+    page.waitForURL(/auth\.anveio\.com|\/ui\/login/, { timeout: 30_000 }),
+    signInButton.click(),
+  ]);
 
   const loginNameInput = page.locator("#loginName");
   await loginNameInput.waitFor({ state: "visible", timeout: 10_000 });
@@ -95,9 +99,11 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   const passwordInput = page.locator("#password");
   await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
   await passwordInput.fill(env.testPassword);
-  await page.locator("button[type='submit']").click();
+  await Promise.all([
+    page.waitForURL(/rentasandbox\./, { timeout: 30_000 }),
+    page.locator("button[type='submit']").click(),
+  ]);
 
-  await page.waitForURL(/rentasandbox\./, { timeout: 30_000 });
   await page.waitForLoadState("networkidle");
   await expect(dashboardHeading).toBeVisible({ timeout: 15_000 });
 }

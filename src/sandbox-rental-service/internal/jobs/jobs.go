@@ -525,6 +525,31 @@ func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.U
 	}
 
 	status, err := s.Orchestrator.ExecRepo(ctx, prepared.Request)
+	if shouldWarmRepoGolden(err, status.ErrorMessage) {
+		// Surgical note: the steady-state contract is still "push default branch to
+		// warm the golden ahead of time". For first-contact website runs we accept a
+		// colder path and warm on demand so the product does not fail immediately on
+		// a brand-new repo.
+		s.Logger.InfoContext(ctx, "repo execution warming missing golden",
+			"execution_id", executionID,
+			"attempt_id", attemptID,
+			"repo", req.Repo,
+			"default_branch", req.DefaultBranch,
+		)
+		if warmErr := s.warmRepoGoldenOnDemand(ctx, req); warmErr != nil {
+			outcome := executionOutcome{
+				StartedAt:      startedAt,
+				CompletedAt:    time.Now().UTC(),
+				CommitSHA:      prepared.Inspection.CommitSHA,
+				FailureReason:  failureReasonFromError(warmErr),
+				State:          StateFailed,
+			}
+			outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
+			return outcome, warmErr
+		}
+		prepared.Request.JobTemplate.JobID = uuid.NewString()
+		status, err = s.Orchestrator.ExecRepo(ctx, prepared.Request)
+	}
 	outcome := executionOutcome{
 		StartedAt:   startedAt,
 		CompletedAt: time.Now().UTC(),
@@ -562,6 +587,33 @@ func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.U
 		outcome.State = StateFailed
 	}
 	return outcome, nil
+}
+
+func (s *Service) warmRepoGoldenOnDemand(ctx context.Context, req SubmitRequest) error {
+	prepared, err := PrepareWarmGolden(WarmGoldenSpec{
+		JobID: uuid.NewString(),
+		RepoTarget: RepoTarget{
+			Repo:    req.Repo,
+			RepoURL: req.RepoURL,
+		},
+		DefaultBranch: req.DefaultBranch,
+	})
+	if err != nil {
+		return err
+	}
+	defer prepared.Cleanup()
+
+	result, err := s.Orchestrator.WarmGolden(ctx, prepared.Request)
+	if err != nil {
+		return err
+	}
+	if result.ErrorMessage != "" {
+		return errors.New(result.ErrorMessage)
+	}
+	if result.JobResult.ExitCode != 0 {
+		return fmt.Errorf("warm golden failed with exit code %d", result.JobResult.ExitCode)
+	}
+	return nil
 }
 
 func (s *Service) runWarmGolden(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
@@ -1224,6 +1276,17 @@ func defaultRepoName(repoURL string) string {
 		return "repo"
 	}
 	return base
+}
+
+func shouldWarmRepoGolden(err error, statusMessage string) bool {
+	combined := strings.ToLower(strings.TrimSpace(statusMessage))
+	if err != nil {
+		if combined != "" {
+			combined += " "
+		}
+		combined += strings.ToLower(err.Error())
+	}
+	return strings.Contains(combined, "repo golden") && strings.Contains(combined, "run warm first")
 }
 
 func reserveFailureReason(err error) string {
