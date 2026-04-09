@@ -9,6 +9,22 @@
 #   ./scripts/mail.sh -r ID                      # Read full email by synced email ID from agents@
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../../.." && pwd)"
+inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
+if [[ "${inventory}" != /* ]]; then
+  inventory="${repo_root}/src/platform/${inventory}"
+fi
+
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    accounts|mailboxes|list|read|code|help|-h|--help)
+      cd "${repo_root}/src/mailbox-service"
+      exec go run ./cmd/mailbox-tool --inventory "${inventory}" "$@"
+      ;;
+  esac
+fi
+
 MAILBOX_ACCOUNT="agents"
 MODE="list"
 EMAIL_ID=""
@@ -34,13 +50,6 @@ done
 if [[ "$MAILBOX_ACCOUNT" != "agents" && "$MAILBOX_ACCOUNT" != "ceo" ]]; then
   echo "ERROR: unknown mailbox account '$MAILBOX_ACCOUNT' (valid: agents, ceo)" >&2
   exit 1
-fi
-
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "${script_dir}/../../.." && pwd)"
-inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
-if [[ "${inventory}" != /* ]]; then
-  inventory="${repo_root}/src/platform/${inventory}"
 fi
 
 tool_args=(go run ./cmd/mailbox-tool --inventory "${inventory}")
