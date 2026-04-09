@@ -1,32 +1,29 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
 import {
-  fetchAccount,
-  fetchEmailBody,
-  markRead,
   flagEmail,
+  getEmailBody,
+  markEmailRead,
   unflagEmail,
   trashEmail,
   type EmailBody,
-} from "~/lib/api";
+} from "~/server-fns/mail";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createEmailCollection, type ElectricEmail } from "~/lib/collections";
 import { keys } from "~/lib/query-keys";
 
 export const Route = createFileRoute("/mail/$mailboxId/$emailId")({
+  ssr: "data-only",
   component: EmailViewer,
 });
 
+const mailRoute = getRouteApi("/mail");
+
 function EmailViewer() {
   const { emailId } = Route.useParams();
-
-  const { data: account } = useQuery({
-    queryKey: keys.account(),
-    queryFn: fetchAccount,
-    staleTime: Infinity,
-  });
+  const account = mailRoute.useLoaderData();
 
   if (!account) {
     return (
@@ -43,7 +40,7 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
   // Fetch the email body via API (triggers JMAP fetch + PG cache on first load)
   const { data: body, isLoading: bodyLoading } = useQuery({
     queryKey: keys.emailBody(emailId),
-    queryFn: () => fetchEmailBody(emailId),
+    queryFn: () => getEmailBody({ data: { emailId } }),
     staleTime: 5 * 60_000,
   });
 
@@ -68,7 +65,7 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
   useEffect(() => {
     if (email && !email.is_seen && markedReadRef.current !== emailId) {
       markedReadRef.current = emailId;
-      void markRead(emailId);
+      void markEmailRead({ data: { emailId } });
     }
   }, [email, emailId]);
 
@@ -98,11 +95,15 @@ function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: 
 
 function EmailHeader({ email }: { email: ElectricEmail }) {
   const handleFlag = () => {
-    void (email.is_flagged ? unflagEmail(email.id) : flagEmail(email.id));
+    void (
+      email.is_flagged
+        ? unflagEmail({ data: { emailId: email.id } })
+        : flagEmail({ data: { emailId: email.id } })
+    );
   };
 
   const handleTrash = () => {
-    void trashEmail(email.id);
+    void trashEmail({ data: { emailId: email.id } });
   };
 
   const toList = safeParseJson<Array<{ name?: string; email: string }>>(email.to_list);

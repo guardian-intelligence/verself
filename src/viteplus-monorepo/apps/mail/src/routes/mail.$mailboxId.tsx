@@ -1,26 +1,22 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, getRouteApi, Link, Outlet } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { fetchAccount } from "~/lib/api";
 import {
   createEmailMailboxCollection,
   createEmailCollection,
   type ElectricEmail,
 } from "~/lib/collections";
-import { keys } from "~/lib/query-keys";
 
 export const Route = createFileRoute("/mail/$mailboxId")({
+  ssr: "data-only",
   component: MailboxEmailList,
 });
 
+const mailRoute = getRouteApi("/mail");
+
 function MailboxEmailList() {
   const { mailboxId } = Route.useParams();
-  const { data: account } = useQuery({
-    queryKey: keys.account(),
-    queryFn: fetchAccount,
-    staleTime: Infinity,
-  });
+  const account = mailRoute.useLoaderData();
 
   if (!account) return null;
 
