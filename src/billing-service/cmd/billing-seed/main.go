@@ -27,6 +27,7 @@ type config struct {
 	tbClusterID        uint64
 	orgID              uint64
 	orgName            string
+	orgTrustTier       string
 	productID          string
 	productDisplayName string
 	meterUnit          string
@@ -37,12 +38,16 @@ type config struct {
 	overageRatesJSON   string
 	quotasJSON         string
 	targetPrepaidUnits uint64
+	prepaidSource      string
+	promotionName      string
+	promotionPercent   int
 	expiresAfter       time.Duration
 }
 
 type seedResult struct {
 	OrgID               uint64 `json:"org_id"`
 	OrgName             string `json:"org_name"`
+	OrgTrustTier        string `json:"org_trust_tier"`
 	ProductID           string `json:"product_id"`
 	PlanID              string `json:"plan_id"`
 	PrepaidBefore       uint64 `json:"prepaid_before"`
@@ -51,6 +56,7 @@ type seedResult struct {
 	TargetPrepaidUnits  uint64 `json:"target_prepaid_units"`
 	ProductUpserted     bool   `json:"product_upserted"`
 	DefaultPlanUpserted bool   `json:"default_plan_upserted"`
+	PromotionUpserted   bool   `json:"promotion_upserted"`
 }
 
 type noopMeteringWriter struct{}
@@ -123,8 +129,8 @@ func run() error {
 		return err
 	}
 
-	if err := client.EnsureOrg(ctx, billing.OrgID(cfg.orgID), cfg.orgName); err != nil {
-		return fmt.Errorf("ensure org: %w", err)
+	if err := upsertOrg(ctx, pg, cfg); err != nil {
+		return err
 	}
 
 	productUpserted, err := upsertProduct(ctx, pg, cfg)
@@ -150,12 +156,17 @@ func run() error {
 			OrgID:             billing.OrgID(cfg.orgID),
 			ProductID:         cfg.productID,
 			Amount:            deposited,
-			Source:            "purchase",
+			Source:            cfg.prepaidSource,
 			StripeReferenceID: fmt.Sprintf("seed:%d:%s:%d", cfg.orgID, cfg.productID, taskID),
 			ExpiresAt:         &expiresAt,
 		}); err != nil {
 			return fmt.Errorf("deposit prepaid credits: %w", err)
 		}
+	}
+
+	promotionUpserted, err := upsertPromotion(ctx, pg, cfg)
+	if err != nil {
+		return err
 	}
 
 	after, err := client.GetProductBalance(ctx, billing.OrgID(cfg.orgID), cfg.productID)
@@ -166,6 +177,7 @@ func run() error {
 	result := seedResult{
 		OrgID:               cfg.orgID,
 		OrgName:             cfg.orgName,
+		OrgTrustTier:        cfg.orgTrustTier,
 		ProductID:           cfg.productID,
 		PlanID:              cfg.planID,
 		PrepaidBefore:       before.PrepaidRemaining,
@@ -174,6 +186,7 @@ func run() error {
 		TargetPrepaidUnits:  cfg.targetPrepaidUnits,
 		ProductUpserted:     productUpserted,
 		DefaultPlanUpserted: defaultPlanUpserted,
+		PromotionUpserted:   promotionUpserted,
 	}
 
 	encoded, err := json.Marshal(result)
@@ -190,12 +203,14 @@ func parseFlags() (config, error) {
 		productDisplayName: "Sandbox",
 		meterUnit:          "vcpu_second",
 		billingModel:       "metered",
+		orgTrustTier:       "new",
 		planID:             "sandbox-default",
 		planDisplayName:    "Sandbox PAYG",
 		unitRatesJSON:      `{"vcpu":325,"gib":40}`,
 		overageRatesJSON:   `{}`,
 		quotasJSON:         `{}`,
 		targetPrepaidUnits: 5_000_000,
+		prepaidSource:      "purchase",
 		expiresAfter:       365 * 24 * time.Hour,
 	}
 
@@ -205,6 +220,7 @@ func parseFlags() (config, error) {
 	flag.Uint64Var(&cfg.tbClusterID, "tb-cluster-id", 0, "TigerBeetle cluster ID")
 	flag.Uint64Var(&cfg.orgID, "org-id", 0, "org ID to seed")
 	flag.StringVar(&cfg.orgName, "org-name", "", "org display name")
+	flag.StringVar(&cfg.orgTrustTier, "org-trust-tier", cfg.orgTrustTier, "org trust tier")
 	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "product ID")
 	flag.StringVar(&cfg.productDisplayName, "product-display-name", cfg.productDisplayName, "product display name")
 	flag.StringVar(&cfg.meterUnit, "meter-unit", cfg.meterUnit, "product meter unit")
@@ -215,6 +231,9 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.overageRatesJSON, "overage-unit-rates-json", cfg.overageRatesJSON, "default plan overage unit rates JSON")
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
+	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
+	flag.StringVar(&cfg.promotionName, "promotion-name", "", "org-scoped promotion name to upsert")
+	flag.IntVar(&cfg.promotionPercent, "promotion-percent", 0, "org-scoped promotion percent off to upsert")
 	flag.DurationVar(&cfg.expiresAfter, "expires-after", cfg.expiresAfter, "duration until seeded credits expire")
 	flag.Parse()
 
@@ -226,8 +245,60 @@ func parseFlags() (config, error) {
 	case cfg.orgName == "":
 		cfg.orgName = fmt.Sprintf("org-%d", cfg.orgID)
 	}
+	cfg.orgTrustTier = strings.TrimSpace(cfg.orgTrustTier)
+	if cfg.orgTrustTier == "" {
+		return config{}, fmt.Errorf("--org-trust-tier is required")
+	}
+	switch cfg.orgTrustTier {
+	case "new", "established", "enterprise", "platform":
+	default:
+		return config{}, fmt.Errorf("--org-trust-tier must be one of new, established, enterprise, platform")
+	}
+	cfg.prepaidSource = strings.TrimSpace(cfg.prepaidSource)
+	if cfg.prepaidSource == "" {
+		return config{}, fmt.Errorf("--prepaid-source is required")
+	}
+	if cfg.promotionPercent < 0 || cfg.promotionPercent > 100 {
+		return config{}, fmt.Errorf("--promotion-percent must be between 0 and 100")
+	}
+	cfg.promotionName = strings.TrimSpace(cfg.promotionName)
+	if cfg.promotionPercent > 0 && cfg.promotionName == "" {
+		return config{}, fmt.Errorf("--promotion-name is required when --promotion-percent is set")
+	}
 
 	return cfg, nil
+}
+
+func upsertOrg(ctx context.Context, pg *sql.DB, cfg config) error {
+	if _, err := pg.ExecContext(ctx, `
+		INSERT INTO orgs (org_id, display_name, trust_tier)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id) DO UPDATE
+		SET display_name = EXCLUDED.display_name,
+		    trust_tier = EXCLUDED.trust_tier
+	`, fmt.Sprintf("%d", cfg.orgID), cfg.orgName, cfg.orgTrustTier); err != nil {
+		return fmt.Errorf("upsert org %d: %w", cfg.orgID, err)
+	}
+	return nil
+}
+
+func upsertPromotion(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
+	if cfg.promotionPercent == 0 {
+		return false, nil
+	}
+	result, err := pg.ExecContext(ctx, `
+		INSERT INTO promotions (org_id, promotion_name, percent_off, effective_at, ending_at)
+		VALUES ($1, $2, $3, now(), NULL)
+		ON CONFLICT (org_id, promotion_name) DO UPDATE
+		SET percent_off = EXCLUDED.percent_off,
+		    effective_at = EXCLUDED.effective_at,
+		    ending_at = EXCLUDED.ending_at
+	`, fmt.Sprintf("%d", cfg.orgID), cfg.promotionName, cfg.promotionPercent)
+	if err != nil {
+		return false, fmt.Errorf("upsert promotion %s: %w", cfg.promotionName, err)
+	}
+	rows, _ := result.RowsAffected()
+	return rows > 0, nil
 }
 
 func resolvePGDSN(cfg config) (string, error) {

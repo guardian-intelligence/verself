@@ -257,7 +257,7 @@ func (c *Client) GetProductBalance(ctx context.Context, orgID OrgID, productID s
 // Promotion: new → established after 3 successful billing months or
 // $100+ equivalent of paid usage (≥ 1,000,000,000 ledger units) with no disputes.
 // Demotion: any dispute_opened or subscription suspended → demote to new.
-// enterprise is never set or cleared by the cron.
+// enterprise and platform are never set or cleared by the cron.
 func (c *Client) EvaluateTrustTiers(ctx context.Context) (TrustTierResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TrustTierResult{}, err
@@ -357,6 +357,9 @@ func (c *Client) EvaluateTrustTiers(ctx context.Context) (TrustTierResult, error
 }
 
 func (c *Client) promoteTrustTier(ctx context.Context, orgID, from, to string) error {
+	if from == "platform" || to == "platform" {
+		return fmt.Errorf("platform trust tier is manual-only")
+	}
 	tag, err := c.pg.ExecContext(ctx, `
 		UPDATE orgs SET trust_tier = $1 WHERE org_id = $2 AND trust_tier = $3
 	`, to, orgID, from)
@@ -379,6 +382,9 @@ func (c *Client) promoteTrustTier(ctx context.Context, orgID, from, to string) e
 }
 
 func (c *Client) demoteTrustTier(ctx context.Context, orgID, from, to string) error {
+	if from == "platform" || to == "platform" {
+		return fmt.Errorf("platform trust tier is manual-only")
+	}
 	tag, err := c.pg.ExecContext(ctx, `
 		UPDATE orgs SET trust_tier = $1 WHERE org_id = $2 AND trust_tier = $3
 	`, to, orgID, from)
