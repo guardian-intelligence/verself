@@ -1,5 +1,5 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check seed-demo billing-reset vm-guest-telemetry-build \
+       hooks-install doctor setup-domain inventory-check seed-demo billing-reset verification-reset vm-guest-telemetry-build \
        traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-code mail-read edit-secrets
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -72,6 +72,9 @@ seed-demo: inventory-check ## Seed demo environment: human user + billing catalo
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
+
+verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse forge_metal + telemetry)
+	cd $(FM)/ansible && ansible-playbook playbooks/verification-reset.yml
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)

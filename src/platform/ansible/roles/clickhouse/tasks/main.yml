@@ -112,18 +112,75 @@
   environment:
     CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
 
+- name: Determine whether ClickHouse schema reset is required
+  ansible.builtin.set_fact:
+    clickhouse_should_reset_schema: >-
+      {{
+        clickhouse_force_schema_reset
+        or (clickhouse_migrations_remote_hash is failed)
+        or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
+           != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
+        or ((clickhouse_otel_table_probe.stdout | trim) == '0')
+      }}
+
 - name: Apply ClickHouse migrations
-  when: >-
-    clickhouse_migrations_remote_hash is failed
-    or (clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
-       != (clickhouse_migrations_local_hash.stdout.split()[0] | trim)
-    or (clickhouse_otel_table_probe.stdout | trim) == '0'
+  when: clickhouse_should_reset_schema
   block:
     - name: Upload migrations
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../migrations/"
         dest: /opt/forge-metal/migrations/
         mode: "0644"
+
+    - name: Stop ClickHouse writers before force schema reset
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - otelcol
+        - billing-service
+        - sandbox-rental-service
+      failed_when: false
+      when: clickhouse_force_schema_reset
+
+    - name: Drop forge_metal database before force schema reset
+      ansible.builtin.shell: >
+        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        --query 'DROP DATABASE IF EXISTS forge_metal SYNC'
+      changed_when: false
+      environment:
+        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+      when: clickhouse_force_schema_reset
+
+    - name: Discover default ClickHouse telemetry tables to truncate
+      ansible.builtin.shell: >
+        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        --query "
+          SELECT concat(database, '.', name)
+          FROM system.tables
+          WHERE database = 'default'
+            AND engine != 'MaterializedView'
+            AND (name LIKE 'otel_%' OR name = 'http_access_logs')
+          ORDER BY name
+          FORMAT TSVRaw
+        "
+      register: clickhouse_force_reset_tables
+      changed_when: false
+      environment:
+        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+      when: clickhouse_force_schema_reset
+
+    - name: Truncate default ClickHouse telemetry tables during force schema reset
+      ansible.builtin.shell: >
+        {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
+        --query 'TRUNCATE TABLE {{ item }}'
+      loop: "{{ clickhouse_force_reset_tables.stdout_lines | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      environment:
+        CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+      when: clickhouse_force_schema_reset
 
     - name: Create forge_metal database
       ansible.builtin.shell: >
@@ -155,3 +212,14 @@
         content: "{{ clickhouse_migrations_local_hash.stdout.split()[0] }}\n"
         dest: /opt/forge-metal/migrations/.applied-hash
         mode: "0644"
+
+    - name: Start ClickHouse writers after force schema reset
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - otelcol
+        - billing-service
+        - sandbox-rental-service
+      failed_when: false
+      when: clickhouse_force_schema_reset

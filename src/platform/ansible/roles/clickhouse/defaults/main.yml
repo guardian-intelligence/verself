@@ -1,3 +1,4 @@
 ---
 # ClickHouse defaults.
 clickhouse_data_path: /var/lib/clickhouse
+clickhouse_force_schema_reset: false

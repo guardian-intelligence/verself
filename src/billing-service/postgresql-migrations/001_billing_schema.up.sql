@@ -143,6 +143,10 @@ CREATE UNIQUE INDEX idx_billing_events_stripe
     ON billing_events (stripe_event_id)
     WHERE stripe_event_id IS NOT NULL;
 
+CREATE UNIQUE INDEX idx_billing_events_credits_deposited_grant
+    ON billing_events (grant_id)
+    WHERE event_type = 'credits_deposited' AND grant_id IS NOT NULL;
+
 CREATE INDEX idx_billing_events_org
     ON billing_events (org_id, created_at);
 

@@ -1,0 +1,39 @@
+---
+# Wipe the verification environment to a clean slate before end-to-end runs.
+#
+# This playbook recreates:
+# - TigerBeetle + billing PostgreSQL schema
+# - sandbox_rental PostgreSQL schema
+# - forge_metal ClickHouse schema
+# - default ClickHouse telemetry tables used for trace/log correlation
+#
+# Usage:
+#   cd src/platform/ansible && ansible-playbook playbooks/verification-reset.yml
+
+- name: Exhaustive verification reset
+  hosts: all
+  become: true
+  force_handlers: true
+  vars:
+    billing_service_force_ledger_reset: true
+    sandbox_rental_service_force_schema_reset: true
+    clickhouse_force_schema_reset: true
+  roles:
+    - role: deploy_profile
+      tags: [deploy_profile]
+    - role: clickhouse
+      tags: [clickhouse]
+    - role: tigerbeetle
+      tags: [tigerbeetle]
+    - role: postgresql
+      tags: [postgresql]
+    - role: billing_service
+      tags: [billing_service]
+    - role: sandbox_rental_service
+      tags: [sandbox_rental_service]
+    - role: electric
+      tags: [electric]
+    - role: rent_a_sandbox
+      tags: [rent_a_sandbox]
+    - role: otelcol
+      tags: [otelcol]
