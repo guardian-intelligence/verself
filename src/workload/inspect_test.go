@@ -53,6 +53,33 @@ func TestInspectRepoRefChecksOutRequestedCommit(t *testing.T) {
 	}
 }
 
+func TestInspectRepoPathInfersManifestFromPackageScripts(t *testing.T) {
+	repoRoot := initGitFixtureRepo(t)
+	if err := os.WriteFile(filepath.Join(repoRoot, "package.json"), []byte(`{
+  "name": "fixture",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "ci": "echo ci"
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+
+	inspection, err := InspectRepoPath(repoRoot)
+	if err != nil {
+		t.Fatalf("InspectRepoPath: %v", err)
+	}
+	if inspection.Manifest == nil {
+		t.Fatal("expected inferred manifest")
+	}
+	if got := strings.Join(inspection.Manifest.Run, " "); got != "pnpm run ci" {
+		t.Fatalf("run: got %q", got)
+	}
+	if got := strings.Join(inspection.Manifest.Prepare, " "); got != "pnpm run ci" {
+		t.Fatalf("prepare: got %q", got)
+	}
+}
+
 func initGitFixtureRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

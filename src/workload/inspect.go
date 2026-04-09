@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,13 +44,18 @@ func InspectRepoRef(repoURL, ref string) (*Inspection, error) {
 }
 
 func InspectRepoPath(repoRoot string) (*Inspection, error) {
-	manifest, err := LoadManifest(repoRoot)
-	if err != nil {
-		return nil, err
-	}
 	toolchain, err := DetectToolchain(repoRoot)
 	if err != nil {
 		return nil, err
+	}
+	manifest, err := LoadManifest(repoRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			manifest, err = InferManifest(repoRoot, toolchain)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	commitSHA, err := gitHeadSHA(repoRoot)
 	if err != nil {

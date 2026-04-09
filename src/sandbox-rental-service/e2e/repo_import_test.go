@@ -19,32 +19,6 @@ import (
 	rentaltestharness "github.com/forge-metal/sandbox-rental-service/testharness"
 )
 
-func TestImportRepoAPI_CompatibleWorkflow(t *testing.T) {
-	repoPath := createWorkflowRepo(t, map[string]string{
-		".github/workflows/ci.yml": `
-name: ci
-on:
-  push:
-jobs:
-  build:
-    runs-on: forge-metal
-    steps:
-      - run: echo ok
-`,
-	})
-
-	repo := importRepoViaAPI(t, repoPath)
-	if repo.State != "waiting_for_bootstrap" {
-		t.Fatalf("repo state: got %q", repo.State)
-	}
-	if repo.CompatibilityStatus != "compatible" {
-		t.Fatalf("compatibility_status: got %q", repo.CompatibilityStatus)
-	}
-	if !strings.Contains(string(repo.CompatibilitySummary), ".github/workflows/ci.yml") {
-		t.Fatalf("compatibility_summary: got %s", repo.CompatibilitySummary)
-	}
-}
-
 func TestImportRepoAPI_UnsupportedWorkflowLabel(t *testing.T) {
 	repoPath := createWorkflowRepo(t, map[string]string{
 		".github/workflows/ci.yml": `

@@ -26,7 +26,8 @@ type Toolchain struct {
 }
 
 type packageJSON struct {
-	PackageManager string `json:"packageManager"`
+	PackageManager string            `json:"packageManager"`
+	Scripts        map[string]string `json:"scripts"`
 	Volta          struct {
 		Node string `json:"node"`
 	} `json:"volta"`

@@ -73,7 +73,17 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 	if err != nil {
 		return nil, err
 	}
-	return s.RescanRepo(ctx, orgID, repo.RepoID)
+	repo, err = s.RescanRepo(ctx, orgID, repo.RepoID)
+	if err != nil {
+		return nil, err
+	}
+	if repo.State == RepoStateWaitingForBootstrap {
+		if _, err := s.QueueRepoBootstrap(ctx, orgID, "system:repo-import", repo.RepoID, GenerationTriggerBootstrap); err != nil {
+			return nil, err
+		}
+		return s.GetRepo(ctx, orgID, repo.RepoID)
+	}
+	return repo, nil
 }
 
 func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID) (*RepoRecord, error) {

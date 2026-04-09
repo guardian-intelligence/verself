@@ -9,9 +9,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// Surgical note: repo-backed VM work still derives its guest shape from
-// `.forge-metal/ci.toml`. That is the current compromise while Forgejo Actions
-// remains the workflow engine and forge-metal replaces only the runner backend.
+// Surgical note: repo-backed VM work prefers `.forge-metal/ci.toml` when
+// present, but imported repos no longer require it. In the absence of that
+// file, the shared workload package infers a minimal Node-oriented contract
+// from package metadata so bootstrap can proceed while the runner-native path
+// is still under construction.
 
 type RepoTarget struct {
 	Repo    string

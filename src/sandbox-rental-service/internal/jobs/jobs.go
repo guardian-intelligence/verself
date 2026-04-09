@@ -50,8 +50,11 @@ const (
 )
 
 var (
-	ErrQuotaExceeded    = errors.New("sandbox-rental: quota exceeded")
-	ErrExecutionMissing = errors.New("sandbox-rental: execution not found")
+	ErrQuotaExceeded      = errors.New("sandbox-rental: quota exceeded")
+	ErrExecutionMissing   = errors.New("sandbox-rental: execution not found")
+	ErrRepoNotReady       = errors.New("sandbox-rental: repo not ready")
+	ErrRunnerUnavailable  = errors.New("sandbox-rental: runner unavailable")
+	ErrBillingUnavailable = errors.New("sandbox-rental: billing unavailable")
 )
 
 // Runner abstracts VM execution for direct sandbox jobs and repo-bound
@@ -67,6 +70,7 @@ type SubmitRequest struct {
 	ProductID       string `json:"product_id,omitempty"`
 	Provider        string `json:"provider,omitempty"`
 	IdempotencyKey  string `json:"idempotency_key,omitempty"`
+	RepoID          string `json:"repo_id,omitempty"`
 	Repo            string `json:"repo,omitempty"`
 	RepoURL         string `json:"repo_url,omitempty"`
 	Ref             string `json:"ref,omitempty"`
@@ -76,6 +80,8 @@ type SubmitRequest struct {
 	WorkflowJobName string `json:"workflow_job_name,omitempty"`
 	ProviderRunID   string `json:"provider_run_id,omitempty"`
 	ProviderJobID   string `json:"provider_job_id,omitempty"`
+
+	GoldenGenerationID *uuid.UUID `json:"-"`
 }
 
 type ExecutionRecord struct {
@@ -88,6 +94,7 @@ type ExecutionRecord struct {
 	Status          string          `json:"status"`
 	CorrelationID   string          `json:"correlation_id,omitempty"`
 	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
+	RepoID          string          `json:"repo_id,omitempty"`
 	Repo            string          `json:"repo,omitempty"`
 	RepoURL         string          `json:"repo_url,omitempty"`
 	Ref             string          `json:"ref,omitempty"`
@@ -213,6 +220,16 @@ type executionOutcome struct {
 // immediately; callers poll for completion.
 func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req SubmitRequest) (uuid.UUID, uuid.UUID, error) {
 	req, err := normalizeSubmitRequest(req)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if s.Orchestrator == nil {
+		return uuid.Nil, uuid.Nil, ErrRunnerUnavailable
+	}
+	if s.Billing == nil {
+		return uuid.Nil, uuid.Nil, ErrBillingUnavailable
+	}
+	req, err = s.hydrateImportedRepoRequest(ctx, orgID, req)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
@@ -413,6 +430,11 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
 		s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return
+	}
+	if req.Kind == KindWarmGolden {
+		if err := s.finalizeWarmGoldenGeneration(ctx, req, outcome); err != nil {
+			s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
+		}
 	}
 
 	if strings.TrimSpace(outcome.Logs) != "" {
@@ -642,6 +664,11 @@ func (s *Service) runWarmGolden(ctx context.Context, executionID, attemptID uuid
 	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
 		return executionOutcome{FailureReason: "mark_running_failed"}, err
 	}
+	if req.GoldenGenerationID != nil {
+		if err := s.SetGoldenGenerationState(ctx, *req.GoldenGenerationID, GenerationStateBuilding, "", ""); err != nil {
+			return executionOutcome{FailureReason: "mark_generation_building_failed"}, err
+		}
+	}
 
 	result, err := s.Orchestrator.WarmGolden(ctx, prepared.Request)
 	outcome := executionOutcome{
@@ -684,6 +711,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.status,
 			e.correlation_id,
 			COALESCE(e.idempotency_key, ''),
+			COALESCE(e.repo_id::text, ''),
 			e.repo,
 			e.repo_url,
 			e.ref,
@@ -722,6 +750,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 	var (
 		record           ExecutionRecord
 		attempt          AttemptRecord
+		repoID           string
 		startedAt        sql.NullTime
 		completedAt      sql.NullTime
 		attemptCreatedAt sql.NullTime
@@ -737,6 +766,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.Status,
 		&record.CorrelationID,
 		&record.IdempotencyKey,
+		&repoID,
 		&record.Repo,
 		&record.RepoURL,
 		&record.Ref,
@@ -776,6 +806,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 	if startedAt.Valid {
 		attempt.StartedAt = &startedAt.Time
 	}
+	record.RepoID = strings.TrimSpace(repoID)
 	if completedAt.Valid {
 		attempt.CompletedAt = &completedAt.Time
 	}
@@ -873,19 +904,28 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var repoID any
+	if strings.TrimSpace(req.RepoID) != "" {
+		parsedRepoID, err := uuid.Parse(strings.TrimSpace(req.RepoID))
+		if err != nil {
+			return fmt.Errorf("parse repo_id: %w", err)
+		}
+		repoID = parsedRepoID
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO executions (
 			execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
-			idempotency_key, repo, repo_url, ref, default_branch, run_command,
+			idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
 			workflow_path, workflow_job_name, provider_run_id, provider_job_id,
 			latest_attempt_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			NULLIF($9, ''), $10, $11, $12, $13, $14,
-			$15, $16, $17, $18,
-			$19, $20, $20
+			NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19,
+			$20, $21, $21
 		)
-	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
+	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
 		return err
 	}
 
@@ -1221,6 +1261,7 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	req.ProductID = strings.TrimSpace(req.ProductID)
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	req.RepoID = strings.TrimSpace(req.RepoID)
 	req.Repo = strings.TrimSpace(req.Repo)
 	req.RepoURL = strings.TrimSpace(req.RepoURL)
 	req.Ref = strings.TrimSpace(req.Ref)
@@ -1251,13 +1292,15 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	case KindDirect:
 		return req, nil
 	case KindRepoExec:
-		if req.RepoURL == "" {
-			return SubmitRequest{}, fmt.Errorf("repo_url is required for repo_exec")
-		}
 		if req.Ref == "" {
-			return SubmitRequest{}, fmt.Errorf("ref is required for repo_exec")
+			if req.RepoID == "" {
+				return SubmitRequest{}, fmt.Errorf("ref is required for repo_exec")
+			}
 		}
-		if req.Repo == "" {
+		if req.RepoID == "" && req.RepoURL == "" {
+			return SubmitRequest{}, fmt.Errorf("repo_url or repo_id is required for repo_exec")
+		}
+		if req.RepoID == "" && req.Repo == "" {
 			return SubmitRequest{}, fmt.Errorf("repo is required for repo_exec")
 		}
 		return req, nil
@@ -1272,6 +1315,45 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
+}
+
+func (s *Service) hydrateImportedRepoRequest(ctx context.Context, orgID uint64, req SubmitRequest) (SubmitRequest, error) {
+	if strings.TrimSpace(req.RepoID) == "" {
+		return req, nil
+	}
+
+	repoID, err := uuid.Parse(strings.TrimSpace(req.RepoID))
+	if err != nil {
+		return SubmitRequest{}, fmt.Errorf("invalid repo_id: %w", err)
+	}
+	repo, err := s.GetRepo(ctx, orgID, repoID)
+	if err != nil {
+		return SubmitRequest{}, err
+	}
+
+	req.RepoID = repo.RepoID.String()
+	req.Repo = firstNonEmpty(req.Repo, repo.FullName)
+	req.RepoURL = firstNonEmpty(req.RepoURL, repo.CloneURL)
+	req.DefaultBranch = firstNonEmpty(req.DefaultBranch, repo.DefaultBranch)
+	req.Provider = firstNonEmpty(req.Provider, repo.Provider)
+	if req.Ref == "" {
+		req.Ref = "refs/heads/" + repo.DefaultBranch
+	}
+
+	switch req.Kind {
+	case KindRepoExec:
+		if repo.State != RepoStateReady && repo.State != RepoStateDegraded {
+			return SubmitRequest{}, ErrRepoNotReady
+		}
+		if repo.ActiveGoldenGenerationID == nil {
+			return SubmitRequest{}, ErrRepoNotReady
+		}
+	case KindWarmGolden:
+		// Warm builds are the mechanism that moves a compatible repo toward
+		// ready. Do not require an active generation here.
+	}
+
+	return req, nil
 }
 
 func defaultRepoName(repoURL string) string {
