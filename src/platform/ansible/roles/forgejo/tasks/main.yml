@@ -51,9 +51,6 @@
 - name: Set up Zitadel OIDC application
   ansible.builtin.include_tasks: zitadel_app.yml
 
-- name: Configure Forgejo Zitadel token claims
-  ansible.builtin.include_tasks: configure_claims.yml
-
 - name: Configure Forgejo OAuth source
   ansible.builtin.include_tasks: configure_oauth.yml
 
