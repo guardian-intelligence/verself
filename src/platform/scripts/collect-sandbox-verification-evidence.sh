@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: $0 <run-json-path> [output-dir]" >&2
+  exit 1
+fi
+
+run_json_path="$1"
+if [[ ! -f "${run_json_path}" ]]; then
+  echo "run json not found: ${run_json_path}" >&2
+  exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/../../.." && pwd)"
+platform_root="${repo_root}/src/platform"
+inventory="${platform_root}/ansible/inventory/hosts.ini"
+output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
+
+mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres" "${output_dir}/tigerbeetle"
+
+mapfile -t run_meta < <(python3 - "${run_json_path}" <<'PY'
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+
+def parse_iso(value: str) -> datetime:
+    value = value.replace("Z", "+00:00")
+    return datetime.fromisoformat(value)
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    run = json.load(fh)
+
+submit = parse_iso(run["submit_requested_at"]) - timedelta(seconds=60)
+terminal = parse_iso(run["terminal_observed_at"]) + timedelta(seconds=120)
+
+print(run.get("verification_run_id", ""))
+print(run.get("execution_id", ""))
+print(run.get("attempt_id", ""))
+print(run.get("status", ""))
+print(run.get("repo_url", ""))
+print(run.get("ref", ""))
+print(run.get("log_marker", ""))
+print(run.get("submit_requested_at", ""))
+print(run.get("terminal_observed_at", ""))
+print(submit.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))
+print(terminal.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))
+print(str(run.get("started_balance", "")))
+print(str(run.get("finished_balance", "")))
+print(run.get("error", ""))
+PY
+)
+
+verification_run_id="${run_meta[0]}"
+execution_id="${run_meta[1]}"
+attempt_id="${run_meta[2]}"
+run_status="${run_meta[3]}"
+repo_url="${run_meta[4]}"
+repo_ref="${run_meta[5]}"
+log_marker="${run_meta[6]}"
+submit_requested_at="${run_meta[7]}"
+terminal_observed_at="${run_meta[8]}"
+window_start="${run_meta[9]}"
+window_end="${run_meta[10]}"
+started_balance="${run_meta[11]}"
+finished_balance="${run_meta[12]}"
+run_error="${run_meta[13]}"
+
+remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
+remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
+ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
+
+ch_query() {
+  (cd "${platform_root}" && ./scripts/clickhouse.sh --query "$1")
+}
+
+remote_psql() {
+  local db="$1"
+  local sql="$2"
+  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
+    "sudo -u postgres psql -d ${db} -X -A -P footer=off" <<<"${sql}"
+}
+
+ch_query "
+SELECT *
+FROM forge_metal.job_events
+WHERE execution_id = '${execution_id}'
+ORDER BY created_at
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/job_events.tsv"
+
+ch_query "
+SELECT *
+FROM forge_metal.job_logs
+WHERE attempt_id = '${attempt_id}'
+ORDER BY seq
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/job_logs.tsv"
+
+ch_query "
+SELECT *
+FROM forge_metal.metering
+WHERE source_ref = '${attempt_id}'
+ORDER BY recorded_at
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/metering.tsv"
+
+ch_query "
+SELECT
+  Timestamp,
+  ServiceName,
+  SeverityText,
+  Body,
+  toString(LogAttributes) AS attrs
+FROM default.otel_logs
+WHERE (
+    Body LIKE '%${verification_run_id}%'
+    OR toString(LogAttributes) LIKE '%${verification_run_id}%'
+    OR Body LIKE '%${execution_id}%'
+    OR toString(LogAttributes) LIKE '%${execution_id}%'
+    OR Body LIKE '%${attempt_id}%'
+    OR toString(LogAttributes) LIKE '%${attempt_id}%'
+  )
+  OR (
+    Timestamp BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
+    AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service')
+  )
+ORDER BY Timestamp
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/otel_logs.tsv"
+
+ch_query "
+SELECT
+  Timestamp,
+  ServiceName,
+  SpanName,
+  StatusCode,
+  intDiv(Duration, 1000000) AS duration_ms,
+  SpanAttributes['http.method'] AS http_method,
+  SpanAttributes['http.target'] AS http_target,
+  SpanAttributes['http.status_code'] AS http_status_code
+FROM default.otel_traces
+WHERE Timestamp BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
+  AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service')
+ORDER BY Timestamp
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/otel_traces.tsv"
+
+remote_psql sandbox_rental "
+COPY (
+  SELECT
+    e.execution_id,
+    e.org_id,
+    e.actor_id,
+    e.kind,
+    e.status,
+    e.repo_url,
+    e.ref,
+    e.commit_sha,
+    e.created_at,
+    e.updated_at,
+    a.attempt_id,
+    a.state,
+    a.billing_job_id,
+    a.orchestrator_job_id,
+    a.exit_code,
+    a.duration_ms,
+    a.trace_id,
+    a.started_at,
+    a.completed_at
+  FROM executions e
+  JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
+  WHERE e.execution_id = '${execution_id}'
+) TO STDOUT WITH (FORMAT csv, HEADER true);
+" >"${output_dir}/postgres/execution.csv"
+
+remote_psql sandbox_rental "
+COPY (
+  SELECT
+    attempt_id,
+    window_seq,
+    window_seconds,
+    actual_seconds,
+    pricing_phase,
+    state,
+    created_at,
+    settled_at
+  FROM execution_billing_windows
+  WHERE attempt_id = '${attempt_id}'
+  ORDER BY window_seq
+) TO STDOUT WITH (FORMAT csv, HEADER true);
+" >"${output_dir}/postgres/execution_billing_windows.csv"
+
+remote_psql sandbox_rental "
+SELECT reservation::text
+FROM execution_billing_windows
+WHERE attempt_id = '${attempt_id}'
+ORDER BY window_seq
+LIMIT 1;
+" >"${output_dir}/postgres/reservation.json"
+
+mapfile -t grant_ids < <(python3 - "${output_dir}/postgres/reservation.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+raw = path.read_text(encoding="utf-8").strip()
+if not raw:
+    sys.exit(0)
+reservation = json.loads(raw)
+for leg in reservation.get("grant_legs", []):
+    grant_id = leg.get("grant_id", "").strip()
+    if grant_id:
+        print(grant_id)
+PY
+)
+
+for grant_id in "${grant_ids[@]:-}"; do
+  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
+    "sudo /opt/forge-metal/profile/bin/tb-inspect '${grant_id}'" \
+    >"${output_dir}/tigerbeetle/grant-${grant_id}.txt"
+done
+
+cat >"${output_dir}/summary.md" <<EOF
+# Sandbox Verification Evidence
+
+- verification_run_id: ${verification_run_id}
+- execution_id: ${execution_id}
+- attempt_id: ${attempt_id}
+- status: ${run_status}
+- repo_url: ${repo_url}
+- ref: ${repo_ref}
+- log_marker: ${log_marker}
+- submit_requested_at: ${submit_requested_at}
+- terminal_observed_at: ${terminal_observed_at}
+- started_balance: ${started_balance}
+- finished_balance: ${finished_balance}
+- error: ${run_error}
+
+Collected files:
+
+- clickhouse/job_events.tsv
+- clickhouse/job_logs.tsv
+- clickhouse/metering.tsv
+- clickhouse/otel_logs.tsv
+- clickhouse/otel_traces.tsv
+- postgres/execution.csv
+- postgres/execution_billing_windows.csv
+- postgres/reservation.json
+- tigerbeetle/grant-*.txt
+EOF

@@ -1,6 +1,7 @@
 .PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
        hooks-install doctor setup-domain inventory-check seed-demo billing-reset verification-reset vm-guest-telemetry-build \
-       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-code mail-read edit-secrets
+       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-code mail-read edit-secrets \
+       verification-repo verify-sandbox-live
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
@@ -75,6 +76,12 @@ billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle +
 
 verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse forge_metal + telemetry)
 	cd $(FM)/ansible && ansible-playbook playbooks/verification-reset.yml
+
+verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
+	cd $(FM) && ./scripts/ensure-verification-repo.sh
+
+verify-sandbox-live: inventory-check ## Reset, deploy, seed, run Playwright sandbox verification, and collect evidence
+	cd $(FM) && ./scripts/verify-sandbox-live.sh
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)

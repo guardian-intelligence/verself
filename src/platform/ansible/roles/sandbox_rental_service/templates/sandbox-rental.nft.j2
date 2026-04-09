@@ -3,8 +3,9 @@
 # Binds 127.0.0.1:4243 (loopback-only). Caddy reverse-proxies to it.
 #
 # The service runs as User=sandbox_rental. Egress is restricted by skuid
-# to only allow connections to PostgreSQL, ClickHouse, billing, and Zitadel
-# on localhost. All other outbound traffic from this user is dropped.
+# to only allow connections to PostgreSQL, ClickHouse, billing, Zitadel, and
+# local Forgejo on localhost. All other outbound traffic from this user is
+# dropped.
 
 table inet forge_metal_sandbox_rental
 delete table inet forge_metal_sandbox_rental
@@ -32,6 +33,11 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.clickhouse.native_port }} accept
         oifname "lo" tcp dport {{ services.billing.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
+        # Repo-backed executions currently inspect and clone repos inside the
+        # service process before the Forgejo runner cutover is complete. Keep
+        # this loopback-only so the first pass can use public local Forgejo
+        # repos without opening general egress from the sandbox_rental user.
+        oifname "lo" tcp dport {{ services.forgejo.port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
 
         # Allow Unix socket traffic (always passes output chain).

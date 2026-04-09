@@ -24,6 +24,14 @@ export const env = {
   zitadelBaseURL: process.env.ZITADEL_BASE_URL || "https://auth.anveio.com",
   zitadelProjectName: process.env.ZITADEL_PROJECT_NAME || "sandbox-rental",
 
+  verificationRunID: process.env.VERIFICATION_RUN_ID || "",
+  verificationRunJSONPath: process.env.VERIFICATION_RUN_JSON_PATH || "",
+  verificationRepoURL:
+    process.env.VERIFICATION_REPO_URL || "http://127.0.0.1:3000/forge-admin/sandbox-verification-next-bun.git",
+  verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
+  verificationLogMarker:
+    process.env.VERIFICATION_LOG_MARKER || "FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE",
+
   // Stripe test card — always succeeds, no 3DS challenge.
   stripeCard: "4242424242424242",
   stripeExpiry: "12/30",
