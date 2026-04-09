@@ -57,17 +57,12 @@ function Nav() {
   return (
     <nav className="border-b border-border bg-card">
       <div className="max-w-6xl mx-auto px-4 flex items-center h-14 gap-6">
-        <Link
-          to="/"
-          search={{ purchased: false, subscribed: false }}
-          className="font-semibold text-lg"
-        >
+        <Link to="/" className="font-semibold text-lg">
           Rent-a-Sandbox
         </Link>
         <div className="flex gap-4 text-sm">
           <Link
             to="/"
-            search={{ purchased: false, subscribed: false }}
             className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
           >
             Dashboard
@@ -86,7 +81,6 @@ function Nav() {
           </Link>
           <Link
             to="/billing"
-            search={{ purchased: false, subscribed: false }}
             className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
           >
             Billing

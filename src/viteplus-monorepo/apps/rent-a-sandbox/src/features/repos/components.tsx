@@ -74,20 +74,12 @@ export function RepoListEmptyState() {
 }
 
 export function RepoListLoadingState() {
-  return (
-    <EmptyState
-      title="Loading repos..."
-      body="Synchronizing the latest repository state."
-    />
-  );
+  return <EmptyState title="Loading repos..." body="Synchronizing the latest repository state." />;
 }
 
 export function RepoDetailLoadingState() {
   return (
-    <EmptyState
-      title="Loading repo..."
-      body="Fetching the repo record and generation history."
-    />
+    <EmptyState title="Loading repo..." body="Fetching the repo record and generation history." />
   );
 }
 
@@ -126,7 +118,9 @@ export function RepoListItem({ repo }: { repo: Repo }) {
         <RepoMetric
           label="Compatibility"
           value={
-            repo.compatibility_status === "compatible" ? "Compatible" : repo.compatibility_status || "--"
+            repo.compatibility_status === "compatible"
+              ? "Compatible"
+              : repo.compatibility_status || "--"
           }
         />
         <RepoMetric label="Last scanned" value={shortSHA(repo.last_scanned_sha)} />
@@ -143,7 +137,11 @@ export function RepoListItem({ repo }: { repo: Repo }) {
   );
 }
 
-export function RepoCompatibilityPanel({ summary }: { summary: RepoCompatibilitySummary | undefined }) {
+export function RepoCompatibilityPanel({
+  summary,
+}: {
+  summary: RepoCompatibilitySummary | undefined;
+}) {
   const issues = summary?.issues ?? [];
   const labels = summary?.unsupported_labels ?? [];
   const paths = summary?.workflow_paths ?? [];
@@ -178,7 +176,10 @@ export function RepoCompatibilityPanel({ summary }: { summary: RepoCompatibility
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Issues</h3>
             {issues.map((issue, index) => (
-              <div key={`${issue.path}-${issue.job_id}-${index}`} className="rounded-md border border-border p-3 text-sm">
+              <div
+                key={`${issue.path}-${issue.job_id}-${index}`}
+                className="rounded-md border border-border p-3 text-sm"
+              >
                 <div className="font-medium">
                   {issue.path || "workflow"} {issue.job_id ? `· ${issue.job_id}` : ""}
                 </div>
@@ -208,12 +209,12 @@ export function RepoCompatibilityPanel({ summary }: { summary: RepoCompatibility
   );
 }
 
-function shortSHA(value?: string): string {
+export function shortSHA(value?: string): string {
   if (!value) return "--";
   return value.slice(0, 12);
 }
 
-function shortID(value?: string): string {
+export function shortID(value?: string): string {
   if (!value) return "--";
   return value.slice(0, 8);
 }

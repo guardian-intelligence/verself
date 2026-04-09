@@ -10,9 +10,11 @@ export function BalanceCard({ balance }: { balance: Balance }) {
         : "border-success/50 bg-success/5";
 
   return (
-    <div className={`border rounded-lg p-6 ${color}`}>
+    <div data-testid="balance-card" className={`border rounded-lg p-6 ${color}`}>
       <div className="text-sm text-muted-foreground mb-1">Available Credits</div>
-      <div className="text-4xl font-bold font-mono tabular-nums">{total.toLocaleString()}</div>
+      <div data-testid="balance-total" className="text-4xl font-bold font-mono tabular-nums">
+        {total.toLocaleString()}
+      </div>
       <div className="mt-3 flex gap-6 text-sm text-muted-foreground">
         <div>
           <span className="font-medium text-foreground">

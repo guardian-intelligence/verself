@@ -1,12 +1,12 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
 import { BalanceCard } from "~/components/balance-card";
-import { createCheckoutSession, getBalance } from "~/server-fns/api";
-import { requireViewer } from "~/lib/protected-route";
+import { ErrorCallout } from "~/components/error-callout";
+import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
+import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
-export const Route = createFileRoute("/billing/credits")({
-  beforeLoad: ({ location }) => requireViewer(location.href),
-  loader: () => getBalance(),
+export const Route = createFileRoute("/_authenticated/billing/credits")({
+  loader: ({ context }) => loadBalance(context.queryClient),
   component: CreditsPage,
 });
 
@@ -18,22 +18,8 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const balance = Route.useLoaderData();
-
-  const mutation = useMutation({
-    mutationFn: (amountCents: number) =>
-      createCheckoutSession({
-        data: {
-          product_id: "sandbox",
-          amount_cents: amountCents,
-          success_url: `${window.location.origin}/billing?purchased=true`,
-          cancel_url: `${window.location.origin}/billing/credits`,
-        },
-      }),
-    onSuccess: (data) => {
-      window.location.href = data.url;
-    },
-  });
+  const balance = useSuspenseQuery(balanceQuery()).data;
+  const mutation = useCreateCheckoutSessionMutation();
 
   return (
     <div className="space-y-6">
@@ -42,15 +28,18 @@ function CreditsPage() {
         Buy additional credits to top up your balance. Credits are added instantly.
       </p>
 
-      {balance && <BalanceCard balance={balance} />}
+      <div className="max-w-md">
+        <BalanceCard balance={balance} />
+      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid gap-4 md:grid-cols-4">
         {CREDIT_PACKS.map((pack) => (
           <button
             key={pack.cents}
+            type="button"
             onClick={() => mutation.mutate(pack.cents)}
             disabled={mutation.isPending}
-            className="border border-border rounded-lg p-4 text-center hover:bg-accent disabled:opacity-50 transition-colors"
+            className="rounded-lg border border-border p-4 text-center transition-colors hover:bg-accent disabled:opacity-50"
           >
             <div className="text-2xl font-bold">{pack.label}</div>
             <div className="text-sm text-muted-foreground mt-1">{pack.credits}</div>
@@ -58,7 +47,7 @@ function CreditsPage() {
         ))}
       </div>
 
-      {mutation.error && <p className="text-sm text-destructive">{mutation.error.message}</p>}
+      {mutation.error ? <ErrorCallout error={mutation.error} title="Checkout failed" /> : null}
     </div>
   );
 }

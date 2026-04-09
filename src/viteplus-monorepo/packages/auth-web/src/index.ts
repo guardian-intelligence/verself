@@ -351,10 +351,7 @@ function extractRoleAssignments(payload: JWTPayload): AuthRoleAssignment[] {
     let projectID: string | null = null;
     if (key === "urn:zitadel:iam:org:project:roles") {
       projectID = null;
-    } else if (
-      key.startsWith("urn:zitadel:iam:org:project:") &&
-      key.endsWith(":roles")
-    ) {
+    } else if (key.startsWith("urn:zitadel:iam:org:project:") && key.endsWith(":roles")) {
       projectID = key.slice("urn:zitadel:iam:org:project:".length, -":roles".length);
     } else {
       continue;

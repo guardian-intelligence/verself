@@ -25,13 +25,23 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 Auth state is server-owned (`@forge-metal/auth-web` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser. Treat auth as route context and server function context.
 
+### Routing + Auth
+
+- Public routes stay at the root of `src/routes/`.
+- Protected screens live under `src/routes/_authenticated/`.
+- Only `src/routes/_authenticated/route.tsx` should call `requireViewer(...)`. Child routes should not repeat auth gating.
+- Router-owned transport states come from app-wide boundaries in `src/router.tsx` (`defaultPendingComponent`, `defaultErrorComponent`, `defaultNotFoundComponent`), not per-page `if (!data)` fallbacks.
+- Reserve `<ClientOnly>` for browser-only leaf widgets such as Electric-powered tables and logs, not auth or route protection.
+
 ### SSR + Loading States
 
 - Never treat `undefined` (query still loading) the same as `[]` (loaded but empty). Use `isPending` from `useQuery` to show `<Skeleton>` placeholders during loading. Show empty-state messages only after the query resolves.
 - `<Skeleton>` is exported from `@forge-metal/ui` (shadcn pattern: `animate-pulse rounded-md bg-primary/10`).
-- Gate protected routes with `beforeLoad` / `requireViewer`, not `useHydrated()` or `<ClientOnly>`.
-- Reserve `<ClientOnly>` for browser-only leaf widgets, not auth or route protection.
+- Use route boundaries for transport loading/error/not-found. Use `EmptyState`, `TableEmptyRow`, `Callout`, and `ErrorCallout` for ready-empty and mutation-error states.
 
-### Query Keys
+### Query Composition
 
-All query keys are centralized in `~/lib/query-keys.ts`. Always use `keys.*` — never inline key arrays.
+- Co-locate query factories and route loaders in `src/features/*/queries.ts`.
+- Seed loader-backed queries with `queryClient.ensureQueryData(...)` or feature `load*` helpers, then read them with `useSuspenseQuery(...)` inside the route component.
+- Keep mutation invalidation and navigation glue in `src/features/*/mutations.ts` when possible so route files stay declarative.
+- Do not add a shared `query-keys.ts` layer. Feature-local `queryOptions(...)` factories are the source of truth for keys, stale policies, and polling.

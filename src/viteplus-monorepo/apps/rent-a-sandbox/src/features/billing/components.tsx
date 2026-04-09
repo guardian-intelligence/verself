@@ -1,6 +1,5 @@
-import type { ReactNode } from "react";
 import { Callout } from "~/components/callout";
-import { TableEmptyRow as AppTableEmptyRow } from "~/components/table-empty-row";
+import type { BillingFlashSearch } from "./search";
 
 export function SubscriptionStatusPill({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -18,20 +17,16 @@ export function SubscriptionStatusPill({ status }: { status: string }) {
   );
 }
 
-export function TableEmptyRow({
-  colSpan,
-  children,
-}: {
-  colSpan: number;
-  children: ReactNode;
-}) {
-  return <AppTableEmptyRow colSpan={colSpan}>{children}</AppTableEmptyRow>;
-}
+export function BillingFlashNotice({ purchased, subscribed }: BillingFlashSearch) {
+  if (!purchased && !subscribed) {
+    return null;
+  }
 
-export function BillingBanner({ children }: { children: ReactNode }) {
   return (
-    <Callout tone="success">
-      {children}
+    <Callout tone="success" title={purchased ? "Credits purchased" : "Subscription activated"}>
+      {purchased
+        ? "Credits purchased successfully. Your balance has been updated."
+        : "Subscription activated. Monthly credits will be deposited automatically."}
     </Callout>
   );
 }
