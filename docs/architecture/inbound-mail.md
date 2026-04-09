@@ -184,7 +184,7 @@ make mail MAILBOX=ceo                  # Switch to ceo@
 - `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
 - `cmd/mailbox-openapi/` + `client/` — generated operator/mutation API client surface
 - `cmd/mailbox-tool/` — typed operator CLI over the generated mailbox-service client
-- `scripts/mail.sh` — thin wrapper around `cmd/mailbox-tool`
+- `Makefile` `mail*` targets — operator shortcuts over `cmd/mailbox-tool`
 
 ## Product evolution
 
