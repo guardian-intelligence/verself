@@ -82,29 +82,38 @@ remote_psql() {
     "sudo -u postgres psql -d ${db} -X -A -P footer=off" <<<"${sql}"
 }
 
-ch_query "
-SELECT *
-FROM forge_metal.job_events
-WHERE execution_id = '${execution_id}'
-ORDER BY created_at
-FORMAT TSVWithNames
-" >"${output_dir}/clickhouse/job_events.tsv"
+if [[ -n "${execution_id}" ]]; then
+  ch_query "
+  SELECT *
+  FROM forge_metal.job_events
+  WHERE execution_id = '${execution_id}'
+  ORDER BY created_at
+  FORMAT TSVWithNames
+  " >"${output_dir}/clickhouse/job_events.tsv"
+else
+  printf 'execution_id\tmissing\n\ttrue\n' >"${output_dir}/clickhouse/job_events.tsv"
+fi
 
-ch_query "
-SELECT *
-FROM forge_metal.job_logs
-WHERE attempt_id = '${attempt_id}'
-ORDER BY seq
-FORMAT TSVWithNames
-" >"${output_dir}/clickhouse/job_logs.tsv"
+if [[ -n "${attempt_id}" ]]; then
+  ch_query "
+  SELECT *
+  FROM forge_metal.job_logs
+  WHERE attempt_id = '${attempt_id}'
+  ORDER BY seq
+  FORMAT TSVWithNames
+  " >"${output_dir}/clickhouse/job_logs.tsv"
 
-ch_query "
-SELECT *
-FROM forge_metal.metering
-WHERE source_ref = '${attempt_id}'
-ORDER BY recorded_at
-FORMAT TSVWithNames
-" >"${output_dir}/clickhouse/metering.tsv"
+  ch_query "
+  SELECT *
+  FROM forge_metal.metering
+  WHERE source_ref = '${attempt_id}'
+  ORDER BY recorded_at
+  FORMAT TSVWithNames
+  " >"${output_dir}/clickhouse/metering.tsv"
+else
+  printf 'attempt_id\tmissing\n\ttrue\n' >"${output_dir}/clickhouse/job_logs.tsv"
+  printf 'attempt_id\tmissing\n\ttrue\n' >"${output_dir}/clickhouse/metering.tsv"
+fi
 
 ch_query "
 SELECT
@@ -147,58 +156,69 @@ ORDER BY Timestamp
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/otel_traces.tsv"
 
-remote_psql sandbox_rental "
-COPY (
-  SELECT
-    e.execution_id,
-    e.org_id,
-    e.actor_id,
-    e.kind,
-    e.status,
-    e.repo_url,
-    e.ref,
-    e.commit_sha,
-    e.created_at,
-    e.updated_at,
-    a.attempt_id,
-    a.state,
-    a.billing_job_id,
-    a.orchestrator_job_id,
-    a.exit_code,
-    a.duration_ms,
-    a.trace_id,
-    a.started_at,
-    a.completed_at
-  FROM executions e
-  JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
-  WHERE e.execution_id = '${execution_id}'
-) TO STDOUT WITH (FORMAT csv, HEADER true);
-" >"${output_dir}/postgres/execution.csv"
+if [[ -n "${execution_id}" ]]; then
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      e.execution_id,
+      e.org_id,
+      e.actor_id,
+      e.kind,
+      e.status,
+      e.repo_url,
+      e.ref,
+      e.commit_sha,
+      e.created_at,
+      e.updated_at,
+      a.attempt_id,
+      a.state,
+      a.billing_job_id,
+      a.orchestrator_job_id,
+      a.exit_code,
+      a.duration_ms,
+      a.trace_id,
+      a.started_at,
+      a.completed_at
+    FROM executions e
+    JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
+    WHERE e.execution_id = '${execution_id}'
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/execution.csv"
+else
+  printf 'execution_id,missing\n,true\n' >"${output_dir}/postgres/execution.csv"
+fi
 
-remote_psql sandbox_rental "
-COPY (
-  SELECT
-    attempt_id,
-    window_seq,
-    window_seconds,
-    actual_seconds,
-    pricing_phase,
-    state,
-    created_at,
-    settled_at
-  FROM execution_billing_windows
-  WHERE attempt_id = '${attempt_id}'
-  ORDER BY window_seq
-) TO STDOUT WITH (FORMAT csv, HEADER true);
-" >"${output_dir}/postgres/execution_billing_windows.csv"
+if [[ -n "${attempt_id}" ]]; then
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      attempt_id,
+      window_seq,
+      window_seconds,
+      actual_seconds,
+      pricing_phase,
+      state,
+      created_at,
+      settled_at
+    FROM execution_billing_windows
+    WHERE attempt_id = '${attempt_id}'
+    ORDER BY window_seq
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/execution_billing_windows.csv"
 
-remote_psql sandbox_rental "
-SELECT reservation::text
-FROM execution_billing_windows
-WHERE attempt_id = '${attempt_id}'
-ORDER BY window_seq
-LIMIT 1;
-" >"${output_dir}/postgres/reservation.json"
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT reservation::text
+    FROM execution_billing_windows
+    WHERE attempt_id = '${attempt_id}'
+    ORDER BY window_seq
+    LIMIT 1
+  ) TO STDOUT;
+  " >"${output_dir}/postgres/reservation.json"
+else
+  printf 'attempt_id,missing\n,true\n' >"${output_dir}/postgres/execution_billing_windows.csv"
+  : >"${output_dir}/postgres/reservation.json"
+fi
 
 mapfile -t grant_ids < <(python3 - "${output_dir}/postgres/reservation.json" <<'PY'
 import json
@@ -217,7 +237,8 @@ for leg in reservation.get("grant_legs", []):
 PY
 )
 
-for grant_id in "${grant_ids[@]:-}"; do
+for grant_id in "${grant_ids[@]}"; do
+  [[ -n "${grant_id}" ]] || continue
   ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
     "sudo /opt/forge-metal/profile/bin/tb-inspect '${grant_id}'" \
     >"${output_dir}/tigerbeetle/grant-${grant_id}.txt"

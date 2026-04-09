@@ -15,6 +15,8 @@ type fakeRunner struct {
 	logs      string
 	err       error
 	commitSHA string
+	requireWarm bool
+	warmed      bool
 }
 
 func (f *fakeRunner) Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error) {
@@ -40,6 +42,14 @@ func (f *fakeRunner) ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRe
 	if f.err != nil {
 		return vmorchestrator.JobStatus{}, f.err
 	}
+	if f.requireWarm && !f.warmed {
+		return vmorchestrator.JobStatus{
+			JobID:        req.JobTemplate.JobID,
+			State:        vmorchestrator.JobStateFailed,
+			Terminal:     true,
+			ErrorMessage: "repo golden for toy-next-bun-monorepo does not exist; run warm first",
+		}, nil
+	}
 	result := f.result(delay)
 	state := vmorchestrator.JobStateSucceeded
 	if f.exitCode != 0 {
@@ -63,7 +73,10 @@ func (f *fakeRunner) ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRe
 }
 
 func (f *fakeRunner) WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error) {
-	delay := f.executionDelay()
+	delay := f.executionDelay() / 4
+	if delay <= 0 {
+		delay = 50 * time.Millisecond
+	}
 	select {
 	case <-time.After(delay):
 	case <-ctx.Done():
@@ -72,6 +85,7 @@ func (f *fakeRunner) WarmGolden(ctx context.Context, req vmorchestrator.WarmGold
 	if f.err != nil {
 		return vmorchestrator.WarmGoldenResult{}, f.err
 	}
+	f.warmed = true
 	return vmorchestrator.WarmGoldenResult{
 		TargetDataset:     "golden/toy-next-bun-monorepo@0002",
 		Promoted:          true,

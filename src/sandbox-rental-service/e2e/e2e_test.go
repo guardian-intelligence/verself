@@ -128,9 +128,12 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 
 	runner := &fakeRunner{
-		delay:     1500 * time.Millisecond, // 1.5s -> actualSeconds=1
-		logs:      "hello from repo exec e2e\n",
-		commitSHA: repoHead,
+		// First repo exec forces an on-demand warm. The same attempt is then
+		// billed for the warm plus the retry, which currently totals 3s here.
+		delay:       1500 * time.Millisecond,
+		logs:        "hello from repo exec e2e\n",
+		commitSHA:   repoHead,
+		requireWarm: true,
 	}
 
 	rentalServer := rentaltestharness.NewServer(rentaltestharness.Config{
@@ -270,7 +273,7 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 	consumed := balanceBefore - balanceAfter
 
-	const expectedCost uint64 = 300
+	const expectedCost uint64 = 900
 	if consumed != expectedCost {
 		t.Fatalf("expected %d credits consumed, got %d (before=%d after=%d)", expectedCost, consumed, balanceBefore, balanceAfter)
 	}
@@ -447,8 +450,8 @@ func assertBillingWindow(t *testing.T, ctx context.Context, db *sql.DB, attemptI
 	if windowSeconds != 300 {
 		t.Fatalf("expected window_seconds=300, got %d", windowSeconds)
 	}
-	if actualSeconds != 1 {
-		t.Fatalf("expected actual_seconds=1, got %d", actualSeconds)
+	if actualSeconds != 3 {
+		t.Fatalf("expected actual_seconds=3, got %d", actualSeconds)
 	}
 	if pricingPhase == "" {
 		t.Fatal("expected non-empty pricing_phase")
