@@ -157,33 +157,42 @@ type JobLogRow struct {
 }
 
 type JobEventRow struct {
-	ExecutionID    string    `ch:"execution_id"`
-	AttemptID      string    `ch:"attempt_id"`
-	OrgID          uint64    `ch:"org_id"`
-	ActorID        string    `ch:"actor_id"`
-	Kind           string    `ch:"kind"`
-	Provider       string    `ch:"provider"`
-	ProductID      string    `ch:"product_id"`
-	Repo           string    `ch:"repo"`
-	RepoURL        string    `ch:"repo_url"`
-	Ref            string    `ch:"ref"`
-	DefaultBranch  string    `ch:"default_branch"`
-	RunCommand     string    `ch:"run_command"`
-	CommitSHA      string    `ch:"commit_sha"`
-	Status         string    `ch:"status"`
-	ExitCode       int32     `ch:"exit_code"`
-	DurationMs     int64     `ch:"duration_ms"`
-	ZFSWritten     uint64    `ch:"zfs_written"`
-	StdoutBytes    uint64    `ch:"stdout_bytes"`
-	StderrBytes    uint64    `ch:"stderr_bytes"`
-	GoldenSnapshot string    `ch:"golden_snapshot"`
-	BillingJobID   int64     `ch:"billing_job_id"`
-	ChargeUnits    uint64    `ch:"charge_units"`
-	PricingPhase   string    `ch:"pricing_phase"`
-	StartedAt      time.Time `ch:"started_at"`
-	CompletedAt    time.Time `ch:"completed_at"`
-	CreatedAt      time.Time `ch:"created_at"`
-	TraceID        string    `ch:"trace_id"`
+	ExecutionID        string    `ch:"execution_id"`
+	AttemptID          string    `ch:"attempt_id"`
+	OrgID              uint64    `ch:"org_id"`
+	ActorID            string    `ch:"actor_id"`
+	Kind               string    `ch:"kind"`
+	Provider           string    `ch:"provider"`
+	ProductID          string    `ch:"product_id"`
+	RepoID             string    `ch:"repo_id"`
+	GoldenGenerationID string    `ch:"golden_generation_id"`
+	Repo               string    `ch:"repo"`
+	RepoURL            string    `ch:"repo_url"`
+	Ref                string    `ch:"ref"`
+	DefaultBranch      string    `ch:"default_branch"`
+	RunCommand         string    `ch:"run_command"`
+	CommitSHA          string    `ch:"commit_sha"`
+	WorkflowPath       string    `ch:"workflow_path"`
+	WorkflowJobName    string    `ch:"workflow_job_name"`
+	ProviderRunID      string    `ch:"provider_run_id"`
+	ProviderJobID      string    `ch:"provider_job_id"`
+	RunnerName         string    `ch:"runner_name"`
+	Status             string    `ch:"status"`
+	ExitCode           int32     `ch:"exit_code"`
+	DurationMs         int64     `ch:"duration_ms"`
+	ZFSWritten         uint64    `ch:"zfs_written"`
+	StdoutBytes        uint64    `ch:"stdout_bytes"`
+	StderrBytes        uint64    `ch:"stderr_bytes"`
+	GoldenSnapshot     string    `ch:"golden_snapshot"`
+	BillingJobID       int64     `ch:"billing_job_id"`
+	ChargeUnits        uint64    `ch:"charge_units"`
+	PricingPhase       string    `ch:"pricing_phase"`
+	CorrelationID      string    `ch:"correlation_id"`
+	VerificationRunID  string    `ch:"verification_run_id"`
+	StartedAt          time.Time `ch:"started_at"`
+	CompletedAt        time.Time `ch:"completed_at"`
+	CreatedAt          time.Time `ch:"created_at"`
+	TraceID            string    `ch:"trace_id"`
 }
 
 // Service manages execution submission, billing, and state transitions.
@@ -219,6 +228,7 @@ type executionOutcome struct {
 	StderrBytes    uint64
 	Logs           string
 	CommitSHA      string
+	RunnerName     string
 	GoldenSnapshot string
 	StartedAt      time.Time
 	CompletedAt    time.Time
@@ -321,6 +331,13 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	}
 
 	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", executionID, "attempt_id", attemptID, "billing_job_id", billingJobID, "org_id", orgID, "kind", req.Kind, "window_seq", reservation.WindowSeq, "fm_correlation_id", correlationID)
+	s.writeSystemLog(ctx, executionID, attemptID,
+		"reserved billing window seq=%d seconds=%d pricing_phase=%s kind=%s",
+		reservation.WindowSeq,
+		reservation.WindowSecs,
+		reservation.PricingPhase,
+		req.Kind,
+	)
 	if verificationRunID := VerificationRunIDFromContext(ctx); verificationRunID != "" {
 		s.Logger.InfoContext(ctx, "execution verification correlation",
 			"verification_run_id", verificationRunID,
@@ -352,6 +369,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		s.Logger.ErrorContext(ctx, "mark launching", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_job_id=%s", req.Kind, orchestratorJobID)
 
 	// Surgical note: until billing renew exists, attempts are capped to a single
 	// 300-second reservation window. The timeout below is the enforcement point.
@@ -382,6 +400,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		if outcome.StartedAt.IsZero() {
 			if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
 				s.Logger.ErrorContext(ctx, "void launch failure reservation", "attempt_id", attemptID, "error", voidErr)
+				s.writeSystemLog(ctx, executionID, attemptID, "billing void failed after launch failure: %v", voidErr)
 				_ = s.markFinalizing(ctx, executionID, attemptID, executionOutcome{
 					State:         StateFinalizing,
 					FailureReason: "billing_void_failed",
@@ -389,6 +408,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				})
 				return
 			}
+			s.writeSystemLog(ctx, executionID, attemptID, "billing voided after launch failure window_seq=%d", reservation.WindowSeq)
 			if err := s.markWindowVoided(ctx, attemptID, int(reservation.WindowSeq), time.Now().UTC()); err != nil {
 				s.Logger.ErrorContext(ctx, "mark window voided", "attempt_id", attemptID, "error", err)
 			}
@@ -426,6 +446,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		s.Logger.ErrorContext(ctx, "mark finalizing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
 
 	actualSeconds := actualSecondsForBilling(outcome.DurationMs, int(reservation.WindowSecs))
 	if settleErr := s.Billing.Settle(ctx, reservation, uint32(actualSeconds)); settleErr != nil {
@@ -433,6 +454,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		return
 	}
 	settledAt := time.Now().UTC()
+	s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_seconds=%d charge_units=%d", reservation.WindowSeq, actualSeconds, chargeUnits(reservation.CostPerSec, actualSeconds))
 	if err := s.markWindowSettled(ctx, attemptID, int(reservation.WindowSeq), actualSeconds, reservation.PricingPhase, settledAt); err != nil {
 		s.Logger.ErrorContext(ctx, "mark window settled", "attempt_id", attemptID, "error", err)
 		return
@@ -443,7 +465,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		return
 	}
 	if req.Kind == KindWarmGolden {
-		if err := s.finalizeWarmGoldenGeneration(ctx, req, outcome); err != nil {
+		if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
 			s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
 		}
 	}
@@ -453,33 +475,42 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	}
 
 	s.writeJobEvent(ctx, JobEventRow{
-		ExecutionID:    executionID.String(),
-		AttemptID:      attemptID.String(),
-		OrgID:          orgID,
-		ActorID:        actorID,
-		Kind:           req.Kind,
-		Provider:       req.Provider,
-		ProductID:      req.ProductID,
-		Repo:           req.Repo,
-		RepoURL:        req.RepoURL,
-		Ref:            req.Ref,
-		DefaultBranch:  req.DefaultBranch,
-		RunCommand:     req.RunCommand,
-		CommitSHA:      outcome.CommitSHA,
-		Status:         outcome.State,
-		ExitCode:       int32(outcome.ExitCode),
-		DurationMs:     outcome.DurationMs,
-		ZFSWritten:     outcome.ZFSWritten,
-		StdoutBytes:    outcome.StdoutBytes,
-		StderrBytes:    outcome.StderrBytes,
-		GoldenSnapshot: outcome.GoldenSnapshot,
-		BillingJobID:   reservation.JobId,
-		ChargeUnits:    chargeUnits(reservation.CostPerSec, actualSeconds),
-		PricingPhase:   reservation.PricingPhase,
-		StartedAt:      outcome.StartedAt,
-		CompletedAt:    outcome.CompletedAt,
-		CreatedAt:      outcome.StartedAt,
-		TraceID:        traceID,
+		ExecutionID:        executionID.String(),
+		AttemptID:          attemptID.String(),
+		OrgID:              orgID,
+		ActorID:            actorID,
+		Kind:               req.Kind,
+		Provider:           req.Provider,
+		ProductID:          req.ProductID,
+		RepoID:             req.RepoID,
+		GoldenGenerationID: uuidString(req.GoldenGenerationID),
+		Repo:               req.Repo,
+		RepoURL:            req.RepoURL,
+		Ref:                req.Ref,
+		DefaultBranch:      req.DefaultBranch,
+		RunCommand:         req.RunCommand,
+		CommitSHA:          outcome.CommitSHA,
+		WorkflowPath:       req.WorkflowPath,
+		WorkflowJobName:    req.WorkflowJobName,
+		ProviderRunID:      req.ProviderRunID,
+		ProviderJobID:      req.ProviderJobID,
+		RunnerName:         outcome.RunnerName,
+		Status:             outcome.State,
+		ExitCode:           int32(outcome.ExitCode),
+		DurationMs:         outcome.DurationMs,
+		ZFSWritten:         outcome.ZFSWritten,
+		StdoutBytes:        outcome.StdoutBytes,
+		StderrBytes:        outcome.StderrBytes,
+		GoldenSnapshot:     outcome.GoldenSnapshot,
+		BillingJobID:       reservation.JobId,
+		ChargeUnits:        chargeUnits(reservation.CostPerSec, actualSeconds),
+		PricingPhase:       reservation.PricingPhase,
+		CorrelationID:      CorrelationIDFromContext(ctx),
+		VerificationRunID:  VerificationRunIDFromContext(ctx),
+		StartedAt:          outcome.StartedAt,
+		CompletedAt:        outcome.CompletedAt,
+		CreatedAt:          outcome.StartedAt,
+		TraceID:            traceID,
 	})
 	s.Logger.InfoContext(ctx, "execution completed",
 		"fm_correlation_id", CorrelationIDFromContext(ctx),
@@ -498,6 +529,7 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
 		return executionOutcome{}, err
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "running direct execution")
 
 	command := strings.TrimSpace(req.RunCommand)
 	if command == "" {
@@ -559,6 +591,7 @@ func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.U
 	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
 		return executionOutcome{FailureReason: "mark_running_failed"}, err
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "running repo execution ref=%s repo=%s", req.Ref, req.Repo)
 
 	status, err := s.Orchestrator.ExecRepo(ctx, prepared.Request)
 	if shouldWarmRepoGolden(err, status.ErrorMessage) {
@@ -572,6 +605,7 @@ func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.U
 			"repo", req.Repo,
 			"default_branch", req.DefaultBranch,
 		)
+		s.writeSystemLog(ctx, executionID, attemptID, "active golden missing; warming repo golden on demand for repo=%s", req.Repo)
 		if warmErr := s.warmRepoGoldenOnDemand(ctx, req); warmErr != nil {
 			outcome := executionOutcome{
 				StartedAt:     startedAt,
@@ -675,6 +709,7 @@ func (s *Service) runWarmGolden(ctx context.Context, executionID, attemptID uuid
 	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
 		return executionOutcome{FailureReason: "mark_running_failed"}, err
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "warming golden for repo=%s default_branch=%s", req.Repo, req.DefaultBranch)
 	if req.GoldenGenerationID != nil {
 		if err := s.SetGoldenGenerationState(ctx, *req.GoldenGenerationID, GenerationStateBuilding, "", ""); err != nil {
 			return executionOutcome{FailureReason: "mark_generation_building_failed"}, err
@@ -1194,8 +1229,20 @@ func (s *Service) findByIdempotencyKey(ctx context.Context, orgID uint64, key st
 }
 
 func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uuid.UUID, logs string, createdAt time.Time) {
+	s.writeLogChunksWithStream(ctx, executionID, attemptID, defaultLogStream, logs, createdAt)
+}
+
+func (s *Service) writeSystemLog(ctx context.Context, executionID, attemptID uuid.UUID, format string, args ...any) {
+	message := strings.TrimSpace(fmt.Sprintf(format, args...))
+	if message == "" {
+		return
+	}
+	s.writeLogChunksWithStream(ctx, executionID, attemptID, "system", message+"\n", time.Now().UTC())
+}
+
+func (s *Service) writeLogChunksWithStream(ctx context.Context, executionID, attemptID uuid.UUID, stream, logs string, createdAt time.Time) {
 	const chunkSize = 8192
-	seq := 0
+	seq := s.nextLogSeq(ctx, attemptID)
 
 	for start := 0; start < len(logs); start += chunkSize {
 		end := start + chunkSize
@@ -1206,7 +1253,7 @@ func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uui
 
 		if _, pgErr := s.PG.ExecContext(ctx,
 			`INSERT INTO execution_logs (attempt_id, seq, stream, chunk, created_at) VALUES ($1, $2, $3, $4, $5)`,
-			attemptID, seq, defaultLogStream, chunk, createdAt,
+			attemptID, seq, stream, chunk, createdAt,
 		); pgErr != nil {
 			s.Logger.ErrorContext(ctx, "write execution log chunk to PG", "attempt_id", attemptID, "seq", seq, "error", pgErr)
 		}
@@ -1215,7 +1262,7 @@ func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uui
 			ExecutionID: executionID.String(),
 			AttemptID:   attemptID.String(),
 			Seq:         uint32(seq),
-			Stream:      defaultLogStream,
+			Stream:      stream,
 			Chunk:       chunk,
 			CreatedAt:   createdAt,
 		})
@@ -1225,6 +1272,22 @@ func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uui
 
 		seq++
 	}
+}
+
+func (s *Service) nextLogSeq(ctx context.Context, attemptID uuid.UUID) int {
+	if s.PG == nil {
+		return 0
+	}
+	var next int
+	if err := s.PG.QueryRowContext(ctx, `
+		SELECT COALESCE(max(seq) + 1, 0)
+		FROM execution_logs
+		WHERE attempt_id = $1
+	`, attemptID).Scan(&next); err != nil {
+		s.Logger.ErrorContext(ctx, "next execution log seq", "attempt_id", attemptID, "error", err)
+		return 0
+	}
+	return next
 }
 
 func (s *Service) writeLogChunkCH(ctx context.Context, row JobLogRow) error {
@@ -1485,6 +1548,13 @@ func chargeUnits(costPerSec int64, seconds int) uint64 {
 		return 0
 	}
 	return uint64(costPerSec) * uint64(seconds)
+}
+
+func uuidString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }
 
 func maxAttemptDuration() time.Duration {

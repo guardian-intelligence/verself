@@ -84,7 +84,7 @@ func (s *Service) QueueRepoBootstrap(ctx context.Context, orgID uint64, actorID 
 	}, nil
 }
 
-func (s *Service) finalizeWarmGoldenGeneration(ctx context.Context, req SubmitRequest, outcome executionOutcome) error {
+func (s *Service) finalizeWarmGoldenGeneration(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, outcome executionOutcome) error {
 	if strings.TrimSpace(req.RepoID) == "" || req.GoldenGenerationID == nil {
 		return nil
 	}
@@ -98,9 +98,12 @@ func (s *Service) finalizeWarmGoldenGeneration(ctx context.Context, req SubmitRe
 		}
 		if err := s.ActivateGoldenGeneration(ctx, repoID, *req.GoldenGenerationID, outcome.GoldenSnapshot); err != nil {
 			_ = s.SetGoldenGenerationState(ctx, *req.GoldenGenerationID, GenerationStateFailed, "activation_failed", err.Error())
+			s.writeSystemLog(ctx, executionID, attemptID, "golden activation failed generation=%s error=%v", req.GoldenGenerationID.String(), err)
 			return err
 		}
+		s.writeSystemLog(ctx, executionID, attemptID, "golden activated generation=%s snapshot=%s", req.GoldenGenerationID.String(), outcome.GoldenSnapshot)
 		return nil
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "golden generation failed generation=%s reason=%s", req.GoldenGenerationID.String(), firstNonEmpty(outcome.FailureReason, outcome.State))
 	return s.SetGoldenGenerationState(ctx, *req.GoldenGenerationID, GenerationStateFailed, firstNonEmpty(outcome.FailureReason, "warm_golden_failed"), firstNonEmpty(outcome.FailureReason, outcome.State))
 }

@@ -114,7 +114,7 @@ func TestImportRepoAPI_CompatibleWorkflowBootstrapsGolden(t *testing.T) {
 	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, generation.AttemptID)
 	assertWarmGoldenBillingSpent(t, env.ctx, env.billingServer, env.balanceBefore, 300)
 	flushBillingMetering(t, env.ctx, env.billingServer)
-	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, generation.ExecutionID, generation.AttemptID)
+	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, imported.RepoID, generation.GoldenGenerationID, generation.ExecutionID, generation.AttemptID)
 }
 
 func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
@@ -183,7 +183,7 @@ func TestRefreshRepoAPI_FailedRefreshPreservesActiveGolden(t *testing.T) {
 
 	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, latest.AttemptID)
 	flushBillingMetering(t, env.ctx, env.billingServer)
-	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, latest.ExecutionID, latest.AttemptID)
+	assertWarmGoldenClickHouse(t, env.ctx, env.queryCHConn, repo.RepoID, latest.GoldenGenerationID, latest.ExecutionID, latest.AttemptID)
 
 	var meteringCount uint64
 	orgIDStr := strconv.FormatUint(testOrgID, 10)
@@ -504,7 +504,7 @@ func flushBillingMetering(t *testing.T, ctx context.Context, billingServer *bill
 	time.Sleep(500 * time.Millisecond)
 }
 
-func assertWarmGoldenClickHouse(t *testing.T, ctx context.Context, ch anyQueryRower, executionID, attemptID string) {
+func assertWarmGoldenClickHouse(t *testing.T, ctx context.Context, ch anyQueryRower, repoID, generationID, executionID, attemptID string) {
 	t.Helper()
 
 	var meteringCount uint64
@@ -519,15 +519,43 @@ func assertWarmGoldenClickHouse(t *testing.T, ctx context.Context, ch anyQueryRo
 		t.Fatalf("expected exactly 1 metering row for warm golden, got %d", meteringCount)
 	}
 
-	var eventCount uint64
-	if err := ch.QueryRow(ctx,
-		"SELECT count() FROM forge_metal.job_events WHERE org_id = $1 AND execution_id = $2 AND kind = 'warm_golden'",
-		testOrgID, executionID,
-	).Scan(&eventCount); err != nil {
-		t.Fatalf("query warm job_events: %v", err)
+	var (
+		eventRepoID       string
+		eventGenerationID string
+		eventKind         string
+	)
+	if err := ch.QueryRow(ctx, `
+		SELECT repo_id, golden_generation_id, kind
+		FROM forge_metal.job_events
+		WHERE org_id = $1 AND execution_id = $2
+	`, testOrgID, executionID).Scan(&eventRepoID, &eventGenerationID, &eventKind); err != nil {
+		t.Fatalf("query warm job_event payload: %v", err)
 	}
-	if eventCount != 1 {
-		t.Fatalf("expected exactly 1 warm_golden job_event, got %d", eventCount)
+	if eventKind != "warm_golden" {
+		t.Fatalf("expected warm_golden kind, got %q", eventKind)
+	}
+	if eventRepoID != repoID {
+		t.Fatalf("expected repo_id=%s, got %s", repoID, eventRepoID)
+	}
+	if eventGenerationID != generationID {
+		t.Fatalf("expected golden_generation_id=%s, got %s", generationID, eventGenerationID)
+	}
+
+	assertSystemLogMirrored(t, ctx, ch, attemptID)
+}
+
+func assertSystemLogMirrored(t *testing.T, ctx context.Context, ch anyQueryRower, attemptID string) {
+	t.Helper()
+
+	var systemCount uint64
+	if err := ch.QueryRow(ctx,
+		"SELECT count() FROM forge_metal.job_logs WHERE attempt_id = $1 AND stream = 'system'",
+		attemptID,
+	).Scan(&systemCount); err != nil {
+		t.Fatalf("query system log rows: %v", err)
+	}
+	if systemCount == 0 {
+		t.Fatalf("expected mirrored system logs for attempt %s", attemptID)
 	}
 }
 

@@ -90,6 +90,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			return fmt.Errorf("void stale reservation attempt %s: %w", candidate.AttemptID, err)
 		}
 		completedAt := time.Now().UTC()
+		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler voided stale reserved window_seq=%d", candidate.WindowSeq)
 		if err := s.markWindowVoided(ctx, candidate.AttemptID, candidate.WindowSeq, completedAt); err != nil {
 			return fmt.Errorf("mark stale window voided %s: %w", candidate.AttemptID, err)
 		}
@@ -270,6 +271,7 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 		return fmt.Errorf("settle reconciled attempt %s: %w", candidate.AttemptID, err)
 	}
 	settledAt := time.Now().UTC()
+	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_seconds=%d", candidate.WindowSeq, actualSeconds)
 	if err := s.markWindowSettled(ctx, candidate.AttemptID, candidate.WindowSeq, actualSeconds, candidate.Reservation.PricingPhase, settledAt); err != nil {
 		return fmt.Errorf("mark reconciled window settled %s: %w", candidate.AttemptID, err)
 	}
@@ -281,6 +283,7 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 
 func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID, reason string) error {
 	now := time.Now().UTC()
+	s.writeSystemLog(ctx, executionID, attemptID, "reconciler marked attempt lost reason=%s", strings.TrimSpace(reason))
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
