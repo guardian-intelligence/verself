@@ -71,15 +71,42 @@ func TestSubmitExecutionAPI_ForgejoRunnerUsesRepoGolden(t *testing.T) {
 	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, submit.AttemptID)
 	flushBillingMetering(t, env.ctx, env.billingServer)
 
-	var eventCount uint64
-	if err := env.queryCHConn.QueryRow(env.ctx,
-		"SELECT count() FROM forge_metal.job_events WHERE org_id = $1 AND execution_id = $2 AND kind = 'forgejo_runner'",
-		testOrgID, submit.ExecutionID,
-	).Scan(&eventCount); err != nil {
-		t.Fatalf("query forgejo_runner job_events: %v", err)
+	var (
+		eventRepoID        string
+		eventGenerationID  string
+		eventProviderRunID string
+		eventProviderJobID string
+		eventWorkflowJob   string
+		eventRunnerName    string
+	)
+	if err := env.queryCHConn.QueryRow(env.ctx, `
+		SELECT repo_id, golden_generation_id, provider_run_id, provider_job_id, workflow_job_name, runner_name
+		FROM forge_metal.job_events
+		WHERE org_id = $1 AND execution_id = $2 AND kind = 'forgejo_runner'
+	`, testOrgID, submit.ExecutionID).Scan(
+		&eventRepoID,
+		&eventGenerationID,
+		&eventProviderRunID,
+		&eventProviderJobID,
+		&eventWorkflowJob,
+		&eventRunnerName,
+	); err != nil {
+		t.Fatalf("query forgejo_runner job_event payload: %v", err)
 	}
-	if eventCount != 1 {
-		t.Fatalf("expected 1 forgejo_runner job_event, got %d", eventCount)
+	if eventRepoID != repo.RepoID {
+		t.Fatalf("expected repo_id=%s, got %s", repo.RepoID, eventRepoID)
+	}
+	if eventGenerationID != repo.ActiveGoldenGenerationID {
+		t.Fatalf("expected golden_generation_id=%s, got %s", repo.ActiveGoldenGenerationID, eventGenerationID)
+	}
+	if eventProviderRunID != "run-123" || eventProviderJobID != "job-456" {
+		t.Fatalf("unexpected provider ids in job_event: run=%q job=%q", eventProviderRunID, eventProviderJobID)
+	}
+	if eventWorkflowJob != "build" {
+		t.Fatalf("expected workflow_job_name=build, got %q", eventWorkflowJob)
+	}
+	if eventRunnerName == "" {
+		t.Fatal("expected runner_name mirrored into job_events")
 	}
 
 	var meteringCount uint64
@@ -93,6 +120,8 @@ func TestSubmitExecutionAPI_ForgejoRunnerUsesRepoGolden(t *testing.T) {
 	if meteringCount != 1 {
 		t.Fatalf("expected 1 forgejo_runner metering row, got %d", meteringCount)
 	}
+
+	assertSystemLogMirrored(t, env.ctx, env.queryCHConn, submit.AttemptID)
 }
 
 func submitForgejoRunner(t *testing.T, ctx context.Context, baseURL, token, repoID string) executionSubmitView {

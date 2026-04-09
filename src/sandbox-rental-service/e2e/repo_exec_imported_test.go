@@ -98,16 +98,29 @@ func TestSubmitExecutionAPI_ImportedRepoUsesActiveGolden(t *testing.T) {
 		t.Fatalf("expected 1 metering row for repo_exec, got %d", meteringCount)
 	}
 
-	var eventCount uint64
-	if err := env.queryCHConn.QueryRow(env.ctx,
-		"SELECT count() FROM forge_metal.job_events WHERE org_id = $1 AND execution_id = $2 AND kind = 'repo_exec'",
-		testOrgID, submit.ExecutionID,
-	).Scan(&eventCount); err != nil {
-		t.Fatalf("query repo_exec job_events: %v", err)
+	var (
+		eventRepoID       string
+		eventGenerationID string
+		eventKind         string
+	)
+	if err := env.queryCHConn.QueryRow(env.ctx, `
+		SELECT repo_id, golden_generation_id, kind
+		FROM forge_metal.job_events
+		WHERE org_id = $1 AND execution_id = $2
+	`, testOrgID, submit.ExecutionID).Scan(&eventRepoID, &eventGenerationID, &eventKind); err != nil {
+		t.Fatalf("query repo_exec job_event payload: %v", err)
 	}
-	if eventCount != 1 {
-		t.Fatalf("expected 1 repo_exec job_event, got %d", eventCount)
+	if eventKind != "repo_exec" {
+		t.Fatalf("expected job_event kind=repo_exec, got %q", eventKind)
 	}
+	if eventRepoID != repo.RepoID {
+		t.Fatalf("expected repo_id=%s, got %s", repo.RepoID, eventRepoID)
+	}
+	if eventGenerationID != repo.ActiveGoldenGenerationID {
+		t.Fatalf("expected golden_generation_id=%s, got %s", repo.ActiveGoldenGenerationID, eventGenerationID)
+	}
+
+	assertSystemLogMirrored(t, env.ctx, env.queryCHConn, submit.AttemptID)
 }
 
 func TestSubmitExecutionAPI_ImportedRepoRejectsPreparingRepo(t *testing.T) {

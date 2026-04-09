@@ -24,6 +24,7 @@ func (s *Service) runForgejoRunner(ctx context.Context, executionID, attemptID u
 	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
 		return executionOutcome{FailureReason: "mark_running_failed"}, err
 	}
+	s.writeSystemLog(ctx, executionID, attemptID, "running forgejo runner runner_name=%s provider_run_id=%s provider_job_id=%s", runnerName, req.ProviderRunID, req.ProviderJobID)
 
 	cfg, err := forgejoRunnerConfigFromSnapshot(req.GoldenSnapshotRef)
 	if err != nil {
@@ -55,6 +56,7 @@ func (s *Service) runForgejoRunner(ctx context.Context, executionID, attemptID u
 		CompletedAt:    time.Now().UTC(),
 		Logs:           result.Logs,
 		ExitCode:       result.ExitCode,
+		RunnerName:     runnerName,
 		ZFSWritten:     result.ZFSWritten,
 		StdoutBytes:    result.StdoutBytes,
 		StderrBytes:    result.StderrBytes,
