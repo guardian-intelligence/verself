@@ -10,28 +10,28 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 ### Build
 
-- build - Build for production
-- pack - Build libraries
-- preview - Preview production build
+- `vp build` - Build for production
+- `vp pack` - Build libraries
+- `vp preview` - Preview production build
 
 ### Manage Dependencies
 
 Vite+ automatically detects and wraps the underlying package manager such as pnpm, npm, or Yarn through the `packageManager` field in `package.json` or package manager-specific lockfiles.
 
-- add - Add packages to dependencies
-- remove (`rm`, `un`, `uninstall`) - Remove packages from dependencies
-- update (`up`) - Update packages to latest versions
-- dedupe - Deduplicate dependencies
-- outdated - Check for outdated packages
-- list (`ls`) - List installed packages
-- why (`explain`) - Show why a package is installed
-- info (`view`, `show`) - View package information from the registry
-- link (`ln`) / unlink - Manage local package links
-- pm - Forward a command to the package manager
+- `vp add` - Add packages to dependencies
+- `vp remove` (`rm`, `un`, `uninstall`) - Remove packages from dependencies
+- `vp update` (`up`) - Update packages to latest versions
+- `vp dedupe` - Deduplicate dependencies
+- `vp outdated` - Check for outdated packages
+- `vp list` (`ls`) - List installed packages
+- `vp why` (`explain`) - Show why a package is installed
+- `vp info` (`view`, `show`) - View package information from the registry
+- `vp link` (`ln`) / unlink - Manage local package links
+- `vp pm` - Forward a command to the package manager
 
 ### Maintain
 
-- upgrade - Update `vp` itself to the latest version
+- `upgrade` - Update `vp` itself to the latest version
 
 These commands map to their corresponding tools. For example, `vp dev --port 3000` runs Vite's dev server and works the same as Vite. `vp test` runs JavaScript tests through the bundled Vitest. The version of all tools can be checked using `vp --version`. This is useful when researching documentation, features, and bugs.
 
@@ -151,3 +151,15 @@ TanStack Router file-based routing. Route files go in `src/routes/`. The route t
 - task: "configuring Nitro server runtime, deployment, server middleware"
 load: "apps/web/node_modules/nitro/skills/nitro/SKILL.md"
 <!-- intent-skills:end -->
+
+
+### ElectricSQL gotchas
+
+Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `mailbox_service`) require three differentiators to avoid collisions:
+
+1. **`ELECTRIC_REPLICATION_STREAM_ID`** — controls the replication slot name suffix. Without it, both instances fight over `electric_slot_default`. Replication slots are cluster-wide, not per-database.
+2. **`ELECTRIC_INSTANCE_ID`** — controls the PostgreSQL advisory lock hash. Without it, both instances use the same default advisory lock and the second instance blocks forever on `waiting_on_lock`.
+3. **`RELEASE_NAME`** — Elixir/Erlang BEAM node name. Both instances run with `--network=host`, so their Erlang nodes collide on the same hostname. Without a distinct name, the second container exits with "the name electric@hostname seems to be in use by another Erlang node".
+
+Each Electric instance also needs its own publication (`CREATE PUBLICATION ... FOR TABLE ...`) with `REPLICA IDENTITY FULL` on all synced tables. The publication name is derived from the stream ID: `electric_publication_{stream_id}` (default: `electric_publication_default`). Since publications are per-database, the default name works if instances target different databases — but setting `ELECTRIC_REPLICATION_STREAM_ID` changes the expected publication name too.
+

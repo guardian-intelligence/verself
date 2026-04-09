@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { fetchBalance } from "~/lib/api";
 import { keys } from "~/lib/query-keys";
@@ -52,7 +52,13 @@ function JobsPage() {
         </div>
       )}
 
-      {balance?.org_id ? <LiveExecutionTable orgId={balance.org_id} /> : <ExecutionTableSkeleton />}
+      {balance?.org_id ? (
+        <ClientOnly fallback={<ExecutionTableLoading />}>
+          <LiveExecutionTable orgId={balance.org_id} />
+        </ClientOnly>
+      ) : (
+        <ExecutionTableSkeleton />
+      )}
     </div>
   );
 }
@@ -147,6 +153,14 @@ function ExecutionTableSkeleton() {
   return (
     <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
       Sign in to view your sandboxes.
+    </div>
+  );
+}
+
+function ExecutionTableLoading() {
+  return (
+    <div className="border border-border rounded-lg p-8 text-center text-muted-foreground">
+      Syncing sandboxes...
     </div>
   );
 }

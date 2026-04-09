@@ -17,11 +17,29 @@ domain="$(awk -F'"' '/^forge_metal_domain:/{print $2}' "${vars_file}")"
 remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
 remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
 
+wait_for_loopback_api() {
+  local name="$1"
+  local url="$2"
+  local expected_status="$3"
+  ssh -o IPQoS=none -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \
+    "for _ in \$(seq 1 60); do \
+       code=\$(curl -s -o /dev/null -w '%{http_code}' '${url}' || true); \
+       if [[ \"\${code}\" == '${expected_status}' ]]; then exit 0; fi; \
+       sleep 1; \
+     done; \
+     echo '${name} did not return ${expected_status} in time' >&2; \
+     exit 1"
+}
+
 "${script_dir}/ensure-verification-repo.sh" "${artifact_dir}/repo.json"
 
 (
   cd "${platform_root}/ansible"
   ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
+  # verification-reset restarts the service stack; wait for the loopback API
+  # before seed-demo starts probing authz behavior against sandbox-rental.
+  wait_for_loopback_api "sandbox-rental-service" "http://127.0.0.1:4243/api/v1/billing/balance" "401"
   ansible-playbook -i inventory/hosts.ini playbooks/seed-demo.yml
 )
 
@@ -31,14 +49,8 @@ demo_password="$(
 )"
 
 verification_repo_url="$(
-  python3 - "${artifact_dir}/repo.json" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as fh:
-    repo = json.load(fh)
-print(repo["loopback_repo_url"])
-PY
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["loopback_repo_url"])' \
+    "${artifact_dir}/repo.json"
 )"
 
 set +e

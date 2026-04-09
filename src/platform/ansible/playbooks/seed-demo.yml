@@ -909,6 +909,12 @@
           register: seed_demo_verify_token
           no_log: true
 
+        - name: Wait for sandbox-rental-service before auth verification
+          ansible.builtin.wait_for:
+            host: "{{ services.sandbox_rental.host }}"
+            port: "{{ services.sandbox_rental.port }}"
+            timeout: 60
+
         - name: Verify sandbox-rental billing proxy rejects unauthenticated request
           ansible.builtin.uri:
             url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
