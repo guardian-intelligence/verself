@@ -1,4 +1,10 @@
 export type EnvSource = Record<string, string | undefined>;
+type LocationLike = { origin?: string };
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const digitsPattern = /^\d+$/;
+const electricOpaqueIDPattern = /^[A-Za-z0-9._:-]+$/;
 
 function readEnv(env: EnvSource, name: string): string | undefined {
   return env[name]?.trim();
@@ -106,4 +112,47 @@ export function deriveDemoEmail(env: EnvSource = process.env, localPart = "demo"
     return explicitEmail;
   }
   return `${localPart}@${requireOperatorDomain("FORGE_METAL_DOMAIN", env)}`;
+}
+
+// Electric requires an absolute shape URL. Keep the real sync path same-origin
+// in the browser, but return a harmless absolute fallback during SSR so the URL
+// parser never sees a bare relative path.
+export function electricShapeURL(): string {
+  const location = (globalThis as { location?: LocationLike }).location;
+  if (location?.origin) {
+    return new URL("/v1/shape", location.origin).toString();
+  }
+  return "http://127.0.0.1/v1/shape";
+}
+
+export function requireUUID(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!uuidPattern.test(trimmed)) {
+    throw new Error(`${label} must be a UUID`);
+  }
+  return trimmed;
+}
+
+export function requireDecimalID(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!digitsPattern.test(trimmed)) {
+    throw new Error(`${label} must be a decimal identifier`);
+  }
+  return trimmed;
+}
+
+export function requireElectricOpaqueID(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!electricOpaqueIDPattern.test(trimmed)) {
+    throw new Error(`${label} contains unsupported characters`);
+  }
+  return trimmed;
+}
+
+export function electricEqualsWhere(column: string, validatedValue: string): string {
+  return `${column} = '${validatedValue}'`;
+}
+
+export function electricAndWhere(clauses: Array<{ column: string; value: string }>): string {
+  return clauses.map(({ column, value }) => electricEqualsWhere(column, value)).join(" AND ");
 }

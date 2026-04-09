@@ -1,15 +1,11 @@
 import { createCollection } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
-
-// Electric requires an absolute shape URL. Keep the real sync path same-origin
-// in the browser, but return a harmless absolute fallback during SSR so the URL
-// parser never sees a bare relative path.
-function electricShapeURL(): string {
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return new URL("/v1/shape", window.location.origin).toString();
-  }
-  return "http://127.0.0.1/v1/shape";
-}
+import {
+  electricAndWhere,
+  electricEqualsWhere,
+  electricShapeURL,
+  requireElectricOpaqueID,
+} from "@forge-metal/web-env";
 
 // --- Mailbox collection ---
 
@@ -28,6 +24,7 @@ export interface ElectricMailbox {
 }
 
 export function createMailboxCollection(accountId: string) {
+  const validatedAccountID = requireElectricOpaqueID(accountId, "account_id");
   return createCollection<ElectricMailbox>(
     electricCollectionOptions({
       id: `sync-mailboxes-${accountId}`,
@@ -35,7 +32,7 @@ export function createMailboxCollection(accountId: string) {
         url: electricShapeURL(),
         params: {
           table: "mailboxes",
-          where: `account_id = '${accountId}'`,
+          where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
       getKey: (item: Record<string, unknown>) =>
@@ -71,6 +68,7 @@ export interface ElectricEmail {
 }
 
 export function createEmailCollection(accountId: string) {
+  const validatedAccountID = requireElectricOpaqueID(accountId, "account_id");
   return createCollection<ElectricEmail>(
     electricCollectionOptions({
       id: `sync-emails-${accountId}`,
@@ -78,7 +76,7 @@ export function createEmailCollection(accountId: string) {
         url: electricShapeURL(),
         params: {
           table: "emails",
-          where: `account_id = '${accountId}'`,
+          where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
       getKey: (item: Record<string, unknown>) =>
@@ -96,6 +94,7 @@ export interface ElectricEmailMailbox {
 }
 
 export function createEmailMailboxCollection(accountId: string) {
+  const validatedAccountID = requireElectricOpaqueID(accountId, "account_id");
   return createCollection<ElectricEmailMailbox>(
     electricCollectionOptions({
       id: `sync-email-mailboxes-${accountId}`,
@@ -103,7 +102,7 @@ export function createEmailMailboxCollection(accountId: string) {
         url: electricShapeURL(),
         params: {
           table: "email_mailboxes",
-          where: `account_id = '${accountId}'`,
+          where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
       getKey: (item: Record<string, unknown>) =>
@@ -123,6 +122,8 @@ export interface ElectricEmailBody {
 }
 
 export function createEmailBodyCollection(accountId: string, emailId: string) {
+  const validatedAccountID = requireElectricOpaqueID(accountId, "account_id");
+  const validatedEmailID = requireElectricOpaqueID(emailId, "email_id");
   return createCollection<ElectricEmailBody>(
     electricCollectionOptions({
       id: `sync-email-body-${accountId}-${emailId}`,
@@ -130,7 +131,10 @@ export function createEmailBodyCollection(accountId: string, emailId: string) {
         url: electricShapeURL(),
         params: {
           table: "email_bodies",
-          where: `account_id = '${accountId}' AND email_id = '${emailId}'`,
+          where: electricAndWhere([
+            { column: "account_id", value: validatedAccountID },
+            { column: "email_id", value: validatedEmailID },
+          ]),
         },
       },
       getKey: (item: Record<string, unknown>) =>
@@ -149,6 +153,7 @@ export interface ElectricThread {
 }
 
 export function createThreadCollection(accountId: string) {
+  const validatedAccountID = requireElectricOpaqueID(accountId, "account_id");
   return createCollection<ElectricThread>(
     electricCollectionOptions({
       id: `sync-threads-${accountId}`,
@@ -156,7 +161,7 @@ export function createThreadCollection(accountId: string) {
         url: electricShapeURL(),
         params: {
           table: "threads",
-          where: `account_id = '${accountId}'`,
+          where: electricEqualsWhere("account_id", validatedAccountID),
         },
       },
       getKey: (item: Record<string, unknown>) =>

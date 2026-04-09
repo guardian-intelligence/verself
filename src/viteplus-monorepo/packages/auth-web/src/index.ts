@@ -1,3 +1,4 @@
+import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { useSession, getRequestUrl } from "@tanstack/react-start/server";
 import postgres from "postgres";
@@ -80,6 +81,15 @@ export interface AuthSession {
   updatedAt: Date;
 }
 
+export interface AuthViewer {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  preferredUsername: string | null;
+  orgID: string | null;
+  roles: string[];
+}
+
 interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -87,6 +97,40 @@ interface TokenResponse {
   refresh_token?: string;
   id_token?: string;
   scope?: string;
+}
+
+interface OAuthErrorBody {
+  error?: string;
+  error_description?: string;
+}
+
+class OIDCExchangeError extends Error {
+  status: number | null;
+  oauthError: string | null;
+  oauthDescription: string | null;
+  body: string | null;
+  isNetworkError: boolean;
+
+  constructor(message: string, options: {
+    status?: number | null;
+    oauthError?: string | null;
+    oauthDescription?: string | null;
+    body?: string | null;
+    isNetworkError?: boolean;
+  } = {}) {
+    super(message);
+    this.name = "OIDCExchangeError";
+    this.status = options.status ?? null;
+    this.oauthError = options.oauthError ?? null;
+    this.oauthDescription = options.oauthDescription ?? null;
+    this.body = options.body ?? null;
+    this.isNetworkError = options.isNetworkError ?? false;
+  }
+}
+
+interface RefreshResult {
+  session: AuthSession | null;
+  revoked: boolean;
 }
 
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
@@ -169,7 +213,12 @@ function getBaseURL(): URL {
 
 function getAbsoluteURL(pathname: string): string {
   const baseURL = getBaseURL();
-  return new URL(pathname, baseURL).toString();
+  const resolvedURL = new URL(pathname, baseURL);
+  // Zitadel compares post_logout_redirect_uri literally, so keep "/" as the bare origin.
+  if (resolvedURL.pathname === "/" && !resolvedURL.search && !resolvedURL.hash) {
+    return resolvedURL.origin;
+  }
+  return resolvedURL.toString();
 }
 
 function toDate(value: string | Date): Date {
@@ -222,20 +271,53 @@ async function exchangeToken(
   if (config.clientSecret) {
     params.set("client_secret", config.clientSecret);
   }
-  const response = await fetch(metadata.token_endpoint, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
+  let response: Response;
+  try {
+    response = await fetch(metadata.token_endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+  } catch (error) {
+    throw new OIDCExchangeError("OIDC token exchange failed: network error", {
+      isNetworkError: true,
+      body: error instanceof Error ? error.message : String(error),
+    });
+  }
   if (!response.ok) {
-    throw new Error(
-      `OIDC token exchange failed: ${response.status} ${await response.text()}`,
+    const body = await response.text();
+    let oauthBody: OAuthErrorBody | null = null;
+    try {
+      oauthBody = JSON.parse(body) as OAuthErrorBody;
+    } catch {
+      oauthBody = null;
+    }
+    const messageDetail =
+      oauthBody?.error_description ??
+      oauthBody?.error ??
+      (body || response.statusText);
+    throw new OIDCExchangeError(
+      `OIDC token exchange failed: ${response.status} ${messageDetail}`,
+      {
+        status: response.status,
+        oauthError: oauthBody?.error ?? null,
+        oauthDescription: oauthBody?.error_description ?? null,
+        body,
+      },
     );
   }
   return response.json() as Promise<TokenResponse>;
+}
+
+function logAuthEvent(level: "warn" | "error", event: string, fields: Record<string, unknown>) {
+  const logger = level === "error" ? console.error : console.warn;
+  logger("[auth-web]", {
+    event,
+    ...fields,
+  });
 }
 
 function extractRoles(payload: JWTPayload): string[] {
@@ -301,6 +383,17 @@ function rowToAuthSession(row: StoredAuthSessionRow): AuthSession {
       roles: row.roles ?? [],
       claims: row.user_claims ?? {},
     },
+  };
+}
+
+function toAuthViewer(user: AuthUser): AuthViewer {
+  return {
+    sub: user.sub,
+    email: user.email,
+    name: user.name,
+    preferredUsername: user.preferredUsername,
+    orgID: user.orgID,
+    roles: user.roles,
   };
 }
 
@@ -407,23 +500,59 @@ async function deleteStoredSession(config: AuthConfig, sessionID: string): Promi
 async function refreshStoredSession(
   config: AuthConfig,
   stored: AuthSession,
-): Promise<AuthSession | null> {
+): Promise<RefreshResult> {
   if (!stored.refreshToken) {
-    return null;
+    return { session: null, revoked: true };
   }
 
   const metadata = await getProviderMetadata(config.issuerURL);
-  const refreshed = await exchangeToken(
-    metadata,
-    config,
-    new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: stored.refreshToken,
-    }),
-  ).catch(() => null);
+  let refreshed: TokenResponse;
+  try {
+    refreshed = await exchangeToken(
+      metadata,
+      config,
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: stored.refreshToken,
+      }),
+    );
+  } catch (error) {
+    const oidcError =
+      error instanceof OIDCExchangeError
+        ? error
+        : new OIDCExchangeError("OIDC token refresh failed", {
+            body: error instanceof Error ? error.message : String(error),
+          });
+    const revoked =
+      oidcError.oauthError === "invalid_grant" ||
+      oidcError.oauthError === "invalid_token" ||
+      oidcError.status === 400 ||
+      oidcError.status === 401;
 
-  if (!refreshed?.id_token) {
-    return null;
+    logAuthEvent(revoked ? "warn" : "error", "token_refresh_failed", {
+      app_name: config.appName,
+      session_id: stored.sessionID,
+      subject: stored.user.sub,
+      status: oidcError.status,
+      oauth_error: oidcError.oauthError,
+      oauth_error_description: oidcError.oauthDescription,
+      failure_type: revoked ? "revoked_or_invalid" : oidcError.isNetworkError ? "network" : "upstream",
+      token_expires_at: stored.expiresAt.toISOString(),
+      body: oidcError.body,
+    });
+    if (!revoked && stored.expiresAt.getTime() > Date.now()) {
+      return { session: stored, revoked: false };
+    }
+    return { session: null, revoked };
+  }
+
+  if (!refreshed.id_token) {
+    logAuthEvent("warn", "token_refresh_missing_id_token", {
+      app_name: config.appName,
+      session_id: stored.sessionID,
+      subject: stored.user.sub,
+    });
+    return { session: null, revoked: true };
   }
 
   const verifiedIDToken = await jwtVerify(refreshed.id_token, getJWKS(metadata), {
@@ -433,7 +562,10 @@ async function refreshStoredSession(
   const accessTokenClaims = decodeJwt(refreshed.access_token);
   const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims);
   await writeStoredSession(config, stored.sessionID, refreshed, user);
-  return readStoredSession(config, stored.sessionID);
+  return {
+    session: await readStoredSession(config, stored.sessionID),
+    revoked: false,
+  };
 }
 
 export async function beginLogin(
@@ -557,12 +689,12 @@ export async function getAuthSession(config: AuthConfig): Promise<AuthSession | 
   const refreshLeeway = (config.refreshLeewaySeconds ?? 60) * 1000;
   if (stored.expiresAt.getTime() - Date.now() <= refreshLeeway) {
     const refreshed = await refreshStoredSession(config, stored);
-    if (!refreshed) {
+    if (!refreshed.session) {
       await deleteStoredSession(config, stored.sessionID);
       await session.clear();
       return null;
     }
-    return refreshed;
+    return refreshed.session;
   }
 
   return stored;
@@ -571,6 +703,46 @@ export async function getAuthSession(config: AuthConfig): Promise<AuthSession | 
 export async function getAuthUser(config: AuthConfig): Promise<AuthUser | null> {
   const session = await getAuthSession(config);
   return session?.user ?? null;
+}
+
+export function createAuthServerFns(config: AuthConfig) {
+  const authMiddleware = createMiddleware({ type: "function" }).server(async ({ next }) => {
+    const auth = await getAuthSession(config);
+    if (!auth) {
+      throw new Error("Authentication required");
+    }
+    return next({
+      context: {
+        auth,
+      } satisfies { auth: AuthSession },
+    });
+  });
+
+  const getViewer = createServerFn({ method: "GET" }).handler(async () => {
+    const user = await getAuthUser(config);
+    return user ? toAuthViewer(user) : null;
+  });
+
+  const getLoginRedirectURL = createServerFn({ method: "GET" })
+    .inputValidator((data: { redirectTo?: string | null }) => data)
+    .handler(async ({ data }) => beginLogin(config, data.redirectTo));
+
+  const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+    const { redirectTo } = await finishLogin(config);
+    return redirectTo;
+  });
+
+  const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+    return logout(config);
+  });
+
+  return {
+    authMiddleware,
+    getViewer,
+    getLoginRedirectURL,
+    getCallbackRedirectURL,
+    getLogoutRedirectURL,
+  };
 }
 
 export async function requireAccessToken(config: AuthConfig): Promise<string> {
