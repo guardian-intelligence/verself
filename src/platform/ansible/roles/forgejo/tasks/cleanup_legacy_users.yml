@@ -1,0 +1,61 @@
+---
+# Remove legacy local human admins from the password-seeded era. The operator
+# identity now comes from Zitadel OIDC; any remaining local users are technical
+# automation only.
+
+- name: List Forgejo users
+  ansible.builtin.command: >
+    {{ fm_bin }}/forgejo admin user list --config /etc/forgejo/app.ini
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  register: forgejo_users
+  changed_when: false
+
+# The user list header is line 0; data lines follow.
+- name: Find legacy local Forgejo admin users
+  ansible.builtin.set_fact:
+    forgejo_legacy_local_usernames: >-
+      {{
+        forgejo_users.stdout_lines[1:]
+        | map('trim')
+        | map('split')
+        | map(attribute='1')
+        | select('match', '^(admin|forge-admin.*)$')
+        | list
+      }}
+
+# Forgejo refuses to delete the last admin via CLI.  Demote first via
+# sqlite3, then delete via CLI so Forgejo cleans up repos/keys/etc.
+- name: Demote local admin users
+  ansible.builtin.command:
+    argv:
+      - sqlite3
+      - /var/lib/forgejo/data/forgejo.db
+      - "UPDATE `user` SET is_admin=0 WHERE lower_name='{{ item | lower }}';"
+  become: true
+  become_user: forgejo
+  loop: "{{ forgejo_legacy_local_usernames }}"
+  when: forgejo_legacy_local_usernames | length > 0
+  changed_when: true
+
+- name: Delete local admin user
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/forgejo"
+      - admin
+      - user
+      - delete
+      - --config
+      - /etc/forgejo/app.ini
+      - --username
+      - "{{ item }}"
+      - --purge
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  loop: "{{ forgejo_legacy_local_usernames }}"
+  when: forgejo_legacy_local_usernames | length > 0
+  changed_when: true

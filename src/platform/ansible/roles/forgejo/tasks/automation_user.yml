@@ -1,0 +1,124 @@
+---
+- name: Set Forgejo automation token path fact
+  ansible.builtin.set_fact:
+    forgejo_automation_token_path: /etc/credstore/forgejo/automation-token
+    forgejo_automation_username_path: /etc/credstore/forgejo/automation-username
+    forgejo_automation_email_path: /etc/credstore/forgejo/automation-email
+
+- name: Check Forgejo automation token file
+  ansible.builtin.stat:
+    path: "{{ forgejo_automation_token_path }}"
+  register: forgejo_automation_token_file
+  no_log: true
+
+- name: List Forgejo users for automation account
+  ansible.builtin.command: >
+    {{ fm_bin }}/forgejo admin user list --config /etc/forgejo/app.ini
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  register: forgejo_automation_users
+  changed_when: false
+
+- name: Set Forgejo automation user existence fact
+  ansible.builtin.set_fact:
+    forgejo_automation_user_exists: >-
+      {{
+        forgejo_automation_users.stdout_lines[1:]
+        | map('trim')
+        | map('split')
+        | map(attribute='1')
+        | select('equalto', forgejo_automation_username)
+        | list
+        | length > 0
+      }}
+
+- name: Remove stale Forgejo automation token file
+  ansible.builtin.file:
+    path: "{{ forgejo_automation_token_path }}"
+    state: absent
+  when:
+    - not forgejo_automation_user_exists
+    - forgejo_automation_token_file.stat.exists
+
+- name: Set Forgejo automation token generation fact
+  ansible.builtin.set_fact:
+    forgejo_automation_token_missing: >-
+      {{ (not forgejo_automation_user_exists) or (not forgejo_automation_token_file.stat.exists) }}
+
+- name: Create Forgejo automation user
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/forgejo"
+      - admin
+      - user
+      - create
+      - --config
+      - /etc/forgejo/app.ini
+      - --username
+      - "{{ forgejo_automation_username }}"
+      - --email
+      - "{{ forgejo_automation_email }}"
+      - --fullname
+      - "{{ forgejo_automation_full_name }}"
+      - --random-password
+      - --random-password-length
+      - "32"
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  when: not forgejo_automation_user_exists
+  changed_when: true
+
+- name: Generate Forgejo automation token
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/forgejo"
+      - admin
+      - user
+      - generate-access-token
+      - --config
+      - /etc/forgejo/app.ini
+      - --username
+      - "{{ forgejo_automation_username }}"
+      - --token-name
+      - "{{ forgejo_automation_token_name }}"
+      - --raw
+      - --scopes
+      - "{{ forgejo_automation_token_scopes }}"
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  register: forgejo_automation_token_raw
+  when: forgejo_automation_token_missing
+  changed_when: true
+  no_log: true
+
+- name: Persist Forgejo automation token
+  ansible.builtin.copy:
+    content: "{{ forgejo_automation_token_raw.stdout | trim }}"
+    dest: "{{ forgejo_automation_token_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: forgejo_automation_token_missing
+  no_log: true
+
+- name: Persist Forgejo automation username
+  ansible.builtin.copy:
+    content: "{{ forgejo_automation_username }}"
+    dest: "{{ forgejo_automation_username_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Persist Forgejo automation email
+  ansible.builtin.copy:
+    content: "{{ forgejo_automation_email }}"
+    dest: "{{ forgejo_automation_email_path }}"
+    owner: root
+    group: root
+    mode: "0644"

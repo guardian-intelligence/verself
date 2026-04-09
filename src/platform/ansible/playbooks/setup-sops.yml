@@ -151,19 +151,7 @@
           {{ lookup('community.general.random_string',
              length=24, upper=true, lower=true,
              numbers=true, special=false) }}
-        _rand24b: >-
-          {{ lookup('community.general.random_string',
-             length=24, upper=true, lower=true,
-             numbers=true, special=false) }}
-        _slug4: >-
-          {{ lookup('community.general.random_string',
-             length=4, upper=false, lower=true,
-             numbers=true, special=false) }}
         _slug6a: >-
-          {{ lookup('community.general.random_string',
-             length=6, upper=false, lower=true,
-             numbers=true, special=false) }}
-        _slug6b: >-
           {{ lookup('community.general.random_string',
              length=6, upper=false, lower=true,
              numbers=true, special=false) }}
@@ -190,11 +178,8 @@
           zitadel_masterkey: "{{ _rand32e }}"
           zitadel_admin_password: "{{ _rand32f }}#@F1"
           zitadel_admin_pat: ""
-          forgejo_admin_user: "forge-admin-{{ _slug4 }}"
-          forgejo_admin_email: "admin+{{ _slug6a }}@forge-metal.local"
-          forgejo_admin_password: "{{ _rand24a }}#@F1"
-          hyperdx_admin_email: "admin+{{ _slug6b }}@forge-metal.local"
-          hyperdx_admin_password: "{{ _rand24b }}#@F1"
+          hyperdx_admin_email: "admin+{{ _slug6a }}@forge-metal.local"
+          hyperdx_admin_password: "{{ _rand24a }}#@F1"
           hyperdx_session_secret: "{{ _hex64 }}"
           billing_pg_password: "{{ _rand32g }}"
           postgresql_sandbox_rental_password: "{{ _rand32h }}"

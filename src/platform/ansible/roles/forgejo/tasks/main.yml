@@ -48,8 +48,20 @@
     host: "{{ services.forgejo.host }}"
     timeout: 60
 
-- name: Include admin user seeding
-  ansible.builtin.include_tasks: seed_admin.yml
+- name: Remove legacy local Forgejo admin users
+  ansible.builtin.include_tasks: cleanup_legacy_users.yml
+
+- name: Set up Zitadel OIDC application
+  ansible.builtin.include_tasks: zitadel_app.yml
+
+- name: Configure Forgejo Zitadel token claims
+  ansible.builtin.include_tasks: configure_claims.yml
+
+- name: Configure Forgejo OAuth source
+  ansible.builtin.include_tasks: configure_oauth.yml
+
+- name: Ensure Forgejo automation token exists
+  ansible.builtin.include_tasks: automation_user.yml
 
 - name: Deploy Forgejo Runner systemd unit
   ansible.builtin.template:

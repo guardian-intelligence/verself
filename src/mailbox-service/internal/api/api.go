@@ -16,6 +16,10 @@ type provider interface {
 	Status() app.ServiceStatus
 	ResolveBoundAccount(context.Context, string) (string, error)
 	GetBoundAccount(context.Context, string) (mailstore.Account, error)
+	ListAccounts(context.Context) ([]mailstore.Account, error)
+	ListMailboxes(context.Context, string) ([]mailstore.Mailbox, error)
+	ListEmails(context.Context, string, string, int) ([]mailstore.Email, error)
+	GetEmail(context.Context, string, string) (mailstore.Email, error)
 	SetEmailSeen(context.Context, string, string, bool) error
 	SetEmailFlagged(context.Context, string, string, bool) error
 	MoveEmail(context.Context, string, string, string) error
@@ -36,6 +40,16 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.
 	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	registerMailRoutes(privateAPI, svc)
+	registerOperatorRoutes(privateAPI, svc)
 
 	return publicAPI, privateMux
+}
+
+func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
+	privateConfig := huma.DefaultConfig("Mailbox Service", version)
+	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
+	privateAPI := humago.New(http.NewServeMux(), privateConfig)
+	registerMailRoutes(privateAPI, nil)
+	registerOperatorRoutes(privateAPI, nil)
+	return privateAPI.OpenAPI().DowngradeYAML()
 }

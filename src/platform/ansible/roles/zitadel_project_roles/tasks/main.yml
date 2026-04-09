@@ -1,0 +1,58 @@
+---
+- name: Assert Zitadel project role inputs are set
+  ansible.builtin.assert:
+    that:
+      - zitadel_project_roles_admin_pat | default('', true) | length > 0
+      - zitadel_project_roles_project_id | default('', true) | length > 0
+      - zitadel_project_roles_definitions | default([]) | length > 0
+    fail_msg: "zitadel_project_roles requires admin PAT, project ID, and at least one role definition."
+
+- name: List existing Zitadel project roles
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.project.v2.ProjectService/ListProjectRoles"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      projectId: "{{ zitadel_project_roles_project_id }}"
+      pagination:
+        limit: 100
+    status_code: 200
+    return_content: true
+  register: zitadel_project_roles_existing
+  no_log: true
+
+- name: Set existing project role keys fact
+  ansible.builtin.set_fact:
+    zitadel_project_roles_existing_keys: >-
+      {{
+        zitadel_project_roles_existing.json.projectRoles
+        | default([])
+        | map(attribute='key')
+        | list
+      }}
+
+- name: Add missing Zitadel project roles
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.project.v2.ProjectService/AddProjectRole"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_project_roles_admin_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      projectId: "{{ zitadel_project_roles_project_id }}"
+      roleKey: "{{ item.key }}"
+      displayName: "{{ item.display_name }}"
+      group: "{{ item.group | default(omit) }}"
+    status_code: 200
+    return_content: true
+  loop: "{{ zitadel_project_roles_definitions }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key not in zitadel_project_roles_existing_keys
+  no_log: true

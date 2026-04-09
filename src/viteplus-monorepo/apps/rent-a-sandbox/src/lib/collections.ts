@@ -1,11 +1,10 @@
-import { createCollection } from "@tanstack/db";
-import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 import {
   electricEqualsWhere,
   electricShapeURL,
   requireDecimalID,
   requireUUID,
 } from "@forge-metal/web-env";
+import { createElectricCollection } from "./electric";
 
 // --- Execution collection (real-time PG sync via Electric) ---
 
@@ -30,19 +29,17 @@ export interface ElectricExecution {
 
 export function createExecutionsCollection(orgId: string) {
   const validatedOrgID = requireDecimalID(orgId, "org_id");
-  return createCollection<ElectricExecution>(
-    electricCollectionOptions({
-      id: `sync-executions-${orgId}`,
-      shapeOptions: {
-        url: electricShapeURL(),
-        params: {
-          table: "executions",
-          where: electricEqualsWhere("org_id", validatedOrgID),
-        },
+  return createElectricCollection<ElectricExecution>({
+    id: `sync-executions-${orgId}`,
+    shapeOptions: {
+      url: electricShapeURL(),
+      params: {
+        table: "executions",
+        where: electricEqualsWhere("org_id", validatedOrgID),
       },
-      getKey: (item: Record<string, unknown>) => String(item.execution_id),
-    }) as any,
-  );
+    },
+    getKey: (item) => item.execution_id,
+  });
 }
 
 // --- Execution log chunks (real-time streaming via Electric) ---
@@ -57,18 +54,15 @@ export interface ElectricExecutionLog {
 
 export function createExecutionLogsCollection(attemptId: string) {
   const validatedAttemptID = requireUUID(attemptId, "attempt_id");
-  return createCollection<ElectricExecutionLog>(
-    electricCollectionOptions({
-      id: `sync-execution-logs-${attemptId}`,
-      shapeOptions: {
-        url: electricShapeURL(),
-        params: {
-          table: "execution_logs",
-          where: electricEqualsWhere("attempt_id", validatedAttemptID),
-        },
+  return createElectricCollection<ElectricExecutionLog>({
+    id: `sync-execution-logs-${attemptId}`,
+    shapeOptions: {
+      url: electricShapeURL(),
+      params: {
+        table: "execution_logs",
+        where: electricEqualsWhere("attempt_id", validatedAttemptID),
       },
-      getKey: (item: Record<string, unknown>) =>
-        `${String(item.attempt_id)}:${String(item.seq)}`,
-    }) as any,
-  );
+    },
+    getKey: (item) => `${item.attempt_id}:${item.seq}`,
+  });
 }

@@ -1,0 +1,98 @@
+---
+# Configure Forgejo's OpenID Connect authentication source via CLI.
+# Idempotent: checks if the source exists, adds or updates as needed.
+
+- name: List Forgejo auth sources
+  ansible.builtin.command: >
+    {{ fm_bin }}/forgejo admin auth list --config /etc/forgejo/app.ini
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  register: forgejo_auth_list
+  changed_when: false
+
+# The CLI output is a whitespace-aligned table:
+#   ID  Name     Type   Enabled
+#   1   Zitadel  OAuth2 true
+# We search for the source name to extract the ID.
+- name: Find existing Zitadel auth source ID
+  ansible.builtin.set_fact:
+    forgejo_zitadel_auth_id: >-
+      {{
+        forgejo_auth_list.stdout_lines
+        | select('search', forgejo_auth_source_name)
+        | map('trim')
+        | map('split')
+        | map('first')
+        | first
+        | default('')
+      }}
+
+- name: Add Zitadel OAuth source
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/forgejo"
+      - admin
+      - auth
+      - add-oauth
+      - --config
+      - /etc/forgejo/app.ini
+      - --name
+      - "{{ forgejo_auth_source_name }}"
+      - --provider
+      - openidConnect
+      - --key
+      - "{{ forgejo_client_id }}"
+      - --secret
+      - "{{ forgejo_client_secret }}"
+      - --auto-discover-url
+      - "{{ forgejo_auth_issuer_url }}/.well-known/openid-configuration"
+      - --group-claim-name
+      - "{{ forgejo_auth_group_claim_name }}"
+      - --admin-group
+      - "{{ forgejo_auth_admin_group }}"
+      - --scopes
+      - "openid profile email urn:iam:org:project:roles urn:zitadel:iam:org:projects:roles"
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  when: forgejo_zitadel_auth_id | default('', true) | length == 0
+  changed_when: true
+  no_log: true
+
+- name: Update Zitadel OAuth source
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/forgejo"
+      - admin
+      - auth
+      - update-oauth
+      - --config
+      - /etc/forgejo/app.ini
+      - --id
+      - "{{ forgejo_zitadel_auth_id }}"
+      - --name
+      - "{{ forgejo_auth_source_name }}"
+      - --provider
+      - openidConnect
+      - --key
+      - "{{ forgejo_client_id }}"
+      - --secret
+      - "{{ forgejo_client_secret }}"
+      - --auto-discover-url
+      - "{{ forgejo_auth_issuer_url }}/.well-known/openid-configuration"
+      - --group-claim-name
+      - "{{ forgejo_auth_group_claim_name }}"
+      - --admin-group
+      - "{{ forgejo_auth_admin_group }}"
+      - --scopes
+      - "openid profile email urn:iam:org:project:roles urn:zitadel:iam:org:projects:roles"
+  become: true
+  become_user: forgejo
+  environment:
+    FORGEJO_WORK_DIR: /var/lib/forgejo
+  when: forgejo_zitadel_auth_id | default('', true) | length > 0
+  changed_when: true
+  no_log: true

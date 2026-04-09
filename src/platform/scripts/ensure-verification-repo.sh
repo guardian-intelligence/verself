@@ -6,6 +6,7 @@ repo_root="$(cd "${script_dir}/../../.." && pwd)"
 platform_root="${repo_root}/src/platform"
 secrets_file="${platform_root}/ansible/group_vars/all/secrets.sops.yml"
 vars_file="${platform_root}/ansible/group_vars/all/main.yml"
+inventory="${platform_root}/ansible/inventory/hosts.ini"
 
 output_json="${1:-}"
 repo_name="${VERIFICATION_REPO_NAME:-sandbox-verification-next-bun}"
@@ -18,10 +19,27 @@ if [[ ! -d "${fixture_dir}" ]]; then
 fi
 
 domain="$(awk -F'"' '/^forge_metal_domain:/{print $2}' "${vars_file}")"
-owner="${VERIFICATION_REPO_OWNER:-$(sops -d --extract '["forgejo_admin_user"]' "${secrets_file}")}"
-password="$(sops -d --extract '["forgejo_admin_password"]' "${secrets_file}")"
+owner="${VERIFICATION_REPO_OWNER:-forgejo-automation}"
 public_base_url="${FORGEJO_PUBLIC_URL:-https://git.${domain}}"
 loopback_base_url="${FORGEJO_LOOPBACK_URL:-http://127.0.0.1:3000}"
+
+if [[ ! -f "${inventory}" ]]; then
+  echo "inventory not found: ${inventory}" >&2
+  exit 1
+fi
+
+remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
+remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
+
+if [[ -z "${remote_host}" || -z "${remote_user}" ]]; then
+  echo "failed to resolve remote inventory host/user" >&2
+  exit 1
+fi
+
+password="$(
+  ssh -o IPQoS=none -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \
+    'sudo cat /etc/credstore/forgejo/automation-token'
+)"
 
 if [[ -z "${domain}" || -z "${owner}" || -z "${password}" ]]; then
   echo "failed to resolve Forgejo verification repo credentials" >&2

@@ -1,0 +1,54 @@
+- name: Resolve existing role assignment
+  ansible.builtin.set_fact:
+    seed_demo_existing_authorization: >-
+      {{
+        (
+          seed_demo_authorizations.json.authorizations | default([])
+          | selectattr('user.id', 'equalto', seed_demo_authorization.user_id)
+          | selectattr('project.id', 'equalto', seed_demo_authorization.project_id)
+          | selectattr('organization.id', 'equalto', seed_demo_authorization.organization_id)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create missing role assignment
+  ansible.builtin.uri:
+    url: "{{ seed_demo_zitadel_base_url }}/zitadel.authorization.v2.AuthorizationService/CreateAuthorization"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ seed_demo_admin_pat }}"
+      Host: "{{ seed_demo_zitadel_host }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      userId: "{{ seed_demo_authorization.user_id }}"
+      projectId: "{{ seed_demo_authorization.project_id }}"
+      organizationId: "{{ seed_demo_authorization.organization_id }}"
+      roleKeys: "{{ seed_demo_authorization.role_keys }}"
+    status_code: 200
+  when: seed_demo_existing_authorization == {}
+  no_log: true
+
+- name: Update changed role assignment
+  ansible.builtin.uri:
+    url: "{{ seed_demo_zitadel_base_url }}/zitadel.authorization.v2.AuthorizationService/UpdateAuthorization"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ seed_demo_admin_pat }}"
+      Host: "{{ seed_demo_zitadel_host }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      id: "{{ seed_demo_existing_authorization.id }}"
+      roleKeys: "{{ seed_demo_authorization.role_keys }}"
+    status_code: 200
+  when:
+    - seed_demo_existing_authorization != {}
+    - >-
+      (
+        seed_demo_existing_authorization.roles | default([])
+        | map(attribute='key')
+        | sort
+      ) != (seed_demo_authorization.role_keys | sort)
+  no_log: true

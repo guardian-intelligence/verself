@@ -1,0 +1,295 @@
+---
+# Create a Zitadel project + confidential OIDC application for Forgejo.
+# Forgejo is a server-side Go app: it exchanges authorization codes using
+# client credentials in the POST body (golang.org/x/oauth2 AuthStyleInParams),
+# so the Zitadel app uses OIDC_AUTH_METHOD_TYPE_POST.
+#
+# The clientSecret is only returned at creation time.  We persist it in
+# the credstore marker so subsequent deploys can read it back.
+
+- name: Wait for Zitadel readiness
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/healthz"
+    status_code: 200
+  register: forgejo_zitadel_health
+  until: forgejo_zitadel_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Read Zitadel admin PAT
+  ansible.builtin.slurp:
+    src: /etc/zitadel/admin.pat
+  register: forgejo_zitadel_pat_raw
+  no_log: true
+
+- name: Set Zitadel PAT fact
+  ansible.builtin.set_fact:
+    forgejo_zitadel_pat: "{{ forgejo_zitadel_pat_raw.content | b64decode | trim }}"
+
+# -- Project -----------------------------------------------------------------
+
+- name: List Zitadel projects for Forgejo auth
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+  register: forgejo_zitadel_projects
+  no_log: true
+
+- name: Find Forgejo auth project
+  ansible.builtin.set_fact:
+    forgejo_auth_project: >-
+      {{
+        (
+          forgejo_zitadel_projects.json.result
+          | selectattr('name', 'equalto', forgejo_auth_project_name)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create Forgejo auth project if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ forgejo_auth_project_name }}"
+    return_content: true
+  register: forgejo_auth_project_created
+  when: forgejo_auth_project == {}
+  no_log: true
+
+- name: Set Forgejo project ID fact
+  ansible.builtin.set_fact:
+    forgejo_project_id: >-
+      {{
+        forgejo_auth_project.id
+        | default(forgejo_auth_project_created.json.id, true)
+      }}
+
+- name: Assert Forgejo project ID is set
+  ansible.builtin.assert:
+    that: forgejo_project_id | default('', true) | length > 0
+    fail_msg: forgejo_project_id could not be resolved from Zitadel.
+
+- name: Ensure Forgejo project roles exist
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ forgejo_zitadel_pat }}"
+    zitadel_project_roles_project_id: "{{ forgejo_project_id }}"
+    zitadel_project_roles_definitions:
+      - key: forgejo_admin
+        display_name: Forgejo Admin
+        group: forgejo
+
+# -- OIDC application --------------------------------------------------------
+
+- name: Search for existing Forgejo app in project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ forgejo_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: forgejo
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: forgejo_app_search
+
+- name: Ensure Forgejo credstore directory exists
+  ansible.builtin.file:
+    path: /etc/credstore/forgejo
+    state: directory
+    owner: root
+    group: forgejo
+    mode: "0750"
+
+- name: Check Forgejo OIDC cutover marker
+  ansible.builtin.stat:
+    path: /etc/credstore/forgejo/oidc-cutover
+  register: forgejo_oidc_cutover_marker
+
+- name: Check Forgejo OIDC client secret file
+  ansible.builtin.stat:
+    path: /etc/credstore/forgejo/oidc-client-secret
+  register: forgejo_oidc_secret_file
+
+- name: Set existing app facts
+  ansible.builtin.set_fact:
+    forgejo_app_exists: "{{ forgejo_app_search.json.result is defined and forgejo_app_search.json.result | length > 0 }}"
+    forgejo_app_id: "{{ (forgejo_app_search.json.result | default([]) | first | default({})).id | default('') }}"
+    forgejo_client_id: "{{ (forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
+    forgejo_app_requires_recreate: >-
+      {{
+        (
+          forgejo_app_search.json.result is defined
+          and forgejo_app_search.json.result | length > 0
+        )
+        and
+        (
+          not forgejo_oidc_cutover_marker.stat.exists
+          or not forgejo_oidc_secret_file.stat.exists
+          or (
+            (forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
+            | default('')
+          ) != 'OIDC_AUTH_METHOD_TYPE_POST'
+          or (
+            ((forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.redirectUris
+            | default([]) | sort)
+            != (["https://" ~ forgejo_domain ~ "/user/oauth2/" ~ forgejo_auth_source_name ~ "/callback"] | sort)
+          )
+          or (
+            ((forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.responseTypes
+            | default([]) | sort)
+            != (["OIDC_RESPONSE_TYPE_CODE"] | sort)
+          )
+          or (
+            ((forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.grantTypes
+            | default([]) | sort)
+            != (["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"] | sort)
+          )
+          or (
+            ((forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.postLogoutRedirectUris
+            | default([]) | sort)
+            != (["https://" ~ forgejo_domain] | sort)
+          )
+          or (
+            (forgejo_app_search.json.result | default([]) | first | default({})).oidcConfig.accessTokenType
+            | default('')
+          ) != 'OIDC_TOKEN_TYPE_JWT'
+        )
+      }}
+
+- name: Remove incompatible Forgejo OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ forgejo_project_id }}/apps/{{ forgejo_app_id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    status_code: 200
+  when:
+    - forgejo_app_exists | bool
+    - forgejo_app_requires_recreate | default(false) | bool
+    - forgejo_app_id | default('', true) | length > 0
+  no_log: true
+
+- name: Create Forgejo OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ forgejo_project_id }}/apps/oidc"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: forgejo
+      redirectUris:
+        - "https://{{ forgejo_domain }}/user/oauth2/{{ forgejo_auth_source_name }}/callback"
+      responseTypes:
+        - "OIDC_RESPONSE_TYPE_CODE"
+      grantTypes:
+        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+        - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+      appType: "OIDC_APP_TYPE_WEB"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_POST"
+      postLogoutRedirectUris:
+        - "https://{{ forgejo_domain }}"
+      devMode: false
+      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+    status_code: 200
+    return_content: true
+  register: forgejo_app_created
+  when: >-
+    not forgejo_app_exists | bool
+    or forgejo_app_requires_recreate | default(false) | bool
+  no_log: true
+
+# Capture the client secret from the creation response — it's only
+# returned once and cannot be retrieved later from Zitadel.
+- name: Set created app credentials
+  ansible.builtin.set_fact:
+    forgejo_client_id: "{{ forgejo_app_created.json.clientId }}"
+    forgejo_client_secret: "{{ forgejo_app_created.json.clientSecret }}"
+    forgejo_app_id: "{{ forgejo_app_created.json.appId }}"
+  when: forgejo_app_created is not skipped
+  no_log: true
+
+# -- Re-query (for existing apps where we didn't just create) ----------------
+
+- name: Re-query Forgejo OIDC application
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ forgejo_project_id }}/apps/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ forgejo_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: forgejo
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: forgejo_final_app_search
+  when: forgejo_app_created is skipped
+
+- name: Set final app facts from re-query
+  ansible.builtin.set_fact:
+    forgejo_app_id: "{{ (forgejo_final_app_search.json.result | default([]) | first | default({})).id | default('') }}"
+    forgejo_client_id: "{{ (forgejo_final_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
+  when: forgejo_app_created is skipped and forgejo_final_app_search is not skipped
+
+# Read stored secret when we didn't just create the app.
+# Stored in its own file to avoid fragile line-parsing of the marker.
+- name: Read stored client secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/forgejo/oidc-client-secret
+  register: forgejo_stored_secret_raw
+  when: forgejo_app_created is skipped and forgejo_oidc_secret_file.stat.exists
+  no_log: true
+
+- name: Set stored client secret fact
+  ansible.builtin.set_fact:
+    forgejo_client_secret: "{{ forgejo_stored_secret_raw.content | b64decode | trim }}"
+  when: forgejo_app_created is skipped and forgejo_oidc_secret_file.stat.exists
+  no_log: true
+
+# -- Persist credentials ------------------------------------------------------
+
+- name: Store client secret
+  ansible.builtin.copy:
+    dest: /etc/credstore/forgejo/oidc-client-secret
+    content: "{{ forgejo_client_secret }}"
+    owner: root
+    group: forgejo
+    mode: "0640"
+  when: forgejo_client_secret | default('', true) | length > 0
+  no_log: true
+
+- name: Persist Forgejo OIDC cutover marker
+  ansible.builtin.copy:
+    dest: /etc/credstore/forgejo/oidc-cutover
+    owner: root
+    group: forgejo
+    mode: "0640"
+    content: |
+      app_id={{ forgejo_app_id }}
+      client_id={{ forgejo_client_id }}
+      auth_method=OIDC_AUTH_METHOD_TYPE_POST
+  when: forgejo_client_id | default('', true) | length > 0
+  no_log: true
