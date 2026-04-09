@@ -1,11 +1,15 @@
 import { createCollection } from "@tanstack/db";
 import { electricCollectionOptions } from "@tanstack/electric-db-collection";
 
-// Electric shape URL — proxied through Caddy at the same origin.
-// Electric syncs the sandbox_rental database only. Billing data
-// (subscriptions, grants, balance) uses TanStack Query — balance is
-// TigerBeetle-derived and billing tables live in a separate PG database.
-const ELECTRIC_SHAPE_URL = "/v1/shape";
+// Electric requires an absolute shape URL. Keep the real sync path same-origin
+// in the browser, but return a harmless absolute fallback during SSR so the URL
+// parser never sees a bare relative path.
+function electricShapeURL(): string {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return new URL("/v1/shape", window.location.origin).toString();
+  }
+  return "http://127.0.0.1/v1/shape";
+}
 
 // --- Execution collection (real-time PG sync via Electric) ---
 
@@ -33,7 +37,7 @@ export function createExecutionsCollection(orgId: string) {
     electricCollectionOptions({
       id: `sync-executions-${orgId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "executions",
           where: `org_id = '${orgId}'`,
@@ -59,7 +63,7 @@ export function createExecutionLogsCollection(attemptId: string) {
     electricCollectionOptions({
       id: `sync-execution-logs-${attemptId}`,
       shapeOptions: {
-        url: ELECTRIC_SHAPE_URL,
+        url: electricShapeURL(),
         params: {
           table: "execution_logs",
           where: `attempt_id = '${attemptId}'`,

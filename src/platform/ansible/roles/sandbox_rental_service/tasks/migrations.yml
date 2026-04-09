@@ -152,17 +152,11 @@
     stdin: |
       DO $$
       BEGIN
-        IF to_regclass('public.executions') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.executions OWNER TO sandbox_rental';
-        END IF;
         IF to_regclass('public.execution_attempts') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_attempts OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.execution_billing_windows') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_billing_windows OWNER TO sandbox_rental';
-        END IF;
-        IF to_regclass('public.execution_logs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.execution_logs OWNER TO sandbox_rental';
         END IF;
         IF to_regclass('public.execution_billing_job_id_seq') IS NOT NULL THEN
           EXECUTE 'ALTER SEQUENCE public.execution_billing_job_id_seq OWNER TO sandbox_rental';

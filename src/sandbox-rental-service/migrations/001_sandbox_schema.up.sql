@@ -20,6 +20,7 @@ CREATE TABLE executions (
     provider           TEXT        NOT NULL DEFAULT '',
     product_id         TEXT        NOT NULL DEFAULT 'sandbox',
     status             TEXT        NOT NULL,
+    correlation_id     TEXT        NOT NULL DEFAULT '',
     idempotency_key    TEXT,
     repo               TEXT        NOT NULL DEFAULT '',
     repo_url           TEXT        NOT NULL DEFAULT '',
@@ -42,6 +43,7 @@ CREATE UNIQUE INDEX idx_executions_org_idempotency_key
 
 CREATE INDEX idx_executions_org_updated_at ON executions (org_id, updated_at DESC);
 CREATE INDEX idx_executions_status ON executions (status);
+CREATE INDEX idx_executions_correlation_id ON executions (correlation_id) WHERE correlation_id <> '';
 
 CREATE TABLE execution_attempts (
     attempt_id            UUID        PRIMARY KEY,
@@ -86,7 +88,9 @@ CREATE TABLE execution_logs (
     attempt_id       UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
     seq              INTEGER     NOT NULL,
     stream           TEXT        NOT NULL,
-    chunk            BYTEA       NOT NULL,
+    -- Execution and runner logs are line-oriented UTF-8 text. Keep them as
+    -- TEXT so Electric can shape them directly into the browser.
+    chunk            TEXT        NOT NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (attempt_id, seq)
 );

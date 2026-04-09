@@ -86,6 +86,7 @@ type ExecutionRecord struct {
 	Provider        string          `json:"provider,omitempty"`
 	ProductID       string          `json:"product_id"`
 	Status          string          `json:"status"`
+	CorrelationID   string          `json:"correlation_id,omitempty"`
 	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
 	Repo            string          `json:"repo,omitempty"`
 	RepoURL         string          `json:"repo_url,omitempty"`
@@ -226,6 +227,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 
 	executionID := uuid.New()
 	attemptID := uuid.New()
+	correlationID := strings.TrimSpace(CorrelationIDFromContext(ctx))
 	traceID := traceIDFromContext(ctx)
 	now := time.Now().UTC()
 
@@ -239,7 +241,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		))
 	defer span.End()
 
-	if err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, now); err != nil {
+	if err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, correlationID, now); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert queued execution: %w", err)
@@ -292,7 +294,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		return uuid.Nil, uuid.Nil, fmt.Errorf("persist reservation: %w", err)
 	}
 
-	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", executionID, "attempt_id", attemptID, "billing_job_id", billingJobID, "org_id", orgID, "kind", req.Kind, "window_seq", reservation.WindowSeq)
+	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", executionID, "attempt_id", attemptID, "billing_job_id", billingJobID, "org_id", orgID, "kind", req.Kind, "window_seq", reservation.WindowSeq, "fm_correlation_id", correlationID)
 	if verificationRunID := VerificationRunIDFromContext(ctx); verificationRunID != "" {
 		s.Logger.InfoContext(ctx, "execution verification correlation",
 			"verification_run_id", verificationRunID,
@@ -447,6 +449,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		TraceID:        traceID,
 	})
 	s.Logger.InfoContext(ctx, "execution completed",
+		"fm_correlation_id", CorrelationIDFromContext(ctx),
 		"verification_run_id", VerificationRunIDFromContext(ctx),
 		"execution_id", executionID,
 		"attempt_id", attemptID,
@@ -538,11 +541,11 @@ func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.U
 		)
 		if warmErr := s.warmRepoGoldenOnDemand(ctx, req); warmErr != nil {
 			outcome := executionOutcome{
-				StartedAt:      startedAt,
-				CompletedAt:    time.Now().UTC(),
-				CommitSHA:      prepared.Inspection.CommitSHA,
-				FailureReason:  failureReasonFromError(warmErr),
-				State:          StateFailed,
+				StartedAt:     startedAt,
+				CompletedAt:   time.Now().UTC(),
+				CommitSHA:     prepared.Inspection.CommitSHA,
+				FailureReason: failureReasonFromError(warmErr),
+				State:         StateFailed,
 			}
 			outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
 			return outcome, warmErr
@@ -679,6 +682,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.provider,
 			e.product_id,
 			e.status,
+			e.correlation_id,
 			COALESCE(e.idempotency_key, ''),
 			e.repo,
 			e.repo_url,
@@ -731,6 +735,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.Provider,
 		&record.ProductID,
 		&record.Status,
+		&record.CorrelationID,
 		&record.IdempotencyKey,
 		&record.Repo,
 		&record.RepoURL,
@@ -814,11 +819,11 @@ func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionI
 
 	var buf strings.Builder
 	for rows.Next() {
-		var chunk []byte
+		var chunk string
 		if err := rows.Scan(&chunk); err != nil {
 			return uuid.Nil, "", fmt.Errorf("scan execution log chunk: %w", err)
 		}
-		buf.Write(chunk)
+		buf.WriteString(chunk)
 	}
 	return attemptID, buf.String(), rows.Err()
 }
@@ -861,7 +866,7 @@ func (s *Service) getBillingWindows(ctx context.Context, attemptID uuid.UUID) ([
 	return out, rows.Err()
 }
 
-func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID string, now time.Time) error {
+func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID, correlationID string, now time.Time) error {
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -870,17 +875,17 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO executions (
-			execution_id, org_id, actor_id, kind, provider, product_id, status,
+			execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
 			idempotency_key, repo, repo_url, ref, default_branch, run_command,
 			workflow_path, workflow_job_name, provider_run_id, provider_job_id,
 			latest_attempt_id, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			NULLIF($8, ''), $9, $10, $11, $12, $13,
-			$14, $15, $16, $17,
-			$18, $19, $19
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			NULLIF($9, ''), $10, $11, $12, $13, $14,
+			$15, $16, $17, $18,
+			$19, $20, $20
 		)
-	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, req.IdempotencyKey, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
+	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
 		return err
 	}
 
@@ -1142,7 +1147,7 @@ func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uui
 
 		if _, pgErr := s.PG.ExecContext(ctx,
 			`INSERT INTO execution_logs (attempt_id, seq, stream, chunk, created_at) VALUES ($1, $2, $3, $4, $5)`,
-			attemptID, seq, defaultLogStream, []byte(chunk), createdAt,
+			attemptID, seq, defaultLogStream, chunk, createdAt,
 		); pgErr != nil {
 			s.Logger.ErrorContext(ctx, "write execution log chunk to PG", "attempt_id", attemptID, "seq", seq, "error", pgErr)
 		}

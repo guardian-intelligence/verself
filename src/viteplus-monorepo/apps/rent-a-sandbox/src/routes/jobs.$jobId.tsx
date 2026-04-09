@@ -1,7 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useLiveQuery } from "@tanstack/react-db";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { fetchExecution, fetchExecutionLogs } from "~/lib/api";
+import { useMemo } from "react";
+import { fetchExecution } from "~/lib/api";
+import { createExecutionLogsCollection } from "~/lib/collections";
 
 export const Route = createFileRoute("/jobs/$jobId")({
   component: JobDetailPage,
@@ -61,10 +64,12 @@ function JobDetailPage() {
         <InfoCard label="Attempt" value={attempt.attempt_id.slice(0, 8)} />
       </div>
 
-      <LiveExecutionLogs
-        attemptId={attempt.attempt_id}
-        isRunning={isActiveStatus(execution.status)}
-      />
+      <ClientOnly fallback={<ExecutionLogsLoading isRunning={isActiveStatus(execution.status)} />}>
+        <LiveExecutionLogs
+          attemptId={attempt.attempt_id}
+          isRunning={isActiveStatus(execution.status)}
+        />
+      </ClientOnly>
     </div>
   );
 }
@@ -99,19 +104,23 @@ function InfoCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LiveExecutionLogs({ attemptId, isRunning }: { attemptId: string; isRunning: boolean }) {
+function LiveExecutionLogs({
+  attemptId,
+  isRunning,
+}: {
+  attemptId: string;
+  isRunning: boolean;
+}) {
   const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
-  const executionID = Route.useParams().jobId;
-  const { data: logs } = useQuery({
-    queryKey: ["execution-logs", executionID, attemptId],
-    queryFn: () => fetchExecutionLogs(executionID),
-    // execution_logs stores bytea chunks. Electric sync currently does not
-    // preserve a browser-friendly string shape for those chunks, so we fetch
-    // decoded text through the service until the log transport is redesigned.
-    refetchInterval: isRunning ? 2_000 : false,
-  });
-
-  const logText = logs?.attempt_id === attemptId ? logs.logs : "";
+  const collection = useMemo(() => createExecutionLogsCollection(attemptId), [attemptId]);
+  const { data: logChunks } = useLiveQuery((q) => q.from({ l: collection }), [collection]);
+  const logText = useMemo(() => {
+    if (!logChunks || logChunks.length === 0) return "";
+    return [...logChunks]
+      .sort((a, b) => a.seq - b.seq)
+      .map((chunk) => chunk.chunk)
+      .join("");
+  }, [logChunks]);
 
   return (
     <div>
@@ -133,6 +142,19 @@ function LiveExecutionLogs({ attemptId, isRunning }: { attemptId: string; isRunn
             Scroll to bottom
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold mb-2">Logs</h2>
+      <div className="relative">
+        <pre className="bg-foreground/5 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto max-h-[600px] overflow-y-auto whitespace-pre-wrap">
+          {isRunning ? "Waiting for output..." : "No log output."}
+        </pre>
       </div>
     </div>
   );
