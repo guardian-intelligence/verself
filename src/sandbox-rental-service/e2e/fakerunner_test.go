@@ -10,16 +10,24 @@ import (
 )
 
 type fakeRunner struct {
-	delay     time.Duration
-	exitCode  int
-	logs      string
-	err       error
-	commitSHA string
+	delay       time.Duration
+	exitCode    int
+	logs        string
+	err         error
+	commitSHA   string
 	requireWarm bool
 	warmed      bool
+	lastConfig  vmorchestrator.Config
+	lastJob     vmorchestrator.JobConfig
 }
 
 func (f *fakeRunner) Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error) {
+	return f.RunWithConfig(ctx, vmorchestrator.Config{}, job)
+}
+
+func (f *fakeRunner) RunWithConfig(ctx context.Context, cfg vmorchestrator.Config, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error) {
+	f.lastConfig = cfg
+	f.lastJob = job
 	delay := f.executionDelay()
 	select {
 	case <-time.After(delay):
