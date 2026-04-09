@@ -97,22 +97,24 @@ clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all pro
 	cd $(FM) && ./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
 
 MAILBOX_ARG = $(if $(MAILBOX),$(MAILBOX),$(if $(filter command line,$(origin USER)),$(USER),))
+MAILBOX_ACCOUNT_FLAG = $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)
+MAILBOX_TOOL = cd $(MS) && go run ./cmd/mailbox-tool --inventory "$(abspath $(INVENTORY))"
 
 mail: inventory-check ## List recent emails (defaults to agents): make mail [MAILBOX=ceo] [N=10]
-	cd $(FM) && ./scripts/mail.sh list $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),) $(if $(N),--limit $(N),)
+	$(MAILBOX_TOOL) list $(MAILBOX_ACCOUNT_FLAG) $(if $(N),--limit $(N),)
 
 mail-accounts: inventory-check ## List synced mailbox accounts
-	cd $(FM) && ./scripts/mail.sh accounts
+	$(MAILBOX_TOOL) accounts
 
 mail-mailboxes: inventory-check ## List mailboxes for an account (defaults to agents): make mail-mailboxes [MAILBOX=ceo]
-	cd $(FM) && ./scripts/mail.sh mailboxes $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)
+	$(MAILBOX_TOOL) mailboxes $(MAILBOX_ACCOUNT_FLAG)
 
 mail-code: inventory-check ## Extract latest 2FA/verification code (defaults to agents): make mail-code [MAILBOX=ceo]
-	cd $(FM) && ./scripts/mail.sh code $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)
+	$(MAILBOX_TOOL) code $(MAILBOX_ACCOUNT_FLAG)
 
 mail-read: inventory-check ## Read a specific email (defaults to agents): make mail-read [MAILBOX=ceo] ID=eaaaaab
 	@test -n "$(ID)" || { echo "ERROR: ID is required (get IDs from 'make mail')"; exit 1; }
-	cd $(FM) && ./scripts/mail.sh read $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),) --id $(ID)
+	$(MAILBOX_TOOL) read $(MAILBOX_ACCOUNT_FLAG) --id $(ID)
 
 mail-send: inventory-check ## Send via Resend: make mail-send TO=agents SUBJECT='test' BODY='hello'
 	@test -n "$(TO)" || { echo "ERROR: TO is required (e.g. TO=agents or TO=ceo or TO=user@example.com)"; exit 1; }

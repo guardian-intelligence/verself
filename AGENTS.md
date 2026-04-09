@@ -424,7 +424,7 @@ forge-metal/                            # Monorepo root
     │       ├── dev_tools/              # Dev tool installation
     │       └── ...                     # guest_rootfs, ci_fixtures, wireguard, etc.
     ├── terraform/                      # Latitude.sh provisioning
-    ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, traces.sh, mail.sh
+    ├── scripts/                        # clickhouse.sh, build-guest-rootfs.sh, traces.sh, mail-send.sh
     ├── migrations/                     # ClickHouse schemas (platform-level)
     ├── server-tools.json               # Pinned server binary versions + SHA256
     └── dev-tools.json                  # Pinned dev tool versions + SHA256
