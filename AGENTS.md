@@ -295,7 +295,7 @@ Read the Makefile for other common task automation.
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL state and restart billing callers |
-| `playbooks/seed-demo.yml` | Seed demo environment: human user, billing catalog, credits, mailboxes, auth verify (supports `--tags user,billing,stalwart,verify`) |
+| `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`) |
 
 All deploy playbooks support `--tags` for targeting individual roles (e.g. `--tags caddy`, `--tags clickhouse`). Preflight checks run regardless of tag selection.
 

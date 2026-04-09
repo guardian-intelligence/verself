@@ -440,46 +440,6 @@
       no_log: true
       tags: [identity]
 
-    - name: Search for retired users
-      ansible.builtin.uri:
-        url: "{{ seed_system_zitadel_base_url }}/v2/users"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ seed_system_admin_pat }}"
-          Host: "{{ seed_system_zitadel_host }}"
-        body_format: json
-        body:
-          queries:
-            - emailQuery:
-                emailAddress: "{{ item }}"
-        return_content: true
-      loop:
-        - "demo@{{ forge_metal_domain }}"
-        - "admin@{{ forge_metal_domain }}"
-      register: seed_system_retired_user_search
-      no_log: true
-      tags: [identity, stalwart]
-
-    - name: Delete retired human users
-      ansible.builtin.uri:
-        url: "{{ seed_system_zitadel_base_url }}/v2/users/{{ (item.json.result | default([]) | first).userId }}"
-        method: DELETE
-        headers:
-          Authorization: "Bearer {{ seed_system_admin_pat }}"
-          Host: "{{ seed_system_zitadel_host }}"
-        status_code: [200, 404]
-      loop: "{{ seed_system_retired_user_search.results }}"
-      when:
-        - (item.json.result | default([]) | length) > 0
-      no_log: true
-      tags: [identity]
-
-    - name: Remove retired seed-demo credstore directory
-      ansible.builtin.file:
-        path: /etc/credstore/seed-demo
-        state: absent
-      tags: [identity]
-
     - name: Print seeded identities
       ansible.builtin.debug:
         msg:
@@ -904,8 +864,9 @@
           DELETE FROM mailbox_accounts
           WHERE account_id IN ('ceo', 'agents', 'bernoulli.agent', 'dijkstra.agent', 'lamport.agent');
           DELETE FROM mailbox_bindings
-          WHERE account_id IN ('bernoulli.agent', 'dijkstra.agent', 'lamport.agent')
-             OR email_address IN ('demo@{{ forge_metal_domain }}', 'admin@{{ forge_metal_domain }}');
+          WHERE account_id <> 'ceo'
+             OR subject <> '{{ seed_system_users_state.ceo.user_id }}'
+             OR email_address <> '{{ seed_system_users_state.ceo.email }}';
       environment:
         PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
       changed_when: false

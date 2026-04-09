@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -113,9 +115,12 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		if len(identity.RoleAssignments) != len(expectedAssignments) {
 			t.Fatalf("unexpected role assignments length: got %#v want %#v", identity.RoleAssignments, expectedAssignments)
 		}
+		actualAssignments := slices.Clone(identity.RoleAssignments)
+		slices.SortFunc(actualAssignments, compareRoleAssignment)
+		slices.SortFunc(expectedAssignments, compareRoleAssignment)
 		for i, assignment := range expectedAssignments {
-			if identity.RoleAssignments[i] != assignment {
-				t.Fatalf("unexpected role assignments: got %#v want %#v", identity.RoleAssignments, expectedAssignments)
+			if actualAssignments[i] != assignment {
+				t.Fatalf("unexpected role assignments: got %#v want %#v", actualAssignments, expectedAssignments)
 			}
 		}
 		if _, ok := identity.Raw["amr"]; !ok {
@@ -162,6 +167,19 @@ func TestMiddlewareRejectsWrongAudience(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
+}
+
+func compareRoleAssignment(a, b RoleAssignment) int {
+	if diff := cmp.Compare(a.OrganizationID, b.OrganizationID); diff != 0 {
+		return diff
+	}
+	if diff := cmp.Compare(a.OrganizationName, b.OrganizationName); diff != 0 {
+		return diff
+	}
+	if diff := cmp.Compare(a.ProjectID, b.ProjectID); diff != 0 {
+		return diff
+	}
+	return cmp.Compare(a.Role, b.Role)
 }
 
 func TestMiddlewareWithSplitJWKSURL(t *testing.T) {
@@ -274,8 +292,8 @@ func TestMiddlewareWithSplitJWKSURLRejectsWrongIssuer(t *testing.T) {
 
 type testProvider struct {
 	*httptest.Server
-	privateKey *rsa.PrivateKey
-	keyID      string
+	privateKey       *rsa.PrivateKey
+	keyID            string
 	expectedJWKSHost string
 }
 
