@@ -40,8 +40,19 @@ CREATE TABLE orgs (
     display_name       TEXT NOT NULL,
     stripe_customer_id TEXT UNIQUE,
     billing_email      TEXT,
-    trust_tier         TEXT NOT NULL DEFAULT 'new' CHECK (trust_tier IN ('new', 'established', 'enterprise')),
+    trust_tier         TEXT NOT NULL DEFAULT 'new' CHECK (trust_tier IN ('new', 'established', 'enterprise', 'platform')),
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE promotions (
+    promotion_id     BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    org_id           TEXT NOT NULL REFERENCES orgs(org_id),
+    promotion_name   TEXT NOT NULL,
+    percent_off      SMALLINT NOT NULL CHECK (percent_off >= 0 AND percent_off <= 100),
+    effective_at     TIMESTAMPTZ NOT NULL,
+    ending_at        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (org_id, promotion_name)
 );
 
 CREATE TABLE subscriptions (

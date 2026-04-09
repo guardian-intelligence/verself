@@ -43,6 +43,10 @@ var trustTierPolicies = map[string]trustTierPolicy{
 		concurrentLimit: nil,
 		spendCapUnits:   nil,
 	},
+	"platform": {
+		concurrentLimit: nil,
+		spendCapUnits:   nil,
+	},
 }
 
 // CheckQuotas is an advisory preflight read. Real enforcement happens in Reserve.
