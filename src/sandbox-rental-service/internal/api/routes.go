@@ -19,6 +19,36 @@ import (
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient) {
 	huma.Register(api, huma.Operation{
+		OperationID:   "import-repo",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/repos",
+		Summary:       "Import or rescan a repo for forge-metal CI",
+		DefaultStatus: 201,
+	}, importRepo(svc))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-repos",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/repos",
+		Summary:     "List imported repos for the current org",
+	}, listRepos(svc))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-repo",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/repos/{repo_id}",
+		Summary:     "Get repo state and compatibility details",
+	}, getRepo(svc))
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "rescan-repo",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/repos/{repo_id}/rescan",
+		Summary:       "Rescan repo workflows for forge-metal compatibility",
+		DefaultStatus: 200,
+	}, rescanRepo(svc))
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",
@@ -82,6 +112,22 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 
 type SubmitExecutionInput struct {
 	Body jobs.SubmitRequest
+}
+
+type ImportRepoInput struct {
+	Body jobs.ImportRepoRequest
+}
+
+type RepoIDPath struct {
+	RepoID string `path:"repo_id" doc:"Repo UUID"`
+}
+
+type RepoOutput struct {
+	Body jobs.RepoRecord
+}
+
+type ListReposOutput struct {
+	Body []jobs.RepoRecord
 }
 
 type SubmitExecutionOutput struct {
@@ -169,6 +215,76 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 	}
 	return orgID, nil
+}
+
+func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*RepoOutput, error) {
+	return func(ctx context.Context, input *ImportRepoInput) (*RepoOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		repo, err := svc.ImportRepo(ctx, orgID, input.Body)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("import repo", err)
+		}
+		return &RepoOutput{Body: *repo}, nil
+	}
+}
+
+func listRepos(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListReposOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*ListReposOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		repos, err := svc.ListRepos(ctx, orgID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list repos", err)
+		}
+		return &ListReposOutput{Body: repos}, nil
+	}
+}
+
+func getRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput, error) {
+	return func(ctx context.Context, input *RepoIDPath) (*RepoOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+		}
+		repo, err := svc.GetRepo(ctx, orgID, repoID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRepoMissing) {
+				return nil, huma.Error404NotFound("repo not found")
+			}
+			return nil, huma.Error500InternalServerError("get repo", err)
+		}
+		return &RepoOutput{Body: *repo}, nil
+	}
+}
+
+func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput, error) {
+	return func(ctx context.Context, input *RepoIDPath) (*RepoOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		repoID, err := uuid.Parse(input.RepoID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+		}
+		repo, err := svc.RescanRepo(ctx, orgID, repoID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrRepoMissing) {
+				return nil, huma.Error404NotFound("repo not found")
+			}
+			return nil, huma.Error500InternalServerError("rescan repo", err)
+		}
+		return &RepoOutput{Body: *repo}, nil
+	}
 }
 
 func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionInput) (*SubmitExecutionOutput, error) {
