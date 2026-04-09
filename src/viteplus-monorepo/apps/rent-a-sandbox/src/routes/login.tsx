@@ -1,39 +1,24 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { signIn } from "~/lib/auth";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getLoginRedirectURL } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
+  beforeLoad: async ({ search }) => {
+    const authURL = await getLoginRedirectURL({
+      data: search.redirect ? { redirectTo: search.redirect } : {},
+    });
+    throw redirect({ href: authURL });
+  },
   component: LoginPage,
 });
 
 function LoginPage() {
-  // Initiate OIDC redirect immediately on mount via loader,
-  // but also provide a button as fallback.
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4">
       <h1 className="text-2xl font-bold">Redirecting to sign in...</h1>
-      <p className="text-muted-foreground">
-        If you are not redirected,{" "}
-        <button onClick={() => void signIn()} className="underline text-foreground">
-          click here
-        </button>
-        .
-      </p>
-      <LoginRedirect />
+      <p className="text-muted-foreground">If you are not redirected, reload this page.</p>
     </div>
   );
-}
-
-function LoginRedirect() {
-  useQuery({
-    queryKey: ["auth", "login"],
-    queryFn: async () => {
-      await signIn();
-      return true;
-    },
-    retry: false,
-    staleTime: Infinity,
-    enabled: typeof window !== "undefined",
-  });
-  return null;
 }

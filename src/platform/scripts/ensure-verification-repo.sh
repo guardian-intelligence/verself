@@ -10,6 +10,7 @@ vars_file="${platform_root}/ansible/group_vars/all/main.yml"
 output_json="${1:-}"
 repo_name="${VERIFICATION_REPO_NAME:-sandbox-verification-next-bun}"
 fixture_dir="${VERIFICATION_FIXTURE_DIR:-${platform_root}/test/fixtures/next-bun-monorepo}"
+revision="${VERIFICATION_REPO_REVISION:-seed}"
 
 if [[ ! -d "${fixture_dir}" ]]; then
   echo "fixture directory not found: ${fixture_dir}" >&2
@@ -75,12 +76,14 @@ esac
 push_dir="${tmp_dir}/repo"
 mkdir -p "${push_dir}"
 cp -R "${fixture_dir}/." "${push_dir}/"
+mkdir -p "${push_dir}/.forge-metal"
+printf '%s\n' "${revision}" >"${push_dir}/.forge-metal/verification-revision.txt"
 
 git -C "${push_dir}" init --initial-branch=main >/dev/null
 git -C "${push_dir}" config user.name "forge-metal verification"
 git -C "${push_dir}" config user.email "verification@forge-metal.local"
 git -C "${push_dir}" add .
-git -C "${push_dir}" commit -m "Seed sandbox verification fixture" >/dev/null
+git -C "${push_dir}" commit --allow-empty -m "Seed sandbox verification fixture ${revision}" >/dev/null
 
 mapfile -t encoded_creds < <(python3 - "${owner}" "${password}" <<'PY'
 import sys

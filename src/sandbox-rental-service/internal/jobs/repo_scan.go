@@ -17,7 +17,7 @@ import (
 )
 
 type ImportRepoRequest struct {
-	Provider       string `json:"provider"`
+	Provider       string `json:"provider,omitempty"`
 	ProviderRepoID string `json:"provider_repo_id,omitempty"`
 	Owner          string `json:"owner,omitempty"`
 	Name           string `json:"name,omitempty"`

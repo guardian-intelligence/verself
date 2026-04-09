@@ -1,21 +1,18 @@
 import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { fetchBalance } from "~/lib/api";
-import { keys } from "~/lib/query-keys";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createExecutionsCollection } from "~/lib/collections";
 import { useMemo } from "react";
+import { getBalance } from "~/server-fns/api";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/jobs/")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
+  loader: () => getBalance(),
   component: JobsPage,
 });
 
 function JobsPage() {
-  const { data: balance } = useQuery({
-    queryKey: keys.balance(),
-    queryFn: fetchBalance,
-    staleTime: 5_000,
-  });
+  const balance = Route.useLoaderData();
 
   const creditsExhausted = balance ? balance.total_available <= 0 : false;
 

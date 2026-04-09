@@ -1,5 +1,4 @@
 export const keys = {
-  user: () => ["auth", "user"] as const,
   balance: () => ["billing", "balance"] as const,
   subscriptions: () => ["billing", "subscriptions"] as const,
   grants: (active?: boolean) => ["billing", "grants", { active }] as const,
