@@ -84,6 +84,10 @@
 	import access_log
 	import waf_detection
 
+	handle /webhooks/forgejo {
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+	}
+
 	handle /api/* {
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
 	}

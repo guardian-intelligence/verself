@@ -2,7 +2,7 @@
 
 Stalwart Mail Server (v0.15.5, Rust, AGPL-3.0) provides receive-only SMTP and JMAP on the single node. Outbound email stays with Resend. `mailbox-service` is the repo-owned mailbox layer that sits beside Stalwart: it rewrites public JMAP session discovery, keeps a normalized mailbox projection in PostgreSQL, exposes authenticated mailbox mutations for future webmail, and currently hosts the tactical operator-forwarding sidecar.
 
-Stalwart still serves two purposes: internal infrastructure (agent mailboxes for 2FA, invoices, testing) and future metered product (hosted email for operator's customers).
+Stalwart still serves two purposes: internal infrastructure (`agents@` for 2FA, invoices, testing) and future metered product (hosted email for operator's customers).
 
 ## Network topology
 
@@ -63,14 +63,14 @@ There are now two mail-adjacent PostgreSQL databases:
 `mailbox-service` is the boundary between Stalwart's JMAP protocol surface and the rest of the Forge Metal product:
 
 - It rewrites `/jmap/session` so clients see the public `https://mail.<domain>` / `wss://mail.<domain>` origin instead of Stalwart's internal `127.0.0.1:8090` listener.
-- It discovers Stalwart accounts through the local management API, derives per-account credentials, subscribes to JMAP EventSource, and applies `Mailbox/changes`, `Email/changes`, and `Thread/changes` into the `mailbox_service` PostgreSQL schema.
+- It discovers Stalwart accounts through the local management API, maps account IDs to configured passwords, subscribes to JMAP EventSource, and applies `Mailbox/changes`, `Email/changes`, and `Thread/changes` into the `mailbox_service` PostgreSQL schema.
 - It exposes the authenticated mailbox write API (`/api/v1/mail/*`) for read/unread, flag, move, trash, and body hydration.
 - It also currently hosts the tactical `ceo@` operator-forwarding sidecar. That forwarding path is deliberately outside Stalwart because per-user Sieve forwarding was not reliable enough for the product path.
 
 ## Mailbox scheme
 
 - `ceo@<domain>` — operator, reserved
-- `<name>.agent@<domain>` — agent mailboxes (`bernoulli.agent`, `dijkstra.agent`, `lamport.agent`)
+- `agents@<domain>` — shared agent mailbox
 
 Accounts are pre-created via Stalwart's Management REST API in `seed-demo.yml --tags stalwart`. No auto-provisioning on first OIDC or JMAP login.
 
@@ -84,7 +84,7 @@ Basic Auth is used for both JMAP and the Management API. Stalwart does not suppo
 
 ```bash
 # List emails for an account
-curl -s -u bernoulli.agent:<password> \
+curl -s -u agents:<password> \
   https://mail.<domain>/jmap \
   -H 'Content-Type: application/json' \
   -d '{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
@@ -95,7 +95,7 @@ curl -s -u bernoulli.agent:<password> \
                        "fetchAllBodyValues":true},"b"]]}'
 
 # JMAP session discovery (shows capabilities, account IDs)
-curl -s -u bernoulli.agent:<password> https://mail.<domain>/jmap/session
+curl -s -u agents:<password> https://mail.<domain>/jmap/session
 ```
 
 ## Management API (admin only, loopback)
@@ -151,7 +151,7 @@ Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands
 
 **Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-demo.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
 
-**Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Agent Sieve scripts would be provisioned alongside accounts in the seed playbook.
+**Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Rules for the shared `agents@` account would be provisioned alongside the account in the seed playbook.
 
 ## Configuration split
 
@@ -162,10 +162,10 @@ This matters for any future Stalwart queue features: database-scoped keys such a
 ## Developer tooling
 
 ```bash
-cd src/platform && ./scripts/mail.sh                         # List ceo@ inbox
-cd src/platform && ./scripts/mail.sh -u bernoulli.agent      # List agent inbox
-cd src/platform && ./scripts/mail.sh -u bernoulli.agent -c   # Extract latest 2FA code
-cd src/platform && ./scripts/mail.sh -u bernoulli.agent -r <JMAP_ID>  # Read full email
+cd src/platform && ./scripts/mail.sh                     # List agents@ inbox
+cd src/platform && ./scripts/mail.sh -c                  # Extract latest 2FA code from agents@
+cd src/platform && ./scripts/mail.sh -r <JMAP_ID>        # Read full email from agents@
+cd src/platform && ./scripts/mail.sh -u ceo              # List ceo@ inbox
 ```
 
 ## Relevant files

@@ -194,11 +194,11 @@
       User=mailbox_service
       Group=mailbox_service
       LoadCredential=pg-dsn:/etc/credstore/mailbox-service/pg-dsn
-      LoadCredential=ceo-password:/etc/credstore/mailbox-service/ceo-password
+      LoadCredential=stalwart-ceo-password:/etc/credstore/mailbox-service/stalwart-ceo-password
+      LoadCredential=stalwart-agents-password:/etc/credstore/mailbox-service/stalwart-agents-password
       LoadCredential=forward-to:/etc/credstore/mailbox-service/forward-to
       LoadCredential=resend-api-key:/etc/credstore/mailbox-service/resend-api-key
       LoadCredential=stalwart-admin-password:/etc/credstore/mailbox-service/stalwart-admin-password
-      LoadCredential=stalwart-agent-password:/etc/credstore/mailbox-service/stalwart-agent-password
       Environment=MAILBOX_SERVICE_LISTEN_ADDR={{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
       Environment=MAILBOX_SERVICE_STALWART_BASE_URL=http://{{ services.stalwart.host }}:{{ services.stalwart.http_port }}
       Environment=MAILBOX_SERVICE_STALWART_PUBLIC_BASE_URL=https://{{ stalwart_domain }}

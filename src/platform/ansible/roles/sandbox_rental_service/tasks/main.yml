@@ -131,6 +131,7 @@
       Group=sandbox_rental
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
+      EnvironmentFile=-/etc/forge-metal/sandbox-rental.env
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
       Environment=SANDBOX_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=SANDBOX_BILLING_URL=http://{{ services.billing.host }}:{{ services.billing.port }}
