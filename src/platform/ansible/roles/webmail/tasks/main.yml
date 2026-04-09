@@ -1,4 +1,36 @@
 ---
+- name: Create webmail credstore directory
+  ansible.builtin.file:
+    path: /etc/credstore/webmail
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"
+
+- name: Check for existing webmail auth session secret
+  ansible.builtin.stat:
+    path: /etc/credstore/webmail/auth-session-secret
+  register: webmail_auth_session_secret_file
+
+- name: Generate webmail auth session secret
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+    dest: /etc/credstore/webmail/auth-session-secret
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+  when: not webmail_auth_session_secret_file.stat.exists
+  no_log: true
+
+- name: Read webmail auth session secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/webmail/auth-session-secret
+  register: webmail_auth_session_secret_raw
+
+- name: Set webmail auth session secret fact
+  ansible.builtin.set_fact:
+    webmail_auth_session_secret: "{{ webmail_auth_session_secret_raw.content | b64decode | trim }}"
+
 - name: Create webmail install directory
   ansible.builtin.file:
     path: "{{ webmail_install_dir }}"

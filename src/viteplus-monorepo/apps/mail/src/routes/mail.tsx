@@ -1,18 +1,27 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { ClientOnly } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { fetchAccount, type MailAccount } from "~/lib/api";
 import {
   createMailboxCollection,
   createEmailMailboxCollection,
   createEmailCollection,
   type ElectricMailbox,
 } from "~/lib/collections";
-import { keys } from "~/lib/query-keys";
+import { getViewer } from "~/server-fns/auth";
+import { getMailAccount, type MailAccount } from "~/server-fns/mail";
 
 export const Route = createFileRoute("/mail")({
+  ssr: "data-only",
+  beforeLoad: async ({ location }) => {
+    const viewer = await getViewer();
+    if (!viewer) {
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href },
+      });
+    }
+  },
+  loader: () => getMailAccount(),
   component: MailLayout,
 });
 
@@ -32,43 +41,7 @@ function mailboxSortKey(m: ElectricMailbox): string {
 }
 
 function MailLayout() {
-  return (
-    <ClientOnly
-      fallback={
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          Loading...
-        </div>
-      }
-    >
-      <MailLayoutInner />
-    </ClientOnly>
-  );
-}
-
-function MailLayoutInner() {
-  const { data: account, isLoading, error } = useQuery({
-    queryKey: keys.account(),
-    queryFn: fetchAccount,
-    staleTime: Infinity,
-    retry: 1,
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Loading account...
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Sign in to access your mailbox.
-      </div>
-    );
-  }
-
+  const account = Route.useLoaderData();
   if (!account) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">

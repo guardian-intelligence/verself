@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MailRouteImport } from './routes/mail'
+import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as IndexRouteImport } from './routes/index'
@@ -19,6 +20,11 @@ import { Route as MailMailboxIdEmailIdRouteImport } from './routes/mail.$mailbox
 const MailRoute = MailRouteImport.update({
   id: '/mail',
   path: '/mail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/mail': typeof MailRouteWithChildren
   '/mail/$mailboxId': typeof MailMailboxIdRouteWithChildren
   '/mail/$mailboxId/$emailId': typeof MailMailboxIdEmailIdRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/mail': typeof MailRouteWithChildren
   '/mail/$mailboxId': typeof MailMailboxIdRouteWithChildren
   '/mail/$mailboxId/$emailId': typeof MailMailboxIdEmailIdRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/mail': typeof MailRouteWithChildren
   '/mail/$mailboxId': typeof MailMailboxIdRouteWithChildren
   '/mail/$mailboxId/$emailId': typeof MailMailboxIdEmailIdRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/logout'
     | '/mail'
     | '/mail/$mailboxId'
     | '/mail/$mailboxId/$emailId'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/logout'
     | '/mail'
     | '/mail/$mailboxId'
     | '/mail/$mailboxId/$emailId'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/callback'
     | '/login'
+    | '/logout'
     | '/mail'
     | '/mail/$mailboxId'
     | '/mail/$mailboxId/$emailId'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CallbackRoute: typeof CallbackRoute
   LoginRoute: typeof LoginRoute
+  LogoutRoute: typeof LogoutRoute
   MailRoute: typeof MailRouteWithChildren
 }
 
@@ -113,6 +126,13 @@ declare module '@tanstack/react-router' {
       path: '/mail'
       fullPath: '/mail'
       preLoaderRoute: typeof MailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CallbackRoute: CallbackRoute,
   LoginRoute: LoginRoute,
+  LogoutRoute: LogoutRoute,
   MailRoute: MailRouteWithChildren,
 }
 export const routeTree = rootRouteImport

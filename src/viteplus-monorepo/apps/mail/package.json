@@ -12,6 +12,7 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@forge-metal/auth-web": "workspace:*",
     "@forge-metal/nitro-plugins": "workspace:*",
     "@forge-metal/ui": "workspace:*",
     "@opentelemetry/api": "catalog:",
@@ -25,7 +26,6 @@
     "@tanstack/react-start": "catalog:",
     "dompurify": "^3.2.6",
     "nitro": "catalog:",
-    "oidc-client-ts": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },

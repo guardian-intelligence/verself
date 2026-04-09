@@ -250,6 +250,9 @@ importers:
 
   apps/mail:
     dependencies:
+      '@forge-metal/auth-web':
+        specifier: workspace:*
+        version: link:../../packages/auth-web
       '@forge-metal/nitro-plugins':
         specifier: workspace:*
         version: link:../../packages/nitro-plugins
@@ -289,9 +292,6 @@ importers:
       nitro:
         specifier: 'catalog:'
         version: 3.0.260311-beta(@voidzero-dev/vite-plus-core@0.1.16(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))(jiti@2.6.1)
-      oidc-client-ts:
-        specifier: 'catalog:'
-        version: 3.5.0
       react:
         specifier: 'catalog:'
         version: 19.2.4
