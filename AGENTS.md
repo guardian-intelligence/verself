@@ -75,7 +75,7 @@ Required - Email Delivery (Resend only for now, inbound done via Stalwart)
 
 ## Service Architecture
 
-See docs/architecture/service-architecture.md for how t
+See docs/architecture/service-architecture.md
 
 See src/platform/ansible/group_vars/all/services.yml for port assignments.
 
@@ -225,7 +225,7 @@ All deploy playbooks support `--tags` for targeting individual roles (e.g. `--ta
 
 ## Directory Structure
 
-See @docs/architecture/directory-structure.md to understand the project's directory structure
+See docs/architecture/directory-structure.md to understand the project's directory structure
 
 ## Assistant Contract
 
