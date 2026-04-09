@@ -1,8 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { env } from "./env";
-import { ensureLoggedIn, ensureTestUserExists, installVerificationOverlay, readBalance } from "./helpers";
+import {
+  ensureLoggedIn,
+  ensureTestUserExists,
+  installVerificationOverlay,
+  pushVerificationRepoRevision,
+  readBalance,
+  type VerificationRepoMeta,
+} from "./helpers";
 
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
@@ -12,14 +19,14 @@ test.use({
   screenshot: "on",
 });
 
-test.describe("Sandbox Repo Execution Live Verification", () => {
-  test.describe.configure({ timeout: 180_000 });
+test.describe("Sandbox Repo Import Live Verification", () => {
+  test.describe.configure({ timeout: 600_000 });
 
   test.beforeAll(async () => {
     await ensureTestUserExists();
   });
 
-  test("submit repo-backed sandbox, verify completion, logs, and billed balance delta", async ({
+  test("import repo, bootstrap golden, execute, refresh, and execute again", async ({
     page,
     context,
   }, testInfo) => {
@@ -34,6 +41,15 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
       verification_run_id: verificationRunID,
       repo_url: env.verificationRepoURL,
       ref: env.verificationRepoRef,
+      repo_id: "",
+      bootstrap_generation_id: "",
+      bootstrap_execution_id: "",
+      bootstrap_attempt_id: "",
+      bootstrap_source_sha: "",
+      refresh_generation_id: "",
+      refresh_execution_id: "",
+      refresh_attempt_id: "",
+      refreshed_commit_sha: "",
       submit_requested_at: new Date().toISOString(),
       execution_id: "",
       attempt_id: "",
@@ -52,48 +68,75 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
       });
       run.started_balance = await readBalance(page);
 
-      await page.goto("/jobs/new");
+      await page.goto("/repos/new");
       await page.waitForLoadState("networkidle");
-      await expect(page.getByRole("heading", { name: "Create Sandbox" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Import Repo" })).toBeVisible();
 
-      const repoInput = page.getByLabel("Repository URL");
-      const refInput = page.getByLabel("Ref");
-      const submitButton = page.getByRole("button", { name: "Create Sandbox" });
+      const repoInput = page.getByLabel("Clone URL");
+      const defaultBranchInput = page.getByLabel("Default branch");
+      const submitButton = page.getByRole("button", { name: "Import Repo" });
 
       await repoInput.fill(env.verificationRepoURL);
-      await refInput.fill(env.verificationRepoRef);
+      await defaultBranchInput.fill("main");
       await expect(repoInput).toHaveValue(env.verificationRepoURL);
-      await expect(refInput).toHaveValue(env.verificationRepoRef);
+      await expect(defaultBranchInput).toHaveValue("main");
       await expect(submitButton).toBeEnabled();
 
-      const submitResponsePromise = page.waitForResponse(
-        (resp) => resp.url().includes("/api/v1/executions") && resp.request().method() === "POST",
+      await Promise.all([
+        page.waitForURL(/\/repos\/[0-9a-f-]+$/, { timeout: 60_000 }),
+        submitButton.click(),
+      ]);
+      run.repo_id = requireRouteID(page.url(), "/repos/");
+
+      await page.waitForLoadState("networkidle");
+      await waitForRepoState(page, "ready");
+      const bootstrap = await readActiveGolden(page);
+      run.bootstrap_generation_id = bootstrap.generation_id;
+      run.bootstrap_execution_id = bootstrap.execution_id;
+      run.bootstrap_source_sha = bootstrap.source_sha;
+
+      await page.screenshot({ path: testInfo.outputPath("repo-ready.png"), fullPage: true });
+
+      const firstExecution = await launchExecutionFromRepo(page);
+      run.execution_id = firstExecution.execution_id;
+      run.attempt_id = firstExecution.attempt_id;
+      run.detail_url = `/jobs/${firstExecution.execution_id}`;
+
+      await waitForExecutionSuccess(page, firstExecution.execution_id, env.verificationLogMarker);
+
+      const refreshedRepoMeta: VerificationRepoMeta = await pushVerificationRepoRevision(
+        `${verificationRunID}-refresh`,
       );
+      run.refreshed_commit_sha = refreshedRepoMeta.commit_sha;
 
-      await submitButton.click();
-      const submitResponse = await submitResponsePromise;
-      expect(submitResponse.ok()).toBeTruthy();
+      await page.goto(`/repos/${run.repo_id}`);
+      await page.waitForLoadState("networkidle");
 
-      const submitJSON = (await submitResponse.json()) as {
-        execution_id: string;
-        attempt_id: string;
-        status: string;
-      };
-
-      run.execution_id = submitJSON.execution_id;
-      run.attempt_id = submitJSON.attempt_id;
-      run.detail_url = `/jobs/${submitJSON.execution_id}`;
-
-      await expect(page).toHaveURL(new RegExp(`/jobs/${submitJSON.execution_id}`));
-      await page.screenshot({ path: testInfo.outputPath("submitted.png"), fullPage: true });
-
-      await expect(page.getByText("succeeded", { exact: true })).toBeVisible({
-        timeout: 180_000,
+      await page.getByRole("button", { name: "Rescan" }).click();
+      await expect(page.getByText("waiting for bootstrap", { exact: true })).toBeVisible({
+        timeout: 60_000,
       });
-
-      await expect(page.locator("pre")).toContainText(env.verificationLogMarker, {
+      await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
         timeout: 30_000,
       });
+
+      await page.getByRole("button", { name: /^(Prepare|Refresh) Golden$/ }).click();
+
+      await waitForRepoState(page, "ready");
+      await expect(page.getByText(refreshedRepoMeta.commit_sha.slice(0, 12))).toBeVisible({
+        timeout: 60_000,
+      });
+      const refreshedGolden = await readActiveGolden(page);
+      run.refresh_generation_id = refreshedGolden.generation_id;
+      run.refresh_execution_id = refreshedGolden.execution_id;
+
+      const secondExecution = await launchExecutionFromRepo(page);
+      run.execution_id = secondExecution.execution_id;
+      run.attempt_id = secondExecution.attempt_id;
+      run.detail_url = `/jobs/${secondExecution.execution_id}`;
+
+      await waitForExecutionSuccess(page, secondExecution.execution_id, env.verificationLogMarker);
+      await expect(page.getByText(refreshedRepoMeta.commit_sha)).toBeVisible({ timeout: 30_000 });
 
       run.terminal_observed_at = new Date().toISOString();
       run.status = "succeeded";
@@ -107,7 +150,7 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
       }).toPass({ timeout: 60_000, intervals: [2_000, 5_000] });
 
       await page.goto("/jobs", { waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("link", { name: submitJSON.execution_id.slice(0, 8) })).toBeVisible({
+      await expect(page.getByRole("link", { name: secondExecution.execution_id.slice(0, 8) })).toBeVisible({
         timeout: 30_000,
       });
 
@@ -125,3 +168,64 @@ test.describe("Sandbox Repo Execution Live Verification", () => {
     }
   });
 });
+
+async function waitForRepoState(page: Page, state: string): Promise<void> {
+  await expect(page.getByText(state.replaceAll("_", " "), { exact: true }).first()).toBeVisible({
+    timeout: 300_000,
+  });
+}
+
+async function launchExecutionFromRepo(page: Page) {
+  await Promise.all([
+    page.waitForURL(/\/jobs\/[0-9a-f-]+$/, { timeout: 60_000 }),
+    page.getByRole("button", { name: "Run Execution" }).click(),
+  ]);
+  await page.waitForLoadState("networkidle");
+  return {
+    execution_id: requireRouteID(page.url(), "/jobs/"),
+    attempt_id: "",
+    status: "queued",
+  };
+}
+
+async function waitForExecutionSuccess(
+  page: Page,
+  executionID: string,
+  logMarker: string,
+): Promise<void> {
+  await expect(page).toHaveURL(new RegExp(`/jobs/${executionID}`));
+  await expect(page.getByText("succeeded", { exact: true })).toBeVisible({
+    timeout: 300_000,
+  });
+  await expect(page.locator("pre")).toContainText(logMarker, {
+    timeout: 60_000,
+  });
+}
+
+async function readActiveGolden(page: Page): Promise<{
+  generation_id: string;
+  execution_id: string;
+  source_sha: string;
+}> {
+  const executionHref = await page.getByRole("link", { name: "View bootstrap execution" }).getAttribute("href");
+  return {
+    generation_id: await readInfoRowValue(page, "Generation"),
+    execution_id: executionHref ? requireRouteID(executionHref, "/jobs/") : "",
+    source_sha: await readInfoRowValue(page, "Source SHA"),
+  };
+}
+
+async function readInfoRowValue(page: Page, label: string): Promise<string> {
+  const labelNode = page.locator("span", { hasText: label }).first();
+  const valueNode = labelNode.locator("xpath=following-sibling::span[1]");
+  await expect(valueNode).toBeVisible({ timeout: 30_000 });
+  return (await valueNode.textContent())?.trim() ?? "";
+}
+
+function requireRouteID(urlOrPath: string, prefix: string): string {
+  const match = urlOrPath.match(new RegExp(`${prefix}([0-9a-f-]+)`));
+  if (!match?.[1]) {
+    throw new Error(`Could not extract route id from ${urlOrPath}`);
+  }
+  return match[1];
+}

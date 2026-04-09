@@ -14,6 +14,7 @@
     "test:e2e:headed": "vp exec playwright test --headed"
   },
   "dependencies": {
+    "@forge-metal/auth-web": "workspace:*",
     "@forge-metal/nitro-plugins": "workspace:*",
     "@forge-metal/ui": "workspace:*",
     "@opentelemetry/api": "catalog:",
@@ -27,7 +28,6 @@
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
     "nitro": "catalog:",
-    "oidc-client-ts": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "use-stick-to-bottom": "catalog:"

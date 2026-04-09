@@ -1,45 +1,34 @@
-import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { getUser } from "~/lib/auth";
-import { fetchBalance } from "~/lib/api";
-import { keys } from "~/lib/query-keys";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { BalanceCard } from "~/components/balance-card";
-import { Skeleton } from "@forge-metal/ui";
+import { getBalance } from "~/server-fns/api";
+import { getViewer } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/")({
-  component: Dashboard,
   validateSearch: (search: Record<string, unknown>) => ({
     purchased: search.purchased === true || search.purchased === "true",
     subscribed: search.subscribed === true || search.subscribed === "true",
   }),
-  beforeLoad: ({ search, context }) => {
-    if (search.purchased || search.subscribed) {
-      void context.queryClient.invalidateQueries({ queryKey: keys.balance() });
-      void context.queryClient.invalidateQueries({ queryKey: keys.subscriptions() });
-      void context.queryClient.invalidateQueries({ queryKey: keys.grants(true) });
+  loader: async () => {
+    const viewer = await getViewer();
+    if (!viewer) {
+      return {
+        viewer: null,
+        balance: null,
+      };
     }
+    return {
+      viewer,
+      balance: await getBalance(),
+    };
   },
+  component: Dashboard,
 });
 
 function Dashboard() {
   const { purchased, subscribed } = Route.useSearch();
-  const hydrated = useHydrated();
+  const { viewer, balance } = Route.useLoaderData();
 
-  const { data: user } = useQuery({
-    queryKey: keys.user(),
-    queryFn: getUser,
-    enabled: hydrated,
-    staleTime: Infinity,
-  });
-
-  const { data: balance, isPending: balancePending } = useQuery({
-    queryKey: keys.balance(),
-    queryFn: fetchBalance,
-    staleTime: 5_000,
-    enabled: hydrated && !!user,
-  });
-
-  if (!hydrated || !user) {
+  if (!viewer) {
     return (
       <div className="space-y-8">
         <h1 className="text-2xl font-bold">Rent-a-Sandbox</h1>
@@ -81,16 +70,7 @@ function Dashboard() {
         </div>
       )}
 
-      {balancePending ? (
-        <div className="border border-border rounded-lg p-6 space-y-3">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-10 w-44" />
-          <div className="flex gap-6 mt-3">
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-        </div>
-      ) : balance ? (
+      {balance ? (
         <>
           <BalanceCard balance={balance} />
           {balance.total_available <= 0 && (

@@ -3,19 +3,25 @@ import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useMemo } from "react";
-import { fetchExecution } from "~/lib/api";
+import { getExecution } from "~/server-fns/api";
 import { createExecutionLogsCollection } from "~/lib/collections";
+import { keys } from "~/lib/query-keys";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/jobs/$jobId")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
+  loader: ({ params }) => getExecution({ data: { executionId: params.jobId } }),
   component: JobDetailPage,
 });
 
 function JobDetailPage() {
   const { jobId } = Route.useParams();
+  const initialExecution = Route.useLoaderData();
 
   const { data: execution, error } = useQuery({
-    queryKey: ["jobs", jobId],
-    queryFn: () => fetchExecution(jobId),
+    queryKey: keys.job(jobId),
+    queryFn: () => getExecution({ data: { executionId: jobId } }),
+    initialData: initialExecution,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return isActiveStatus(status) ? 2_000 : false;

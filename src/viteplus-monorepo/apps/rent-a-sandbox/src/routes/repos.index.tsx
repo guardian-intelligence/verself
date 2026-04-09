@@ -1,16 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { fetchRepos } from "~/lib/api";
+import { getRepos } from "~/server-fns/api";
 import { keys } from "~/lib/query-keys";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/repos/")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
+  loader: () => getRepos(),
   component: ReposPage,
 });
 
 function ReposPage() {
+  const initialRepos = Route.useLoaderData();
   const { data: repos, isPending, error } = useQuery({
     queryKey: keys.repos(),
-    queryFn: fetchRepos,
+    queryFn: () => getRepos(),
+    initialData: initialRepos,
     refetchInterval: (query) => {
       const current = query.state.data;
       if (!current) return false;

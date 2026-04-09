@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { createCheckout, fetchBalance } from "~/lib/api";
-import { keys } from "~/lib/query-keys";
+import { useMutation } from "@tanstack/react-query";
 import { BalanceCard } from "~/components/balance-card";
+import { createCheckoutSession, getBalance } from "~/server-fns/api";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/billing/credits")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
+  loader: () => getBalance(),
   component: CreditsPage,
 });
 
@@ -16,19 +18,17 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const { data: balance } = useQuery({
-    queryKey: keys.balance(),
-    queryFn: fetchBalance,
-    staleTime: 5_000,
-  });
+  const balance = Route.useLoaderData();
 
   const mutation = useMutation({
     mutationFn: (amountCents: number) =>
-      createCheckout({
+      createCheckoutSession({
+        data: {
         product_id: "sandbox",
         amount_cents: amountCents,
         success_url: `${window.location.origin}/billing?purchased=true`,
         cancel_url: `${window.location.origin}/billing/credits`,
+        },
       }),
     onSuccess: (data) => {
       window.location.href = data.url;

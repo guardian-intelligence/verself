@@ -1,17 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  fetchRepo,
-  fetchRepoGenerations,
+  getRepo,
+  getRepoGenerations,
   refreshRepo,
   rescanRepo,
   submitRepoExecution,
   type Repo,
   type RepoCompatibilitySummary,
-} from "~/lib/api";
+} from "~/server-fns/api";
 import { keys } from "~/lib/query-keys";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/repos/$repoId")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
+  loader: async ({ params }) => ({
+    repo: await getRepo({ data: { repoId: params.repoId } }),
+    generations: await getRepoGenerations({ data: { repoId: params.repoId } }),
+  }),
   component: RepoDetailPage,
 });
 
@@ -19,10 +25,12 @@ function RepoDetailPage() {
   const { repoId } = Route.useParams();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const initialData = Route.useLoaderData();
 
   const repoQuery = useQuery({
     queryKey: keys.repo(repoId),
-    queryFn: () => fetchRepo(repoId),
+    queryFn: () => getRepo({ data: { repoId } }),
+    initialData: initialData.repo,
     refetchInterval: (query) => {
       const repo = query.state.data;
       return repo && shouldPollRepo(repo.state) ? 2_000 : false;
@@ -31,7 +39,8 @@ function RepoDetailPage() {
 
   const generationsQuery = useQuery({
     queryKey: keys.repoGenerations(repoId),
-    queryFn: () => fetchRepoGenerations(repoId),
+    queryFn: () => getRepoGenerations({ data: { repoId } }),
+    initialData: initialData.generations,
     refetchInterval: (query) => {
       const generations = query.state.data;
       return generations && generations.some((generation) => shouldPollGeneration(generation.state))
@@ -50,17 +59,17 @@ function RepoDetailPage() {
   };
 
   const rescanMutation = useMutation({
-    mutationFn: () => rescanRepo(repoId),
+    mutationFn: () => rescanRepo({ data: { repoId } }),
     onSuccess: invalidateRepo,
   });
 
   const refreshMutation = useMutation({
-    mutationFn: () => refreshRepo(repoId),
+    mutationFn: () => refreshRepo({ data: { repoId } }),
     onSuccess: invalidateRepo,
   });
 
   const runMutation = useMutation({
-    mutationFn: async () => submitRepoExecution({ repo_id: repoId }),
+    mutationFn: async () => submitRepoExecution({ data: { repo_id: repoId } }),
     onSuccess: async (data) => {
       await invalidateRepo();
       void navigate({ to: "/jobs/$jobId", params: { jobId: data.execution_id } });

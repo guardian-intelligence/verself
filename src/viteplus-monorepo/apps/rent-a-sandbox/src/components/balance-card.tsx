@@ -1,4 +1,4 @@
-import type { Balance } from "~/lib/api";
+import type { Balance } from "~/server-fns/api";
 
 export function BalanceCard({ balance }: { balance: Balance }) {
   const total = balance.total_available;

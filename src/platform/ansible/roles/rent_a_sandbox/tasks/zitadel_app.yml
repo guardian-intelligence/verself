@@ -55,6 +55,14 @@
   register: rent_a_sandbox_app_search
   when: rent_a_sandbox_project_id is defined
 
+- name: Ensure rent-a-sandbox credstore directory exists
+  ansible.builtin.file:
+    path: /etc/credstore/rent-a-sandbox
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"
+
 - name: Check rent-a-sandbox OIDC Web cutover marker
   ansible.builtin.stat:
     path: /etc/credstore/rent-a-sandbox/oidc-web-cutover

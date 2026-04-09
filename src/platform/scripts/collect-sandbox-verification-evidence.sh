@@ -36,6 +36,7 @@ submit = parse_iso(run["submit_requested_at"]) - timedelta(seconds=60)
 terminal = parse_iso(run["terminal_observed_at"]) + timedelta(seconds=120)
 
 print(run.get("verification_run_id", ""))
+print(run.get("repo_id", ""))
 print(run.get("execution_id", ""))
 print(run.get("attempt_id", ""))
 print(run.get("status", ""))
@@ -53,19 +54,20 @@ PY
 )
 
 verification_run_id="${run_meta[0]}"
-execution_id="${run_meta[1]}"
-attempt_id="${run_meta[2]}"
-run_status="${run_meta[3]}"
-repo_url="${run_meta[4]}"
-repo_ref="${run_meta[5]}"
-log_marker="${run_meta[6]}"
-submit_requested_at="${run_meta[7]}"
-terminal_observed_at="${run_meta[8]}"
-window_start="${run_meta[9]}"
-window_end="${run_meta[10]}"
-started_balance="${run_meta[11]}"
-finished_balance="${run_meta[12]}"
-run_error="${run_meta[13]}"
+repo_id="${run_meta[1]}"
+execution_id="${run_meta[2]}"
+attempt_id="${run_meta[3]}"
+run_status="${run_meta[4]}"
+repo_url="${run_meta[5]}"
+repo_ref="${run_meta[6]}"
+log_marker="${run_meta[7]}"
+submit_requested_at="${run_meta[8]}"
+terminal_observed_at="${run_meta[9]}"
+window_start="${run_meta[10]}"
+window_end="${run_meta[11]}"
+started_balance="${run_meta[12]}"
+finished_balance="${run_meta[13]}"
+run_error="${run_meta[14]}"
 
 remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
 remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
@@ -82,32 +84,67 @@ remote_psql() {
     "sudo -u postgres psql -d ${db} -X -A -P footer=off" <<<"${sql}"
 }
 
-if [[ -n "${execution_id}" ]]; then
+remote_psql_tsv() {
+  local db="$1"
+  local sql="$2"
+  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
+    "sudo -u postgres psql -d ${db} -X -A -t -F $'\t' -P footer=off -c \"$sql\""
+}
+
+if [[ -n "${execution_id}" && ( -z "${repo_id}" || -z "${attempt_id}" ) ]]; then
+  mapfile -t execution_identity < <(remote_psql_tsv sandbox_rental "
+    SELECT
+      COALESCE(e.repo_id::text, ''),
+      COALESCE(a.attempt_id::text, '')
+    FROM executions e
+    LEFT JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
+    WHERE e.execution_id = '${execution_id}';
+  ")
+  if [[ ${#execution_identity[@]} -gt 0 ]]; then
+    IFS=$'\t' read -r derived_repo_id derived_attempt_id <<<"${execution_identity[0]}"
+    if [[ -z "${repo_id}" && -n "${derived_repo_id}" ]]; then
+      repo_id="${derived_repo_id}"
+    fi
+    if [[ -z "${attempt_id}" && -n "${derived_attempt_id}" ]]; then
+      attempt_id="${derived_attempt_id}"
+    fi
+  fi
+fi
+
+if [[ -n "${verification_run_id}" ]]; then
   ch_query "
   SELECT *
   FROM forge_metal.job_events
-  WHERE execution_id = '${execution_id}'
-  ORDER BY created_at
+  WHERE verification_run_id = '${verification_run_id}'
+  ORDER BY created_at, execution_id
   FORMAT TSVWithNames
   " >"${output_dir}/clickhouse/job_events.tsv"
 else
   printf 'execution_id\tmissing\n\ttrue\n' >"${output_dir}/clickhouse/job_events.tsv"
 fi
 
-if [[ -n "${attempt_id}" ]]; then
+if [[ -n "${verification_run_id}" ]]; then
   ch_query "
   SELECT *
   FROM forge_metal.job_logs
-  WHERE attempt_id = '${attempt_id}'
-  ORDER BY seq
+  WHERE attempt_id IN (
+    SELECT toString(attempt_id)
+    FROM forge_metal.job_events
+    WHERE verification_run_id = '${verification_run_id}'
+  )
+  ORDER BY attempt_id, seq
   FORMAT TSVWithNames
   " >"${output_dir}/clickhouse/job_logs.tsv"
 
   ch_query "
   SELECT *
   FROM forge_metal.metering
-  WHERE source_ref = '${attempt_id}'
-  ORDER BY recorded_at
+  WHERE source_ref IN (
+    SELECT toString(attempt_id)
+    FROM forge_metal.job_events
+    WHERE verification_run_id = '${verification_run_id}'
+  )
+  ORDER BY recorded_at, source_ref
   FORMAT TSVWithNames
   " >"${output_dir}/clickhouse/metering.tsv"
 else
@@ -188,6 +225,59 @@ else
   printf 'execution_id,missing\n,true\n' >"${output_dir}/postgres/execution.csv"
 fi
 
+if [[ -n "${repo_id}" ]]; then
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      repo_id,
+      org_id,
+      provider,
+      full_name,
+      clone_url,
+      default_branch,
+      state,
+      compatibility_status,
+      last_scanned_sha,
+      active_golden_generation_id,
+      last_ready_sha,
+      last_error,
+      created_at,
+      updated_at
+    FROM repos
+    WHERE repo_id = '${repo_id}'
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/repo.csv"
+
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      golden_generation_id,
+      repo_id,
+      runner_profile_slug,
+      source_ref,
+      source_sha,
+      state,
+      trigger_reason,
+      execution_id,
+      attempt_id,
+      orchestrator_job_id,
+      snapshot_ref,
+      activated_at,
+      superseded_at,
+      failure_reason,
+      failure_detail,
+      created_at,
+      updated_at
+    FROM golden_generations
+    WHERE repo_id = '${repo_id}'
+    ORDER BY created_at
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/golden_generations.csv"
+else
+  printf 'repo_id,missing\n,true\n' >"${output_dir}/postgres/repo.csv"
+  printf 'repo_id,missing\n,true\n' >"${output_dir}/postgres/golden_generations.csv"
+fi
+
 if [[ -n "${attempt_id}" ]]; then
   remote_psql sandbox_rental "
   COPY (
@@ -248,6 +338,7 @@ cat >"${output_dir}/summary.md" <<EOF
 # Sandbox Verification Evidence
 
 - verification_run_id: ${verification_run_id}
+- repo_id: ${repo_id}
 - execution_id: ${execution_id}
 - attempt_id: ${attempt_id}
 - status: ${run_status}

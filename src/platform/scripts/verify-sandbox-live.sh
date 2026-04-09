@@ -31,17 +31,35 @@ wait_for_loopback_api() {
      exit 1"
 }
 
-"${script_dir}/ensure-verification-repo.sh" "${artifact_dir}/repo.json"
+wait_for_public_site() {
+  local url="$1"
+  for _ in $(seq 1 60); do
+    code="$(curl -k -L -s -o /dev/null -w '%{http_code}' "${url}" || true)"
+    if [[ "${code}" == "200" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "public site did not resolve to 200 in time: ${url}" >&2
+  return 1
+}
+
+VERIFICATION_REPO_REVISION="${run_id}-seed" \
+  "${script_dir}/ensure-verification-repo.sh" "${artifact_dir}/repo.json"
 
 (
   cd "${platform_root}/ansible"
   ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
+    --tags deploy_profile,clickhouse,billing_service,sandbox_rental_service,electric,frontend_auth_sessions,rent_a_sandbox,otelcol,forgejo
   wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
   # verification-reset restarts the service stack; wait for the loopback API
   # before seed-demo starts probing authz behavior against sandbox-rental.
   wait_for_loopback_api "sandbox-rental-service" "http://127.0.0.1:4243/api/v1/billing/balance" "401"
   ansible-playbook -i inventory/hosts.ini playbooks/seed-demo.yml
 )
+
+wait_for_public_site "${BASE_URL:-https://rentasandbox.${domain}}"
 
 demo_password="$(
   ssh -o IPQoS=none -o StrictHostKeyChecking=no "${remote_user}@${remote_host}" \
@@ -56,6 +74,7 @@ verification_repo_url="$(
 set +e
 TEST_PASSWORD="${demo_password}" \
 BASE_URL="${BASE_URL:-https://rentasandbox.${domain}}" \
+FORGE_METAL_RECORD_ARTIFACTS="1" \
 VERIFICATION_RUN_ID="${run_id}" \
 VERIFICATION_RUN_JSON_PATH="${artifact_dir}/run.json" \
 VERIFICATION_REPO_URL="${verification_repo_url}" \

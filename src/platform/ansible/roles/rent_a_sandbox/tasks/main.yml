@@ -1,4 +1,36 @@
 ---
+- name: Create rent-a-sandbox credstore directory
+  ansible.builtin.file:
+    path: /etc/credstore/rent-a-sandbox
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"
+
+- name: Check for existing rent-a-sandbox auth session secret
+  ansible.builtin.stat:
+    path: /etc/credstore/rent-a-sandbox/auth-session-secret
+  register: rent_a_sandbox_auth_session_secret_file
+
+- name: Generate rent-a-sandbox auth session secret
+  ansible.builtin.copy:
+    content: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+    dest: /etc/credstore/rent-a-sandbox/auth-session-secret
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+  when: not rent_a_sandbox_auth_session_secret_file.stat.exists
+  no_log: true
+
+- name: Read rent-a-sandbox auth session secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/rent-a-sandbox/auth-session-secret
+  register: rent_a_sandbox_auth_session_secret_raw
+
+- name: Set rent-a-sandbox auth session secret fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_auth_session_secret: "{{ rent_a_sandbox_auth_session_secret_raw.content | b64decode | trim }}"
+
 - name: Create rent-a-sandbox install directory
   ansible.builtin.file:
     path: "{{ rent_a_sandbox_install_dir }}"
@@ -34,6 +66,10 @@
       - "--exclude=.output"
       - "--exclude=dist"
       - "--exclude=.tanstack"
+      - "--exclude=apps/mail"
+      - "--exclude=apps/mail/**"
+      - "--exclude=apps/letters"
+      - "--exclude=apps/letters/**"
       - "--exclude=playwright-report"
       - "--exclude=test-results"
       - "--exclude=HANDOFF_PROMPT.md"

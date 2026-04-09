@@ -1,11 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
-import { submitRepoExecution } from "~/lib/api";
+import { submitRepoExecution } from "~/server-fns/api";
 import { keys } from "~/lib/query-keys";
 import { useState } from "react";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/jobs/new")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
   component: NewJobPage,
 });
 
@@ -23,8 +25,10 @@ function NewJobPage() {
       setSubmitError(null);
       try {
         const data = await submitRepoExecution({
-          repo_url: value.repoUrl,
-          ref: value.ref,
+          data: {
+            repo_url: value.repoUrl,
+            ref: value.ref,
+          },
         });
         void queryClient.invalidateQueries({ queryKey: keys.jobs() });
         void queryClient.invalidateQueries({ queryKey: keys.balance() });

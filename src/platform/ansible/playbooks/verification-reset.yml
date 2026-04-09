@@ -33,6 +33,8 @@
       tags: [sandbox_rental_service]
     - role: electric
       tags: [electric]
+    - role: frontend_auth_sessions
+      tags: [frontend_auth_sessions, rent_a_sandbox]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox]
     - role: otelcol

@@ -1,5 +1,10 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { expect, type Page } from "@playwright/test";
 import { env } from "./env";
+
+const execFile = promisify(execFileCallback);
 
 export async function ensureTestUserExists(): Promise<void> {
   if (!env.zitadelAdminPAT) return;
@@ -166,4 +171,27 @@ export async function installVerificationOverlay(page: Page, verificationRunID: 
 
     install();
   }, { runID: verificationRunID });
+}
+
+export interface VerificationRepoMeta {
+  owner: string;
+  repo_name: string;
+  public_base_url: string;
+  loopback_repo_url: string;
+  browse_url: string;
+  ref: string;
+  commit_sha: string;
+}
+
+export async function pushVerificationRepoRevision(revision: string): Promise<VerificationRepoMeta> {
+  const scriptPath = fileURLToPath(
+    new URL("../../../../platform/scripts/ensure-verification-repo.sh", import.meta.url),
+  );
+  const { stdout } = await execFile(scriptPath, [], {
+    env: {
+      ...process.env,
+      VERIFICATION_REPO_REVISION: revision,
+    },
+  });
+  return JSON.parse(stdout) as VerificationRepoMeta;
 }

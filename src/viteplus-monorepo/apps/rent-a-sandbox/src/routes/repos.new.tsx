@@ -1,11 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "@tanstack/react-form";
-import { importRepo } from "~/lib/api";
+import { importRepo } from "~/server-fns/api";
 import { keys } from "~/lib/query-keys";
 import { useState } from "react";
+import { requireViewer } from "~/lib/protected-route";
 
 export const Route = createFileRoute("/repos/new")({
+  beforeLoad: ({ location }) => requireViewer(location.href),
   component: NewRepoPage,
 });
 
@@ -23,8 +25,10 @@ function NewRepoPage() {
       setSubmitError(null);
       try {
         const repo = await importRepo({
-          clone_url: value.cloneUrl,
-          default_branch: value.defaultBranch,
+          data: {
+            clone_url: value.cloneUrl,
+            default_branch: value.defaultBranch,
+          },
         });
         void queryClient.invalidateQueries({ queryKey: keys.repos() });
         void navigate({ to: "/repos/$repoId", params: { repoId: repo.repo_id } });

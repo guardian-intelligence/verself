@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // E2E tests run against the live deployment.
 // Override via environment variables for different environments.
 const BASE_URL = process.env.BASE_URL || "https://rentasandbox.anveio.com";
+const RECORD_VERIFICATION_ARTIFACTS = process.env.FORGE_METAL_RECORD_ARTIFACTS === "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -13,9 +14,9 @@ export default defineConfig({
   reporter: [["html", { open: "never" }], ["list"]],
   use: {
     baseURL: BASE_URL,
-    trace: "on-first-retry",
-    screenshot: "only-on-failure",
-    video: "on-first-retry",
+    trace: RECORD_VERIFICATION_ARTIFACTS ? "on" : "on-first-retry",
+    screenshot: RECORD_VERIFICATION_ARTIFACTS ? "on" : "only-on-failure",
+    video: RECORD_VERIFICATION_ARTIFACTS ? "on" : "on-first-retry",
     // Accept self-signed certs for dev environments
     ignoreHTTPSErrors: true,
   },
