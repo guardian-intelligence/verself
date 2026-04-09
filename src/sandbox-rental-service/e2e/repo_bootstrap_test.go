@@ -564,3 +564,38 @@ func doJSONRequest[T any](t *testing.T, ctx context.Context, url, token, method 
 	}
 	return out
 }
+
+func doJSONRequestStatusOnly(t *testing.T, ctx context.Context, url, token, method string, body any, wantStatus int) []byte {
+	t.Helper()
+
+	var reader *strings.Reader
+	if body == nil {
+		reader = strings.NewReader("")
+	} else {
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		reader = strings.NewReader(string(data))
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request %s %s: %v", method, url, err)
+	}
+	defer resp.Body.Close()
+	payload, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("expected %d from %s %s, got %d: %s", wantStatus, method, url, resp.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	return payload
+}
