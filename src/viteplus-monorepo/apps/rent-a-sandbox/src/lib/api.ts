@@ -1,4 +1,5 @@
 import { getAccessToken } from "./auth";
+import { correlationCookieName, correlationHeaderName, readBrowserCookie } from "./correlation";
 
 async function authFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = await getAccessToken();
@@ -7,6 +8,14 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
     headers.set("Authorization", `Bearer ${token}`);
   }
   headers.set("Accept", "application/json");
+  if (path.startsWith("/api/v1/")) {
+    const correlationID = readBrowserCookie(correlationCookieName);
+    if (correlationID) {
+      // Keep correlation on same-origin product APIs only. Cross-origin OIDC
+      // traffic must not inherit custom headers or it will preflight.
+      headers.set(correlationHeaderName, correlationID);
+    }
+  }
   return fetch(path, { ...init, headers });
 }
 

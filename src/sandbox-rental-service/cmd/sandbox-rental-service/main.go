@@ -29,7 +29,11 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
 
-const verificationRunHeader = "X-Forge-Metal-Verification-Run"
+const (
+	verificationRunHeader = "X-Forge-Metal-Verification-Run"
+	correlationHeader     = "X-Forge-Metal-Correlation-Id"
+	correlationCookie     = "fm_correlation_id"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -140,6 +144,15 @@ func run() error {
 		runID := strings.TrimSpace(r.Header.Get(verificationRunHeader))
 		if runID != "" {
 			r = r.WithContext(jobs.WithVerificationRunID(r.Context(), runID))
+		}
+		correlationID := strings.TrimSpace(r.Header.Get(correlationHeader))
+		if correlationID == "" {
+			if cookie, err := r.Cookie(correlationCookie); err == nil {
+				correlationID = strings.TrimSpace(cookie.Value)
+			}
+		}
+		if correlationID != "" {
+			r = r.WithContext(jobs.WithCorrelationID(r.Context(), correlationID))
 		}
 		authHandler.ServeHTTP(w, r)
 	})
