@@ -23,6 +23,7 @@ type reconcileCandidate struct {
 	ExecutionID       uuid.UUID
 	AttemptID         uuid.UUID
 	State             string
+	WindowState       string
 	FailureReason     string
 	ExitCode          int
 	DurationMs        int64
@@ -119,12 +120,13 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			a.golden_snapshot,
 			w.window_seq,
 			w.window_seconds,
+			w.state,
 			w.reservation
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
 		WHERE a.state = 'finalizing'
-		  AND w.state = 'reserved'
+		  AND w.state IN ('reserved', 'settled', 'voided')
 	`)
 	if err != nil {
 		return fmt.Errorf("query finalizing reconciliation candidates: %w", err)
@@ -147,6 +149,7 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			&candidate.GoldenSnapshot,
 			&candidate.WindowSeq,
 			&candidate.WindowSeconds,
+			&candidate.WindowState,
 			&reservationJSON,
 		); err != nil {
 			return fmt.Errorf("scan finalizing reconciliation candidate: %w", err)
@@ -154,7 +157,7 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 		if err := json.Unmarshal(reservationJSON, &candidate.Reservation); err != nil {
 			return fmt.Errorf("decode finalizing reconciliation reservation: %w", err)
 		}
-		if err := s.settleReconciledAttempt(ctx, candidate); err != nil {
+		if err := s.reconcileFinalizingCandidate(ctx, candidate); err != nil {
 			return err
 		}
 	}
@@ -238,6 +241,7 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 			a.golden_snapshot,
 			w.window_seq,
 			w.window_seconds,
+			w.state,
 			w.reservation
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
@@ -255,6 +259,7 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 		&candidate.GoldenSnapshot,
 		&candidate.WindowSeq,
 		&candidate.WindowSeconds,
+		&candidate.WindowState,
 		&reservationJSON,
 	); err != nil {
 		return reconcileCandidate{}, fmt.Errorf("load finalizing candidate %s: %w", attemptID, err)
@@ -265,10 +270,39 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 	return candidate, nil
 }
 
+func (s *Service) reconcileFinalizingCandidate(ctx context.Context, candidate reconcileCandidate) error {
+	switch candidate.WindowState {
+	case "reserved":
+		// If a previous billing operation failed (settle or void), the
+		// reconciler should void rather than retry the original operation.
+		reason := strings.TrimSpace(candidate.FailureReason)
+		if reason == "billing_settle_failed" || reason == "billing_void_failed" {
+			return s.voidReconciledAttempt(ctx, candidate)
+		}
+		return s.settleReconciledAttempt(ctx, candidate)
+	case "settled", "voided":
+		if err := s.markTerminal(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); err != nil {
+			return fmt.Errorf("mark reconciled attempt terminal %s: %w", candidate.AttemptID, err)
+		}
+		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler finalized attempt from window_state=%s", candidate.WindowState)
+		return nil
+	default:
+		return fmt.Errorf("unsupported finalizing reconciliation window state %q for attempt %s", candidate.WindowState, candidate.AttemptID)
+	}
+}
+
 func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconcileCandidate) error {
 	actualSeconds := actualSecondsForBilling(candidate.DurationMs, candidate.WindowSeconds)
 	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds)); err != nil {
-		return fmt.Errorf("settle reconciled attempt %s: %w", candidate.AttemptID, err)
+		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_seconds=%d error=%v", candidate.WindowSeq, actualSeconds, err)
+		candidate.FailureReason = "billing_settle_failed"
+		if updateErr := s.markFinalizing(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); updateErr != nil {
+			return fmt.Errorf("persist billing failure on reconciled attempt %s: %w", candidate.AttemptID, updateErr)
+		}
+		if voidErr := s.voidReconciledAttempt(ctx, candidate); voidErr != nil {
+			return fmt.Errorf("settle reconciled attempt %s: %w (void fallback: %v)", candidate.AttemptID, err, voidErr)
+		}
+		return nil
 	}
 	settledAt := time.Now().UTC()
 	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_seconds=%d", candidate.WindowSeq, actualSeconds)
@@ -277,6 +311,21 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 	}
 	if err := s.markTerminal(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); err != nil {
 		return fmt.Errorf("mark reconciled attempt terminal %s: %w", candidate.AttemptID, err)
+	}
+	return nil
+}
+
+func (s *Service) voidReconciledAttempt(ctx context.Context, candidate reconcileCandidate) error {
+	if err := s.Billing.Void(ctx, candidate.Reservation); err != nil {
+		return fmt.Errorf("void reconciled attempt %s: %w", candidate.AttemptID, err)
+	}
+	voidedAt := time.Now().UTC()
+	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler voided billing window_seq=%d after settle failure", candidate.WindowSeq)
+	if err := s.markWindowVoided(ctx, candidate.AttemptID, candidate.WindowSeq, voidedAt); err != nil {
+		return fmt.Errorf("mark reconciled window voided %s: %w", candidate.AttemptID, err)
+	}
+	if err := s.markTerminal(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); err != nil {
+		return fmt.Errorf("mark reconciled voided attempt terminal %s: %w", candidate.AttemptID, err)
 	}
 	return nil
 }

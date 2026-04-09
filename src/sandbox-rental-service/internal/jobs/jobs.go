@@ -67,6 +67,23 @@ type Runner interface {
 	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
+type BillingClient interface {
+	Reserve(
+		ctx context.Context,
+		jobID int64,
+		orgID uint64,
+		productID string,
+		actorID string,
+		concurrentCount uint64,
+		sourceType string,
+		sourceRef string,
+		allocation map[string]float64,
+		reqEditors ...billingclient.RequestEditorFn,
+	) (billingclient.Reservation, error)
+	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
+	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
+}
+
 type SubmitRequest struct {
 	Kind            string `json:"kind"`
 	ProductID       string `json:"product_id,omitempty"`
@@ -201,7 +218,7 @@ type Service struct {
 	CH                        driver.Conn
 	CHDatabase                string
 	Orchestrator              Runner
-	Billing                   *billingclient.ServiceClient
+	Billing                   BillingClient
 	BillingVCPUs              int
 	BillingMemMiB             int
 	ForgejoURL                string
@@ -450,7 +467,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 
 	actualSeconds := actualSecondsForBilling(outcome.DurationMs, int(reservation.WindowSecs))
 	if settleErr := s.Billing.Settle(ctx, reservation, uint32(actualSeconds)); settleErr != nil {
-		s.Logger.ErrorContext(ctx, "billing settle", "execution_id", executionID, "attempt_id", attemptID, "error", settleErr)
+		s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, reservation, outcome, actualSeconds, settleErr)
 		return
 	}
 	settledAt := time.Now().UTC()
@@ -462,6 +479,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 
 	if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
 		s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+		s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing settled: %v", err)
 		return
 	}
 	if req.Kind == KindWarmGolden {
@@ -470,58 +488,61 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		}
 	}
 
-	if strings.TrimSpace(outcome.Logs) != "" {
-		s.writeLogChunks(ctx, executionID, attemptID, outcome.Logs, outcome.StartedAt)
+	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, outcome, chargeUnits(reservation.CostPerSec, actualSeconds))
+}
+
+func (s *Service) handleSettleFailure(
+	ctx context.Context,
+	executionID, attemptID uuid.UUID,
+	orgID uint64,
+	actorID string,
+	req SubmitRequest,
+	reservation billingclient.Reservation,
+	outcome executionOutcome,
+	actualSeconds int,
+	settleErr error,
+) {
+	failureOutcome := outcome
+	failureOutcome.State = StateFailed
+	// Always set billing_settle_failed so the reconciler can dispatch to void
+	// instead of retrying settle. The original failure reason is captured in
+	// system logs and the execution outcome's exit_code.
+	failureOutcome.FailureReason = "billing_settle_failed"
+	if failureOutcome.CompletedAt.IsZero() {
+		failureOutcome.CompletedAt = time.Now().UTC()
+	}
+	if failureOutcome.StartedAt.IsZero() {
+		failureOutcome.StartedAt = failureOutcome.CompletedAt
+	}
+	if failureOutcome.DurationMs == 0 {
+		failureOutcome.DurationMs = failureOutcome.CompletedAt.Sub(failureOutcome.StartedAt).Milliseconds()
 	}
 
-	s.writeJobEvent(ctx, JobEventRow{
-		ExecutionID:        executionID.String(),
-		AttemptID:          attemptID.String(),
-		OrgID:              orgID,
-		ActorID:            actorID,
-		Kind:               req.Kind,
-		Provider:           req.Provider,
-		ProductID:          req.ProductID,
-		RepoID:             req.RepoID,
-		GoldenGenerationID: uuidString(req.GoldenGenerationID),
-		Repo:               req.Repo,
-		RepoURL:            req.RepoURL,
-		Ref:                req.Ref,
-		DefaultBranch:      req.DefaultBranch,
-		RunCommand:         req.RunCommand,
-		CommitSHA:          outcome.CommitSHA,
-		WorkflowPath:       req.WorkflowPath,
-		WorkflowJobName:    req.WorkflowJobName,
-		ProviderRunID:      req.ProviderRunID,
-		ProviderJobID:      req.ProviderJobID,
-		RunnerName:         outcome.RunnerName,
-		Status:             outcome.State,
-		ExitCode:           int32(outcome.ExitCode),
-		DurationMs:         outcome.DurationMs,
-		ZFSWritten:         outcome.ZFSWritten,
-		StdoutBytes:        outcome.StdoutBytes,
-		StderrBytes:        outcome.StderrBytes,
-		GoldenSnapshot:     outcome.GoldenSnapshot,
-		BillingJobID:       reservation.JobId,
-		ChargeUnits:        chargeUnits(reservation.CostPerSec, actualSeconds),
-		PricingPhase:       reservation.PricingPhase,
-		CorrelationID:      CorrelationIDFromContext(ctx),
-		VerificationRunID:  VerificationRunIDFromContext(ctx),
-		StartedAt:          outcome.StartedAt,
-		CompletedAt:        outcome.CompletedAt,
-		CreatedAt:          outcome.StartedAt,
-		TraceID:            traceID,
-	})
-	s.Logger.InfoContext(ctx, "execution completed",
-		"fm_correlation_id", CorrelationIDFromContext(ctx),
-		"verification_run_id", VerificationRunIDFromContext(ctx),
-		"execution_id", executionID,
-		"attempt_id", attemptID,
-		"state", outcome.State,
-		"actual_seconds", actualSeconds,
-		"charge_units", chargeUnits(reservation.CostPerSec, actualSeconds),
-		"pricing_phase", reservation.PricingPhase,
-	)
+	s.Logger.ErrorContext(ctx, "billing settle", "execution_id", executionID, "attempt_id", attemptID, "actual_seconds", actualSeconds, "error", settleErr)
+	s.writeSystemLog(ctx, executionID, attemptID, "billing settle failed window_seq=%d actual_seconds=%d error=%v", reservation.WindowSeq, actualSeconds, settleErr)
+	if err := s.markFinalizing(ctx, executionID, attemptID, failureOutcome); err != nil {
+		s.Logger.ErrorContext(ctx, "persist billing failure on finalizing attempt", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+	}
+
+	if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
+		s.Logger.ErrorContext(ctx, "billing void after settle failure", "execution_id", executionID, "attempt_id", attemptID, "error", voidErr)
+		s.writeSystemLog(ctx, executionID, attemptID, "billing void failed after settle failure window_seq=%d error=%v", reservation.WindowSeq, voidErr)
+		return
+	}
+
+	voidedAt := time.Now().UTC()
+	s.writeSystemLog(ctx, executionID, attemptID, "billing voided after settle failure window_seq=%d", reservation.WindowSeq)
+	if err := s.markWindowVoided(ctx, attemptID, int(reservation.WindowSeq), voidedAt); err != nil {
+		s.Logger.ErrorContext(ctx, "mark window voided after settle failure", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+		return
+	}
+	if err := s.markTerminal(ctx, executionID, attemptID, failureOutcome); err != nil {
+		s.Logger.ErrorContext(ctx, "mark terminal after settle failure", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+		s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing failure: %v", err)
+		return
+	}
+
+	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, failureOutcome, 0)
 }
 
 func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
@@ -1314,6 +1335,70 @@ func (s *Service) writeJobEvent(ctx context.Context, event JobEventRow) {
 	if err := batch.Send(); err != nil {
 		s.Logger.ErrorContext(ctx, "send job event batch", "error", err)
 	}
+}
+
+func (s *Service) recordExecutionCompletion(
+	ctx context.Context,
+	executionID, attemptID uuid.UUID,
+	orgID uint64,
+	actorID string,
+	req SubmitRequest,
+	reservation billingclient.Reservation,
+	outcome executionOutcome,
+	charge uint64,
+) {
+	if strings.TrimSpace(outcome.Logs) != "" {
+		s.writeLogChunks(ctx, executionID, attemptID, outcome.Logs, outcome.StartedAt)
+	}
+
+	s.writeJobEvent(ctx, JobEventRow{
+		ExecutionID:        executionID.String(),
+		AttemptID:          attemptID.String(),
+		OrgID:              orgID,
+		ActorID:            actorID,
+		Kind:               req.Kind,
+		Provider:           req.Provider,
+		ProductID:          req.ProductID,
+		RepoID:             req.RepoID,
+		GoldenGenerationID: uuidString(req.GoldenGenerationID),
+		Repo:               req.Repo,
+		RepoURL:            req.RepoURL,
+		Ref:                req.Ref,
+		DefaultBranch:      req.DefaultBranch,
+		RunCommand:         req.RunCommand,
+		CommitSHA:          outcome.CommitSHA,
+		WorkflowPath:       req.WorkflowPath,
+		WorkflowJobName:    req.WorkflowJobName,
+		ProviderRunID:      req.ProviderRunID,
+		ProviderJobID:      req.ProviderJobID,
+		RunnerName:         outcome.RunnerName,
+		Status:             outcome.State,
+		ExitCode:           int32(outcome.ExitCode),
+		DurationMs:         outcome.DurationMs,
+		ZFSWritten:         outcome.ZFSWritten,
+		StdoutBytes:        outcome.StdoutBytes,
+		StderrBytes:        outcome.StderrBytes,
+		GoldenSnapshot:     outcome.GoldenSnapshot,
+		BillingJobID:       reservation.JobId,
+		ChargeUnits:        charge,
+		PricingPhase:       reservation.PricingPhase,
+		CorrelationID:      CorrelationIDFromContext(ctx),
+		VerificationRunID:  VerificationRunIDFromContext(ctx),
+		StartedAt:          outcome.StartedAt,
+		CompletedAt:        outcome.CompletedAt,
+		CreatedAt:          outcome.StartedAt,
+		TraceID:            traceIDFromContext(ctx),
+	})
+	s.Logger.InfoContext(ctx, "execution completed",
+		"fm_correlation_id", CorrelationIDFromContext(ctx),
+		"verification_run_id", VerificationRunIDFromContext(ctx),
+		"execution_id", executionID,
+		"attempt_id", attemptID,
+		"state", outcome.State,
+		"actual_seconds", actualSecondsForBilling(outcome.DurationMs, int(reservation.WindowSecs)),
+		"charge_units", charge,
+		"pricing_phase", reservation.PricingPhase,
+	)
 }
 
 func (s *Service) nextBillingJobID(ctx context.Context) (int64, error) {
