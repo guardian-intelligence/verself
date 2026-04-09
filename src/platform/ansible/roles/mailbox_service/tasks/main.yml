@@ -18,54 +18,6 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-- name: Stop and disable legacy inbound-mail-forwarder
-  ansible.builtin.systemd:
-    name: inbound-mail-forwarder
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  failed_when: false
-
-- name: Stop and disable legacy inbound-mail-proxy
-  ansible.builtin.systemd:
-    name: inbound-mail-proxy
-    enabled: false
-    state: stopped
-    daemon_reload: true
-  failed_when: false
-
-- name: Remove legacy inbound-mail-forwarder systemd unit
-  ansible.builtin.file:
-    path: /etc/systemd/system/inbound-mail-forwarder.service
-    state: absent
-
-- name: Remove legacy inbound-mail-proxy systemd unit
-  ansible.builtin.file:
-    path: /etc/systemd/system/inbound-mail-proxy.service
-    state: absent
-
-- name: Remove legacy inbound-mail-forwarder nftables ruleset
-  ansible.builtin.file:
-    path: /etc/nftables.d/inbound-mail-forwarder.nft
-    state: absent
-  notify: reload nftables
-
-- name: Remove legacy inbound-mail-proxy nftables ruleset
-  ansible.builtin.file:
-    path: /etc/nftables.d/inbound-mail-proxy.nft
-    state: absent
-  notify: reload nftables
-
-- name: Remove legacy inbound-mail-forwarder binary
-  ansible.builtin.file:
-    path: "{{ fm_bin }}/inbound-mail-forwarder"
-    state: absent
-
-- name: Remove legacy inbound-mail-proxy binary
-  ansible.builtin.file:
-    path: "{{ fm_bin }}/inbound-mail-proxy"
-    state: absent
-
 - name: Deploy mailbox-service nftables ruleset
   ansible.builtin.template:
     src: mailbox-service.nft.j2
@@ -93,27 +45,10 @@
     group: mailbox_service
     mode: "0750"
 
-- name: Check legacy inbound-mail state file
-  ansible.builtin.stat:
-    path: /var/lib/inbound-mail-forwarder/state.json
-  register: mailbox_service_legacy_state
-
 - name: Check mailbox-service state file
   ansible.builtin.stat:
     path: /var/lib/mailbox-service/forwarder-state.json
   register: mailbox_service_state
-
-- name: Migrate legacy inbound-mail state into mailbox-service
-  ansible.builtin.copy:
-    src: /var/lib/inbound-mail-forwarder/state.json
-    dest: /var/lib/mailbox-service/forwarder-state.json
-    remote_src: true
-    owner: mailbox_service
-    group: mailbox_service
-    mode: "0640"
-  when:
-    - mailbox_service_legacy_state.stat.exists
-    - not mailbox_service_state.stat.exists
 
 - name: Wait for Zitadel before configuring mailbox-service auth
   ansible.builtin.wait_for:
@@ -260,13 +195,3 @@
   retries: 30
   delay: 1
   until: mailbox_service_readyz.status == 200
-
-- name: Remove legacy inbound-mail credstore directory
-  ansible.builtin.file:
-    path: /etc/credstore/inbound-mail-forwarder
-    state: absent
-
-- name: Remove legacy inbound-mail state directory
-  ansible.builtin.file:
-    path: /var/lib/inbound-mail-forwarder
-    state: absent

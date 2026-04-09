@@ -48,9 +48,6 @@
     host: "{{ services.forgejo.host }}"
     timeout: 60
 
-- name: Remove legacy local Forgejo admin users
-  ansible.builtin.include_tasks: cleanup_legacy_users.yml
-
 - name: Set up Zitadel OIDC application
   ansible.builtin.include_tasks: zitadel_app.yml
 
