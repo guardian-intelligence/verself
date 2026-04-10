@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
-import { authQueryKey, type AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
 import { getRepo, getRepoGenerations, getRepos, isSandboxRentalNotFound } from "~/server-fns/api";
 
 export function shouldPollRepo(state: string): boolean {
@@ -12,15 +12,15 @@ export function shouldPollGeneration(state: string): boolean {
 }
 
 function reposQueryKey<TParts extends readonly unknown[]>(
-  authState: AuthenticatedAuthState,
+  auth: AuthenticatedAuth,
   ...parts: TParts
 ) {
-  return authQueryKey(authState, "repos", ...parts);
+  return authQueryKey(auth, "repos", ...parts);
 }
 
-export const reposQuery = (authState: AuthenticatedAuthState) =>
+export const reposQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: reposQueryKey(authState),
+    queryKey: reposQueryKey(auth),
     queryFn: () => getRepos(),
     refetchInterval: (query) => {
       const repos = query.state.data;
@@ -29,9 +29,9 @@ export const reposQuery = (authState: AuthenticatedAuthState) =>
     },
   });
 
-export const repoQuery = (authState: AuthenticatedAuthState, repoId: string) =>
+export const repoQuery = (auth: AuthenticatedAuth, repoId: string) =>
   queryOptions({
-    queryKey: reposQueryKey(authState, repoId),
+    queryKey: reposQueryKey(auth, repoId),
     queryFn: () => getRepo({ data: { repoId } }),
     refetchInterval: (query) => {
       const repo = query.state.data;
@@ -39,9 +39,9 @@ export const repoQuery = (authState: AuthenticatedAuthState, repoId: string) =>
     },
   });
 
-export const repoGenerationsQuery = (authState: AuthenticatedAuthState, repoId: string) =>
+export const repoGenerationsQuery = (auth: AuthenticatedAuth, repoId: string) =>
   queryOptions({
-    queryKey: reposQueryKey(authState, repoId, "generations"),
+    queryKey: reposQueryKey(auth, repoId, "generations"),
     queryFn: () => getRepoGenerations({ data: { repoId } }),
     refetchInterval: (query) => {
       const generations = query.state.data;
@@ -52,19 +52,19 @@ export const repoGenerationsQuery = (authState: AuthenticatedAuthState, repoId: 
     },
   });
 
-export async function loadReposIndex(queryClient: QueryClient, authState: AuthenticatedAuthState) {
-  return queryClient.ensureQueryData(reposQuery(authState));
+export async function loadReposIndex(queryClient: QueryClient, auth: AuthenticatedAuth) {
+  return queryClient.ensureQueryData(reposQuery(auth));
 }
 
 export async function loadRepoDetail(
   queryClient: QueryClient,
-  authState: AuthenticatedAuthState,
+  auth: AuthenticatedAuth,
   repoId: string,
 ) {
   try {
     await Promise.all([
-      queryClient.ensureQueryData(repoQuery(authState, repoId)),
-      queryClient.ensureQueryData(repoGenerationsQuery(authState, repoId)),
+      queryClient.ensureQueryData(repoQuery(auth, repoId)),
+      queryClient.ensureQueryData(repoGenerationsQuery(auth, repoId)),
     ]);
   } catch (error) {
     if (isSandboxRentalNotFound(error)) {

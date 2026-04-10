@@ -2,7 +2,7 @@ import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
 import { useStickToBottom } from "use-stick-to-bottom";
-import type { AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
@@ -18,28 +18,16 @@ import {
 } from "./validation";
 import { useCreateExecutionMutation, type CreateExecutionResult } from "./mutations";
 
-export function ExecutionListPanel({
-  authState,
-  orgId,
-}: {
-  authState: AuthenticatedAuthState;
-  orgId: string;
-}) {
+export function ExecutionListPanel({ orgId }: { orgId: string }) {
   return (
     <ClientOnly fallback={<ExecutionListLoading />}>
-      <ExecutionListPanelContent authState={authState} orgId={orgId} />
+      <ExecutionListPanelContent orgId={orgId} />
     </ClientOnly>
   );
 }
 
-function ExecutionListPanelContent({
-  authState,
-  orgId,
-}: {
-  authState: AuthenticatedAuthState;
-  orgId: string;
-}) {
-  const rows = useExecutionRows(authState, orgId);
+function ExecutionListPanelContent({ orgId }: { orgId: string }) {
+  const rows = useExecutionRows(orgId);
 
   if (rows.isLoading || rows.isIdle) {
     return <ExecutionListLoading />;
@@ -56,14 +44,9 @@ function ExecutionListPanelContent({
   return <ExecutionTable executions={rows.executions} />;
 }
 
-export function ExecutionDetailPanel({
-  authState,
-  jobId,
-}: {
-  authState: AuthenticatedAuthState;
-  jobId: string;
-}) {
-  const execution = useSuspenseQuery(executionQuery(authState, jobId)).data;
+export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
+  const auth = useAuthenticatedAuth();
+  const execution = useSuspenseQuery(executionQuery(auth, jobId)).data;
 
   const attempt = execution.latest_attempt;
   const isRunning = isExecutionActiveStatus(execution.status);
@@ -112,24 +95,18 @@ export function ExecutionDetailPanel({
       </div>
 
       <ClientOnly fallback={<ExecutionLogsLoading isRunning={isRunning} />}>
-        <ExecutionLogsPanel
-          authState={authState}
-          attemptId={attempt.attempt_id}
-          isRunning={isRunning}
-        />
+        <ExecutionLogsPanel attemptId={attempt.attempt_id} isRunning={isRunning} />
       </ClientOnly>
     </div>
   );
 }
 
 export function ExecutionSubmissionForm({
-  authState,
   onSuccess,
 }: {
-  authState: AuthenticatedAuthState;
   onSuccess: (execution: CreateExecutionResult) => void | Promise<void>;
 }) {
-  const mutation = useCreateExecutionMutation({ authState, onSuccess });
+  const mutation = useCreateExecutionMutation({ onSuccess });
   const form = useForm({
     defaultValues: {
       repoUrl: "",
@@ -226,16 +203,8 @@ export function ExecutionSubmissionForm({
   );
 }
 
-function ExecutionLogsPanel({
-  authState,
-  attemptId,
-  isRunning,
-}: {
-  authState: AuthenticatedAuthState;
-  attemptId: string;
-  isRunning: boolean;
-}) {
-  const logs = useExecutionLogs(authState, attemptId);
+function ExecutionLogsPanel({ attemptId, isRunning }: { attemptId: string; isRunning: boolean }) {
+  const logs = useExecutionLogs(attemptId);
 
   if (logs.isLoading || logs.isIdle) {
     return <ExecutionLogsLoading isRunning={isRunning} />;

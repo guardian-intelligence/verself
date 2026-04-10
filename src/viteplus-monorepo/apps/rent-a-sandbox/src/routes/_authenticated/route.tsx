@@ -1,9 +1,9 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { requireAuthenticatedAuthState } from "@forge-metal/auth-web";
+import { requireAuth } from "@forge-metal/auth-web/shared";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: ({ context, location }) => ({
-    authState: requireAuthenticatedAuthState(context.authState, location.href),
+    auth: requireAuth(context.auth, location.href),
   }),
   component: AuthenticatedLayout,
 });

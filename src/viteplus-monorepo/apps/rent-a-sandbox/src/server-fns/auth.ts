@@ -1,13 +1,17 @@
-import { createAuthServerFns } from "@forge-metal/auth-web";
-import { getAuthConfig } from "../server/auth";
+import { createAuthServerFns } from "@forge-metal/auth-web/server-fns";
 
-const auth = createAuthServerFns(getAuthConfig);
+const authServerFns = createAuthServerFns(async () => {
+  if (!import.meta.env.SSR) {
+    throw new Error("auth config is server-only");
+  }
+  const { getAuthConfig } = await import("../server/auth");
+  return getAuthConfig();
+});
 
-export const rentASandboxAuthMiddleware = auth.authMiddleware;
+export const rentASandboxAuthMiddleware = authServerFns.authMiddleware;
 export const {
-  getAuthState,
-  getViewer,
+  getAuthSnapshot,
   getLoginRedirectURL,
   getCallbackRedirectURL,
   getLogoutRedirectURL,
-} = auth;
+} = authServerFns;

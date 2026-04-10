@@ -8,9 +8,8 @@ export const Route = createFileRoute("/_authenticated/repos/new")({
 });
 
 function NewRepoPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
   const navigate = useNavigate();
-  const importMutation = useImportRepoMutation(authState, (repoId) => {
+  const importMutation = useImportRepoMutation((repoId) => {
     void navigate({ to: "/repos/$repoId", params: { repoId } });
   });
 

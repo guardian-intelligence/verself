@@ -8,8 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
-import type { AuthViewer } from "@forge-metal/auth-web";
-import { getAuthState } from "~/server-fns/auth";
+import { AuthProvider, useUser } from "@forge-metal/auth-web/react";
+import { getAuthSnapshot, getLoginRedirectURL, getLogoutRedirectURL } from "~/server-fns/auth";
 import "~/styles/app.css";
 
 const authPartitionsByQueryClient = new WeakMap<QueryClient, string | null>();
@@ -27,9 +27,9 @@ export const Route = createRootRouteWithContext<{
 }>()({
   component: RootComponent,
   beforeLoad: async ({ context }) => {
-    const authState = await getAuthState();
-    syncQueryClientAuthPartition(context.queryClient, authState.cachePartition);
-    return { authState };
+    const authSnapshot = await getAuthSnapshot();
+    syncQueryClientAuthPartition(context.queryClient, authSnapshot.auth.cachePartition);
+    return authSnapshot;
   },
   head: () => ({
     meta: [
@@ -41,16 +41,18 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
-  const { authState, queryClient } = Route.useRouteContext();
+  const { auth, queryClient, session, user } = Route.useRouteContext();
   return (
-    <QueryClientProvider
-      client={queryClient}
-      key={`auth:${authState.cachePartition ?? "anonymous"}`}
+    <AuthProvider
+      client={{ getLoginRedirectURL, getLogoutRedirectURL }}
+      snapshot={{ auth, user, session }}
     >
-      <RootDocument>
-        <Outlet />
-      </RootDocument>
-    </QueryClientProvider>
+      <QueryClientProvider client={queryClient} key={`auth:${auth.cachePartition ?? "anonymous"}`}>
+        <RootDocument>
+          <Outlet />
+        </RootDocument>
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }
 
@@ -72,8 +74,6 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function Nav() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
-
   return (
     <nav className="border-b border-border bg-card">
       <div className="max-w-6xl mx-auto px-4 flex items-center h-14 gap-6">
@@ -107,20 +107,19 @@ function Nav() {
           </Link>
         </div>
         <div className="ml-auto">
-          <AuthButton viewer={authState.viewer} />
+          <AuthButton />
         </div>
       </div>
     </nav>
   );
 }
 
-function AuthButton({ viewer }: { viewer: AuthViewer | null }) {
-  const currentLocation = useRouterState({
-    select: (state) => state.location.href,
-  });
+function AuthButton() {
+  const { user } = useUser();
+  const currentLocation = useRouterState().location.href;
   const loginHref = `/login?redirect=${encodeURIComponent(currentLocation)}`;
 
-  if (!viewer) {
+  if (!user) {
     return (
       <a
         href={loginHref}
@@ -133,9 +132,7 @@ function AuthButton({ viewer }: { viewer: AuthViewer | null }) {
 
   return (
     <div className="flex items-center gap-3 text-sm">
-      <span className="text-muted-foreground truncate max-w-[200px]">
-        {viewer.email ?? viewer.sub}
-      </span>
+      <span className="text-muted-foreground truncate max-w-[200px]">{user.email ?? user.sub}</span>
       <a href="/logout" className="text-muted-foreground hover:text-foreground">
         Sign out
       </a>

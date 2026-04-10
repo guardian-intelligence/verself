@@ -1,12 +1,13 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import type { AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { createExecutionLogsCollection, createExecutionsCollection } from "~/lib/collections";
 
-export function useExecutionRows(authState: AuthenticatedAuthState, orgId: string) {
+export function useExecutionRows(orgId: string) {
+  const auth = useAuthenticatedAuth();
   const collection = useMemo(
-    () => createExecutionsCollection(authState, orgId),
-    [authState.cachePartition, orgId],
+    () => createExecutionsCollection(auth, orgId),
+    [auth.cachePartition, orgId],
   );
   const liveQuery = useLiveQuery(collection);
   const executions = useMemo(() => sortExecutions(liveQuery.data), [liveQuery.data]);
@@ -18,10 +19,11 @@ export function useExecutionRows(authState: AuthenticatedAuthState, orgId: strin
   };
 }
 
-export function useExecutionLogs(authState: AuthenticatedAuthState, attemptId: string) {
+export function useExecutionLogs(attemptId: string) {
+  const auth = useAuthenticatedAuth();
   const collection = useMemo(
-    () => createExecutionLogsCollection(authState, attemptId),
-    [attemptId, authState.cachePartition],
+    () => createExecutionLogsCollection(auth, attemptId),
+    [attemptId, auth.cachePartition],
   );
   const liveQuery = useLiveQuery(collection);
   const orderedLogs = useMemo(() => sortLogChunks(liveQuery.data), [liveQuery.data]);
