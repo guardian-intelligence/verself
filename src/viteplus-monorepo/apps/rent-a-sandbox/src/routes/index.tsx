@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type { AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { useAuth, useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
@@ -8,20 +8,20 @@ import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
-    if (context.authState.isAuthenticated) {
-      await loadBalance(context.queryClient, context.authState);
+    if (context.auth.isAuthenticated) {
+      await loadBalance(context.queryClient, context.auth);
     }
   },
   component: Dashboard,
 });
 
 function Dashboard() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
-  if (!authState.isAuthenticated) {
+  const { isSignedIn } = useAuth();
+  if (!isSignedIn) {
     return <GuestLanding />;
   }
 
-  return <MemberDashboard authState={authState} />;
+  return <MemberDashboard />;
 }
 
 function GuestLanding() {
@@ -69,8 +69,9 @@ function GuestLanding() {
   );
 }
 
-function MemberDashboard({ authState }: { authState: AuthenticatedAuthState }) {
-  const { data: balance } = useSuspenseQuery(balanceQuery(authState));
+function MemberDashboard() {
+  const auth = useAuthenticatedAuth();
+  const { data: balance } = useSuspenseQuery(balanceQuery(auth));
 
   return (
     <div className="space-y-8">

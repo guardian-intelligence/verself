@@ -1,17 +1,17 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
 import { loadBalance } from "~/features/billing/queries";
 import { getExecution } from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 import { isExecutionActiveStatus } from "./status";
 
-export async function loadJobsIndex(queryClient: QueryClient, authState: AuthenticatedAuthState) {
-  return loadBalance(queryClient, authState);
+export async function loadJobsIndex(queryClient: QueryClient, auth: AuthenticatedAuth) {
+  return loadBalance(queryClient, auth);
 }
 
-export function executionQuery(authState: AuthenticatedAuthState, executionId: string) {
+export function executionQuery(auth: AuthenticatedAuth, executionId: string) {
   return queryOptions({
-    queryKey: authQueryKey(authState, "jobs", executionId),
+    queryKey: authQueryKey(auth, "jobs", executionId),
     queryFn: () => getExecution({ data: { executionId } }),
     staleTime: 10_000,
     refetchInterval: (query) => {
@@ -23,8 +23,8 @@ export function executionQuery(authState: AuthenticatedAuthState, executionId: s
 
 export async function loadExecutionDetail(
   queryClient: QueryClient,
-  authState: AuthenticatedAuthState,
+  auth: AuthenticatedAuth,
   executionId: string,
 ) {
-  return ensureOrNotFound(queryClient, executionQuery(authState, executionId));
+  return ensureOrNotFound(queryClient, executionQuery(auth, executionId));
 }

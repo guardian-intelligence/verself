@@ -15,7 +15,7 @@ This codebase has zero `useEffect`. Do not introduce any. Every common `useEffec
 | `useEffect` to fetch data                                                         | `useQuery` from `@tanstack/react-query`                                                                                      |
 | `useEffect` + `useState(mounted)` for SSR hydration guard                         | `useHydrated()` or `<ClientOnly>` from `@tanstack/react-router`                                                              |
 | `useEffect` to run side effects on navigation (e.g. Stripe redirect invalidation) | `beforeLoad` on the route definition — it runs once per navigation, not per render                                           |
-| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@forge-metal/auth-web` server helpers                                                         |
+| `useEffect` to trigger login/logout/callback auth flows                           | Route-level `beforeLoad` plus `@forge-metal/auth-web/server` helpers                                                         |
 | `useEffect` to invalidate queries when external data changes                      | `onSuccess` / `onSettled` on the `useMutation` that caused the change                                                        |
 | `useEffect` for DOM interactions (scroll, focus, resize)                          | `use-stick-to-bottom` for scroll-follow; for other DOM cases, evaluate whether a library exists before writing a `useEffect` |
 
@@ -23,13 +23,15 @@ The one exception: `useEffect` is acceptable for DOM manipulation that has no li
 
 ### Auth + Query Cache
 
-Auth state is server-owned (`@forge-metal/auth-web` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser. Treat auth as route context and server function context.
+Auth state is server-owned (`@forge-metal/auth-web/server` + HTTP-only session cookie + `frontend_auth_sessions`). `/login`, `/callback`, and `/logout` are route-level `beforeLoad` flows that run on the server and during client navigations. Do not mirror auth state into React Query or persist bearer tokens in the browser.
+
+`src/routes/__root.tsx` calls `getAuthSnapshot()` once per navigation, seeds `AuthProvider`, and keys the React Query provider by the server-issued auth cache partition. Component code should read `useAuth()`, `useAuthenticatedAuth()`, `useUser()`, or `useSession()` from `@forge-metal/auth-web/react`; it should not call server auth helpers directly.
 
 ### Routing + Auth
 
 - Public routes stay at the root of `src/routes/`.
 - Protected screens live under `src/routes/_authenticated/`.
-- Only `src/routes/_authenticated/route.tsx` should call `requireAuthenticatedAuthState(...)`. Child routes should not repeat auth gating.
+- Only `src/routes/_authenticated/route.tsx` should call `requireAuth(...)`. Child routes should not repeat auth gating; read the already-authenticated snapshot through `useAuthenticatedAuth()` when query keys or mutations need the cache partition.
 - Router-owned transport states come from app-wide boundaries in `src/router.tsx` (`defaultPendingComponent`, `defaultErrorComponent`, `defaultNotFoundComponent`), not per-page `if (!data)` fallbacks.
 - Reserve `<ClientOnly>` for browser-only leaf widgets such as Electric-powered tables and logs, not auth or route protection.
 

@@ -7,7 +7,6 @@ export const Route = createFileRoute("/_authenticated/jobs/new")({
 });
 
 function NewJobPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
   const navigate = useNavigate();
 
   return (
@@ -28,7 +27,6 @@ function NewJobPage() {
       </Callout>
 
       <ExecutionSubmissionForm
-        authState={authState}
         onSuccess={(execution) => {
           void navigate({
             to: "/jobs/$jobId",

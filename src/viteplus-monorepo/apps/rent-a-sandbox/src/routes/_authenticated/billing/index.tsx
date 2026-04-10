@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { TableEmptyRow } from "~/components/table-empty-row";
 import { BillingFlashNotice, SubscriptionStatusPill } from "~/features/billing/components";
@@ -14,16 +15,16 @@ import { formatDateUTC, formatInteger } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/billing/")({
   validateSearch: parseBillingFlashSearch,
-  loader: ({ context }) => loadBillingPage(context.queryClient, context.authState),
+  loader: ({ context }) => loadBillingPage(context.queryClient, context.auth),
   component: BillingPage,
 });
 
 function BillingPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
+  const auth = useAuthenticatedAuth();
   const flash = Route.useSearch();
-  const balance = useSuspenseQuery(balanceQuery(authState)).data;
-  const subscriptions = useSuspenseQuery(subscriptionsQuery(authState)).data;
-  const grants = useSuspenseQuery(activeGrantsQuery(authState)).data;
+  const balance = useSuspenseQuery(balanceQuery(auth)).data;
+  const subscriptions = useSuspenseQuery(subscriptionsQuery(auth)).data;
+  const grants = useSuspenseQuery(activeGrantsQuery(auth)).data;
 
   const subscriptionRows = subscriptions.subscriptions ?? [];
   const grantRows = grants.grants ?? [];

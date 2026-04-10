@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { authCollectionId, type AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { authCollectionId, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
 import {
   createElectricShapeCollection,
   electricEqualsWhere,
@@ -39,10 +39,10 @@ const electricExecutionSchema = v.object({
 
 export type ElectricExecution = v.InferOutput<typeof electricExecutionSchema>;
 
-export function createExecutionsCollection(authState: AuthenticatedAuthState, orgId: string) {
+export function createExecutionsCollection(auth: AuthenticatedAuth, orgId: string) {
   const validatedOrgID = requireDecimalID(orgId, "org_id");
   return createElectricShapeCollection({
-    id: authCollectionId(authState, `sync-executions-${orgId}`),
+    id: authCollectionId(auth, `sync-executions-${orgId}`),
     schema: electricExecutionSchema,
     table: "executions",
     where: electricEqualsWhere("org_id", validatedOrgID),
@@ -62,13 +62,10 @@ const electricExecutionLogSchema = v.object({
 
 export type ElectricExecutionLog = v.InferOutput<typeof electricExecutionLogSchema>;
 
-export function createExecutionLogsCollection(
-  authState: AuthenticatedAuthState,
-  attemptId: string,
-) {
+export function createExecutionLogsCollection(auth: AuthenticatedAuth, attemptId: string) {
   const validatedAttemptID = requireUUID(attemptId, "attempt_id");
   return createElectricShapeCollection({
-    id: authCollectionId(authState, `sync-execution-logs-${attemptId}`),
+    id: authCollectionId(auth, `sync-execution-logs-${attemptId}`),
     schema: electricExecutionLogSchema,
     table: "execution_logs",
     where: electricEqualsWhere("attempt_id", validatedAttemptID),

@@ -1,12 +1,13 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
 import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/_authenticated/billing/credits")({
-  loader: ({ context }) => loadBalance(context.queryClient, context.authState),
+  loader: ({ context }) => loadBalance(context.queryClient, context.auth),
   component: CreditsPage,
 });
 
@@ -18,8 +19,8 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
-  const balance = useSuspenseQuery(balanceQuery(authState)).data;
+  const auth = useAuthenticatedAuth();
+  const balance = useSuspenseQuery(balanceQuery(auth)).data;
   const mutation = useCreateCheckoutSessionMutation();
 
   return (

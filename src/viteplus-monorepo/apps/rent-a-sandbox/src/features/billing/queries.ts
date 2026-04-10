@@ -1,41 +1,41 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuthState } from "@forge-metal/auth-web";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
 import { getBalance, getGrants, getSubscriptions } from "~/server-fns/api";
 
 function billingQueryKey<TParts extends readonly unknown[]>(
-  authState: AuthenticatedAuthState,
+  auth: AuthenticatedAuth,
   ...parts: TParts
 ) {
-  return authQueryKey(authState, "billing", ...parts);
+  return authQueryKey(auth, "billing", ...parts);
 }
 
-export const balanceQuery = (authState: AuthenticatedAuthState) =>
+export const balanceQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(authState, "balance"),
+    queryKey: billingQueryKey(auth, "balance"),
     queryFn: () => getBalance(),
   });
 
-export const subscriptionsQuery = (authState: AuthenticatedAuthState) =>
+export const subscriptionsQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(authState, "subscriptions"),
+    queryKey: billingQueryKey(auth, "subscriptions"),
     queryFn: () => getSubscriptions(),
   });
 
-export const activeGrantsQuery = (authState: AuthenticatedAuthState) =>
+export const activeGrantsQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(authState, "grants", { active: true }),
+    queryKey: billingQueryKey(auth, "grants", { active: true }),
     queryFn: () => getGrants({ data: { active: true } }),
   });
 
-export async function loadBalance(queryClient: QueryClient, authState: AuthenticatedAuthState) {
-  return queryClient.ensureQueryData(balanceQuery(authState));
+export async function loadBalance(queryClient: QueryClient, auth: AuthenticatedAuth) {
+  return queryClient.ensureQueryData(balanceQuery(auth));
 }
 
-export async function loadBillingPage(queryClient: QueryClient, authState: AuthenticatedAuthState) {
+export async function loadBillingPage(queryClient: QueryClient, auth: AuthenticatedAuth) {
   const [balance, subscriptions, grants] = await Promise.all([
-    queryClient.ensureQueryData(balanceQuery(authState)),
-    queryClient.ensureQueryData(subscriptionsQuery(authState)),
-    queryClient.ensureQueryData(activeGrantsQuery(authState)),
+    queryClient.ensureQueryData(balanceQuery(auth)),
+    queryClient.ensureQueryData(subscriptionsQuery(auth)),
+    queryClient.ensureQueryData(activeGrantsQuery(auth)),
   ]);
 
   return {

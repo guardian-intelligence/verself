@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { Callout } from "~/components/callout";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
@@ -25,21 +26,20 @@ import {
 import { formatDateTimeUTC } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/repos/$repoId")({
-  loader: ({ context, params }) =>
-    loadRepoDetail(context.queryClient, context.authState, params.repoId),
+  loader: ({ context, params }) => loadRepoDetail(context.queryClient, context.auth, params.repoId),
   component: RepoDetailPage,
 });
 
 function RepoDetailPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
+  const auth = useAuthenticatedAuth();
   const { repoId } = Route.useParams();
   const navigate = useNavigate();
-  const repo = useSuspenseQuery(repoQuery(authState, repoId)).data;
-  const generations = useSuspenseQuery(repoGenerationsQuery(authState, repoId)).data;
+  const repo = useSuspenseQuery(repoQuery(auth, repoId)).data;
+  const generations = useSuspenseQuery(repoGenerationsQuery(auth, repoId)).data;
 
-  const rescanMutation = useRescanRepoMutation(authState, repoId);
-  const refreshMutation = useRefreshRepoMutation(authState, repoId);
-  const runMutation = useRunRepoExecutionMutation(authState, repoId, (executionId) => {
+  const rescanMutation = useRescanRepoMutation(repoId);
+  const refreshMutation = useRefreshRepoMutation(repoId);
+  const runMutation = useRunRepoExecutionMutation(repoId, (executionId) => {
     void navigate({ to: "/jobs/$jobId", params: { jobId: executionId } });
   });
 

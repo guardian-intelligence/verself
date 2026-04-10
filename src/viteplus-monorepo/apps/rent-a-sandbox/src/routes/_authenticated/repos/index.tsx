@@ -1,16 +1,17 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { RepoListEmptyState, RepoListItem } from "~/features/repos/components";
 import { loadReposIndex, reposQuery } from "~/features/repos/queries";
 
 export const Route = createFileRoute("/_authenticated/repos/")({
-  loader: ({ context }) => loadReposIndex(context.queryClient, context.authState),
+  loader: ({ context }) => loadReposIndex(context.queryClient, context.auth),
   component: ReposPage,
 });
 
 function ReposPage() {
-  const authState = Route.useRouteContext({ select: (context) => context.authState });
-  const repos = useSuspenseQuery(reposQuery(authState)).data;
+  const auth = useAuthenticatedAuth();
+  const repos = useSuspenseQuery(reposQuery(auth)).data;
 
   return (
     <div className="space-y-6">
