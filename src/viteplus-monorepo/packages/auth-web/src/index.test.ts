@@ -19,6 +19,7 @@ import {
   type Auth,
   type AuthSnapshot,
 } from "./shared.ts";
+import { createAuthConfig, resolveAuthConfig, type AuthConfig } from "./config.ts";
 
 const anonymousAuth: Auth = {
   cachePartition: null,
@@ -60,6 +61,18 @@ const authenticatedSnapshot: AuthSnapshot = {
     sub: "user-1",
   },
 };
+
+const testAuthConfig: AuthConfig = createAuthConfig({
+  appName: "test-auth",
+  issuerURL: "https://auth.example.test",
+  clientID: "test-client",
+  sessionDatabaseURL: "postgres://auth.example.test/auth",
+  sessionPassword: "x".repeat(32),
+  scopes: ["openid", "profile"],
+  callbackPath: "/callback",
+  defaultRedirectPath: "/",
+  postLogoutRedirectPath: "/",
+});
 
 function renderWithAuth(snapshot: AuthSnapshot, child: ReactNode) {
   return renderToString(createElement(AuthProvider, { snapshot }, child));
@@ -146,6 +159,12 @@ describe("auth-web React hooks", () => {
 });
 
 describe("auth-web helpers", () => {
+  it("resolves object, sync factory, and async factory auth config sources", async () => {
+    await expect(resolveAuthConfig(testAuthConfig)).resolves.toBe(testAuthConfig);
+    await expect(resolveAuthConfig(() => testAuthConfig)).resolves.toBe(testAuthConfig);
+    await expect(resolveAuthConfig(async () => testAuthConfig)).resolves.toBe(testAuthConfig);
+  });
+
   it("partitions query keys and Electric collection IDs by auth scope", () => {
     expect(authQueryKey(authenticatedAuth, "billing", "balance")).toEqual([
       "auth",
