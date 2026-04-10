@@ -39,18 +39,21 @@
     group: "{{ ansible_user }}"
     mode: "0755"
 
+- name: Verify corepack exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/corepack"
+  register: webmail_corepack
+  failed_when: not webmail_corepack.stat.exists
+
 - name: Remove generated webmail artifacts before sync
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ webmail_install_dir }}/node_modules"
     - "{{ webmail_install_dir }}/.output"
     - "{{ webmail_install_dir }}/.tanstack"
-    - "{{ webmail_install_dir }}/apps/mail/node_modules"
     - "{{ webmail_install_dir }}/apps/mail/.output"
     - "{{ webmail_install_dir }}/apps/mail/.tanstack"
-    - "{{ webmail_install_dir }}/packages/ui/node_modules"
     - "{{ webmail_install_dir }}/packages/ui/dist"
 
 - name: Synchronize webmail source
@@ -66,14 +69,50 @@
       - "--exclude=.output"
       - "--exclude=dist"
       - "--exclude=.tanstack"
+      - "--exclude=apps/rent-a-sandbox"
+      - "--exclude=apps/rent-a-sandbox/**"
+      - "--exclude=apps/letters"
+      - "--exclude=apps/letters/**"
       - "--exclude=playwright-report"
       - "--exclude=test-results"
       - "--exclude=HANDOFF_PROMPT.md"
-      - "--delete-excluded"
       - "--no-owner"
       - "--no-group"
 
-- name: Install webmail workspace dependencies
+- name: Compute webmail workspace dependency fingerprint
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd {{ playbook_dir }}/../../../viteplus-monorepo
+        {
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/mail/package.json
+          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
+        } | sort -z | xargs -0 sha256sum | sha256sum
+  register: webmail_workspace_dependency_fingerprint
+  changed_when: false
+
+- name: Check cached webmail install fingerprint
+  ansible.builtin.stat:
+    path: "{{ webmail_dependencies_fingerprint_path }}"
+  register: webmail_install_fingerprint_file
+
+- name: Read cached webmail install fingerprint
+  ansible.builtin.slurp:
+    src: "{{ webmail_dependencies_fingerprint_path }}"
+  register: webmail_install_fingerprint_raw
+  when: webmail_install_fingerprint_file.stat.exists
+
+- name: Check cached webmail node_modules
+  ansible.builtin.stat:
+    path: "{{ webmail_install_dir }}/node_modules"
+  register: webmail_node_modules_dir
+
+- name: Install webmail workspace dependencies when manifests change
   become: false
   ansible.builtin.command:
     argv:
@@ -85,17 +124,48 @@
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
+  when: >-
+    (not webmail_node_modules_dir.stat.exists)
+    or (not webmail_install_fingerprint_file.stat.exists)
+    or (
+      (webmail_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (webmail_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+    )
 
-- name: Build webmail workspace
+- name: Record cached webmail install fingerprint
+  ansible.builtin.copy:
+    content: "{{ webmail_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ webmail_dependencies_fingerprint_path }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Build webmail package dependencies
   become: false
   ansible.builtin.command:
     argv:
       - "{{ fm_bin }}/corepack"
       - pnpm
-      - exec
-      - vp
+      - --filter
+      - "@forge-metal/mail^..."
       - run
-      - -r
+      - build
+    chdir: "{{ webmail_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart webmail
+
+- name: Build webmail app
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@forge-metal/mail"
+      - run
       - build
     chdir: "{{ webmail_install_dir }}"
   environment:

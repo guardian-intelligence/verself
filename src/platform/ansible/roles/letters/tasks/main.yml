@@ -13,18 +13,21 @@
     group: "{{ ansible_user }}"
     mode: "0755"
 
+- name: Verify corepack exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/corepack"
+  register: letters_corepack
+  failed_when: not letters_corepack.stat.exists
+
 - name: Remove generated letters artifacts before sync
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ letters_install_dir }}/node_modules"
     - "{{ letters_install_dir }}/.output"
     - "{{ letters_install_dir }}/.tanstack"
-    - "{{ letters_install_dir }}/apps/letters/node_modules"
     - "{{ letters_install_dir }}/apps/letters/.output"
     - "{{ letters_install_dir }}/apps/letters/.tanstack"
-    - "{{ letters_install_dir }}/packages/ui/node_modules"
     - "{{ letters_install_dir }}/packages/ui/dist"
 
 - name: Synchronize letters source
@@ -40,14 +43,50 @@
       - "--exclude=.output"
       - "--exclude=dist"
       - "--exclude=.tanstack"
+      - "--exclude=apps/rent-a-sandbox"
+      - "--exclude=apps/rent-a-sandbox/**"
+      - "--exclude=apps/mail"
+      - "--exclude=apps/mail/**"
       - "--exclude=playwright-report"
       - "--exclude=test-results"
       - "--exclude=HANDOFF_PROMPT.md"
-      - "--delete-excluded"
       - "--no-owner"
       - "--no-group"
 
-- name: Install letters workspace dependencies
+- name: Compute letters workspace dependency fingerprint
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd {{ playbook_dir }}/../../../viteplus-monorepo
+        {
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/letters/package.json
+          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
+        } | sort -z | xargs -0 sha256sum | sha256sum
+  register: letters_workspace_dependency_fingerprint
+  changed_when: false
+
+- name: Check cached letters install fingerprint
+  ansible.builtin.stat:
+    path: "{{ letters_dependencies_fingerprint_path }}"
+  register: letters_install_fingerprint_file
+
+- name: Read cached letters install fingerprint
+  ansible.builtin.slurp:
+    src: "{{ letters_dependencies_fingerprint_path }}"
+  register: letters_install_fingerprint_raw
+  when: letters_install_fingerprint_file.stat.exists
+
+- name: Check cached letters node_modules
+  ansible.builtin.stat:
+    path: "{{ letters_install_dir }}/node_modules"
+  register: letters_node_modules_dir
+
+- name: Install letters workspace dependencies when manifests change
   become: false
   ansible.builtin.command:
     argv:
@@ -59,17 +98,48 @@
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
+  when: >-
+    (not letters_node_modules_dir.stat.exists)
+    or (not letters_install_fingerprint_file.stat.exists)
+    or (
+      (letters_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (letters_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+    )
 
-- name: Build letters workspace
+- name: Record cached letters install fingerprint
+  ansible.builtin.copy:
+    content: "{{ letters_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ letters_dependencies_fingerprint_path }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Build letters package dependencies
   become: false
   ansible.builtin.command:
     argv:
       - "{{ fm_bin }}/corepack"
       - pnpm
-      - exec
-      - vp
+      - --filter
+      - "@forge-metal/letters^..."
       - run
-      - -r
+      - build
+    chdir: "{{ letters_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart letters
+
+- name: Build letters app
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@forge-metal/letters"
+      - run
       - build
     chdir: "{{ letters_install_dir }}"
   environment:
