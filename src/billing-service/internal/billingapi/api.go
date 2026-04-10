@@ -2,139 +2,307 @@ package billingapi
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 
+	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
-	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 )
 
-const serviceVersion = "1.1.0"
+type Config struct {
+	Version      string
+	ListenAddr   string
+	Client       *billing.Client
+	Logger       *slog.Logger
+	InternalRole string
+}
 
-var tracer = otel.Tracer("billing-service")
-
-func NewAPI(mux *http.ServeMux, app *billingruntime.App) huma.API {
-	config := huma.DefaultConfig("Billing Service", serviceVersion)
-	config.OpenAPI.Servers = []*huma.Server{
-		{URL: "http://127.0.0.1:4242"},
+func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
+	version := cfg.Version
+	if version == "" {
+		version = "2.0.0"
+	}
+	config := huma.DefaultConfig("Billing Service", version)
+	if cfg.ListenAddr != "" {
+		config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
-	registerRoutes(api, app)
+	registerRoutes(api, cfg)
 	return api
 }
 
 func OpenAPIDowngradeYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), nil)
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: "billing_internal"})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), nil)
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: "billing_internal"})
 	return api.OpenAPI().YAML()
 }
 
-func registerRoutes(api huma.API, app *billingruntime.App) {
-	huma.Register(api, huma.Operation{
-		OperationID: "healthz",
-		Method:      http.MethodGet,
-		Path:        "/healthz",
-		Summary:     "Liveness probe",
-	}, healthz())
+type ErrorModel struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
 
-	huma.Register(api, huma.Operation{
-		OperationID: "readyz",
-		Method:      http.MethodGet,
-		Path:        "/readyz",
-		Summary:     "Readiness probe",
-	}, readyz(app))
+type EmptyInput struct{}
 
+type BalanceOutput struct {
+	Body BalanceOutputBody
+}
+
+type BalanceOutputBody struct {
+	OrgId             int64 `json:"org_id"`
+	FreeTierAvailable int64 `json:"free_tier_available"`
+	FreeTierPending   int64 `json:"free_tier_pending"`
+	CreditAvailable   int64 `json:"credit_available"`
+	CreditPending     int64 `json:"credit_pending"`
+	TotalAvailable    int64 `json:"total_available"`
+}
+
+type OrgPath struct {
+	OrgId int64 `path:"org_id"`
+}
+
+type GrantsInput struct {
+	OrgPath
+	ProductId string `query:"product_id,omitempty"`
+	Active    bool   `query:"active,omitempty"`
+}
+
+type GrantJSON struct {
+	GrantId   string  `json:"grant_id"`
+	Source    string  `json:"source"`
+	Available int64   `json:"available"`
+	Pending   int64   `json:"pending"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+}
+
+type GrantsOutput struct {
+	Body GrantsOutputBody
+}
+
+type GrantsOutputBody struct {
+	Grants []GrantJSON `json:"grants"`
+}
+
+type SubscriptionsOutput struct {
+	Body SubscriptionsOutputBody
+}
+
+type SubscriptionsOutputBody struct {
+	Subscriptions []SubscriptionJSON `json:"subscriptions"`
+}
+
+type SubscriptionJSON struct {
+	SubscriptionId     int64   `json:"subscription_id"`
+	ProductId          string  `json:"product_id"`
+	PlanId             string  `json:"plan_id"`
+	Cadence            string  `json:"cadence"`
+	Status             string  `json:"status"`
+	CurrentPeriodStart *string `json:"current_period_start,omitempty"`
+	CurrentPeriodEnd   *string `json:"current_period_end,omitempty"`
+}
+
+type CheckoutInput struct {
+	Body CreateCheckoutBody
+}
+
+type CreateCheckoutBody struct {
+	OrgId       int64  `json:"org_id" required:"true"`
+	ProductId   string `json:"product_id" required:"true" maxLength:"255"`
+	AmountCents int64  `json:"amount_cents" required:"true" minimum:"1"`
+	SuccessUrl  string `json:"success_url" required:"true" maxLength:"2048"`
+	CancelUrl   string `json:"cancel_url" required:"true" maxLength:"2048"`
+}
+
+type CreateSubscriptionInput struct {
+	Body CreateSubscriptionBody
+}
+
+type CreateSubscriptionBody struct {
+	OrgId      int64  `json:"org_id" required:"true"`
+	PlanId     string `json:"plan_id" required:"true" maxLength:"255"`
+	Cadence    string `json:"cadence,omitempty" enum:"monthly,annual"`
+	SuccessUrl string `json:"success_url" required:"true" maxLength:"2048"`
+	CancelUrl  string `json:"cancel_url" required:"true" maxLength:"2048"`
+}
+
+type URLOutput struct {
+	Body struct {
+		Url string `json:"url"`
+	}
+}
+
+type ReserveInput struct {
+	Body ReserveInputBody
+}
+
+type ReserveInputBody struct {
+	OrgId           int64              `json:"org_id" required:"true"`
+	ProductId       string             `json:"product_id" required:"true" maxLength:"255"`
+	ActorId         string             `json:"actor_id" required:"true" maxLength:"255"`
+	ConcurrentCount int64              `json:"concurrent_count"`
+	SourceType      string             `json:"source_type" required:"true" maxLength:"255"`
+	SourceRef       string             `json:"source_ref" required:"true" maxLength:"255"`
+	Allocation      map[string]float64 `json:"allocation" required:"true"`
+}
+
+type WindowReservationJSON struct {
+	WindowId            string             `json:"window_id"`
+	OrgId               int64              `json:"org_id"`
+	ProductId           string             `json:"product_id"`
+	PlanId              string             `json:"plan_id"`
+	ActorId             string             `json:"actor_id"`
+	SourceType          string             `json:"source_type"`
+	SourceRef           string             `json:"source_ref"`
+	WindowSeq           int32              `json:"window_seq"`
+	ReservationShape    string             `json:"reservation_shape"`
+	ReservedQuantity    int32              `json:"reserved_quantity"`
+	ReservedChargeUnits int64              `json:"reserved_charge_units"`
+	PricingPhase        string             `json:"pricing_phase"`
+	Allocation          map[string]float64 `json:"allocation"`
+	UnitRates           map[string]int64   `json:"unit_rates"`
+	CostPerUnit         int64              `json:"cost_per_unit"`
+	WindowStart         string             `json:"window_start"`
+	ExpiresAt           string             `json:"expires_at"`
+	RenewBy             *string            `json:"renew_by,omitempty"`
+}
+
+type ReserveOutput struct {
+	Body struct {
+		Reservation WindowReservationJSON `json:"reservation"`
+	}
+}
+
+type SettleInput struct {
+	Body SettleInputBody
+}
+
+type SettleInputBody struct {
+	WindowId       string         `json:"window_id" required:"true" maxLength:"255"`
+	ActualQuantity int32          `json:"actual_quantity" required:"true" minimum:"0"`
+	UsageSummary   map[string]any `json:"usage_summary,omitempty"`
+}
+
+type SettleOutput struct {
+	Body struct {
+		WindowId            string `json:"window_id"`
+		ActualQuantity      int32  `json:"actual_quantity"`
+		BillableQuantity    int32  `json:"billable_quantity"`
+		WriteoffQuantity    int32  `json:"writeoff_quantity"`
+		BilledChargeUnits   int64  `json:"billed_charge_units"`
+		WriteoffChargeUnits int64  `json:"writeoff_charge_units"`
+		SettledAt           string `json:"settled_at"`
+	}
+}
+
+type VoidInput struct {
+	Body struct {
+		WindowId string `json:"window_id" required:"true" maxLength:"255"`
+	}
+}
+
+type VoidOutput struct {
+	Body struct {
+		WindowId string `json:"window_id"`
+	}
+}
+
+func registerRoutes(api huma.API, cfg Config) {
 	huma.Register(api, huma.Operation{
-		OperationID: "get-org-balance",
+		OperationID: "get-balance",
 		Method:      http.MethodGet,
 		Path:        "/internal/billing/v1/orgs/{org_id}/balance",
-		Summary:     "Get org balance across all grants",
-	}, getOrgBalance(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-product-balance",
-		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/products/{product_id}/balance",
-		Summary:     "Get product-specific balance for an org",
-	}, getProductBalance(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID: "list-subscriptions",
-		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/subscriptions",
-		Summary:     "List subscriptions for an org",
-	}, listSubscriptions(app))
+		Summary:     "Get org grant balance",
+	}, func(ctx context.Context, input *OrgPath) (*BalanceOutput, error) {
+		if cfg.Client == nil {
+			return nil, huma.Error500InternalServerError("billing client unavailable")
+		}
+		balance, err := cfg.Client.GetOrgBalance(ctx, billing.OrgID(input.OrgId))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("get balance", err)
+		}
+		return &BalanceOutput{Body: BalanceOutputBody{
+			OrgId:             input.OrgId,
+			FreeTierAvailable: int64(balance.FreeTierAvailable),
+			FreeTierPending:   int64(balance.FreeTierPending),
+			CreditAvailable:   int64(balance.CreditAvailable),
+			CreditPending:     int64(balance.CreditPending),
+			TotalAvailable:    int64(balance.TotalAvailable),
+		}}, nil
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-grants",
 		Method:      http.MethodGet,
 		Path:        "/internal/billing/v1/orgs/{org_id}/grants",
 		Summary:     "List credit grants for an org",
-	}, listGrants(app))
+	}, func(ctx context.Context, input *GrantsInput) (*GrantsOutput, error) {
+		if cfg.Client == nil {
+			return nil, huma.Error500InternalServerError("billing client unavailable")
+		}
+		grants, err := cfg.Client.ListGrantBalances(ctx, billing.OrgID(input.OrgId), input.ProductId)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list grants", err)
+		}
+		out := make([]GrantJSON, 0, len(grants))
+		for _, grant := range grants {
+			entry := GrantJSON{
+				GrantId:   grant.GrantID.String(),
+				Source:    grant.Source.String(),
+				Available: int64(grant.Available),
+				Pending:   int64(grant.Pending),
+			}
+			if grant.ExpiresAt != nil {
+				value := grant.ExpiresAt.UTC().Format(time.RFC3339Nano)
+				entry.ExpiresAt = &value
+			}
+			out = append(out, entry)
+		}
+		return &GrantsOutput{Body: GrantsOutputBody{Grants: out}}, nil
+	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "list-usage",
+		OperationID: "list-subscriptions",
 		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/usage",
-		Summary:     "List billing events for an org",
-	}, listUsage(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "check-quotas",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/check-quotas",
-		Summary:       "Check quota windows for a metered product",
-		DefaultStatus: 200,
-	}, checkQuotas(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "reserve",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/reserve",
-		Summary:       "Reserve one metered billing window",
-		DefaultStatus: 200,
-	}, reserve(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "settle",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/settle",
-		Summary:       "Settle a metered reservation",
-		DefaultStatus: 200,
-	}, settle(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "renew",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/renew",
-		Summary:       "Renew a metered reservation window",
-		DefaultStatus: 200,
-	}, renew(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "void",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/void",
-		Summary:       "Void a metered reservation",
-		DefaultStatus: 200,
-	}, voidReservation(app))
+		Path:        "/internal/billing/v1/orgs/{org_id}/subscriptions",
+		Summary:     "List subscriptions for an org",
+	}, func(ctx context.Context, input *OrgPath) (*SubscriptionsOutput, error) {
+		if cfg.Client == nil {
+			return nil, huma.Error500InternalServerError("billing client unavailable")
+		}
+		subscriptions, err := cfg.Client.ListSubscriptions(ctx, billing.OrgID(input.OrgId))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list subscriptions", err)
+		}
+		out := make([]SubscriptionJSON, 0, len(subscriptions))
+		for _, subscription := range subscriptions {
+			entry := SubscriptionJSON{
+				SubscriptionId: subscription.SubscriptionID,
+				ProductId:      subscription.ProductID,
+				PlanId:         subscription.PlanID,
+				Cadence:        subscription.Cadence,
+				Status:         subscription.Status,
+			}
+			if subscription.CurrentPeriodStart != nil {
+				value := subscription.CurrentPeriodStart.UTC().Format(time.RFC3339Nano)
+				entry.CurrentPeriodStart = &value
+			}
+			if subscription.CurrentPeriodEnd != nil {
+				value := subscription.CurrentPeriodEnd.UTC().Format(time.RFC3339Nano)
+				entry.CurrentPeriodEnd = &value
+			}
+			out = append(out, entry)
+		}
+		return &SubscriptionsOutput{Body: SubscriptionsOutputBody{Subscriptions: out}}, nil
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-checkout",
@@ -142,7 +310,22 @@ func registerRoutes(api huma.API, app *billingruntime.App) {
 		Path:          "/internal/billing/v1/checkout",
 		Summary:       "Create a Stripe checkout session",
 		DefaultStatus: 200,
-	}, createCheckout(app))
+	}, func(ctx context.Context, input *CheckoutInput) (*URLOutput, error) {
+		if cfg.Client == nil {
+			return nil, huma.Error500InternalServerError("billing client unavailable")
+		}
+		url, err := cfg.Client.CreateCheckoutSession(ctx, billing.OrgID(input.Body.OrgId), input.Body.ProductId, billing.CheckoutParams{
+			AmountCents: input.Body.AmountCents,
+			SuccessURL:  input.Body.SuccessUrl,
+			CancelURL:   input.Body.CancelUrl,
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("create checkout", err)
+		}
+		output := &URLOutput{}
+		output.Body.Url = url
+		return output, nil
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-subscription",
@@ -150,987 +333,161 @@ func registerRoutes(api huma.API, app *billingruntime.App) {
 		Path:          "/internal/billing/v1/subscribe",
 		Summary:       "Create a Stripe subscription checkout",
 		DefaultStatus: 200,
-	}, createSubscription(app))
+	}, func(ctx context.Context, input *CreateSubscriptionInput) (*URLOutput, error) {
+		if cfg.Client == nil {
+			return nil, huma.Error500InternalServerError("billing client unavailable")
+		}
+		url, err := cfg.Client.CreateSubscription(ctx, billing.OrgID(input.Body.OrgId), input.Body.PlanId, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessUrl, input.Body.CancelUrl)
+		if err != nil {
+			return nil, huma.Error501NotImplemented("subscription checkout", err)
+		}
+		output := &URLOutput{}
+		output.Body.Url = url
+		return output, nil
+	})
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "ops-deposit-credits",
+		OperationID:   "reserve-window",
 		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/ops/deposit-credits",
-		Summary:       "Deposit subscription credits for the current period",
+		Path:          "/internal/billing/v1/reserve",
+		Summary:       "Reserve a billing window",
 		DefaultStatus: 200,
-	}, opsDepositCredits(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "ops-expire-credits",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/ops/expire-credits",
-		Summary:       "Expire credit grants past their expiry date",
-		DefaultStatus: 200,
-	}, opsExpireCredits(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "ops-reconcile",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/ops/reconcile",
-		Summary:       "Run reconciliation across PG, TigerBeetle, and ClickHouse",
-		DefaultStatus: 200,
-	}, opsReconcile(app))
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "ops-trust-tier-evaluate",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/ops/trust-tier-evaluate",
-		Summary:       "Evaluate and update org trust tiers",
-		DefaultStatus: 200,
-	}, opsTrustTierEvaluate(app))
-}
-
-type orgIDPath struct {
-	OrgID uint64 `path:"org_id" doc:"Organization ID"`
-}
-
-type orgProductPath struct {
-	OrgID     uint64 `path:"org_id" doc:"Organization ID"`
-	ProductID string `path:"product_id" doc:"Product ID"`
-}
-
-type healthOutput struct {
-	Body struct {
-		Status string `json:"status"`
-	}
-}
-
-type balanceOutput struct {
-	Body struct {
-		OrgID             string `json:"org_id"`
-		FreeTierAvailable uint64 `json:"free_tier_available"`
-		FreeTierPending   uint64 `json:"free_tier_pending"`
-		CreditAvailable   uint64 `json:"credit_available"`
-		CreditPending     uint64 `json:"credit_pending"`
-		TotalAvailable    uint64 `json:"total_available"`
-	}
-}
-
-type productBalanceOutput struct {
-	Body struct {
-		OrgID             string `json:"org_id"`
-		ProductID         string `json:"product_id"`
-		FreeTierRemaining uint64 `json:"free_tier_remaining"`
-		IncludedRemaining uint64 `json:"included_remaining"`
-		PrepaidRemaining  uint64 `json:"prepaid_remaining"`
-	}
-}
-
-type subscriptionJSON struct {
-	SubscriptionID       int64      `json:"subscription_id"`
-	PlanID               string     `json:"plan_id"`
-	ProductID            string     `json:"product_id"`
-	Cadence              string     `json:"cadence"`
-	Status               string     `json:"status"`
-	StripeSubscriptionID *string    `json:"stripe_subscription_id,omitempty"`
-	CurrentPeriodStart   *time.Time `json:"current_period_start,omitempty"`
-	CurrentPeriodEnd     *time.Time `json:"current_period_end,omitempty"`
-	OverageCapUnits      *int64     `json:"overage_cap_units,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-}
-
-type grantJSON struct {
-	GrantID   string     `json:"grant_id"`
-	ProductID string     `json:"product_id"`
-	Amount    int64      `json:"amount"`
-	Source    string     `json:"source"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-
-type usageEventJSON struct {
-	EventID   int64           `json:"event_id"`
-	EventType string          `json:"event_type"`
-	Payload   json.RawMessage `json:"payload"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-type subscriptionsOutput struct {
-	Body struct {
-		OrgID         string             `json:"org_id"`
-		Subscriptions []subscriptionJSON `json:"subscriptions"`
-	}
-}
-
-type grantsInput struct {
-	OrgID     uint64 `path:"org_id" doc:"Organization ID"`
-	ProductID string `query:"product_id,omitempty" doc:"Filter by product"`
-	Active    bool   `query:"active,omitempty" doc:"Only active grants"`
-}
-
-type grantsOutput struct {
-	Body struct {
-		OrgID  string      `json:"org_id"`
-		Grants []grantJSON `json:"grants"`
-	}
-}
-
-type usageInput struct {
-	OrgID     uint64 `path:"org_id" doc:"Organization ID"`
-	ProductID string `query:"product_id,omitempty" doc:"Filter by product"`
-	Since     string `query:"since,omitempty" doc:"RFC3339 lower bound on created_at"`
-	Limit     int    `query:"limit,omitempty" minimum:"1" maximum:"1000" doc:"Max results (1-1000, default 100)"`
-}
-
-type usageOutput struct {
-	Body struct {
-		OrgID  string           `json:"org_id"`
-		Events []usageEventJSON `json:"events"`
-	}
-}
-
-type quotaCheckInput struct {
-	Body struct {
-		OrgID           uint64 `json:"org_id" required:"true" minimum:"1"`
-		ProductID       string `json:"product_id" required:"true" maxLength:"255"`
-		ConcurrentCount uint64 `json:"concurrent_count" required:"true"`
-	}
-}
-
-type quotaViolationJSON struct {
-	Dimension string `json:"dimension"`
-	Window    string `json:"window"`
-	Limit     uint64 `json:"limit"`
-	Current   uint64 `json:"current"`
-}
-
-type quotaCheckOutput struct {
-	Body struct {
-		Allowed    bool                 `json:"allowed"`
-		Violations []quotaViolationJSON `json:"violations,omitempty"`
-	}
-}
-
-type reserveInput struct {
-	Body struct {
-		JobID           int64              `json:"job_id" required:"true" minimum:"1"`
-		OrgID           uint64             `json:"org_id" required:"true" minimum:"1"`
-		ProductID       string             `json:"product_id" required:"true" maxLength:"255"`
-		ActorID         string             `json:"actor_id" required:"true" maxLength:"255"`
-		ConcurrentCount uint64             `json:"concurrent_count" required:"true"`
-		SourceType      string             `json:"source_type" required:"true" maxLength:"255"`
-		SourceRef       string             `json:"source_ref" required:"true" maxLength:"255"`
-		Allocation      map[string]float64 `json:"allocation" required:"true"`
-	}
-}
-
-type grantLegJSON struct {
-	GrantID    string `json:"grant_id"`
-	TransferID string `json:"transfer_id"`
-	Amount     uint64 `json:"amount"`
-	Source     string `json:"source"`
-}
-
-type reservationJSON struct {
-	JobID               int64              `json:"job_id"`
-	OrgID               uint64             `json:"org_id"`
-	ProductID           string             `json:"product_id"`
-	PlanID              string             `json:"plan_id"`
-	ActorID             string             `json:"actor_id"`
-	SourceType          string             `json:"source_type"`
-	SourceRef           string             `json:"source_ref"`
-	WindowSeq           uint32             `json:"window_seq"`
-	WindowSecs          uint32             `json:"window_secs"`
-	WindowStart         time.Time          `json:"window_start"`
-	ExpiresAt           time.Time          `json:"expires_at"`
-	RenewBy             time.Time          `json:"renew_by"`
-	PricingPhase        string             `json:"pricing_phase"`
-	Allocation          map[string]float64 `json:"allocation"`
-	UnitRates           map[string]uint64  `json:"unit_rates"`
-	CostPerSec          uint64             `json:"cost_per_sec"`
-	GrantLegs           []grantLegJSON     `json:"grant_legs"`
-	SpendCapPeriodStart *time.Time         `json:"spend_cap_period_start,omitempty"`
-}
-
-type reserveOutput struct {
-	Body struct {
-		Reservation reservationJSON `json:"reservation"`
-	}
-}
-
-type settleInput struct {
-	Body struct {
-		Reservation   reservationJSON `json:"reservation" required:"true"`
-		ActualSeconds uint32          `json:"actual_seconds" required:"true" minimum:"1"`
-	}
-}
-
-type renewInput struct {
-	Body struct {
-		Reservation   reservationJSON `json:"reservation" required:"true"`
-		ActualSeconds uint32          `json:"actual_seconds" required:"true" minimum:"1"`
-	}
-}
-
-type voidInput struct {
-	Body struct {
-		Reservation reservationJSON `json:"reservation" required:"true"`
-	}
-}
-
-type statusOutput struct {
-	Body struct {
-		Status string `json:"status"`
-	}
-}
-
-type checkoutInput struct {
-	Body struct {
-		OrgID       uint64 `json:"org_id" required:"true" minimum:"1"`
-		ProductID   string `json:"product_id" required:"true" maxLength:"255"`
-		AmountCents int64  `json:"amount_cents" minimum:"1" required:"true"`
-		SuccessURL  string `json:"success_url" required:"true" maxLength:"2048"`
-		CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
-	}
-}
-
-type urlOutput struct {
-	Body struct {
-		URL string `json:"url"`
-	}
-}
-
-type subscriptionInput struct {
-	Body struct {
-		OrgID      uint64 `json:"org_id" required:"true" minimum:"1"`
-		PlanID     string `json:"plan_id" required:"true" maxLength:"255"`
-		Cadence    string `json:"cadence,omitempty" enum:"monthly,annual"`
-		SuccessURL string `json:"success_url" required:"true" maxLength:"2048"`
-		CancelURL  string `json:"cancel_url" required:"true" maxLength:"2048"`
-	}
-}
-
-type depositCreditsOutput struct {
-	Body struct {
-		SubscriptionsProcessed int      `json:"subscriptions_processed"`
-		CreditsDeposited       int      `json:"credits_deposited"`
-		CreditsSkipped         int      `json:"credits_skipped"`
-		CreditsFailed          int      `json:"credits_failed"`
-		Errors                 []string `json:"errors,omitempty"`
-	}
-}
-
-type expireCreditsOutput struct {
-	Body struct {
-		GrantsChecked int      `json:"grants_checked"`
-		GrantsExpired int      `json:"grants_expired"`
-		GrantsFailed  int      `json:"grants_failed"`
-		UnitsExpired  uint64   `json:"units_expired"`
-		Errors        []string `json:"errors,omitempty"`
-	}
-}
-
-type reconcileCheckJSON struct {
-	Name     string `json:"name"`
-	Severity string `json:"severity"`
-	Passed   bool   `json:"passed"`
-	Details  string `json:"details,omitempty"`
-}
-
-type reconcileOutput struct {
-	Body struct {
-		Checks    []reconcileCheckJSON `json:"checks"`
-		HasAlerts bool                 `json:"has_alerts"`
-	}
-}
-
-type trustTierOutput struct {
-	Body struct {
-		OrgPromoted int      `json:"org_promoted"`
-		OrgDemoted  int      `json:"org_demoted"`
-		Errors      []string `json:"errors,omitempty"`
-	}
-}
-
-func healthz() func(context.Context, *struct{}) (*healthOutput, error) {
-	return func(_ context.Context, _ *struct{}) (*healthOutput, error) {
-		out := &healthOutput{}
-		out.Body.Status = "ok"
-		return out, nil
-	}
-}
-
-func readyz(app *billingruntime.App) func(context.Context, *struct{}) (*healthOutput, error) {
-	return func(ctx context.Context, _ *struct{}) (*healthOutput, error) {
-		if app == nil {
-			return nil, huma.Error500InternalServerError("billing runtime unavailable")
-		}
-		if err := app.Ready(ctx); err != nil {
-			return nil, huma.Error503ServiceUnavailable("billing runtime not ready: " + err.Error())
-		}
-		out := &healthOutput{}
-		out.Body.Status = "ok"
-		return out, nil
-	}
-}
-
-func getOrgBalance(app *billingruntime.App) func(context.Context, *orgIDPath) (*balanceOutput, error) {
-	return func(ctx context.Context, input *orgIDPath) (*balanceOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
+	}, func(ctx context.Context, input *ReserveInput) (*ReserveOutput, error) {
+		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
 			return nil, err
 		}
-		bal, callErr := client.GetOrgBalance(ctx, billing.OrgID(input.OrgID))
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("get balance", callErr)
-		}
-		out := &balanceOutput{}
-		out.Body.OrgID = strconv.FormatUint(input.OrgID, 10)
-		out.Body.FreeTierAvailable = bal.FreeTierAvailable
-		out.Body.FreeTierPending = bal.FreeTierPending
-		out.Body.CreditAvailable = bal.CreditAvailable
-		out.Body.CreditPending = bal.CreditPending
-		out.Body.TotalAvailable = bal.TotalAvailable
-		return out, nil
-	}
-}
-
-func getProductBalance(app *billingruntime.App) func(context.Context, *orgProductPath) (*productBalanceOutput, error) {
-	return func(ctx context.Context, input *orgProductPath) (*productBalanceOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		bal, callErr := client.GetProductBalance(ctx, billing.OrgID(input.OrgID), input.ProductID)
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("get product balance", callErr)
-		}
-		out := &productBalanceOutput{}
-		out.Body.OrgID = strconv.FormatUint(input.OrgID, 10)
-		out.Body.ProductID = input.ProductID
-		out.Body.FreeTierRemaining = bal.FreeTierRemaining
-		out.Body.IncludedRemaining = bal.IncludedRemaining
-		out.Body.PrepaidRemaining = bal.PrepaidRemaining
-		return out, nil
-	}
-}
-
-func listSubscriptions(app *billingruntime.App) func(context.Context, *orgIDPath) (*subscriptionsOutput, error) {
-	return func(ctx context.Context, input *orgIDPath) (*subscriptionsOutput, error) {
-		pg, err := requirePG(app)
-		if err != nil {
-			return nil, err
-		}
-		rows, queryErr := listSubscriptionsQuery(ctx, pg, billing.OrgID(input.OrgID))
-		if queryErr != nil {
-			return nil, huma.Error500InternalServerError("list subscriptions", queryErr)
-		}
-		out := &subscriptionsOutput{}
-		out.Body.OrgID = strconv.FormatUint(input.OrgID, 10)
-		out.Body.Subscriptions = rows
-		return out, nil
-	}
-}
-
-func listGrants(app *billingruntime.App) func(context.Context, *grantsInput) (*grantsOutput, error) {
-	return func(ctx context.Context, input *grantsInput) (*grantsOutput, error) {
-		pg, err := requirePG(app)
-		if err != nil {
-			return nil, err
-		}
-		rows, queryErr := listGrantsQuery(ctx, pg, billing.OrgID(input.OrgID), input.ProductID, input.Active)
-		if queryErr != nil {
-			return nil, huma.Error500InternalServerError("list grants", queryErr)
-		}
-		out := &grantsOutput{}
-		out.Body.OrgID = strconv.FormatUint(input.OrgID, 10)
-		out.Body.Grants = rows
-		return out, nil
-	}
-}
-
-func listUsage(app *billingruntime.App) func(context.Context, *usageInput) (*usageOutput, error) {
-	return func(ctx context.Context, input *usageInput) (*usageOutput, error) {
-		pg, err := requirePG(app)
-		if err != nil {
-			return nil, err
-		}
-		var since *time.Time
-		if input.Since != "" {
-			t, parseErr := time.Parse(time.RFC3339, input.Since)
-			if parseErr != nil {
-				return nil, huma.Error400BadRequest("invalid since: " + parseErr.Error())
-			}
-			since = &t
-		}
-		rows, queryErr := listUsageQuery(ctx, pg, billing.OrgID(input.OrgID), input.ProductID, since, input.Limit)
-		if queryErr != nil {
-			return nil, huma.Error500InternalServerError("list usage", queryErr)
-		}
-		out := &usageOutput{}
-		out.Body.OrgID = strconv.FormatUint(input.OrgID, 10)
-		out.Body.Events = rows
-		return out, nil
-	}
-}
-
-func checkQuotas(app *billingruntime.App) func(context.Context, *quotaCheckInput) (*quotaCheckOutput, error) {
-	return func(ctx context.Context, input *quotaCheckInput) (*quotaCheckOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		ctx, span := tracer.Start(ctx, "billing.CheckQuotas",
-			trace.WithAttributes(
-				attribute.Int64("billing.org_id", int64(input.Body.OrgID)),
-				attribute.String("billing.product_id", input.Body.ProductID),
-			))
-		defer span.End()
-		result, callErr := client.CheckQuotas(ctx, billing.OrgID(input.Body.OrgID), input.Body.ProductID, input.Body.ConcurrentCount)
-		if callErr != nil {
-			span.RecordError(callErr)
-			span.SetStatus(codes.Error, callErr.Error())
-			return nil, huma.Error500InternalServerError("check quotas", callErr)
-		}
-		span.SetAttributes(attribute.Bool("billing.allowed", result.Allowed))
-		out := &quotaCheckOutput{}
-		out.Body.Allowed = result.Allowed
-		for _, violation := range result.Violations {
-			out.Body.Violations = append(out.Body.Violations, quotaViolationJSON{
-				Dimension: violation.Dimension,
-				Window:    violation.Window,
-				Limit:     violation.Limit,
-				Current:   violation.Current,
-			})
-		}
-		slog.InfoContext(ctx, "billing: quota check", "org_id", input.Body.OrgID, "product_id", input.Body.ProductID, "allowed", result.Allowed, "violations", len(result.Violations))
-		return out, nil
-	}
-}
-
-func reserve(app *billingruntime.App) func(context.Context, *reserveInput) (*reserveOutput, error) {
-	return func(ctx context.Context, input *reserveInput) (*reserveOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		ctx, span := tracer.Start(ctx, "billing.Reserve",
-			trace.WithAttributes(
-				attribute.Int64("billing.job_id", input.Body.JobID),
-				attribute.Int64("billing.org_id", int64(input.Body.OrgID)),
-				attribute.String("billing.product_id", input.Body.ProductID),
-				attribute.String("billing.source_ref", input.Body.SourceRef),
-			))
-		defer span.End()
-		reservation, callErr := client.Reserve(ctx, billing.ReserveRequest{
-			JobID:           billing.JobID(input.Body.JobID),
-			OrgID:           billing.OrgID(input.Body.OrgID),
-			ProductID:       input.Body.ProductID,
-			ActorID:         input.Body.ActorID,
-			ConcurrentCount: input.Body.ConcurrentCount,
+		reservation, err := cfg.Client.ReserveWindow(ctx, billing.ReserveRequest{
+			OrgID:           billing.OrgID(input.Body.OrgId),
+			ProductID:       input.Body.ProductId,
+			ActorID:         input.Body.ActorId,
+			Allocation:      input.Body.Allocation,
+			ConcurrentCount: uint64(input.Body.ConcurrentCount),
 			SourceType:      input.Body.SourceType,
 			SourceRef:       input.Body.SourceRef,
-			Allocation:      input.Body.Allocation,
 		})
-		if callErr != nil {
-			span.RecordError(callErr)
-			span.SetStatus(codes.Error, callErr.Error())
-			return nil, mapReserveError(callErr)
-		}
-		span.SetAttributes(attribute.Int("billing.window_seq", int(reservation.WindowSeq)))
-		out := &reserveOutput{}
-		out.Body.Reservation = reservationFromDomain(reservation)
-		slog.InfoContext(ctx, "billing: reserved",
-			"org_id", input.Body.OrgID,
-			"product_id", input.Body.ProductID,
-			"job_id", input.Body.JobID,
-			"source_type", input.Body.SourceType,
-			"source_ref", input.Body.SourceRef,
-			"window_seq", reservation.WindowSeq,
-		)
-		return out, nil
-	}
-}
-
-func settle(app *billingruntime.App) func(context.Context, *settleInput) (*statusOutput, error) {
-	return func(ctx context.Context, input *settleInput) (*statusOutput, error) {
-		client, err := requireBilling(app)
 		if err != nil {
-			return nil, err
-		}
-		reservation, convErr := input.Body.Reservation.toDomain()
-		if convErr != nil {
-			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
-		}
-		ctx, span := tracer.Start(ctx, "billing.Settle",
-			trace.WithAttributes(
-				attribute.Int64("billing.job_id", int64(reservation.JobID)),
-				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
-				attribute.String("billing.product_id", reservation.ProductID),
-				attribute.Int("billing.actual_seconds", int(input.Body.ActualSeconds)),
-			))
-		defer span.End()
-		if callErr := client.Settle(ctx, reservation, input.Body.ActualSeconds); callErr != nil {
-			span.RecordError(callErr)
-			span.SetStatus(codes.Error, callErr.Error())
-			return nil, huma.Error500InternalServerError("settle reservation", callErr)
-		}
-		out := &statusOutput{}
-		out.Body.Status = "settled"
-		slog.InfoContext(ctx, "billing: settled",
-			"org_id", reservation.OrgID,
-			"product_id", reservation.ProductID,
-			"job_id", reservation.JobID,
-			"source_type", reservation.SourceType,
-			"source_ref", reservation.SourceRef,
-			"window_seq", reservation.WindowSeq,
-			"actual_seconds", input.Body.ActualSeconds,
-		)
-		return out, nil
-	}
-}
-
-func renew(app *billingruntime.App) func(context.Context, *renewInput) (*reserveOutput, error) {
-	return func(ctx context.Context, input *renewInput) (*reserveOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		reservation, convErr := input.Body.Reservation.toDomain()
-		if convErr != nil {
-			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
-		}
-		ctx, span := tracer.Start(ctx, "billing.Renew",
-			trace.WithAttributes(
-				attribute.Int64("billing.job_id", int64(reservation.JobID)),
-				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
-				attribute.String("billing.product_id", reservation.ProductID),
-				attribute.Int("billing.actual_seconds", int(input.Body.ActualSeconds)),
-				attribute.Int("billing.window_seq", int(reservation.WindowSeq)),
-			))
-		defer span.End()
-		next, callErr := client.Renew(ctx, reservation, input.Body.ActualSeconds)
-		if callErr != nil {
-			span.RecordError(callErr)
-			span.SetStatus(codes.Error, callErr.Error())
-			return nil, mapRenewError(callErr)
-		}
-		span.SetAttributes(attribute.Int("billing.next_window_seq", int(next.WindowSeq)))
-		out := &reserveOutput{}
-		out.Body.Reservation = reservationFromDomain(next)
-		slog.InfoContext(ctx, "billing: renewed",
-			"org_id", reservation.OrgID,
-			"product_id", reservation.ProductID,
-			"job_id", reservation.JobID,
-			"source_type", reservation.SourceType,
-			"source_ref", reservation.SourceRef,
-			"window_seq", reservation.WindowSeq,
-			"next_window_seq", next.WindowSeq,
-			"actual_seconds", input.Body.ActualSeconds,
-		)
-		return out, nil
-	}
-}
-
-func voidReservation(app *billingruntime.App) func(context.Context, *voidInput) (*statusOutput, error) {
-	return func(ctx context.Context, input *voidInput) (*statusOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		reservation, convErr := input.Body.Reservation.toDomain()
-		if convErr != nil {
-			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
-		}
-		ctx, span := tracer.Start(ctx, "billing.Void",
-			trace.WithAttributes(
-				attribute.Int64("billing.job_id", int64(reservation.JobID)),
-				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
-				attribute.String("billing.product_id", reservation.ProductID),
-			))
-		defer span.End()
-		if callErr := client.Void(ctx, reservation); callErr != nil {
-			span.RecordError(callErr)
-			span.SetStatus(codes.Error, callErr.Error())
-			return nil, huma.Error500InternalServerError("void reservation", callErr)
-		}
-		out := &statusOutput{}
-		out.Body.Status = "voided"
-		slog.InfoContext(ctx, "billing: voided",
-			"org_id", reservation.OrgID,
-			"product_id", reservation.ProductID,
-			"job_id", reservation.JobID,
-			"source_type", reservation.SourceType,
-			"source_ref", reservation.SourceRef,
-			"window_seq", reservation.WindowSeq,
-		)
-		return out, nil
-	}
-}
-
-func createCheckout(app *billingruntime.App) func(context.Context, *checkoutInput) (*urlOutput, error) {
-	return func(ctx context.Context, input *checkoutInput) (*urlOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		url, callErr := client.CreateCheckoutSession(ctx, billing.OrgID(input.Body.OrgID), input.Body.ProductID, billing.CheckoutParams{
-			AmountCents: input.Body.AmountCents,
-			SuccessURL:  input.Body.SuccessURL,
-			CancelURL:   input.Body.CancelURL,
-		})
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("create checkout", callErr)
-		}
-		out := &urlOutput{}
-		out.Body.URL = url
-		return out, nil
-	}
-}
-
-func createSubscription(app *billingruntime.App) func(context.Context, *subscriptionInput) (*urlOutput, error) {
-	return func(ctx context.Context, input *subscriptionInput) (*urlOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		cadence := billing.BillingCadence(input.Body.Cadence)
-		if cadence == "" {
-			cadence = billing.CadenceMonthly
-		}
-		url, callErr := client.CreateSubscription(ctx, billing.OrgID(input.Body.OrgID), input.Body.PlanID, cadence, input.Body.SuccessURL, input.Body.CancelURL)
-		if callErr != nil {
-			if errors.Is(callErr, billing.ErrNoPriceConfigured) {
-				return nil, huma.Error400BadRequest(callErr.Error())
+			switch {
+			case errors.Is(err, billing.ErrInsufficientBalance):
+				return nil, huma.Error402PaymentRequired("reserve", err)
+			case errors.Is(err, billing.ErrOrgSuspended):
+				return nil, huma.Error403Forbidden("reserve", err)
+			default:
+				return nil, huma.Error500InternalServerError("reserve", err)
 			}
-			return nil, huma.Error500InternalServerError("create subscription", callErr)
 		}
-		out := &urlOutput{}
-		out.Body.URL = url
-		return out, nil
-	}
-}
+		output := &ReserveOutput{}
+		output.Body.Reservation = toWindowReservationJSON(reservation)
+		return output, nil
+	})
 
-func opsDepositCredits(app *billingruntime.App) func(context.Context, *struct{}) (*depositCreditsOutput, error) {
-	return func(ctx context.Context, _ *struct{}) (*depositCreditsOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
+	huma.Register(api, huma.Operation{
+		OperationID:   "settle-window",
+		Method:        http.MethodPost,
+		Path:          "/internal/billing/v1/settle",
+		Summary:       "Settle a reserved billing window",
+		DefaultStatus: 200,
+	}, func(ctx context.Context, input *SettleInput) (*SettleOutput, error) {
+		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
 			return nil, err
 		}
-		result, callErr := client.DepositSubscriptionCredits(ctx)
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("deposit credits", callErr)
-		}
-		out := &depositCreditsOutput{}
-		out.Body.SubscriptionsProcessed = result.SubscriptionsProcessed
-		out.Body.CreditsDeposited = result.CreditsDeposited
-		out.Body.CreditsSkipped = result.CreditsSkipped
-		out.Body.CreditsFailed = result.CreditsFailed
-		for _, problem := range result.Errors {
-			out.Body.Errors = append(out.Body.Errors, problem.Error())
-		}
-		return out, nil
-	}
-}
-
-func opsExpireCredits(app *billingruntime.App) func(context.Context, *struct{}) (*expireCreditsOutput, error) {
-	return func(ctx context.Context, _ *struct{}) (*expireCreditsOutput, error) {
-		client, err := requireBilling(app)
+		result, err := cfg.Client.SettleWindow(ctx, input.Body.WindowId, uint32(input.Body.ActualQuantity), input.Body.UsageSummary)
 		if err != nil {
+			switch {
+			case errors.Is(err, billing.ErrWindowNotFound):
+				return nil, huma.Error404NotFound("window not found")
+			case errors.Is(err, billing.ErrWindowAlreadyVoided):
+				return nil, huma.Error400BadRequest("window already voided")
+			default:
+				if cfg.Logger != nil {
+					cfg.Logger.ErrorContext(ctx, "settle billing window", "window_id", input.Body.WindowId, "actual_quantity", input.Body.ActualQuantity, "error", err)
+				}
+				return nil, huma.Error500InternalServerError("settle", err)
+			}
+		}
+		output := &SettleOutput{}
+		output.Body.WindowId = result.WindowID
+		output.Body.ActualQuantity = int32(result.ActualQuantity)
+		output.Body.BillableQuantity = int32(result.BillableQuantity)
+		output.Body.WriteoffQuantity = int32(result.WriteoffQuantity)
+		output.Body.BilledChargeUnits = int64(result.BilledChargeUnits)
+		output.Body.WriteoffChargeUnits = int64(result.WriteoffChargeUnits)
+		output.Body.SettledAt = result.SettledAt.UTC().Format(time.RFC3339Nano)
+		return output, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "void-window",
+		Method:        http.MethodPost,
+		Path:          "/internal/billing/v1/void",
+		Summary:       "Void a reserved billing window",
+		DefaultStatus: 200,
+	}, func(ctx context.Context, input *VoidInput) (*VoidOutput, error) {
+		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
 			return nil, err
 		}
-		result, callErr := client.ExpireCredits(ctx)
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("expire credits", callErr)
+		if err := cfg.Client.VoidWindow(ctx, input.Body.WindowId); err != nil {
+			switch {
+			case errors.Is(err, billing.ErrWindowNotFound):
+				return nil, huma.Error404NotFound("window not found")
+			case errors.Is(err, billing.ErrWindowAlreadySettled):
+				return nil, huma.Error400BadRequest("window already settled")
+			default:
+				if cfg.Logger != nil {
+					cfg.Logger.ErrorContext(ctx, "void billing window", "window_id", input.Body.WindowId, "error", err)
+				}
+				return nil, huma.Error500InternalServerError("void", err)
+			}
 		}
-		out := &expireCreditsOutput{}
-		out.Body.GrantsChecked = result.GrantsChecked
-		out.Body.GrantsExpired = result.GrantsExpired
-		out.Body.GrantsFailed = result.GrantsFailed
-		out.Body.UnitsExpired = result.UnitsExpired
-		for _, problem := range result.Errors {
-			out.Body.Errors = append(out.Body.Errors, problem.Error())
-		}
-		return out, nil
-	}
+		output := &VoidOutput{}
+		output.Body.WindowId = input.Body.WindowId
+		return output, nil
+	})
 }
 
-func opsReconcile(app *billingruntime.App) func(context.Context, *struct{}) (*reconcileOutput, error) {
-	return func(ctx context.Context, _ *struct{}) (*reconcileOutput, error) {
-		if app == nil || app.Billing == nil || app.ReconcileQuerier == nil {
-			return nil, huma.Error500InternalServerError("billing runtime unavailable")
-		}
-		result, callErr := app.Billing.Reconcile(ctx, app.ReconcileQuerier)
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("reconcile", callErr)
-		}
-		out := &reconcileOutput{}
-		for _, check := range result.Checks {
-			out.Body.Checks = append(out.Body.Checks, reconcileCheckJSON{
-				Name:     check.Name,
-				Severity: check.Severity,
-				Passed:   check.Passed,
-				Details:  check.Details,
-			})
-		}
-		out.Body.HasAlerts = result.HasAlerts()
-		return out, nil
+func requireInternalRole(ctx context.Context, role string) error {
+	identity := auth.FromContext(ctx)
+	if identity == nil {
+		return huma.Error401Unauthorized("missing identity")
 	}
+	if role == "" {
+		role = "billing_internal"
+	}
+	for _, candidate := range identity.Roles {
+		if candidate == role {
+			return nil
+		}
+	}
+	return huma.Error403Forbidden("missing internal billing role")
 }
 
-func opsTrustTierEvaluate(app *billingruntime.App) func(context.Context, *struct{}) (*trustTierOutput, error) {
-	return func(ctx context.Context, _ *struct{}) (*trustTierOutput, error) {
-		client, err := requireBilling(app)
-		if err != nil {
-			return nil, err
-		}
-		result, callErr := client.EvaluateTrustTiers(ctx)
-		if callErr != nil {
-			return nil, huma.Error500InternalServerError("evaluate trust tiers", callErr)
-		}
-		out := &trustTierOutput{}
-		out.Body.OrgPromoted = result.OrgPromoted
-		out.Body.OrgDemoted = result.OrgDemoted
-		for _, problem := range result.Errors {
-			out.Body.Errors = append(out.Body.Errors, problem.Error())
-		}
-		return out, nil
+func toWindowReservationJSON(in billing.WindowReservation) WindowReservationJSON {
+	var renewBy *string
+	if in.RenewBy != nil {
+		value := in.RenewBy.UTC().Format(time.RFC3339Nano)
+		renewBy = &value
 	}
-}
-
-func requireBilling(app *billingruntime.App) (*billing.Client, error) {
-	if app == nil || app.Billing == nil {
-		return nil, huma.Error500InternalServerError("billing runtime unavailable")
+	unitRates := make(map[string]int64, len(in.UnitRates))
+	for key, value := range in.UnitRates {
+		unitRates[key] = int64(value)
 	}
-	return app.Billing, nil
-}
-
-func requirePG(app *billingruntime.App) (*sql.DB, error) {
-	if app == nil || app.PG == nil {
-		return nil, huma.Error500InternalServerError("billing runtime unavailable")
+	return WindowReservationJSON{
+		WindowId:            in.WindowID,
+		OrgId:               int64(in.OrgID),
+		ProductId:           in.ProductID,
+		PlanId:              in.PlanID,
+		ActorId:             in.ActorID,
+		SourceType:          in.SourceType,
+		SourceRef:           in.SourceRef,
+		WindowSeq:           int32(in.WindowSeq),
+		ReservationShape:    string(in.ReservationShape),
+		ReservedQuantity:    int32(in.ReservedQuantity),
+		ReservedChargeUnits: int64(in.ReservedChargeUnits),
+		PricingPhase:        string(in.PricingPhase),
+		Allocation:          in.Allocation,
+		UnitRates:           unitRates,
+		CostPerUnit:         int64(in.CostPerUnit),
+		WindowStart:         in.WindowStart.UTC().Format(time.RFC3339Nano),
+		ExpiresAt:           in.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		RenewBy:             renewBy,
 	}
-	return app.PG, nil
-}
-
-func mapReserveError(err error) error {
-	switch {
-	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrNoActiveSubscription), errors.Is(err, billing.ErrSpendCapExceeded):
-		return huma.Error402PaymentRequired(err.Error())
-	case errors.Is(err, billing.ErrOrgSuspended), errors.Is(err, billing.ErrConcurrentLimitExceeded):
-		return huma.Error403Forbidden(err.Error())
-	case errors.Is(err, billing.ErrDimensionMismatch):
-		return huma.Error400BadRequest(err.Error())
-	default:
-		return huma.Error500InternalServerError("reserve", err)
-	}
-}
-
-func mapRenewError(err error) error {
-	switch {
-	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrNoActiveSubscription), errors.Is(err, billing.ErrSpendCapExceeded):
-		return huma.Error402PaymentRequired(err.Error())
-	case errors.Is(err, billing.ErrOrgSuspended), errors.Is(err, billing.ErrConcurrentLimitExceeded):
-		return huma.Error403Forbidden(err.Error())
-	case errors.Is(err, billing.ErrDimensionMismatch), errors.Is(err, billing.ErrPendingTransferExpired):
-		return huma.Error400BadRequest(err.Error())
-	default:
-		return huma.Error500InternalServerError("renew", err)
-	}
-}
-
-func reservationFromDomain(reservation billing.Reservation) reservationJSON {
-	out := reservationJSON{
-		JobID:               int64(reservation.JobID),
-		OrgID:               uint64(reservation.OrgID),
-		ProductID:           reservation.ProductID,
-		PlanID:              reservation.PlanID,
-		ActorID:             reservation.ActorID,
-		SourceType:          reservation.SourceType,
-		SourceRef:           reservation.SourceRef,
-		WindowSeq:           reservation.WindowSeq,
-		WindowSecs:          reservation.WindowSecs,
-		WindowStart:         reservation.WindowStart,
-		ExpiresAt:           reservation.ExpiresAt,
-		RenewBy:             reservation.RenewBy,
-		PricingPhase:        string(reservation.PricingPhase),
-		Allocation:          reservation.Allocation,
-		UnitRates:           reservation.UnitRates,
-		CostPerSec:          reservation.CostPerSec,
-		SpendCapPeriodStart: reservation.SpendCapPeriodStart,
-	}
-	for _, leg := range reservation.GrantLegs {
-		out.GrantLegs = append(out.GrantLegs, grantLegJSON{
-			GrantID:    leg.GrantID.String(),
-			TransferID: leg.TransferID.String(),
-			Amount:     leg.Amount,
-			Source:     leg.Source.String(),
-		})
-	}
-	return out
-}
-
-func (reservation reservationJSON) toDomain() (billing.Reservation, error) {
-	out := billing.Reservation{
-		JobID:               billing.JobID(reservation.JobID),
-		OrgID:               billing.OrgID(reservation.OrgID),
-		ProductID:           reservation.ProductID,
-		PlanID:              reservation.PlanID,
-		ActorID:             reservation.ActorID,
-		SourceType:          reservation.SourceType,
-		SourceRef:           reservation.SourceRef,
-		WindowSeq:           reservation.WindowSeq,
-		WindowSecs:          reservation.WindowSecs,
-		WindowStart:         reservation.WindowStart,
-		ExpiresAt:           reservation.ExpiresAt,
-		RenewBy:             reservation.RenewBy,
-		PricingPhase:        billing.PricingPhase(reservation.PricingPhase),
-		Allocation:          reservation.Allocation,
-		UnitRates:           reservation.UnitRates,
-		CostPerSec:          reservation.CostPerSec,
-		SpendCapPeriodStart: reservation.SpendCapPeriodStart,
-	}
-	for _, leg := range reservation.GrantLegs {
-		grantID, err := billing.ParseGrantID(leg.GrantID)
-		if err != nil {
-			return billing.Reservation{}, err
-		}
-		transferID, err := billing.ParseTransferID(leg.TransferID)
-		if err != nil {
-			return billing.Reservation{}, err
-		}
-		source, err := billing.ParseGrantSourceType(leg.Source)
-		if err != nil {
-			return billing.Reservation{}, err
-		}
-		out.GrantLegs = append(out.GrantLegs, billing.GrantLeg{
-			GrantID:    grantID,
-			TransferID: transferID,
-			Amount:     leg.Amount,
-			Source:     source,
-		})
-	}
-	return out, nil
-}
-
-func listSubscriptionsQuery(ctx context.Context, pg *sql.DB, orgID billing.OrgID) ([]subscriptionJSON, error) {
-	rows, err := pg.QueryContext(ctx, `
-		SELECT subscription_id, plan_id, product_id, cadence, status,
-		       stripe_subscription_id, current_period_start, current_period_end,
-		       overage_cap_units, created_at
-		FROM subscriptions
-		WHERE org_id = $1
-		ORDER BY created_at DESC
-	`, strconv.FormatUint(uint64(orgID), 10))
-	if err != nil {
-		return nil, fmt.Errorf("query subscriptions: %w", err)
-	}
-	defer rows.Close()
-
-	var subs []subscriptionJSON
-	for rows.Next() {
-		var sub subscriptionJSON
-		if err := rows.Scan(
-			&sub.SubscriptionID, &sub.PlanID, &sub.ProductID, &sub.Cadence, &sub.Status,
-			&sub.StripeSubscriptionID, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd,
-			&sub.OverageCapUnits, &sub.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan subscription: %w", err)
-		}
-		subs = append(subs, sub)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate subscriptions: %w", err)
-	}
-	if subs == nil {
-		subs = []subscriptionJSON{}
-	}
-	return subs, nil
-}
-
-func listGrantsQuery(ctx context.Context, pg *sql.DB, orgID billing.OrgID, productID string, activeOnly bool) ([]grantJSON, error) {
-	query := `
-		SELECT grant_id, product_id, amount, source, expires_at, closed_at, created_at
-		FROM credit_grants
-		WHERE org_id = $1
-	`
-	args := []any{strconv.FormatUint(uint64(orgID), 10)}
-	argIdx := 2
-
-	if productID != "" {
-		query += fmt.Sprintf(" AND product_id = $%d", argIdx)
-		args = append(args, productID)
-		argIdx++
-	}
-	if activeOnly {
-		query += " AND closed_at IS NULL"
-	}
-	query += " ORDER BY created_at DESC"
-
-	rows, err := pg.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query grants: %w", err)
-	}
-	defer rows.Close()
-
-	var grants []grantJSON
-	for rows.Next() {
-		var grant grantJSON
-		if err := rows.Scan(&grant.GrantID, &grant.ProductID, &grant.Amount, &grant.Source, &grant.ExpiresAt, &grant.ClosedAt, &grant.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan grant: %w", err)
-		}
-		grants = append(grants, grant)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate grants: %w", err)
-	}
-	if grants == nil {
-		grants = []grantJSON{}
-	}
-	return grants, nil
-}
-
-func listUsageQuery(ctx context.Context, pg *sql.DB, orgID billing.OrgID, productID string, since *time.Time, limit int) ([]usageEventJSON, error) {
-	query := `
-		SELECT event_id, event_type, payload, created_at
-		FROM billing_events
-		WHERE org_id = $1
-	`
-	args := []any{strconv.FormatUint(uint64(orgID), 10)}
-	argIdx := 2
-
-	if productID != "" {
-		query += fmt.Sprintf(" AND payload->>'product_id' = $%d", argIdx)
-		args = append(args, productID)
-		argIdx++
-	}
-	if since != nil {
-		query += fmt.Sprintf(" AND created_at >= $%d", argIdx)
-		args = append(args, *since)
-		argIdx++
-	}
-	query += " ORDER BY created_at DESC"
-
-	if limit <= 0 || limit > 1000 {
-		limit = 100
-	}
-	query += fmt.Sprintf(" LIMIT $%d", argIdx)
-	args = append(args, limit)
-
-	rows, err := pg.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query usage events: %w", err)
-	}
-	defer rows.Close()
-
-	var events []usageEventJSON
-	for rows.Next() {
-		var event usageEventJSON
-		if err := rows.Scan(&event.EventID, &event.EventType, &event.Payload, &event.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan event: %w", err)
-		}
-		events = append(events, event)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate events: %w", err)
-	}
-	if events == nil {
-		events = []usageEventJSON{}
-	}
-	return events, nil
 }

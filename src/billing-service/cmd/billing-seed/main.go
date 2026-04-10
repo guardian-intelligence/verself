@@ -83,7 +83,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
 	pg, err := sql.Open("postgres", pgDSN)
 	if err != nil {
 		return fmt.Errorf("open postgres: %w", err)
@@ -105,96 +104,80 @@ func run() error {
 	billingCfg.TigerBeetleAddresses = tbAddresses
 	billingCfg.TigerBeetleClusterID = cfg.tbClusterID
 
-	client, err := billing.NewClient(
-		tbClient,
-		pg,
-		stripe.NewClient(seedStripeSecret),
-		noopMeteringWriter{},
-		billingCfg,
-	)
+	client, err := billing.NewClient(tbClient, pg, stripe.NewClient(seedStripeSecret), noopMeteringWriter{}, billingCfg)
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
 
-	unitRates, err := decodeUint64Map("unit_rates_json", cfg.unitRatesJSON)
-	if err != nil {
+	if err := client.EnsureOrg(ctx, billing.OrgID(cfg.orgID), cfg.orgName, cfg.orgTrustTier); err != nil {
 		return err
 	}
-	overageRates, err := decodeUint64Map("overage_unit_rates_json", cfg.overageRatesJSON)
-	if err != nil {
-		return err
-	}
-	quotasJSON, err := normalizeJSON("quotas_json", cfg.quotasJSON)
-	if err != nil {
-		return err
-	}
-
-	if err := upsertOrg(ctx, pg, cfg); err != nil {
-		return err
-	}
-
 	productUpserted, err := upsertProduct(ctx, pg, cfg)
 	if err != nil {
 		return err
 	}
-	defaultPlanUpserted, err := upsertDefaultPlan(ctx, pg, cfg, unitRates, overageRates, quotasJSON)
+	defaultPlanUpserted, err := upsertDefaultPlan(ctx, pg, cfg)
 	if err != nil {
 		return err
 	}
 
-	before, err := client.GetProductBalance(ctx, billing.OrgID(cfg.orgID), cfg.productID)
+	before, err := currentPrepaidUnits(ctx, client, cfg.orgID, cfg.productID)
 	if err != nil {
-		return fmt.Errorf("get product balance before seed: %w", err)
+		return err
 	}
 
 	var deposited uint64
-	if before.PrepaidRemaining < cfg.targetPrepaidUnits {
-		deposited = cfg.targetPrepaidUnits - before.PrepaidRemaining
-		taskID := billing.TaskID(time.Now().UTC().UnixNano())
+	if before < cfg.targetPrepaidUnits {
+		deposited = cfg.targetPrepaidUnits - before
 		expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
-		if _, err := client.DepositCredits(ctx, &taskID, billing.CreditGrant{
+		if _, err := client.DepositCredits(ctx, billing.CreditGrant{
 			OrgID:             billing.OrgID(cfg.orgID),
 			ProductID:         cfg.productID,
 			Amount:            deposited,
 			Source:            cfg.prepaidSource,
-			StripeReferenceID: fmt.Sprintf("seed:%d:%s:%d", cfg.orgID, cfg.productID, taskID),
+			StripeReferenceID: fmt.Sprintf("seed:%d:%s", cfg.orgID, cfg.productID),
 			ExpiresAt:         &expiresAt,
 		}); err != nil {
 			return fmt.Errorf("deposit prepaid credits: %w", err)
 		}
 	}
 
-	promotionUpserted, err := upsertPromotion(ctx, pg, cfg)
+	after, err := currentPrepaidUnits(ctx, client, cfg.orgID, cfg.productID)
 	if err != nil {
 		return err
 	}
 
-	after, err := client.GetProductBalance(ctx, billing.OrgID(cfg.orgID), cfg.productID)
-	if err != nil {
-		return fmt.Errorf("get product balance after seed: %w", err)
-	}
-
-	result := seedResult{
+	encoded, err := json.Marshal(seedResult{
 		OrgID:               cfg.orgID,
 		OrgName:             cfg.orgName,
 		OrgTrustTier:        cfg.orgTrustTier,
 		ProductID:           cfg.productID,
 		PlanID:              cfg.planID,
-		PrepaidBefore:       before.PrepaidRemaining,
+		PrepaidBefore:       before,
 		DepositedUnits:      deposited,
-		PrepaidAfter:        after.PrepaidRemaining,
+		PrepaidAfter:        after,
 		TargetPrepaidUnits:  cfg.targetPrepaidUnits,
 		ProductUpserted:     productUpserted,
 		DefaultPlanUpserted: defaultPlanUpserted,
-		PromotionUpserted:   promotionUpserted,
-	}
-
-	encoded, err := json.Marshal(result)
+		PromotionUpserted:   false,
+	})
 	if err != nil {
 		return fmt.Errorf("marshal seed result: %w", err)
 	}
 	fmt.Println(string(encoded))
 	return nil
+}
+
+func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint64, productID string) (uint64, error) {
+	grants, err := client.ListGrantBalances(ctx, billing.OrgID(orgID), productID)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64
+	for _, grant := range grants {
+		total += grant.Available
+	}
+	return total, nil
 }
 
 func parseFlags() (config, error) {
@@ -232,8 +215,8 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
 	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
-	flag.StringVar(&cfg.promotionName, "promotion-name", "", "org-scoped promotion name to upsert")
-	flag.IntVar(&cfg.promotionPercent, "promotion-percent", 0, "org-scoped promotion percent off to upsert")
+	flag.StringVar(&cfg.promotionName, "promotion-name", "", "ignored by rewritten seed helper")
+	flag.IntVar(&cfg.promotionPercent, "promotion-percent", 0, "ignored by rewritten seed helper")
 	flag.DurationVar(&cfg.expiresAfter, "expires-after", cfg.expiresAfter, "duration until seeded credits expire")
 	flag.Parse()
 
@@ -245,60 +228,7 @@ func parseFlags() (config, error) {
 	case cfg.orgName == "":
 		cfg.orgName = fmt.Sprintf("org-%d", cfg.orgID)
 	}
-	cfg.orgTrustTier = strings.TrimSpace(cfg.orgTrustTier)
-	if cfg.orgTrustTier == "" {
-		return config{}, fmt.Errorf("--org-trust-tier is required")
-	}
-	switch cfg.orgTrustTier {
-	case "new", "established", "enterprise", "platform":
-	default:
-		return config{}, fmt.Errorf("--org-trust-tier must be one of new, established, enterprise, platform")
-	}
-	cfg.prepaidSource = strings.TrimSpace(cfg.prepaidSource)
-	if cfg.prepaidSource == "" {
-		return config{}, fmt.Errorf("--prepaid-source is required")
-	}
-	if cfg.promotionPercent < 0 || cfg.promotionPercent > 100 {
-		return config{}, fmt.Errorf("--promotion-percent must be between 0 and 100")
-	}
-	cfg.promotionName = strings.TrimSpace(cfg.promotionName)
-	if cfg.promotionPercent > 0 && cfg.promotionName == "" {
-		return config{}, fmt.Errorf("--promotion-name is required when --promotion-percent is set")
-	}
-
 	return cfg, nil
-}
-
-func upsertOrg(ctx context.Context, pg *sql.DB, cfg config) error {
-	if _, err := pg.ExecContext(ctx, `
-		INSERT INTO orgs (org_id, display_name, trust_tier)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (org_id) DO UPDATE
-		SET display_name = EXCLUDED.display_name,
-		    trust_tier = EXCLUDED.trust_tier
-	`, fmt.Sprintf("%d", cfg.orgID), cfg.orgName, cfg.orgTrustTier); err != nil {
-		return fmt.Errorf("upsert org %d: %w", cfg.orgID, err)
-	}
-	return nil
-}
-
-func upsertPromotion(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
-	if cfg.promotionPercent == 0 {
-		return false, nil
-	}
-	result, err := pg.ExecContext(ctx, `
-		INSERT INTO promotions (org_id, promotion_name, percent_off, effective_at, ending_at)
-		VALUES ($1, $2, $3, now(), NULL)
-		ON CONFLICT (org_id, promotion_name) DO UPDATE
-		SET percent_off = EXCLUDED.percent_off,
-		    effective_at = EXCLUDED.effective_at,
-		    ending_at = EXCLUDED.ending_at
-	`, fmt.Sprintf("%d", cfg.orgID), cfg.promotionName, cfg.promotionPercent)
-	if err != nil {
-		return false, fmt.Errorf("upsert promotion %s: %w", cfg.promotionName, err)
-	}
-	rows, _ := result.RowsAffected()
-	return rows > 0, nil
 }
 
 func resolvePGDSN(cfg config) (string, error) {
@@ -317,14 +247,28 @@ func resolvePGDSN(cfg config) (string, error) {
 }
 
 func upsertProduct(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
+	reservePolicy := map[string]any{
+		"shape":                  "time",
+		"target_quantity":        300,
+		"min_quantity":           30,
+		"allow_partial_reserve":  true,
+		"renew_slack_quantity":   60,
+		"operator_grace_quantity": 0,
+	}
+	reservePolicyJSON, err := json.Marshal(reservePolicy)
+	if err != nil {
+		return false, err
+	}
 	result, err := pg.ExecContext(ctx, `
-		INSERT INTO products (product_id, display_name, meter_unit, billing_model)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy)
+		VALUES ($1, $2, $3, $4, $5::jsonb)
 		ON CONFLICT (product_id) DO UPDATE
 		SET display_name = EXCLUDED.display_name,
 		    meter_unit = EXCLUDED.meter_unit,
-		    billing_model = EXCLUDED.billing_model
-	`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel)
+		    billing_model = EXCLUDED.billing_model,
+		    reserve_policy = EXCLUDED.reserve_policy,
+		    updated_at = now()
+	`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel, string(reservePolicyJSON))
 	if err != nil {
 		return false, fmt.Errorf("upsert product %s: %w", cfg.productID, err)
 	}
@@ -332,65 +276,25 @@ func upsertProduct(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	return rows > 0, nil
 }
 
-func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config, unitRates map[string]uint64, overageRates map[string]uint64, quotasJSON string) (bool, error) {
-	unitRatesRaw, err := json.Marshal(unitRates)
-	if err != nil {
-		return false, fmt.Errorf("marshal unit rates: %w", err)
-	}
-	overageRatesRaw, err := json.Marshal(overageRates)
-	if err != nil {
-		return false, fmt.Errorf("marshal overage unit rates: %w", err)
-	}
-
+func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	result, err := pg.ExecContext(ctx, `
-		INSERT INTO plans (
-			plan_id,
-			product_id,
-			display_name,
-			included_credits,
-			unit_rates,
-			overage_unit_rates,
-			quotas,
-			is_default,
-			active
-		)
-		VALUES ($1, $2, $3, 0, $4::jsonb, $5::jsonb, $6::jsonb, true, true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credits, unit_rates, overage_unit_rates, quotas, is_default, tier, active)
+		VALUES ($1, $2, $3, 'prepaid', NULL, $4::jsonb, $5::jsonb, $6::jsonb, true, 'default', true)
 		ON CONFLICT (plan_id) DO UPDATE
 		SET product_id = EXCLUDED.product_id,
 		    display_name = EXCLUDED.display_name,
-		    included_credits = EXCLUDED.included_credits,
+		    billing_mode = EXCLUDED.billing_mode,
 		    unit_rates = EXCLUDED.unit_rates,
 		    overage_unit_rates = EXCLUDED.overage_unit_rates,
 		    quotas = EXCLUDED.quotas,
 		    is_default = EXCLUDED.is_default,
-		    active = EXCLUDED.active
-	`, cfg.planID, cfg.productID, cfg.planDisplayName, string(unitRatesRaw), string(overageRatesRaw), quotasJSON)
+		    tier = EXCLUDED.tier,
+		    active = EXCLUDED.active,
+		    updated_at = now()
+	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.unitRatesJSON, cfg.overageRatesJSON, cfg.quotasJSON)
 	if err != nil {
 		return false, fmt.Errorf("upsert default plan %s: %w", cfg.planID, err)
 	}
 	rows, _ := result.RowsAffected()
 	return rows > 0, nil
-}
-
-func decodeUint64Map(name string, raw string) (map[string]uint64, error) {
-	var decoded map[string]uint64
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-	if decoded == nil {
-		return map[string]uint64{}, nil
-	}
-	return decoded, nil
-}
-
-func normalizeJSON(name string, raw string) (string, error) {
-	var decoded any
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
-	}
-	encoded, err := json.Marshal(decoded)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", name, err)
-	}
-	return string(encoded), nil
 }

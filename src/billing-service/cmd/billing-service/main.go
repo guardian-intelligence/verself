@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -25,7 +26,6 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
-	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 	fmotel "github.com/forge-metal/otel"
 )
 
@@ -49,11 +49,12 @@ func run() error {
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
+	internalRole := envOr("BILLING_INTERNAL_ROLE", "billing_internal")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: "1.1.0"})
+	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: "2.0.0"})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -89,18 +90,8 @@ func run() error {
 	}
 	defer func() { _ = chConn.Close() }()
 
+	meteringWriter := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
 	sc := stripe.NewClient(stripeKey)
-	meteringSink := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
-	meteringWriter := billing.NewAsyncMeteringWriter(meteringSink, billing.AsyncMeteringWriterConfig{})
-	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := meteringWriter.Close(flushCtx); err != nil {
-			logger.ErrorContext(ctx, "billing: async metering shutdown", "error", err)
-		}
-	}()
-	reconcileQuerier := billing.NewClickHouseReconcileQuerier(chConn, "forge_metal")
-
 	cfg := billing.DefaultConfig()
 	cfg.StripeSecretKey = stripeKey
 	cfg.TigerBeetleAddresses = tbAddresses
@@ -111,29 +102,66 @@ func run() error {
 		return fmt.Errorf("create billing client: %w", err)
 	}
 
-	app := billingruntime.New(pg, tbClient, chConn, billingClient, reconcileQuerier, webhookSecret, logger)
+	rootMux := http.NewServeMux()
+	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	rootMux.HandleFunc("POST /webhooks/stripe", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read webhook body", http.StatusBadRequest)
+			return
+		}
+		if err := billingClient.HandleStripeWebhook(r.Context(), body, r.Header.Get("Stripe-Signature"), webhookSecret); err != nil {
+			logger.ErrorContext(r.Context(), "billing webhook", "error", err)
+			http.Error(w, "webhook processing failed", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
-	mux := http.NewServeMux()
-	billingapi.NewAPI(mux, app)
-	mux.Handle("POST /webhooks/stripe", app.WebhookHandler())
-
-	authHandler := auth.Middleware(auth.Config{
+	privateMux := http.NewServeMux()
+	billingapi.NewAPI(privateMux, billingapi.Config{
+		Version:      "2.0.0",
+		ListenAddr:   listenAddr,
+		Client:       billingClient,
+		Logger:       logger,
+		InternalRole: internalRole,
+	})
+	protected := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
 		JWKSURL:   authJWKSURL,
-	})(mux)
+	})(privateMux)
+	rootMux.Handle("/", billingHandler(privateMux, protected))
 
-	workerCtx, workerCancel := context.WithCancel(ctx)
-	defer workerCancel()
-
-	workerDone := make(chan error, 1)
+	projectorCtx, cancelProjector := context.WithCancel(ctx)
+	defer cancelProjector()
+	projectorDone := make(chan error, 1)
 	go func() {
-		workerDone <- app.RunWorker(workerCtx, 100*time.Millisecond)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-projectorCtx.Done():
+				projectorDone <- projectorCtx.Err()
+				return
+			case <-ticker.C:
+				if _, err := billingClient.ProjectPendingWindows(projectorCtx, 100); err != nil && !errors.Is(err, context.Canceled) {
+					logger.ErrorContext(projectorCtx, "billing projector", "error", err)
+				}
+			}
+		}
 	}()
 
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(billingHandler(mux, authHandler), "billing-service"),
+		Handler:           otelhttp.NewHandler(rootMux, "billing-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -142,19 +170,19 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorContext(context.Background(), "billing: shutdown", "error", err)
+			logger.ErrorContext(context.Background(), "billing shutdown", "error", err)
 		}
 	}()
 
 	logger.Info("billing: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		workerCancel()
-		return fmt.Errorf("billing: listen: %w", err)
+		cancelProjector()
+		return fmt.Errorf("billing listen: %w", err)
 	}
 
-	workerCancel()
-	if err := <-workerDone; err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("billing worker: %w", err)
+	cancelProjector()
+	if err := <-projectorDone; err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("billing projector: %w", err)
 	}
 	return nil
 }
@@ -238,18 +266,10 @@ func isUnauthenticatedBillingPath(path string) bool {
 	if strings.HasPrefix(path, "/openapi") {
 		return true
 	}
-	if strings.HasPrefix(path, "/internal/billing/v1/ops/") {
-		return true
-	}
-	// Org-scoped reads and Stripe session creation — loopback-only (nftables
-	// blocks external access to port 4242). Called by sandbox-rental-service
-	// which enforces its own auth.
 	if strings.HasPrefix(path, "/internal/billing/v1/orgs/") {
 		return true
 	}
 	switch path {
-	case "/internal/billing/v1/check-quotas", "/internal/billing/v1/reserve", "/internal/billing/v1/settle", "/internal/billing/v1/void":
-		return true
 	case "/internal/billing/v1/checkout", "/internal/billing/v1/subscribe":
 		return true
 	default:

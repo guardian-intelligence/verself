@@ -1,170 +1,119 @@
-CREATE TYPE subscription_status AS ENUM ('active', 'past_due', 'suspended', 'cancelled', 'trialing');
-
-CREATE TYPE billing_cadence AS ENUM ('monthly', 'annual');
-
-CREATE TYPE task_status AS ENUM ('pending', 'claimed', 'completed', 'retrying', 'dead');
+CREATE TABLE orgs (
+    org_id              TEXT        PRIMARY KEY,
+    display_name        TEXT        NOT NULL,
+    stripe_customer_id  TEXT        NOT NULL DEFAULT '',
+    billing_email       TEXT        NOT NULL DEFAULT '',
+    trust_tier          TEXT        NOT NULL CHECK (trust_tier IN ('new', 'established', 'enterprise', 'platform')),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE products (
-    product_id    TEXT PRIMARY KEY,
-    display_name  TEXT NOT NULL,
-    meter_unit    TEXT NOT NULL,
-    billing_model TEXT NOT NULL CHECK (billing_model IN ('metered', 'licensed', 'one_time')),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    product_id       TEXT        PRIMARY KEY,
+    display_name     TEXT        NOT NULL,
+    meter_unit       TEXT        NOT NULL,
+    billing_model    TEXT        NOT NULL CHECK (billing_model IN ('metered', 'licensed', 'one_time')),
+    reserve_policy   JSONB       NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE plans (
-    plan_id                 TEXT PRIMARY KEY,
-    product_id              TEXT NOT NULL REFERENCES products(product_id),
-    display_name            TEXT NOT NULL,
-    stripe_monthly_price_id TEXT,
-    stripe_annual_price_id  TEXT,
-    monthly_price_cents     INTEGER,
-    annual_price_cents      INTEGER,
-    included_credits        BIGINT NOT NULL DEFAULT 0,
-    unit_rates              JSONB NOT NULL DEFAULT '{}',
-    overage_unit_rates      JSONB NOT NULL DEFAULT '{}',
-    quotas                  JSONB NOT NULL DEFAULT '{}',
-    cancellation_policy     JSONB NOT NULL DEFAULT '{"annual_refund_mode":"credit_note","void_remaining_credits":false}',
-    is_default              BOOLEAN NOT NULL DEFAULT false,
-    sort_order              INTEGER NOT NULL DEFAULT 0,
-    active                  BOOLEAN NOT NULL DEFAULT true,
+    plan_id                  TEXT        PRIMARY KEY,
+    product_id               TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    display_name             TEXT        NOT NULL,
+    billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
+    included_credits         BIGINT,
+    unit_rates               JSONB       NOT NULL,
+    overage_unit_rates       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    quotas                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    is_default               BOOLEAN     NOT NULL DEFAULT false,
+    tier                     TEXT        NOT NULL DEFAULT 'default',
+    active                   BOOLEAN     NOT NULL DEFAULT true,
+    stripe_price_id_monthly  TEXT        NOT NULL DEFAULT '',
+    stripe_price_id_annual   TEXT        NOT NULL DEFAULT '',
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_plans_default_per_product
+    ON plans (product_id)
+    WHERE is_default AND active;
+
+CREATE TABLE subscriptions (
+    subscription_id            BIGSERIAL    PRIMARY KEY,
+    org_id                     TEXT         NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    product_id                 TEXT         NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    plan_id                    TEXT         NOT NULL REFERENCES plans(plan_id),
+    cadence                    TEXT         NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'annual')),
+    status                     TEXT         NOT NULL DEFAULT 'active',
+    stripe_subscription_id     TEXT         NOT NULL DEFAULT '',
+    stripe_checkout_session_id TEXT         NOT NULL DEFAULT '',
+    current_period_start       TIMESTAMPTZ,
+    current_period_end         TIMESTAMPTZ,
+    created_at                 TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at                 TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_subscriptions_org_product
+    ON subscriptions (org_id, product_id, status, current_period_end DESC);
+
+CREATE TABLE credit_grants (
+    grant_id             TEXT        PRIMARY KEY,
+    org_id               TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    product_id           TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    amount               BIGINT      NOT NULL CHECK (amount >= 0),
+    source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
+    contract_id          TEXT        NOT NULL DEFAULT '',
+    stripe_reference_id  TEXT        NOT NULL DEFAULT '',
+    expires_at           TIMESTAMPTZ,
+    closed_at            TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_credit_grants_open
+    ON credit_grants (org_id, product_id, expires_at, grant_id)
+    WHERE closed_at IS NULL;
+
+CREATE UNIQUE INDEX idx_credit_grants_stripe_reference
+    ON credit_grants (org_id, product_id, stripe_reference_id)
+    WHERE stripe_reference_id <> '';
+
+CREATE TABLE billing_windows (
+    window_id               TEXT        PRIMARY KEY,
+    org_id                  TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    actor_id                TEXT        NOT NULL,
+    product_id              TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    plan_id                 TEXT        NOT NULL DEFAULT '',
+    source_type             TEXT        NOT NULL,
+    source_ref              TEXT        NOT NULL,
+    window_seq              BIGINT      NOT NULL CHECK (window_seq >= 0),
+    state                   TEXT        NOT NULL CHECK (state IN ('reserving', 'reserved', 'settled', 'voided', 'denied', 'failed')),
+    reservation_shape       TEXT        NOT NULL CHECK (reservation_shape IN ('time', 'units')),
+    reserved_quantity       BIGINT      NOT NULL CHECK (reserved_quantity >= 0),
+    actual_quantity         BIGINT      NOT NULL DEFAULT 0 CHECK (actual_quantity >= 0),
+    billable_quantity       BIGINT      NOT NULL DEFAULT 0 CHECK (billable_quantity >= 0),
+    writeoff_quantity       BIGINT      NOT NULL DEFAULT 0 CHECK (writeoff_quantity >= 0),
+    reserved_charge_units   BIGINT      NOT NULL CHECK (reserved_charge_units >= 0),
+    billed_charge_units     BIGINT      NOT NULL DEFAULT 0 CHECK (billed_charge_units >= 0),
+    writeoff_charge_units   BIGINT      NOT NULL DEFAULT 0 CHECK (writeoff_charge_units >= 0),
+    pricing_phase           TEXT        NOT NULL,
+    allocation              JSONB       NOT NULL,
+    rate_context            JSONB       NOT NULL,
+    usage_summary           JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    funding_legs            JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    window_start            TIMESTAMPTZ NOT NULL,
+    expires_at              TIMESTAMPTZ NOT NULL,
+    renew_by                TIMESTAMPTZ,
+    settled_at              TIMESTAMPTZ,
+    metering_projected_at   TIMESTAMPTZ,
+    last_projection_error   TEXT        NOT NULL DEFAULT '',
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_default_plan_per_product
-    ON plans (product_id)
-    WHERE is_default;
+CREATE UNIQUE INDEX idx_billing_windows_source_seq
+    ON billing_windows (product_id, source_type, source_ref, window_seq);
 
-CREATE TABLE orgs (
-    org_id             TEXT PRIMARY KEY,
-    display_name       TEXT NOT NULL,
-    stripe_customer_id TEXT UNIQUE,
-    billing_email      TEXT,
-    trust_tier         TEXT NOT NULL DEFAULT 'new' CHECK (trust_tier IN ('new', 'established', 'enterprise', 'platform')),
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE promotions (
-    promotion_id     BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    org_id           TEXT NOT NULL REFERENCES orgs(org_id),
-    promotion_name   TEXT NOT NULL,
-    percent_off      SMALLINT NOT NULL CHECK (percent_off >= 0 AND percent_off <= 100),
-    effective_at     TIMESTAMPTZ NOT NULL,
-    ending_at        TIMESTAMPTZ,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (org_id, promotion_name)
-);
-
-CREATE TABLE subscriptions (
-    subscription_id        BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    org_id                 TEXT NOT NULL REFERENCES orgs(org_id),
-    plan_id                TEXT NOT NULL REFERENCES plans(plan_id),
-    product_id             TEXT NOT NULL REFERENCES products(product_id),
-    stripe_subscription_id TEXT UNIQUE,
-    stripe_item_id         TEXT,
-    cadence                billing_cadence NOT NULL DEFAULT 'monthly',
-    billing_anchor_day     SMALLINT NOT NULL DEFAULT 1,
-    current_period_start   TIMESTAMPTZ,
-    current_period_end     TIMESTAMPTZ,
-    status                 subscription_status NOT NULL DEFAULT 'active',
-    status_changed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    past_due_since         TIMESTAMPTZ,
-    overage_cap_units      BIGINT CHECK (overage_cap_units >= 0),
-    cancel_at_period_end   BOOLEAN NOT NULL DEFAULT false,
-    cancelled_at           TIMESTAMPTZ,
-    cancellation_reason    TEXT,
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX idx_one_active_sub_per_product
-    ON subscriptions (org_id, product_id)
-    WHERE status IN ('active', 'past_due', 'trialing');
-
-CREATE TABLE credit_grants (
-    grant_id            TEXT PRIMARY KEY,  -- ULID, application-generated
-    org_id              TEXT NOT NULL REFERENCES orgs(org_id),
-    product_id          TEXT NOT NULL REFERENCES products(product_id),
-    amount              BIGINT NOT NULL CHECK (amount > 0),
-    source              TEXT NOT NULL,
-    stripe_reference_id TEXT,
-    subscription_id     BIGINT REFERENCES subscriptions(subscription_id),
-    period_start        TIMESTAMPTZ,
-    period_end          TIMESTAMPTZ,
-    expires_at          TIMESTAMPTZ,
-    closed_at           TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_credit_grants_active
-    ON credit_grants (org_id, product_id, expires_at)
-    WHERE closed_at IS NULL;
-
-CREATE UNIQUE INDEX idx_credit_grants_subscription_period
-    ON credit_grants (subscription_id, period_start)
-    WHERE subscription_id IS NOT NULL;
-
-CREATE TABLE org_pricing_overrides (
-    org_id      TEXT NOT NULL REFERENCES orgs(org_id),
-    plan_id     TEXT NOT NULL REFERENCES plans(plan_id),
-    unit_rates  JSONB NOT NULL,
-    quotas      JSONB,
-    notes       TEXT,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (org_id, plan_id)
-);
-
-CREATE TABLE tasks (
-    task_id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    task_type       TEXT NOT NULL,
-    payload         JSONB NOT NULL DEFAULT '{}',
-    status          task_status NOT NULL DEFAULT 'pending',
-    idempotency_key TEXT UNIQUE,
-    attempts        INTEGER NOT NULL DEFAULT 0,
-    max_attempts    INTEGER NOT NULL DEFAULT 5,
-    last_error      TEXT,
-    next_retry_at   TIMESTAMPTZ,
-    scheduled_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    claimed_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ,
-    dead_at         TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_tasks_claimable
-    ON tasks (scheduled_at, next_retry_at)
-    WHERE status IN ('pending', 'retrying');
-
-CREATE INDEX idx_tasks_dead
-    ON tasks (dead_at)
-    WHERE status = 'dead';
-
-CREATE TABLE billing_events (
-    event_id        BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    org_id          TEXT NOT NULL,
-    event_type      TEXT NOT NULL,
-    subscription_id BIGINT,
-    grant_id        TEXT,
-    task_id         BIGINT,
-    payload         JSONB NOT NULL DEFAULT '{}',
-    stripe_event_id TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX idx_billing_events_stripe
-    ON billing_events (stripe_event_id)
-    WHERE stripe_event_id IS NOT NULL;
-
-CREATE UNIQUE INDEX idx_billing_events_credits_deposited_grant
-    ON billing_events (grant_id)
-    WHERE event_type = 'credits_deposited' AND grant_id IS NOT NULL;
-
-CREATE INDEX idx_billing_events_org
-    ON billing_events (org_id, created_at);
-
-CREATE TABLE billing_cursors (
-    cursor_name   TEXT PRIMARY KEY,
-    cursor_ts     TIMESTAMPTZ,
-    cursor_bigint BIGINT,
-    cursor_json   JSONB NOT NULL DEFAULT '{}',
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+CREATE INDEX idx_billing_windows_projection_pending
+    ON billing_windows (state, metering_projected_at, created_at)
+    WHERE state = 'settled' AND metering_projected_at IS NULL;

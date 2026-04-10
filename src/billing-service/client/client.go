@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 var (
@@ -13,8 +14,6 @@ var (
 	ErrUnexpected      = errors.New("billing-client: unexpected response")
 )
 
-// ServiceClient is the supported integration surface for other forge-metal services.
-// It wraps the generated OpenAPI client and normalizes the billing error model.
 type ServiceClient struct {
 	inner ClientWithResponsesInterface
 }
@@ -32,29 +31,37 @@ func NewFromGenerated(inner ClientWithResponsesInterface) *ServiceClient {
 }
 
 type (
-	QuotaResult    = QuotaCheckOutputBody
-	QuotaViolation = QuotaViolationJSON
-	Reservation    = ReservationJSON
+	Balance       = BalanceOutputBody
+	Grants        = GrantsOutputBody
+	Subscriptions = SubscriptionsOutputBody
 )
 
-func (c *ServiceClient) CheckQuotas(ctx context.Context, orgID uint64, productID string, concurrentCount uint64, reqEditors ...RequestEditorFn) (QuotaResult, error) {
-	resp, err := c.inner.CheckQuotasWithResponse(ctx, CheckQuotasJSONRequestBody{
-		OrgId:           int64(orgID),
-		ProductId:       productID,
-		ConcurrentCount: int64(concurrentCount),
-	}, reqEditors...)
-	if err != nil {
-		return QuotaResult{}, err
-	}
-	if resp.JSON200 != nil {
-		return *resp.JSON200, nil
-	}
-	return QuotaResult{}, unexpected("check quotas", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+type Reservation struct {
+	WindowId         string
+	JobId            int64
+	OrgId            int64
+	ProductId        string
+	PlanId           string
+	ActorId          string
+	SourceType       string
+	SourceRef        string
+	WindowSeq        int32
+	ReservationShape string
+	WindowSecs       int32
+	PricingPhase     string
+	Allocation       map[string]float64
+	UnitRates        map[string]int64
+	CostPerSec       int64
+	WindowStart      time.Time
+	ExpiresAt        time.Time
+	RenewBy          time.Time
 }
+
+type SettleWindowResult = SettleOutputBody
 
 func (c *ServiceClient) Reserve(
 	ctx context.Context,
-	jobID int64,
+	_ int64,
 	orgID uint64,
 	productID string,
 	actorID string,
@@ -64,8 +71,7 @@ func (c *ServiceClient) Reserve(
 	allocation map[string]float64,
 	reqEditors ...RequestEditorFn,
 ) (Reservation, error) {
-	resp, err := c.inner.ReserveWithResponse(ctx, ReserveJSONRequestBody{
-		JobId:           jobID,
+	resp, err := c.inner.ReserveWindowWithResponse(ctx, ReserveWindowJSONRequestBody{
 		OrgId:           int64(orgID),
 		ProductId:       productID,
 		ActorId:         actorID,
@@ -77,27 +83,62 @@ func (c *ServiceClient) Reserve(
 	if err != nil {
 		return Reservation{}, err
 	}
-	switch {
-	case resp.JSON200 != nil:
-		return resp.JSON200.Reservation, nil
+	if resp.JSON200 != nil {
+		return parseReservation(resp.JSON200.Reservation)
+	}
+	switch statusCode(resp.HTTPResponse) {
+	case http.StatusPaymentRequired:
+		return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+	case http.StatusForbidden:
+		return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+	case http.StatusBadRequest:
+		return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
 	default:
-		switch statusCode(resp.HTTPResponse) {
-		case http.StatusPaymentRequired:
-			return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		case http.StatusForbidden:
-			return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		case http.StatusBadRequest:
-			return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		default:
-			return Reservation{}, unexpected("reserve", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
-		}
+		return Reservation{}, unexpected("reserve", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 	}
 }
 
-func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualSeconds uint32, reqEditors ...RequestEditorFn) error {
-	resp, err := c.inner.SettleWithResponse(ctx, SettleJSONRequestBody{
-		Reservation:   reservation,
-		ActualSeconds: int32(actualSeconds),
+func parseReservation(in WindowReservationJSON) (Reservation, error) {
+	windowStart, err := time.Parse(time.RFC3339Nano, in.WindowStart)
+	if err != nil {
+		return Reservation{}, fmt.Errorf("parse window_start: %w", err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, in.ExpiresAt)
+	if err != nil {
+		return Reservation{}, fmt.Errorf("parse expires_at: %w", err)
+	}
+	var renewBy time.Time
+	if in.RenewBy != nil && *in.RenewBy != "" {
+		renewBy, err = time.Parse(time.RFC3339Nano, *in.RenewBy)
+		if err != nil {
+			return Reservation{}, fmt.Errorf("parse renew_by: %w", err)
+		}
+	}
+	return Reservation{
+		WindowId:         in.WindowId,
+		OrgId:            in.OrgId,
+		ProductId:        in.ProductId,
+		PlanId:           in.PlanId,
+		ActorId:          in.ActorId,
+		SourceType:       in.SourceType,
+		SourceRef:        in.SourceRef,
+		WindowSeq:        in.WindowSeq,
+		ReservationShape: in.ReservationShape,
+		WindowSecs:       in.ReservedQuantity,
+		PricingPhase:     in.PricingPhase,
+		Allocation:       in.Allocation,
+		UnitRates:        in.UnitRates,
+		CostPerSec:       in.CostPerUnit,
+		WindowStart:      windowStart.UTC(),
+		ExpiresAt:        expiresAt.UTC(),
+		RenewBy:          renewBy.UTC(),
+	}, nil
+}
+
+func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, reqEditors ...RequestEditorFn) error {
+	resp, err := c.inner.SettleWindowWithResponse(ctx, SettleWindowJSONRequestBody{
+		WindowId:       reservation.WindowId,
+		ActualQuantity: int32(actualQuantity),
 	}, reqEditors...)
 	if err != nil {
 		return err
@@ -111,34 +152,9 @@ func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, act
 	return unexpected("settle", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-func (c *ServiceClient) Renew(ctx context.Context, reservation Reservation, actualSeconds uint32, reqEditors ...RequestEditorFn) (Reservation, error) {
-	resp, err := c.inner.RenewWithResponse(ctx, RenewJSONRequestBody{
-		Reservation:   reservation,
-		ActualSeconds: int32(actualSeconds),
-	}, reqEditors...)
-	if err != nil {
-		return Reservation{}, err
-	}
-	switch {
-	case resp.JSON200 != nil:
-		return resp.JSON200.Reservation, nil
-	default:
-		switch statusCode(resp.HTTPResponse) {
-		case http.StatusPaymentRequired:
-			return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		case http.StatusForbidden:
-			return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		case http.StatusBadRequest:
-			return Reservation{}, fmt.Errorf("billing-client: renew bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-		default:
-			return Reservation{}, unexpected("renew", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
-		}
-	}
-}
-
 func (c *ServiceClient) Void(ctx context.Context, reservation Reservation, reqEditors ...RequestEditorFn) error {
-	resp, err := c.inner.VoidWithResponse(ctx, VoidJSONRequestBody{
-		Reservation: reservation,
+	resp, err := c.inner.VoidWindowWithResponse(ctx, VoidWindowJSONRequestBody{
+		WindowId: reservation.WindowId,
 	}, reqEditors...)
 	if err != nil {
 		return err
@@ -173,9 +189,6 @@ func unexpected(op string, resp *http.Response, problem *ErrorModel) error {
 	return fmt.Errorf("%w: %s %s", ErrUnexpected, op, status)
 }
 
-// Generated returns the underlying generated client for direct access to all
-// billing-service endpoints. Use this for read-only proxy operations where
-// custom error mapping is unnecessary.
 func (c *ServiceClient) Generated() ClientWithResponsesInterface {
 	return c.inner
 }

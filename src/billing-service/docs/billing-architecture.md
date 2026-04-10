@@ -1,6 +1,6 @@
 # Billing Architecture
 
-Usage-based billing with subscriptions, prepaid credits, and enterprise contracts. Three data stores, each authoritative for a different concern: TigerBeetle for financial state, PostgreSQL for commercial metadata, ClickHouse for usage metering.
+Usage-based billing with subscriptions, prepaid credits, and enterprise contracts. Three data stores, each authoritative for a different concern: TigerBeetle for financial state, PostgreSQL for commercial metadata plus first-class billing windows, ClickHouse for raw usage evidence and invoice-grade metering projections.
 
 Reference architectures: Metronome's rate card + contract override model for pricing structure; Stripe's immutable prices and integer-only financial arithmetic for correctness guarantees; TigerBeetle's two-phase transfers for crash-safe fund reservation.
 
@@ -17,10 +17,10 @@ Reference architectures: Metronome's rate card + contract override model for pri
 | Store | Authoritative for | Access pattern |
 |-------|-------------------|----------------|
 | TigerBeetle | Account balances, transfer history, spend caps | Synchronous at Reserve/Settle/Void time. All financial mutations go through TB. |
-| PostgreSQL | Products, plans, contracts, orgs, subscriptions, credit grants, adjustments, invoices | Read at Reserve time for rate resolution. Write for commercial lifecycle events. |
-| ClickHouse | Per-window usage metering (charge units, grant source breakdown, rate applied) | Write at Settle time. Read for invoice generation and reconciliation. |
+| PostgreSQL | Products, plans, contracts, orgs, subscriptions, credit grants, adjustments, invoices, billing windows, projection state | Read at Reserve time for rate resolution. Write for commercial lifecycle events and metered entitlement state transitions. |
+| ClickHouse | Raw usage evidence and invoice-grade metering projections | Append product-specific usage events directly when useful; project settled billing windows asynchronously for invoice generation, dashboards, and reconciliation. |
 
-Consistency between the three stores is verified by periodic reconciliation (eight named checks, described below).
+Consistency between the three stores is verified by periodic reconciliation (eight named checks, described below). Billing truth is decided by TigerBeetle + PostgreSQL window state; ClickHouse is a derived read model that can be retried or rebuilt if projection falls behind.
 
 ## PostgreSQL schema
 
@@ -34,6 +34,9 @@ Defines what is metered. One row per billable capability.
 | display_name | TEXT | Human-readable name for invoices |
 | meter_unit | TEXT | Unit of measurement (e.g. `seconds`, `requests`) |
 | billing_model | TEXT | `metered`, `licensed`, or `one_time` |
+| reserve_policy | JSONB | Metered products only. Defines the entitlement slice shape: time window vs unit tranche, target size, minimum size, partial-reserve behavior, and bounded operator-paid grace. |
+
+The reserve policy is part of the product definition rather than the caller. This keeps liability policy close to the SKU being sold. A sandbox SKU may reserve 300-second slices with a 30-second minimum; an inference SKU may reserve 25,000-au token tranches; a network egress SKU may reserve byte tranches. The billing primitives stay the same.
 
 ### plans
 
@@ -167,6 +170,39 @@ Grant lifecycle:
 2. **Consume**: Reserve creates pending debits against grant accounts in waterfall order. Settle posts actual spend, voids remainder.
 3. **Expire**: Sweep job finds `expires_at <= now AND closed_at IS NULL`. Balancing debit drains remaining balance. PG `closed_at` set.
 
+### billing_windows
+
+Authoritative operational state for metered entitlement slices. Each row is one bounded billing window with immutable rate context and funding context. Callers keep only references to these rows; they do not own the financial truth themselves.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| window_id | TEXT PK | Stable identifier for exactly-once settlement and projection |
+| org_id | TEXT FK | |
+| actor_id | TEXT | Principal that opened the window |
+| product_id | TEXT FK | |
+| source_type | TEXT | Product-specific source class (`job`, `inference_stream`, `request_batch`, `network_flow`) |
+| source_ref | TEXT | Product-specific source identifier |
+| window_seq | BIGINT | Monotonic sequence within a source |
+| state | TEXT | `reserving`, `reserved`, `settled`, `voided`, `denied`, `failed` |
+| reservation_shape | TEXT | `time` or `units` |
+| reserved_quantity | BIGINT | Entitled quantity for this slice (seconds, tokens, requests, bytes, etc.) |
+| actual_quantity | BIGINT | Actual consumed quantity once settled |
+| billable_quantity | BIGINT | Quantity charged to the customer |
+| writeoff_quantity | BIGINT | Quantity intentionally eaten by the operator |
+| reserved_charge_units | BIGINT | Maximum spend reserved for this slice |
+| billed_charge_units | BIGINT | Final customer charge in atomic units |
+| writeoff_charge_units | BIGINT | Operator-paid spend in atomic units |
+| pricing_phase | TEXT | `free_tier`, `included`, `overage`, `metered`, etc. |
+| rate_context | JSONB | Resolved plan/contract rate snapshot used for settlement and invoice explainability |
+| usage_summary | JSONB | Product-specific usage aggregate for the finalized window |
+| expires_at | TIMESTAMPTZ | Pending transfer expiry / reservation validity bound |
+| renew_by | TIMESTAMPTZ | When the caller should acquire the next slice. Nullable for discrete windows. |
+| settled_at | TIMESTAMPTZ | |
+| metering_projected_at | TIMESTAMPTZ | Null until ClickHouse projection succeeds |
+| last_projection_error | TEXT | Last projection failure detail (nullable) |
+
+This table is the boundary between request-path financial correctness and downstream analytics. A settled row is already billable truth even if ClickHouse is temporarily unavailable.
+
 ### product_entitlements
 
 Tier-gated product access. Controls which products each tier can use.
@@ -181,7 +217,7 @@ At request time, the calling service checks: does the org's current plan tier in
 
 ### invoices
 
-Generated monthly from ClickHouse metering aggregation.
+Generated monthly from projected ClickHouse metering aggregation.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -289,7 +325,7 @@ The net Revenue contribution from a guarantee invocation is negative (subscripti
 
 **Invoice generation (daily cron — processes subscriptions where `current_period_end <= now`):**
 
-1. Aggregate ClickHouse metering rows for the billing period, grouped by `(product_id, pricing_phase)`
+1. Aggregate projected ClickHouse metering rows for the billing period, grouped by `(product_id, pricing_phase)`. These rows are derived from settled `billing_windows`, not from raw usage events directly.
 2. Create invoice + usage line items in PostgreSQL
 3. Commitment true-up: for contracts with `committed_monthly`, compare `subtotal` against the commitment. If usage < commitment, insert a `committed_minimum_trueup` line item for the difference and create a `KindCommitmentTrueUp` TigerBeetle transfer.
 4. Evaluate adjustments: load all matching adjustment rules for this org/contract/tier/period. Apply MFN precedence. For each surviving adjustment, insert an adjustment line item (negative `amount`). Sum into `adjustments_total`.
@@ -395,14 +431,20 @@ Deterministic IDs enable safe retries across process crashes. All schemes pack a
 
 All pending transfers have a 3600-second timeout. After timeout, TigerBeetle auto-voids and returns funds to the source account.
 
-## ClickHouse metering
+## ClickHouse usage evidence and metering projection
 
-One row per billing window (default 300 seconds) per job. Written synchronously at Settle time. The metering row is the complete record of what happened, at what rate, funded by which grant sources.
+ClickHouse serves two roles:
+
+1. **Raw usage evidence** for products whose consumption is naturally high-volume or bursty (for example, token streaming, request batches, or network I/O samples). These rows are product-specific telemetry, useful for debugging, analytics, and invoice explainability.
+2. **Invoice-grade metering projection** derived from settled billing windows. One metering row represents one finalized billing window with immutable rate and funding context.
+
+The second role is the financial read model. Invoice generation, billing dashboards, and customer-facing usage summaries read the projection, not the raw evidence stream.
 
 ### Schema: `forge_metal.metering`
 
 ```sql
 CREATE TABLE forge_metal.metering (
+    window_id          String,
     org_id             LowCardinality(String),
     actor_id           String DEFAULT '',
     product_id         LowCardinality(String),
@@ -427,18 +469,22 @@ CREATE TABLE forge_metal.metering (
     trace_id           String DEFAULT ''
 )
 ENGINE = MergeTree()
-ORDER BY (org_id, product_id, started_at, source_ref, window_seq)
+ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id)
 ```
 
-`charge_units` is the total cost in atomic units for this window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both — determined by the plan's `billing_mode`. `plan_id` and `cost_per_sec` record the rate context, making invoice generation a pure ClickHouse aggregation without joining to PostgreSQL.
+`window_id` is the stable identity of the projected billing window and is the basis for idempotent projection retries. `charge_units` is the billed cost in atomic units for this finalized window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both — determined by the plan's `billing_mode`. `plan_id` and `cost_per_sec` record the rate context, making invoice generation a pure ClickHouse aggregation without joining to PostgreSQL.
 
-### Async metering writer
+The metering row is a projection of authoritative billing-window state, not the write-time source of truth. A settled window is first made durable in PostgreSQL, then projected into ClickHouse. The first implementation can keep projection state inline on the billing window row (`metering_projected_at`, `last_projection_error`, retry counter). If multiple independent projections appear later, that inline marker can be split into a dedicated projection outbox table without changing the billing model.
 
-The production metering path uses a buffered writer (4096-row buffer, 256-row batches, 250ms flush interval) to amortize ClickHouse insert overhead. Non-blocking enqueue — drops on buffer full with a log message. Reconciliation repairs any missing ClickHouse writes by comparing against TigerBeetle transfer history.
+This separation keeps ClickHouse off the charging-critical path:
 
-## Reserve / Settle / Void lifecycle
+- If ClickHouse is healthy, the projection usually lands immediately.
+- If ClickHouse is unavailable, the projector retries until the settled window is reflected.
+- If the projector crashes after inserting but before marking success, retries must be idempotent on billing window identity.
 
-The core billing loop. All metered products follow this flow.
+## Billing window lifecycle
+
+The core billing loop for metered products is not "renew"; it is a window state machine. A billing window is a bounded entitlement slice for a specific `(org, product, source_type, source_ref, window_seq)` with immutable rate context and funding context. The slice may be time-based (sandbox runtime), unit-based (tokens, requests, bytes), or another product-specific shape chosen by reserve policy.
 
 ### Reserve
 
@@ -447,23 +493,33 @@ The core billing loop. All metered products follow this flow.
 2. Load active subscription plan (with contract override resolution)
 3. Load default plan (fallback)
 4. Check concurrent limit (min of trust tier policy, plan quota)
-5. Compute cost_per_sec from allocation dimensions × unit rates
-6. Branch on plan.billing_mode:
+5. Load the product's reserve policy:
+   - time window or unit tranche
+   - target size
+   - minimum reserveable size
+   - whether partial reserve is allowed
+   - whether bounded operator-paid grace is allowed
+6. Create a PostgreSQL `billing_window` row in state `reserving`
+7. Compute the target reservation amount from the product's usage model and resolved rate context
+8. Branch on plan.billing_mode:
 
    PREPAID:
-   7a. Load unexpired grant balances from PG, then lookup available amounts from TB
-   8a. Select pricing phase: free_tier → included → overage (waterfall)
-   9a. If overage + spend cap: ensure spend-cap account, add linked probe+void to batch
-   10a. Create linked TigerBeetle pending transfers for each grant in waterfall order
-   11a. Return Reservation with grant legs (transfer IDs + amounts)
+   9a. Load unexpired grant balances from PG, then lookup available amounts from TB
+   10a. Select pricing phase: free_tier → included → overage (waterfall)
+   11a. If the full target amount is unavailable:
+       - if partial reserve is allowed and the remaining balance covers at least the minimum size, shrink the window
+       - otherwise deny the window and leave the workload unstarted
+   12a. If overage + spend cap: ensure spend-cap account, add linked probe+void to batch
+   13a. Create linked TigerBeetle pending transfers for each grant in waterfall order
+   14a. Update the billing window row to `reserved` with grant legs, reserved amount, rate snapshot, and expiry metadata
 
    POSTPAID:
-   7b. Ensure receivable account exists for (org, product, current period)
-   8b. Create pending transfer: debit receivable → credit AcctRevenue (KindPostpaidReservation)
-   9b. Return Reservation with single receivable leg (transfer ID + amount)
+   9b. Ensure receivable account exists for (org, product, current period)
+   10b. Create pending transfer: debit receivable → credit AcctRevenue (KindPostpaidReservation)
+   11b. Update the billing window row to `reserved` with receivable leg, reserved amount, rate snapshot, and expiry metadata
 ```
 
-**Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is null and grants are exhausted, Reserve returns `ErrInsufficientBalance` (hard stop).
+**Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is null and grants are exhausted, Reserve returns `ErrInsufficientBalance` unless partial reserve is permitted and can produce a smaller valid window.
 
 **Postpaid:** the receivable account has no `debits_must_not_exceed_credits` flag (it's an Asset, not a Liability), so the pending transfer always succeeds. There is no spend cap — postpaid plans accrue unbounded usage. The invoice at period end is the collection event.
 
@@ -488,30 +544,46 @@ This is evaluated per-dimension, identically for prepaid and postpaid. A single 
 ### Settle
 
 ```
-1. Compute actual_cost = cost_per_sec × actual_seconds
-2. Branch on billing_mode:
+1. Load the reserved billing window from PostgreSQL
+2. Compute actual usage for the window from the product's usage model
+3. Compute billed usage and operator-paid writeoff:
+   - billed usage is bounded by the reserved entitlement for prepaid windows
+   - bounded grace may intentionally let `actual > billed`
+   - writeoff is explicit state, not an accounting accident
+4. Branch on billing_mode:
 
    PREPAID:
-   3a. For each grant leg: post actual spend, void remainder
-   4a. If spend cap applied: post spend-cap debit
+   5a. For each grant leg: post billed spend, void remainder
+   6a. If spend cap applied: post spend-cap debit for the billed amount
 
    POSTPAID:
-   3b. Post actual spend on receivable leg, void remainder (KindPostpaidSettlement)
+   5b. Post billed spend on receivable leg, void remainder (KindPostpaidSettlement)
 
-3. Write metering row to ClickHouse
+5. Update the billing window row to `settled` with actual usage, billed usage, writeoff amount, and settlement timestamps
+6. Project the settled window into ClickHouse metering asynchronously
 ```
 
 ### Void
 
-Cancel all pending legs (grant legs for prepaid, receivable leg for postpaid). Used when a job fails before producing billable usage. The customer is never charged for crashes — void is the default failure mode.
+Cancel all pending legs (grant legs for prepaid, receivable leg for postpaid). Used when a workload fails before producing billable usage or when a reservation must be unwound after a persistence failure. The customer is never charged for crashes — void is the default failure mode.
 
-### Renew
+### Continue long-running work
 
-For long-running workloads (>300 seconds): settle the current window, then reserve the next. For prepaid plans, this refreshes from the latest grant state — preventing a single reservation from holding credits for the full job duration. For postpaid plans, Renew still settles and re-reserves to bound the pending transfer window for reconciliation.
+For long-running workloads, the caller performs two explicit commands:
+
+1. `SettleWindow(current)`
+2. `ReserveWindow(next)`
+
+This replaces `Renew` as a billing primitive. `Renew` is only caller orchestration over two first-class transitions:
+
+- finalize economic truth for the old window
+- acquire entitlement for the next window
+
+That split matters because partial progress is real. The old window may be fully settled even if the next window cannot be reserved. Making the two transitions explicit prevents duplicate settlement, keeps retries idempotent, and generalizes cleanly beyond sandbox runtime to inference streams, request firehoses, and network I/O billing.
 
 ## Reconciliation
 
-Eight named consistency checks run periodically across all three stores. Each check has a severity (`alert` or `warn`) and produces a `billing_events` row on failure.
+Eight named consistency checks run periodically across all three stores. Each check has a severity (`alert` or `warn`) and emits a structured reconciliation finding for the OTel pipeline and operator dashboard.
 
 | Check | Severity | Validates |
 |-------|----------|-----------|
@@ -519,12 +591,12 @@ Eight named consistency checks run periodically across all three stores. Each ch
 | `no_orphan_grant_accounts` | alert | Every TB grant account found has a PG catalog row |
 | `expired_grants_swept` | warn | Every expired grant has a credit expiry transfer in TB |
 | `licensed_charge_exactly_once` | alert | Each completed licensed charge task has exactly one Revenue transfer |
-| `metering_vs_transfers` | alert | CH `charge_units` totals ≤ TB `debits_posted` per org (CH > TB = data loss) |
+| `metering_vs_transfers` | alert | Settled billing-window charges projected to CH are consistent with TB posted debits per org (CH > TB = projection bug or duplicate metering) |
 | `receivable_vs_invoiced` | alert | For postpaid orgs: TB receivable `debits_posted` for the period matches the invoice `subtotal`. Drift = metering or invoice generation bug. |
 | `trust_tier_monotonicity` | warn | No org auto-promoted to enterprise |
 | `refunds_vs_stripe` | alert | Every completed PG refund has a matching Stripe refund (monetary) or TB grant (account credit) |
 
-Failure policy: fail immediately on infrastructure errors. Do not advance any watermark on failure. Reconciliation failures are loud — they produce alert-level billing events that surface in the OTel pipeline.
+Failure policy: fail immediately on infrastructure errors. Do not advance any watermark on failure. Reconciliation failures are loud — they produce alert-level findings that surface in the OTel pipeline.
 
 ## Dispute handling
 
@@ -543,7 +615,7 @@ Suspension sets `subscriptions.status = 'suspended'` for all active subscription
 
 ## Plan changes (upgrades / downgrades)
 
-Mid-period plan changes follow from design invariants 1 and 3: the customer never overpays, downgrades are not punitive but not advantageous. Metering rows already record `plan_id` and `cost_per_sec` at Reserve time, so historical usage is always priced correctly regardless of plan changes. The problem is narrower than in most billing systems — it is about managing prepaid credit balances across the transition, not about re-rating usage.
+Mid-period plan changes follow from design invariants 1 and 3: the customer never overpays, downgrades are not punitive but not advantageous. Projected metering rows already record `plan_id` and `cost_per_sec` at Reserve time, so historical usage is always priced correctly regardless of plan changes. The problem is narrower than in most billing systems — it is about managing prepaid credit balances across the transition, not about re-rating usage.
 
 ### Upgrade (e.g. Free → Pro)
 
@@ -587,7 +659,7 @@ The `min(unused_credits, prorated_cap)` bound in step 2 is the key anti-gaming m
 
 ### Postpaid plan changes
 
-Simpler — no prepaid credits to manage. Close the old subscription, create a new one. The receivable for the current period captures usage through the switch point (metering rows already record old contract rates). A new receivable picks up usage from the switch point forward. The month-end invoice produces separate line items per plan — the ClickHouse aggregation groups by `plan_id`.
+Simpler — no prepaid credits to manage. Close the old subscription, create a new one. The receivable for the current period captures usage through the switch point (projected metering rows already record the old contract rates). A new receivable picks up usage from the switch point forward. The month-end invoice produces separate line items per plan — the ClickHouse aggregation groups by `plan_id`.
 
 ## Stripe integration
 
@@ -596,15 +668,16 @@ Stripe is the payment collection and tax compliance layer, not the billing engin
 | Operation | Stripe API | Ownership boundary |
 |-----------|------------|-------------------|
 | Store payment method | Customer + SetupIntent | — |
+| Collect self-serve credit purchase | Checkout Session | Billing service creates the session; Stripe collects payment; `payment_intent.succeeded` deposits prepaid credits idempotently |
 | Collect self-serve payment | Invoice API (created at invoice generation time) | Billing service provides pre-tax line items |
 | Collect enterprise payment | Invoice API with `due_date` from contract terms | Billing service provides pre-tax line items |
-| Confirm payment | Webhook: `invoice.paid` | Billing service records payment, posts TB transfers |
+| Confirm invoice payment | Webhook: `invoice.paid` | Future invoice subsystem records payment, posts TB transfers |
 | Compute tax | Invoice API with `automatic_tax: {enabled: true}` | **Stripe owns.** Computes per-line-item tax from product tax codes, customer address, exemption status, and jurisdiction rules. Billing service reads back `tax_total` and `tax_jurisdiction`. |
 | Collect and remit tax | Stripe Tax auto-filing (where registered) | **Stripe owns.** Billing service does not track tax liability in TigerBeetle. |
 | Process refund | Refund API (`stripe.refunds.create`) | **Stripe owns tax math.** Billing service passes pre-tax refund amount. Stripe computes proportional tax reversal automatically. |
 | Issue credit note | Credit Note API | **Stripe owns.** Used for post-finalization corrections (billing errors, SLA credits). References the Stripe invoice. |
 | Customer tax exemption | Customer API (`tax_exempt` field) | Billing service sets `none`, `exempt`, or `reverse` on the Stripe Customer. Stripe Tax acts on it. |
-| Handle disputes | Webhook: `charge.dispute.created` | Billing service handles TB accounting |
+| Handle disputes | Webhook: `charge.dispute.created` | Future dispute subsystem handles TB accounting |
 
 Stripe Subscriptions are not used for metered billing. This avoids the 20-item limit, proration complexity, and the coupling between usage reporting and subscription state that motivated Stripe's own meters API redesign.
 
@@ -618,9 +691,8 @@ All endpoints use the Huma v2 framework with OpenAPI 3.1 spec generation.
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /internal/billing/v1/check-quotas` | Advisory preflight. Returns allowed/denied with violation details. |
 | `POST /internal/billing/v1/reserve` | Reserve credits for a billing window. Blocks on insufficient balance or spend cap. |
-| `POST /internal/billing/v1/settle` | Post actual spend, void remainder, write metering row. |
+| `POST /internal/billing/v1/settle` | Finalize a reserved billing window: post billed spend, void remainder, persist settled window state, and queue ClickHouse projection. |
 | `POST /internal/billing/v1/void` | Cancel reservation. Customer not charged. |
 
 ### Query
@@ -640,7 +712,7 @@ All endpoints use the Huma v2 framework with OpenAPI 3.1 spec generation.
 |----------|---------|
 | `POST /internal/billing/v1/ops/deposit-credits` | Period credit deposits for active prepaid subscriptions (no-op for postpaid) |
 | `POST /internal/billing/v1/ops/expire-credits` | Sweep expired grants (prepaid only) |
-| `POST /internal/billing/v1/ops/reconcile` | Run seven-check consistency verification |
+| `POST /internal/billing/v1/ops/reconcile` | Run eight-check consistency verification |
 | `POST /internal/billing/v1/ops/trust-tier-evaluate` | Automated promotion/demotion |
 | `POST /internal/billing/v1/ops/process-refund` | Execute a refund (monetary or account credit). Creates TB transfers, Stripe refund if monetary. |
 | `POST /internal/billing/v1/ops/change-plan` | Mid-period plan change. Handles credit carry-forward, prorated deposits, subscription lifecycle. |
@@ -673,7 +745,7 @@ Acme signs a 12-month contract on a postpaid plan (`billing_mode = 'postpaid'`).
 |---|---|---|---|---|---|---|---|
 | `adj-acme-onboard` | `percentage_discount` | `acme-2026` | -0.1500 | — | 2026-04-01 | 2026-07-01 | Onboarding discount (15%) |
 
-These operate at different levels: the `contract_overrides` reduce Acme's per-second rates (metering rows already reflect discounted rates). The `adjustment` reduces the invoice total by an additional 15% (metering rows unchanged, discount visible only on the invoice). They stack because the rate card changes the cost of each unit, while the adjustment discounts the aggregate.
+These operate at different levels: the `contract_overrides` reduce Acme's per-second rates (projected metering rows already reflect the discounted rates). The `adjustment` reduces the invoice total by an additional 15% (metering projection unchanged, discount visible only on the invoice). They stack because the rate card changes the cost of each unit, while the adjustment discounts the aggregate.
 
 **Rate resolution at Reserve time for a sandbox-premium-nvme job with allocation `{vcpu: 2.0, memory_gb: 8.0}`:**
 
@@ -751,7 +823,7 @@ No `committed_monthly`, no `payment_terms_days` override. The contract exists pu
 
 The promotion ends with zero cleanup. No cron job to remove discounts, no migration, no feature flags. The contract's temporal bounds do the work.
 
-Note: this could alternatively be modeled as an adjustment (`percentage_discount` of `-0.9000` scoped to `product_id = sandbox-*`, `dimension = vcpu`). The difference: as a contract_override, the discount is visible in metering rows (per-second rates reflect the discount). As an adjustment, metering rows show full-rate and the discount appears only on the invoice. The contract_override approach is preferred for promotional pricing because it produces more accurate metering data.
+Note: this could alternatively be modeled as an adjustment (`percentage_discount` of `-0.9000` scoped to `product_id = sandbox-*`, `dimension = vcpu`). The difference: as a contract_override, the discount is visible in projected metering rows (per-second rates reflect the discount). As an adjustment, projected metering rows show full-rate and the discount appears only on the invoice. The contract_override approach is preferred for promotional pricing because it produces more accurate metering data.
 
 ### Prepaid: free tier with 500 included credits, then hard stop
 
@@ -790,10 +862,10 @@ The operator's own org has `trust_tier = 'platform'`. It uses a postpaid plan (`
 
 **At Reserve time:** receivable account is debited. Rate resolution follows the same cascade as any org — plan rates, contract overrides if any. The receivable has no balance constraint (Asset account), so the reservation always succeeds.
 
-**At Settle time:** actual spend is posted on the receivable. The metering row is written to ClickHouse with `pricing_phase = 'metered'` and `receivable_units = charge_units`. Same postpaid path as any enterprise org.
+**At Settle time:** actual spend is posted on the receivable. The billing window is marked `settled` with `pricing_phase = 'metered'`, `receivable_units = charge_units`, and then projected into ClickHouse. Same postpaid path as any enterprise org.
 
 **At invoice generation time:** the platform org is not skipped. The invoice cron:
-1. Aggregates ClickHouse metering rows for the period (same query as any postpaid org)
+1. Aggregates projected ClickHouse metering rows for the period (same query as any postpaid org)
 2. Creates `metered` usage line items at list rates
 3. Evaluates adjustments — the `platform_showback` rule matches, producing an adjustment line item with `amount = -subtotal`
 4. Computes `adjustments_total = -subtotal`, `pretax_total = 0`
@@ -822,7 +894,7 @@ Account: Platform Org (trust_tier: platform)
 
 This exercises every component of the billing pipeline on every cycle: metering aggregation, rate resolution, line item generation, adjustment evaluation, MFN precedence, TigerBeetle transfer creation, and invoice finalization. The platform invoice is a real artifact — queryable, auditable, and structurally identical to customer invoices. The operator sees exactly what their CI compute would cost at list rates.
 
-If billing infrastructure is down (TigerBeetle unavailable), the Forgejo webhook adapter flips a runtime configuration flag to route CI directly to the vm-orchestrator gRPC API, bypassing sandbox-rental-service and billing entirely. When billing recovers, the flag is flipped back. The metering gap is detectable by the `metering_vs_transfers` reconciliation check.
+If billing infrastructure is down (TigerBeetle unavailable), the Forgejo webhook adapter flips a runtime configuration flag to route CI directly to the vm-orchestrator gRPC API, bypassing sandbox-rental-service and billing entirely. Those runs intentionally create no billing windows and no customer charge; the operator eats the cost by policy. When billing recovers, the flag is flipped back. This is an explicit operator subsidy path, not a reconciliation failure.
 
 ### Mid-month upgrade: Free → Pro on day 15
 
@@ -863,7 +935,7 @@ Account: DevShop LLC
   Total due                                                      262,763 au
 ```
 
-Metering rows for the free-tier period have `plan_id = 'sandbox-free'`, `pricing_phase = 'free_tier'`. Metering rows for the Pro period have `plan_id = 'sandbox-pro'`, `pricing_phase = 'included'`. The ClickHouse aggregation groups by `plan_id`, producing separate line items — no re-rating needed.
+Projected metering rows for the free-tier period have `plan_id = 'sandbox-free'`, `pricing_phase = 'free_tier'`. Projected metering rows for the Pro period have `plan_id = 'sandbox-pro'`, `pricing_phase = 'included'`. The ClickHouse aggregation groups by `plan_id`, producing separate line items — no re-rating needed.
 
 ### Mid-month downgrade: Pro → Hobby on day 20
 
