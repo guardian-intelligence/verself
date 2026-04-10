@@ -123,7 +123,7 @@ export async function assertJobsIndexHydratesExecutionList(
 
   await app.expectSSRHTML("/jobs", ["Executions", "Loading executions"]);
   await app.goto("/jobs");
-  await expect(app.page.getByRole("heading", { name: "Executions" })).toBeVisible();
+  await expect(app.page.getByRole("heading", { name: "Executions", exact: true })).toBeVisible();
   await expect(app.page.getByText("Loading executions")).toBeVisible();
 
   await app.waitForCondition("execution list hydration", 15_000, async () => {
@@ -131,7 +131,7 @@ export async function assertJobsIndexHydratesExecutionList(
   });
 
   await app.assertStableRoute({
-    ready: app.page.getByRole("heading", { name: "Executions" }),
+    ready: app.page.getByRole("heading", { name: "Executions", exact: true }),
     expectedText: ["Executions", executionId.slice(0, 8)],
   });
 }
