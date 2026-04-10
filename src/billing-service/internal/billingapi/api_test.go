@@ -1,52 +1,39 @@
 package billingapi
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-func TestOrgPathAcceptsDecimalString(t *testing.T) {
+func TestOrgPathDecimalUint64Validation(t *testing.T) {
 	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("test", "1.0.0"))
+	NewAPI(mux, Config{Version: "test", ListenAddr: "127.0.0.1:0"})
 
-	type output struct {
-		Body struct {
-			OrgID string `json:"org_id"`
-		}
-	}
+	t.Run("accepts decimal string path param", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/367889413595774308/balance", nil)
+		mux.ServeHTTP(rec, req)
 
-	huma.Get(api, "/orgs/{org_id}/balance", func(_ context.Context, input *OrgPath) (*output, error) {
-		orgID, err := billingOrgID(input.OrgID)
-		if err != nil {
-			return nil, err
+		if rec.Code == http.StatusUnprocessableEntity {
+			t.Fatalf("expected decimal org_id path param to pass Huma validation, got 422: %s", rec.Body.String())
 		}
-		out := &output{}
-		out.Body.OrgID = orgID.String()
-		return out, nil
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected handler to run and fail on nil billing client, got %d: %s", rec.Code, rec.Body.String())
+		}
 	})
 
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/orgs/367889413595774308/balance", nil)
-	mux.ServeHTTP(recorder, request)
+	t.Run("rejects non-decimal path param", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/notdecimal/balance", nil)
+		mux.ServeHTTP(rec, req)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected valid decimal org_id path to pass, got %d: %s", recorder.Code, recorder.Body.String())
-	}
-
-	var body struct {
-		OrgID string `json:"org_id"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.OrgID != "367889413595774308" {
-		t.Fatalf("expected org_id to round-trip, got %q", body.OrgID)
-	}
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected non-decimal org_id to fail validation, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "expected string to match pattern") {
+			t.Fatalf("expected decimal pattern validation error, got: %s", rec.Body.String())
+		}
+	})
 }
-

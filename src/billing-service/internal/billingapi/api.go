@@ -178,6 +178,14 @@ func billingOrgID(id string) (billing.OrgID, error) {
 	if err != nil {
 		return 0, huma.Error400BadRequest("invalid org_id", err)
 	}
+	return billingOrgIDFromUint64(parsed)
+}
+
+func billingOrgIDFromWire(id apiwire.DecimalUint64) (billing.OrgID, error) {
+	return billingOrgIDFromUint64(id.Uint64())
+}
+
+func billingOrgIDFromUint64(parsed uint64) (billing.OrgID, error) {
 	if parsed == 0 {
 		return 0, huma.Error400BadRequest("org_id must be positive")
 	}
@@ -318,7 +326,7 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[CreateCheckout
 	if err != nil {
 		return nil, err
 	}
-	orgID, err := billingOrgID(input.Body.OrgID)
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +346,7 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[CreateSubs
 	if err != nil {
 		return nil, err
 	}
-	orgID, err := billingOrgID(input.Body.OrgID)
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +362,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRe
 	if err != nil {
 		return nil, err
 	}
-	orgID, err := billingOrgID(input.Body.OrgID)
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
 		return nil, err
 	}
