@@ -28,11 +28,10 @@ Implemented in this repo:
 
 - HTTPS-only public webhook ingress at `https://billing.<domain>/webhooks/stripe` through Caddy: [`../../platform/ansible/roles/caddy/templates/Caddyfile.j2`](../../platform/ansible/roles/caddy/templates/Caddyfile.j2)
 - Stripe source IP allowlist at the edge, pinned to Stripe's published webhook IP list: [`../../platform/ansible/roles/caddy/defaults/main.yml`](../../platform/ansible/roles/caddy/defaults/main.yml), [`../../platform/ansible/roles/caddy/templates/Caddyfile.j2`](../../platform/ansible/roles/caddy/templates/Caddyfile.j2)
-- Raw-body signature verification with Stripe's official Go library: [`../internal/runtime/app.go`](../internal/runtime/app.go)
+- Raw-body signature verification with Stripe's official Go library: [`../cmd/billing-service/main.go`](../cmd/billing-service/main.go), [`../internal/billing/stripe.go`](../internal/billing/stripe.go)
 - Public method restriction and edge-side body cap: [`../../platform/ansible/roles/caddy/templates/Caddyfile.j2`](../../platform/ansible/roles/caddy/templates/Caddyfile.j2)
 - Blocking WAF policy on the billing hostname: [`../../platform/ansible/roles/caddy/templates/Caddyfile.j2`](../../platform/ansible/roles/caddy/templates/Caddyfile.j2)
-- Queue-first webhook handler that returns after durable enqueue instead of doing downstream work inline: [`../internal/runtime/app.go`](../internal/runtime/app.go)
-- Duplicate protection on downstream tasks and Stripe event logs: [`../internal/runtime/app.go`](../internal/runtime/app.go), [`../postgresql-migrations/001_billing_schema.up.sql`](../postgresql-migrations/001_billing_schema.up.sql)
+- Webhook handling is intentionally inline in the rewritten service until billing needs a durable asynchronous workflow. The handled event side effect is idempotent because Stripe references are unique per `(org_id, product_id, stripe_reference_id)` in [`../postgresql-migrations/001_billing_schema.up.sql`](../postgresql-migrations/001_billing_schema.up.sql).
 - Billing-service keeps the Stripe webhook secret out of process args and env by loading it through systemd credentials: [`../../platform/ansible/roles/billing_service/tasks/credentials.yml`](../../platform/ansible/roles/billing_service/tasks/credentials.yml), [`../cmd/billing-service/main.go`](../cmd/billing-service/main.go)
 
 Not automated in this repo yet:
@@ -49,12 +48,8 @@ Stripe says to subscribe only to the event types the integration requires. The b
 
 - `checkout.session.completed`
 - `payment_intent.succeeded`
-- `invoice.paid`
-- `invoice.payment_failed`
-- `charge.dispute.created`
-- `customer.subscription.deleted`
 
-Source in code: [`../internal/runtime/app.go`](../internal/runtime/app.go)
+Source in code: [`../internal/billing/stripe.go`](../internal/billing/stripe.go)
 
 The Stripe webhook endpoint should be configured to send only that set. Do not subscribe the billing endpoint to all events.
 
@@ -73,7 +68,7 @@ The repo pins that published list in [`../../platform/ansible/roles/caddy/defaul
 For a production billing rollout, the operator should verify all of the following:
 
 - Stripe Workbench has a webhook endpoint at `https://billing.<domain>/webhooks/stripe`
-- The endpoint is subscribed only to the six event types listed above
+- The endpoint is subscribed only to the two event types listed above
 - The endpoint signing secret in Stripe matches `stripe_webhook_secret`
 - The billing hostname remains DNS-only in Cloudflare so origin IP allowlisting still sees Stripe's real source IPs
 - Billing deploys continue to return `403` for non-Stripe public webhook probes and `200` for valid Stripe-signed loopback probes

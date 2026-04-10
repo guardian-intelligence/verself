@@ -1,5 +1,3 @@
-// Package testharness provides in-process billing-service wiring for e2e tests.
-// This is the public entry point — internal packages stay internal.
 package testharness
 
 import (
@@ -14,13 +12,11 @@ import (
 	"github.com/stripe/stripe-go/v85"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 
+	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
-	billingruntime "github.com/forge-metal/billing-service/internal/runtime"
 )
 
-// Config holds all dependencies for a test billing-service.
-// No billing domain types are exposed — raw infrastructure only.
 type Config struct {
 	PG              *sql.DB
 	TBClient        tb.Client
@@ -32,61 +28,73 @@ type Config struct {
 	Logger          *slog.Logger
 }
 
-// Server is an in-process billing-service for e2e tests.
 type Server struct {
 	*httptest.Server
-	app            *billingruntime.App
-	billingClient  *billing.Client
-	meteringWriter *billing.AsyncMeteringWriter
+	client *billing.Client
 }
 
-// NewServer constructs a billing-service HTTP test server with all routes
-// registered and ready to accept requests. The caller is responsible for
-// closing the server and cancelling the worker context.
 func NewServer(cfg Config) *Server {
-	sc := stripe.NewClient(cfg.StripeSecretKey)
-	meteringSink := billing.NewClickHouseMeteringWriter(cfg.CHConn, cfg.CHDatabase)
-	meteringWriter := billing.NewAsyncMeteringWriter(meteringSink, billing.AsyncMeteringWriterConfig{})
-	reconcileQuerier := billing.NewClickHouseReconcileQuerier(cfg.CHConn, cfg.CHDatabase)
-
+	meteringWriter := billing.NewClickHouseMeteringWriter(cfg.CHConn, cfg.CHDatabase)
 	billingCfg := billing.DefaultConfig()
 	billingCfg.StripeSecretKey = cfg.StripeSecretKey
 	billingCfg.TigerBeetleAddresses = cfg.TBAddresses
 	billingCfg.TigerBeetleClusterID = cfg.TBClusterID
 
-	billingClient, err := billing.NewClient(cfg.TBClient, cfg.PG, sc, meteringWriter, billingCfg)
+	client, err := billing.NewClient(
+		cfg.TBClient,
+		cfg.PG,
+		stripe.NewClient(cfg.StripeSecretKey),
+		meteringWriter,
+		billingCfg,
+	)
 	if err != nil {
 		panic("testharness: create billing client: " + err.Error())
 	}
 
-	app := billingruntime.New(cfg.PG, cfg.TBClient, cfg.CHConn, billingClient, reconcileQuerier, "whsec_test_unused", cfg.Logger)
 	mux := http.NewServeMux()
-	billingapi.NewAPI(mux, app)
-	srv := httptest.NewServer(mux)
+	billingapi.NewAPI(mux, billingapi.Config{
+		Version:      "2.0.0",
+		ListenAddr:   "127.0.0.1:0",
+		Client:       client,
+		Logger:       cfg.Logger,
+		InternalRole: "billing_internal",
+	})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := &auth.Identity{
+			Subject: "test:sandbox-rental-service",
+			Roles:   []string{"billing_internal"},
+		}
+		mux.ServeHTTP(w, r.WithContext(auth.WithIdentity(r.Context(), identity)))
+	})
 
 	return &Server{
-		Server:         srv,
-		app:            app,
-		billingClient:  billingClient,
-		meteringWriter: meteringWriter,
+		Server: httptest.NewServer(handler),
+		client: client,
 	}
 }
 
-// RunWorker starts the billing background worker. Blocks until ctx is cancelled.
-func (s *Server) RunWorker(ctx context.Context, pollInterval time.Duration) error {
-	return s.app.RunWorker(ctx, pollInterval)
+func (s *Server) RunProjector(ctx context.Context, pollInterval time.Duration) error {
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if _, err := s.client.ProjectPendingWindows(ctx, 100); err != nil {
+				return err
+			}
+		}
+	}
 }
 
-// SeedOrg creates TigerBeetle accounts for the given org.
-func (s *Server) SeedOrg(ctx context.Context, orgID uint64, name string) error {
-	return s.billingClient.EnsureOrg(ctx, billing.OrgID(orgID), name)
+func (s *Server) SeedOrg(ctx context.Context, orgID uint64, name string, trustTier string) error {
+	return s.client.EnsureOrg(ctx, billing.OrgID(orgID), name, trustTier)
 }
 
-// SeedCredits deposits credits into the org's account. Returns true if a new
-// grant was created (false on idempotent replay).
-func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string, amount uint64, source string, stripeRef string, expiresAt time.Time) (bool, error) {
-	taskID := billing.TaskID(time.Now().UnixNano())
-	return s.billingClient.DepositCredits(ctx, &taskID, billing.CreditGrant{
+func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string, amount uint64, source string, stripeRef string, expiresAt time.Time) (billing.GrantBalance, error) {
+	return s.client.DepositCredits(ctx, billing.CreditGrant{
 		OrgID:             billing.OrgID(orgID),
 		ProductID:         productID,
 		Amount:            amount,
@@ -96,17 +104,14 @@ func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string
 	})
 }
 
-// GetBalance returns the org's credit balance as (available, pending).
 func (s *Server) GetBalance(ctx context.Context, orgID uint64) (available uint64, pending uint64, err error) {
-	b, err := s.billingClient.GetOrgBalance(ctx, billing.OrgID(orgID))
+	b, err := s.client.GetOrgBalance(ctx, billing.OrgID(orgID))
 	if err != nil {
 		return 0, 0, err
 	}
 	return b.CreditAvailable, b.CreditPending, nil
 }
 
-// FlushMetering flushes the async metering writer and waits briefly for
-// ClickHouse to process. Non-fatal errors are logged.
-func (s *Server) FlushMetering(ctx context.Context) error {
-	return s.meteringWriter.Close(ctx)
+func (s *Server) ProjectPendingWindows(ctx context.Context) (int, error) {
+	return s.client.ProjectPendingWindows(ctx, 100)
 }

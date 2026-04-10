@@ -32,9 +32,9 @@ type Identity struct {
 }
 
 type RoleAssignment struct {
-	ProjectID     string
-	Role          string
-	OrganizationID string
+	ProjectID        string
+	Role             string
+	OrganizationID   string
 	OrganizationName string
 }
 
@@ -56,6 +56,12 @@ type verifierCache struct {
 func FromContext(ctx context.Context) *Identity {
 	identity, _ := ctx.Value(identityKey).(*Identity)
 	return identity
+}
+
+// WithIdentity is for in-process harnesses that need to exercise service
+// authorization without standing up an OIDC issuer.
+func WithIdentity(ctx context.Context, identity *Identity) context.Context {
+	return context.WithValue(ctx, identityKey, identity)
 }
 
 // Middleware returns HTTP middleware that validates Bearer tokens.

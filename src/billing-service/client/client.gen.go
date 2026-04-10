@@ -12,19 +12,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for SubscriptionInputBodyCadence.
+// Defines values for CreateSubscriptionBodyCadence.
 const (
-	Annual  SubscriptionInputBodyCadence = "annual"
-	Monthly SubscriptionInputBodyCadence = "monthly"
+	Annual  CreateSubscriptionBodyCadence = "annual"
+	Monthly CreateSubscriptionBodyCadence = "monthly"
 )
 
-// Valid indicates whether the value is a known member of the SubscriptionInputBodyCadence enum.
-func (e SubscriptionInputBodyCadence) Valid() bool {
+// Valid indicates whether the value is a known member of the CreateSubscriptionBodyCadence enum.
+func (e CreateSubscriptionBodyCadence) Valid() bool {
 	switch e {
 	case Annual:
 		return true
@@ -43,12 +42,12 @@ type BalanceOutputBody struct {
 	CreditPending     int64   `json:"credit_pending"`
 	FreeTierAvailable int64   `json:"free_tier_available"`
 	FreeTierPending   int64   `json:"free_tier_pending"`
-	OrgId             string  `json:"org_id"`
+	OrgId             int64   `json:"org_id"`
 	TotalAvailable    int64   `json:"total_available"`
 }
 
-// CheckoutInputBody defines model for CheckoutInputBody.
-type CheckoutInputBody struct {
+// CreateCheckoutBody defines model for CreateCheckoutBody.
+type CreateCheckoutBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema      *string `json:"$schema,omitempty"`
 	AmountCents int64   `json:"amount_cents"`
@@ -58,16 +57,19 @@ type CheckoutInputBody struct {
 	SuccessUrl  string  `json:"success_url"`
 }
 
-// DepositCreditsOutputBody defines model for DepositCreditsOutputBody.
-type DepositCreditsOutputBody struct {
+// CreateSubscriptionBody defines model for CreateSubscriptionBody.
+type CreateSubscriptionBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string   `json:"$schema,omitempty"`
-	CreditsDeposited       int64     `json:"credits_deposited"`
-	CreditsFailed          int64     `json:"credits_failed"`
-	CreditsSkipped         int64     `json:"credits_skipped"`
-	Errors                 *[]string `json:"errors,omitempty"`
-	SubscriptionsProcessed int64     `json:"subscriptions_processed"`
+	Schema     *string                        `json:"$schema,omitempty"`
+	Cadence    *CreateSubscriptionBodyCadence `json:"cadence,omitempty"`
+	CancelUrl  string                         `json:"cancel_url"`
+	OrgId      int64                          `json:"org_id"`
+	PlanId     string                         `json:"plan_id"`
+	SuccessUrl string                         `json:"success_url"`
 }
+
+// CreateSubscriptionBodyCadence defines model for CreateSubscriptionBody.Cadence.
+type CreateSubscriptionBodyCadence string
 
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
@@ -105,34 +107,13 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// ExpireCreditsOutputBody defines model for ExpireCreditsOutputBody.
-type ExpireCreditsOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string   `json:"$schema,omitempty"`
-	Errors        *[]string `json:"errors,omitempty"`
-	GrantsChecked int64     `json:"grants_checked"`
-	GrantsExpired int64     `json:"grants_expired"`
-	GrantsFailed  int64     `json:"grants_failed"`
-	UnitsExpired  int64     `json:"units_expired"`
-}
-
 // GrantJSON defines model for GrantJSON.
 type GrantJSON struct {
-	Amount    int64      `json:"amount"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	GrantId   string     `json:"grant_id"`
-	ProductId string     `json:"product_id"`
-	Source    string     `json:"source"`
-}
-
-// GrantLegJSON defines model for GrantLegJSON.
-type GrantLegJSON struct {
-	Amount     int64  `json:"amount"`
-	GrantId    string `json:"grant_id"`
-	Source     string `json:"source"`
-	TransferId string `json:"transfer_id"`
+	Available int64   `json:"available"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+	GrantId   string  `json:"grant_id"`
+	Pending   int64   `json:"pending"`
+	Source    string  `json:"source"`
 }
 
 // GrantsOutputBody defines model for GrantsOutputBody.
@@ -140,96 +121,6 @@ type GrantsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string      `json:"$schema,omitempty"`
 	Grants *[]GrantJSON `json:"grants"`
-	OrgId  string       `json:"org_id"`
-}
-
-// HealthOutputBody defines model for HealthOutputBody.
-type HealthOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Status string  `json:"status"`
-}
-
-// ProductBalanceOutputBody defines model for ProductBalanceOutputBody.
-type ProductBalanceOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema            *string `json:"$schema,omitempty"`
-	FreeTierRemaining int64   `json:"free_tier_remaining"`
-	IncludedRemaining int64   `json:"included_remaining"`
-	OrgId             string  `json:"org_id"`
-	PrepaidRemaining  int64   `json:"prepaid_remaining"`
-	ProductId         string  `json:"product_id"`
-}
-
-// QuotaCheckInputBody defines model for QuotaCheckInputBody.
-type QuotaCheckInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema          *string `json:"$schema,omitempty"`
-	ConcurrentCount int64   `json:"concurrent_count"`
-	OrgId           int64   `json:"org_id"`
-	ProductId       string  `json:"product_id"`
-}
-
-// QuotaCheckOutputBody defines model for QuotaCheckOutputBody.
-type QuotaCheckOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string               `json:"$schema,omitempty"`
-	Allowed    bool                  `json:"allowed"`
-	Violations *[]QuotaViolationJSON `json:"violations,omitempty"`
-}
-
-// QuotaViolationJSON defines model for QuotaViolationJSON.
-type QuotaViolationJSON struct {
-	Current   int64  `json:"current"`
-	Dimension string `json:"dimension"`
-	Limit     int64  `json:"limit"`
-	Window    string `json:"window"`
-}
-
-// ReconcileCheckJSON defines model for ReconcileCheckJSON.
-type ReconcileCheckJSON struct {
-	Details  *string `json:"details,omitempty"`
-	Name     string  `json:"name"`
-	Passed   bool    `json:"passed"`
-	Severity string  `json:"severity"`
-}
-
-// ReconcileOutputBody defines model for ReconcileOutputBody.
-type ReconcileOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema    *string               `json:"$schema,omitempty"`
-	Checks    *[]ReconcileCheckJSON `json:"checks"`
-	HasAlerts bool                  `json:"has_alerts"`
-}
-
-// RenewInputBody defines model for RenewInputBody.
-type RenewInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string         `json:"$schema,omitempty"`
-	ActualSeconds int32           `json:"actual_seconds"`
-	Reservation   ReservationJSON `json:"reservation"`
-}
-
-// ReservationJSON defines model for ReservationJSON.
-type ReservationJSON struct {
-	ActorId             string             `json:"actor_id"`
-	Allocation          map[string]float64 `json:"allocation"`
-	CostPerSec          int64              `json:"cost_per_sec"`
-	ExpiresAt           time.Time          `json:"expires_at"`
-	GrantLegs           *[]GrantLegJSON    `json:"grant_legs"`
-	JobId               int64              `json:"job_id"`
-	OrgId               int64              `json:"org_id"`
-	PlanId              string             `json:"plan_id"`
-	PricingPhase        string             `json:"pricing_phase"`
-	ProductId           string             `json:"product_id"`
-	RenewBy             time.Time          `json:"renew_by"`
-	SourceRef           string             `json:"source_ref"`
-	SourceType          string             `json:"source_type"`
-	SpendCapPeriodStart *time.Time         `json:"spend_cap_period_start,omitempty"`
-	UnitRates           map[string]int64   `json:"unit_rates"`
-	WindowSecs          int32              `json:"window_secs"`
-	WindowSeq           int32              `json:"window_seq"`
-	WindowStart         time.Time          `json:"window_start"`
 }
 
 // ReserveInputBody defines model for ReserveInputBody.
@@ -239,7 +130,6 @@ type ReserveInputBody struct {
 	ActorId         string             `json:"actor_id"`
 	Allocation      map[string]float64 `json:"allocation"`
 	ConcurrentCount int64              `json:"concurrent_count"`
-	JobId           int64              `json:"job_id"`
 	OrgId           int64              `json:"org_id"`
 	ProductId       string             `json:"product_id"`
 	SourceRef       string             `json:"source_ref"`
@@ -249,141 +139,113 @@ type ReserveInputBody struct {
 // ReserveOutputBody defines model for ReserveOutputBody.
 type ReserveOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string         `json:"$schema,omitempty"`
-	Reservation ReservationJSON `json:"reservation"`
+	Schema      *string               `json:"$schema,omitempty"`
+	Reservation WindowReservationJSON `json:"reservation"`
 }
 
 // SettleInputBody defines model for SettleInputBody.
 type SettleInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string         `json:"$schema,omitempty"`
-	ActualSeconds int32           `json:"actual_seconds"`
-	Reservation   ReservationJSON `json:"reservation"`
+	Schema         *string                 `json:"$schema,omitempty"`
+	ActualQuantity int32                   `json:"actual_quantity"`
+	UsageSummary   *map[string]interface{} `json:"usage_summary,omitempty"`
+	WindowId       string                  `json:"window_id"`
 }
 
-// StatusOutputBody defines model for StatusOutputBody.
-type StatusOutputBody struct {
+// SettleOutputBody defines model for SettleOutputBody.
+type SettleOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Status string  `json:"status"`
+	Schema              *string `json:"$schema,omitempty"`
+	ActualQuantity      int32   `json:"actual_quantity"`
+	BillableQuantity    int32   `json:"billable_quantity"`
+	BilledChargeUnits   int64   `json:"billed_charge_units"`
+	SettledAt           string  `json:"settled_at"`
+	WindowId            string  `json:"window_id"`
+	WriteoffChargeUnits int64   `json:"writeoff_charge_units"`
+	WriteoffQuantity    int32   `json:"writeoff_quantity"`
 }
-
-// SubscriptionInputBody defines model for SubscriptionInputBody.
-type SubscriptionInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                       `json:"$schema,omitempty"`
-	Cadence    *SubscriptionInputBodyCadence `json:"cadence,omitempty"`
-	CancelUrl  string                        `json:"cancel_url"`
-	OrgId      int64                         `json:"org_id"`
-	PlanId     string                        `json:"plan_id"`
-	SuccessUrl string                        `json:"success_url"`
-}
-
-// SubscriptionInputBodyCadence defines model for SubscriptionInputBody.Cadence.
-type SubscriptionInputBodyCadence string
 
 // SubscriptionJSON defines model for SubscriptionJSON.
 type SubscriptionJSON struct {
-	Cadence              string     `json:"cadence"`
-	CreatedAt            time.Time  `json:"created_at"`
-	CurrentPeriodEnd     *time.Time `json:"current_period_end,omitempty"`
-	CurrentPeriodStart   *time.Time `json:"current_period_start,omitempty"`
-	OverageCapUnits      *int64     `json:"overage_cap_units,omitempty"`
-	PlanId               string     `json:"plan_id"`
-	ProductId            string     `json:"product_id"`
-	Status               string     `json:"status"`
-	StripeSubscriptionId *string    `json:"stripe_subscription_id,omitempty"`
-	SubscriptionId       int64      `json:"subscription_id"`
+	Cadence            string  `json:"cadence"`
+	CurrentPeriodEnd   *string `json:"current_period_end,omitempty"`
+	CurrentPeriodStart *string `json:"current_period_start,omitempty"`
+	PlanId             string  `json:"plan_id"`
+	ProductId          string  `json:"product_id"`
+	Status             string  `json:"status"`
+	SubscriptionId     int64   `json:"subscription_id"`
 }
 
 // SubscriptionsOutputBody defines model for SubscriptionsOutputBody.
 type SubscriptionsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string             `json:"$schema,omitempty"`
-	OrgId         string              `json:"org_id"`
 	Subscriptions *[]SubscriptionJSON `json:"subscriptions"`
 }
 
-// TrustTierOutputBody defines model for TrustTierOutputBody.
-type TrustTierOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema      *string   `json:"$schema,omitempty"`
-	Errors      *[]string `json:"errors,omitempty"`
-	OrgDemoted  int64     `json:"org_demoted"`
-	OrgPromoted int64     `json:"org_promoted"`
-}
-
-// UrlOutputBody defines model for UrlOutputBody.
-type UrlOutputBody struct {
+// URLOutputBody defines model for URLOutputBody.
+type URLOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Url    string  `json:"url"`
 }
 
-// UsageEventJSON defines model for UsageEventJSON.
-type UsageEventJSON struct {
-	CreatedAt time.Time   `json:"created_at"`
-	EventId   int64       `json:"event_id"`
-	EventType string      `json:"event_type"`
-	Payload   interface{} `json:"payload"`
-}
-
-// UsageOutputBody defines model for UsageOutputBody.
-type UsageOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string           `json:"$schema,omitempty"`
-	Events *[]UsageEventJSON `json:"events"`
-	OrgId  string            `json:"org_id"`
-}
-
 // VoidInputBody defines model for VoidInputBody.
 type VoidInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string         `json:"$schema,omitempty"`
-	Reservation ReservationJSON `json:"reservation"`
+	Schema   *string `json:"$schema,omitempty"`
+	WindowId string  `json:"window_id"`
+}
+
+// VoidOutputBody defines model for VoidOutputBody.
+type VoidOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	WindowId string  `json:"window_id"`
+}
+
+// WindowReservationJSON defines model for WindowReservationJSON.
+type WindowReservationJSON struct {
+	ActorId             string             `json:"actor_id"`
+	Allocation          map[string]float64 `json:"allocation"`
+	CostPerUnit         int64              `json:"cost_per_unit"`
+	ExpiresAt           string             `json:"expires_at"`
+	OrgId               int64              `json:"org_id"`
+	PlanId              string             `json:"plan_id"`
+	PricingPhase        string             `json:"pricing_phase"`
+	ProductId           string             `json:"product_id"`
+	RenewBy             *string            `json:"renew_by,omitempty"`
+	ReservationShape    string             `json:"reservation_shape"`
+	ReservedChargeUnits int64              `json:"reserved_charge_units"`
+	ReservedQuantity    int32              `json:"reserved_quantity"`
+	SourceRef           string             `json:"source_ref"`
+	SourceType          string             `json:"source_type"`
+	UnitRates           map[string]int64   `json:"unit_rates"`
+	WindowId            string             `json:"window_id"`
+	WindowSeq           int32              `json:"window_seq"`
+	WindowStart         string             `json:"window_start"`
 }
 
 // ListGrantsParams defines parameters for ListGrants.
 type ListGrantsParams struct {
-	// ProductId Filter by product
 	ProductId *string `form:"product_id,omitempty" json:"product_id,omitempty"`
-
-	// Active Only active grants
-	Active *bool `form:"active,omitempty" json:"active,omitempty"`
+	Active    *bool   `form:"active,omitempty" json:"active,omitempty"`
 }
-
-// ListUsageParams defines parameters for ListUsage.
-type ListUsageParams struct {
-	// ProductId Filter by product
-	ProductId *string `form:"product_id,omitempty" json:"product_id,omitempty"`
-
-	// Since RFC3339 lower bound on created_at
-	Since *string `form:"since,omitempty" json:"since,omitempty"`
-
-	// Limit Max results (1-1000, default 100)
-	Limit *int64 `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// CheckQuotasJSONRequestBody defines body for CheckQuotas for application/json ContentType.
-type CheckQuotasJSONRequestBody = QuotaCheckInputBody
 
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
-type CreateCheckoutJSONRequestBody = CheckoutInputBody
+type CreateCheckoutJSONRequestBody = CreateCheckoutBody
 
-// RenewJSONRequestBody defines body for Renew for application/json ContentType.
-type RenewJSONRequestBody = RenewInputBody
+// ReserveWindowJSONRequestBody defines body for ReserveWindow for application/json ContentType.
+type ReserveWindowJSONRequestBody = ReserveInputBody
 
-// ReserveJSONRequestBody defines body for Reserve for application/json ContentType.
-type ReserveJSONRequestBody = ReserveInputBody
-
-// SettleJSONRequestBody defines body for Settle for application/json ContentType.
-type SettleJSONRequestBody = SettleInputBody
+// SettleWindowJSONRequestBody defines body for SettleWindow for application/json ContentType.
+type SettleWindowJSONRequestBody = SettleInputBody
 
 // CreateSubscriptionJSONRequestBody defines body for CreateSubscription for application/json ContentType.
-type CreateSubscriptionJSONRequestBody = SubscriptionInputBody
+type CreateSubscriptionJSONRequestBody = CreateSubscriptionBody
 
-// VoidJSONRequestBody defines body for Void for application/json ContentType.
-type VoidJSONRequestBody = VoidInputBody
+// VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
+type VoidWindowJSONRequestBody = VoidInputBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -458,109 +320,39 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// Healthz request
-	Healthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CheckQuotasWithBody request with any body
-	CheckQuotasWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CheckQuotas(ctx context.Context, body CheckQuotasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// CreateCheckoutWithBody request with any body
 	CreateCheckoutWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// OpsDepositCredits request
-	OpsDepositCredits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OpsExpireCredits request
-	OpsExpireCredits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OpsReconcile request
-	OpsReconcile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// OpsTrustTierEvaluate request
-	OpsTrustTierEvaluate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetOrgBalance request
-	GetOrgBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetBalance request
+	GetBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListGrants request
 	ListGrants(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetProductBalance request
-	GetProductBalance(ctx context.Context, orgId int64, productId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListSubscriptions request
 	ListSubscriptions(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListUsage request
-	ListUsage(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ReserveWindowWithBody request with any body
+	ReserveWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// RenewWithBody request with any body
-	RenewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ReserveWindow(ctx context.Context, body ReserveWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	Renew(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SettleWindowWithBody request with any body
+	SettleWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ReserveWithBody request with any body
-	ReserveWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	Reserve(ctx context.Context, body ReserveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SettleWithBody request with any body
-	SettleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	Settle(ctx context.Context, body SettleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SettleWindow(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateSubscriptionWithBody request with any body
 	CreateSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateSubscription(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// VoidWithBody request with any body
-	VoidWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// VoidWindowWithBody request with any body
+	VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	Void(ctx context.Context, body VoidJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// Readyz request
-	Readyz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-}
-
-func (c *Client) Healthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHealthzRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CheckQuotasWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCheckQuotasRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CheckQuotas(ctx context.Context, body CheckQuotasJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCheckQuotasRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
+	VoidWindow(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) CreateCheckoutWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -587,56 +379,8 @@ func (c *Client) CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequ
 	return c.Client.Do(req)
 }
 
-func (c *Client) OpsDepositCredits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOpsDepositCreditsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OpsExpireCredits(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOpsExpireCreditsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OpsReconcile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOpsReconcileRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) OpsTrustTierEvaluate(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOpsTrustTierEvaluateRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetOrgBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOrgBalanceRequest(c.Server, orgId)
+func (c *Client) GetBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBalanceRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
 	}
@@ -659,18 +403,6 @@ func (c *Client) ListGrants(ctx context.Context, orgId int64, params *ListGrants
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetProductBalance(ctx context.Context, orgId int64, productId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetProductBalanceRequest(c.Server, orgId, productId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 func (c *Client) ListSubscriptions(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListSubscriptionsRequest(c.Server, orgId)
 	if err != nil {
@@ -683,8 +415,8 @@ func (c *Client) ListSubscriptions(ctx context.Context, orgId int64, reqEditors 
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListUsage(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListUsageRequest(c.Server, orgId, params)
+func (c *Client) ReserveWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReserveWindowRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -695,8 +427,8 @@ func (c *Client) ListUsage(ctx context.Context, orgId int64, params *ListUsagePa
 	return c.Client.Do(req)
 }
 
-func (c *Client) RenewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRenewRequestWithBody(c.Server, contentType, body)
+func (c *Client) ReserveWindow(ctx context.Context, body ReserveWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReserveWindowRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -707,8 +439,8 @@ func (c *Client) RenewWithBody(ctx context.Context, contentType string, body io.
 	return c.Client.Do(req)
 }
 
-func (c *Client) Renew(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRenewRequest(c.Server, body)
+func (c *Client) SettleWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSettleWindowRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -719,44 +451,8 @@ func (c *Client) Renew(ctx context.Context, body RenewJSONRequestBody, reqEditor
 	return c.Client.Do(req)
 }
 
-func (c *Client) ReserveWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewReserveRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) Reserve(ctx context.Context, body ReserveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewReserveRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SettleWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSettleRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) Settle(ctx context.Context, body SettleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSettleRequest(c.Server, body)
+func (c *Client) SettleWindow(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSettleWindowRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -791,8 +487,8 @@ func (c *Client) CreateSubscription(ctx context.Context, body CreateSubscription
 	return c.Client.Do(req)
 }
 
-func (c *Client) VoidWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewVoidRequestWithBody(c.Server, contentType, body)
+func (c *Client) VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVoidWindowRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -803,8 +499,8 @@ func (c *Client) VoidWithBody(ctx context.Context, contentType string, body io.R
 	return c.Client.Do(req)
 }
 
-func (c *Client) Void(ctx context.Context, body VoidJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewVoidRequest(c.Server, body)
+func (c *Client) VoidWindow(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVoidWindowRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -813,85 +509,6 @@ func (c *Client) Void(ctx context.Context, body VoidJSONRequestBody, reqEditors 
 		return nil, err
 	}
 	return c.Client.Do(req)
-}
-
-func (c *Client) Readyz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewReadyzRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// NewHealthzRequest generates requests for Healthz
-func NewHealthzRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/healthz")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewCheckQuotasRequest calls the generic CheckQuotas builder with application/json body
-func NewCheckQuotasRequest(server string, body CheckQuotasJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCheckQuotasRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCheckQuotasRequestWithBody generates requests for CheckQuotas with any type of body
-func NewCheckQuotasRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/check-quotas")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
 }
 
 // NewCreateCheckoutRequest calls the generic CreateCheckout builder with application/json body
@@ -934,116 +551,8 @@ func NewCreateCheckoutRequestWithBody(server string, contentType string, body io
 	return req, nil
 }
 
-// NewOpsDepositCreditsRequest generates requests for OpsDepositCredits
-func NewOpsDepositCreditsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/ops/deposit-credits")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOpsExpireCreditsRequest generates requests for OpsExpireCredits
-func NewOpsExpireCreditsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/ops/expire-credits")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOpsReconcileRequest generates requests for OpsReconcile
-func NewOpsReconcileRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/ops/reconcile")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewOpsTrustTierEvaluateRequest generates requests for OpsTrustTierEvaluate
-func NewOpsTrustTierEvaluateRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/ops/trust-tier-evaluate")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetOrgBalanceRequest generates requests for GetOrgBalance
-func NewGetOrgBalanceRequest(server string, orgId int64) (*http.Request, error) {
+// NewGetBalanceRequest generates requests for GetBalance
+func NewGetBalanceRequest(server string, orgId int64) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -1148,47 +657,6 @@ func NewListGrantsRequest(server string, orgId int64, params *ListGrantsParams) 
 	return req, nil
 }
 
-// NewGetProductBalanceRequest generates requests for GetProductBalance
-func NewGetProductBalanceRequest(server string, orgId int64, productId string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "product_id", productId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/products/%s/balance", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewListSubscriptionsRequest generates requests for ListSubscriptions
 func NewListSubscriptionsRequest(server string, orgId int64) (*http.Request, error) {
 	var err error
@@ -1223,147 +691,19 @@ func NewListSubscriptionsRequest(server string, orgId int64) (*http.Request, err
 	return req, nil
 }
 
-// NewListUsageRequest generates requests for ListUsage
-func NewListUsageRequest(server string, orgId int64, params *ListUsageParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/usage", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.ProductId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "product_id", *params.ProductId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Since != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewRenewRequest calls the generic Renew builder with application/json body
-func NewRenewRequest(server string, body RenewJSONRequestBody) (*http.Request, error) {
+// NewReserveWindowRequest calls the generic ReserveWindow builder with application/json body
+func NewReserveWindowRequest(server string, body ReserveWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewRenewRequestWithBody(server, "application/json", bodyReader)
+	return NewReserveWindowRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewRenewRequestWithBody generates requests for Renew with any type of body
-func NewRenewRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/renew")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewReserveRequest calls the generic Reserve builder with application/json body
-func NewReserveRequest(server string, body ReserveJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewReserveRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewReserveRequestWithBody generates requests for Reserve with any type of body
-func NewReserveRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewReserveWindowRequestWithBody generates requests for ReserveWindow with any type of body
+func NewReserveWindowRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1391,19 +731,19 @@ func NewReserveRequestWithBody(server string, contentType string, body io.Reader
 	return req, nil
 }
 
-// NewSettleRequest calls the generic Settle builder with application/json body
-func NewSettleRequest(server string, body SettleJSONRequestBody) (*http.Request, error) {
+// NewSettleWindowRequest calls the generic SettleWindow builder with application/json body
+func NewSettleWindowRequest(server string, body SettleWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewSettleRequestWithBody(server, "application/json", bodyReader)
+	return NewSettleWindowRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewSettleRequestWithBody generates requests for Settle with any type of body
-func NewSettleRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewSettleWindowRequestWithBody generates requests for SettleWindow with any type of body
+func NewSettleWindowRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1471,19 +811,19 @@ func NewCreateSubscriptionRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
-// NewVoidRequest calls the generic Void builder with application/json body
-func NewVoidRequest(server string, body VoidJSONRequestBody) (*http.Request, error) {
+// NewVoidWindowRequest calls the generic VoidWindow builder with application/json body
+func NewVoidWindowRequest(server string, body VoidWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewVoidRequestWithBody(server, "application/json", bodyReader)
+	return NewVoidWindowRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewVoidRequestWithBody generates requests for Void with any type of body
-func NewVoidRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewVoidWindowRequestWithBody generates requests for VoidWindow with any type of body
+func NewVoidWindowRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1507,33 +847,6 @@ func NewVoidRequestWithBody(server string, contentType string, body io.Reader) (
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewReadyzRequest generates requests for Readyz
-func NewReadyzRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/readyz")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	return req, nil
 }
@@ -1581,125 +894,45 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// HealthzWithResponse request
-	HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error)
-
-	// CheckQuotasWithBodyWithResponse request with any body
-	CheckQuotasWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CheckQuotasResponse, error)
-
-	CheckQuotasWithResponse(ctx context.Context, body CheckQuotasJSONRequestBody, reqEditors ...RequestEditorFn) (*CheckQuotasResponse, error)
-
 	// CreateCheckoutWithBodyWithResponse request with any body
 	CreateCheckoutWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
 	CreateCheckoutWithResponse(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
-	// OpsDepositCreditsWithResponse request
-	OpsDepositCreditsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsDepositCreditsResponse, error)
-
-	// OpsExpireCreditsWithResponse request
-	OpsExpireCreditsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsExpireCreditsResponse, error)
-
-	// OpsReconcileWithResponse request
-	OpsReconcileWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsReconcileResponse, error)
-
-	// OpsTrustTierEvaluateWithResponse request
-	OpsTrustTierEvaluateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsTrustTierEvaluateResponse, error)
-
-	// GetOrgBalanceWithResponse request
-	GetOrgBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetOrgBalanceResponse, error)
+	// GetBalanceWithResponse request
+	GetBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error)
 
 	// ListGrantsWithResponse request
 	ListGrantsWithResponse(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error)
 
-	// GetProductBalanceWithResponse request
-	GetProductBalanceWithResponse(ctx context.Context, orgId int64, productId string, reqEditors ...RequestEditorFn) (*GetProductBalanceResponse, error)
-
 	// ListSubscriptionsWithResponse request
 	ListSubscriptionsWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
 
-	// ListUsageWithResponse request
-	ListUsageWithResponse(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*ListUsageResponse, error)
+	// ReserveWindowWithBodyWithResponse request with any body
+	ReserveWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error)
 
-	// RenewWithBodyWithResponse request with any body
-	RenewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenewResponse, error)
+	ReserveWindowWithResponse(ctx context.Context, body ReserveWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error)
 
-	RenewWithResponse(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*RenewResponse, error)
+	// SettleWindowWithBodyWithResponse request with any body
+	SettleWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error)
 
-	// ReserveWithBodyWithResponse request with any body
-	ReserveWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveResponse, error)
-
-	ReserveWithResponse(ctx context.Context, body ReserveJSONRequestBody, reqEditors ...RequestEditorFn) (*ReserveResponse, error)
-
-	// SettleWithBodyWithResponse request with any body
-	SettleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SettleResponse, error)
-
-	SettleWithResponse(ctx context.Context, body SettleJSONRequestBody, reqEditors ...RequestEditorFn) (*SettleResponse, error)
+	SettleWindowWithResponse(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error)
 
 	// CreateSubscriptionWithBodyWithResponse request with any body
 	CreateSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
 
 	CreateSubscriptionWithResponse(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
 
-	// VoidWithBodyWithResponse request with any body
-	VoidWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidResponse, error)
+	// VoidWindowWithBodyWithResponse request with any body
+	VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
 
-	VoidWithResponse(ctx context.Context, body VoidJSONRequestBody, reqEditors ...RequestEditorFn) (*VoidResponse, error)
-
-	// ReadyzWithResponse request
-	ReadyzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReadyzResponse, error)
-}
-
-type HealthzResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *HealthOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r HealthzResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r HealthzResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CheckQuotasResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *QuotaCheckOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CheckQuotasResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CheckQuotasResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
+	VoidWindowWithResponse(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
 }
 
 type CreateCheckoutResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *UrlOutputBody
+	JSON200                       *URLOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1719,99 +952,7 @@ func (r CreateCheckoutResponse) StatusCode() int {
 	return 0
 }
 
-type OpsDepositCreditsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *DepositCreditsOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r OpsDepositCreditsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OpsDepositCreditsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type OpsExpireCreditsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ExpireCreditsOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r OpsExpireCreditsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OpsExpireCreditsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type OpsReconcileResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ReconcileOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r OpsReconcileResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OpsReconcileResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type OpsTrustTierEvaluateResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *TrustTierOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r OpsTrustTierEvaluateResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r OpsTrustTierEvaluateResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetOrgBalanceResponse struct {
+type GetBalanceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *BalanceOutputBody
@@ -1819,7 +960,7 @@ type GetOrgBalanceResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r GetOrgBalanceResponse) Status() string {
+func (r GetBalanceResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1827,7 +968,7 @@ func (r GetOrgBalanceResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetOrgBalanceResponse) StatusCode() int {
+func (r GetBalanceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1857,29 +998,6 @@ func (r ListGrantsResponse) StatusCode() int {
 	return 0
 }
 
-type GetProductBalanceResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ProductBalanceOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetProductBalanceResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetProductBalanceResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type ListSubscriptionsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -1903,30 +1021,7 @@ func (r ListSubscriptionsResponse) StatusCode() int {
 	return 0
 }
 
-type ListUsageResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *UsageOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ListUsageResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListUsageResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type RenewResponse struct {
+type ReserveWindowResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
 	JSON200                       *ReserveOutputBody
@@ -1934,7 +1029,7 @@ type RenewResponse struct {
 }
 
 // Status returns HTTPResponse.Status
-func (r RenewResponse) Status() string {
+func (r ReserveWindowResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1942,22 +1037,22 @@ func (r RenewResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r RenewResponse) StatusCode() int {
+func (r ReserveWindowResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type ReserveResponse struct {
+type SettleWindowResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *ReserveOutputBody
+	JSON200                       *SettleOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r ReserveResponse) Status() string {
+func (r SettleWindowResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1965,30 +1060,7 @@ func (r ReserveResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ReserveResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SettleResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *StatusOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SettleResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SettleResponse) StatusCode() int {
+func (r SettleWindowResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1998,7 +1070,7 @@ func (r SettleResponse) StatusCode() int {
 type CreateSubscriptionResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *UrlOutputBody
+	JSON200                       *URLOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -2018,15 +1090,15 @@ func (r CreateSubscriptionResponse) StatusCode() int {
 	return 0
 }
 
-type VoidResponse struct {
+type VoidWindowResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *StatusOutputBody
+	JSON200                       *VoidOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r VoidResponse) Status() string {
+func (r VoidWindowResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -2034,60 +1106,11 @@ func (r VoidResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r VoidResponse) StatusCode() int {
+func (r VoidWindowResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
-}
-
-type ReadyzResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *HealthOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ReadyzResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ReadyzResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// HealthzWithResponse request returning *HealthzResponse
-func (c *ClientWithResponses) HealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzResponse, error) {
-	rsp, err := c.Healthz(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseHealthzResponse(rsp)
-}
-
-// CheckQuotasWithBodyWithResponse request with arbitrary body returning *CheckQuotasResponse
-func (c *ClientWithResponses) CheckQuotasWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CheckQuotasResponse, error) {
-	rsp, err := c.CheckQuotasWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCheckQuotasResponse(rsp)
-}
-
-func (c *ClientWithResponses) CheckQuotasWithResponse(ctx context.Context, body CheckQuotasJSONRequestBody, reqEditors ...RequestEditorFn) (*CheckQuotasResponse, error) {
-	rsp, err := c.CheckQuotas(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCheckQuotasResponse(rsp)
 }
 
 // CreateCheckoutWithBodyWithResponse request with arbitrary body returning *CreateCheckoutResponse
@@ -2107,49 +1130,13 @@ func (c *ClientWithResponses) CreateCheckoutWithResponse(ctx context.Context, bo
 	return ParseCreateCheckoutResponse(rsp)
 }
 
-// OpsDepositCreditsWithResponse request returning *OpsDepositCreditsResponse
-func (c *ClientWithResponses) OpsDepositCreditsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsDepositCreditsResponse, error) {
-	rsp, err := c.OpsDepositCredits(ctx, reqEditors...)
+// GetBalanceWithResponse request returning *GetBalanceResponse
+func (c *ClientWithResponses) GetBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error) {
+	rsp, err := c.GetBalance(ctx, orgId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseOpsDepositCreditsResponse(rsp)
-}
-
-// OpsExpireCreditsWithResponse request returning *OpsExpireCreditsResponse
-func (c *ClientWithResponses) OpsExpireCreditsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsExpireCreditsResponse, error) {
-	rsp, err := c.OpsExpireCredits(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOpsExpireCreditsResponse(rsp)
-}
-
-// OpsReconcileWithResponse request returning *OpsReconcileResponse
-func (c *ClientWithResponses) OpsReconcileWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsReconcileResponse, error) {
-	rsp, err := c.OpsReconcile(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOpsReconcileResponse(rsp)
-}
-
-// OpsTrustTierEvaluateWithResponse request returning *OpsTrustTierEvaluateResponse
-func (c *ClientWithResponses) OpsTrustTierEvaluateWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpsTrustTierEvaluateResponse, error) {
-	rsp, err := c.OpsTrustTierEvaluate(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseOpsTrustTierEvaluateResponse(rsp)
-}
-
-// GetOrgBalanceWithResponse request returning *GetOrgBalanceResponse
-func (c *ClientWithResponses) GetOrgBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetOrgBalanceResponse, error) {
-	rsp, err := c.GetOrgBalance(ctx, orgId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOrgBalanceResponse(rsp)
+	return ParseGetBalanceResponse(rsp)
 }
 
 // ListGrantsWithResponse request returning *ListGrantsResponse
@@ -2161,15 +1148,6 @@ func (c *ClientWithResponses) ListGrantsWithResponse(ctx context.Context, orgId 
 	return ParseListGrantsResponse(rsp)
 }
 
-// GetProductBalanceWithResponse request returning *GetProductBalanceResponse
-func (c *ClientWithResponses) GetProductBalanceWithResponse(ctx context.Context, orgId int64, productId string, reqEditors ...RequestEditorFn) (*GetProductBalanceResponse, error) {
-	rsp, err := c.GetProductBalance(ctx, orgId, productId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetProductBalanceResponse(rsp)
-}
-
 // ListSubscriptionsWithResponse request returning *ListSubscriptionsResponse
 func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error) {
 	rsp, err := c.ListSubscriptions(ctx, orgId, reqEditors...)
@@ -2179,64 +1157,38 @@ func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context,
 	return ParseListSubscriptionsResponse(rsp)
 }
 
-// ListUsageWithResponse request returning *ListUsageResponse
-func (c *ClientWithResponses) ListUsageWithResponse(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*ListUsageResponse, error) {
-	rsp, err := c.ListUsage(ctx, orgId, params, reqEditors...)
+// ReserveWindowWithBodyWithResponse request with arbitrary body returning *ReserveWindowResponse
+func (c *ClientWithResponses) ReserveWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error) {
+	rsp, err := c.ReserveWindowWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseListUsageResponse(rsp)
+	return ParseReserveWindowResponse(rsp)
 }
 
-// RenewWithBodyWithResponse request with arbitrary body returning *RenewResponse
-func (c *ClientWithResponses) RenewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenewResponse, error) {
-	rsp, err := c.RenewWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) ReserveWindowWithResponse(ctx context.Context, body ReserveWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error) {
+	rsp, err := c.ReserveWindow(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseRenewResponse(rsp)
+	return ParseReserveWindowResponse(rsp)
 }
 
-func (c *ClientWithResponses) RenewWithResponse(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*RenewResponse, error) {
-	rsp, err := c.Renew(ctx, body, reqEditors...)
+// SettleWindowWithBodyWithResponse request with arbitrary body returning *SettleWindowResponse
+func (c *ClientWithResponses) SettleWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error) {
+	rsp, err := c.SettleWindowWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseRenewResponse(rsp)
+	return ParseSettleWindowResponse(rsp)
 }
 
-// ReserveWithBodyWithResponse request with arbitrary body returning *ReserveResponse
-func (c *ClientWithResponses) ReserveWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveResponse, error) {
-	rsp, err := c.ReserveWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) SettleWindowWithResponse(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error) {
+	rsp, err := c.SettleWindow(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseReserveResponse(rsp)
-}
-
-func (c *ClientWithResponses) ReserveWithResponse(ctx context.Context, body ReserveJSONRequestBody, reqEditors ...RequestEditorFn) (*ReserveResponse, error) {
-	rsp, err := c.Reserve(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseReserveResponse(rsp)
-}
-
-// SettleWithBodyWithResponse request with arbitrary body returning *SettleResponse
-func (c *ClientWithResponses) SettleWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SettleResponse, error) {
-	rsp, err := c.SettleWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSettleResponse(rsp)
-}
-
-func (c *ClientWithResponses) SettleWithResponse(ctx context.Context, body SettleJSONRequestBody, reqEditors ...RequestEditorFn) (*SettleResponse, error) {
-	rsp, err := c.Settle(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSettleResponse(rsp)
+	return ParseSettleWindowResponse(rsp)
 }
 
 // CreateSubscriptionWithBodyWithResponse request with arbitrary body returning *CreateSubscriptionResponse
@@ -2256,96 +1208,21 @@ func (c *ClientWithResponses) CreateSubscriptionWithResponse(ctx context.Context
 	return ParseCreateSubscriptionResponse(rsp)
 }
 
-// VoidWithBodyWithResponse request with arbitrary body returning *VoidResponse
-func (c *ClientWithResponses) VoidWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidResponse, error) {
-	rsp, err := c.VoidWithBody(ctx, contentType, body, reqEditors...)
+// VoidWindowWithBodyWithResponse request with arbitrary body returning *VoidWindowResponse
+func (c *ClientWithResponses) VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error) {
+	rsp, err := c.VoidWindowWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseVoidResponse(rsp)
+	return ParseVoidWindowResponse(rsp)
 }
 
-func (c *ClientWithResponses) VoidWithResponse(ctx context.Context, body VoidJSONRequestBody, reqEditors ...RequestEditorFn) (*VoidResponse, error) {
-	rsp, err := c.Void(ctx, body, reqEditors...)
+func (c *ClientWithResponses) VoidWindowWithResponse(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error) {
+	rsp, err := c.VoidWindow(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseVoidResponse(rsp)
-}
-
-// ReadyzWithResponse request returning *ReadyzResponse
-func (c *ClientWithResponses) ReadyzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReadyzResponse, error) {
-	rsp, err := c.Readyz(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseReadyzResponse(rsp)
-}
-
-// ParseHealthzResponse parses an HTTP response from a HealthzWithResponse call
-func ParseHealthzResponse(rsp *http.Response) (*HealthzResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &HealthzResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HealthOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCheckQuotasResponse parses an HTTP response from a CheckQuotasWithResponse call
-func ParseCheckQuotasResponse(rsp *http.Response) (*CheckQuotasResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CheckQuotasResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest QuotaCheckOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
+	return ParseVoidWindowResponse(rsp)
 }
 
 // ParseCreateCheckoutResponse parses an HTTP response from a CreateCheckoutWithResponse call
@@ -2363,7 +1240,7 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest UrlOutputBody
+		var dest URLOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2381,147 +1258,15 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 	return response, nil
 }
 
-// ParseOpsDepositCreditsResponse parses an HTTP response from a OpsDepositCreditsWithResponse call
-func ParseOpsDepositCreditsResponse(rsp *http.Response) (*OpsDepositCreditsResponse, error) {
+// ParseGetBalanceResponse parses an HTTP response from a GetBalanceWithResponse call
+func ParseGetBalanceResponse(rsp *http.Response) (*GetBalanceResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &OpsDepositCreditsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest DepositCreditsOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseOpsExpireCreditsResponse parses an HTTP response from a OpsExpireCreditsWithResponse call
-func ParseOpsExpireCreditsResponse(rsp *http.Response) (*OpsExpireCreditsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &OpsExpireCreditsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ExpireCreditsOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseOpsReconcileResponse parses an HTTP response from a OpsReconcileWithResponse call
-func ParseOpsReconcileResponse(rsp *http.Response) (*OpsReconcileResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &OpsReconcileResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ReconcileOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseOpsTrustTierEvaluateResponse parses an HTTP response from a OpsTrustTierEvaluateWithResponse call
-func ParseOpsTrustTierEvaluateResponse(rsp *http.Response) (*OpsTrustTierEvaluateResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &OpsTrustTierEvaluateResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest TrustTierOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetOrgBalanceResponse parses an HTTP response from a GetOrgBalanceWithResponse call
-func ParseGetOrgBalanceResponse(rsp *http.Response) (*GetOrgBalanceResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOrgBalanceResponse{
+	response := &GetBalanceResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -2579,39 +1324,6 @@ func ParseListGrantsResponse(rsp *http.Response) (*ListGrantsResponse, error) {
 	return response, nil
 }
 
-// ParseGetProductBalanceResponse parses an HTTP response from a GetProductBalanceWithResponse call
-func ParseGetProductBalanceResponse(rsp *http.Response) (*GetProductBalanceResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetProductBalanceResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ProductBalanceOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
 // ParseListSubscriptionsResponse parses an HTTP response from a ListSubscriptionsWithResponse call
 func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2645,48 +1357,15 @@ func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsRespo
 	return response, nil
 }
 
-// ParseListUsageResponse parses an HTTP response from a ListUsageWithResponse call
-func ParseListUsageResponse(rsp *http.Response) (*ListUsageResponse, error) {
+// ParseReserveWindowResponse parses an HTTP response from a ReserveWindowWithResponse call
+func ParseReserveWindowResponse(rsp *http.Response) (*ReserveWindowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListUsageResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest UsageOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseRenewResponse parses an HTTP response from a RenewWithResponse call
-func ParseRenewResponse(rsp *http.Response) (*RenewResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &RenewResponse{
+	response := &ReserveWindowResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -2711,55 +1390,22 @@ func ParseRenewResponse(rsp *http.Response) (*RenewResponse, error) {
 	return response, nil
 }
 
-// ParseReserveResponse parses an HTTP response from a ReserveWithResponse call
-func ParseReserveResponse(rsp *http.Response) (*ReserveResponse, error) {
+// ParseSettleWindowResponse parses an HTTP response from a SettleWindowWithResponse call
+func ParseSettleWindowResponse(rsp *http.Response) (*SettleWindowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ReserveResponse{
+	response := &SettleWindowResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ReserveOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSettleResponse parses an HTTP response from a SettleWithResponse call
-func ParseSettleResponse(rsp *http.Response) (*SettleResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SettleResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StatusOutputBody
+		var dest SettleOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2792,7 +1438,7 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest UrlOutputBody
+		var dest URLOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2810,55 +1456,22 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 	return response, nil
 }
 
-// ParseVoidResponse parses an HTTP response from a VoidWithResponse call
-func ParseVoidResponse(rsp *http.Response) (*VoidResponse, error) {
+// ParseVoidWindowResponse parses an HTTP response from a VoidWindowWithResponse call
+func ParseVoidWindowResponse(rsp *http.Response) (*VoidWindowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &VoidResponse{
+	response := &VoidWindowResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StatusOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseReadyzResponse parses an HTTP response from a ReadyzWithResponse call
-func ParseReadyzResponse(rsp *http.Response) (*ReadyzResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ReadyzResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HealthOutputBody
+		var dest VoidOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
