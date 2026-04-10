@@ -3,6 +3,8 @@ import {
   createElectricShapeCollection,
   electricAndWhere,
   electricEqualsWhere,
+  electricStringifiedBooleanSchema,
+  electricStringifiedIntegerSchema,
   requireElectricOpaqueID,
 } from "@forge-metal/web-env";
 
@@ -14,11 +16,11 @@ const electricMailboxSchema = v.object({
   name: v.string(),
   parent_id: v.string(),
   role: v.string(),
-  sort_order: v.number(),
-  total_emails: v.number(),
-  unread_emails: v.number(),
-  total_threads: v.number(),
-  unread_threads: v.number(),
+  sort_order: electricStringifiedIntegerSchema,
+  total_emails: electricStringifiedIntegerSchema,
+  unread_emails: electricStringifiedIntegerSchema,
+  total_threads: electricStringifiedIntegerSchema,
+  unread_threads: electricStringifiedIntegerSchema,
   synced_at: v.string(),
 });
 
@@ -50,14 +52,14 @@ const electricEmailSchema = v.object({
   reply_to_list: v.string(),
   preview: v.string(),
   keywords: v.string(),
-  has_attachment: v.boolean(),
-  size: v.number(),
+  has_attachment: electricStringifiedBooleanSchema,
+  size: electricStringifiedIntegerSchema,
   received_at: v.string(),
   sent_at: v.string(),
-  is_seen: v.boolean(),
-  is_flagged: v.boolean(),
-  is_answered: v.boolean(),
-  is_draft: v.boolean(),
+  is_seen: electricStringifiedBooleanSchema,
+  is_flagged: electricStringifiedBooleanSchema,
+  is_answered: electricStringifiedBooleanSchema,
+  is_draft: electricStringifiedBooleanSchema,
   synced_at: v.string(),
 });
 

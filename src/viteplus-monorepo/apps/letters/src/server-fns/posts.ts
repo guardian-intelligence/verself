@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { lettersAuthMiddleware } from "./auth";
 import {
   createPostInputSchema,
+  emptyPostContent,
   type JsonObject,
   type JsonValue,
   postOnlySlugInputSchema,
@@ -83,7 +84,7 @@ export const createPost = createServerFn({ method: "POST" })
   .handler(async ({ data }) =>
     withLettersDb(async (sql) => {
       const slug = slugify(data.title) || "untitled";
-      const content = data.content ?? {};
+      const content = data.content ?? emptyPostContent;
       const readingTime = estimateReadingTime(content);
       const [post] = await sql`
         INSERT INTO posts (slug, title, subtitle, cover_image_url, content, author_name, reading_time_minutes, tags)

@@ -2,6 +2,7 @@ import * as v from "valibot";
 import {
   createElectricShapeCollection,
   electricEqualsWhere,
+  electricStringifiedIntegerSchema,
   requireDecimalID,
   requireUUID,
 } from "@forge-metal/web-env";
@@ -52,7 +53,7 @@ export function createExecutionsCollection(orgId: string) {
 
 const electricExecutionLogSchema = v.object({
   attempt_id: v.string(),
-  seq: v.number(),
+  seq: electricStringifiedIntegerSchema,
   stream: v.string(),
   chunk: v.string(),
   created_at: v.string(),
