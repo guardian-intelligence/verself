@@ -204,7 +204,7 @@ func TestGuestNetworkConfig(t *testing.T) {
 		GatewayIP: "172.16.0.5",
 	}
 
-	cfg := lease.GuestNetworkConfig()
+	cfg := lease.GuestNetworkConfig("10.255.0.1", 18080)
 	if cfg.LinkName != defaultIf {
 		t.Fatalf("link_name: got %q want %q", cfg.LinkName, defaultIf)
 	}
@@ -213,6 +213,12 @@ func TestGuestNetworkConfig(t *testing.T) {
 	}
 	if cfg.Gateway != "172.16.0.5" {
 		t.Fatalf("gateway: got %q want %q", cfg.Gateway, "172.16.0.5")
+	}
+	if cfg.HostServiceIP != "10.255.0.1" {
+		t.Fatalf("host_service_ip: got %q want %q", cfg.HostServiceIP, "10.255.0.1")
+	}
+	if cfg.HostServicePort != 18080 {
+		t.Fatalf("host_service_port: got %d want %d", cfg.HostServicePort, 18080)
 	}
 }
 

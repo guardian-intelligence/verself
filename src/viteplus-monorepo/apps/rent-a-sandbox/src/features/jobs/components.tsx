@@ -2,7 +2,7 @@ import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
 import { useStickToBottom } from "use-stick-to-bottom";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
@@ -45,7 +45,7 @@ function ExecutionListPanelContent({ orgId }: { orgId: string }) {
 }
 
 export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const execution = useSuspenseQuery(executionQuery(auth, jobId)).data;
 
   const attempt = execution.latest_attempt;

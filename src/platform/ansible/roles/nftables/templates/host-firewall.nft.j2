@@ -19,8 +19,8 @@ table inet forge_metal_host {
 {% endfor %}
 
 {% if nftables_firecracker_guest_tcp_ports | length > 0 %}
-        # Firecracker guests may reach selected host-local services via the host gateway.
-        ip saddr {{ nftables_firecracker_guest_cidr }} tcp dport { {{ nftables_firecracker_guest_tcp_ports | join(', ') }} } accept
+        # Firecracker guests may reach selected services on the host-only service plane.
+        iifname "fc-tap-*" ip saddr {{ nftables_firecracker_guest_cidr }} ip daddr {{ nftables_firecracker_host_service_ip }} tcp dport { {{ nftables_firecracker_guest_tcp_ports | join(', ') }} } accept
 {% endif %}
 
         # ICMP / ICMPv6 (ping, PMTUD, neighbor discovery)

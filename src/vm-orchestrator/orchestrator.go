@@ -42,6 +42,8 @@ type Config struct {
 	HostInterface   string // outbound interface for guest egress (auto-detected if empty)
 	GuestPoolCIDR   string // guest IPv4 pool subdivided into /30s
 	NetworkLeaseDir string // persistent lease directory for guest network slots
+	HostServiceIP   string // host-only service address reachable from guests
+	HostServicePort int    // host-only HTTP reverse proxy port for platform services
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -60,6 +62,8 @@ func DefaultConfig() Config {
 		MemoryMiB:       2048,
 		GuestPoolCIDR:   defaultGuestPoolCIDR,
 		NetworkLeaseDir: defaultLeaseDir,
+		HostServiceIP:   defaultHostServiceIP,
+		HostServicePort: defaultHostServicePort,
 	}
 }
 
@@ -122,6 +126,12 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	}
 	if cfg.MemoryMiB == 0 {
 		cfg.MemoryMiB = 2048
+	}
+	if cfg.HostServiceIP == "" {
+		cfg.HostServiceIP = defaultHostServiceIP
+	}
+	if cfg.HostServicePort == 0 {
+		cfg.HostServicePort = defaultHostServicePort
 	}
 	o := &Orchestrator{cfg: cfg, logger: logger, ops: DirectPrivOps{}}
 	for _, opt := range opts {
@@ -442,7 +452,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		err    error
 	}, 1)
 	go func() {
-		controlResult, err := control.run(job, netSetup.Lease, logger, observer)
+		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, logger, observer)
 		controlDone <- struct {
 			result guestControlResult
 			err    error

@@ -70,9 +70,9 @@
     content: |
       [Unit]
       Description=Caddy HTTP/2 web server
-      After=forge-metal-firewall.target network-online.target
+      After=forge-metal-firewall.target network-online.target forge-metal-firecracker-network.service
       Requires=forge-metal-firewall.target
-      Wants=network-online.target
+      Wants=network-online.target forge-metal-firecracker-network.service
 
       [Service]
       Type=simple

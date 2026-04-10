@@ -1,6 +1,6 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { balanceQuery } from "~/features/billing/queries";
 import { importRepo, refreshRepo, rescanRepo, submitRepoExecution } from "~/server-fns/api";
 import { repoGenerationsQuery, repoQuery, reposQuery } from "./queries";
@@ -28,7 +28,7 @@ export async function invalidateRepoQueries(
 }
 
 export function useImportRepoMutation(onSuccess: (repoId: string) => void) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -41,7 +41,7 @@ export function useImportRepoMutation(onSuccess: (repoId: string) => void) {
 }
 
 export function useRescanRepoMutation(repoId: string) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -53,7 +53,7 @@ export function useRescanRepoMutation(repoId: string) {
 }
 
 export function useRefreshRepoMutation(repoId: string) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -68,7 +68,7 @@ export function useRunRepoExecutionMutation(
   repoId: string,
   onSuccess: (executionId: string) => void,
 ) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
   return useMutation({

@@ -1,8 +1,18 @@
 # forge-metal
 
-Free Open-Source Software for a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
+Polyglot Repo:
 
-Bootstrapping UX: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
+src/apps/viteplus-monorepo -- TypeScript (Vite Plus + TanStack Start/DB/Query/Router)
+go.work -- All of those are Golang
+src/vm-orchestrator -- Zig guest agent that lives in all Firecracker VMs.
+
+This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
+
+Features:
+
+Bootstrapping: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
+Git Hosting + Fast CI through ZFS
+Billing is figured out, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, accounts receivable, dunning, invoicing, etc. 
 
 ## Direction
 
@@ -196,7 +206,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 
 ## Assistant Contract
 
-* Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The users of this repo will be sole operators of a single-person software company operating all services off a single bare metal box (with upgrade path to 3 for higher availability).
+* Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The user is a non-technical startup founder -- a sole operator of a small software company operating all services off a single bare metal box (with upgrade path to 3-node k3s for higher availability and additional capabilities).
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so it's important to understand how everything connects.
 * You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM), or are technically infeasible or "not even wrong".
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 

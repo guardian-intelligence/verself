@@ -50,6 +50,24 @@
 	reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }}
 }
 
+http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_service.http_port }} {
+	import access_log
+	bind {{ caddy_firecracker_host_service_ip }}
+
+	@forgejo_git_clone {
+		method GET POST
+		path_regexp forgejo_git ^/.+(\.git)?/(info/refs|git-upload-pack)$
+	}
+	handle @forgejo_git_clone {
+		reverse_proxy {{ services.forgejo.host }}:{{ services.forgejo.port }} {
+			header_up Host {{ forgejo_domain }}
+			header_up X-Forwarded-Host {{ forgejo_domain }}
+			header_up X-Forwarded-Proto https
+		}
+	}
+	respond 403
+}
+
 {{ billing_service_domain }} {
 	import access_log
 	import waf_blocking

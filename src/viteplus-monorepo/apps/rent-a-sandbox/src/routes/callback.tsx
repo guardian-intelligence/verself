@@ -1,9 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { getCallbackRedirectURL } from "~/server-fns/auth";
+import { getSignInCallbackRedirectURL } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/callback")({
   beforeLoad: async () => {
-    const redirectTo = await getCallbackRedirectURL();
+    const redirectTo = await getSignInCallbackRedirectURL();
     throw redirect({ href: redirectTo });
   },
   component: CallbackPage,

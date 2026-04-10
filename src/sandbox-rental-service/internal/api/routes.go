@@ -4,13 +4,13 @@ package api
 import (
 	"context"
 	"errors"
-	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-service/client"
 
@@ -181,12 +181,12 @@ type GetExecutionLogsOutput struct {
 type EmptyInput struct{}
 
 type BalanceResponse struct {
-	OrgID             string `json:"org_id" pattern:"^[0-9]+$"`
-	FreeTierAvailable int64  `json:"free_tier_available"`
-	FreeTierPending   int64  `json:"free_tier_pending"`
-	CreditAvailable   int64  `json:"credit_available"`
-	CreditPending     int64  `json:"credit_pending"`
-	TotalAvailable    int64  `json:"total_available"`
+	OrgID             apiwire.DecimalUint64 `json:"org_id"`
+	FreeTierAvailable int64                 `json:"free_tier_available"`
+	FreeTierPending   int64                 `json:"free_tier_pending"`
+	CreditAvailable   int64                 `json:"credit_available"`
+	CreditPending     int64                 `json:"credit_pending"`
+	TotalAvailable    int64                 `json:"total_available"`
 }
 
 type BalanceOutput struct {
@@ -248,13 +248,6 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 	}
 	return orgID, nil
-}
-
-func billingOrgIDParam(orgID uint64) (int64, error) {
-	if orgID > math.MaxInt64 {
-		return 0, huma.Error400BadRequest("org_id exceeds billing API int64 range")
-	}
-	return int64(orgID), nil
 }
 
 func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*RepoOutput, error) {
@@ -473,24 +466,17 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, err
 		}
-		billingOrgID, err := billingOrgIDParam(orgID)
+		balance, err := billing.GetBalance(ctx, orgID)
 		if err != nil {
-			return nil, err
-		}
-		resp, err := billing.Generated().GetBalanceWithResponse(ctx, billingOrgID)
-		if err != nil {
-			return nil, huma.Error502BadGateway("billing service unreachable")
-		}
-		if resp.JSON200 == nil {
-			return nil, huma.Error502BadGateway("billing: " + resp.Status())
+			return nil, billingProxyError(err)
 		}
 		return &BalanceOutput{Body: BalanceResponse{
-			OrgID:             strconv.FormatUint(orgID, 10),
-			FreeTierAvailable: resp.JSON200.FreeTierAvailable,
-			FreeTierPending:   resp.JSON200.FreeTierPending,
-			CreditAvailable:   resp.JSON200.CreditAvailable,
-			CreditPending:     resp.JSON200.CreditPending,
-			TotalAvailable:    resp.JSON200.TotalAvailable,
+			OrgID:             apiwire.Uint64(orgID),
+			FreeTierAvailable: balance.FreeTierAvailable,
+			FreeTierPending:   balance.FreeTierPending,
+			CreditAvailable:   balance.CreditAvailable,
+			CreditPending:     balance.CreditPending,
+			TotalAvailable:    balance.TotalAvailable,
 		}}, nil
 	}
 }
@@ -501,18 +487,11 @@ func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context
 		if err != nil {
 			return nil, err
 		}
-		billingOrgID, err := billingOrgIDParam(orgID)
+		subscriptions, err := billing.ListSubscriptions(ctx, orgID)
 		if err != nil {
-			return nil, err
+			return nil, billingProxyError(err)
 		}
-		resp, err := billing.Generated().ListSubscriptionsWithResponse(ctx, billingOrgID)
-		if err != nil {
-			return nil, huma.Error502BadGateway("billing service unreachable")
-		}
-		if resp.JSON200 == nil {
-			return nil, huma.Error502BadGateway("billing: " + resp.Status())
-		}
-		return &SubscriptionsOutput{Body: *resp.JSON200}, nil
+		return &SubscriptionsOutput{Body: subscriptions}, nil
 	}
 }
 
@@ -522,25 +501,11 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, err
 		}
-		params := &billingclient.ListGrantsParams{}
-		if input.ProductID != "" {
-			params.ProductId = &input.ProductID
-		}
-		if input.Active {
-			params.Active = &input.Active
-		}
-		billingOrgID, err := billingOrgIDParam(orgID)
+		grants, err := billing.ListGrants(ctx, orgID, input.ProductID, input.Active)
 		if err != nil {
-			return nil, err
+			return nil, billingProxyError(err)
 		}
-		resp, err := billing.Generated().ListGrantsWithResponse(ctx, billingOrgID, params)
-		if err != nil {
-			return nil, huma.Error502BadGateway("billing service unreachable")
-		}
-		if resp.JSON200 == nil {
-			return nil, huma.Error502BadGateway("billing: " + resp.Status())
-		}
-		return &GrantsOutput{Body: *resp.JSON200}, nil
+		return &GrantsOutput{Body: grants}, nil
 	}
 }
 
@@ -550,25 +515,12 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 		if err != nil {
 			return nil, err
 		}
-		billingOrgID, err := billingOrgIDParam(orgID)
+		url, err := billing.CreateCheckout(ctx, orgID, input.Body.ProductID, input.Body.AmountCents, input.Body.SuccessURL, input.Body.CancelURL)
 		if err != nil {
-			return nil, err
-		}
-		resp, err := billing.Generated().CreateCheckoutWithResponse(ctx, billingclient.CreateCheckoutJSONRequestBody{
-			OrgId:       billingOrgID,
-			ProductId:   input.Body.ProductID,
-			AmountCents: input.Body.AmountCents,
-			SuccessUrl:  input.Body.SuccessURL,
-			CancelUrl:   input.Body.CancelURL,
-		})
-		if err != nil {
-			return nil, huma.Error502BadGateway("billing service unreachable")
-		}
-		if resp.JSON200 == nil {
-			return nil, huma.Error502BadGateway("billing: " + resp.Status())
+			return nil, billingProxyError(err)
 		}
 		out := &URLOutput{}
-		out.Body.URL = resp.JSON200.Url
+		out.Body.URL = url
 		return out, nil
 	}
 }
@@ -579,29 +531,16 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 		if err != nil {
 			return nil, err
 		}
-		billingOrgID, err := billingOrgIDParam(orgID)
+		url, err := billing.CreateSubscription(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)
 		if err != nil {
-			return nil, err
-		}
-		body := billingclient.CreateSubscriptionJSONRequestBody{
-			OrgId:      billingOrgID,
-			PlanId:     input.Body.PlanID,
-			SuccessUrl: input.Body.SuccessURL,
-			CancelUrl:  input.Body.CancelURL,
-		}
-		if input.Body.Cadence != "" {
-			cadence := billingclient.CreateSubscriptionRequestCadence(input.Body.Cadence)
-			body.Cadence = &cadence
-		}
-		resp, err := billing.Generated().CreateSubscriptionWithResponse(ctx, body)
-		if err != nil {
-			return nil, huma.Error502BadGateway("billing service unreachable")
-		}
-		if resp.JSON200 == nil {
-			return nil, huma.Error502BadGateway("billing: " + resp.Status())
+			return nil, billingProxyError(err)
 		}
 		out := &URLOutput{}
-		out.Body.URL = resp.JSON200.Url
+		out.Body.URL = url
 		return out, nil
 	}
+}
+
+func billingProxyError(err error) error {
+	return huma.Error502BadGateway("billing: " + err.Error())
 }

@@ -92,7 +92,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		session.sendLogString("system", fmt.Sprintf("[init] warning: set wall clock: %v\n", err))
 	}
 
-	env, err := buildRuntimeEnv(runReq.Env)
+	env, err := buildRuntimeEnv(runReq.Env, runReq.Network)
 	if err != nil {
 		return session.fail(err)
 	}

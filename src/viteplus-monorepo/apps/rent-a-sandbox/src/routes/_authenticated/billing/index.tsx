@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { TableEmptyRow } from "~/components/table-empty-row";
 import { BillingFlashNotice, SubscriptionStatusPill } from "~/features/billing/components";
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/billing/")({
 });
 
 function BillingPage() {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const flash = Route.useSearch();
   const balance = useSuspenseQuery(balanceQuery(auth)).data;
   const subscriptions = useSuspenseQuery(subscriptionsQuery(auth)).data;

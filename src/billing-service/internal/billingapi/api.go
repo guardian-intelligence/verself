@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 )
@@ -59,7 +60,7 @@ type body[T any] struct {
 }
 
 type OrgPath struct {
-	OrgID billing.OrgID `path:"org_id" minimum:"1"`
+	OrgID string `path:"org_id" pattern:"^[0-9]+$"`
 }
 
 type GrantsInput struct {
@@ -69,12 +70,12 @@ type GrantsInput struct {
 }
 
 type BalanceResponse struct {
-	OrgID             billing.OrgID `json:"org_id"`
-	FreeTierAvailable uint64        `json:"free_tier_available"`
-	FreeTierPending   uint64        `json:"free_tier_pending"`
-	CreditAvailable   uint64        `json:"credit_available"`
-	CreditPending     uint64        `json:"credit_pending"`
-	TotalAvailable    uint64        `json:"total_available"`
+	OrgID             apiwire.DecimalUint64 `json:"org_id"`
+	FreeTierAvailable uint64                `json:"free_tier_available"`
+	FreeTierPending   uint64                `json:"free_tier_pending"`
+	CreditAvailable   uint64                `json:"credit_available"`
+	CreditPending     uint64                `json:"credit_pending"`
+	TotalAvailable    uint64                `json:"total_available"`
 }
 
 type GrantResponse struct {
@@ -104,19 +105,19 @@ type SubscriptionResponse struct {
 }
 
 type CreateCheckoutRequest struct {
-	OrgID       billing.OrgID `json:"org_id" minimum:"1"`
-	ProductID   string        `json:"product_id" minLength:"1" maxLength:"255"`
-	AmountCents int64         `json:"amount_cents" minimum:"1"`
-	SuccessURL  string        `json:"success_url" minLength:"1" maxLength:"2048"`
-	CancelURL   string        `json:"cancel_url" minLength:"1" maxLength:"2048"`
+	OrgID       apiwire.DecimalUint64 `json:"org_id"`
+	ProductID   string                `json:"product_id" minLength:"1" maxLength:"255"`
+	AmountCents int64                 `json:"amount_cents" minimum:"1"`
+	SuccessURL  string                `json:"success_url" minLength:"1" maxLength:"2048"`
+	CancelURL   string                `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
 type CreateSubscriptionRequest struct {
-	OrgID      billing.OrgID `json:"org_id" minimum:"1"`
-	PlanID     string        `json:"plan_id" minLength:"1" maxLength:"255"`
-	Cadence    string        `json:"cadence,omitempty" enum:"monthly,annual"`
-	SuccessURL string        `json:"success_url" minLength:"1" maxLength:"2048"`
-	CancelURL  string        `json:"cancel_url" minLength:"1" maxLength:"2048"`
+	OrgID      apiwire.DecimalUint64 `json:"org_id"`
+	PlanID     string                `json:"plan_id" minLength:"1" maxLength:"255"`
+	Cadence    string                `json:"cadence,omitempty" enum:"monthly,annual"`
+	SuccessURL string                `json:"success_url" minLength:"1" maxLength:"2048"`
+	CancelURL  string                `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
 type URLResponse struct {
@@ -124,17 +125,38 @@ type URLResponse struct {
 }
 
 type ReserveWindowRequest struct {
-	OrgID           billing.OrgID      `json:"org_id" minimum:"1"`
-	ProductID       string             `json:"product_id" minLength:"1" maxLength:"255"`
-	ActorID         string             `json:"actor_id" minLength:"1" maxLength:"255"`
-	ConcurrentCount uint64             `json:"concurrent_count" minimum:"0"`
-	SourceType      string             `json:"source_type" minLength:"1" maxLength:"255"`
-	SourceRef       string             `json:"source_ref" minLength:"1" maxLength:"255"`
-	Allocation      map[string]float64 `json:"allocation" minProperties:"1"`
+	OrgID           apiwire.DecimalUint64 `json:"org_id"`
+	ProductID       string                `json:"product_id" minLength:"1" maxLength:"255"`
+	ActorID         string                `json:"actor_id" minLength:"1" maxLength:"255"`
+	ConcurrentCount uint64                `json:"concurrent_count" minimum:"0"`
+	SourceType      string                `json:"source_type" minLength:"1" maxLength:"255"`
+	SourceRef       string                `json:"source_ref" minLength:"1" maxLength:"255"`
+	Allocation      map[string]float64    `json:"allocation" minProperties:"1"`
 }
 
 type ReserveWindowResult struct {
-	Reservation billing.WindowReservation `json:"reservation"`
+	Reservation WindowReservationResponse `json:"reservation"`
+}
+
+type WindowReservationResponse struct {
+	WindowID            string                `json:"window_id"`
+	OrgID               apiwire.DecimalUint64 `json:"org_id"`
+	ProductID           string                `json:"product_id"`
+	PlanID              string                `json:"plan_id"`
+	ActorID             string                `json:"actor_id"`
+	SourceType          string                `json:"source_type"`
+	SourceRef           string                `json:"source_ref"`
+	WindowSeq           uint32                `json:"window_seq"`
+	ReservationShape    string                `json:"reservation_shape"`
+	ReservedQuantity    uint32                `json:"reserved_quantity"`
+	ReservedChargeUnits uint64                `json:"reserved_charge_units"`
+	PricingPhase        string                `json:"pricing_phase"`
+	Allocation          map[string]float64    `json:"allocation"`
+	UnitRates           map[string]uint64     `json:"unit_rates"`
+	CostPerUnit         uint64                `json:"cost_per_unit"`
+	WindowStart         time.Time             `json:"window_start"`
+	ExpiresAt           time.Time             `json:"expires_at"`
+	RenewBy             *time.Time            `json:"renew_by,omitempty"`
 }
 
 type SettleWindowRequest struct {
@@ -149,6 +171,40 @@ type VoidWindowRequest struct {
 
 type VoidWindowResult struct {
 	WindowID string `json:"window_id"`
+}
+
+func billingOrgID(id string) (billing.OrgID, error) {
+	parsed, err := apiwire.ParseUint64(id)
+	if err != nil {
+		return 0, huma.Error400BadRequest("invalid org_id", err)
+	}
+	if parsed == 0 {
+		return 0, huma.Error400BadRequest("org_id must be positive")
+	}
+	return billing.OrgID(parsed), nil
+}
+
+func windowReservationResponse(reservation billing.WindowReservation) WindowReservationResponse {
+	return WindowReservationResponse{
+		WindowID:            reservation.WindowID,
+		OrgID:               apiwire.Uint64(uint64(reservation.OrgID)),
+		ProductID:           reservation.ProductID,
+		PlanID:              reservation.PlanID,
+		ActorID:             reservation.ActorID,
+		SourceType:          reservation.SourceType,
+		SourceRef:           reservation.SourceRef,
+		WindowSeq:           reservation.WindowSeq,
+		ReservationShape:    string(reservation.ReservationShape),
+		ReservedQuantity:    reservation.ReservedQuantity,
+		ReservedChargeUnits: reservation.ReservedChargeUnits,
+		PricingPhase:        string(reservation.PricingPhase),
+		Allocation:          reservation.Allocation,
+		UnitRates:           reservation.UnitRates,
+		CostPerUnit:         reservation.CostPerUnit,
+		WindowStart:         reservation.WindowStart,
+		ExpiresAt:           reservation.ExpiresAt,
+		RenewBy:             reservation.RenewBy,
+	}
 }
 
 func RegisterRoutes(api huma.API, cfg Config) {
@@ -185,12 +241,16 @@ func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[Balance
 	if err != nil {
 		return nil, err
 	}
-	balance, err := client.GetOrgBalance(ctx, input.OrgID)
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	balance, err := client.GetOrgBalance(ctx, orgID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("get balance", err)
 	}
 	return &body[BalanceResponse]{Body: BalanceResponse{
-		OrgID:             input.OrgID,
+		OrgID:             apiwire.Uint64(uint64(orgID)),
 		FreeTierAvailable: balance.FreeTierAvailable,
 		FreeTierPending:   balance.FreeTierPending,
 		CreditAvailable:   balance.CreditAvailable,
@@ -204,7 +264,11 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 	if err != nil {
 		return nil, err
 	}
-	grants, err := client.ListGrantBalances(ctx, input.OrgID, input.ProductID)
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	grants, err := client.ListGrantBalances(ctx, orgID, input.ProductID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list grants", err)
 	}
@@ -226,7 +290,11 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	if err != nil {
 		return nil, err
 	}
-	subscriptions, err := client.ListSubscriptions(ctx, input.OrgID)
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	subscriptions, err := client.ListSubscriptions(ctx, orgID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list subscriptions", err)
 	}
@@ -250,7 +318,11 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[CreateCheckout
 	if err != nil {
 		return nil, err
 	}
-	url, err := client.CreateCheckoutSession(ctx, input.Body.OrgID, input.Body.ProductID, billing.CheckoutParams{
+	orgID, err := billingOrgID(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := client.CreateCheckoutSession(ctx, orgID, input.Body.ProductID, billing.CheckoutParams{
 		AmountCents: input.Body.AmountCents,
 		SuccessURL:  input.Body.SuccessURL,
 		CancelURL:   input.Body.CancelURL,
@@ -266,7 +338,11 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[CreateSubs
 	if err != nil {
 		return nil, err
 	}
-	url, err := client.CreateSubscription(ctx, input.Body.OrgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
+	orgID, err := billingOrgID(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := client.CreateSubscription(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
 	if err != nil {
 		return nil, huma.Error501NotImplemented("subscription checkout", err)
 	}
@@ -278,8 +354,12 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRe
 	if err != nil {
 		return nil, err
 	}
+	orgID, err := billingOrgID(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
 	reservation, err := client.ReserveWindow(ctx, billing.ReserveRequest{
-		OrgID:           input.Body.OrgID,
+		OrgID:           orgID,
 		ProductID:       input.Body.ProductID,
 		ActorID:         input.Body.ActorID,
 		Allocation:      input.Body.Allocation,
@@ -290,7 +370,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRe
 	if err != nil {
 		return nil, reserveWindowError(err)
 	}
-	return &body[ReserveWindowResult]{Body: ReserveWindowResult{Reservation: reservation}}, nil
+	return &body[ReserveWindowResult]{Body: ReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
 }
 
 func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequest]) (*body[billing.SettleResult], error) {

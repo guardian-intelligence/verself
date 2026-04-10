@@ -1,5 +1,6 @@
 import { createContext, createElement, type ReactNode, useContext } from "react";
-import type { Auth, AuthSnapshot, AuthenticatedAuth, ClientUser, SessionInfo } from "./shared.ts";
+import { parseAuthSnapshot } from "./isomorphic.ts";
+import type { Auth, AuthSnapshot, AuthenticatedAuth, ClientUser, SessionInfo } from "./isomorphic.ts";
 
 export type {
   AnonymousAuth,
@@ -9,16 +10,24 @@ export type {
   AuthRoleAssignment,
   ClientUser,
   SessionInfo,
-} from "./shared.ts";
-export { authCollectionId, authQueryKey, loginRedirect, requireAuth } from "./shared.ts";
+} from "./isomorphic.ts";
+export {
+  authCacheKey,
+  authCollectionId,
+  authQueryKey,
+  loginRedirect,
+  parseAuthSnapshot,
+  requireAuth,
+  syncAuthPartitionedCache,
+} from "./isomorphic.ts";
 
 export interface AuthNavigationClient {
-  getLoginRedirectURL?: (input: {
+  getSignInRedirectURL?: (input: {
     data: {
       redirectTo?: string | null;
     };
   }) => Promise<string>;
-  getLogoutRedirectURL?: () => Promise<string>;
+  getSignOutRedirectURL?: () => Promise<string>;
 }
 
 interface AuthContextValue {
@@ -40,17 +49,29 @@ export interface UseAuthSignedIn extends AuthenticatedAuth {
 
 export type UseAuthReturn = UseAuthSignedOut | UseAuthSignedIn;
 
-export interface UseUserReturn {
-  isLoaded: true;
-  isSignedIn: boolean;
-  user: ClientUser | null;
-}
+export type UseUserReturn =
+  | {
+      isLoaded: true;
+      isSignedIn: false;
+      user: null;
+    }
+  | {
+      isLoaded: true;
+      isSignedIn: true;
+      user: ClientUser;
+    };
 
-export interface UseSessionReturn {
-  isLoaded: true;
-  isSignedIn: boolean;
-  session: SessionInfo | null;
-}
+export type UseSessionReturn =
+  | {
+      isLoaded: true;
+      isSignedIn: false;
+      session: null;
+    }
+  | {
+      isLoaded: true;
+      isSignedIn: true;
+      session: SessionInfo;
+    };
 
 export interface AuthProviderProps {
   children?: ReactNode;
@@ -76,9 +97,10 @@ function useAuthContextValue(): AuthContextValue {
 }
 
 export function AuthProvider({ children, client, snapshot }: AuthProviderProps) {
+  const parsedSnapshot = parseAuthSnapshot(snapshot);
   return createElement(
     AuthContext.Provider,
-    { value: { client: client ?? null, snapshot } },
+    { value: { client: client ?? null, snapshot: parsedSnapshot } },
     children,
   );
 }
@@ -106,33 +128,47 @@ export function useAuth(): UseAuthReturn {
   };
 }
 
-export function useAuthenticatedAuth(): AuthenticatedAuth {
+export function useSignedInAuth(): AuthenticatedAuth {
   const auth = useAuth();
   if (!auth.isAuthenticated) {
-    throw new Error("useAuthenticatedAuth() requires an authenticated auth snapshot");
+    throw new Error("useSignedInAuth() requires a signed-in auth snapshot");
   }
   return auth;
 }
 
 export function useUser(): UseUserReturn {
   const {
-    snapshot: { auth, user },
+    snapshot,
   } = useAuthContextValue();
+  if (!snapshot.isSignedIn) {
+    return {
+      isLoaded: true,
+      isSignedIn: false,
+      user: null,
+    };
+  }
   return {
     isLoaded: true,
-    isSignedIn: auth.isAuthenticated,
-    user,
+    isSignedIn: true,
+    user: snapshot.user,
   };
 }
 
 export function useSession(): UseSessionReturn {
   const {
-    snapshot: { auth, session },
+    snapshot,
   } = useAuthContextValue();
+  if (!snapshot.isSignedIn) {
+    return {
+      isLoaded: true,
+      isSignedIn: false,
+      session: null,
+    };
+  }
   return {
     isLoaded: true,
-    isSignedIn: auth.isAuthenticated,
-    session,
+    isSignedIn: true,
+    session: snapshot.session,
   };
 }
 
@@ -147,35 +183,35 @@ function getBrowserLocation() {
   ).location;
 
   if (!location) {
-    throw new Error("useAuthClient() can only be used in the browser");
+    throw new Error("useClerk() can only be used in the browser");
   }
 
   return location;
 }
 
-export function useAuthClient() {
+export function useClerk() {
   const { client } = useAuthContextValue();
 
   return {
     redirectToSignIn: async (options?: { redirectTo?: string }) => {
-      if (!client?.getLoginRedirectURL) {
-        throw new Error("AuthProvider is missing getLoginRedirectURL()");
+      if (!client?.getSignInRedirectURL) {
+        throw new Error("AuthProvider is missing getSignInRedirectURL()");
       }
 
       const location = getBrowserLocation();
       const redirectTo = options?.redirectTo ?? location.href;
-      const href = await client.getLoginRedirectURL({
+      const href = await client.getSignInRedirectURL({
         data: redirectTo ? { redirectTo } : {},
       });
       location.assign(href);
     },
     redirectToSignOut: async () => {
-      if (!client?.getLogoutRedirectURL) {
-        throw new Error("AuthProvider is missing getLogoutRedirectURL()");
+      if (!client?.getSignOutRedirectURL) {
+        throw new Error("AuthProvider is missing getSignOutRedirectURL()");
       }
 
       const location = getBrowserLocation();
-      const href = await client.getLogoutRedirectURL();
+      const href = await client.getSignOutRedirectURL();
       location.assign(href);
     },
   };

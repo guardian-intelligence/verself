@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { Callout } from "~/components/callout";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/_authenticated/repos/$repoId")({
 });
 
 function RepoDetailPage() {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const { repoId } = Route.useParams();
   const navigate = useNavigate();
   const repo = useSuspenseQuery(repoQuery(auth, repoId)).data;

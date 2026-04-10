@@ -25,7 +25,9 @@ ExecStart={{ firecracker_vm_orchestrator_binary_path }} \
   --host-interface {{ firecracker_host_uplink_interface }} \
 {% endif %}
   --guest-pool-cidr {{ firecracker_guest_pool_cidr }} \
-  --network-lease-dir {{ firecracker_net_lease_dir }}
+  --network-lease-dir {{ firecracker_net_lease_dir }} \
+  --host-service-ip {{ firecracker_host_service_ip }} \
+  --host-service-port {{ services.firecracker_host_service.http_port }}
 Restart=always
 RestartSec=2
 RuntimeDirectory=vm-orchestrator

@@ -27,9 +27,8 @@ components:
           minimum: 0
           type: integer
         org_id:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         total_available:
           format: int64
           minimum: 0
@@ -61,9 +60,8 @@ components:
           minLength: 1
           type: string
         org_id:
-          format: int64
-          minimum: 1
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         product_id:
           maxLength: 255
           minLength: 1
@@ -99,9 +97,8 @@ components:
           minLength: 1
           type: string
         org_id:
-          format: int64
-          minimum: 1
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         plan_id:
           maxLength: 255
           minLength: 1
@@ -243,9 +240,8 @@ components:
           minimum: 0
           type: integer
         org_id:
-          format: int64
-          minimum: 1
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         product_id:
           maxLength: 255
           minLength: 1
@@ -278,7 +274,7 @@ components:
           readOnly: true
           type: string
         reservation:
-          $ref: "#/components/schemas/WindowReservation"
+          $ref: "#/components/schemas/WindowReservationResponse"
       required:
         - reservation
       type: object
@@ -444,7 +440,7 @@ components:
       required:
         - window_id
       type: object
-    WindowReservation:
+    WindowReservationResponse:
       additionalProperties: false
       properties:
         actor_id:
@@ -462,9 +458,8 @@ components:
           format: date-time
           type: string
         org_id:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         plan_id:
           type: string
         pricing_phase:
@@ -558,9 +553,8 @@ paths:
           name: org_id
           required: true
           schema:
-            format: int64
-            minimum: 1
-            type: integer
+            pattern: ^[0-9]+$
+            type: string
       responses:
         "200":
           content:
@@ -583,9 +577,8 @@ paths:
           name: org_id
           required: true
           schema:
-            format: int64
-            minimum: 1
-            type: integer
+            pattern: ^[0-9]+$
+            type: string
         - explode: false
           in: query
           name: product_id
@@ -619,9 +612,8 @@ paths:
           name: org_id
           required: true
           schema:
-            format: int64
-            minimum: 1
-            type: integer
+            pattern: ^[0-9]+$
+            type: string
       responses:
         "200":
           content:

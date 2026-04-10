@@ -1,6 +1,6 @@
 # vm-guest-telemetry
 
-`vm-guest-telemetry` is the Zig guest agent for Firecracker VM health sampling.
+`vm-guest-telemetry` is the Zig guest agent for Firecracker VM health sampling. Written in Zig instead of Go because disk/RAM footprint matters.
 
 The agent reads guest-local state from `/proc` and streams fixed-size 128-byte frames over vsock port `10790`. The Go guest PID 1 (`vm-init`) still owns the job-control channel on vsock port `10789`.
 

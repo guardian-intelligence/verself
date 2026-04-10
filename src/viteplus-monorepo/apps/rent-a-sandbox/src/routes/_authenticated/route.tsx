@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { requireAuth } from "@forge-metal/auth-web/shared";
+import { requireAuth } from "@forge-metal/auth-web/isomorphic";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: ({ context, location }) => ({

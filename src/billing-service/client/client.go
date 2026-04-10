@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"time"
+
+	"github.com/forge-metal/apiwire"
 )
 
 var (
@@ -34,7 +36,7 @@ func NewFromGenerated(inner ClientWithResponsesInterface) *ServiceClient {
 type Reservation struct {
 	WindowId         string
 	JobId            int64
-	OrgId            int64
+	OrgId            uint64
 	ProductId        string
 	PlanId           string
 	ActorId          string
@@ -52,6 +54,89 @@ type Reservation struct {
 	RenewBy          time.Time
 }
 
+func (c *ServiceClient) GetBalance(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (BalanceResponse, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	resp, err := c.inner.GetBalanceWithResponse(ctx, orgIDWire, reqEditors...)
+	if err != nil {
+		return BalanceResponse{}, err
+	}
+	if resp.JSON200 != nil {
+		return *resp.JSON200, nil
+	}
+	return BalanceResponse{}, unexpected("get balance", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+}
+
+func (c *ServiceClient) ListSubscriptions(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (SubscriptionsResponse, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	resp, err := c.inner.ListSubscriptionsWithResponse(ctx, orgIDWire, reqEditors...)
+	if err != nil {
+		return SubscriptionsResponse{}, err
+	}
+	if resp.JSON200 != nil {
+		return *resp.JSON200, nil
+	}
+	return SubscriptionsResponse{}, unexpected("list subscriptions", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+}
+
+func (c *ServiceClient) ListGrants(ctx context.Context, orgID uint64, productID string, active bool, reqEditors ...RequestEditorFn) (GrantsResponse, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	params := &ListGrantsParams{}
+	if productID != "" {
+		params.ProductId = &productID
+	}
+	if active {
+		params.Active = &active
+	}
+	resp, err := c.inner.ListGrantsWithResponse(ctx, orgIDWire, params, reqEditors...)
+	if err != nil {
+		return GrantsResponse{}, err
+	}
+	if resp.JSON200 != nil {
+		return *resp.JSON200, nil
+	}
+	return GrantsResponse{}, unexpected("list grants", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+}
+
+func (c *ServiceClient) CreateCheckout(ctx context.Context, orgID uint64, productID string, amountCents int64, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (string, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	resp, err := c.inner.CreateCheckoutWithResponse(ctx, CreateCheckoutJSONRequestBody{
+		OrgId:       orgIDWire,
+		ProductId:   productID,
+		AmountCents: amountCents,
+		SuccessUrl:  successURL,
+		CancelUrl:   cancelURL,
+	}, reqEditors...)
+	if err != nil {
+		return "", err
+	}
+	if resp.JSON200 != nil {
+		return resp.JSON200.Url, nil
+	}
+	return "", unexpected("create checkout", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+}
+
+func (c *ServiceClient) CreateSubscription(ctx context.Context, orgID uint64, planID string, cadence string, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (string, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	body := CreateSubscriptionJSONRequestBody{
+		OrgId:      orgIDWire,
+		PlanId:     planID,
+		SuccessUrl: successURL,
+		CancelUrl:  cancelURL,
+	}
+	if cadence != "" {
+		wireCadence := CreateSubscriptionRequestCadence(cadence)
+		body.Cadence = &wireCadence
+	}
+	resp, err := c.inner.CreateSubscriptionWithResponse(ctx, body, reqEditors...)
+	if err != nil {
+		return "", err
+	}
+	if resp.JSON200 != nil {
+		return resp.JSON200.Url, nil
+	}
+	return "", unexpected("create subscription", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON501, resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
+}
+
 func (c *ServiceClient) Reserve(
 	ctx context.Context,
 	_ int64,
@@ -64,10 +149,7 @@ func (c *ServiceClient) Reserve(
 	allocation map[string]float64,
 	reqEditors ...RequestEditorFn,
 ) (Reservation, error) {
-	orgIDWire, err := uint64ToInt64(orgID, "org_id")
-	if err != nil {
-		return Reservation{}, err
-	}
+	orgIDWire := apiwire.Uint64(orgID).String()
 	concurrentCountWire, err := uint64ToInt64(concurrentCount, "concurrent_count")
 	if err != nil {
 		return Reservation{}, err
@@ -99,14 +181,18 @@ func (c *ServiceClient) Reserve(
 	}
 }
 
-func parseReservation(in WindowReservation) (Reservation, error) {
+func parseReservation(in WindowReservationResponse) (Reservation, error) {
+	orgID, err := apiwire.ParseUint64(in.OrgId)
+	if err != nil {
+		return Reservation{}, fmt.Errorf("billing-client: reservation org_id: %w", err)
+	}
 	var renewBy time.Time
 	if in.RenewBy != nil {
 		renewBy = in.RenewBy.UTC()
 	}
 	return Reservation{
 		WindowId:         in.WindowId,
-		OrgId:            in.OrgId,
+		OrgId:            orgID,
 		ProductId:        in.ProductId,
 		PlanId:           in.PlanId,
 		ActorId:          in.ActorId,
@@ -204,10 +290,6 @@ func unexpected(op string, resp *http.Response, problem *ErrorModel) error {
 		return fmt.Errorf("%w: %s %s: %s", ErrUnexpected, op, status, *problem.Detail)
 	}
 	return fmt.Errorf("%w: %s %s", ErrUnexpected, op, status)
-}
-
-func (c *ServiceClient) Generated() ClientWithResponsesInterface {
-	return c.inner
 }
 
 func statusCode(resp *http.Response) int {

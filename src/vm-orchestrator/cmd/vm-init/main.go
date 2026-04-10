@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/forge-metal/vm-orchestrator/vmproto"
 )
 
 const (
@@ -98,7 +100,7 @@ func configureLoopback() error {
 	return nil
 }
 
-func buildRuntimeEnv(overrides map[string]string) ([]string, error) {
+func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig) ([]string, error) {
 	envMap := map[string]string{
 		"HOME": "/home/runner",
 		"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -109,7 +111,14 @@ func buildRuntimeEnv(overrides map[string]string) ([]string, error) {
 		envMap[key] = value
 	}
 
-	registry, err := resolveRegistryURL(envMap)
+	if network.HostServiceIP != "" {
+		envMap["FORGE_METAL_HOST_SERVICE_IP"] = network.HostServiceIP
+		if network.HostServicePort > 0 {
+			envMap["FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN"] = fmt.Sprintf("http://%s:%d", network.HostServiceIP, network.HostServicePort)
+		}
+	}
+
+	registry, err := resolveRegistryURL(envMap, network)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +144,7 @@ func buildRuntimeEnv(overrides map[string]string) ([]string, error) {
 	return env, nil
 }
 
-func resolveRegistryURL(env map[string]string) (string, error) {
+func resolveRegistryURL(env map[string]string, network vmproto.NetworkConfig) (string, error) {
 	if value := strings.TrimSpace(env["FORGE_METAL_NPM_REGISTRY"]); value != "" {
 		return value, nil
 	}
@@ -147,6 +156,10 @@ func resolveRegistryURL(env map[string]string) (string, error) {
 	}
 	if value := strings.TrimSpace(env["BUN_CONFIG_REGISTRY"]); value != "" {
 		return value, nil
+	}
+
+	if network.HostServiceIP != "" {
+		return "http://" + network.HostServiceIP + ":4873", nil
 	}
 
 	gateway, err := routeGateway()

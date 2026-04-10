@@ -50,6 +50,8 @@ message RuntimeConfig {
   string host_interface = 12;
   string guest_pool_cidr = 13;
   string network_lease_dir = 14;
+  string host_service_ip = 15;
+  int32 host_service_port = 16;
 }
 
 message PhaseResult {

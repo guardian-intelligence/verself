@@ -1,5 +1,5 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import { getBalance, getGrants, getSubscriptions } from "~/server-fns/api";
 
 function billingQueryKey<TParts extends readonly unknown[]>(

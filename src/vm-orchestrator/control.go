@@ -111,7 +111,7 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
+func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP string, hostServicePort int, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
 	var (
 		logBuf       strings.Builder
 		hello        vmproto.Hello
@@ -149,7 +149,7 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, logger *slog.Logge
 		RunWorkDir:          job.RunWorkDir,
 		Services:            cloneStringSlice(job.Services),
 		Env:                 cloneStringMap(job.Env),
-		Network:             lease.GuestNetworkConfig(),
+		Network:             lease.GuestNetworkConfig(hostServiceIP, hostServicePort),
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
 	}); err != nil {

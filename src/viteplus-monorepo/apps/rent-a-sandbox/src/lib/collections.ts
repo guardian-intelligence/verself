@@ -1,5 +1,5 @@
 import * as v from "valibot";
-import { authCollectionId, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
+import { authCollectionId, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import {
   createElectricShapeCollection,
   electricEqualsWhere,

@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
-import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/shared";
+import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import { getRepo, getRepoGenerations, getRepos, isSandboxRentalNotFound } from "~/server-fns/api";
 
 export function shouldPollRepo(state: string): boolean {
