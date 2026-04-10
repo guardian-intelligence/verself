@@ -70,7 +70,7 @@ export function canRefresh(repo: { compatibility_status: string; state: string }
   return repo.state !== "archived" && repo.state !== "importing" && repo.state !== "preparing";
 }
 
-export function canRun(repo: { active_golden_generation_id?: string; state: string }) {
+export function canRun(repo: { active_golden_generation_id?: string | undefined; state: string }) {
   return (
     (repo.state === "ready" || repo.state === "degraded") && !!repo.active_golden_generation_id
   );

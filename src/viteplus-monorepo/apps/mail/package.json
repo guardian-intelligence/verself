@@ -9,6 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "generate": "vp exec openapi-ts -i ../../../mailbox-service/openapi/openapi-3.1.yaml -o src/__generated/mailbox-api -p @hey-api/typescript @hey-api/sdk valibot && vp exec node ../../scripts/mark-generated-ts-nocheck.mjs src/__generated/mailbox-api",
     "test:e2e": "vp exec playwright test",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
@@ -28,9 +29,11 @@
     "dompurify": "^3.2.6",
     "nitro": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "catalog:",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/dompurify": "^3.2.0",

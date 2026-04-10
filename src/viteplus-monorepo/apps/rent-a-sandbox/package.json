@@ -9,6 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
+    "generate": "vp exec openapi-ts -i ../../../sandbox-rental-service/openapi/openapi-3.1.yaml -o src/__generated/sandbox-rental-api -p @hey-api/typescript @hey-api/sdk valibot && vp exec node ../../scripts/mark-generated-ts-nocheck.mjs src/__generated/sandbox-rental-api",
     "typecheck": "vp exec tsc -p tsconfig.json",
     "test:e2e": "vp exec playwright test",
     "test:e2e:headed": "vp exec playwright test --headed"
@@ -30,9 +31,11 @@
     "nitro": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "use-stick-to-bottom": "catalog:"
+    "use-stick-to-bottom": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "catalog:",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",

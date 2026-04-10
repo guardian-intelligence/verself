@@ -22,6 +22,11 @@
     "dev": "vp pack src/index.ts --watch",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "@tanstack/electric-db-collection": "catalog:",
+    "@tanstack/react-db": "catalog:",
+    "valibot": "catalog:"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",

@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -150,9 +148,7 @@ func run() error {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	humaAPI := humago.New(privateMux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
-
-	sandboxapi.RegisterRoutes(humaAPI, jobService, billingClient)
+	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, billingClient)
 	sandboxapi.RegisterPublicRoutes(rootMux, jobService, sandboxapi.ForgejoWebhookConfig{
 		PlatformOrgID: platformOrgID,
 		ActorID:       "system:forgejo-webhook",

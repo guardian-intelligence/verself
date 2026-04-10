@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge-metal/mailbox-service/internal/api"
+	"github.com/forge-metal/sandbox-rental-service/internal/api"
 )
 
-const version = "dev"
+const version = "1.0.0"
 
 func main() {
 	format := flag.String("format", "3.0", "OpenAPI output format: 3.0 or 3.1")
@@ -23,9 +23,9 @@ func main() {
 	)
 	switch *format {
 	case "3.0":
-		spec, err = api.OpenAPIDowngradeYAML(version, "127.0.0.1:4246")
+		spec, err = api.OpenAPIDowngradeYAML(version, "127.0.0.1:4243")
 	case "3.1":
-		spec, err = api.OpenAPIYAML(version, "127.0.0.1:4246")
+		spec, err = api.OpenAPIYAML(version, "127.0.0.1:4243")
 	default:
 		fmt.Fprintln(os.Stderr, "invalid -format value, expected 3.0 or 3.1")
 		os.Exit(1)
