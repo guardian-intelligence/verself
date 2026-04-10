@@ -129,6 +129,131 @@
         group: sandbox
   when: sandbox_rental_service_auth_audience | default('', true) | length > 0
 
+- name: Find billing auth project for sandbox-rental billing client
+  ansible.builtin.set_fact:
+    sandbox_rental_service_billing_auth_project: >-
+      {{
+        (
+          sandbox_rental_service_zitadel_projects.json.result
+          | selectattr('name', 'equalto', sandbox_rental_service_billing_auth_project_name)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Assert billing auth project exists for sandbox-rental billing client
+  ansible.builtin.assert:
+    that: sandbox_rental_service_billing_auth_project != {}
+    fail_msg: >-
+      billing auth project {{ sandbox_rental_service_billing_auth_project_name }} is missing.
+
+- name: Set sandbox-rental billing auth audience
+  ansible.builtin.set_fact:
+    sandbox_rental_service_billing_auth_audience: "{{ sandbox_rental_service_billing_auth_project.id }}"
+
+- name: Check sandbox-rental billing client secret credential
+  ansible.builtin.stat:
+    path: /etc/credstore/sandbox-rental/billing-client-secret
+  register: sandbox_rental_service_billing_client_secret_file
+
+- name: List Zitadel users for sandbox-rental billing client
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body: {}
+    return_content: true
+    status_code: 200
+  register: sandbox_rental_service_zitadel_users
+  no_log: true
+
+- name: Find sandbox-rental billing machine user
+  ansible.builtin.set_fact:
+    sandbox_rental_service_billing_machine_user: >-
+      {{
+        (
+          sandbox_rental_service_zitadel_users.json.result
+          | selectattr('username', 'equalto', sandbox_rental_service_billing_client_id)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create sandbox-rental billing machine user if missing
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/machine"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      userName: "{{ sandbox_rental_service_billing_client_id }}"
+      name: "sandbox rental billing {{ inventory_hostname }}"
+      accessTokenType: ACCESS_TOKEN_TYPE_JWT
+    return_content: true
+  register: sandbox_rental_service_billing_machine_user_created
+  when: sandbox_rental_service_billing_machine_user == {}
+  no_log: true
+
+- name: Set sandbox-rental billing machine user id
+  ansible.builtin.set_fact:
+    sandbox_rental_service_billing_machine_user_id: >-
+      {{
+        sandbox_rental_service_billing_machine_user.userId
+        | default(sandbox_rental_service_billing_machine_user_created.json.userId, true)
+      }}
+
+- name: Create sandbox-rental billing machine user secret when needed
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/v2/users/{{
+      sandbox_rental_service_billing_machine_user_id }}/secret
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    status_code: 200
+    return_content: true
+  register: sandbox_rental_service_billing_machine_user_secret
+  when:
+    - sandbox_rental_service_billing_machine_user_created is not skipped
+      or not sandbox_rental_service_billing_client_secret_file.stat.exists
+  no_log: true
+
+- name: Store sandbox-rental billing client secret
+  ansible.builtin.copy:
+    content: "{{ sandbox_rental_service_billing_machine_user_secret.json.clientSecret }}"
+    dest: /etc/credstore/sandbox-rental/billing-client-secret
+    owner: root
+    group: sandbox_rental
+    mode: "0640"
+  when:
+    - sandbox_rental_service_billing_machine_user_created is not skipped
+      or not sandbox_rental_service_billing_client_secret_file.stat.exists
+  no_log: true
+  notify: restart sandbox-rental-service
+
+- name: Grant sandbox-rental billing machine user access to billing project
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/users/{{
+      sandbox_rental_service_billing_machine_user_id }}/grants
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sandbox_rental_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      projectId: "{{ sandbox_rental_service_billing_auth_audience }}"
+      roleKeys:
+        - "{{ sandbox_rental_service_billing_internal_role }}"
+    status_code: [200, 409]
+  no_log: true
+
 # --- systemd unit ---
 
 - name: Deploy sandbox-rental-service systemd unit
@@ -146,10 +271,14 @@
       Group=sandbox_rental
       LoadCredential=pg-dsn:/etc/credstore/sandbox-rental/pg-dsn
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
+      LoadCredential=billing-client-secret:/etc/credstore/sandbox-rental/billing-client-secret
       EnvironmentFile=-/etc/forge-metal/sandbox-rental.env
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
       Environment=SANDBOX_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=SANDBOX_BILLING_URL=http://{{ services.billing.host }}:{{ services.billing.port }}
+      Environment=SANDBOX_BILLING_CLIENT_ID={{ sandbox_rental_service_billing_client_id }}
+      Environment=SANDBOX_BILLING_TOKEN_URL={{ sandbox_rental_service_billing_token_url }}
+      Environment=SANDBOX_BILLING_AUTH_AUDIENCE={{ sandbox_rental_service_billing_auth_audience }}
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
       Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}

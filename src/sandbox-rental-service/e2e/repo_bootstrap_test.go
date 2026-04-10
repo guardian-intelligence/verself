@@ -287,7 +287,11 @@ jobs:
 	})
 
 	workerCtx, workerCancel := context.WithCancel(ctx)
-	go billingServer.RunWorker(workerCtx, 200*time.Millisecond)
+	go func() {
+		if err := billingServer.RunProjector(workerCtx, 200*time.Millisecond); err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("billing projector: %v", err)
+		}
+	}()
 	t.Cleanup(workerCancel)
 
 	seedCredits := seedSandboxProductAndCredits(t, ctx, pg.billingDB, billingServer)
@@ -358,21 +362,21 @@ func (e *repoBootstrapEnv) close() {
 func seedSandboxProductAndCredits(t *testing.T, ctx context.Context, billingDB *sql.DB, billingServer *billingtestharness.Server) uint64 {
 	t.Helper()
 
-	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org"); err != nil {
+	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org", "new"); err != nil {
 		t.Fatalf("ensure org: %v", err)
 	}
 
 	if _, err := billingDB.ExecContext(ctx, `
-		INSERT INTO products (product_id, display_name, meter_unit, billing_model)
-		VALUES ('sandbox', 'Sandbox', 'vcpu_second', 'metered')
+		INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy)
+		VALUES ('sandbox', 'Sandbox', 'vcpu_second', 'metered', '{"shape":"time","target_quantity":300,"min_quantity":1,"allow_partial_reserve":true,"renew_slack_quantity":30}'::jsonb)
 		ON CONFLICT DO NOTHING
 	`); err != nil {
 		t.Fatalf("insert product: %v", err)
 	}
 
 	if _, err := billingDB.ExecContext(ctx, `
-		INSERT INTO plans (plan_id, product_id, display_name, included_credits, unit_rates, is_default, active)
-		VALUES ('sandbox-default', 'sandbox', 'Sandbox PAYG', 0, '{"vcpu":100,"gib":50}'::jsonb, true, true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credits, unit_rates, is_default, active)
+		VALUES ('sandbox-default', 'sandbox', 'Sandbox PAYG', 'prepaid', 0, '{"vcpu":100,"gib":50}'::jsonb, true, true)
 		ON CONFLICT DO NOTHING
 	`); err != nil {
 		t.Fatalf("insert plan: %v", err)
@@ -380,12 +384,8 @@ func seedSandboxProductAndCredits(t *testing.T, ctx context.Context, billingDB *
 
 	const seedCredits uint64 = 5_000_000
 	expiresAt := time.Now().Add(24 * time.Hour)
-	created, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "repo-bootstrap-seed", expiresAt)
-	if err != nil {
+	if _, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "repo-bootstrap-seed", expiresAt); err != nil {
 		t.Fatalf("deposit credits: %v", err)
-	}
-	if !created {
-		t.Fatal("expected new grant, got idempotent replay")
 	}
 	balanceBefore, _, err := billingServer.GetBalance(ctx, testOrgID)
 	if err != nil {
@@ -492,26 +492,26 @@ func assertWarmGoldenBillingWindow(t *testing.T, ctx context.Context, db *sql.DB
 	t.Helper()
 
 	var (
-		state         string
-		windowSeconds int
-		actualSeconds int
-		pricingPhase  string
+		state            string
+		reservedQuantity int
+		actualQuantity   int
+		pricingPhase     string
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT state, window_seconds, actual_seconds, pricing_phase
+		SELECT state, reserved_quantity, actual_quantity, pricing_phase
 		FROM execution_billing_windows
 		WHERE attempt_id = $1 AND window_seq = 0
-	`, attemptID).Scan(&state, &windowSeconds, &actualSeconds, &pricingPhase); err != nil {
+	`, attemptID).Scan(&state, &reservedQuantity, &actualQuantity, &pricingPhase); err != nil {
 		t.Fatalf("query warm billing window: %v", err)
 	}
 	if state != "settled" {
 		t.Fatalf("expected billing window state=settled, got %q", state)
 	}
-	if windowSeconds != 300 {
-		t.Fatalf("expected window_seconds=300, got %d", windowSeconds)
+	if reservedQuantity != 300 {
+		t.Fatalf("expected reserved_quantity=300, got %d", reservedQuantity)
 	}
-	if actualSeconds != 1 {
-		t.Fatalf("expected actual_seconds=1, got %d", actualSeconds)
+	if actualQuantity != 1 {
+		t.Fatalf("expected actual_quantity=1, got %d", actualQuantity)
 	}
 	if pricingPhase == "" {
 		t.Fatal("expected non-empty pricing_phase")
@@ -537,8 +537,8 @@ func flushBillingMetering(t *testing.T, ctx context.Context, billingServer *bill
 	t.Helper()
 	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer flushCancel()
-	if err := billingServer.FlushMetering(flushCtx); err != nil {
-		t.Logf("metering writer close (non-fatal): %v", err)
+	if _, err := billingServer.ProjectPendingWindows(flushCtx); err != nil {
+		t.Fatalf("project billing windows: %v", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 }

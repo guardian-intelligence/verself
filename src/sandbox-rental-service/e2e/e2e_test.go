@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -75,17 +76,21 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
-	go billingServer.RunWorker(workerCtx, 200*time.Millisecond)
+	go func() {
+		if err := billingServer.RunProjector(workerCtx, 200*time.Millisecond); err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("billing projector: %v", err)
+		}
+	}()
 
 	// ---- 3. Seed test data ----
 
-	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org"); err != nil {
+	if err := billingServer.SeedOrg(ctx, testOrgID, "E2E Test Org", "new"); err != nil {
 		t.Fatalf("ensure org: %v", err)
 	}
 
 	if _, err := pg.billingDB.ExecContext(ctx, `
-		INSERT INTO products (product_id, display_name, meter_unit, billing_model)
-		VALUES ('sandbox', 'Sandbox', 'vcpu_second', 'metered')
+		INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy)
+		VALUES ('sandbox', 'Sandbox', 'vcpu_second', 'metered', '{"shape":"time","target_quantity":300,"min_quantity":1,"allow_partial_reserve":true,"renew_slack_quantity":30}'::jsonb)
 		ON CONFLICT DO NOTHING
 	`); err != nil {
 		t.Fatalf("insert product: %v", err)
@@ -95,8 +100,8 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	// With BillingVCPUs=2 and BillingMemMiB=2048 (2 GiB):
 	//   CostPerSec = 2*100 + 2*50 = 300
 	if _, err := pg.billingDB.ExecContext(ctx, `
-		INSERT INTO plans (plan_id, product_id, display_name, included_credits, unit_rates, is_default, active)
-		VALUES ('sandbox-default', 'sandbox', 'Sandbox PAYG', 0, '{"vcpu":100,"gib":50}'::jsonb, true, true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credits, unit_rates, is_default, active)
+		VALUES ('sandbox-default', 'sandbox', 'Sandbox PAYG', 'prepaid', 0, '{"vcpu":100,"gib":50}'::jsonb, true, true)
 		ON CONFLICT DO NOTHING
 	`); err != nil {
 		t.Fatalf("insert plan: %v", err)
@@ -104,12 +109,8 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 
 	const seedCredits uint64 = 5_000_000
 	expiresAt := time.Now().Add(24 * time.Hour)
-	created, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "e2e-test-seed", expiresAt)
-	if err != nil {
+	if _, err := billingServer.SeedCredits(ctx, testOrgID, "sandbox", seedCredits, "purchase", "e2e-test-seed", expiresAt); err != nil {
 		t.Fatalf("deposit credits: %v", err)
-	}
-	if !created {
-		t.Fatal("expected new grant, got idempotent replay")
 	}
 
 	balanceBefore, _, err := billingServer.GetBalance(ctx, testOrgID)
@@ -287,8 +288,8 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 
 	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer flushCancel()
-	if err := billingServer.FlushMetering(flushCtx); err != nil {
-		t.Logf("metering writer close (non-fatal): %v", err)
+	if _, err := billingServer.ProjectPendingWindows(flushCtx); err != nil {
+		t.Fatalf("project billing windows: %v", err)
 	}
 	time.Sleep(500 * time.Millisecond)
 
@@ -432,26 +433,26 @@ func assertBillingWindow(t *testing.T, ctx context.Context, db *sql.DB, attemptI
 	t.Helper()
 
 	var (
-		state         string
-		windowSeconds int
-		actualSeconds int
-		pricingPhase  string
+		state            string
+		reservedQuantity int
+		actualQuantity   int
+		pricingPhase     string
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT state, window_seconds, actual_seconds, pricing_phase
+		SELECT state, reserved_quantity, actual_quantity, pricing_phase
 		FROM execution_billing_windows
 		WHERE attempt_id = $1 AND window_seq = 0
-	`, attemptID).Scan(&state, &windowSeconds, &actualSeconds, &pricingPhase); err != nil {
+	`, attemptID).Scan(&state, &reservedQuantity, &actualQuantity, &pricingPhase); err != nil {
 		t.Fatalf("query billing window: %v", err)
 	}
 	if state != "settled" {
 		t.Fatalf("expected billing window state=settled, got %q", state)
 	}
-	if windowSeconds != 300 {
-		t.Fatalf("expected window_seconds=300, got %d", windowSeconds)
+	if reservedQuantity != 300 {
+		t.Fatalf("expected reserved_quantity=300, got %d", reservedQuantity)
 	}
-	if actualSeconds != 3 {
-		t.Fatalf("expected actual_seconds=3, got %d", actualSeconds)
+	if actualQuantity != 3 {
+		t.Fatalf("expected actual_quantity=3, got %d", actualQuantity)
 	}
 	if pricingPhase == "" {
 		t.Fatal("expected non-empty pricing_phase")

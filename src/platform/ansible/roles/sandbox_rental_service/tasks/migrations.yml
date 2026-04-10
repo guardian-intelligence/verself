@@ -59,12 +59,14 @@
         dest: /opt/forge-metal/sandbox-rental-migrations/
         mode: "0644"
 
-    - name: Stop Electric before sandbox_rental schema recreate
+    - name: Stop sandbox_rental schema clients before recreate
       ansible.builtin.systemd:
-        name: electric
+        name: "{{ item }}"
         state: stopped
+      loop:
+        - electric
+        - sandbox-rental-service
       failed_when: false
-      when: sandbox_rental_service_force_schema_reset
 
     - name: Terminate sandbox_rental connections before recreate
       ansible.builtin.command:
