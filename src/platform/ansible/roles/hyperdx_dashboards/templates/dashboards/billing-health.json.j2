@@ -38,36 +38,36 @@
       }
     },
     {
-      "name": "Billing Events by Type",
+      "name": "Billing Windows by State",
       "x": 0, "y": 9, "w": 4, "h": 9,
       "config": {
         "configType": "sql",
         "displayType": "line",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT toStartOfHour(created_at) AS __hdx_time_bucket, event_type AS series, toFloat64(count()) AS events FROM forge_metal.billing_events_pg WHERE created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
+        "sqlTemplate": "SELECT toStartOfHour(created_at) AS __hdx_time_bucket, state AS series, toFloat64(count()) AS windows FROM forge_metal.billing_windows_pg WHERE created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket, series ORDER BY __hdx_time_bucket",
         "fillNulls": true
       }
     },
     {
-      "name": "Credit Expiry Sweep",
+      "name": "Operator Writeoffs",
       "x": 4, "y": 9, "w": 4, "h": 9,
       "config": {
         "configType": "sql",
         "displayType": "line",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT toStartOfHour(created_at) AS __hdx_time_bucket, 'expired_units' AS series, toFloat64(sum(toInt64OrZero(JSONExtractString(payload, 'expired_units')))) AS units FROM forge_metal.billing_events_pg WHERE event_type = 'credits_expired' AND created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "sqlTemplate": "SELECT toStartOfHour(started_at) AS __hdx_time_bucket, 'writeoff_units' AS series, toFloat64(sum(writeoff_charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
         "fillNulls": true,
         "numberFormat": {"output": "number", "suffix": " units"}
       }
     },
     {
-      "name": "Overage Ceiling Hits",
+      "name": "Projection Lag",
       "x": 8, "y": 9, "w": 4, "h": 9,
       "config": {
         "configType": "sql",
         "displayType": "line",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT toStartOfHour(created_at) AS __hdx_time_bucket, 'ceiling_hits' AS series, toFloat64(count()) AS hits FROM forge_metal.billing_events_pg WHERE event_type = 'overage_ceiling_hit' AND created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
+        "sqlTemplate": "SELECT toStartOfHour(created_at) AS __hdx_time_bucket, 'unprojected_settled_windows' AS series, toFloat64(count()) AS windows FROM forge_metal.billing_windows_pg WHERE state = 'settled' AND isNull(metering_projected_at) AND created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket ORDER BY __hdx_time_bucket",
         "fillNulls": true
       }
     }

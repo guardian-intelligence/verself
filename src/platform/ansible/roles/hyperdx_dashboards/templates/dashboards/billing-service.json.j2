@@ -73,24 +73,24 @@
       }
     },
     {
-      "name": "Billing Events by Type",
+      "name": "Billing Windows by State",
       "x": 0, "y": 18, "w": 4, "h": 9,
       "config": {
         "configType": "sql",
         "displayType": "line",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT toStartOfInterval(created_at, INTERVAL 1 hour) as __hdx_time_bucket, event_type, count() as cnt FROM forge_metal.billing_events_pg WHERE created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket, event_type ORDER BY __hdx_time_bucket",
+        "sqlTemplate": "SELECT toStartOfInterval(created_at, INTERVAL 1 hour) as __hdx_time_bucket, state, count() as cnt FROM forge_metal.billing_windows_pg WHERE created_at >= now() - INTERVAL 7 DAY GROUP BY __hdx_time_bucket, state ORDER BY __hdx_time_bucket",
         "fillNulls": true
       }
     },
     {
-      "name": "Recent Billing Events",
+      "name": "Recent Billing Windows",
       "x": 4, "y": 18, "w": 4, "h": 9,
       "config": {
         "configType": "sql",
         "displayType": "table",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT created_at, event_type, org_id, coalesce(toString(subscription_id), '') as sub_id, coalesce(toString(grant_id), '') as grant_id, coalesce(stripe_event_id, '') as stripe_event FROM forge_metal.billing_events_pg ORDER BY created_at DESC LIMIT 20"
+        "sqlTemplate": "SELECT created_at, window_id, org_id, product_id, source_type, source_ref, window_seq, state, reserved_quantity, actual_quantity, billed_charge_units, metering_projected_at FROM forge_metal.billing_windows_pg ORDER BY created_at DESC LIMIT 20"
       }
     },
     {
