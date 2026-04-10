@@ -1,0 +1,142 @@
+---
+# Seed the forge-metal repository on Forgejo and configure controller access.
+#
+# Requires:
+#   - Forgejo running and automation user promoted to admin
+#   - seed_forgejo_owner: Forgejo username to own the repo
+#   - seed_forgejo_controller_ssh_pubkey_path: path to SSH public key on controller
+#   - seed_forgejo_repo_local_path: local path to the git repo on controller
+#
+# Expects these facts to already be set by the caller:
+#   - seed_forgejo_automation_token (read from credstore)
+
+- name: Read controller SSH public key
+  ansible.builtin.slurp:
+    src: "{{ seed_forgejo_controller_ssh_pubkey_path }}"
+  delegate_to: localhost
+  become: false
+  register: seed_forgejo_ssh_pubkey_raw
+
+- name: Set SSH public key fact
+  ansible.builtin.set_fact:
+    seed_forgejo_ssh_pubkey: "{{ seed_forgejo_ssh_pubkey_raw.content | b64decode | trim }}"
+
+# --- SSH key registration (idempotent) ---
+
+- name: List SSH keys on owner account
+  ansible.builtin.uri:
+    url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/users/{{ seed_forgejo_owner }}/keys"
+    method: GET
+    headers:
+      Authorization: "token {{ seed_forgejo_automation_token }}"
+    status_code: [200]
+  register: seed_forgejo_existing_keys
+
+- name: Check if controller key already registered
+  ansible.builtin.set_fact:
+    seed_forgejo_key_exists: >-
+      {{
+        seed_forgejo_existing_keys.json
+        | selectattr('key', 'equalto', seed_forgejo_ssh_pubkey)
+        | list
+        | length > 0
+      }}
+
+- name: Register controller SSH key on owner account
+  ansible.builtin.uri:
+    url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/admin/users/{{ seed_forgejo_owner }}/keys"
+    method: POST
+    headers:
+      Authorization: "token {{ seed_forgejo_automation_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      title: "controller-{{ inventory_hostname }}"
+      key: "{{ seed_forgejo_ssh_pubkey }}"
+    status_code: [201]
+  when: not seed_forgejo_key_exists
+  register: seed_forgejo_key_created
+
+# --- Repository creation (idempotent) ---
+
+- name: Check if forge-metal repo exists
+  ansible.builtin.uri:
+    url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/repos/{{ seed_forgejo_owner }}/forge-metal"
+    method: GET
+    headers:
+      Authorization: "token {{ seed_forgejo_automation_token }}"
+    status_code: [200, 404]
+  register: seed_forgejo_repo_check
+
+- name: Create forge-metal repo under owner
+  ansible.builtin.uri:
+    url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/admin/users/{{ seed_forgejo_owner }}/repos"
+    method: POST
+    headers:
+      Authorization: "token {{ seed_forgejo_automation_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: forge-metal
+      auto_init: false
+      default_branch: main
+      description: "Self-hosted bare-metal platform"
+      private: false
+    status_code: [201]
+  when: seed_forgejo_repo_check.status == 404
+
+# --- Controller git remote (local) ---
+
+- name: Check if forgejo remote exists on controller  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: git remote get-url forgejo
+    chdir: "{{ seed_forgejo_repo_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: seed_forgejo_remote_check
+  changed_when: false
+  failed_when: false
+
+- name: Set expected Forgejo SSH remote URL
+  ansible.builtin.set_fact:
+    seed_forgejo_remote_url: "ssh://forgejo@git.{{ forge_metal_domain }}:{{ services.forgejo.ssh_port }}/{{ seed_forgejo_owner }}/forge-metal.git"
+
+- name: Add forgejo remote on controller  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "git remote add forgejo {{ seed_forgejo_remote_url }}"
+    chdir: "{{ seed_forgejo_repo_local_path }}"
+  delegate_to: localhost
+  become: false
+  when: seed_forgejo_remote_check.rc != 0
+  changed_when: true
+
+- name: Update forgejo remote URL if changed  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "git remote set-url forgejo {{ seed_forgejo_remote_url }}"
+    chdir: "{{ seed_forgejo_repo_local_path }}"
+  delegate_to: localhost
+  become: false
+  when: seed_forgejo_remote_check.rc == 0 and seed_forgejo_remote_check.stdout | trim != seed_forgejo_remote_url
+  changed_when: true
+
+# --- Push (idempotent — fast-forward only) ---
+
+- name: Push forge-metal to Forgejo  # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: git push forgejo main
+    chdir: "{{ seed_forgejo_repo_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: seed_forgejo_push
+  changed_when: "'Everything up-to-date' not in seed_forgejo_push.stderr"
+  environment:
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new -p {{ services.forgejo.ssh_port }}"
+
+- name: Print Forgejo repo seed summary
+  ansible.builtin.debug:
+    msg:
+      - "Forgejo repo: https://git.{{ forge_metal_domain }}/{{ seed_forgejo_owner }}/forge-metal"
+      - "SSH remote:   {{ seed_forgejo_remote_url }}"
+      - "SSH key:      {{ 'registered' if not seed_forgejo_key_exists else 'already present' }}"
+      - "Repo:         {{ 'created' if seed_forgejo_repo_check.status == 404 else 'already exists' }}"
+      - "Push:         {{ 'up-to-date' if 'Everything up-to-date' in (seed_forgejo_push.stderr | default('')) else 'pushed' }}"

@@ -18,6 +18,7 @@
 #   --tags stalwart    Seed Stalwart mailboxes + bindings
 #   --tags dev-oidc    Create dev OIDC apps for local frontend development
 #   --tags verify      Verify billing auth integration only
+#   --tags forgejo     Seed forge-metal repo on Forgejo + configure controller SSH
 #
 # Password overrides:
 #   -e 'seed_system_password_overrides={"ceo":"...", "acme_admin":"...", "acme_user":"..."}'
@@ -1211,7 +1212,8 @@
         - name: Assert balance response has org_id
           ansible.builtin.assert:
             that:
-              - seed_system_verify_authed.json.org_id | default('') | length > 0
+              - seed_system_verify_authed.json.org_id is defined
+              - seed_system_verify_authed.json.total_available is defined
             fail_msg: "Billing proxy returned unexpected payload: {{ seed_system_verify_authed.json }}"
 
         - name: Print verification result
@@ -1230,6 +1232,31 @@
               Host: "{{ seed_system_zitadel_host }}"
             status_code: [200, 404]
           when: seed_system_verify_user is defined and seed_system_verify_user.json.userId is defined
+
+    # ── Forgejo repo seeding ──────────────────────────────────────────
+    - name: Read Forgejo automation token for repo seeding
+      ansible.builtin.slurp:
+        src: /etc/credstore/forgejo/automation-token
+      register: seed_forgejo_token_raw
+      no_log: true
+      tags: [forgejo]
+
+    - name: Set Forgejo automation token fact
+      ansible.builtin.set_fact:
+        seed_forgejo_automation_token: "{{ seed_forgejo_token_raw.content | b64decode | trim }}"
+      no_log: true
+      tags: [forgejo]
+
+    - name: Seed forge-metal repo on Forgejo
+      ansible.builtin.include_tasks:
+        file: tasks/seed-forgejo-repos.yml
+        apply:
+          tags: [forgejo]
+      vars:
+        seed_forgejo_owner: "{{ seed_system_users.ceo.username }}"
+        seed_forgejo_controller_ssh_pubkey_path: "~/.ssh/id_ed25519.pub"
+        seed_forgejo_repo_local_path: "{{ playbook_dir }}/../../../.."
+      tags: [forgejo]
 
     - name: Print seed-system summary
       ansible.builtin.debug:
