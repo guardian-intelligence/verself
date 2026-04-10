@@ -59,7 +59,6 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   const loginRedirectButton = page.getByRole("button", { name: /click here/i });
   const passwordInput = page.locator("#password");
   const otherUserButton = page.getByRole("button", { name: /other user/i });
-  const authOrigin = new URL(env.zitadelBaseURL).origin;
 
   await page.goto("/");
 
@@ -76,36 +75,53 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
     }
 
     if (await loginRedirectButton.isVisible().catch(() => false)) {
-      await Promise.all([
-        page.waitForURL((url) => url.toString().startsWith(authOrigin), {
-          timeout: shortTimeoutMS,
-        }),
-        loginRedirectButton.click(),
-      ]);
+      await loginRedirectButton.click();
+      await waitForLoginBoundary(page, {
+        mailboxNav,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+      });
       continue;
     }
 
     if (await otherUserButton.isVisible().catch(() => false)) {
       await otherUserButton.click();
+      await waitForLoginBoundary(page, {
+        mailboxNav,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+      });
       continue;
     }
 
     if (await loginNameInput.isVisible().catch(() => false)) {
       await loginNameInput.fill(env.testEmail);
       await page.locator("button[type='submit']").click();
+      await waitForLoginBoundary(page, {
+        mailboxNav,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+      });
       continue;
     }
 
     if (await passwordInput.isVisible().catch(() => false)) {
       await passwordInput.fill(env.testPassword);
-      await Promise.all([
-        page.waitForURL((url) => url.toString().startsWith(env.baseURL), {
-          timeout: shortTimeoutMS,
-        }),
-        page.locator("button[type='submit']").click(),
-      ]);
-      await expect(inboxLink).toBeVisible({ timeout: shortTimeoutMS });
-      return;
+      await page.locator("button[type='submit']").click();
+      await waitForLoginBoundary(page, {
+        mailboxNav,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+      });
+      continue;
     }
 
     await page.waitForTimeout(pollIntervalMS);
@@ -168,4 +184,35 @@ export async function assertLoggedOut(page: Page): Promise<void> {
   await expect(signInLink).toBeVisible({
     timeout: shortTimeoutMS,
   });
+}
+
+async function waitForLoginBoundary(
+  page: Page,
+  {
+    mailboxNav,
+    loginNameInput,
+    passwordInput,
+    loginRedirectButton,
+    otherUserButton,
+  }: {
+    mailboxNav: ReturnType<Page["locator"]>;
+    loginNameInput: ReturnType<Page["locator"]>;
+    passwordInput: ReturnType<Page["locator"]>;
+    loginRedirectButton: ReturnType<Page["getByRole"]>;
+    otherUserButton: ReturnType<Page["getByRole"]>;
+  },
+): Promise<void> {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (
+      (await mailboxNav.isVisible().catch(() => false)) ||
+      (await loginNameInput.isVisible().catch(() => false)) ||
+      (await passwordInput.isVisible().catch(() => false)) ||
+      (await loginRedirectButton.isVisible().catch(() => false)) ||
+      (await otherUserButton.isVisible().catch(() => false))
+    ) {
+      return;
+    }
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
+    await page.waitForTimeout(pollIntervalMS);
+  }
 }

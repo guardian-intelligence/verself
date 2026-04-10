@@ -7,9 +7,8 @@ import { env } from "./env";
 const execFile = promisify(execFileCallback);
 export const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 const routeBaseURL = normalizeBaseURL(env.baseURL);
-const authOrLoginURL = createURLPattern(env.zitadelBaseURL, ["/ui/login"]);
-const appURL = createURLPattern(env.baseURL);
-const postPasswordURL = createURLPattern(env.baseURL, ["/ui/mfa"]);
+const shortTimeoutMS = 5_000;
+const pollIntervalMS = 250;
 
 export async function ensureTestUserExists(): Promise<void> {
   if (!env.zitadelAdminPAT) return;
@@ -81,53 +80,99 @@ export async function ensureTestUserExists(): Promise<void> {
 }
 
 export async function ensureLoggedIn(page: Page): Promise<void> {
-  const balanceCard = page.getByTestId("balance-card");
   const loginNameInput = page.locator("#loginName");
-  const loginRedirectButton = page.getByRole("button", { name: "click here" });
+  const passwordInput = page.locator("#password");
+  const loginRedirectButton = page.getByRole("button", { name: /click here/i });
+  const otherUserButton = page.getByRole("button", { name: /other user/i });
+  const skipButton = page.getByRole("button", { name: /^Skip$/ });
+  const dashboardHeading = page.getByRole("heading", { name: "Dashboard" });
+  const signOutLink = page.getByRole("link", { name: "Sign out" });
+  const balanceCard = page.getByTestId("balance-card");
 
   await page.goto("/");
-  await page.waitForLoadState("networkidle");
-  if (await balanceCard.isVisible().catch(() => false)) {
+  await page.waitForLoadState("domcontentloaded");
+  if (await isDashboardReady({ dashboardHeading, balanceCard, signOutLink })) {
     return;
   }
 
   await page.goto("/login");
-  await Promise.race([
-    balanceCard.waitFor({ state: "visible", timeout: 15_000 }),
-    loginNameInput.waitFor({ state: "visible", timeout: 15_000 }),
-    loginRedirectButton.waitFor({ state: "visible", timeout: 15_000 }),
-  ]);
-  if (await balanceCard.isVisible().catch(() => false)) {
-    return;
-  }
-  if (await loginRedirectButton.isVisible().catch(() => false)) {
-    await Promise.all([
-      page.waitForURL(authOrLoginURL, { timeout: 30_000 }),
-      loginRedirectButton.click(),
-    ]);
+  await page.waitForLoadState("domcontentloaded");
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (await isDashboardReady({ dashboardHeading, balanceCard, signOutLink })) {
+      return;
+    }
+
+    if (await loginRedirectButton.isVisible().catch(() => false)) {
+      await loginRedirectButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await otherUserButton.isVisible().catch(() => false)) {
+      await otherUserButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await loginNameInput.isVisible().catch(() => false)) {
+      await loginNameInput.fill(env.testEmail);
+      await page.locator("button[type='submit']").click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await passwordInput.isVisible().catch(() => false)) {
+      await passwordInput.fill(env.testPassword);
+      await page.locator("button[type='submit']").click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await skipButton.isVisible().catch(() => false)) {
+      await skipButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        loginRedirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    await page.waitForTimeout(pollIntervalMS);
   }
 
-  await loginNameInput.waitFor({ state: "visible", timeout: 30_000 });
-  await loginNameInput.fill(env.testEmail);
-  await page.locator("button[type='submit']").click();
-
-  const passwordInput = page.locator("#password");
-  await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
-  await passwordInput.fill(env.testPassword);
-  await Promise.all([
-    page.waitForURL(postPasswordURL, { timeout: 30_000 }),
-    page.locator("button[type='submit']").click(),
-  ]);
-  const skipButton = page.getByRole("button", { name: /^Skip$/ });
-  if (await skipButton.isVisible().catch(() => false)) {
-    await Promise.all([
-      page.waitForURL(appURL, { timeout: 30_000 }),
-      skipButton.click(),
-    ]);
-  }
-
-  await page.waitForLoadState("networkidle");
-  await expect(balanceCard).toBeVisible({ timeout: 15_000 });
+  await expect(balanceCard).toBeVisible({ timeout: shortTimeoutMS });
 }
 
 export async function readBalance(page: Page): Promise<number> {
@@ -226,23 +271,61 @@ export async function pushVerificationRepoRevision(
   return JSON.parse(stdout) as VerificationRepoMeta;
 }
 
-function createURLPattern(baseURL: string, extraPathPatterns: string[] = []): RegExp {
-  const normalizedBaseURL = normalizeBaseURL(baseURL);
-  const basePattern = escapeRegex(normalizedBaseURL);
-  if (extraPathPatterns.length === 0) {
-    return new RegExp(`^${basePattern}(?:[/?#].*)?$`);
-  }
-
-  const pathPatterns = extraPathPatterns.map(
-    (pathPattern) => `${basePattern}${escapeRegex(pathPattern)}(?:[?#].*)?`,
-  );
-  return new RegExp(`^(?:${pathPatterns.join("|")})$`);
-}
-
 function normalizeBaseURL(baseURL: string): string {
   return new URL(baseURL).href.replace(/\/$/, "");
 }
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function isDashboardReady({
+  dashboardHeading,
+  balanceCard,
+  signOutLink,
+}: {
+  dashboardHeading: ReturnType<Page["getByRole"]>;
+  balanceCard: ReturnType<Page["getByTestId"]>;
+  signOutLink: ReturnType<Page["getByRole"]>;
+}): Promise<boolean> {
+  const [dashboardVisible, balanceVisible, signOutVisible] = await Promise.all([
+    dashboardHeading.isVisible().catch(() => false),
+    balanceCard.isVisible().catch(() => false),
+    signOutLink.isVisible().catch(() => false),
+  ]);
+  return dashboardVisible && balanceVisible && signOutVisible;
+}
+
+async function waitForAuthBoundary(
+  page: Page,
+  {
+    dashboardHeading,
+    loginNameInput,
+    passwordInput,
+    loginRedirectButton,
+    otherUserButton,
+    skipButton,
+  }: {
+    dashboardHeading: ReturnType<Page["getByRole"]>;
+    loginNameInput: ReturnType<Page["locator"]>;
+    passwordInput: ReturnType<Page["locator"]>;
+    loginRedirectButton: ReturnType<Page["getByRole"]>;
+    otherUserButton: ReturnType<Page["getByRole"]>;
+    skipButton: ReturnType<Page["getByRole"]>;
+  },
+): Promise<void> {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (
+      (await dashboardHeading.isVisible().catch(() => false)) ||
+      (await loginNameInput.isVisible().catch(() => false)) ||
+      (await passwordInput.isVisible().catch(() => false)) ||
+      (await loginRedirectButton.isVisible().catch(() => false)) ||
+      (await otherUserButton.isVisible().catch(() => false)) ||
+      (await skipButton.isVisible().catch(() => false))
+    ) {
+      return;
+    }
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
+    await page.waitForTimeout(pollIntervalMS);
+  }
 }

@@ -3,15 +3,11 @@ import fs from "node:fs/promises";
 
 const runId = process.env.VERIFICATION_RUN_ID;
 const baseURL = process.env.TEST_BASE_URL ?? "https://rentasandbox.anveio.com";
-const authBaseURL =
-  process.env.ZITADEL_BASE_URL ??
-  (process.env.FORGE_METAL_DOMAIN ? `https://auth.${process.env.FORGE_METAL_DOMAIN}` : "https://auth.anveio.com");
 const routeBaseURL = normalizeBaseURL(baseURL);
 const deploymentDomain = process.env.FORGE_METAL_DOMAIN ?? inferDeploymentDomain(baseURL);
 const artifactDir = process.env.ADMIN_UI_ARTIFACT_DIR ?? "artifacts/admin-ui-check";
-const authOrLoginURL = createURLPattern(authBaseURL, ["/ui/login"]);
-const appURL = createURLPattern(baseURL);
-const postPasswordURL = createURLPattern(baseURL, ["/ui/mfa"]);
+const shortTimeoutMS = 5_000;
+const pollIntervalMS = 250;
 const accounts = [
   {
     label: "acme-admin",
@@ -55,6 +51,14 @@ try {
     page.on("requestfailed", (req) =>
       failedRequests.push({ url: req.url(), failure: req.failure()?.errorText || "unknown" }),
     );
+    const dashboardHeading = page.getByRole("heading", { name: "Dashboard" });
+    const balanceCard = page.getByTestId("balance-card");
+    const signOutLink = page.getByRole("link", { name: "Sign out" });
+    const loginNameInput = page.locator("#loginName");
+    const passwordInput = page.locator("#password");
+    const redirectButton = page.getByRole("button", { name: /click here/i });
+    const otherUserButton = page.getByRole("button", { name: /other user/i });
+    const skipButton = page.getByRole("button", { name: /^Skip$/ });
 
     const result = {
       label: account.label,
@@ -73,49 +77,28 @@ try {
 
     try {
       await page.goto("/");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
-      const dashboardHeading = page.getByRole("heading", { name: "Dashboard" });
-      const balanceCard = page.getByTestId("balance-card");
-      if (!(await dashboardHeading.isVisible().catch(() => false))) {
+      if (!(await isDashboardReady({ dashboardHeading, balanceCard, signOutLink }))) {
         await page.goto("/login");
-        await page.waitForLoadState("networkidle");
-
-        const redirectButton = page.getByRole("button", { name: "click here" });
-        if (await redirectButton.isVisible().catch(() => false)) {
-          await Promise.all([
-            page.waitForURL(authOrLoginURL, { timeout: 30000 }),
-            redirectButton.click(),
-          ]);
-        }
-
-        const loginNameInput = page.locator("#loginName");
-        await loginNameInput.waitFor({ state: "visible", timeout: 30000 });
-        await loginNameInput.fill(account.email);
-        await page.locator('button[type="submit"]').click();
-
-        const passwordInput = page.locator("#password");
-        await passwordInput.waitFor({ state: "visible", timeout: 15000 });
-        await passwordInput.fill(account.password);
-        await Promise.all([
-          page.waitForURL(postPasswordURL, { timeout: 30000 }),
-          page.locator('button[type="submit"]').click(),
-        ]);
-        const skipButton = page.getByRole("button", { name: /^Skip$/ });
-        if (await skipButton.isVisible().catch(() => false)) {
-          await Promise.all([
-            page.waitForURL(appURL, { timeout: 30000 }),
-            skipButton.click(),
-          ]);
-        }
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
+        await completeLoginFlow(page, {
+          email: account.email,
+          password: account.password,
+          dashboardHeading,
+          balanceCard,
+          signOutLink,
+          loginNameInput,
+          passwordInput,
+          redirectButton,
+          otherUserButton,
+          skipButton,
+        });
       }
 
-      await expect(dashboardHeading).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByRole("link", { name: "Sign out" })).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(balanceCard).toBeVisible({ timeout: 15_000 });
+      await expect(dashboardHeading).toBeVisible({ timeout: shortTimeoutMS });
+      await expect(signOutLink).toBeVisible({ timeout: shortTimeoutMS });
+      await expect(balanceCard).toBeVisible({ timeout: shortTimeoutMS });
 
       result.final_url = page.url();
       result.balance_visible = await balanceCard.isVisible().catch(() => false);
@@ -154,6 +137,15 @@ try {
     } catch (error) {
       result.status = "failed";
       result.error = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      result.final_url = page.url();
+      result.balance_visible = await balanceCard.isVisible().catch(() => false);
+      result.header_visible = await page
+        .getByRole("link", { name: "Rent-a-Sandbox" })
+        .isVisible()
+        .catch(() => false);
+      result.main_text = (await page.locator("main").innerText().catch(() => ""))
+        .trim()
+        .slice(0, 1500);
       await page
         .screenshot({
           path: `${artifactDir}/${account.label}-${runId}-failed.png`,
@@ -177,29 +169,141 @@ if (out.some((result) => result.status !== "ok")) {
   process.exitCode = 1;
 }
 
-function createURLPattern(base, extraPathPatterns = []) {
-  const normalizedBaseURL = normalizeBaseURL(base);
-  const basePattern = escapeRegex(normalizedBaseURL);
-  if (extraPathPatterns.length === 0) {
-    return new RegExp(`^${basePattern}(?:[/?#].*)?$`);
-  }
-
-  const pathPatterns = extraPathPatterns.map(
-    (pathPattern) => `${basePattern}${escapeRegex(pathPattern)}(?:[?#].*)?`,
-  );
-  return new RegExp(`^(?:${pathPatterns.join("|")})$`);
-}
-
 function normalizeBaseURL(baseURL) {
   return new URL(baseURL).href.replace(/\/$/, "");
+}
+
+async function completeLoginFlow(
+  page,
+  {
+    email,
+    password,
+    dashboardHeading,
+    balanceCard,
+    signOutLink,
+    loginNameInput,
+    passwordInput,
+    redirectButton,
+    otherUserButton,
+    skipButton,
+  },
+) {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (await isDashboardReady({ dashboardHeading, balanceCard, signOutLink })) {
+      return;
+    }
+
+    if (await redirectButton.isVisible().catch(() => false)) {
+      await redirectButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await otherUserButton.isVisible().catch(() => false)) {
+      await otherUserButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await loginNameInput.isVisible().catch(() => false)) {
+      await loginNameInput.fill(email);
+      await page.locator('button[type="submit"]').click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await passwordInput.isVisible().catch(() => false)) {
+      await passwordInput.fill(password);
+      await page.locator('button[type="submit"]').click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await skipButton.isVisible().catch(() => false)) {
+      await skipButton.click();
+      await waitForAuthBoundary(page, {
+        dashboardHeading,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    await page.waitForTimeout(pollIntervalMS);
+  }
+
+  throw new Error(`Unable to complete login flow from ${page.url()}`);
+}
+
+async function isDashboardReady({ dashboardHeading, balanceCard, signOutLink }) {
+  const [dashboardVisible, balanceVisible, signOutVisible] = await Promise.all([
+    dashboardHeading.isVisible().catch(() => false),
+    balanceCard.isVisible().catch(() => false),
+    signOutLink.isVisible().catch(() => false),
+  ]);
+  return dashboardVisible && balanceVisible && signOutVisible;
+}
+
+async function waitForAuthBoundary(
+  page,
+  {
+    dashboardHeading,
+    loginNameInput,
+    passwordInput,
+    redirectButton,
+    otherUserButton,
+    skipButton,
+  },
+) {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (
+      (await dashboardHeading.isVisible().catch(() => false)) ||
+      (await loginNameInput.isVisible().catch(() => false)) ||
+      (await passwordInput.isVisible().catch(() => false)) ||
+      (await redirectButton.isVisible().catch(() => false)) ||
+      (await otherUserButton.isVisible().catch(() => false)) ||
+      (await skipButton.isVisible().catch(() => false))
+    ) {
+      return;
+    }
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
+    await page.waitForTimeout(pollIntervalMS);
+  }
 }
 
 function inferDeploymentDomain(baseURL) {
   const hostname = new URL(baseURL).hostname;
   const segments = hostname.split(".");
   return segments.length > 1 ? segments.slice(1).join(".") : hostname;
-}
-
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
