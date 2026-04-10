@@ -14,15 +14,16 @@ import { formatDateUTC, formatInteger } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/billing/")({
   validateSearch: parseBillingFlashSearch,
-  loader: ({ context }) => loadBillingPage(context.queryClient),
+  loader: ({ context }) => loadBillingPage(context.queryClient, context.authState),
   component: BillingPage,
 });
 
 function BillingPage() {
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
   const flash = Route.useSearch();
-  const balance = useSuspenseQuery(balanceQuery()).data;
-  const subscriptions = useSuspenseQuery(subscriptionsQuery()).data;
-  const grants = useSuspenseQuery(activeGrantsQuery()).data;
+  const balance = useSuspenseQuery(balanceQuery(authState)).data;
+  const subscriptions = useSuspenseQuery(subscriptionsQuery(authState)).data;
+  const grants = useSuspenseQuery(activeGrantsQuery(authState)).data;
 
   const subscriptionRows = subscriptions.subscriptions ?? [];
   const grantRows = grants.grants ?? [];
@@ -73,7 +74,9 @@ function BillingPage() {
                     </td>
                     <td className="px-4 py-2">{subscription.cadence}</td>
                     <td className="px-4 py-2 text-muted-foreground">
-                      {subscription.current_period_end ? formatDateUTC(subscription.current_period_end) : "--"}
+                      {subscription.current_period_end
+                        ? formatDateUTC(subscription.current_period_end)
+                        : "--"}
                     </td>
                   </tr>
                 ))

@@ -33,10 +33,14 @@ export async function importRepoFromURL(
   await defaultBranchInput.fill(defaultBranch);
   await submitButton.click();
 
-  const repoId = await app.waitForCondition("repo import redirect", repoRedirectTimeoutMS, async () => {
-    const match = app.page.url().match(/\/repos\/([0-9a-f-]+)$/);
-    return match?.[1] ?? false;
-  });
+  const repoId = await app.waitForCondition(
+    "repo import redirect",
+    repoRedirectTimeoutMS,
+    async () => {
+      const match = app.page.url().match(/\/repos\/([0-9a-f-]+)$/);
+      return match?.[1] ?? false;
+    },
+  );
 
   const repoName = await app.readText(app.page.getByRole("heading", { level: 1 }).first());
   const bootstrap = await waitForRepoReady(app);
@@ -95,8 +99,7 @@ export async function refreshRepoGolden(
     return sourceSHA === refreshedSha && state === "ready";
   });
 
-  const executionHref = await app
-    .page
+  const executionHref = await app.page
     .getByRole("link", { name: "View bootstrap execution" })
     .getAttribute("href");
 
@@ -111,10 +114,14 @@ export async function launchExecutionFromRepo(app: SandboxHarness): Promise<{
   execution_id: string;
 }> {
   await app.page.getByRole("button", { name: "Run Execution" }).click();
-  const executionId = await app.waitForCondition("execution launch redirect", repoRedirectTimeoutMS, async () => {
-    const match = app.page.url().match(/\/jobs\/([0-9a-f-]+)$/);
-    return match?.[1] ?? false;
-  });
+  const executionId = await app.waitForCondition(
+    "execution launch redirect",
+    repoRedirectTimeoutMS,
+    async () => {
+      const match = app.page.url().match(/\/jobs\/([0-9a-f-]+)$/);
+      return match?.[1] ?? false;
+    },
+  );
 
   return { execution_id: executionId };
 }
@@ -172,8 +179,14 @@ export async function waitForExecutionSuccess(
       .getByRole("heading", { name: executionPrefix })
       .isVisible()
       .catch(() => false);
-    const statusVisible = await app.page.getByText("succeeded", { exact: true }).isVisible().catch(() => false);
-    const logText = await app.page.locator("pre").innerText().catch(() => "");
+    const statusVisible = await app.page
+      .getByText("succeeded", { exact: true })
+      .isVisible()
+      .catch(() => false);
+    const logText = await app.page
+      .locator("pre")
+      .innerText()
+      .catch(() => "");
     if (headingVisible && statusVisible && logText.includes(logMarker)) {
       return true;
     }
@@ -196,8 +209,7 @@ export async function waitForRepoReady(app: SandboxHarness): Promise<{
     return state === "ready" && executionLinkVisible;
   });
 
-  const executionHref = await app
-    .page
+  const executionHref = await app.page
     .getByRole("link", { name: "View bootstrap execution" })
     .getAttribute("href");
 

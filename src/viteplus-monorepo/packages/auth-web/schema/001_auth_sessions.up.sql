@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS auth_sessions (
   session_id TEXT PRIMARY KEY,
   app_name TEXT NOT NULL,
+  client_cache_partition TEXT NOT NULL,
   subject TEXT NOT NULL,
   email TEXT,
   display_name TEXT,

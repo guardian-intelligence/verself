@@ -1,5 +1,7 @@
-import { createMiddleware } from "@tanstack/react-start";
+import { redirect } from "@tanstack/react-router";
+import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import * as v from "valibot";
 
 export interface AuthUser {
   sub: string;
@@ -37,7 +39,7 @@ export interface AuthConfig {
   postLogoutRedirectPath: string;
 }
 
-type AuthConfigSource = AuthConfig | (() => AuthConfig);
+export type AuthConfigSource = AuthConfig | (() => AuthConfig);
 
 interface ProviderMetadata {
   issuer: string;
@@ -64,6 +66,7 @@ interface AuthCookieData {
 interface StoredAuthSessionRow {
   session_id: string;
   app_name: string;
+  client_cache_partition: string;
   subject: string;
   email: string | null;
   display_name: string | null;
@@ -82,6 +85,7 @@ interface StoredAuthSessionRow {
 
 export interface AuthSession {
   sessionID: string;
+  clientCachePartition: string;
   accessToken: string;
   refreshToken: string | null;
   idToken: string | null;
@@ -101,6 +105,20 @@ export interface AuthViewer {
   roles: string[];
   roleAssignments: AuthRoleAssignment[];
 }
+
+export interface AnonymousAuthState {
+  viewer: null;
+  cachePartition: null;
+  isAuthenticated: false;
+}
+
+export interface AuthenticatedAuthState {
+  viewer: AuthViewer;
+  cachePartition: string;
+  isAuthenticated: true;
+}
+
+export type AuthState = AnonymousAuthState | AuthenticatedAuthState;
 
 interface TokenResponse {
   access_token: string;
@@ -149,6 +167,9 @@ interface RefreshResult {
 }
 
 const pendingLoginTTL = 5 * 60 * 1000;
+const loginRedirectInputSchema = v.object({
+  redirectTo: v.optional(v.nullable(v.string())),
+});
 
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -502,6 +523,7 @@ function buildUserSnapshot(
 function rowToAuthSession(row: StoredAuthSessionRow): AuthSession {
   return {
     sessionID: row.session_id,
+    clientCachePartition: row.client_cache_partition,
     accessToken: row.access_token,
     refreshToken: row.refresh_token,
     idToken: row.id_token,
@@ -543,6 +565,7 @@ async function readStoredSession(
     SELECT
       session_id,
       app_name,
+      client_cache_partition,
       subject,
       email,
       display_name,
@@ -570,6 +593,7 @@ async function readStoredSession(
 async function writeStoredSession(
   config: AuthConfig,
   sessionID: string,
+  clientCachePartition: string,
   tokens: TokenResponse,
   user: AuthUser,
 ): Promise<void> {
@@ -579,6 +603,7 @@ async function writeStoredSession(
     INSERT INTO auth_sessions (
       session_id,
       app_name,
+      client_cache_partition,
       subject,
       email,
       display_name,
@@ -594,6 +619,7 @@ async function writeStoredSession(
     ) VALUES (
       ${sessionID},
       ${config.appName},
+      ${clientCachePartition},
       ${user.sub},
       ${user.email},
       ${user.name},
@@ -609,6 +635,7 @@ async function writeStoredSession(
     )
     ON CONFLICT (session_id) DO UPDATE SET
       app_name = EXCLUDED.app_name,
+      client_cache_partition = EXCLUDED.client_cache_partition,
       subject = EXCLUDED.subject,
       email = EXCLUDED.email,
       display_name = EXCLUDED.display_name,
@@ -703,7 +730,7 @@ async function refreshStoredSession(
   const accessTokenClaims = decodeJwt(refreshed.access_token);
   const userInfoClaims = await fetchUserInfo(metadata, refreshed.access_token);
   const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims, userInfoClaims);
-  await writeStoredSession(config, stored.sessionID, refreshed, user);
+  await writeStoredSession(config, stored.sessionID, stored.clientCachePartition, refreshed, user);
   return {
     session: await readStoredSession(config, stored.sessionID),
     revoked: false,
@@ -801,8 +828,9 @@ export async function finishLogin(config: AuthConfig): Promise<{
   const userInfoClaims = await fetchUserInfo(metadata, tokens.access_token);
   const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims, userInfoClaims);
   const sessionID = crypto.randomUUID();
+  const clientCachePartition = randomToken(24);
 
-  await writeStoredSession(config, sessionID, tokens, user);
+  await writeStoredSession(config, sessionID, clientCachePartition, tokens, user);
   await session.clear();
   await session.update({ sessionID });
 
@@ -854,6 +882,52 @@ export async function getAuthViewer(config: AuthConfigSource): Promise<AuthViewe
   return user ? toAuthViewer(user) : null;
 }
 
+export async function getAuthState(config: AuthConfigSource): Promise<AuthState> {
+  const session = await getAuthSession(resolveAuthConfig(config));
+  if (!session) {
+    return {
+      viewer: null,
+      cachePartition: null,
+      isAuthenticated: false,
+    };
+  }
+
+  return {
+    viewer: toAuthViewer(session.user),
+    cachePartition: session.clientCachePartition,
+    isAuthenticated: true,
+  };
+}
+
+export function createAuthServerFns(config: AuthConfigSource) {
+  const authMiddleware = createAuthMiddleware(config);
+  const getAuthStateServerFn = createServerFn({ method: "GET" }).handler(async () =>
+    getAuthState(config),
+  );
+  const getViewerServerFn = createServerFn({ method: "GET" }).handler(async () =>
+    getAuthViewer(config),
+  );
+  const getLoginRedirectURL = createServerFn({ method: "GET" })
+    .inputValidator(loginRedirectInputSchema)
+    .handler(async ({ data }) => beginLogin(resolveAuthConfig(config), data.redirectTo));
+  const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+    const { redirectTo } = await finishLogin(resolveAuthConfig(config));
+    return redirectTo;
+  });
+  const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () =>
+    logout(config),
+  );
+
+  return {
+    authMiddleware,
+    getAuthState: getAuthStateServerFn,
+    getViewer: getViewerServerFn,
+    getLoginRedirectURL,
+    getCallbackRedirectURL,
+    getLogoutRedirectURL,
+  };
+}
+
 export function createAuthMiddleware(config: AuthConfigSource) {
   // TanStack Start resolves server function handlers from app modules, so keep
   // auth config lazy and server-side to avoid bundling env lookups into the client.
@@ -876,6 +950,34 @@ export async function requireAccessToken(config: AuthConfigSource): Promise<stri
     throw new Error("Authentication required");
   }
   return session.accessToken;
+}
+
+export function loginRedirect(locationHref: string) {
+  return redirect({
+    to: "/login",
+    search: { redirect: locationHref },
+  });
+}
+
+export function requireAuthenticatedAuthState(
+  authState: AuthState,
+  locationHref: string,
+): AuthenticatedAuthState {
+  if (!authState.isAuthenticated) {
+    throw loginRedirect(locationHref);
+  }
+  return authState;
+}
+
+export function authQueryKey<TParts extends readonly unknown[]>(
+  authState: AuthenticatedAuthState,
+  ...parts: TParts
+) {
+  return ["auth", authState.cachePartition, ...parts] as const;
+}
+
+export function authCollectionId(authState: AuthenticatedAuthState, baseId: string): string {
+  return `auth:${authState.cachePartition}:${baseId}`;
 }
 
 export async function logout(config: AuthConfigSource): Promise<string> {

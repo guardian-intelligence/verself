@@ -4,11 +4,12 @@ import { ExecutionListPanel } from "~/features/jobs/components";
 import { loadJobsIndex } from "~/features/jobs/queries";
 
 export const Route = createFileRoute("/_authenticated/jobs/")({
-  loader: ({ context }) => loadJobsIndex(context.queryClient),
+  loader: ({ context }) => loadJobsIndex(context.queryClient, context.authState),
   component: JobsPage,
 });
 
 function JobsPage() {
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
   const balance = Route.useLoaderData();
 
   const creditsExhausted = balance.total_available <= 0;
@@ -56,7 +57,7 @@ function JobsPage() {
         </Callout>
       )}
 
-      <ExecutionListPanel orgId={balance.org_id} />
+      <ExecutionListPanel authState={authState} orgId={balance.org_id} />
     </div>
   );
 }

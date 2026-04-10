@@ -172,8 +172,9 @@ export const unpublishPost = createServerFn({ method: "POST" })
 
 /** Fetch all published posts for SSR, normalized to the Electric shape. */
 export const listPublishedPosts = createServerFn({ method: "GET" }).handler(async () =>
-  withLettersDb(async (sql) =>
-    sql`
+  withLettersDb(
+    async (sql) =>
+      sql`
       SELECT
         id,
         slug,
@@ -200,8 +201,9 @@ export const listPublishedPosts = createServerFn({ method: "GET" }).handler(asyn
 export const listAllPosts = createServerFn({ method: "GET" })
   .middleware([lettersAuthMiddleware])
   .handler(async () =>
-    withLettersDb(async (sql) =>
-      sql`
+    withLettersDb(
+      async (sql) =>
+        sql`
         SELECT
           id,
           slug,

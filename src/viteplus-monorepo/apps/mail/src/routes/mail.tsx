@@ -149,13 +149,7 @@ function MailShell({ account }: { account: MailAccount }) {
   const defaultMailboxID = account.default_mailbox_id ?? sortedMailboxes[0]?.id;
 
   if (isMailboxRoot && defaultMailboxID) {
-    return (
-      <Navigate
-        to="/mail/$mailboxId"
-        params={{ mailboxId: defaultMailboxID }}
-        replace
-      />
-    );
+    return <Navigate to="/mail/$mailboxId" params={{ mailboxId: defaultMailboxID }} replace />;
   }
 
   return (

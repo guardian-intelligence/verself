@@ -67,10 +67,7 @@ function actionableFailures(requests) {
     if (!request.url.startsWith(routeBaseURL)) {
       return false;
     }
-    return !(
-      request.failure === "net::ERR_ABORTED" &&
-      request.url.includes("/v1/shape")
-    );
+    return !(request.failure === "net::ERR_ABORTED" && request.url.includes("/v1/shape"));
   });
 }
 
@@ -131,7 +128,12 @@ try {
       `Editor list changed during hydration: ${result.editor_title_before_hydration} -> ${result.editor_title_after_hydration}`,
     );
   }
-  if (await page.getByText("No posts yet. Start writing!").isVisible().catch(() => false)) {
+  if (
+    await page
+      .getByText("No posts yet. Start writing!")
+      .isVisible()
+      .catch(() => false)
+  ) {
     throw new Error("Editor dashboard collapsed to the empty state after hydration");
   }
 
@@ -169,7 +171,8 @@ try {
   sameOriginFailures = actionableFailures(failedRequests);
   const hydrationWarnings = consoleMessages.filter(
     (message) =>
-      message.type === "error" && /hydration|did not match|text content does not match/i.test(message.text),
+      message.type === "error" &&
+      /hydration|did not match|text content does not match/i.test(message.text),
   );
   if (pageErrors.length > 0 || sameOriginFailures.length > 0 || hydrationWarnings.length > 0) {
     throw new Error(
@@ -307,14 +310,7 @@ async function completeLoginFlow(
 
 async function waitForAuthBoundary(
   page,
-  {
-    readyLocator,
-    loginNameInput,
-    passwordInput,
-    redirectButton,
-    otherUserButton,
-    skipButton,
-  },
+  { readyLocator, loginNameInput, passwordInput, redirectButton, otherUserButton, skipButton },
 ) {
   for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
     if (

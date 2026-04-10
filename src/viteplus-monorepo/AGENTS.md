@@ -28,6 +28,7 @@ Vite+ automatically detects and wraps the underlying package manager such as pnp
 - `vp info` (`view`, `show`) - View package information from the registry
 - `vp link` (`ln`) / unlink - Manage local package links
 - `vp pm` - Forward a command to the package manager
+- `vp fmt . --write ` - Format the monorepo with Oxfmt
 
 ### Maintain
 
@@ -193,3 +194,7 @@ Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandb
 3. **`RELEASE_NAME`** — Elixir/Erlang BEAM node name. Both instances run with `--network=host`, so their Erlang nodes collide on the same hostname. Without a distinct name, the second container exits with "the name electric@hostname seems to be in use by another Erlang node".
 
 Each Electric instance also needs its own publication (`CREATE PUBLICATION ... FOR TABLE ...`) with `REPLICA IDENTITY FULL` on all synced tables. The publication name is derived from the stream ID: `electric_publication_{stream_id}` (default: `electric_publication_default`). Since publications are per-database, the default name works if instances target different databases — but setting `ELECTRIC_REPLICATION_STREAM_ID` changes the expected publication name too.
+
+**Frontend SSR footgun:** browser-visible time formatting is hydration-sensitive. `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()` without an explicit timezone will drift between server and browser and can cause React to throw away SSR output during hydration. Do not introduce app-local date formatting helpers for SSR-visible timestamps.
+
+**Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `letters`, `mail`, and `rent-a-sandbox` render the same text on the server and client.

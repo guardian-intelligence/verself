@@ -1,9 +1,13 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import type { AuthenticatedAuthState } from "@forge-metal/auth-web";
 import { createExecutionLogsCollection, createExecutionsCollection } from "~/lib/collections";
 
-export function useExecutionRows(orgId: string) {
-  const collection = useMemo(() => createExecutionsCollection(orgId), [orgId]);
+export function useExecutionRows(authState: AuthenticatedAuthState, orgId: string) {
+  const collection = useMemo(
+    () => createExecutionsCollection(authState, orgId),
+    [authState.cachePartition, orgId],
+  );
   const liveQuery = useLiveQuery(collection);
   const executions = useMemo(() => sortExecutions(liveQuery.data), [liveQuery.data]);
 
@@ -14,8 +18,11 @@ export function useExecutionRows(orgId: string) {
   };
 }
 
-export function useExecutionLogs(attemptId: string) {
-  const collection = useMemo(() => createExecutionLogsCollection(attemptId), [attemptId]);
+export function useExecutionLogs(authState: AuthenticatedAuthState, attemptId: string) {
+  const collection = useMemo(
+    () => createExecutionLogsCollection(authState, attemptId),
+    [attemptId, authState.cachePartition],
+  );
   const liveQuery = useLiveQuery(collection);
   const orderedLogs = useMemo(() => sortLogChunks(liveQuery.data), [liveQuery.data]);
   const logText = useMemo(() => buildLogText(orderedLogs), [orderedLogs]);

@@ -6,7 +6,7 @@ import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
 import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/_authenticated/billing/credits")({
-  loader: ({ context }) => loadBalance(context.queryClient),
+  loader: ({ context }) => loadBalance(context.queryClient, context.authState),
   component: CreditsPage,
 });
 
@@ -18,7 +18,8 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const balance = useSuspenseQuery(balanceQuery()).data;
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
+  const balance = useSuspenseQuery(balanceQuery(authState)).data;
   const mutation = useCreateCheckoutSessionMutation();
 
   return (

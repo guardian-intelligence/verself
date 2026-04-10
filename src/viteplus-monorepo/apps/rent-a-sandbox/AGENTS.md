@@ -29,7 +29,7 @@ Auth state is server-owned (`@forge-metal/auth-web` + HTTP-only session cookie +
 
 - Public routes stay at the root of `src/routes/`.
 - Protected screens live under `src/routes/_authenticated/`.
-- Only `src/routes/_authenticated/route.tsx` should call `requireViewer(...)`. Child routes should not repeat auth gating.
+- Only `src/routes/_authenticated/route.tsx` should call `requireAuthenticatedAuthState(...)`. Child routes should not repeat auth gating.
 - Router-owned transport states come from app-wide boundaries in `src/router.tsx` (`defaultPendingComponent`, `defaultErrorComponent`, `defaultNotFoundComponent`), not per-page `if (!data)` fallbacks.
 - Reserve `<ClientOnly>` for browser-only leaf widgets such as Electric-powered tables and logs, not auth or route protection.
 

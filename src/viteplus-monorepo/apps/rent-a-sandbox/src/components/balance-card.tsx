@@ -18,16 +18,22 @@ export function BalanceCard({ balance }: { balance: Balance }) {
       </div>
       <div className="mt-3 flex gap-6 text-sm text-muted-foreground">
         <div>
-          <span className="font-medium text-foreground">{formatInteger(balance.free_tier_available)}</span>{" "}
+          <span className="font-medium text-foreground">
+            {formatInteger(balance.free_tier_available)}
+          </span>{" "}
           free tier
         </div>
         <div>
-          <span className="font-medium text-foreground">{formatInteger(balance.credit_available)}</span>{" "}
+          <span className="font-medium text-foreground">
+            {formatInteger(balance.credit_available)}
+          </span>{" "}
           purchased
         </div>
         {balance.credit_pending > 0 && (
           <div>
-            <span className="font-medium text-foreground">{formatInteger(balance.credit_pending)}</span>{" "}
+            <span className="font-medium text-foreground">
+              {formatInteger(balance.credit_pending)}
+            </span>{" "}
             pending
           </div>
         )}

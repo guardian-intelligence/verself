@@ -4,12 +4,13 @@ import { RepoListEmptyState, RepoListItem } from "~/features/repos/components";
 import { loadReposIndex, reposQuery } from "~/features/repos/queries";
 
 export const Route = createFileRoute("/_authenticated/repos/")({
-  loader: ({ context }) => loadReposIndex(context.queryClient),
+  loader: ({ context }) => loadReposIndex(context.queryClient, context.authState),
   component: ReposPage,
 });
 
 function ReposPage() {
-  const repos = useSuspenseQuery(reposQuery()).data;
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
+  const repos = useSuspenseQuery(reposQuery(authState)).data;
 
   return (
     <div className="space-y-6">

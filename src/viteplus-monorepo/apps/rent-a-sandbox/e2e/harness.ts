@@ -11,7 +11,11 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import { env } from "./env";
-import { createVerificationRun, persistVerificationRun, type VerificationRun } from "./verification-run";
+import {
+  createVerificationRun,
+  persistVerificationRun,
+  type VerificationRun,
+} from "./verification-run";
 
 const execFile = promisify(execFileCallback);
 

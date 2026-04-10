@@ -32,15 +32,16 @@ type StandardSchemaLike<Input = unknown, Output = Input> = {
       value: unknown,
       options?: { readonly libraryOptions?: Record<string, unknown> | undefined },
     ) => StandardResult<Output> | Promise<StandardResult<Output>>;
-    readonly types?: {
-      readonly input: Input;
-      readonly output: Output;
-    } | undefined;
+    readonly types?:
+      | {
+          readonly input: Input;
+          readonly output: Output;
+        }
+      | undefined;
     readonly vendor: string;
     readonly version: 1;
   };
 };
-
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digitsPattern = /^\d+$/;
@@ -197,7 +198,11 @@ export const electricStringifiedIntegerSchema = v.union([
 // Electric serializes PostgreSQL booleans as "true"/"false" strings in payloads.
 export const electricStringifiedBooleanSchema = v.union([
   v.boolean(),
-  v.pipe(v.string(), v.regex(electricBooleanPattern), v.transform((value) => value === "true")),
+  v.pipe(
+    v.string(),
+    v.regex(electricBooleanPattern),
+    v.transform((value) => value === "true"),
+  ),
 ]);
 
 export function electricEqualsWhere(column: string, validatedValue: string): string {
