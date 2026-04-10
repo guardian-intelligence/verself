@@ -3,6 +3,7 @@ letters_subdomain: letters
 letters_domain: "{{ letters_subdomain }}.{{ forge_metal_domain }}"
 letters_install_dir: /opt/letters
 letters_app_dir: "{{ letters_install_dir }}/apps/letters"
+letters_dependencies_fingerprint_path: "{{ letters_install_dir }}/.pnpm-install-fingerprint"
 letters_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 letters_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 letters_auth_project_name: letters

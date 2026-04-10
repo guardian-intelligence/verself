@@ -7,6 +7,12 @@
     group: "{{ ansible_user }}"
     mode: "0750"
 
+- name: Verify corepack exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/corepack"
+  register: rent_a_sandbox_corepack
+  failed_when: not rent_a_sandbox_corepack.stat.exists
+
 - name: Check for existing rent-a-sandbox auth session secret
   ansible.builtin.stat:
     path: /etc/credstore/rent-a-sandbox/auth-session-secret
@@ -44,14 +50,10 @@
     path: "{{ item }}"
     state: absent
   loop:
-    - "{{ rent_a_sandbox_install_dir }}/node_modules"
     - "{{ rent_a_sandbox_install_dir }}/.output"
     - "{{ rent_a_sandbox_install_dir }}/.tanstack"
-    - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/node_modules"
     - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.output"
     - "{{ rent_a_sandbox_install_dir }}/apps/rent-a-sandbox/.tanstack"
-    - "{{ rent_a_sandbox_install_dir }}/packages/ui/node_modules"
-    - "{{ rent_a_sandbox_install_dir }}/packages/ui/dist"
 
 - name: Synchronize rent-a-sandbox source
   delegate_to: localhost
@@ -73,11 +75,44 @@
       - "--exclude=playwright-report"
       - "--exclude=test-results"
       - "--exclude=HANDOFF_PROMPT.md"
-      - "--delete-excluded"
+      # delete-excluded would wipe remote node_modules and defeat incremental deploys.
       - "--no-owner"
       - "--no-group"
 
-- name: Install rent-a-sandbox workspace dependencies
+- name: Compute rent-a-sandbox workspace dependency fingerprint
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        cd {{ playbook_dir }}/../../../viteplus-monorepo
+        {
+          printf '%s\0' package.json pnpm-lock.yaml pnpm-workspace.yaml apps/rent-a-sandbox/package.json
+          find packages -mindepth 2 -maxdepth 2 -name package.json -print0
+        } | sort -z | xargs -0 sha256sum | sha256sum
+  register: rent_a_sandbox_workspace_dependency_fingerprint
+  changed_when: false
+
+- name: Check cached rent-a-sandbox install fingerprint
+  ansible.builtin.stat:
+    path: "{{ rent_a_sandbox_dependencies_fingerprint_path }}"
+  register: rent_a_sandbox_install_fingerprint_file
+
+- name: Read cached rent-a-sandbox install fingerprint
+  ansible.builtin.slurp:
+    src: "{{ rent_a_sandbox_dependencies_fingerprint_path }}"
+  register: rent_a_sandbox_install_fingerprint_raw
+  when: rent_a_sandbox_install_fingerprint_file.stat.exists
+
+- name: Check cached rent-a-sandbox node_modules
+  ansible.builtin.stat:
+    path: "{{ rent_a_sandbox_install_dir }}/node_modules"
+  register: rent_a_sandbox_node_modules_dir
+
+- name: Install rent-a-sandbox workspace dependencies when manifests change
   become: false
   ansible.builtin.command:
     argv:
@@ -89,17 +124,48 @@
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
+  when: >-
+    (not rent_a_sandbox_node_modules_dir.stat.exists)
+    or (not rent_a_sandbox_install_fingerprint_file.stat.exists)
+    or (
+      (rent_a_sandbox_install_fingerprint_raw.content | default('') | b64decode | trim)
+      != (rent_a_sandbox_workspace_dependency_fingerprint.stdout.split()[0] | trim)
+    )
 
-- name: Build rent-a-sandbox workspace
+- name: Record cached rent-a-sandbox install fingerprint
+  ansible.builtin.copy:
+    content: "{{ rent_a_sandbox_workspace_dependency_fingerprint.stdout.split()[0] | trim }}\n"
+    dest: "{{ rent_a_sandbox_dependencies_fingerprint_path }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+- name: Build rent-a-sandbox package dependencies
   become: false
   ansible.builtin.command:
     argv:
       - "{{ fm_bin }}/corepack"
       - pnpm
-      - exec
-      - vp
+      - --filter
+      - "@forge-metal/rent-a-sandbox^..."
       - run
-      - -r
+      - build
+    chdir: "{{ rent_a_sandbox_install_dir }}"
+  environment:
+    PATH: "{{ fm_bin }}:/usr/bin:/bin"
+    HOME: "/home/{{ ansible_user }}"
+  changed_when: true
+  notify: Restart rent-a-sandbox
+
+- name: Build rent-a-sandbox app
+  become: false
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/corepack"
+      - pnpm
+      - --filter
+      - "@forge-metal/rent-a-sandbox"
+      - run
       - build
     chdir: "{{ rent_a_sandbox_install_dir }}"
   environment:

@@ -1,10 +1,14 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { expect, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { env } from "./env";
 
 const execFile = promisify(execFileCallback);
+export const verificationRunHeader = "X-Forge-Metal-Verification-Run";
+const authOrLoginURL = createURLPattern(env.zitadelBaseURL, ["/ui/login"]);
+const appURL = createURLPattern(env.baseURL);
+const postPasswordURL = createURLPattern(env.baseURL, ["/ui/mfa"]);
 
 export async function ensureTestUserExists(): Promise<void> {
   if (!env.zitadelAdminPAT) return;
@@ -97,7 +101,7 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   }
   if (await loginRedirectButton.isVisible().catch(() => false)) {
     await Promise.all([
-      page.waitForURL(/auth\.anveio\.com|\/ui\/login/, { timeout: 30_000 }),
+      page.waitForURL(authOrLoginURL, { timeout: 30_000 }),
       loginRedirectButton.click(),
     ]);
   }
@@ -110,9 +114,16 @@ export async function ensureLoggedIn(page: Page): Promise<void> {
   await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
   await passwordInput.fill(env.testPassword);
   await Promise.all([
-    page.waitForURL(/rentasandbox\./, { timeout: 30_000 }),
+    page.waitForURL(postPasswordURL, { timeout: 30_000 }),
     page.locator("button[type='submit']").click(),
   ]);
+  const skipButton = page.getByRole("button", { name: /^Skip$/ });
+  if (await skipButton.isVisible().catch(() => false)) {
+    await Promise.all([
+      page.waitForURL(appURL, { timeout: 30_000 }),
+      skipButton.click(),
+    ]);
+  }
 
   await page.waitForLoadState("networkidle");
   await expect(balanceCard).toBeVisible({ timeout: 15_000 });
@@ -175,6 +186,20 @@ export async function installVerificationOverlay(
   );
 }
 
+export async function installVerificationHeader(
+  context: BrowserContext,
+  verificationRunID: string,
+): Promise<void> {
+  await context.route(`${env.baseURL}/**`, async (route) => {
+    await route.continue({
+      headers: {
+        ...route.request().headers(),
+        [verificationRunHeader]: verificationRunID,
+      },
+    });
+  });
+}
+
 export interface VerificationRepoMeta {
   owner: string;
   repo_name: string;
@@ -198,4 +223,14 @@ export async function pushVerificationRepoRevision(
     },
   });
   return JSON.parse(stdout) as VerificationRepoMeta;
+}
+
+function createURLPattern(baseURL: string, extraPathPatterns: string[] = []): RegExp {
+  const hostPattern = escapeRegex(new URL(baseURL).host);
+  const pathPatterns = extraPathPatterns.map((pathPattern) => escapeRegex(pathPattern));
+  return new RegExp([hostPattern, ...pathPatterns].join("|"));
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

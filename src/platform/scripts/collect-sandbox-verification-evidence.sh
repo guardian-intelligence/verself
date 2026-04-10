@@ -13,9 +13,8 @@ if [[ ! -f "${run_json_path}" ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "${script_dir}/../../.." && pwd)"
-platform_root="${repo_root}/src/platform"
-inventory="${platform_root}/ansible/inventory/hosts.ini"
+source "${script_dir}/lib/verification-context.sh"
+verification_context_init "${BASH_SOURCE[0]}"
 output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
 
 mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres" "${output_dir}/tigerbeetle"
@@ -69,26 +68,20 @@ started_balance="${run_meta[12]}"
 finished_balance="${run_meta[13]}"
 run_error="${run_meta[14]}"
 
-remote_host="$(grep -m1 'ansible_host=' "${inventory}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
-remote_user="$(grep -m1 'ansible_user=' "${inventory}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
-ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
-
 ch_query() {
-  (cd "${platform_root}" && ./scripts/clickhouse.sh --query "$1")
+  (cd "${VERIFICATION_PLATFORM_ROOT}" && ./scripts/clickhouse.sh --query "$1")
 }
 
 remote_psql() {
   local db="$1"
   local sql="$2"
-  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-    "sudo -u postgres psql -d ${db} -X -A -P footer=off" <<<"${sql}"
+  verification_ssh "sudo -u postgres psql -d ${db} -X -A -P footer=off" <<<"${sql}"
 }
 
 remote_psql_tsv() {
   local db="$1"
   local sql="$2"
-  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-    "sudo -u postgres psql -d ${db} -X -A -t -F $'\t' -P footer=off -c \"$sql\""
+  verification_ssh "sudo -u postgres psql -d ${db} -X -A -t -F \$'\\t' -P footer=off -c \"$sql\""
 }
 
 if [[ -n "${execution_id}" && ( -z "${repo_id}" || -z "${attempt_id}" ) ]]; then
@@ -329,8 +322,7 @@ PY
 
 for grant_id in "${grant_ids[@]}"; do
   [[ -n "${grant_id}" ]] || continue
-  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-    "sudo /opt/forge-metal/profile/bin/tb-inspect '${grant_id}'" \
+  verification_ssh "sudo /opt/forge-metal/profile/bin/tb-inspect '${grant_id}'" \
     >"${output_dir}/tigerbeetle/grant-${grant_id}.txt"
 done
 

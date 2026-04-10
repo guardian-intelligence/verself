@@ -1,7 +1,8 @@
-.PHONY: build clean test test-integration lint lint-ansible fmt vet tidy \
-       hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset vm-guest-telemetry-build \
-       traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes mail-code mail-read mail-send \
-       mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo verify-sandbox-live
+.PHONY: build clean test test-integration lint lint-ansible fmt vet tidy openapi openapi-check \
+       hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset \
+       vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
+       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
+       sandbox-inner sandbox-middle sandbox-proof
 
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
@@ -62,6 +63,23 @@ tidy:
 	cd $(OT) && go mod tidy
 	cd $(WL) && go mod tidy
 
+openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
+	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml
+	go run ./$(BS)/cmd/billing-openapi --format 3.1 > $(BS)/openapi/openapi-3.1.yaml
+	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
+	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
+	mkdir -p $(SR)/openapi
+	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.0 > $(SR)/openapi/openapi-3.0.yaml
+	go run ./$(SR)/cmd/sandbox-rental-openapi --format 3.1 > $(SR)/openapi/openapi-3.1.yaml
+
+openapi-check: ## Verify committed OpenAPI specs are up to date
+	cd $(BS) && go run ./cmd/billing-openapi --format 3.0 --check
+	cd $(BS) && go run ./cmd/billing-openapi --format 3.1 --check
+	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
+	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
+	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
+	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
+
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
 
@@ -80,7 +98,13 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
 	cd $(FM) && ./scripts/ensure-verification-repo.sh
 
-verify-sandbox-live: inventory-check ## Reset, deploy, seed, run Playwright sandbox verification, and collect evidence
+sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
+	cd $(FM) && ./scripts/sandbox-inner.sh
+
+sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none SANDBOX_SEED_VERIFY=1
+	cd $(FM) && ./scripts/sandbox-middle.sh
+
+sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live repo-exec verification
 	cd $(FM) && ./scripts/verify-sandbox-live.sh
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]

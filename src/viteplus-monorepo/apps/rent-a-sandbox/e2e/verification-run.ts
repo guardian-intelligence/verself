@@ -1,0 +1,67 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { env } from "./env";
+
+export interface VerificationRun {
+  verification_run_id: string;
+  repo_url: string;
+  ref: string;
+  repo_id: string;
+  bootstrap_generation_id: string;
+  bootstrap_execution_id: string;
+  bootstrap_attempt_id: string;
+  bootstrap_source_sha: string;
+  refresh_generation_id: string;
+  refresh_execution_id: string;
+  refresh_attempt_id: string;
+  refreshed_commit_sha: string;
+  submit_requested_at: string;
+  execution_id: string;
+  attempt_id: string;
+  started_balance: number;
+  finished_balance: number;
+  status: string;
+  detail_url: string;
+  log_marker: string;
+  terminal_observed_at: string;
+  error: string;
+}
+
+export function createVerificationRun(verificationRunID: string): VerificationRun {
+  return {
+    verification_run_id: verificationRunID,
+    repo_url: env.verificationRepoURL,
+    ref: env.verificationRepoRef,
+    repo_id: "",
+    bootstrap_generation_id: "",
+    bootstrap_execution_id: "",
+    bootstrap_attempt_id: "",
+    bootstrap_source_sha: "",
+    refresh_generation_id: "",
+    refresh_execution_id: "",
+    refresh_attempt_id: "",
+    refreshed_commit_sha: "",
+    submit_requested_at: new Date().toISOString(),
+    execution_id: "",
+    attempt_id: "",
+    started_balance: 0,
+    finished_balance: 0,
+    status: "unknown",
+    detail_url: "",
+    log_marker: env.verificationLogMarker,
+    terminal_observed_at: "",
+    error: "",
+  };
+}
+
+export async function persistVerificationRun(
+  runJSONPath: string,
+  run: VerificationRun,
+): Promise<void> {
+  if (!run.terminal_observed_at) {
+    run.terminal_observed_at = new Date().toISOString();
+  }
+
+  await fs.mkdir(path.dirname(runJSONPath), { recursive: true });
+  await fs.writeFile(runJSONPath, JSON.stringify(run, null, 2));
+}
