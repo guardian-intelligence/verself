@@ -1,7 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createAllPostsCollection, type ElectricPost } from "~/lib/collections";
+import { formatPostDate, parsePostContent, parsePostTags } from "~/lib/post-utils";
+import type { JsonValue } from "~/server-fns/validation";
 import {
   updatePost,
   publishPost,
@@ -24,25 +26,51 @@ export const Route = createFileRoute("/editor/$slug")({
 
 function EditPostPage() {
   const { post: initialPost } = Route.useLoaderData();
-  const { slug } = Route.useParams();
-  const navigate = useNavigate();
+  if (!initialPost) {
+    return (
+      <div className="py-12 text-center">
+        <h1 className="text-xl font-bold mb-2">Post not found</h1>
+        <p className="text-muted-foreground">This post may have been deleted.</p>
+      </div>
+    );
+  }
 
-  // Live updates from Electric
+  return (
+    <ClientOnly fallback={<EditPostPageContent post={initialPost} />}>
+      <LiveEditPostPage initialPost={initialPost} />
+    </ClientOnly>
+  );
+}
+
+function LiveEditPostPage({
+  initialPost,
+}: {
+  initialPost: NonNullable<Awaited<ReturnType<typeof getPostBySlug>>>;
+}) {
+  const { slug } = Route.useParams();
   const collection = useMemo(() => createAllPostsCollection(), []);
   const { data: livePosts } = useLiveQuery((q) => q.from({ p: collection }), [collection]);
   const livePost = useMemo(
-    () => (livePosts as ElectricPost[] | undefined)?.find((p) => p.slug === slug),
+    () => (livePosts as ElectricPost[] | undefined)?.find((post) => post.slug === slug),
     [livePosts, slug],
   );
+  return <EditPostPageContent post={livePost ?? initialPost} />;
+}
 
-  const post = livePost ?? initialPost;
+function EditPostPageContent({
+  post,
+}: {
+  post: NonNullable<Awaited<ReturnType<typeof getPostBySlug>>> | ElectricPost;
+}) {
+  const { slug } = Route.useParams();
+  const navigate = useNavigate();
 
   const [title, setTitle] = useState(post?.title ?? "");
   const [subtitle, setSubtitle] = useState(post?.subtitle ?? "");
   const [coverImageUrl, setCoverImageUrl] = useState(post?.cover_image_url ?? "");
   const [authorName, setAuthorName] = useState(post?.author_name ?? "");
   const [tags, setTags] = useState("");
-  const [content, setContent] = useState<unknown>(null);
+  const [content, setContent] = useState<JsonValue>();
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
@@ -53,39 +81,11 @@ function EditPostPage() {
       setSubtitle(post.subtitle);
       setCoverImageUrl(post.cover_image_url);
       setAuthorName(post.author_name);
-      // Parse tags from Electric TEXT[] format
-      const t = post.tags;
-      if (typeof t === "string" && t.startsWith("{") && t.endsWith("}")) {
-        setTags(t.slice(1, -1));
-      } else if (typeof t === "string") {
-        try {
-          setTags(JSON.parse(t).join(", "));
-        } catch {
-          setTags(t);
-        }
-      }
-      // Parse content
-      if (typeof post.content === "string") {
-        try {
-          setContent(JSON.parse(post.content));
-        } catch {
-          setContent(post.content);
-        }
-      } else {
-        setContent(post.content);
-      }
+      setTags(parsePostTags(post.tags).join(", "));
+      setContent(parsePostContent(post.content));
       setInitialized(true);
     }
   }, [post, initialized]);
-
-  if (!post) {
-    return (
-      <div className="py-12 text-center">
-        <h1 className="text-xl font-bold mb-2">Post not found</h1>
-        <p className="text-muted-foreground">This post may have been deleted.</p>
-      </div>
-    );
-  }
 
   async function handleSave() {
     setSaving(true);
@@ -133,7 +133,7 @@ function EditPostPage() {
   async function handleDelete() {
     if (!window.confirm("Delete this post permanently?")) return;
     await deletePost({ data: { slug } });
-    void navigate({ to: "/editor" });
+    await navigate({ to: "/editor" });
   }
 
   const isPublished = post.status === "published";
@@ -182,15 +182,7 @@ function EditPostPage() {
           {isPublished ? "Published" : "Draft"}
         </span>
         {isPublished && post.published_at && (
-          <span>
-            {" "}
-            · Published{" "}
-            {new Date(post.published_at).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </span>
+          <span> · Published {formatPostDate(post.published_at)}</span>
         )}
         {post.total_claps > 0 && <span> · {post.total_claps} claps</span>}
       </div>

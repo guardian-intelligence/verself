@@ -1,30 +1,40 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createAllPostsCollection, type ElectricPost } from "~/lib/collections";
+import { formatPostDate, sortPostsByUpdatedAt } from "~/lib/post-utils";
+import { listAllPosts } from "~/server-fns/posts";
 
 export const Route = createFileRoute("/editor/")({
+  loader: async () => ({
+    posts: await listAllPosts(),
+  }),
   component: EditorDashboard,
 });
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+function EditorDashboard() {
+  const { posts } = Route.useLoaderData() as { posts: ElectricPost[] };
+  const fallbackPosts = sortPostsByUpdatedAt(posts);
+
+  return (
+    <ClientOnly fallback={<EditorDashboardTable posts={fallbackPosts} />}>
+      <LiveEditorDashboard initialPosts={fallbackPosts} />
+    </ClientOnly>
+  );
 }
 
-function EditorDashboard() {
+function LiveEditorDashboard({ initialPosts }: { initialPosts: ElectricPost[] }) {
   const collection = useMemo(() => createAllPostsCollection(), []);
   const { data: posts } = useLiveQuery((q) => q.from({ p: collection }), [collection]);
+  const sortedPosts = useMemo(
+    () => sortPostsByUpdatedAt((posts as ElectricPost[] | undefined) ?? initialPosts),
+    [initialPosts, posts],
+  );
+  return <EditorDashboardTable posts={sortedPosts} />;
+}
 
-  const sortedPosts = useMemo(() => {
-    if (!posts) return [];
-    return [...(posts as ElectricPost[])].sort(
-      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    );
-  }, [posts]);
-
-  if (sortedPosts.length === 0) {
+function EditorDashboardTable({ posts }: { posts: ReadonlyArray<ElectricPost> }) {
+  if (posts.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground mb-4">No posts yet. Start writing!</p>
@@ -50,14 +60,10 @@ function EditorDashboard() {
           </tr>
         </thead>
         <tbody>
-          {sortedPosts.map((post) => (
+          {posts.map((post) => (
             <tr key={post.id} className="border-b border-border hover:bg-muted/50">
               <td className="py-3">
-                <Link
-                  to="/editor/$slug"
-                  params={{ slug: post.slug }}
-                  className="font-medium hover:underline"
-                >
+                <Link to="/editor/$slug" params={{ slug: post.slug }} className="font-medium hover:underline">
                   {post.title || "Untitled"}
                 </Link>
               </td>
@@ -72,7 +78,7 @@ function EditorDashboard() {
                 </span>
               </td>
               <td className="py-3 text-muted-foreground tabular-nums">{post.total_claps}</td>
-              <td className="py-3 text-muted-foreground">{formatDate(post.updated_at)}</td>
+              <td className="py-3 text-muted-foreground">{formatPostDate(post.updated_at)}</td>
             </tr>
           ))}
         </tbody>

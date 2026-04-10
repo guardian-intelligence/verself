@@ -1,13 +1,15 @@
+import type { JSONContent } from "@tiptap/core";
 import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import LinkExtension from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useCallback } from "react";
+import type { JsonValue } from "~/server-fns/validation";
 
 interface TiptapEditorProps {
-  content: unknown;
-  onChange: (content: unknown) => void;
+  content: JsonValue | undefined;
+  onChange: (content: JsonValue) => void;
 }
 
 export function TiptapEditor({ content, onChange }: TiptapEditorProps) {
@@ -170,14 +172,19 @@ function ToolbarButton({
   );
 }
 
-function parseContent(content: unknown): Record<string, unknown> | undefined {
+function isJSONContent(value: JsonValue): value is JSONContent {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseContent(content: JsonValue | undefined): JSONContent | undefined {
   if (!content) return undefined;
   if (typeof content === "string") {
     try {
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      return isJSONContent(parsed) ? parsed : undefined;
     } catch {
       return undefined;
     }
   }
-  return content as Record<string, unknown>;
+  return isJSONContent(content) ? content : undefined;
 }

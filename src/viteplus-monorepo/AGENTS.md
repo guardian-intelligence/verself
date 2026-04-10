@@ -81,39 +81,64 @@ Production OIDC apps are created automatically by each app's Ansible role (`zita
 
 For each frontend, create a dev OIDC app in the same Zitadel project as the production app. Use the Zitadel console at `https://auth.<domain>` or the Management API:
 
-| Frontend       | Zitadel Project | Port | Dev Redirect URI                 |
-| -------------- | --------------- | ---- | -------------------------------- |
-| rent-a-sandbox | sandbox-rental  | 4244 | `http://127.0.0.1:4244/callback` |
-| webmail        | mailbox-service | 4245 | `http://127.0.0.1:4245/callback` |
+| Frontend       | Zitadel Project | Preferred Port | Dev Redirect URI              |
+| -------------- | --------------- | -------------- | ----------------------------- |
+| rent-a-sandbox | sandbox-rental  | 4244           | `http://127.0.0.1:*/callback` |
+| webmail        | mailbox-service | 4245           | `http://127.0.0.1:*/callback` |
+| letters        | letters         | 4247           | `http://127.0.0.1:*/callback` |
 
 The dev app must have:
 
-- `appType: OIDC_APP_TYPE_USER_AGENT` (SPA, no server secret)
+- `appType: OIDC_APP_TYPE_WEB`
 - `authMethodType: OIDC_AUTH_METHOD_TYPE_NONE` (public client)
 - `devMode: true`
 - `accessTokenType: OIDC_TOKEN_TYPE_JWT` (so backend middleware can validate)
-- Redirect URI: `http://127.0.0.1:<port>/callback`
-- Post-logout URI: `http://127.0.0.1:<port>`
+- Redirect URI: `http://127.0.0.1:*/callback`
+- Post-logout URI: `http://127.0.0.1:*`
 
 ### Running a frontend locally
 
 ```bash
-# 1. SSH tunnels to remote services (run once, background)
-ssh -L 4246:127.0.0.1:4246 \
-    -L 3011:127.0.0.1:3011 \
-    -L 3010:127.0.0.1:3010 \
-    -L 4243:127.0.0.1:4243 \
-    fm-dev-w0 -N &
+# run rent-a-sandbox locally against the deployed services
+make sandbox-inner
 
-# 2. Start the app with dev credentials
-cd apps/mail   # or apps/rent-a-sandbox
-AUTH_ISSUER_URL=https://auth.<domain> \
-AUTH_CLIENT_ID=<dev-oidc-client-id> \
-ELECTRIC_URL=http://127.0.0.1:3011 \
-vp dev
+# separate terminal: verify the local dev server and collect ClickHouse evidence
+make sandbox-inner SANDBOX_INNER_MODE=verify
+
+# targeted deploy + targeted verification against the current remote stack
+make sandbox-middle
+
+# final merge proof: reset, redeploy, reseed, live repo-exec verification
+make sandbox-proof
 ```
 
-Open `http://127.0.0.1:<port>`. Vite HMR gives sub-second feedback on every file save. API calls and Electric shapes go through the SSH tunnels to real services.
+`make sandbox-inner` opens the required SSH tunnels, re-queries the `rent-a-sandbox-dev`
+client ID from Zitadel, and exports the current runtime env for the local server:
+
+- `FORGE_METAL_DOMAIN`
+- `AUTH_SUBDOMAIN`
+- `AUTH_CLIENT_ID`
+- `AUTH_PROJECT_ID`
+- `AUTH_DATABASE_URL`
+- `AUTH_SESSION_SECRET`
+- `SANDBOX_RENTAL_SERVICE_BASE_URL`
+- `ELECTRIC_URL`
+
+Open the `app:` URL printed by `make sandbox-inner`. The launcher prefers `http://127.0.0.1:4244`
+but will move to a higher local port if that one is busy, then records the chosen
+URL in `/tmp/forge-metal-rent-dev.env` so `make sandbox-inner SANDBOX_INNER_MODE=verify` can target
+the same dev server from another terminal. Vite HMR gives sub-second feedback on
+every file save. API calls, Electric shapes, auth sessions, and OTLP traces all
+flow through the SSH tunnels to the deployed single-node stack.
+
+`make sandbox-middle` is the non-destructive remote loop. By default it deploys
+the `rent_a_sandbox` frontend role and runs the fast admin smoke. Override
+`SANDBOX_DEPLOY_TARGET=ui|service|both|none`, `SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none`,
+and `SANDBOX_SEED_VERIFY=1` when you need a different targeted rehearsal.
+
+`make sandbox-proof` is the only destructive/full proof path. It resets the
+verification state, redeploys the required stack, reseeds, runs the omnibus live
+repo execution proof, and collects ClickHouse-linked artifacts.
 
 ### External Data Sources
 
