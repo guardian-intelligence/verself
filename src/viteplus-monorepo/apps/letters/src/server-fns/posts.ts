@@ -7,10 +7,12 @@ import {
   type JsonValue,
   postOnlySlugInputSchema,
   updatePostInputSchema,
-  withLettersDb,
 } from "./validation";
+import type { LettersSql } from "./db";
 
-type LettersSql = Parameters<typeof withLettersDb>[0] extends (sql: infer T) => unknown ? T : never;
+async function loadLettersDb() {
+  return import("./db");
+}
 
 function slugify(text: string): string {
   return text
@@ -81,8 +83,9 @@ async function selectPostBySlug(sql: LettersSql, slug: string) {
 export const createPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(createPostInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const slug = slugify(data.title) || "untitled";
       const content = data.content ?? emptyPostContent;
       const readingTime = estimateReadingTime(content);
@@ -102,14 +105,15 @@ export const createPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error("Post creation failed");
       return { id: post.id, slug: post.slug };
-    }),
-  );
+    });
+  });
 
 export const updatePost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(updatePostInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET
           title = COALESCE(${data.title ?? null}, title),
@@ -126,25 +130,27 @@ export const updatePost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { id: post.id, slug: post.slug };
-    }),
-  );
+    });
+  });
 
 export const deletePost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(postOnlySlugInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const [post] = await sql`DELETE FROM posts WHERE slug = ${data.slug} RETURNING id`;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { deleted: true };
-    }),
-  );
+    });
+  });
 
 export const publishPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(postOnlySlugInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET status = 'published', published_at = now(), updated_at = now()
         WHERE slug = ${data.slug}
@@ -152,14 +158,15 @@ export const publishPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { slug: post.slug, published_at: post.published_at };
-    }),
-  );
+    });
+  });
 
 export const unpublishPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
   .inputValidator(postOnlySlugInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET status = 'draft', published_at = NULL, updated_at = now()
         WHERE slug = ${data.slug}
@@ -167,12 +174,13 @@ export const unpublishPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { slug: post.slug };
-    }),
-  );
+    });
+  });
 
 /** Fetch all published posts for SSR, normalized to the Electric shape. */
-export const listPublishedPosts = createServerFn({ method: "GET" }).handler(async () =>
-  withLettersDb(
+export const listPublishedPosts = createServerFn({ method: "GET" }).handler(async () => {
+  const { withLettersDb } = await loadLettersDb();
+  return withLettersDb(
     async (sql) =>
       sql`
       SELECT
@@ -194,14 +202,15 @@ export const listPublishedPosts = createServerFn({ method: "GET" }).handler(asyn
       WHERE status = 'published'
       ORDER BY COALESCE(published_at, created_at) DESC
     `,
-  ),
-);
+  );
+});
 
 /** Fetch all posts for the authenticated editor, normalized to the Electric shape. */
 export const listAllPosts = createServerFn({ method: "GET" })
   .middleware([lettersAuthMiddleware])
-  .handler(async () =>
-    withLettersDb(
+  .handler(async () => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(
       async (sql) =>
         sql`
         SELECT
@@ -222,16 +231,17 @@ export const listAllPosts = createServerFn({ method: "GET" })
         FROM posts
         ORDER BY updated_at DESC
       `,
-    ),
-  );
+    );
+  });
 
 /** Fetch a single post by slug (server-side, for SSR). */
 export const getPostBySlug = createServerFn({ method: "GET" })
   .inputValidator(postOnlySlugInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const post = await selectPostBySlug(sql, data.slug);
       // SSR server-function plumbing treats bare null as a middleware payload.
       return post ?? undefined;
-    }),
-  );
+    });
+  });

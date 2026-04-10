@@ -1,12 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
-import { clapPostInputSchema, withLettersDb } from "./validation";
+import { clapPostInputSchema } from "./validation";
 
 const MAX_CLAPS_PER_SESSION = 50;
 
+async function loadLettersDb() {
+  return import("./db");
+}
+
 export const clapPost = createServerFn({ method: "POST" })
   .inputValidator(clapPostInputSchema)
-  .handler(async ({ data }) =>
-    withLettersDb(async (sql) => {
+  .handler(async ({ data }) => {
+    const { withLettersDb } = await loadLettersDb();
+    return withLettersDb(async (sql) => {
       const increment = Math.min(Math.max(data.count ?? 1, 1), 10); // 1-10 per request
 
       // Find the post
@@ -41,5 +46,5 @@ export const clapPost = createServerFn({ method: "POST" })
         sessionCount: clap.count,
         totalClaps: updated.total_claps,
       };
-    }),
-  );
+    });
+  });

@@ -1,7 +1,5 @@
 import * as v from "valibot";
-import { requireURLFromEnv } from "@forge-metal/web-env";
 
-type LettersDb = import("postgres").Sql<Record<string, unknown>>;
 export type JsonValue = string | number | boolean | null | JsonObject | Array<JsonValue>;
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -98,13 +96,3 @@ export const clapPostInputSchema = v.strictObject({
 export const postOnlySlugInputSchema = v.strictObject({
   slug: postSlugSchema,
 });
-
-export async function withLettersDb<T>(fn: (sql: LettersDb) => Promise<T>): Promise<T> {
-  const { default: postgres } = await import("postgres");
-  const sql = postgres(requireURLFromEnv("DATABASE_URL"), { max: 5 });
-  try {
-    return await fn(sql);
-  } finally {
-    await sql.end();
-  }
-}

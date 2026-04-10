@@ -15,6 +15,13 @@ function isJSONContent(value: unknown): value is JSONContent {
   return typeof value === "object" && value !== null;
 }
 
+function fallbackText(value: unknown): string {
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return value.toString();
+  }
+  return "";
+}
+
 export function TiptapRenderer({ content, className }: TiptapRendererProps) {
   if (!content) {
     return <div className={className} />;
@@ -33,7 +40,7 @@ export function TiptapRenderer({ content, className }: TiptapRendererProps) {
     }
   } else {
     if (!isJSONContent(content)) {
-      return <div className={className}>{String(content)}</div>;
+      return <div className={className}>{fallbackText(content)}</div>;
     }
     doc = content;
   }
