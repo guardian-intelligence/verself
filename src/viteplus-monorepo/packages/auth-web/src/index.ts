@@ -1,17 +1,15 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
-import { anonymousAuth } from "./shared.ts";
+import { anonymousAuth, parseAuthSnapshot } from "./isomorphic.ts";
 import { resolveAuthConfig } from "./config.ts";
 import type {
   AnonymousAuth,
   Auth,
   AuthRoleAssignment,
-  AuthSession,
   AuthSnapshot,
   ClientUser,
-  CurrentUser,
   SessionInfo,
-} from "./shared.ts";
+} from "./isomorphic.ts";
 import type { AuthConfig, AuthConfigSource } from "./config.ts";
 
 export { createAuthConfig } from "./config.ts";
@@ -19,22 +17,49 @@ export type { AuthConfig, AuthConfigSource } from "./config.ts";
 
 export {
   anonymousAuth,
+  authCacheKey,
   authCollectionId,
   authQueryKey,
   loginRedirect,
+  parseAuthSnapshot,
   requireAuth,
-} from "./shared.ts";
+  syncAuthPartitionedCache,
+} from "./isomorphic.ts";
 export type {
   AnonymousAuth,
   Auth,
   AuthRoleAssignment,
-  AuthSession,
   AuthenticatedAuth,
   AuthSnapshot,
   ClientUser,
-  CurrentUser,
   SessionInfo,
-} from "./shared.ts";
+} from "./isomorphic.ts";
+
+export interface CurrentUser {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  preferredUsername: string | null;
+  // Current runtime still assumes one active org per user even though Zitadel
+  // can issue multi-org assignments.
+  orgID: string | null;
+  roles: string[];
+  roleAssignments: AuthRoleAssignment[];
+  claims: Record<string, unknown>;
+}
+
+export interface AuthSession {
+  sessionID: string;
+  clientCachePartition: string;
+  accessToken: string;
+  refreshToken: string | null;
+  idToken: string | null;
+  scope: string | null;
+  expiresAt: Date;
+  user: CurrentUser;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 interface ProviderMetadata {
   issuer: string;
@@ -78,9 +103,9 @@ interface StoredAuthSessionRow {
   updated_at: string | Date;
 }
 
-interface ResolvedAuthSnapshot extends AuthSnapshot {
+type ResolvedAuthSnapshot = AuthSnapshot & {
   currentUser: CurrentUser | null;
-}
+};
 
 interface TokenResponse {
   access_token: string;
@@ -836,11 +861,12 @@ async function resolveAuthSnapshot(config: AuthConfigSource): Promise<ResolvedAu
   const session = await getAuthSession(await resolveAuthConfig(config));
   const authState = toAuth(session);
   const user = session ? toClientUser(session.user) : null;
-  const snapshot: AuthSnapshot = {
+  const snapshot = parseAuthSnapshot({
+    isSignedIn: authState.isAuthenticated,
     auth: authState,
     user,
     session: toSessionInfo(session),
-  };
+  });
 
   return {
     ...snapshot,
@@ -867,9 +893,19 @@ export async function currentSession(config: AuthConfigSource): Promise<SessionI
 
 // Root-loader snapshot. Read once per navigation and seed hooks from the result
 // instead of making multiple auth reads from components.
-export async function getAuthSnapshot(config: AuthConfigSource): Promise<AuthSnapshot> {
+export async function getClientAuthSnapshot(config: AuthConfigSource): Promise<AuthSnapshot> {
   const snapshot = await resolveAuthSnapshot(config);
+  if (!snapshot.isSignedIn) {
+    return {
+      isSignedIn: false,
+      auth: snapshot.auth,
+      user: null,
+      session: null,
+    };
+  }
+
   return {
+    isSignedIn: true,
     auth: snapshot.auth,
     user: snapshot.user,
     session: snapshot.session,

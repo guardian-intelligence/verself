@@ -73,10 +73,13 @@ fn handleConnection(stream: std.net.Stream) !void {
     var hello_bytes = hs.encodeHelloFrame(hello);
     try stream.writeAll(hello_bytes[0..]);
 
+    var sampler = try ProcSampler.init();
+    defer sampler.deinit();
+
     var seq = hello.seq + 1;
     while (true) {
         const loop_started_ns = try hs.monotonicNowNs();
-        const sample = try collectSampleFrame(seq);
+        const sample = try sampler.collectSampleFrame(seq);
         var sample_bytes = hs.encodeSampleFrame(sample);
         try stream.writeAll(sample_bytes[0..]);
         seq += 1;
@@ -107,6 +110,136 @@ fn parseArgs(allocator: std.mem.Allocator) !void {
         std.log.err("unknown argument: {s}", .{arg});
         return error.ShowUsage;
     }
+}
+
+pub const BenchHooks = struct {
+    pub fn collectSampleFrame(seq: u32) !hs.SampleFrame {
+        return guest.collectSampleFrame(seq);
+    }
+
+    pub const Sampler = guest.ProcSampler;
+
+    pub fn parseProcStatContents(frame: *hs.SampleFrame, contents: []const u8) !void {
+        return guest.parseProcStatContents(frame, contents);
+    }
+
+    pub fn parseProcLoadavgContents(frame: *hs.SampleFrame, contents: []const u8) !void {
+        return guest.parseProcLoadavgContents(frame, contents);
+    }
+
+    pub fn parseProcMeminfoContents(frame: *hs.SampleFrame, contents: []const u8) !void {
+        return guest.parseProcMeminfoContents(frame, contents);
+    }
+
+    pub fn parseProcDiskstatsContents(frame: *hs.SampleFrame, contents: []const u8) !void {
+        return guest.parseProcDiskstatsContents(frame, contents);
+    }
+
+    pub fn parseProcNetDevContents(frame: *hs.SampleFrame, contents: []const u8) !void {
+        return guest.parseProcNetDevContents(frame, contents);
+    }
+
+    pub fn parsePressurePct100Contents(contents: []const u8) !u16 {
+        return guest.parsePressurePct100Contents(contents);
+    }
+};
+
+const guest = @This();
+
+const ProcSampler = struct {
+    stat: std.fs.File,
+    loadavg: std.fs.File,
+    meminfo: std.fs.File,
+    diskstats: ?std.fs.File,
+    net_dev: ?std.fs.File,
+    psi_cpu: ?std.fs.File,
+    psi_mem: ?std.fs.File,
+    psi_io: ?std.fs.File,
+
+    pub fn init() !ProcSampler {
+        return .{
+            .stat = try std.fs.openFileAbsolute("/proc/stat", .{}),
+            .loadavg = try std.fs.openFileAbsolute("/proc/loadavg", .{}),
+            .meminfo = try std.fs.openFileAbsolute("/proc/meminfo", .{}),
+            .diskstats = try openOptionalProcFile("/proc/diskstats"),
+            .net_dev = try openOptionalProcFile("/proc/net/dev"),
+            .psi_cpu = try openOptionalProcFile("/proc/pressure/cpu"),
+            .psi_mem = try openOptionalProcFile("/proc/pressure/memory"),
+            .psi_io = try openOptionalProcFile("/proc/pressure/io"),
+        };
+    }
+
+    pub fn deinit(self: *ProcSampler) void {
+        self.stat.close();
+        self.loadavg.close();
+        self.meminfo.close();
+        if (self.diskstats) |file| file.close();
+        if (self.net_dev) |file| file.close();
+        if (self.psi_cpu) |file| file.close();
+        if (self.psi_mem) |file| file.close();
+        if (self.psi_io) |file| file.close();
+    }
+
+    pub fn collectSampleFrame(self: *ProcSampler, seq: u32) !hs.SampleFrame {
+        var frame = hs.SampleFrame{
+            .seq = seq,
+            .mono_ns = try hs.monotonicNowNs(),
+            .wall_ns = try hs.realtimeNowNs(),
+        };
+
+        try parseProcStatFile(&frame, self.stat);
+        try parseProcLoadavgFile(&frame, self.loadavg);
+        try parseProcMeminfoFile(&frame, self.meminfo);
+
+        if (self.diskstats) |file| {
+            parseProcDiskstatsFile(&frame, file) catch |err| switch (err) {
+                error.DeviceNotFound => frame.flags |= hs.flag_disk_missing,
+                else => return err,
+            };
+        } else {
+            frame.flags |= hs.flag_disk_missing;
+        }
+
+        if (self.net_dev) |file| {
+            parseProcNetDevFile(&frame, file) catch |err| switch (err) {
+                error.InterfaceNotFound => frame.flags |= hs.flag_net_missing,
+                else => return err,
+            };
+        } else {
+            frame.flags |= hs.flag_net_missing;
+        }
+
+        frame.psi_cpu_pct100 = if (self.psi_cpu) |file| parsePressurePct100File(file) catch |err| switch (err) {
+            error.InvalidPressureFile => return err,
+            else => return err,
+        } else blk: {
+            frame.flags |= hs.flag_psi_cpu_missing;
+            break :blk 0;
+        };
+        frame.psi_mem_pct100 = if (self.psi_mem) |file| parsePressurePct100File(file) catch |err| switch (err) {
+            error.InvalidPressureFile => return err,
+            else => return err,
+        } else blk: {
+            frame.flags |= hs.flag_psi_mem_missing;
+            break :blk 0;
+        };
+        frame.psi_io_pct100 = if (self.psi_io) |file| parsePressurePct100File(file) catch |err| switch (err) {
+            error.InvalidPressureFile => return err,
+            else => return err,
+        } else blk: {
+            frame.flags |= hs.flag_psi_io_missing;
+            break :blk 0;
+        };
+
+        return frame;
+    }
+};
+
+fn openOptionalProcFile(path: []const u8) !?std.fs.File {
+    return std.fs.openFileAbsolute(path, .{}) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
 }
 
 fn collectHelloFrame() !hs.HelloFrame {
@@ -178,8 +311,14 @@ fn readMemTotalKb() !u64 {
 }
 
 fn parseProcStat(frame: *hs.SampleFrame) !void {
-    var buf: [4096]u8 = undefined;
+    var buf: [16 * 1024]u8 = undefined;
     const contents = try readFile("/proc/stat", buf[0..]);
+    return parseProcStatContents(frame, contents);
+}
+
+fn parseProcStatFile(frame: *hs.SampleFrame, file: std.fs.File) !void {
+    var buf: [16 * 1024]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
     return parseProcStatContents(frame, contents);
 }
 
@@ -231,6 +370,12 @@ fn parseProcLoadavg(frame: *hs.SampleFrame) !void {
     return parseProcLoadavgContents(frame, contents);
 }
 
+fn parseProcLoadavgFile(frame: *hs.SampleFrame, file: std.fs.File) !void {
+    var buf: [256]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
+    return parseProcLoadavgContents(frame, contents);
+}
+
 fn parseProcLoadavgContents(frame: *hs.SampleFrame, contents: []const u8) !void {
     var fields = std.mem.tokenizeAny(u8, std.mem.trim(u8, contents, " \n\r\t"), " \t");
     frame.load1_centis = try parseScaledDecimalU32(fields.next() orelse return error.InvalidLoadavg, 100);
@@ -241,6 +386,12 @@ fn parseProcLoadavgContents(frame: *hs.SampleFrame, contents: []const u8) !void 
 fn parseProcMeminfo(frame: *hs.SampleFrame) !void {
     var buf: [4096]u8 = undefined;
     const contents = try readFile("/proc/meminfo", buf[0..]);
+    return parseProcMeminfoContents(frame, contents);
+}
+
+fn parseProcMeminfoFile(frame: *hs.SampleFrame, file: std.fs.File) !void {
+    var buf: [4096]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
     return parseProcMeminfoContents(frame, contents);
 }
 
@@ -270,8 +421,14 @@ fn parseMemTotalKbContents(contents: []const u8) !u64 {
 }
 
 fn parseProcDiskstats(frame: *hs.SampleFrame) !void {
-    var buf: [8192]u8 = undefined;
+    var buf: [16 * 1024]u8 = undefined;
     const contents = try readFile("/proc/diskstats", buf[0..]);
+    return parseProcDiskstatsContents(frame, contents);
+}
+
+fn parseProcDiskstatsFile(frame: *hs.SampleFrame, file: std.fs.File) !void {
+    var buf: [16 * 1024]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
     return parseProcDiskstatsContents(frame, contents);
 }
 
@@ -301,8 +458,14 @@ fn parseProcDiskstatsContents(frame: *hs.SampleFrame, contents: []const u8) !voi
 }
 
 fn parseProcNetDev(frame: *hs.SampleFrame) !void {
-    var buf: [4096]u8 = undefined;
+    var buf: [16 * 1024]u8 = undefined;
     const contents = try readFile("/proc/net/dev", buf[0..]);
+    return parseProcNetDevContents(frame, contents);
+}
+
+fn parseProcNetDevFile(frame: *hs.SampleFrame, file: std.fs.File) !void {
+    var buf: [16 * 1024]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
     return parseProcNetDevContents(frame, contents);
 }
 
@@ -330,6 +493,12 @@ fn parseProcNetDevContents(frame: *hs.SampleFrame, contents: []const u8) !void {
 fn parsePressurePct100(path: []const u8) !u16 {
     var buf: [256]u8 = undefined;
     const contents = try readFile(path, buf[0..]);
+    return parsePressurePct100Contents(contents);
+}
+
+fn parsePressurePct100File(file: std.fs.File) !u16 {
+    var buf: [256]u8 = undefined;
+    const contents = try readOpenFile(file, buf[0..]);
     return parsePressurePct100Contents(contents);
 }
 
@@ -364,10 +533,53 @@ fn parseScaledDecimalU16(text: []const u8, scale: u32) !u16 {
 }
 
 fn parseScaledDecimalU32(text: []const u8, scale: u32) !u32 {
-    const value = try std.fmt.parseFloat(f64, text);
-    const scaled = value * @as(f64, @floatFromInt(scale));
-    if (scaled <= 0) return 0;
-    return std.math.cast(u32, @as(u64, @intFromFloat(@round(scaled)))) orelse std.math.maxInt(u32);
+    std.debug.assert(scale == 100);
+
+    const trimmed = std.mem.trim(u8, text, " \t");
+    if (trimmed.len == 0) return error.InvalidCharacter;
+    if (trimmed[0] == '-') return 0;
+
+    var index: usize = 0;
+    var whole: u64 = 0;
+    var saw_digit = false;
+    while (index < trimmed.len and isDigit(trimmed[index])) : (index += 1) {
+        saw_digit = true;
+        whole = saturatingDecimalAppend(whole, trimmed[index] - '0');
+    }
+    if (!saw_digit) return error.InvalidCharacter;
+
+    var fraction: u64 = 0;
+    var fraction_digits: u8 = 0;
+    var round_up = false;
+    if (index < trimmed.len and trimmed[index] == '.') {
+        index += 1;
+        while (index < trimmed.len and isDigit(trimmed[index])) : (index += 1) {
+            const digit = trimmed[index] - '0';
+            if (fraction_digits < 2) {
+                fraction = fraction * 10 + digit;
+                fraction_digits += 1;
+                continue;
+            }
+            if (fraction_digits == 2 and digit >= 5) {
+                round_up = true;
+            }
+            fraction_digits += 1;
+        }
+    }
+    while (fraction_digits < 2) : (fraction_digits += 1) {
+        fraction *= 10;
+    }
+    if (round_up) {
+        fraction += 1;
+        if (fraction == scale) {
+            fraction = 0;
+            whole = whole +| 1;
+        }
+    }
+    if (index != trimmed.len) return error.InvalidCharacter;
+
+    const scaled = whole *| scale +| fraction;
+    return std.math.cast(u32, scaled) orelse std.math.maxInt(u32);
 }
 
 fn parseU64(text: []const u8) !u64 {
@@ -378,6 +590,11 @@ fn readFile(path: []const u8, buf: []u8) ![]const u8 {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
 
+    return readOpenFile(file, buf);
+}
+
+fn readOpenFile(file: std.fs.File, buf: []u8) ![]const u8 {
+    try file.seekTo(0);
     const n = try file.readAll(buf);
     if (n == buf.len) {
         var extra: [1]u8 = undefined;
@@ -392,6 +609,14 @@ fn saturatingCastU16(value: anytype) u16 {
     const max = std.math.maxInt(u16);
     if (value > max) return max;
     return @as(u16, @intCast(value));
+}
+
+fn saturatingDecimalAppend(value: u64, digit: u8) u64 {
+    return value *| 10 +| digit;
+}
+
+fn isDigit(char: u8) bool {
+    return char >= '0' and char <= '9';
 }
 
 test "parseBootIDContents trims whitespace" {
@@ -548,6 +773,10 @@ test "parseScaledDecimalU32 handles zero" {
 
 test "parseScaledDecimalU32 handles normal values" {
     try std.testing.expectEqual(@as(u32, 10000), try parseScaledDecimalU32("100.00", 100));
+}
+
+test "parseScaledDecimalU32 rounds third fractional digit" {
+    try std.testing.expectEqual(@as(u32, 124), try parseScaledDecimalU32("1.235", 100));
 }
 
 test "parseScaledDecimalU32 saturates large values" {

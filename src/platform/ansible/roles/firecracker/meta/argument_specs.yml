@@ -94,6 +94,16 @@ argument_specs:
         default: ""
         description: "Host network interface for guest NAT. Auto-detected if empty."
 
+      firecracker_host_service_interface:
+        type: str
+        default: fm-host0
+        description: "Dummy host-only interface exposing selected platform services to Firecracker guests."
+
+      firecracker_host_service_ip:
+        type: str
+        default: "10.255.0.1"
+        description: "Host-only IPv4 address exposed on firecracker_host_service_interface."
+
       firecracker_vm_orchestrator_binary_path:
         type: path
         default: /usr/local/bin/vm-orchestrator

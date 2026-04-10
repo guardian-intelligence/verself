@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -431,6 +430,11 @@ func (s *APIServer) runRepoExec(ctx context.Context, record *managedJob, cfg Con
 
 	job := jobConfigFromProto(spec.GetJobTemplate())
 	job.JobID = ensureJobID(job.JobID)
+	repoJob, err := buildInVMRepoExecJob(job, spec.GetRepoUrl(), spec.GetRef(), spec.GetLockfileRelPath(), cfg.HostServiceIP, cfg.HostServicePort)
+	if err != nil {
+		return JobResult{}, nil, err
+	}
+
 	jobDataset := fmt.Sprintf("%s/%s/%s", cfg.Pool, cfg.CIDataset, job.JobID)
 	cloneStart := time.Now()
 	if err := (DirectPrivOps{}).ZFSClone(ctx, snapshot, jobDataset, job.JobID); err != nil {
@@ -438,55 +442,11 @@ func (s *APIServer) runRepoExec(ctx context.Context, record *managedJob, cfg Con
 	}
 	cloneDuration := time.Since(cloneStart)
 
-	mountDir, err := mountDataset(ctx, jobDataset)
-	if err != nil {
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
-		return JobResult{}, nil, err
-	}
-
-	mounted := true
-	cleanup := func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
-		defer cancel()
-		if mounted {
-			_ = unmount(cleanupCtx, mountDir)
-			mounted = false
-		}
-		_ = destroyDatasetRecursive(cleanupCtx, jobDataset)
-	}
-	defer func() {
-		if mounted {
-			cleanup()
-		}
-	}()
-
-	workspace := filepath.Join(mountDir, "workspace")
-	if err := fetchRef(workspace, spec.GetRef()); err != nil {
-		return JobResult{}, nil, err
-	}
-	commitSHA, err := gitHeadSHA(workspace)
-	if err != nil {
-		return JobResult{}, nil, err
-	}
-	installNeeded, err := lockfileChanged(workspace, spec.GetLockfileRelPath())
-	if err != nil {
-		return JobResult{}, nil, err
-	}
-	if !installNeeded {
-		job.PrepareCommand = nil
-		job.PrepareWorkDir = ""
-	}
-
-	if err := unmount(ctx, mountDir); err != nil {
-		_ = destroyDatasetRecursive(context.Background(), jobDataset)
-		mounted = false
-		return JobResult{}, nil, err
-	}
-	mounted = false
-
 	observer := &jobObserver{server: s, job: record}
 	orch := New(cfg, s.logger)
-	result, err := orch.RunDatasetObserved(ctx, job, jobDataset, true, observer)
+	result, err := orch.RunDatasetObserved(ctx, repoJob, jobDataset, true, observer)
+	commitSHA := record.latestGuestEventAttr(repoExecCheckoutEvent, repoCommitSHAAttr)
+	installNeeded := repoExecInstallNeededFromEvents(record)
 	meta := &RepoExecMetadata{
 		Repo:           spec.GetRepo(),
 		RepoURL:        spec.GetRepoUrl(),
@@ -520,48 +480,32 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 	cloneDuration := time.Since(cloneStart)
 
 	cleanupTargetDataset := true
-	var cleanupMountDir string
 	defer func() {
 		if !cleanupTargetDataset {
 			return
 		}
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
 		defer cancel()
-		if cleanupMountDir != "" {
-			_ = unmount(cleanupCtx, cleanupMountDir)
-		}
 		_ = destroyDatasetRecursive(cleanupCtx, targetDataset)
 	}()
 
-	mountDir, err := mountDataset(ctx, targetDataset)
+	// The warm process runs entirely inside the Firecracker VM: git fetch,
+	// dependency install, and lockfile hash write all happen in the guest.
+	// The host never mounts the zvol — all filesystem writes are contained
+	// inside the Firecracker sandbox.
+	warmJob, err := buildInVMWarmJob(job, req.GetRepoUrl(), req.GetDefaultBranch(), req.GetLockfileRelPath(), cfg.HostServiceIP, cfg.HostServicePort)
 	if err != nil {
 		return WarmGoldenResult{}, err
 	}
-	cleanupMountDir = mountDir
-
-	workspace := filepath.Join(mountDir, "workspace")
-	if err := clearWorkspace(workspace); err != nil {
-		return WarmGoldenResult{}, err
-	}
-	if err := runGit("", nil, "clone", "--depth", "1", "--branch", req.GetDefaultBranch(), req.GetRepoUrl(), workspace); err != nil {
-		return WarmGoldenResult{}, err
-	}
-	commitSHA, err := gitHeadSHA(workspace)
-	if err != nil {
-		return WarmGoldenResult{}, err
-	}
-	if err := writeLockfileHash(workspace, req.GetLockfileRelPath()); err != nil {
-		return WarmGoldenResult{}, err
-	}
-
-	if err := unmount(ctx, mountDir); err != nil {
-		return WarmGoldenResult{}, err
-	}
-	cleanupMountDir = ""
+	s.logger.Info("warm golden: in-VM warm (no host mount)",
+		"repo", req.GetRepo(),
+		"dataset", targetDataset,
+	)
 
 	observer := &jobObserver{server: s, job: record}
 	orch := New(cfg, s.logger)
-	startedResult, runErr := orch.RunDatasetObserved(ctx, job, targetDataset, false, observer)
+	startedResult, runErr := orch.RunDatasetObserved(ctx, warmJob, targetDataset, false, observer)
+	commitSHA := record.latestGuestEventAttr(repoWarmCommitEvent, repoCommitSHAAttr)
 	if runErr != nil {
 		return WarmGoldenResult{
 			TargetDataset:   targetDataset,
@@ -717,6 +661,21 @@ func (j *managedJob) setRepoExec(meta *RepoExecMetadata) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.repoExec = meta
+}
+
+func (j *managedJob) latestGuestEventAttr(kind, attr string) string {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	for i := len(j.events) - 1; i >= 0; i-- {
+		event := j.events[i]
+		if event.Kind != kind {
+			continue
+		}
+		if value := strings.TrimSpace(event.Attrs[attr]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (j *managedJob) cancelJob() bool {
@@ -891,6 +850,19 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func repoExecInstallNeededFromEvents(record *managedJob) bool {
+	switch strings.ToLower(record.latestGuestEventAttr(repoExecInstallDecision, repoExecInstallNeededAttr)) {
+	case "0", "false", "no":
+		return false
+	case "1", "true", "yes":
+		return true
+	default:
+		// Absence is conservative: if checkout failed before the guest emitted
+		// a decision, callers should not treat dependencies as known-reused.
+		return true
+	}
 }
 
 func totalGuestSlots(poolCIDR string) int {

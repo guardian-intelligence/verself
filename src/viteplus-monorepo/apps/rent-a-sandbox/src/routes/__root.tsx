@@ -9,26 +9,25 @@ import {
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import { AuthProvider, useUser } from "@forge-metal/auth-web/react";
-import { getAuthSnapshot, getLoginRedirectURL, getLogoutRedirectURL } from "~/server-fns/auth";
+import {
+  authCacheKey,
+  parseAuthSnapshot,
+  syncAuthPartitionedCache,
+} from "@forge-metal/auth-web/isomorphic";
+import {
+  getClientAuthSnapshot,
+  getSignInRedirectURL,
+  getSignOutRedirectURL,
+} from "~/server-fns/auth";
 import "~/styles/app.css";
-
-const authPartitionsByQueryClient = new WeakMap<QueryClient, string | null>();
-
-function syncQueryClientAuthPartition(queryClient: QueryClient, cachePartition: string | null) {
-  const previousPartition = authPartitionsByQueryClient.get(queryClient);
-  if (previousPartition !== undefined && previousPartition !== cachePartition) {
-    queryClient.clear();
-  }
-  authPartitionsByQueryClient.set(queryClient, cachePartition);
-}
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   component: RootComponent,
   beforeLoad: async ({ context }) => {
-    const authSnapshot = await getAuthSnapshot();
-    syncQueryClientAuthPartition(context.queryClient, authSnapshot.auth.cachePartition);
+    const authSnapshot = await getClientAuthSnapshot();
+    syncAuthPartitionedCache(context.queryClient, authSnapshot);
     return authSnapshot;
   },
   head: () => ({
@@ -41,13 +40,11 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
-  const { auth, queryClient, session, user } = Route.useRouteContext();
+  const routeContext = Route.useRouteContext();
+  const authSnapshot = parseAuthSnapshot(routeContext);
   return (
-    <AuthProvider
-      client={{ getLoginRedirectURL, getLogoutRedirectURL }}
-      snapshot={{ auth, user, session }}
-    >
-      <QueryClientProvider client={queryClient} key={`auth:${auth.cachePartition ?? "anonymous"}`}>
+    <AuthProvider client={{ getSignInRedirectURL, getSignOutRedirectURL }} snapshot={authSnapshot}>
+      <QueryClientProvider client={routeContext.queryClient} key={authCacheKey(authSnapshot)}>
         <RootDocument>
           <Outlet />
         </RootDocument>

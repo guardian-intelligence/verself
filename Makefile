@@ -1,4 +1,4 @@
-.PHONY: build clean test test-integration lint lint-ansible fmt vet tidy openapi openapi-check \
+.PHONY: build clean test test-integration lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check \
        hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
@@ -7,6 +7,7 @@
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 FM       := src/platform
+AW       := src/apiwire
 VMO      := src/vm-orchestrator
 BS       := src/billing-service
 AM       := src/auth-middleware
@@ -15,6 +16,8 @@ MS       := src/mailbox-service
 OT       := src/otel
 WL       := src/workload
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
+GO_DIRS  := $(FM) $(AW) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT) $(WL)
+GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 
 build: ## Build the forge-metal Go binary
 	go build $(LDFLAGS) -o $(FM)/forge-metal ./$(FM)/cmd/forge-metal
@@ -26,7 +29,7 @@ clean:
 	rm -f $(FM)/forge-metal
 
 test: ## Run unit tests
-	go test -race ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
+	go test -race $(GO_PKGS)
 
 test-integration: ## Run all tests including ZFS integration (requires sudo + zfs)
 	@echo "Integration tests require root for ZFS pool operations."
@@ -34,8 +37,11 @@ test-integration: ## Run all tests including ZFS integration (requires sudo + zf
 	@echo ""
 	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
-lint:
-	golangci-lint run ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
+lint: lint-conversions
+	golangci-lint run $(GO_PKGS)
+
+lint-conversions:
+	gosec -quiet -include=G115 $(GO_PKGS)
 
 lint-ansible:
 	cd $(FM)/ansible && ansible-lint playbooks roles
@@ -48,10 +54,10 @@ hooks-install:
 	pre-commit install
 
 fmt:
-	gofumpt -w $(FM) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT) $(WL)
+	gofumpt -w $(GO_DIRS)
 
 vet:
-	go vet ./$(FM)/... ./$(VMO)/... ./$(BS)/... ./$(AM)/... ./$(SR)/... ./$(MS)/... ./$(OT)/... ./$(WL)/...
+	go vet $(GO_PKGS)
 
 tidy:
 	cd $(FM) && go mod tidy

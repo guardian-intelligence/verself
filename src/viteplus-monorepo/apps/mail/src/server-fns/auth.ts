@@ -1,6 +1,6 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
-import type { AuthSession } from "@forge-metal/auth-web/shared";
+import type { AuthSession } from "@forge-metal/auth-web/server";
 import { getAuthConfig } from "../server/auth";
 
 const loginRedirectInputSchema = v.object({
@@ -43,7 +43,7 @@ export const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(as
   return logout(getAuthConfig());
 });
 export const getViewer = createServerFn({ method: "GET" }).handler(async () => {
-  const { getAuthSnapshot } = await loadAuthServer();
-  const snapshot = await getAuthSnapshot(getAuthConfig);
+  const { getClientAuthSnapshot } = await loadAuthServer();
+  const snapshot = await getClientAuthSnapshot(getAuthConfig);
   return snapshot.user;
 });

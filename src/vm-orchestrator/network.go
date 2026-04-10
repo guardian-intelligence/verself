@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	defaultGuestPoolCIDR = "172.16.0.0/16"
-	defaultLeaseDir      = "/var/lib/ci/net/leases"
-	defaultIf            = "eth0"
-	pendingLeaseTTL      = 5 * time.Minute
+	defaultGuestPoolCIDR   = "172.16.0.0/16"
+	defaultLeaseDir        = "/var/lib/ci/net/leases"
+	defaultIf              = "eth0"
+	pendingLeaseTTL        = 5 * time.Minute
+	defaultHostServiceIP   = "10.255.0.1"
+	defaultHostServicePort = 18080
 )
 
 var ErrNoNetworkSlots = errors.New("no network slots available")
@@ -98,11 +100,19 @@ func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig, ops 
 	}, cleanup, nil
 }
 
-func (l NetworkLease) GuestNetworkConfig() vmproto.NetworkConfig {
+func (l NetworkLease) GuestNetworkConfig(hostServiceIP string, hostServicePort int) vmproto.NetworkConfig {
+	if hostServiceIP == "" {
+		hostServiceIP = defaultHostServiceIP
+	}
+	if hostServicePort == 0 {
+		hostServicePort = defaultHostServicePort
+	}
 	return vmproto.NetworkConfig{
-		AddressCIDR: fmt.Sprintf("%s/30", l.GuestIP),
-		Gateway:     l.GatewayIP,
-		LinkName:    defaultIf,
+		AddressCIDR:     fmt.Sprintf("%s/30", l.GuestIP),
+		Gateway:         l.GatewayIP,
+		LinkName:        defaultIf,
+		HostServiceIP:   hostServiceIP,
+		HostServicePort: hostServicePort,
 	}
 }
 

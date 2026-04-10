@@ -2,12 +2,13 @@ package vmorchestrator
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -131,10 +132,6 @@ func runZFS(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func mountDataset(ctx context.Context, dataset string) (string, error) {
-	return mountZvol(ctx, zvolDevicePath(dataset))
-}
-
 func checkFilesystem(ctx context.Context, dataset string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()
@@ -148,92 +145,201 @@ func checkFilesystem(ctx context.Context, dataset string) error {
 	return nil
 }
 
-func runGit(dir string, env []string, args ...string) error {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
-	out, err := cmd.CombinedOutput()
+const (
+	repoWarmCommitEvent       = "repo_warm.commit"
+	repoExecCheckoutEvent     = "repo_exec.checkout"
+	repoExecInstallDecision   = "repo_exec.install_decision"
+	repoExecInstallNeededAttr = "install_needed"
+	repoCommitSHAAttr         = "commit_sha"
+)
+
+// buildInVMWarmJob wraps the caller's install commands in a script that
+// runs entirely inside the Firecracker VM: fetch the repo, install deps,
+// and write lockfile hashes. The host never mounts the zvol.
+func buildInVMWarmJob(originalJob JobConfig, repoURL, defaultBranch, lockfileRelPath, hostServiceIP string, hostServicePort int) (JobConfig, error) {
+	guestRepoURL, err := repoURLForGuest(repoURL, hostServiceIP, hostServicePort)
 	if err != nil {
-		return fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
+		return JobConfig{}, err
 	}
-	return nil
-}
+	guestRepoURLNoCredentials := repoURLWithoutCredentials(guestRepoURL)
 
-func gitHeadSHA(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git rev-parse HEAD: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
+	var script strings.Builder
+	script.WriteString("set -eu\n")
+	writeGuestEventFunction(&script)
+	script.WriteString("REPO_URL=" + shellQuoteArg(guestRepoURL) + "\n")
+	script.WriteString("REPO_URL_NO_CREDENTIALS=" + shellQuoteArg(guestRepoURLNoCredentials) + "\n")
+	script.WriteString("rm -rf /workspace\n")
+	script.WriteString("mkdir -p /workspace\n")
+	script.WriteString("cd /workspace\n")
+	script.WriteString("git init\n")
+	script.WriteString("git remote add origin \"$REPO_URL_NO_CREDENTIALS\"\n")
+	script.WriteString("git fetch --depth 1 \"$REPO_URL\" " + shellQuoteArg(defaultBranch) + "\n")
+	script.WriteString("git checkout --force FETCH_HEAD\n")
+	script.WriteString("rm -f .git/FETCH_HEAD\n")
+	script.WriteString("unset REPO_URL\n")
+	script.WriteString("COMMIT_SHA=$(git rev-parse HEAD)\n")
+	writeGuestEventShellAttr(&script, repoWarmCommitEvent, repoCommitSHAAttr, "$COMMIT_SHA")
 
-func fetchRef(repoRoot, ref string) error {
-	if err := runGit(repoRoot, []string{"GIT_TERMINAL_PROMPT=0"}, "fetch", "--depth", "1", "origin", ref); err != nil {
-		return err
-	}
-	if err := runGit(repoRoot, nil, "checkout", "--force", "FETCH_HEAD"); err != nil {
-		return err
-	}
-	return nil
-}
-
-func clearWorkspace(path string) error {
-	if err := os.RemoveAll(path); err != nil {
-		return fmt.Errorf("clear workspace %s: %w", path, err)
-	}
-	return nil
-}
-
-func writeLockfileHash(repoRoot, lockfileRelPath string) error {
-	lockfileRelPath = strings.TrimSpace(lockfileRelPath)
-	if lockfileRelPath == "" {
-		return nil
-	}
-	hash, err := computeFileSHA256(filepath.Join(repoRoot, lockfileRelPath))
-	if err != nil {
-		return err
-	}
-	return writeFile(filepath.Join(repoRoot, lockfileHashRelPath), hash+"\n", 0o644)
-}
-
-func lockfileChanged(repoRoot, lockfileRelPath string) (bool, error) {
-	lockfileRelPath = strings.TrimSpace(lockfileRelPath)
-	if lockfileRelPath == "" {
-		return true, nil
-	}
-
-	current, err := computeFileSHA256(filepath.Join(repoRoot, lockfileRelPath))
-	if err != nil {
-		return false, err
-	}
-	recordedPath := filepath.Join(repoRoot, lockfileHashRelPath)
-	recorded, err := os.ReadFile(recordedPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return true, nil
+	if len(originalJob.PrepareCommand) > 0 {
+		wd := originalJob.PrepareWorkDir
+		if wd == "" {
+			wd = "/workspace"
 		}
-		return false, fmt.Errorf("read lockfile hash record: %w", err)
+		script.WriteString(fmt.Sprintf("cd %s\n", shellQuoteArg(wd)))
+		script.WriteString(shellJoinCmd(originalJob.PrepareCommand) + "\n")
 	}
-	return strings.TrimSpace(string(recorded)) != current, nil
+
+	if len(originalJob.RunCommand) > 0 {
+		wd := originalJob.RunWorkDir
+		if wd == "" {
+			wd = "/workspace"
+		}
+		script.WriteString(fmt.Sprintf("cd %s\n", shellQuoteArg(wd)))
+		script.WriteString(shellJoinCmd(originalJob.RunCommand) + "\n")
+	}
+
+	// Write lockfile hash for exec-time change detection.
+	// The exec path reads this to decide whether to skip dependency install.
+	lockfileRelPath = strings.TrimSpace(lockfileRelPath)
+	if lockfileRelPath != "" {
+		script.WriteString("mkdir -p /workspace/.forge-metal\n")
+		script.WriteString(fmt.Sprintf("sha256sum %s | cut -d' ' -f1 > %s\n",
+			shellQuoteArg(workspacePath(lockfileRelPath)), shellQuoteArg(workspacePath(lockfileHashRelPath))))
+	}
+
+	return JobConfig{
+		JobID:      originalJob.JobID,
+		RunCommand: []string{"sh", "-c", script.String()},
+		RunWorkDir: "/",
+		Services:   originalJob.Services,
+		Env:        originalJob.Env,
+	}, nil
 }
 
-func computeFileSHA256(path string) (string, error) {
-	data, err := os.ReadFile(path)
+func buildInVMRepoExecJob(originalJob JobConfig, repoURL, ref, lockfileRelPath, hostServiceIP string, hostServicePort int) (JobConfig, error) {
+	if len(originalJob.RunCommand) == 0 {
+		return JobConfig{}, fmt.Errorf("repo exec run command is required")
+	}
+
+	guestRepoURL, err := repoURLForGuest(repoURL, hostServiceIP, hostServicePort)
 	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
+		return JobConfig{}, err
 	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), nil
+	guestRepoURLNoCredentials := repoURLWithoutCredentials(guestRepoURL)
+
+	var prepare strings.Builder
+	prepare.WriteString("set -eu\n")
+	writeGuestEventFunction(&prepare)
+	prepare.WriteString("REPO_URL=" + shellQuoteArg(guestRepoURL) + "\n")
+	prepare.WriteString("REPO_URL_NO_CREDENTIALS=" + shellQuoteArg(guestRepoURLNoCredentials) + "\n")
+	prepare.WriteString("cd /workspace\n")
+	prepare.WriteString("git remote set-url origin \"$REPO_URL_NO_CREDENTIALS\"\n")
+	prepare.WriteString("git fetch --depth 1 \"$REPO_URL\" " + shellQuoteArg(ref) + "\n")
+	prepare.WriteString("git checkout --force FETCH_HEAD\n")
+	prepare.WriteString("rm -f .git/FETCH_HEAD\n")
+	prepare.WriteString("unset REPO_URL\n")
+	prepare.WriteString("COMMIT_SHA=$(git rev-parse HEAD)\n")
+	writeGuestEventShellAttr(&prepare, repoExecCheckoutEvent, repoCommitSHAAttr, "$COMMIT_SHA")
+	prepare.WriteString("INSTALL_NEEDED=1\n")
+	if strings.TrimSpace(lockfileRelPath) != "" {
+		currentLockfile := workspacePath(lockfileRelPath)
+		recordedLockfile := workspacePath(lockfileHashRelPath)
+		prepare.WriteString(fmt.Sprintf("if [ -f %s ] && [ -f %s ]; then\n", shellQuoteArg(currentLockfile), shellQuoteArg(recordedLockfile)))
+		prepare.WriteString(fmt.Sprintf("  CURRENT_LOCKFILE_SHA=$(sha256sum %s | cut -d' ' -f1)\n", shellQuoteArg(currentLockfile)))
+		prepare.WriteString(fmt.Sprintf("  RECORDED_LOCKFILE_SHA=$(cat %s)\n", shellQuoteArg(recordedLockfile)))
+		prepare.WriteString("  if [ \"$CURRENT_LOCKFILE_SHA\" = \"$RECORDED_LOCKFILE_SHA\" ]; then\n")
+		prepare.WriteString("    INSTALL_NEEDED=0\n")
+		prepare.WriteString("  fi\n")
+		prepare.WriteString("fi\n")
+	}
+	writeGuestEventShellAttr(&prepare, repoExecInstallDecision, repoExecInstallNeededAttr, "$INSTALL_NEEDED")
+	if len(originalJob.PrepareCommand) > 0 {
+		prepare.WriteString("if [ \"$INSTALL_NEEDED\" = \"1\" ]; then\n")
+		wd := originalJob.PrepareWorkDir
+		if wd == "" {
+			wd = "/workspace"
+		}
+		prepare.WriteString(fmt.Sprintf("  cd %s\n", shellQuoteArg(wd)))
+		prepare.WriteString("  " + shellJoinCmd(originalJob.PrepareCommand) + "\n")
+		prepare.WriteString("fi\n")
+	}
+
+	return JobConfig{
+		JobID:          originalJob.JobID,
+		PrepareCommand: []string{"sh", "-c", prepare.String()},
+		PrepareWorkDir: "/",
+		RunCommand:     originalJob.RunCommand,
+		RunWorkDir:     originalJob.RunWorkDir,
+		Services:       originalJob.Services,
+		Env:            originalJob.Env,
+	}, nil
 }
 
-func writeFile(path, contents string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("mkdir for %s: %w", path, err)
+func repoURLForGuest(repoURL, hostServiceIP string, hostServicePort int) (string, error) {
+	if hostServiceIP == "" {
+		hostServiceIP = defaultHostServiceIP
 	}
-	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	if hostServicePort == 0 {
+		hostServicePort = defaultHostServicePort
 	}
-	return nil
+	parsed, err := url.Parse(strings.TrimSpace(repoURL))
+	if err != nil {
+		return "", fmt.Errorf("parse repo_url for guest: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("repo_url scheme %q is not supported for guest host-service fetch; use http or https", parsed.Scheme)
+	}
+	parsed.Scheme = "http"
+	parsed.Host = net.JoinHostPort(hostServiceIP, strconv.Itoa(hostServicePort))
+	return parsed.String(), nil
+}
+
+func repoURLWithoutCredentials(repoURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(repoURL))
+	if err != nil {
+		return repoURL
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return repoURL
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func workspacePath(relPath string) string {
+	relPath = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(relPath)), "/")
+	return filepath.ToSlash(filepath.Join("/workspace", relPath))
+}
+
+func writeGuestEventFunction(script *strings.Builder) {
+	script.WriteString("emit_guest_event() {\n")
+	script.WriteString("  if [ -n \"${FORGE_METAL_GUEST_EVENT_FIFO:-}\" ]; then\n")
+	script.WriteString("    printf '%s\\n' \"$1\" > \"$FORGE_METAL_GUEST_EVENT_FIFO\" || true\n")
+	script.WriteString("  fi\n")
+	script.WriteString("}\n")
+}
+
+func writeGuestEventShellAttr(script *strings.Builder, kind, attr, shellValue string) {
+	script.WriteString("emit_guest_event ")
+	script.WriteString(shellQuoteArg(fmt.Sprintf(`{"kind":"%s","attrs":{"%s":"`, kind, attr)))
+	script.WriteString(`"`)
+	script.WriteString(shellValue)
+	script.WriteString(`"`)
+	script.WriteString(shellQuoteArg(`"}}`))
+	script.WriteString("\n")
+}
+
+func shellQuoteArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+func shellJoinCmd(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = shellQuoteArg(arg)
+	}
+	return strings.Join(quoted, " ")
 }

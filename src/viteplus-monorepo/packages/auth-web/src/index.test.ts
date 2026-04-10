@@ -4,21 +4,24 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   AuthProvider,
   useAuth,
-  useAuthClient,
-  useAuthenticatedAuth,
+  useClerk,
   useSession,
+  useSignedInAuth,
   useUser,
   type UseAuthReturn,
   type UseSessionReturn,
   type UseUserReturn,
 } from "./react.ts";
 import {
+  authCacheKey,
   authCollectionId,
   authQueryKey,
+  parseAuthSnapshot,
   requireAuth,
+  syncAuthPartitionedCache,
   type Auth,
   type AuthSnapshot,
-} from "./shared.ts";
+} from "./isomorphic.ts";
 import { createAuthConfig, resolveAuthConfig, type AuthConfig } from "./config.ts";
 
 const anonymousAuth: Auth = {
@@ -40,12 +43,14 @@ const authenticatedAuth = {
 } satisfies Auth;
 
 const anonymousSnapshot: AuthSnapshot = {
+  isSignedIn: false,
   auth: anonymousAuth,
   session: null,
   user: null,
 };
 
 const authenticatedSnapshot: AuthSnapshot = {
+  isSignedIn: true,
   auth: authenticatedAuth,
   session: {
     createdAt: new Date("2026-04-10T12:00:00.000Z"),
@@ -148,12 +153,26 @@ describe("auth-web React hooks", () => {
 
   it("throws when authenticated auth is requested from an anonymous snapshot", () => {
     function Probe() {
-      useAuthenticatedAuth();
+      useSignedInAuth();
       return null;
     }
 
     expect(() => renderWithAuth(anonymousSnapshot, createElement(Probe))).toThrow(
-      "useAuthenticatedAuth() requires an authenticated auth snapshot",
+      "useSignedInAuth() requires a signed-in auth snapshot",
+    );
+  });
+
+  it("rejects mismatched auth snapshots at the provider boundary", () => {
+    const mismatchedSnapshot = {
+      ...authenticatedSnapshot,
+      user: {
+        ...authenticatedSnapshot.user,
+        sub: "other-user",
+      },
+    } satisfies AuthSnapshot;
+
+    expect(() => renderWithAuth(mismatchedSnapshot, null)).toThrow(
+      "Auth snapshot user does not match cache partition owner",
     );
   });
 });
@@ -175,6 +194,46 @@ describe("auth-web helpers", () => {
     expect(authCollectionId(authenticatedAuth, "sync-executions-org-1")).toBe(
       "auth:partition-123:sync-executions-org-1",
     );
+    expect(authCacheKey(authenticatedSnapshot)).toBe("auth:partition-123");
+    expect(authCacheKey(anonymousSnapshot)).toBe("auth:anonymous");
+  });
+
+  it("normalizes serialized client auth snapshot session dates", () => {
+    const snapshot = parseAuthSnapshot({
+      ...authenticatedSnapshot,
+      session: {
+        createdAt: "2026-04-10T12:00:00.000Z",
+        expiresAt: "2026-04-10T13:00:00.000Z",
+      },
+    });
+
+    if (!snapshot.isSignedIn) {
+      throw new Error("Expected a signed-in auth snapshot");
+    }
+    expect(snapshot.session.expiresAt.toISOString()).toBe("2026-04-10T13:00:00.000Z");
+  });
+
+  it("clears partitioned caches when the auth partition changes", () => {
+    const cache = {
+      clears: 0,
+      clear() {
+        this.clears += 1;
+      },
+    };
+    const secondSnapshot: AuthSnapshot = {
+      ...authenticatedSnapshot,
+      auth: {
+        ...authenticatedSnapshot.auth,
+        cachePartition: "partition-456",
+      },
+    };
+
+    syncAuthPartitionedCache(cache, anonymousSnapshot);
+    syncAuthPartitionedCache(cache, anonymousSnapshot);
+    syncAuthPartitionedCache(cache, authenticatedSnapshot);
+    syncAuthPartitionedCache(cache, secondSnapshot);
+
+    expect(cache.clears).toBe(2);
   });
 
   it("returns authenticated auth from requireAuth", () => {
@@ -191,10 +250,10 @@ describe("auth-web helpers", () => {
         };
       }
     ).location;
-    const clients: ReturnType<typeof useAuthClient>[] = [];
+    const clients: ReturnType<typeof useClerk>[] = [];
 
     function Probe() {
-      clients.push(useAuthClient());
+      clients.push(useClerk());
       return null;
     }
 
@@ -212,9 +271,9 @@ describe("auth-web helpers", () => {
           AuthProvider,
           {
             client: {
-              getLoginRedirectURL: async ({ data }) =>
+              getSignInRedirectURL: async ({ data }) =>
                 `/login/redirect?to=${encodeURIComponent(data.redirectTo ?? "")}`,
-              getLogoutRedirectURL: async () => "/logout/redirect",
+              getSignOutRedirectURL: async () => "/logout/redirect",
             },
             snapshot: authenticatedSnapshot,
           },

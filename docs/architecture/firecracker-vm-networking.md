@@ -6,6 +6,7 @@ Firecracker CI networking uses a host-managed allocator over a dedicated guest p
 - one `/30` lease per VM
 - one TAP per lease
 - one persistent host-owned NAT and forwarding policy for the entire guest pool
+- one host-only service address, default `10.255.0.1/32` on `fm-host0`
 - no DHCP, no CNI, no Linux bridge management, no network namespaces in this phase
 
 ## Topology
@@ -14,10 +15,15 @@ Firecracker CI networking uses a host-managed allocator over a dedicated guest p
 Bare-Metal Host
 │
 ├── uplink: eth0
-│   └── iptables
+│   └── nftables
 │       ├── MASQUERADE 172.16.0.0/16 -> eth0
 │       ├── allow guest egress
 │       └── drop guest -> guest east-west traffic
+│
+├── host service plane
+│   ├── fm-host0: 10.255.0.1/32
+│   ├── Caddy: 10.255.0.1:18080 -> Forgejo 127.0.0.1:3000
+│   └── Verdaccio: 10.255.0.1:4873
 │
 ├── lease dir: /var/lib/ci/net/leases
 │   ├── 000000.json  -> 172.16.0.0/30
@@ -46,6 +52,7 @@ Bare-Metal Host
 - Per-job runtime only creates and deletes TAP devices. It does not mutate host-wide firewall state.
 - Recovery is best-effort. On startup, stale lease files are reconciled against live TAP devices and recorded PIDs.
 - Guests still use static kernel boot args, so the guest image stays simple and unaware of host network orchestration.
+- Guests do not reach host loopback through DNAT. Host-local platform services are exposed through `fm-host0`, and host firewall rules match `fc-tap-*` plus destination `10.255.0.1`.
 
 ## Why not CNI or `tc-redirect-tap` yet
 

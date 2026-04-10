@@ -1,108 +1,43 @@
 # ZFS Golden Image Lifecycle
 
-Three-tier zvol clone hierarchy. Each CI job's rootfs traces back to one base image through two clone levels.
+1. Host clones ZFS base snapshot to a candidate repo-golden zvol.
+2. Host boots a warm-golden Firecracker VM with that zvol as /dev/vda.
+3. VM gets a narrow network profile: Forgejo and dependency mirrors only, preferably no general internet.
+4. VM fetches from Forgejo, installs deps through Verdaccio or other mirrors, writes warm metadata like lockfile hash, syncs, shuts down.
+5. Host snapshots the same zvol as @ready. No “send it out” step is needed; the host already owns the zvol. The host should not mount the guest-mutated
+    ext4 in the trusted host kernel path. The current implementation still runs `fsck.ext4 -n` as a read-only check before promotion; removing even that
+    userland filesystem parser is the stricter endpoint if we want a pure block-layer host boundary.
 
-```mermaid
-graph TD
-    subgraph "Layer 1: Base Golden"
-        ROOTFS["rootfs.ext4"] -->|"dd"| ZVOL["forgepool/golden-zvol"]
-        ZVOL --> SNAP["golden-zvol@ready"]
-    end
+    The key distinction: ZFS stays host-side at the block layer; filesystem parsing and untrusted repo execution stay guest-side.
 
-    subgraph "Layer 2: Repo Goldens"
-        SNAP -->|"clone"| RG1["repo-goldens/app-A-<ts>"]
-        SNAP -->|"clone"| RG2["repo-goldens/app-B-<ts>"]
-        RG1 --> RG1S["...@ready"]
-        RG2 --> RG2S["...@ready"]
-    end
+Forgejo connectivity uses an explicit host-service plane rather than `route_localnet` or DNAT to `127.0.0.1`:
 
-    subgraph "Layer 3: CI Jobs"
-        RG1S -->|"clone"| J1["ci/job-uuid-1"]
-        RG1S -->|"clone"| J2["ci/job-uuid-2"]
-        RG2S -->|"clone"| J3["ci/job-uuid-3"]
-    end
+- Add a host-only service IP, e.g. 10.255.0.1/32 on a dummy interface like fm-host0.
+- Put Caddy or a tiny internal reverse proxy on 10.255.0.1:18080.
+- Pass the host-service origin to the VM as runtime config.
+- Caddy reverse-proxies git.<domain> to Forgejo’s existing 127.0.0.1:3000.
+- nftables allows Firecracker TAPs to 10.255.0.1:18080 and 10.255.0.1:4873, and drops other host-local/internal destinations.
+- Warm/exec repo URLs must be HTTP(S); SSH-style clone URLs are rejected on this path.
 
-    style SNAP fill:#f9f,stroke:#333,stroke-width:2px
-    style RG1S fill:#f9f,stroke:#333,stroke-width:2px
-    style RG2S fill:#f9f,stroke:#333,stroke-width:2px
-```
+That avoids the 127/8 routing footgun. Firecracker just attaches the VM to TAP devices; the host owns TAP routing and policy.
 
-| Layer | Contains | Created by |
-|-------|----------|------------|
-| **Base golden** | Alpine + Node + git + PID 1 | Ansible `firecracker` role |
-| **Repo golden** | Base + repo checkout + warmed `node_modules` | `forge-metal ci warm` |
-| **CI job clone** | Repo golden + PR branch delta | `forge-metal ci exec` |
+Define VM “pools” as profiles, not separate codebases:
 
-## Snapshot dependency rule
+- warm-golden: can reach Forgejo + package mirrors; can receive a short-lived repo-read credential; writes a candidate repo-golden zvol.
+- ci-exec: starts from repo-golden snapshot, fetches the target ref inside the VM, compares lockfile hash inside the VM, runs prepare only if needed, then
+runs CI; no host mount.
+- customer-sandbox: separate CIDR/profile, no operator Forgejo access by default, billing and policy attached from the start.
 
-**A snapshot cannot be destroyed while clones exist.** Tear down leaf-to-root.
+The exec path follows the same boundary: it starts from the repo-golden snapshot, fetches the requested ref inside the VM, compares lockfile hashes inside the
+VM, and skips dependency install only after the guest emits that decision.
 
-Replacing the base golden requires destroying all repo goldens and CI jobs first. The Ansible role does this automatically when it detects the rootfs SHA256 changed.
+If private repo credentials matter, there are two sane options:
 
-## Refresh flow
+- Short-term: inject a short-lived, repo-scoped, read-only clone credential into the warm/exec VM, use it only for clone/fetch, don’t persist it in .git/
+config, remove it before running repo scripts, and don’t allow general internet egress where it can be exfiltrated.
+- Stronger later: a vsock fetch broker keeps credentials host-side and exposes only “give this VM this repo/ref pack/archive” semantics. More secure for
+credentials, but more code and easier to accidentally reinvent a leaky HTTP proxy.
 
-```mermaid
-flowchart TD
-    A["SHA256 of rootfs.ext4 changed?"] -->|no| SKIP([skip])
-    A -->|yes| B["zfs destroy -r repo-goldens"]
-    B --> C["destroy all children under ci/"]
-    C --> D["zfs destroy golden-zvol@ready"]
-    D --> E["dd rootfs.ext4 → golden-zvol"]
-    E --> F["zfs snapshot golden-zvol@ready"]
-
-    style B fill:#fbb,stroke:#333
-    style C fill:#fbb,stroke:#333
-    style D fill:#fbb,stroke:#333
-```
-
-Trigger: rootfs hash mismatch, missing zvol/snapshot, or `firecracker_refresh_base_golden: true`.
-
-## Warm path (`ci warm`)
-
-1. `zfs clone golden-zvol@ready` → new `repo-goldens/<key>-<unix-nano>`
-2. Mount, `git clone` repo, detect toolchain, unmount
-3. Boot Firecracker VM, run install/prepare
-4. `fsck.ext4 -n`, snapshot as `@ready`
-5. Record active dataset, destroy previous generation
-
-New dataset per warm. Old one destroyed only after new one promotes. Always a valid golden.
-
-## Exec path (`ci exec`)
-
-1. `zfs clone repo-golden@ready` → `ci/<job-uuid>` (~1.7ms)
-2. Mount, `git fetch` PR ref, check if lockfile changed, unmount
-3. Boot VM. Skip `npm install` if lockfile unchanged (warm caches intact)
-4. `zfs get written` for telemetry, then `zfs destroy`
-
-## Dev hot-swap (`vm-guest-telemetry-dev.yml`)
-
-Clone base golden → mount → replace one binary → snapshot → boot VM → probe → destroy. ~10s loop, no rootfs rebuild.
-
-## On disk
-
-```
-forgepool/
-├── golden-zvol                         (4G zvol, volblocksize=16K, lz4)
-│   └── @ready                          (origin for repo goldens)
-├── repo-goldens/
-│   ├── app-A-1743523200                (clone of golden-zvol@ready)
-│   │   └── @ready                      (origin for CI jobs)
-│   └── app-B-1743523201
-│       └── @ready
-└── ci/
-    └── job-a1b2c3d4                    (clone of app-A@ready)
-```
-
-## Debugging
-
-```bash
-zfs list -r -t all forgepool              # full hierarchy
-zfs get origin forgepool/repo-goldens/X   # what was this cloned from
-zfs get -r clones forgepool/golden-zvol@ready  # who depends on this snapshot
-zfs get written forgepool/ci/job-X        # COW bytes dirtied
-zfs list -t snapshot -o name,clones forgepool/golden-zvol@ready  # safe to destroy?
-```
-
-## Guest perspective
-
-Guest sees `/dev/vda` with ext4. No ZFS in guest. COW is transparent at block layer.
+I would not use host-side clone/mount as the main path. It is operationally tempting, but it moves Git parsing, ext4 parsing, and sometimes workspace mutation
+back into the privileged host boundary. The whole point of the Firecracker move is to make the malicious repo only affect a disposable VM and a candidate zvol
+that gets promoted only after a clean guest outcome.

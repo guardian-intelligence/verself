@@ -43,7 +43,7 @@ type BalanceResponse struct {
 	CreditPending     int64   `json:"credit_pending"`
 	FreeTierAvailable int64   `json:"free_tier_available"`
 	FreeTierPending   int64   `json:"free_tier_pending"`
-	OrgId             int64   `json:"org_id"`
+	OrgId             string  `json:"org_id"`
 	TotalAvailable    int64   `json:"total_available"`
 }
 
@@ -53,7 +53,7 @@ type CreateCheckoutRequest struct {
 	Schema      *string `json:"$schema,omitempty"`
 	AmountCents int64   `json:"amount_cents"`
 	CancelUrl   string  `json:"cancel_url"`
-	OrgId       int64   `json:"org_id"`
+	OrgId       string  `json:"org_id"`
 	ProductId   string  `json:"product_id"`
 	SuccessUrl  string  `json:"success_url"`
 }
@@ -64,7 +64,7 @@ type CreateSubscriptionRequest struct {
 	Schema     *string                           `json:"$schema,omitempty"`
 	Cadence    *CreateSubscriptionRequestCadence `json:"cadence,omitempty"`
 	CancelUrl  string                            `json:"cancel_url"`
-	OrgId      int64                             `json:"org_id"`
+	OrgId      string                            `json:"org_id"`
 	PlanId     string                            `json:"plan_id"`
 	SuccessUrl string                            `json:"success_url"`
 }
@@ -131,7 +131,7 @@ type ReserveWindowRequest struct {
 	ActorId         string             `json:"actor_id"`
 	Allocation      map[string]float64 `json:"allocation"`
 	ConcurrentCount int64              `json:"concurrent_count"`
-	OrgId           int64              `json:"org_id"`
+	OrgId           string             `json:"org_id"`
 	ProductId       string             `json:"product_id"`
 	SourceRef       string             `json:"source_ref"`
 	SourceType      string             `json:"source_type"`
@@ -140,8 +140,8 @@ type ReserveWindowRequest struct {
 // ReserveWindowResult defines model for ReserveWindowResult.
 type ReserveWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string           `json:"$schema,omitempty"`
-	Reservation WindowReservation `json:"reservation"`
+	Schema      *string                   `json:"$schema,omitempty"`
+	Reservation WindowReservationResponse `json:"reservation"`
 }
 
 // SettleResult defines model for SettleResult.
@@ -205,13 +205,13 @@ type VoidWindowResult struct {
 	WindowId string  `json:"window_id"`
 }
 
-// WindowReservation defines model for WindowReservation.
-type WindowReservation struct {
+// WindowReservationResponse defines model for WindowReservationResponse.
+type WindowReservationResponse struct {
 	ActorId             string             `json:"actor_id"`
 	Allocation          map[string]float64 `json:"allocation"`
 	CostPerUnit         int64              `json:"cost_per_unit"`
 	ExpiresAt           time.Time          `json:"expires_at"`
-	OrgId               int64              `json:"org_id"`
+	OrgId               string             `json:"org_id"`
 	PlanId              string             `json:"plan_id"`
 	PricingPhase        string             `json:"pricing_phase"`
 	ProductId           string             `json:"product_id"`
@@ -327,13 +327,13 @@ type ClientInterface interface {
 	CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetBalance request
-	GetBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetBalance(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListGrants request
-	ListGrants(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListGrants(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSubscriptions request
-	ListSubscriptions(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReserveWindowWithBody request with any body
 	ReserveWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -380,7 +380,7 @@ func (c *Client) CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequ
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetBalance(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetBalance(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetBalanceRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
@@ -392,7 +392,7 @@ func (c *Client) GetBalance(ctx context.Context, orgId int64, reqEditors ...Requ
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListGrants(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListGrants(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListGrantsRequest(c.Server, orgId, params)
 	if err != nil {
 		return nil, err
@@ -404,7 +404,7 @@ func (c *Client) ListGrants(ctx context.Context, orgId int64, params *ListGrants
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListSubscriptions(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListSubscriptionsRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
@@ -553,12 +553,12 @@ func NewCreateCheckoutRequestWithBody(server string, contentType string, body io
 }
 
 // NewGetBalanceRequest generates requests for GetBalance
-func NewGetBalanceRequest(server string, orgId int64) (*http.Request, error) {
+func NewGetBalanceRequest(server string, orgId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -587,12 +587,12 @@ func NewGetBalanceRequest(server string, orgId int64) (*http.Request, error) {
 }
 
 // NewListGrantsRequest generates requests for ListGrants
-func NewListGrantsRequest(server string, orgId int64, params *ListGrantsParams) (*http.Request, error) {
+func NewListGrantsRequest(server string, orgId string, params *ListGrantsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -659,12 +659,12 @@ func NewListGrantsRequest(server string, orgId int64, params *ListGrantsParams) 
 }
 
 // NewListSubscriptionsRequest generates requests for ListSubscriptions
-func NewListSubscriptionsRequest(server string, orgId int64) (*http.Request, error) {
+func NewListSubscriptionsRequest(server string, orgId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -901,13 +901,13 @@ type ClientWithResponsesInterface interface {
 	CreateCheckoutWithResponse(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
 	// GetBalanceWithResponse request
-	GetBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error)
+	GetBalanceWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error)
 
 	// ListGrantsWithResponse request
-	ListGrantsWithResponse(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error)
+	ListGrantsWithResponse(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error)
 
 	// ListSubscriptionsWithResponse request
-	ListSubscriptionsWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
+	ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
 
 	// ReserveWindowWithBodyWithResponse request with any body
 	ReserveWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error)
@@ -1143,7 +1143,7 @@ func (c *ClientWithResponses) CreateCheckoutWithResponse(ctx context.Context, bo
 }
 
 // GetBalanceWithResponse request returning *GetBalanceResponse
-func (c *ClientWithResponses) GetBalanceWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error) {
+func (c *ClientWithResponses) GetBalanceWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error) {
 	rsp, err := c.GetBalance(ctx, orgId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -1152,7 +1152,7 @@ func (c *ClientWithResponses) GetBalanceWithResponse(ctx context.Context, orgId 
 }
 
 // ListGrantsWithResponse request returning *ListGrantsResponse
-func (c *ClientWithResponses) ListGrantsWithResponse(ctx context.Context, orgId int64, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error) {
+func (c *ClientWithResponses) ListGrantsWithResponse(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error) {
 	rsp, err := c.ListGrants(ctx, orgId, params, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -1161,7 +1161,7 @@ func (c *ClientWithResponses) ListGrantsWithResponse(ctx context.Context, orgId 
 }
 
 // ListSubscriptionsWithResponse request returning *ListSubscriptionsResponse
-func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context, orgId int64, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error) {
+func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error) {
 	rsp, err := c.ListSubscriptions(ctx, orgId, reqEditors...)
 	if err != nil {
 		return nil, err

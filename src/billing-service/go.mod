@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/lib/pq v1.12.3
@@ -59,6 +60,8 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/forge-metal/apiwire => ../apiwire
 
 replace github.com/forge-metal/auth-middleware => ../auth-middleware
 

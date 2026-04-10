@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimization mode for benchmark executable") orelse .ReleaseSafe;
     const guest_target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
         .os_tag = .linux,
@@ -46,6 +47,33 @@ pub fn build(b: *std.Build) void {
     const run_gen_vectors_step = b.step("run-generate-vectors", "Regenerate protocol/vectors.json from canonical encoder");
     const run_gen_vectors = b.addRunArtifact(gen_vectors);
     run_gen_vectors_step.dependOn(&run_gen_vectors.step);
+
+    const bench_guest_mod = b.createModule(.{
+        .root_source_file = b.path("src/guest.zig"),
+        .target = target,
+        .optimize = bench_optimize,
+        .imports = &.{
+            .{ .name = "vm_guest_telemetry", .module = mod },
+        },
+    });
+    const bench = b.addExecutable(.{
+        .name = "vm-guest-telemetry-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/bench.zig"),
+            .target = target,
+            .optimize = bench_optimize,
+            .imports = &.{
+                .{ .name = "vm_guest_telemetry", .module = mod },
+                .{ .name = "guest_agent", .module = bench_guest_mod },
+            },
+        }),
+    });
+    const run_bench = b.addRunArtifact(bench);
+    if (b.args) |args| {
+        run_bench.addArgs(args);
+    }
+    const bench_step = b.step("bench", "Run vm-guest-telemetry benchmarks");
+    bench_step.dependOn(&run_bench.step);
 
     const mod_tests = b.addTest(.{
         .root_module = mod,

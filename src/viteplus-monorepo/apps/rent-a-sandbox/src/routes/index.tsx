@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuth, useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useAuth, useSignedInAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
@@ -70,7 +70,7 @@ function GuestLanding() {
 }
 
 function MemberDashboard() {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const { data: balance } = useSuspenseQuery(balanceQuery(auth));
 
   return (

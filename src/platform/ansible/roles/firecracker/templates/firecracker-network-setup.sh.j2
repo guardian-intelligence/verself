@@ -4,6 +4,20 @@ set -euo pipefail
 # Enable IP forwarding (also persisted via sysctl.d, this covers the first boot).
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
+# Explicitly undo the old localhost-DNAT path; guests use fm-host0 instead.
+sysctl -w net.ipv4.conf.all.route_localnet=0 >/dev/null
+sysctl -w net.ipv4.conf.default.route_localnet=0 >/dev/null
+
+# Host-only service plane for selected platform endpoints reachable from guests.
+HOST_SERVICE_IF="{{ firecracker_host_service_interface }}"
+HOST_SERVICE_CIDR="{{ firecracker_host_service_ip }}/32"
+
+if ! ip link show "$HOST_SERVICE_IF" >/dev/null 2>&1; then
+    ip link add "$HOST_SERVICE_IF" type dummy
+fi
+ip addr replace "$HOST_SERVICE_CIDR" dev "$HOST_SERVICE_IF"
+ip link set "$HOST_SERVICE_IF" up
+
 # --- Migrate: remove old iptables-nft compat rules ---
 # Previous versions used iptables (translated to nft compat tables via
 # iptables-nft). Clean up our chains only; the provider's metadata DNAT

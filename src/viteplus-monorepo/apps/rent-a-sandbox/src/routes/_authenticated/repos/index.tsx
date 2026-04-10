@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { RepoListEmptyState, RepoListItem } from "~/features/repos/components";
 import { loadReposIndex, reposQuery } from "~/features/repos/queries";
 
@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_authenticated/repos/")({
 });
 
 function ReposPage() {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const repos = useSuspenseQuery(reposQuery(auth)).data;
 
   return (

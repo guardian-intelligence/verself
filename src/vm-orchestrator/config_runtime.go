@@ -18,6 +18,8 @@ func configToProto(cfg Config) *vmrpc.RuntimeConfig {
 		HostInterface:   cfg.HostInterface,
 		GuestPoolCidr:   cfg.GuestPoolCIDR,
 		NetworkLeaseDir: cfg.NetworkLeaseDir,
+		HostServiceIp:   cfg.HostServiceIP,
+		HostServicePort: int32(cfg.HostServicePort),
 	}
 }
 
@@ -67,6 +69,12 @@ func configFromProto(base Config, in *vmrpc.RuntimeConfig) Config {
 	}
 	if in.GetNetworkLeaseDir() != "" {
 		cfg.NetworkLeaseDir = in.GetNetworkLeaseDir()
+	}
+	if in.GetHostServiceIp() != "" {
+		cfg.HostServiceIP = in.GetHostServiceIp()
+	}
+	if in.GetHostServicePort() > 0 {
+		cfg.HostServicePort = int(in.GetHostServicePort())
 	}
 	return cfg
 }

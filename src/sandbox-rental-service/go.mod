@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/billing-service v0.0.0
 	github.com/forge-metal/otel v0.0.0
@@ -66,6 +67,7 @@ require (
 )
 
 replace (
+	github.com/forge-metal/apiwire => ../apiwire
 	github.com/forge-metal/auth-middleware => ../auth-middleware
 	github.com/forge-metal/billing-service => ../billing-service
 	github.com/forge-metal/otel => ../otel

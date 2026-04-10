@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { BalanceCard } from "~/components/balance-card";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
@@ -19,7 +19,7 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const balance = useSuspenseQuery(balanceQuery(auth)).data;
   const mutation = useCreateCheckoutSessionMutation();
 

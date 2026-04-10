@@ -51,10 +51,12 @@ type Hello struct {
 }
 
 type NetworkConfig struct {
-	AddressCIDR string   `json:"address_cidr"`
-	Gateway     string   `json:"gateway"`
-	LinkName    string   `json:"link_name"`
-	DNS         []string `json:"dns,omitempty"`
+	AddressCIDR     string   `json:"address_cidr"`
+	Gateway         string   `json:"gateway"`
+	LinkName        string   `json:"link_name"`
+	DNS             []string `json:"dns,omitempty"`
+	HostServiceIP   string   `json:"host_service_ip,omitempty"`
+	HostServicePort int      `json:"host_service_port,omitempty"`
 }
 
 type RunRequest struct {

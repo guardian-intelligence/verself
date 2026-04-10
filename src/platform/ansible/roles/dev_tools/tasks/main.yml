@@ -501,6 +501,24 @@
     - dev_tools_manifest['golangci-lint'] is defined
     - dev_tools_golangci_current.rc != 0 or dev_tools_manifest['golangci-lint'].version not in (dev_tools_golangci_current.stdout | default(''))
 
+- name: Check gosec module version
+  ansible.builtin.command: "/usr/local/go/bin/go version -m {{ dev_tools_gopath }}/bin/gosec"
+  register: dev_tools_gosec_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest.gosec is defined
+
+- name: Install gosec via go install
+  ansible.builtin.command:
+    cmd: "/usr/local/go/bin/go install {{ dev_tools_manifest.gosec.go_package }}@v{{ dev_tools_manifest.gosec.version }}"
+  environment:
+    GOPATH: "{{ dev_tools_gopath }}"
+    GOBIN: "{{ dev_tools_gopath }}/bin"
+  changed_when: true
+  when:
+    - dev_tools_manifest.gosec is defined
+    - dev_tools_gosec_current.rc != 0 or dev_tools_manifest.gosec.version not in (dev_tools_gosec_current.stdout | default(''))
+
 - name: Check gofumpt version
   ansible.builtin.command: "{{ dev_tools_gopath }}/bin/gofumpt --version"
   register: dev_tools_gofumpt_current

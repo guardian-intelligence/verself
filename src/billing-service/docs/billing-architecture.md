@@ -20,7 +20,11 @@ Reference architectures: Metronome's rate card + contract override model for pri
 | PostgreSQL | Products, plans, contracts, orgs, subscriptions, credit grants, adjustments, invoices, billing windows, projection state | Read at Reserve time for rate resolution. Write for commercial lifecycle events and metered entitlement state transitions. |
 | ClickHouse | Raw usage evidence and invoice-grade metering projections | Append product-specific usage events directly when useful; project settled billing windows asynchronously for invoice generation, dashboards, and reconciliation. |
 
+<<<<<<< Updated upstream
 Consistency between the three stores is verified by periodic reconciliation (eight named checks, described below). Billing truth is decided by TigerBeetle + PostgreSQL window state; ClickHouse is a derived read model that can be retried or rebuilt if projection falls behind.
+=======
+Consistency between the three stores is verified by periodic reconciliation (seven named checks, described below).
+>>>>>>> Stashed changes
 
 ## PostgreSQL schema
 
@@ -49,8 +53,13 @@ Tier definition and list pricing. Each plan references a product and defines the
 | display_name | TEXT | Human-readable tier name |
 | billing_mode | TEXT | `prepaid` or `postpaid`. Determines the Reserve funding path (see below). |
 | included_credits | BIGINT | Prepaid only. Monthly credit allowance deposited as a grant at period start. Null for postpaid plans. |
+<<<<<<< Updated upstream
 | unit_rates | JSONB | Rate card: `{"vcpu": 100, "memory_gb": 50}` — atomic units per second per dimension. For prepaid, applies to the included allocation. For postpaid, applies to all usage from the first unit. |
 | overage_unit_rates | JSONB | Prepaid only. Rates applied when included credits are exhausted. Null = hard stop (usage blocked until next period or upgrade). Non-null = overage pricing subject to spend cap. Ignored for postpaid plans. |
+=======
+| unit_rates | JSONB | Rate card: `{"vcpu": 100, "memory_gb": 50}` — atomic units per second per dimension. For prepaid plans, applies to the included allocation. For postpaid plans, applies to all usage from the first unit. |
+| overage_unit_rates | JSONB | Prepaid only. Rates applied when included credits are exhausted. Null = hard stop (ElevenLabs-style: "limit reached — upgrade to continue"). Non-null = overage pricing subject to spend cap. Ignored for postpaid plans. |
+>>>>>>> Stashed changes
 | quotas | JSONB | Concurrent limits, resource caps |
 | is_default | BOOLEAN | One default plan per product (unique partial index) |
 | tier | TEXT | `free`, `hobby`, `pro`, `enterprise` |
@@ -59,10 +68,17 @@ Tier definition and list pricing. Each plan references a product and defines the
 
 | Mode | Funding | On exhaustion | Invoice covers |
 |------|---------|---------------|----------------|
+<<<<<<< Updated upstream
 | `prepaid` | Grant deposited from `included_credits` at period start | Hard stop (`overage_unit_rates` null) or overage pricing (spend-capped) | Overage charges only — prepaid portion already paid via subscription fee |
 | `postpaid` | TigerBeetle receivable account (no balance constraint) | N/A — never exhausts | Total usage at `unit_rates` (after contract override resolution) |
 
 Prepaid maps to self-serve tiers: the subscription fee purchases the credit allocation, usage draws it down, and exhaustion is either a hard stop or a spend-capped overage. Postpaid maps to enterprise and platform tiers: usage accrues unbounded against a receivable (an Asset account in double-entry terms — "money owed to you"), and the invoice at period end is the collection event.
+=======
+| `prepaid` | Grant deposited from `included_credits` at period start | Hard stop (`overage_unit_rates` null) or overage pricing (spend-capped) | Overage charges only — prepaid portion is already paid via subscription fee |
+| `postpaid` | TigerBeetle receivable account (no balance constraint) | N/A — never exhausts | Total usage at `unit_rates` (after contract override resolution) |
+
+Prepaid plans map to ElevenLabs-style self-serve tiers: the subscription fee purchases the credit allocation, usage draws it down, and exhaustion is either a hard stop or a spend-capped overage. Postpaid plans map to enterprise and platform tiers: usage accrues unbounded against a receivable, and the invoice at period end is the collection event.
+>>>>>>> Stashed changes
 
 Rate changes follow the Stripe/Metronome immutable-price pattern: append a new plan version with an `effective_at` timestamp rather than mutating `unit_rates` in place. Historical metering rows reference the `plan_id` that was active at Reserve time, preserving the audit trail required by SOX/GAAP. Stripe chose immutable prices because their billing architecture treats pricing as a stream of events — mutation would produce temporal ambiguity across invoices, webhooks, and integrations.
 
@@ -85,7 +101,11 @@ Trust tier policy:
 | `new` | 2 | 500 | Default for new signups |
 | `established` | 20 | 50,000 | Auto-promoted after 3 successful billing months with no disputes |
 | `enterprise` | unlimited | unlimited | Manually assigned. Never auto-promoted or auto-demoted. |
+<<<<<<< Updated upstream
 | `platform` | unlimited | unlimited | The operator's own org. Postpaid plan. Reserve always succeeds (receivable account, no balance constraint). Usage settles into `AcctRevenue` like any customer. Cost accounting separation via platform showback adjustment at invoice time. |
+=======
+| `platform` | unlimited | unlimited | The operator's own org. Reserve always succeeds financially. Usage settles into `AcctRevenue` like any customer org. Cost accounting separation happens at invoice time via a platform adjustment (see invoice generation). |
+>>>>>>> Stashed changes
 
 Automated trust tier transitions: `new` → `established` requires 3+ `payment_succeeded` billing events and zero `dispute_opened` events. `established` → `new` on any dispute or subscription suspension. `enterprise` and `platform` are never modified by automation.
 
@@ -152,7 +172,11 @@ Override resolution precedence (evaluated at Reserve time):
 
 ### credit_grants
 
+<<<<<<< Updated upstream
 Prepaid balance accounts. Used only by prepaid plans — postpaid plans use receivable accounts instead (see TigerBeetle account structure). Each grant maps 1:1 to a TigerBeetle account via the ULID half-swap (described below). Grants are consumed in waterfall order: earliest-expiring first, then ULID order within the same expiry.
+=======
+Prepaid balance accounts. Used only by prepaid plans — postpaid plans use receivable accounts instead. Each grant maps 1:1 to a TigerBeetle account via the ULID half-swap (described below). Grants are consumed in waterfall order: earliest-expiring first, then ULID order within the same expiry.
+>>>>>>> Stashed changes
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -227,6 +251,7 @@ Generated monthly from projected ClickHouse metering aggregation.
 | billing_period_start | TIMESTAMPTZ | |
 | billing_period_end | TIMESTAMPTZ | |
 | subtotal | BIGINT | Sum of usage + trueup line items (atomic units) |
+<<<<<<< Updated upstream
 | adjustments_total | BIGINT | Sum of adjustment line items (negative for credits/discounts, positive for surcharges). Default 0. |
 | committed_minimum | BIGINT | From contract. Nullable. |
 | pretax_total | BIGINT | `max(subtotal, committed_minimum) + adjustments_total` (floored at 0). All spend caps and adjustment calculations operate on this pre-tax value (design invariant 2). |
@@ -234,6 +259,11 @@ Generated monthly from projected ClickHouse metering aggregation.
 | tax_total | BIGINT | Read-back from Stripe Tax at finalization time. The billing service does not compute this value. 0 for zero-due invoices (platform showback, fully credited). |
 | tax_jurisdiction | TEXT | Read-back from Stripe Tax (e.g. `US-NY`). Nullable. Null when `tax_total = 0`. |
 | total_due | BIGINT | `pretax_total + tax_total` |
+=======
+| adjustments_total | BIGINT | Sum of adjustment line items (negative for credits/platform, positive for surcharges). Default 0. |
+| committed_minimum | BIGINT | From contract. Nullable. |
+| total_due | BIGINT | `max(subtotal, committed_minimum) + adjustments_total` (floored at 0) |
+>>>>>>> Stashed changes
 | due_date | TIMESTAMPTZ | Period end + `payment_terms_days` from contract (or 0 for self-serve) |
 | status | TEXT | `draft`, `finalized`, `paid`, `void` |
 | stripe_invoice_id | TEXT | Set after Stripe invoice creation. Null when `total_due = 0`. |
@@ -246,6 +276,7 @@ Detailed breakdown for each invoice. Usage line items have positive amounts; adj
 |--------|------|---------|
 | invoice_id | TEXT FK | |
 | product_id | TEXT | |
+<<<<<<< Updated upstream
 | description | TEXT | e.g. "Sandbox Compute (Standard) — 47,800 min" or "Platform showback (100%)" |
 | quantity | BIGINT | Total metered units for usage lines. Null for adjustment lines. |
 | unit | TEXT | `seconds`, `requests`, `units`. Null for adjustment lines. |
@@ -346,6 +377,29 @@ Prepaid plans:
 Postpaid plans:
 - Enterprise orgs: invoice for total metered usage at contract rates. Stripe invoice with `due_date` set per contract payment terms. Adjustments applied per contract rules.
 - Platform org: invoice for total metered usage at list rates. Platform showback adjustment (`percentage = -1.0000`) negates the subtotal. `total_due = 0`, no Stripe invoice. Dogfoods the entire invoice generation, adjustment evaluation, and TigerBeetle transfer pipeline on every billing cycle.
+=======
+| description | TEXT | e.g. "Sandbox Compute (Standard) — 47,800 min" |
+| quantity | BIGINT | Total metered units (seconds, requests) |
+| unit | TEXT | `seconds`, `requests`, `units` |
+| rate | BIGINT | Effective rate in atomic units (after contract override) |
+| amount | BIGINT | Charged amount |
+| pricing_phase | TEXT | `free_tier`, `included`, `overage` (prepaid plans); `metered` (postpaid plans); `committed_minimum_trueup`, `platform_adjustment` (invoice-time adjustments) |
+
+Invoice generation (monthly cron):
+1. Aggregate ClickHouse metering rows for the billing period, grouped by `(product_id, pricing_phase)`
+2. Create invoice + line items in PostgreSQL
+3. For enterprise contracts: compare `subtotal` against `committed_monthly`. If usage < commitment, insert a `committed_minimum_trueup` line item for the difference and create a TigerBeetle transfer (`KindCommitmentTrueUp`) to record the revenue.
+4. For platform org (`trust_tier = 'platform'`): insert a `platform_adjustment` line item with `amount = -subtotal`, setting `total_due = 0`. Create a `KindPlatformAdjustment` TigerBeetle transfer to move the subtotal from `AcctRevenue` to `AcctPlatformExpense`. This is a standard invoice with a zeroing adjustment — the same code path as any customer invoice, exercising line item generation, subtotal computation, and adjustment application.
+5. Create Stripe invoice via Invoice API for payment collection when `total_due > 0`. Stripe is the payment processor, not the billing engine. Invoices with `total_due = 0` (platform, fully-credited) are finalized in PostgreSQL without a Stripe counterpart.
+
+**Prepaid plans:**
+- Free tier orgs: no invoice generated (usage covered by auto-deposited grants, hard stop on exhaustion).
+- Self-serve orgs with overage (hobby/pro): invoice for overage charges only. Stripe invoice charged on receipt.
+
+**Postpaid plans:**
+- Enterprise orgs: invoice for total metered usage at contract rates. Stripe invoice with `due_date` set per contract payment terms.
+- Platform org: invoice for total metered usage at list rates, plus a `platform_adjustment` line item that negates the subtotal (`total_due = 0`). A `KindPlatformAdjustment` transfer moves the invoiced amount from `AcctRevenue` to `AcctPlatformExpense` for cost accounting separation. No Stripe invoice created when `total_due = 0`. This dogfoods the entire invoice generation, line item aggregation, and adjustment pipeline on every billing cycle.
+>>>>>>> Stashed changes
 
 ## TigerBeetle account structure
 
@@ -353,6 +407,7 @@ All financial state lives in TigerBeetle. Integer-only arithmetic — Stripe use
 
 ### Account types
 
+<<<<<<< Updated upstream
 Accounts are classified by their double-entry accounting type. This determines which TigerBeetle balance constraint flag is set and whether debits or credits increase the balance.
 
 | Type | Code | Acct. type | ID scheme | Purpose | TB constraint flag |
@@ -371,6 +426,21 @@ Accounts are classified by their double-entry accounting type. This determines w
 | Platform expense | 13 | Expense | `OperatorAccountID(13)` | Destination for platform showback adjustment transfers at invoice time | — |
 | SLA expense | 16 | Expense | `OperatorAccountID(16)` | Destination for SLA credit adjustment transfers (operational cost of SLA breaches) | — |
 | Refund payable | 18 | Liability | `OperatorAccountID(18)` | Monetary refunds owed to customers, pending Stripe payout. Cleared when Stripe confirms the refund. | `debits_must_not_exceed_credits` |
+=======
+| Type | Code | ID scheme | Purpose |
+|------|------|-----------|---------|
+| Grant | 9 | `GrantAccountID(grantULID)` via half-swap | Per-grant prepaid balance. Created with `debits_must_not_exceed_credits` — cannot overspend. |
+| Receivable | 14 | `ReceivableAccountID(orgID, productID, periodStart)` via FNV-1a | Postpaid usage accrual. Created WITHOUT `debits_must_not_exceed_credits` — accumulates unbounded debt, settled at invoice time. One per (org, product, billing period). |
+| Spend cap | 11 | `SpendCapAccountID(orgID, productID, periodStart)` via FNV-1a | Period-scoped overage limit. Prepaid plans only. |
+| Revenue | 3 | `OperatorAccountID(3)` | Destination for settled metered + licensed charges |
+| Free tier pool | 4 | `OperatorAccountID(4)` | Source for free tier deposits |
+| Stripe holding | 5 | `OperatorAccountID(5)` | Stripe payment holding |
+| Promo pool | 6 | `OperatorAccountID(6)` | Source for promotional grants |
+| Free tier expense | 7 | `OperatorAccountID(7)` | Sink for expired free tier grants |
+| Expired credits | 8 | `OperatorAccountID(8)` | Sink for expired paid grants |
+| Quota sink | 12 | `OperatorAccountID(12)` | Sink for spend-cap probe debits |
+| Platform expense | 13 | `OperatorAccountID(13)` | Destination for platform adjustment transfers at invoice time (offsets `AcctRevenue`, preserving cost accounting separation) |
+>>>>>>> Stashed changes
 
 ### ULID → TigerBeetle half-swap
 
@@ -390,6 +460,8 @@ Operator accounts use low 16 bits only (type code), with the high u64 as zero. T
 | Reservation | 1 | Prepaid: pending debit from grant |
 | Settlement | 2 | Post actual spend from pending reservation |
 | Void | 3 | Release unspent portion of reservation |
+| Postpaid reservation | 17 | Postpaid: pending debit from receivable → AcctRevenue. No balance constraint. |
+| Postpaid settlement | 18 | Post actual spend from postpaid reservation |
 | Free tier reset | 4 | Deposit from FreeTierPool |
 | Stripe deposit | 5 | Deposit from StripeHolding (purchase) |
 | Subscription deposit | 6 | Deposit from StripeHolding (subscription) |
@@ -401,6 +473,7 @@ Operator accounts use low 16 bits only (type code), with the high u64 as zero. T
 | Spend cap check | 13 | Linked probe+void at reserve time |
 | Spend cap debit | 14 | Posted permanent spend-cap consumption |
 | Commitment trueup | 15 | Posted revenue for commitment floor shortfall |
+<<<<<<< Updated upstream
 | Postpaid reservation | 17 | Postpaid: pending debit from receivable → AcctRevenue. No balance constraint. |
 | Postpaid settlement | 18 | Post actual spend from postpaid reservation |
 | Adjustment | 19 | Posted at invoice time: DR AcctRevenue → CR destination (AcctDiscounts, AcctPlatformExpense, or AcctSLAExpense depending on adjustment_type) |
@@ -409,6 +482,9 @@ Operator accounts use low 16 bits only (type code), with the high u64 as zero. T
 | Monetary refund | 24 | Revenue reversal: DR AcctRevenue → CR AcctRefundPayable. Linked pair with refund payout. |
 | Refund payout | 25 | Refund disbursement: DR AcctRefundPayable → CR AcctStripeHolding. Posted on Stripe refund confirmation. |
 | Refund credit | 26 | Revenue reversal via account credit: DR AcctRevenue → CR new Grant (`source = 'refund'`). No Stripe interaction. |
+=======
+| Platform adjustment | 16 | Posted at invoice time: moves platform usage amount from AcctRevenue → AcctPlatformExpense |
+>>>>>>> Stashed changes
 
 ### Transfer ID schemes
 
@@ -423,11 +499,15 @@ Deterministic IDs enable safe retries across process crashes. All schemes pack a
 | Dispute debit | task_id | `[4]=grantIdx, [5]=KindDisputeDebit` |
 | Spend cap ops | job_id | `[0:4]=seq, [5]=kind, [6:8]=AcctSpendCapCode` |
 | Credit expiry | — | Full ULID half-swap (bijective, one per grant) |
+<<<<<<< Updated upstream
 | Adjustment | invoice_id hash | `[5]=KindAdjustment, [0:4]=adjustmentIdx` (one per adjustment line item per invoice, deterministic) |
 | Receivable payment | invoice_id hash | `[5]=KindReceivablePayment` (one per invoice payment) |
 | Proration refund | subscription_id | `[5]=KindProrationRefund, [0:4]=grantIdx` (one per grant carried forward) |
 | Monetary refund / payout | refund_id hash | `[5]=KindMonetaryRefund` or `KindRefundPayout` (linked pair, one per refund) |
 | Refund credit | refund_id hash | `[5]=KindRefundCredit` (one per account credit refund) |
+=======
+| Platform adjustment | invoice_id hash | `[5]=KindPlatformAdjustment` (one per invoice, deterministic) |
+>>>>>>> Stashed changes
 
 All pending transfers have a 3600-second timeout. After timeout, TigerBeetle auto-voids and returns funds to the source account.
 
@@ -472,7 +552,11 @@ ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id)
 ```
 
+<<<<<<< Updated upstream
 `window_id` is the stable identity of the projected billing window and is the basis for idempotent projection retries. `charge_units` is the billed cost in atomic units for this finalized window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both — determined by the plan's `billing_mode`. `plan_id` and `cost_per_sec` record the rate context, making invoice generation a pure ClickHouse aggregation without joining to PostgreSQL.
+=======
+`charge_units` is the total cost in atomic units for this window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both. `plan_id` and `cost_per_sec` record the rate context, making invoice generation a pure ClickHouse aggregation without joining to PostgreSQL.
+>>>>>>> Stashed changes
 
 The metering row is a projection of authoritative billing-window state, not the write-time source of truth. A settled window is first made durable in PostgreSQL, then projected into ClickHouse. The first implementation can keep projection state inline on the billing window row (`metering_projected_at`, `last_projection_error`, retry counter). If multiple independent projections appear later, that inline marker can be split into a dedicated projection outbox table without changing the billing model.
 
@@ -493,6 +577,7 @@ The core billing loop for metered products is not "renew"; it is a window state 
 2. Load active subscription plan (with contract override resolution)
 3. Load default plan (fallback)
 4. Check concurrent limit (min of trust tier policy, plan quota)
+<<<<<<< Updated upstream
 5. Load the product's reserve policy:
    - time window or unit tranche
    - target size
@@ -522,6 +607,27 @@ The core billing loop for metered products is not "renew"; it is a window state 
 **Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is null and grants are exhausted, Reserve returns `ErrInsufficientBalance` unless partial reserve is permitted and can produce a smaller valid window.
 
 **Postpaid:** the receivable account has no `debits_must_not_exceed_credits` flag (it's an Asset, not a Liability), so the pending transfer always succeeds. There is no spend cap — postpaid plans accrue unbounded usage. The invoice at period end is the collection event.
+=======
+5. Compute cost_per_sec from allocation dimensions × unit rates
+6. Branch on plan.billing_mode:
+
+   PREPAID:
+   7a. Load unexpired grant balances from PG, then lookup available amounts from TB
+   8a. Select pricing phase: free_tier → included → overage (waterfall)
+   9a. If overage + spend cap: ensure spend-cap account, add linked probe+void to batch
+   10a. Create linked TigerBeetle pending transfers for each grant in waterfall order
+   11a. Return Reservation with grant legs (transfer IDs + amounts)
+
+   POSTPAID:
+   7b. Ensure receivable account exists for (org, product, current period)
+   8b. Create pending transfer: debit receivable → credit AcctRevenue (KindPostpaidReservation)
+   9b. Return Reservation with single receivable leg (transfer ID + amount)
+```
+
+**Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is null and grants are exhausted, Reserve returns `ErrInsufficientBalance` (hard stop).
+
+**Postpaid:** the receivable account has no balance constraint (`debits_must_not_exceed_credits` is not set), so the pending transfer always succeeds. There is no spend cap check — postpaid plans accrue unbounded usage. The invoice at period end is the collection event.
+>>>>>>> Stashed changes
 
 ### Rate resolution cascade
 
@@ -544,6 +650,7 @@ This is evaluated per-dimension, identically for prepaid and postpaid. A single 
 ### Settle
 
 ```
+<<<<<<< Updated upstream
 1. Load the reserved billing window from PostgreSQL
 2. Compute actual usage for the window from the product's usage model
 3. Compute billed usage and operator-paid writeoff:
@@ -561,14 +668,32 @@ This is evaluated per-dimension, identically for prepaid and postpaid. A single 
 
 5. Update the billing window row to `settled` with actual usage, billed usage, writeoff amount, and settlement timestamps
 6. Project the settled window into ClickHouse metering asynchronously
+=======
+1. Compute actual_cost = cost_per_sec × actual_seconds
+2. Branch on billing_mode:
+
+   PREPAID:
+   3a. For each grant leg: post actual spend, void remainder
+   4a. If spend cap applied: post spend-cap debit
+
+   POSTPAID:
+   3b. Post actual spend on receivable leg, void remainder (KindPostpaidSettlement)
+
+3. Write metering row to ClickHouse
+>>>>>>> Stashed changes
 ```
 
 ### Void
 
+<<<<<<< Updated upstream
 Cancel all pending legs (grant legs for prepaid, receivable leg for postpaid). Used when a workload fails before producing billable usage or when a reservation must be unwound after a persistence failure. The customer is never charged for crashes — void is the default failure mode.
+=======
+Cancel all pending legs (grant legs for prepaid, receivable leg for postpaid). Used when a job fails before producing billable usage. The customer is never charged for crashes — void is the default failure mode.
+>>>>>>> Stashed changes
 
 ### Continue long-running work
 
+<<<<<<< Updated upstream
 For long-running workloads, the caller performs two explicit commands:
 
 1. `SettleWindow(current)`
@@ -584,6 +709,13 @@ That split matters because partial progress is real. The old window may be fully
 ## Reconciliation
 
 Eight named consistency checks run periodically across all three stores. Each check has a severity (`alert` or `warn`) and emits a structured reconciliation finding for the OTel pipeline and operator dashboard.
+=======
+For long-running workloads (>300 seconds): settle the current window, then reserve the next. For prepaid plans, this refreshes from the latest grant state — preventing a single reservation from holding credits for the full job duration. For postpaid plans, Renew still settles and re-reserves to bound the pending transfer window for reconciliation.
+
+## Reconciliation
+
+Seven named consistency checks run periodically across all three stores. Each check has a severity (`alert` or `warn`) and produces a `billing_events` row on failure.
+>>>>>>> Stashed changes
 
 | Check | Severity | Validates |
 |-------|----------|-----------|
@@ -591,7 +723,11 @@ Eight named consistency checks run periodically across all three stores. Each ch
 | `no_orphan_grant_accounts` | alert | Every TB grant account found has a PG catalog row |
 | `expired_grants_swept` | warn | Every expired grant has a credit expiry transfer in TB |
 | `licensed_charge_exactly_once` | alert | Each completed licensed charge task has exactly one Revenue transfer |
+<<<<<<< Updated upstream
 | `metering_vs_transfers` | alert | Settled billing-window charges projected to CH are consistent with TB posted debits per org (CH > TB = projection bug or duplicate metering) |
+=======
+| `metering_vs_transfers` | alert | CH `charge_units` totals ≤ TB `debits_posted` per org (CH > TB = data loss) |
+>>>>>>> Stashed changes
 | `receivable_vs_invoiced` | alert | For postpaid orgs: TB receivable `debits_posted` for the period matches the invoice `subtotal`. Drift = metering or invoice generation bug. |
 | `trust_tier_monotonicity` | warn | No org auto-promoted to enterprise |
 | `refunds_vs_stripe` | alert | Every completed PG refund has a matching Stripe refund (monetary) or TB grant (account credit) |
@@ -699,12 +835,19 @@ All endpoints use the Huma v2 framework with OpenAPI 3.1 spec generation.
 
 | Endpoint | Purpose |
 |----------|---------|
+<<<<<<< Updated upstream
 | `GET /internal/billing/v1/orgs/{org_id}/balance` | Prepaid: grant balances (available/pending). Postpaid: current-period receivable accrual. |
 | `GET /internal/billing/v1/orgs/{org_id}/products/{product_id}/balance` | Per-product balance breakdown |
 | `GET /internal/billing/v1/orgs/{org_id}/subscriptions` | Active subscriptions (includes `billing_mode` from plan) |
 | `GET /internal/billing/v1/orgs/{org_id}/grants` | Credit grants (prepaid orgs, filterable by product, active status) |
 | `GET /internal/billing/v1/orgs/{org_id}/adjustments` | Active adjustments for this org (contract-scoped, org-scoped, and matching global/tier rules) |
 | `GET /internal/billing/v1/orgs/{org_id}/refunds` | Refund history for this org (filterable by status, reason) |
+=======
+| `GET /internal/billing/v1/orgs/{org_id}/balance` | Prepaid: free tier + credit available/pending. Postpaid: current-period receivable accrual (usage to date). |
+| `GET /internal/billing/v1/orgs/{org_id}/products/{product_id}/balance` | Per-product balance breakdown (grant balances for prepaid, receivable accrual for postpaid) |
+| `GET /internal/billing/v1/orgs/{org_id}/subscriptions` | Active subscriptions (includes `billing_mode` from plan) |
+| `GET /internal/billing/v1/orgs/{org_id}/grants` | Credit grants (prepaid orgs only, filterable by product, active status) |
+>>>>>>> Stashed changes
 
 ### Operations (cron / admin)
 
@@ -712,7 +855,11 @@ All endpoints use the Huma v2 framework with OpenAPI 3.1 spec generation.
 |----------|---------|
 | `POST /internal/billing/v1/ops/deposit-credits` | Period credit deposits for active prepaid subscriptions (no-op for postpaid) |
 | `POST /internal/billing/v1/ops/expire-credits` | Sweep expired grants (prepaid only) |
+<<<<<<< Updated upstream
 | `POST /internal/billing/v1/ops/reconcile` | Run eight-check consistency verification |
+=======
+| `POST /internal/billing/v1/ops/reconcile` | Run seven-check consistency verification |
+>>>>>>> Stashed changes
 | `POST /internal/billing/v1/ops/trust-tier-evaluate` | Automated promotion/demotion |
 | `POST /internal/billing/v1/ops/process-refund` | Execute a refund (monetary or account credit). Creates TB transfers, Stripe refund if monetary. |
 | `POST /internal/billing/v1/ops/change-plan` | Mid-period plan change. Handles credit carry-forward, prorated deposits, subscription lifecycle. |
@@ -721,9 +868,15 @@ All endpoints use the Huma v2 framework with OpenAPI 3.1 spec generation.
 
 These demonstrate how `contract_overrides` (rate card, at Reserve time), `adjustments` (invoice modifications, at invoice time), `billing_mode` (prepaid vs. postpaid), plan changes, refunds, and tax compose to handle diverse commercial arrangements without special-purpose billing code.
 
+<<<<<<< Updated upstream
 ### Postpaid: Acme Corp — enterprise contract with overrides + onboarding adjustment
 
 Acme signs a 12-month contract on a postpaid plan (`billing_mode = 'postpaid'`). They want a blanket 30% discount on standard sandboxes, a fixed vCPU rate for premium NVMe, $2,000/month minimum spend, net-45 payment terms, and a 15% onboarding discount for the first 90 days. All usage accrues against receivable accounts.
+=======
+### Postpaid: Acme Corp — multi-product committed spend with mixed overrides
+
+Acme signs a 12-month contract for sandbox compute on a postpaid plan (`billing_mode = 'postpaid'`). They want a blanket 30% discount on standard sandboxes, but they've negotiated a fixed vCPU rate for premium NVMe sandboxes (they run GPU workloads and want price certainty regardless of list price changes). They commit to $2,000/month minimum spend with net-45 payment terms. All usage accrues against receivable accounts and is invoiced monthly.
+>>>>>>> Stashed changes
 
 **contracts row:**
 
@@ -823,6 +976,7 @@ No `committed_monthly`, no `payment_terms_days` override. The contract exists pu
 
 The promotion ends with zero cleanup. No cron job to remove discounts, no migration, no feature flags. The contract's temporal bounds do the work.
 
+<<<<<<< Updated upstream
 Note: this could alternatively be modeled as an adjustment (`percentage_discount` of `-0.9000` scoped to `product_id = sandbox-*`, `dimension = vcpu`). The difference: as a contract_override, the discount is visible in projected metering rows (per-second rates reflect the discount). As an adjustment, projected metering rows show full-rate and the discount appears only on the invoice. The contract_override approach is preferred for promotional pricing because it produces more accurate metering data.
 
 ### Prepaid: free tier with 500 included credits, then hard stop
@@ -840,6 +994,66 @@ The operator creates a global adjustment — no contract, no org, no tier restri
 | `adj-summer-2026` | `percentage_discount` | — | — | — | -0.5000 | 2026-06-01 | 2026-09-01 | Summer 2026 promotion (50%) |
 
 At invoice time for a self-serve Pro customer: the 50% global discount applies. Their invoice shows usage at list rates with a -50% adjustment.
+=======
+### Prepaid: free tier with 500 included credits, then hard stop
+
+The operator defines a `free` plan tier (`billing_mode = 'prepaid'`) with 500 included credits per month and no overage path (`overage_unit_rates = NULL`). This is the default experience for new signups.
+
+No contract or overrides needed. The plan's `included_credits = 500` deposits a grant each billing period. When the grant is exhausted, `Reserve` returns `ErrInsufficientBalance`. The frontend shows "free tier limit reached — upgrade to continue." No invoice is generated — usage is fully covered by the prepaid grant.
+
+This case study demonstrates prepaid hard-stop billing: the plan + grant waterfall handles the standard self-serve tiers without any contract machinery, overage pricing, or invoice generation.
+
+### Postpaid: enterprise with committed spend
+
+Enterprise org on a postpaid plan (`billing_mode = 'postpaid'`). All usage accrues against the receivable account and is invoiced at period end.
+
+At Reserve time, the receivable account is debited (no balance constraint). Rate resolution applies contract overrides as usual. At Settle time, actual spend is posted and metered to ClickHouse with `pricing_phase = 'metered'` and `receivable_units = charge_units`. At invoice time, the `metered` rows are aggregated into line items, commitment true-up is applied if usage < `committed_monthly`, and a Stripe invoice is created with the contract's payment terms.
+
+The postpaid path has no grant waterfall, no spend cap, and no hard stop. "Unlimited" is a property of the billing mode, not a hack on the funding mechanism.
+
+### Platform: operator dogfooding the full billing path
+
+The operator's own org has `trust_tier = 'platform'`. It uses a postpaid plan and goes through the same billing abstractions as any enterprise customer: subscription, Reserve/Settle/Void via receivable accounts, invoice generation. The only difference is the invoice total nets to zero via a platform adjustment.
+
+**Setup (seeded at platform bootstrap):**
+- Subscription to a postpaid plan at list rates
+- No grants needed (postpaid plans use receivable accounts, not prepaid grants)
+- No Stripe customer (no payment to collect on $0 invoices)
+
+**At Reserve time:** receivable account is debited. Rate resolution follows the same cascade as any org — plan rates, contract overrides if any. The receivable has no balance constraint, so the reservation always succeeds.
+
+**At Settle time:** actual spend is posted on the receivable. The metering row is written to ClickHouse with `pricing_phase = 'metered'` and `receivable_units = charge_units`. Same postpaid path as any enterprise org.
+
+**At invoice generation time:** the platform org is not skipped. The invoice cron:
+1. Aggregates ClickHouse metering rows for the period (same query as any postpaid org)
+2. Creates `metered` line items at list rates (same as any postpaid org)
+3. Inserts a `platform_adjustment` line item with `amount = -subtotal`
+4. Sets `adjustments_total = -subtotal`, `total_due = 0`
+5. Creates a `KindPlatformAdjustment` transfer in TigerBeetle: `AcctRevenue` → `AcctPlatformExpense` for the subtotal amount
+6. Skips Stripe invoice creation (`total_due = 0`)
+
+**Sample platform invoice:**
+
+```
+Invoice #FM-2026-05-0001
+Billing period: April 1–30, 2026
+Account: Platform Org (trust_tier: platform)
+
+  Sandbox Standard (metered)
+    186,400 sec × 100 atomic/sec                             18,640,000 au
+
+  Sandbox Premium NVMe (metered)
+    vCPU: 42,000 sec × 60 atomic/sec                          2,520,000 au
+    memory_gb: 42,000 sec × 50 atomic/sec                     2,100,000 au
+
+  Usage subtotal                                             23,260,000 au
+  Platform adjustment                                       -23,260,000 au
+  ─────────────────────────────────────────────────────────────────────────
+  Total due                                                           0 au
+```
+
+This exercises every component of the billing pipeline on every cycle: metering aggregation, rate resolution, line item generation, adjustment application, TigerBeetle transfer creation, and invoice finalization. The platform invoice is a real artifact — queryable, auditable, and identical in structure to customer invoices. The operator sees exactly what their CI compute would cost at list rates.
+>>>>>>> Stashed changes
 
 At invoice time for Acme (who has a contract-scoped 15% onboarding discount): MFN precedence kicks in. Both the global 50% and the contract 15% are `percentage_discount` type from different sources (global vs. contract). The customer gets the better deal — the 50% global discount wins. Acme is never worse off for having a contract.
 

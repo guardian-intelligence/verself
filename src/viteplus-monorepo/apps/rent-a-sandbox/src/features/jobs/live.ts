@@ -1,10 +1,10 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { createExecutionLogsCollection, createExecutionsCollection } from "~/lib/collections";
 
 export function useExecutionRows(orgId: string) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const collection = useMemo(
     () => createExecutionsCollection(auth, orgId),
     [auth.cachePartition, orgId],
@@ -20,7 +20,7 @@ export function useExecutionRows(orgId: string) {
 }
 
 export function useExecutionLogs(attemptId: string) {
-  const auth = useAuthenticatedAuth();
+  const auth = useSignedInAuth();
   const collection = useMemo(
     () => createExecutionLogsCollection(auth, attemptId),
     [attemptId, auth.cachePartition],

@@ -236,6 +236,8 @@ type RuntimeConfig struct {
 	HostInterface   string                 `protobuf:"bytes,12,opt,name=host_interface,json=hostInterface,proto3" json:"host_interface,omitempty"`
 	GuestPoolCidr   string                 `protobuf:"bytes,13,opt,name=guest_pool_cidr,json=guestPoolCidr,proto3" json:"guest_pool_cidr,omitempty"`
 	NetworkLeaseDir string                 `protobuf:"bytes,14,opt,name=network_lease_dir,json=networkLeaseDir,proto3" json:"network_lease_dir,omitempty"`
+	HostServiceIp   string                 `protobuf:"bytes,15,opt,name=host_service_ip,json=hostServiceIp,proto3" json:"host_service_ip,omitempty"`
+	HostServicePort int32                  `protobuf:"varint,16,opt,name=host_service_port,json=hostServicePort,proto3" json:"host_service_port,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -366,6 +368,20 @@ func (x *RuntimeConfig) GetNetworkLeaseDir() string {
 		return x.NetworkLeaseDir
 	}
 	return ""
+}
+
+func (x *RuntimeConfig) GetHostServiceIp() string {
+	if x != nil {
+		return x.HostServiceIp
+	}
+	return ""
+}
+
+func (x *RuntimeConfig) GetHostServicePort() int32 {
+	if x != nil {
+		return x.HostServicePort
+	}
+	return 0
 }
 
 type PhaseResult struct {
@@ -2489,7 +2505,7 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x03env\x18\a \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xdb\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xaf\x04\n" +
 	"\rRuntimeConfig\x12\x12\n" +
 	"\x04pool\x18\x01 \x01(\tR\x04pool\x12\x1f\n" +
 	"\vgolden_zvol\x18\x02 \x01(\tR\n" +
@@ -2513,7 +2529,9 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"memory_mib\x18\v \x01(\x05R\tmemoryMib\x12%\n" +
 	"\x0ehost_interface\x18\f \x01(\tR\rhostInterface\x12&\n" +
 	"\x0fguest_pool_cidr\x18\r \x01(\tR\rguestPoolCidr\x12*\n" +
-	"\x11network_lease_dir\x18\x0e \x01(\tR\x0fnetworkLeaseDir\"_\n" +
+	"\x11network_lease_dir\x18\x0e \x01(\tR\x0fnetworkLeaseDir\x12&\n" +
+	"\x0fhost_service_ip\x18\x0f \x01(\tR\rhostServiceIp\x12*\n" +
+	"\x11host_service_port\x18\x10 \x01(\x05R\x0fhostServicePort\"_\n" +
 	"\vPhaseResult\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x1f\n" +

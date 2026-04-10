@@ -17,4 +17,9 @@ warn_list:
   - jinja[spacing]
   - fqcn[deep]
 
+# Disable auto-fix so ansible-lint never modifies files during pre-commit.
+# Without this, pre-commit sees modified files and fails the hook even when
+# lint passes, which blocks partial commits.
+write_list: []
+
 offline: true
