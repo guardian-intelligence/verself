@@ -22,6 +22,7 @@ import {
   useRescanRepoMutation,
   useRunRepoExecutionMutation,
 } from "~/features/repos/mutations";
+import { formatDateTimeUTC } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/repos/$repoId")({
   loader: ({ context, params }) => loadRepoDetail(context.queryClient, params.repoId),
@@ -119,7 +120,7 @@ function RepoDetailPage() {
           }
         />
         <RepoMetric label="Compatibility" value={repo.compatibility_status || "--"} />
-        <RepoMetric label="Updated" value={new Date(repo.updated_at).toLocaleString()} />
+        <RepoMetric label="Updated" value={formatDateTimeUTC(repo.updated_at)} />
       </div>
 
       <RepoCompatibilityPanel summary={repo.compatibility_summary} />
@@ -153,7 +154,7 @@ function RepoDetailPage() {
                   label="Activated"
                   value={
                     activeGeneration.activated_at
-                      ? new Date(activeGeneration.activated_at).toLocaleString()
+                      ? formatDateTimeUTC(activeGeneration.activated_at)
                       : "--"
                   }
                 />
@@ -230,7 +231,7 @@ function RepoDetailPage() {
                       )}
                     </td>
                     <td className="px-4 py-2 text-muted-foreground">
-                      {new Date(generation.created_at).toLocaleString()}
+                      {formatDateTimeUTC(generation.created_at)}
                     </td>
                   </tr>
                 ))

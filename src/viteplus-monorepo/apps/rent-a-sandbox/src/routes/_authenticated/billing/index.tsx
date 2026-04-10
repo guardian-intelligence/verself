@@ -10,6 +10,7 @@ import {
   subscriptionsQuery,
 } from "~/features/billing/queries";
 import { parseBillingFlashSearch } from "~/features/billing/search";
+import { formatDateUTC, formatInteger } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/billing/")({
   validateSearch: parseBillingFlashSearch,
@@ -72,9 +73,7 @@ function BillingPage() {
                     </td>
                     <td className="px-4 py-2">{subscription.cadence}</td>
                     <td className="px-4 py-2 text-muted-foreground">
-                      {subscription.current_period_end
-                        ? new Date(subscription.current_period_end).toLocaleDateString()
-                        : "--"}
+                      {subscription.current_period_end ? formatDateUTC(subscription.current_period_end) : "--"}
                     </td>
                   </tr>
                 ))
@@ -107,10 +106,10 @@ function BillingPage() {
                 grantRows.map((grant) => (
                   <tr key={grant.grant_id}>
                     <td className="px-4 py-2">{grant.source}</td>
-                    <td className="px-4 py-2 font-mono">{grant.amount.toLocaleString()}</td>
+                    <td className="px-4 py-2 font-mono">{formatInteger(grant.amount)}</td>
                     <td className="px-4 py-2">{grant.product_id}</td>
                     <td className="px-4 py-2 text-muted-foreground">
-                      {grant.expires_at ? new Date(grant.expires_at).toLocaleDateString() : "Never"}
+                      {grant.expires_at ? formatDateUTC(grant.expires_at) : "Never"}
                     </td>
                   </tr>
                 ))

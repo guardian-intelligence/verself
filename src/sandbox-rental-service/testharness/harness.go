@@ -10,8 +10,6 @@ import (
 	"net/http/httptest"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	auth "github.com/forge-metal/auth-middleware"
 	billingclient "github.com/forge-metal/billing-service/client"
@@ -96,8 +94,7 @@ func NewServer(cfg Config) *Server {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	humaAPI := humago.New(privateMux, huma.DefaultConfig("Sandbox Rental Service", "1.0.0"))
-	sandboxapi.RegisterRoutes(humaAPI, svc, cfg.Billing)
+	sandboxapi.NewAPI(privateMux, "1.0.0", "127.0.0.1:0", svc, cfg.Billing)
 	sandboxapi.RegisterPublicRoutes(rootMux, svc, sandboxapi.ForgejoWebhookConfig{
 		PlatformOrgID: cfg.PlatformOrgID,
 		ActorID:       "system:forgejo-webhook",

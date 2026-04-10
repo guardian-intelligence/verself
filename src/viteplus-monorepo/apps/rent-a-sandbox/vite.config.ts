@@ -8,11 +8,12 @@ import { defineConfig } from "vite-plus";
 const observabilityPlugin = fileURLToPath(
   import.meta.resolve("@forge-metal/nitro-plugins/observability-plugin"),
 );
+const localAppPort = Number.parseInt(process.env.RENT_DEV_LOCAL_APP_PORT ?? "4244", 10);
 
 export default defineConfig({
   server: {
     host: "127.0.0.1",
-    port: 4244,
+    port: Number.isNaN(localAppPort) ? 4244 : localAppPort,
     strictPort: true,
   },
   resolve: {

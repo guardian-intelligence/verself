@@ -13,13 +13,16 @@ fi
 
 case "${flow_mode}" in
   import)
-    spec_path="e2e/repo-import-live.spec.ts"
+    spec_path="e2e/repo-journeys.live.spec.ts"
+    grep_pattern="repo import renders a stable repo detail page after bootstrap"
     ;;
   refresh)
-    spec_path="e2e/repo-refresh-live.spec.ts"
+    spec_path="e2e/repo-journeys.live.spec.ts"
+    grep_pattern="repo refresh activates a new source sha after rescan"
     ;;
   execute)
-    spec_path="e2e/repo-execute-live.spec.ts"
+    spec_path="e2e/repo-journeys.live.spec.ts"
+    grep_pattern="repo execution preserves jobs index and job detail through hydration"
     ;;
   *)
     echo "unsupported sandbox repo flow: ${flow_mode}" >&2
@@ -67,8 +70,9 @@ env \
     cd "$1"
     vp exec playwright test "$2" \
       --project=chromium \
-      --output "$3"
-  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${spec_path}" "${artifact_dir}/playwright-results"
+      --grep "$3" \
+      --output "$4"
+  ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${spec_path}" "${grep_pattern}" "${artifact_dir}/playwright-results"
 playwright_status=$?
 set -e
 
