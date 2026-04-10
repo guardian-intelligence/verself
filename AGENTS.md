@@ -72,6 +72,7 @@ Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (will be done through
 Required - Domain Registrar (Cloudflare only for now)
 Required - Compute Provider (Latitude.sh only for now)
 Required - Email Delivery (Resend only for now, inbound done via Stalwart)
+Required - Payments, Dunning, Tax, Invoices (Stripe only for now)
 
 ## Service Architecture
 
@@ -81,7 +82,7 @@ See src/platform/ansible/group_vars/all/services.yml for port assignments.
 
 Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each service's Ansible role to `/etc/credstore/{service}/` (root-owned, service-group-readable), and loaded at runtime via systemd `LoadCredential=` into `$CREDENTIALS_DIRECTORY`.
 
-Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services; generate them from an OpenAPI specification.
+Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (for Go client generation via oapi-codegen) and a 3.1 spec (for TypeScript client + Valibot validator generation via @hey-api/openapi-ts).
 
 ### Auth model
 
@@ -255,6 +256,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 * The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
 * When editing byte-layouts, avoid piecemeal edits as that's how you end up with contradictions.
+* Destructive commands like `git restore`, `git checkout -- <file>`, `rm -rf` will be blocked.
 
 ## Coding Contract
 
