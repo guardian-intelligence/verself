@@ -118,7 +118,7 @@ function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> 
   const initials = viewer.name
     ? viewer.name
         .split(" ")
-        .map((w) => w[0])
+        .map((word: string) => word[0])
         .join("")
         .toUpperCase()
         .slice(0, 2)

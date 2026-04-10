@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ClientOnly, createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAuthenticatedAuth } from "@forge-metal/auth-web/react";
 import { Callout } from "~/components/callout";
 import { ErrorCallout } from "~/components/error-callout";
@@ -24,6 +24,7 @@ import {
   useRunRepoExecutionMutation,
 } from "~/features/repos/mutations";
 import { formatDateTimeUTC } from "~/lib/format";
+import type { Repo } from "~/lib/sandbox-rental-api";
 
 export const Route = createFileRoute("/_authenticated/repos/$repoId")({
   loader: ({ context, params }) => loadRepoDetail(context.queryClient, context.auth, params.repoId),
@@ -62,36 +63,14 @@ function RepoDetailPage() {
           <p className="text-sm text-muted-foreground">{repo.clone_url}</p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => rescanMutation.mutate()}
-            disabled={rescanMutation.isPending}
-            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-          >
-            {rescanMutation.isPending ? "Rescanning..." : "Rescan"}
-          </button>
-          <button
-            type="button"
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending || !canRefresh(repo)}
-            className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-          >
-            {refreshMutation.isPending
-              ? "Queueing..."
-              : repo.active_golden_generation_id
-                ? "Refresh Golden"
-                : "Prepare Golden"}
-          </button>
-          <button
-            type="button"
-            onClick={() => runMutation.mutate()}
-            disabled={runMutation.isPending || !canRun(repo)}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
-            {runMutation.isPending ? "Launching..." : "Run Execution"}
-          </button>
-        </div>
+        <ClientOnly fallback={<RepoActionFallback repo={repo} />}>
+          <RepoActions
+            repo={repo}
+            refreshMutation={refreshMutation}
+            rescanMutation={rescanMutation}
+            runMutation={runMutation}
+          />
+        </ClientOnly>
       </div>
 
       {rescanMutation.error ? (
@@ -242,6 +221,79 @@ function RepoDetailPage() {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+function RepoActions({
+  repo,
+  refreshMutation,
+  rescanMutation,
+  runMutation,
+}: {
+  repo: Repo;
+  refreshMutation: ReturnType<typeof useRefreshRepoMutation>;
+  rescanMutation: ReturnType<typeof useRescanRepoMutation>;
+  runMutation: ReturnType<typeof useRunRepoExecutionMutation>;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => rescanMutation.mutate()}
+        disabled={rescanMutation.isPending}
+        className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+      >
+        {rescanMutation.isPending ? "Rescanning..." : "Rescan"}
+      </button>
+      <button
+        type="button"
+        onClick={() => refreshMutation.mutate()}
+        disabled={refreshMutation.isPending || !canRefresh(repo)}
+        className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+      >
+        {refreshMutation.isPending
+          ? "Queueing..."
+          : repo.active_golden_generation_id
+            ? "Refresh Golden"
+            : "Prepare Golden"}
+      </button>
+      <button
+        type="button"
+        onClick={() => runMutation.mutate()}
+        disabled={runMutation.isPending || !canRun(repo)}
+        className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+      >
+        {runMutation.isPending ? "Launching..." : "Run Execution"}
+      </button>
+    </div>
+  );
+}
+
+function RepoActionFallback({ repo }: { repo: Repo }) {
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        disabled
+        className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
+      >
+        Rescan
+      </button>
+      <button
+        type="button"
+        disabled
+        className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-50"
+      >
+        {repo.active_golden_generation_id ? "Refresh Golden" : "Prepare Golden"}
+      </button>
+      <button
+        type="button"
+        disabled
+        className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+      >
+        Run Execution
+      </button>
     </div>
   );
 }

@@ -32,19 +32,22 @@ export type BalanceOutputBody = {
   credit_pending: number;
   free_tier_available: number;
   free_tier_pending: number;
-  org_id: string;
+  org_id: number;
   total_available: number;
 };
 
 export type BillingWindow = {
-  actual_seconds?: number;
+  actual_quantity?: number;
   attempt_id: string;
+  billing_window_id: string;
   created_at: string;
   pricing_phase?: string;
+  reservation_shape: string;
+  reserved_quantity: number;
   settled_at?: string;
   state: string;
-  window_seconds: number;
   window_seq: number;
+  window_start: string;
 };
 
 export type CheckoutInputBody = {
@@ -173,19 +176,16 @@ export type GoldenGenerationRecord = {
 };
 
 export type GrantJson = {
-  amount: number;
-  closed_at?: string;
-  created_at: string;
+  available: number;
   expires_at?: string;
   grant_id: string;
-  product_id: string;
+  pending: number;
   source: string;
 };
 
 export type GrantsOutputBody = {
   $schema?: string;
   grants: Array<GrantJson> | null;
-  org_id: string;
 };
 
 export type ImportRepoRequest = {
@@ -291,20 +291,16 @@ export type SubscribeInputBody = {
 
 export type SubscriptionJson = {
   cadence: string;
-  created_at: string;
   current_period_end?: string;
   current_period_start?: string;
-  overage_cap_units?: number;
   plan_id: string;
   product_id: string;
   status: string;
-  stripe_subscription_id?: string;
   subscription_id: number;
 };
 
 export type SubscriptionsOutputBody = {
   $schema?: string;
-  org_id: string;
   subscriptions: Array<SubscriptionJson> | null;
 };
 

@@ -100,8 +100,8 @@ function BillingPage() {
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left px-4 py-2 font-medium">Source</th>
-                <th className="text-left px-4 py-2 font-medium">Amount</th>
-                <th className="text-left px-4 py-2 font-medium">Product</th>
+                <th className="text-left px-4 py-2 font-medium">Available</th>
+                <th className="text-left px-4 py-2 font-medium">Pending</th>
                 <th className="text-left px-4 py-2 font-medium">Expires</th>
               </tr>
             </thead>
@@ -110,8 +110,8 @@ function BillingPage() {
                 grantRows.map((grant) => (
                   <tr key={grant.grant_id}>
                     <td className="px-4 py-2">{grant.source}</td>
-                    <td className="px-4 py-2 font-mono">{formatInteger(grant.amount)}</td>
-                    <td className="px-4 py-2">{grant.product_id}</td>
+                    <td className="px-4 py-2 font-mono">{formatInteger(grant.available)}</td>
+                    <td className="px-4 py-2 font-mono">{formatInteger(grant.pending)}</td>
                     <td className="px-4 py-2 text-muted-foreground">
                       {grant.expires_at ? formatDateUTC(grant.expires_at) : "Never"}
                     </td>
