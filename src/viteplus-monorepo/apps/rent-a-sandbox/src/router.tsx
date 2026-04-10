@@ -3,16 +3,20 @@ import { QueryClient } from "@tanstack/react-query";
 import { routeTree } from "./routeTree.gen";
 import { AppNotFound, AppPending, AppRouteError } from "./components/route-boundaries";
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 10_000,
-      refetchOnWindowFocus: true,
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 10_000,
+        refetchOnWindowFocus: true,
+      },
     },
-  },
-});
+  });
+}
 
 export function getRouter() {
+  const queryClient = createQueryClient();
+
   return createRouter({
     routeTree,
     defaultPreload: "intent",
