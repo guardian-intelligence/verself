@@ -1,4 +1,4 @@
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 
 const runId = process.env.VERIFICATION_RUN_ID;
@@ -6,6 +6,8 @@ const baseURL = process.env.TEST_BASE_URL ?? "https://rentasandbox.anveio.com";
 const authBaseURL =
   process.env.ZITADEL_BASE_URL ??
   (process.env.FORGE_METAL_DOMAIN ? `https://auth.${process.env.FORGE_METAL_DOMAIN}` : "https://auth.anveio.com");
+const routeBaseURL = normalizeBaseURL(baseURL);
+const deploymentDomain = process.env.FORGE_METAL_DOMAIN ?? inferDeploymentDomain(baseURL);
 const artifactDir = process.env.ADMIN_UI_ARTIFACT_DIR ?? "artifacts/admin-ui-check";
 const authOrLoginURL = createURLPattern(authBaseURL, ["/ui/login"]);
 const appURL = createURLPattern(baseURL);
@@ -13,7 +15,7 @@ const postPasswordURL = createURLPattern(baseURL, ["/ui/mfa"]);
 const accounts = [
   {
     label: "acme-admin",
-    email: "acme-admin@anveio.com",
+    email: process.env.ACME_ADMIN_EMAIL ?? `acme-admin@${deploymentDomain}`,
     password: process.env.ACME_ADMIN_PASSWORD,
   },
 ].filter((account) => account.password);
@@ -36,7 +38,7 @@ try {
       baseURL,
       ignoreHTTPSErrors: true,
     });
-    await context.route(`${baseURL}/**`, async (route) => {
+    await context.route(`${routeBaseURL}/**`, async (route) => {
       await route.continue({
         headers: {
           ...route.request().headers(),
@@ -73,8 +75,9 @@ try {
       await page.goto("/");
       await page.waitForLoadState("networkidle");
 
+      const dashboardHeading = page.getByRole("heading", { name: "Dashboard" });
       const balanceCard = page.getByTestId("balance-card");
-      if (!(await balanceCard.isVisible().catch(() => false))) {
+      if (!(await dashboardHeading.isVisible().catch(() => false))) {
         await page.goto("/login");
         await page.waitForLoadState("networkidle");
 
@@ -108,6 +111,12 @@ try {
         await page.waitForLoadState("networkidle");
       }
 
+      await expect(dashboardHeading).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("link", { name: "Sign out" })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(balanceCard).toBeVisible({ timeout: 15_000 });
+
       result.final_url = page.url();
       result.balance_visible = await balanceCard.isVisible().catch(() => false);
       result.header_visible = await page
@@ -121,13 +130,21 @@ try {
         path: `${artifactDir}/${account.label}-${runId}.png`,
         fullPage: true,
       });
-      const sameOriginFailures = failedRequests.filter((request) => request.url.startsWith(baseURL));
-      if (pageErrors.length > 0 || sameOriginFailures.length > 0) {
+      const sameOriginFailures = failedRequests.filter((request) =>
+        request.url.startsWith(routeBaseURL),
+      );
+      const hydrationWarnings = consoleMessages.filter(
+        (message) =>
+          message.type === "error" &&
+          /hydration|did not match|text content does not match/i.test(message.text),
+      );
+      if (pageErrors.length > 0 || sameOriginFailures.length > 0 || hydrationWarnings.length > 0) {
         result.status = "failed";
         result.error = [
           pageErrors[0],
           sameOriginFailures[0]?.failure,
           sameOriginFailures[0]?.url,
+          hydrationWarnings[0]?.text,
         ]
           .filter(Boolean)
           .join(" | ");
@@ -161,9 +178,26 @@ if (out.some((result) => result.status !== "ok")) {
 }
 
 function createURLPattern(base, extraPathPatterns = []) {
-  const hostPattern = escapeRegex(new URL(base).host);
-  const pathPatterns = extraPathPatterns.map((pathPattern) => escapeRegex(pathPattern));
-  return new RegExp([hostPattern, ...pathPatterns].join("|"));
+  const normalizedBaseURL = normalizeBaseURL(base);
+  const basePattern = escapeRegex(normalizedBaseURL);
+  if (extraPathPatterns.length === 0) {
+    return new RegExp(`^${basePattern}(?:[/?#].*)?$`);
+  }
+
+  const pathPatterns = extraPathPatterns.map(
+    (pathPattern) => `${basePattern}${escapeRegex(pathPattern)}(?:[?#].*)?`,
+  );
+  return new RegExp(`^(?:${pathPatterns.join("|")})$`);
+}
+
+function normalizeBaseURL(baseURL) {
+  return new URL(baseURL).href.replace(/\/$/, "");
+}
+
+function inferDeploymentDomain(baseURL) {
+  const hostname = new URL(baseURL).hostname;
+  const segments = hostname.split(".");
+  return segments.length > 1 ? segments.slice(1).join(".") : hostname;
 }
 
 function escapeRegex(value) {
