@@ -1,45 +1,40 @@
-import { redirect } from "@tanstack/react-router";
-import { createMiddleware, createServerFn } from "@tanstack/react-start";
+import { createMiddleware } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
-import * as v from "valibot";
+import { anonymousAuth } from "./shared.ts";
+import { resolveAuthConfig } from "./config.ts";
+import type {
+  AnonymousAuth,
+  Auth,
+  AuthRoleAssignment,
+  AuthSession,
+  AuthSnapshot,
+  ClientUser,
+  CurrentUser,
+  SessionInfo,
+} from "./shared.ts";
+import type { AuthConfig, AuthConfigSource } from "./config.ts";
 
-export interface AuthUser {
-  sub: string;
-  email: string | null;
-  name: string | null;
-  preferredUsername: string | null;
-  // Current runtime still assumes one active org per user even though Zitadel
-  // can issue multi-org assignments.
-  orgID: string | null;
-  roles: string[];
-  roleAssignments: AuthRoleAssignment[];
-  claims: Record<string, unknown>;
-}
+export { createAuthConfig } from "./config.ts";
+export type { AsyncAuthConfigSource, AuthConfig, AuthConfigSource } from "./config.ts";
 
-export interface AuthRoleAssignment {
-  projectID: string | null;
-  orgID: string;
-  orgName: string | null;
-  role: string;
-}
-
-export interface AuthConfig {
-  appName: string;
-  issuerURL: string;
-  clientID: string;
-  clientSecret?: string;
-  sessionCookieName?: string;
-  sessionDatabaseURL: string;
-  sessionPassword: string;
-  sessionMaxAgeSeconds?: number;
-  refreshLeewaySeconds?: number;
-  scopes: string[];
-  callbackPath: string;
-  defaultRedirectPath: string;
-  postLogoutRedirectPath: string;
-}
-
-export type AuthConfigSource = AuthConfig | (() => AuthConfig);
+export {
+  anonymousAuth,
+  authCollectionId,
+  authQueryKey,
+  loginRedirect,
+  requireAuth,
+} from "./shared.ts";
+export type {
+  AnonymousAuth,
+  Auth,
+  AuthRoleAssignment,
+  AuthSession,
+  AuthenticatedAuth,
+  AuthSnapshot,
+  ClientUser,
+  CurrentUser,
+  SessionInfo,
+} from "./shared.ts";
 
 interface ProviderMetadata {
   issuer: string;
@@ -83,42 +78,9 @@ interface StoredAuthSessionRow {
   updated_at: string | Date;
 }
 
-export interface AuthSession {
-  sessionID: string;
-  clientCachePartition: string;
-  accessToken: string;
-  refreshToken: string | null;
-  idToken: string | null;
-  scope: string | null;
-  expiresAt: Date;
-  user: AuthUser;
-  createdAt: Date;
-  updatedAt: Date;
+interface ResolvedAuthSnapshot extends AuthSnapshot {
+  currentUser: CurrentUser | null;
 }
-
-export interface AuthViewer {
-  sub: string;
-  email: string | null;
-  name: string | null;
-  preferredUsername: string | null;
-  orgID: string | null;
-  roles: string[];
-  roleAssignments: AuthRoleAssignment[];
-}
-
-export interface AnonymousAuthState {
-  viewer: null;
-  cachePartition: null;
-  isAuthenticated: false;
-}
-
-export interface AuthenticatedAuthState {
-  viewer: AuthViewer;
-  cachePartition: string;
-  isAuthenticated: true;
-}
-
-export type AuthState = AnonymousAuthState | AuthenticatedAuthState;
 
 interface TokenResponse {
   access_token: string;
@@ -167,42 +129,10 @@ interface RefreshResult {
 }
 
 const pendingLoginTTL = 5 * 60 * 1000;
-const loginRedirectInputSchema = v.object({
-  redirectTo: v.optional(v.nullable(v.string())),
-});
-
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 type SQLClient = import("postgres").Sql<Record<string, unknown>>;
 const sqlCache = new Map<string, SQLClient>();
-
-function requiredNonEmpty(value: string | undefined, label: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    throw new Error(`${label} is required`);
-  }
-  return trimmed;
-}
-
-export function createAuthConfig(config: AuthConfig): AuthConfig {
-  return {
-    ...config,
-    issuerURL: requiredNonEmpty(config.issuerURL, `${config.appName} issuerURL`),
-    clientID: requiredNonEmpty(config.clientID, `${config.appName} clientID`),
-    sessionDatabaseURL: requiredNonEmpty(
-      config.sessionDatabaseURL,
-      `${config.appName} sessionDatabaseURL`,
-    ),
-    sessionPassword: requiredNonEmpty(config.sessionPassword, `${config.appName} sessionPassword`),
-    sessionCookieName: config.sessionCookieName ?? `${config.appName}-session`,
-    sessionMaxAgeSeconds: config.sessionMaxAgeSeconds ?? 60 * 60 * 24 * 30,
-    refreshLeewaySeconds: config.refreshLeewaySeconds ?? 60,
-  };
-}
-
-function resolveAuthConfig(config: AuthConfigSource): AuthConfig {
-  return typeof config === "function" ? config() : config;
-}
 
 async function getSQL(databaseURL: string): Promise<SQLClient> {
   let sql = sqlCache.get(databaseURL);
@@ -477,7 +407,7 @@ function buildUserSnapshot(
   idTokenClaims: JWTPayload,
   accessTokenClaims: JWTPayload,
   userInfoClaims: Record<string, unknown>,
-): AuthUser {
+): CurrentUser {
   const mergedClaims: JWTPayload = {
     ...accessTokenClaims,
     ...idTokenClaims,
@@ -544,7 +474,7 @@ function rowToAuthSession(row: StoredAuthSessionRow): AuthSession {
   };
 }
 
-function toAuthViewer(user: AuthUser): AuthViewer {
+function toClientUser(user: CurrentUser): ClientUser {
   return {
     sub: user.sub,
     email: user.email,
@@ -595,7 +525,7 @@ async function writeStoredSession(
   sessionID: string,
   clientCachePartition: string,
   tokens: TokenResponse,
-  user: AuthUser,
+  user: CurrentUser,
 ): Promise<void> {
   const sql = await getSQL(config.sessionDatabaseURL);
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
@@ -872,59 +802,77 @@ export async function getAuthSession(config: AuthConfig): Promise<AuthSession | 
   return stored;
 }
 
-export async function getAuthUser(config: AuthConfig): Promise<AuthUser | null> {
-  const session = await getAuthSession(config);
-  return session?.user ?? null;
+function createAnonymousAuth(): AnonymousAuth {
+  return anonymousAuth;
 }
 
-export async function getAuthViewer(config: AuthConfigSource): Promise<AuthViewer | null> {
-  const user = await getAuthUser(resolveAuthConfig(config));
-  return user ? toAuthViewer(user) : null;
-}
-
-export async function getAuthState(config: AuthConfigSource): Promise<AuthState> {
-  const session = await getAuthSession(resolveAuthConfig(config));
+function toAuth(session: AuthSession | null): Auth {
   if (!session) {
-    return {
-      viewer: null,
-      cachePartition: null,
-      isAuthenticated: false,
-    };
+    return createAnonymousAuth();
   }
 
   return {
-    viewer: toAuthViewer(session.user),
-    cachePartition: session.clientCachePartition,
     isAuthenticated: true,
+    userId: session.user.sub,
+    orgId: session.user.orgID,
+    roles: session.user.roles,
+    roleAssignments: session.user.roleAssignments,
+    cachePartition: session.clientCachePartition,
   };
 }
 
-export function createAuthServerFns(config: AuthConfigSource) {
-  const authMiddleware = createAuthMiddleware(config);
-  const getAuthStateServerFn = createServerFn({ method: "GET" }).handler(async () =>
-    getAuthState(config),
-  );
-  const getViewerServerFn = createServerFn({ method: "GET" }).handler(async () =>
-    getAuthViewer(config),
-  );
-  const getLoginRedirectURL = createServerFn({ method: "GET" })
-    .inputValidator(loginRedirectInputSchema)
-    .handler(async ({ data }) => beginLogin(resolveAuthConfig(config), data.redirectTo));
-  const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
-    const { redirectTo } = await finishLogin(resolveAuthConfig(config));
-    return redirectTo;
-  });
-  const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () =>
-    logout(config),
-  );
+function toSessionInfo(session: AuthSession | null): SessionInfo | null {
+  if (!session) {
+    return null;
+  }
 
   return {
-    authMiddleware,
-    getAuthState: getAuthStateServerFn,
-    getViewer: getViewerServerFn,
-    getLoginRedirectURL,
-    getCallbackRedirectURL,
-    getLogoutRedirectURL,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+  };
+}
+
+async function resolveAuthSnapshot(config: AuthConfigSource): Promise<ResolvedAuthSnapshot> {
+  const session = await getAuthSession(resolveAuthConfig(config));
+  const authState = toAuth(session);
+  const user = session ? toClientUser(session.user) : null;
+  const snapshot: AuthSnapshot = {
+    auth: authState,
+    user,
+    session: toSessionInfo(session),
+  };
+
+  return {
+    ...snapshot,
+    currentUser: session?.user ?? null,
+  };
+}
+
+// Server-side auth read for routing, authorization, and cache partitioning.
+// This is a small projection over the persisted web session.
+export async function auth(config: AuthConfigSource): Promise<Auth> {
+  return (await resolveAuthSnapshot(config)).auth;
+}
+
+// Server-only authenticated user snapshot. This includes claims and should not
+// be serialized wholesale to the client.
+export async function currentUser(config: AuthConfigSource): Promise<CurrentUser | null> {
+  return (await resolveAuthSnapshot(config)).currentUser;
+}
+
+// Client-safe session timing metadata derived from the persisted web session.
+export async function currentSession(config: AuthConfigSource): Promise<SessionInfo | null> {
+  return (await resolveAuthSnapshot(config)).session;
+}
+
+// Root-loader snapshot. Read once per navigation and seed hooks from the result
+// instead of making multiple auth reads from components.
+export async function getAuthSnapshot(config: AuthConfigSource): Promise<AuthSnapshot> {
+  const snapshot = await resolveAuthSnapshot(config);
+  return {
+    auth: snapshot.auth,
+    user: snapshot.user,
+    session: snapshot.session,
   };
 }
 
@@ -950,34 +898,6 @@ export async function requireAccessToken(config: AuthConfigSource): Promise<stri
     throw new Error("Authentication required");
   }
   return session.accessToken;
-}
-
-export function loginRedirect(locationHref: string) {
-  return redirect({
-    to: "/login",
-    search: { redirect: locationHref },
-  });
-}
-
-export function requireAuthenticatedAuthState(
-  authState: AuthState,
-  locationHref: string,
-): AuthenticatedAuthState {
-  if (!authState.isAuthenticated) {
-    throw loginRedirect(locationHref);
-  }
-  return authState;
-}
-
-export function authQueryKey<TParts extends readonly unknown[]>(
-  authState: AuthenticatedAuthState,
-  ...parts: TParts
-) {
-  return ["auth", authState.cachePartition, ...parts] as const;
-}
-
-export function authCollectionId(authState: AuthenticatedAuthState, baseId: string): string {
-  return `auth:${authState.cachePartition}:${baseId}`;
 }
 
 export async function logout(config: AuthConfigSource): Promise<string> {
