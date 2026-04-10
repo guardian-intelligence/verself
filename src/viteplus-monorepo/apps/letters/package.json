@@ -9,7 +9,8 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mts .output/server/index.mjs",
-    "typecheck": "vp exec tsc -p tsconfig.json"
+    "typecheck": "vp exec tsc -p tsconfig.json",
+    "verify:live": "vp exec node e2e/letters-live-check.mjs"
   },
   "dependencies": {
     "@forge-metal/auth-web": "workspace:*",
@@ -35,9 +36,11 @@
     "nitro": "catalog:",
     "postgres": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@tailwindcss/typography": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",

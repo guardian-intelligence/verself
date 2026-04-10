@@ -41,6 +41,11 @@ func OpenAPIDowngradeYAML() ([]byte, error) {
 	return api.OpenAPI().DowngradeYAML()
 }
 
+func OpenAPIYAML() ([]byte, error) {
+	api := NewAPI(http.NewServeMux(), nil)
+	return api.OpenAPI().YAML()
+}
+
 func registerRoutes(api huma.API, app *billingruntime.App) {
 	huma.Register(api, huma.Operation{
 		OperationID: "healthz",

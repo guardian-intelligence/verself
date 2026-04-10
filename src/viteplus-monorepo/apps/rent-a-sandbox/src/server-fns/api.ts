@@ -1,435 +1,195 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireURLFromEnv } from "@forge-metal/web-env";
-import { rentASandboxAuthMiddleware, verificationRunMiddleware } from "./auth";
+import {
+  createCheckoutSession as createCheckoutSessionRequest,
+  createSubscriptionSession as createSubscriptionSessionRequest,
+  executionIdInputSchema,
+  getBalance as getBalanceRequest,
+  getExecution as getExecutionRequest,
+  getGrants as getGrantsRequest,
+  getRepo as getRepoRequest,
+  getRepoGenerations as getRepoGenerationsRequest,
+  getRepos as getReposRequest,
+  getSubscriptions as getSubscriptionsRequest,
+  grantsQuerySchema,
+  importRepo as importRepoRequest,
+  importRepoRequestSchema,
+  isSandboxRentalApiError,
+  isSandboxRentalNotFound,
+  repoExecutionRequestSchema,
+  repoIdInputSchema,
+  refreshRepo as refreshRepoRequest,
+  rescanRepo as rescanRepoRequest,
+  SandboxRentalApiError,
+  submitRepoExecution as submitRepoExecutionRequest,
+  subscribeRequestSchema,
+  checkoutRequestSchema,
+} from "~/lib/sandbox-rental-api";
+import type {
+  Balance,
+  CheckoutRequest,
+  Execution,
+  GrantsResponse,
+  ImportRepoRequest,
+  Repo,
+  RepoBootstrapRecord,
+  RepoCompatibilitySummary,
+  RepoExecutionRequest,
+  SubscribeRequest,
+  SubscriptionsResponse,
+  GoldenGeneration,
+} from "~/lib/sandbox-rental-api";
+import { rentASandboxAuthMiddleware } from "./auth";
 
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
-export class SandboxRentalApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly path: string,
-    public readonly body: string,
-  ) {
-    super(`Sandbox rental API ${status}: ${body}`);
-    this.name = "SandboxRentalApiError";
-  }
+export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
+export type {
+  Balance,
+  CheckoutRequest,
+  Execution,
+  GoldenGeneration,
+  GrantsResponse,
+  ImportRepoRequest,
+  Repo,
+  RepoBootstrapRecord,
+  RepoCompatibilitySummary,
+  RepoExecutionRequest,
+  SubscribeRequest,
+  SubscriptionsResponse,
+};
+
+async function getServerVerificationRunID(): Promise<string | undefined> {
+  // This module is imported by client query code, so keep Start's server helpers
+  // behind a dynamic import or Vite will pull server-only modules into the browser graph.
+  const { getRequestHeader } = await import("@tanstack/react-start/server");
+  return getRequestHeader(verificationRunHeader)?.trim() || undefined;
 }
 
-export function isSandboxRentalApiError(error: unknown): error is SandboxRentalApiError {
-  return error instanceof SandboxRentalApiError;
-}
-
-export function isSandboxRentalNotFound(error: unknown): error is SandboxRentalApiError {
-  return error instanceof SandboxRentalApiError && error.status === 404;
-}
-
-async function sandboxRentalServiceRequest<T>(
-  accessToken: string,
-  path: string,
-  init?: RequestInit,
-  verificationRunID?: string,
-): Promise<T> {
-  const headers = new Headers(init?.headers);
-  headers.set("Accept", "application/json");
-  headers.set("Authorization", `Bearer ${accessToken}`);
-  if (verificationRunID) {
-    headers.set(verificationRunHeader, verificationRunID);
-  }
-  if (init?.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(new URL(path, SANDBOX_RENTAL_SERVICE_BASE_URL), {
-    ...init,
-    headers,
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new SandboxRentalApiError(response.status, path, body);
-  }
-
-  return response.json() as Promise<T>;
-}
-
-export interface Balance {
-  org_id: string;
-  free_tier_available: number;
-  free_tier_pending: number;
-  credit_available: number;
-  credit_pending: number;
-  total_available: number;
-}
-
-export interface Subscription {
-  subscription_id: number;
-  plan_id: string;
-  product_id: string;
-  cadence: string;
-  status: string;
-  stripe_subscription_id: string;
-  current_period_start: string;
-  current_period_end: string;
-  overage_cap_units: number;
-  created_at: string;
-}
-
-export interface SubscriptionsResponse {
-  org_id: string;
-  subscriptions: Subscription[] | null;
-}
-
-export interface Grant {
-  grant_id: string;
-  product_id: string;
-  amount: number;
-  source: string;
-  expires_at: string | null;
-  closed_at: string | null;
-  created_at: string;
-}
-
-export interface GrantsResponse {
-  org_id: string;
-  grants: Grant[] | null;
-}
-
-export interface CheckoutRequest {
-  product_id: string;
-  amount_cents: number;
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface SubscribeRequest {
-  plan_id: string;
-  cadence?: "monthly" | "annual";
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface Attempt {
-  attempt_id: string;
-  attempt_seq: number;
-  state: string;
-  orchestrator_job_id?: string;
-  billing_job_id?: number;
-  runner_name?: string;
-  golden_snapshot?: string;
-  failure_reason?: string;
-  exit_code?: number;
-  duration_ms?: number;
-  zfs_written?: number;
-  stdout_bytes?: number;
-  stderr_bytes?: number;
-  trace_id?: string;
-  started_at?: string;
-  completed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BillingWindow {
-  attempt_id: string;
-  window_seq: number;
-  window_seconds: number;
-  actual_seconds?: number;
-  pricing_phase?: string;
-  state: string;
-  created_at: string;
-  settled_at?: string;
-}
-
-export interface Execution {
-  execution_id: string;
-  org_id: number;
-  actor_id: string;
-  kind: string;
-  provider?: string;
-  product_id: string;
-  status: string;
-  idempotency_key?: string;
-  repo_id?: string;
-  golden_generation_id?: string;
-  repo?: string;
-  repo_url?: string;
-  ref?: string;
-  default_branch?: string;
-  run_command?: string;
-  commit_sha?: string;
-  workflow_path?: string;
-  workflow_job_name?: string;
-  provider_run_id?: string;
-  provider_job_id?: string;
-  latest_attempt: Attempt;
-  billing_windows?: BillingWindow[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RepoExecutionRequest {
-  repo_id?: string;
-  repo_url?: string;
-  ref?: string;
-}
-
-export interface WorkflowScanIssue {
-  path: string;
-  job_id?: string;
-  reason: string;
-  labels?: string[];
-  details?: string;
-}
-
-export interface RepoCompatibilitySummary {
-  workflow_paths?: string[];
-  unsupported_labels?: string[];
-  issues?: WorkflowScanIssue[];
-}
-
-export interface Repo {
-  repo_id: string;
-  org_id: number;
-  provider: string;
-  provider_repo_id: string;
-  owner: string;
-  name: string;
-  full_name: string;
-  clone_url: string;
-  default_branch: string;
-  runner_profile_slug: string;
-  state: string;
-  compatibility_status: string;
-  compatibility_summary?: RepoCompatibilitySummary;
-  last_scanned_sha?: string;
-  active_golden_generation_id?: string;
-  last_ready_sha?: string;
-  last_error?: string;
-  created_at: string;
-  updated_at: string;
-  archived_at?: string;
-}
-
-export interface GoldenGeneration {
-  golden_generation_id: string;
-  repo_id: string;
-  runner_profile_slug: string;
-  source_ref: string;
-  source_sha: string;
-  state: string;
-  trigger_reason: string;
-  execution_id?: string;
-  attempt_id?: string;
-  orchestrator_job_id?: string;
-  snapshot_ref?: string;
-  activated_at?: string;
-  superseded_at?: string;
-  failure_reason?: string;
-  failure_detail?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RepoBootstrapRecord {
-  repo: Repo;
-  generation: GoldenGeneration;
-  execution_id: string;
-  attempt_id: string;
-  trigger_reason: string;
-}
-
-export interface ImportRepoRequest {
-  provider?: string;
-  provider_repo_id?: string;
-  owner?: string;
-  name?: string;
-  full_name?: string;
-  clone_url: string;
-  default_branch?: string;
+async function sandboxRentalClientOptions(context: { auth: { accessToken: string } }) {
+  const options = {
+    accessToken: context.auth.accessToken,
+    baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
+  };
+  const verificationRunID = await getServerVerificationRunID();
+  return verificationRunID ? { ...options, verificationRunId: verificationRunID } : options;
 }
 
 export const getBalance = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
+  .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return sandboxRentalServiceRequest<Balance>(
-      context.auth.accessToken,
-      "/api/v1/billing/balance",
-      undefined,
-      context.verificationRunID,
-    );
+    return getBalanceRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getSubscriptions = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
+  .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return sandboxRentalServiceRequest<SubscriptionsResponse>(
-      context.auth.accessToken,
-      "/api/v1/billing/subscriptions",
-      undefined,
-      context.verificationRunID,
-    );
+    return getSubscriptionsRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getGrants = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { active?: boolean; productId?: string } = {}) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(grantsQuerySchema)
   .handler(async ({ context, data }) => {
-    const searchParams = new URLSearchParams();
-    if (data.active !== undefined) {
-      searchParams.set("active", String(data.active));
-    }
-    if (data.productId) {
-      searchParams.set("product_id", data.productId);
-    }
-    const search = searchParams.toString();
-    const path = search ? `/api/v1/billing/grants?${search}` : "/api/v1/billing/grants";
-    return sandboxRentalServiceRequest<GrantsResponse>(
-      context.auth.accessToken,
-      path,
-      undefined,
-      context.verificationRunID,
-    );
+    return getGrantsRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      query: data,
+    });
   });
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: CheckoutRequest) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(checkoutRequestSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<{ url: string }>(
-      context.auth.accessToken,
-      "/api/v1/billing/checkout",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-      context.verificationRunID,
-    );
+    return createCheckoutSessionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
   });
 
 export const createSubscriptionSession = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: SubscribeRequest) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(subscribeRequestSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<{ url: string }>(
-      context.auth.accessToken,
-      "/api/v1/billing/subscribe",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-      context.verificationRunID,
-    );
+    return createSubscriptionSessionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
   });
 
 export const submitRepoExecution = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: RepoExecutionRequest) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(repoExecutionRequestSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<{
-      execution_id: string;
-      attempt_id: string;
-      status: string;
-    }>(
-      context.auth.accessToken,
-      "/api/v1/executions",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "repo_exec",
-          ...data,
-        }),
-      },
-      context.verificationRunID,
-    );
+    return submitRepoExecutionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
   });
 
 export const getExecution = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { executionId: string }) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(executionIdInputSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<Execution>(
-      context.auth.accessToken,
-      `/api/v1/executions/${data.executionId}`,
-      undefined,
-      context.verificationRunID,
-    );
+    return getExecutionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      executionId: data.executionId,
+    });
   });
 
 export const importRepo = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: ImportRepoRequest) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(importRepoRequestSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<Repo>(
-      context.auth.accessToken,
-      "/api/v1/repos",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
-      context.verificationRunID,
-    );
+    return importRepoRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
   });
 
 export const getRepos = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
+  .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return sandboxRentalServiceRequest<Repo[]>(
-      context.auth.accessToken,
-      "/api/v1/repos",
-      undefined,
-      context.verificationRunID,
-    );
+    return getReposRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getRepo = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { repoId: string }) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(repoIdInputSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<Repo>(
-      context.auth.accessToken,
-      `/api/v1/repos/${data.repoId}`,
-      undefined,
-      context.verificationRunID,
-    );
+    return getRepoRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      repoId: data.repoId,
+    });
   });
 
 export const rescanRepo = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { repoId: string }) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(repoIdInputSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<Repo>(
-      context.auth.accessToken,
-      `/api/v1/repos/${data.repoId}/rescan`,
-      {
-        method: "POST",
-      },
-      context.verificationRunID,
-    );
+    return rescanRepoRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      repoId: data.repoId,
+    });
   });
 
 export const getRepoGenerations = createServerFn({ method: "GET" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { repoId: string }) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(repoIdInputSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<GoldenGeneration[]>(
-      context.auth.accessToken,
-      `/api/v1/repos/${data.repoId}/generations`,
-      undefined,
-      context.verificationRunID,
-    );
+    return getRepoGenerationsRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      repoId: data.repoId,
+    });
   });
 
 export const refreshRepo = createServerFn({ method: "POST" })
-  .middleware([verificationRunMiddleware, rentASandboxAuthMiddleware])
-  .inputValidator((data: { repoId: string }) => data)
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(repoIdInputSchema)
   .handler(async ({ context, data }) => {
-    return sandboxRentalServiceRequest<RepoBootstrapRecord>(
-      context.auth.accessToken,
-      `/api/v1/repos/${data.repoId}/refresh`,
-      {
-        method: "POST",
-      },
-      context.verificationRunID,
-    );
+    return refreshRepoRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      repoId: data.repoId,
+    });
   });

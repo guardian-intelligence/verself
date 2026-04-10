@@ -1,0 +1,1031 @@
+components:
+  schemas:
+    AttemptRecord:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          type: string
+        attempt_seq:
+          format: int64
+          type: integer
+        billing_job_id:
+          format: int64
+          type: integer
+        completed_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        duration_ms:
+          format: int64
+          type: integer
+        exit_code:
+          format: int64
+          type: integer
+        failure_reason:
+          type: string
+        golden_snapshot:
+          type: string
+        orchestrator_job_id:
+          type: string
+        runner_name:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+        stderr_bytes:
+          format: int64
+          type: integer
+        stdout_bytes:
+          format: int64
+          type: integer
+        trace_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        zfs_written:
+          format: int64
+          type: integer
+      required:
+        - attempt_id
+        - attempt_seq
+        - state
+        - created_at
+        - updated_at
+      type: object
+    BalanceOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          type: string
+        credit_available:
+          format: int64
+          type: integer
+        credit_pending:
+          format: int64
+          type: integer
+        free_tier_available:
+          format: int64
+          type: integer
+        free_tier_pending:
+          format: int64
+          type: integer
+        org_id:
+          type: string
+        total_available:
+          format: int64
+          type: integer
+      required:
+        - credit_available
+        - credit_pending
+        - free_tier_available
+        - free_tier_pending
+        - org_id
+        - total_available
+      type: object
+    BillingWindow:
+      additionalProperties: false
+      properties:
+        actual_seconds:
+          format: int64
+          type: integer
+        attempt_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        pricing_phase:
+          type: string
+        settled_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+        window_seconds:
+          format: int64
+          type: integer
+        window_seq:
+          format: int64
+          type: integer
+      required:
+        - attempt_id
+        - window_seq
+        - window_seconds
+        - state
+        - created_at
+      type: object
+    CheckoutInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/CheckoutInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        amount_cents:
+          description: Amount in cents
+          format: int64
+          minimum: 1
+          type: integer
+        cancel_url:
+          maxLength: 2048
+          type: string
+        product_id:
+          description: Product to purchase credits for
+          maxLength: 255
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+      required:
+        - product_id
+        - amount_cents
+        - success_url
+        - cancel_url
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+            - array
+            - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    ExecutionRecord:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/ExecutionRecord.json
+          format: uri
+          readOnly: true
+          type: string
+        actor_id:
+          type: string
+        billing_windows:
+          items:
+            $ref: "#/components/schemas/BillingWindow"
+          type:
+            - array
+            - "null"
+        commit_sha:
+          type: string
+        correlation_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        default_branch:
+          type: string
+        execution_id:
+          type: string
+        golden_generation_id:
+          type: string
+        idempotency_key:
+          type: string
+        kind:
+          type: string
+        latest_attempt:
+          $ref: "#/components/schemas/AttemptRecord"
+        org_id:
+          format: int64
+          minimum: 0
+          type: integer
+        product_id:
+          type: string
+        provider:
+          type: string
+        provider_job_id:
+          type: string
+        provider_run_id:
+          type: string
+        ref:
+          type: string
+        repo:
+          type: string
+        repo_id:
+          type: string
+        repo_url:
+          type: string
+        run_command:
+          type: string
+        status:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        workflow_job_name:
+          type: string
+        workflow_path:
+          type: string
+      required:
+        - execution_id
+        - org_id
+        - actor_id
+        - kind
+        - product_id
+        - status
+        - latest_attempt
+        - created_at
+        - updated_at
+      type: object
+    GetExecutionLogsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/GetExecutionLogsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        attempt_id:
+          type: string
+        execution_id:
+          type: string
+        logs:
+          type: string
+      required:
+        - execution_id
+        - attempt_id
+        - logs
+      type: object
+    GoldenGenerationRecord:
+      additionalProperties: false
+      properties:
+        activated_at:
+          format: date-time
+          type: string
+        attempt_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        execution_id:
+          type: string
+        failure_detail:
+          type: string
+        failure_reason:
+          type: string
+        golden_generation_id:
+          type: string
+        orchestrator_job_id:
+          type: string
+        repo_id:
+          type: string
+        runner_profile_slug:
+          type: string
+        snapshot_ref:
+          type: string
+        source_ref:
+          type: string
+        source_sha:
+          type: string
+        state:
+          type: string
+        superseded_at:
+          format: date-time
+          type: string
+        trigger_reason:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - golden_generation_id
+        - repo_id
+        - runner_profile_slug
+        - source_ref
+        - source_sha
+        - state
+        - trigger_reason
+        - created_at
+        - updated_at
+      type: object
+    GrantJSON:
+      additionalProperties: false
+      properties:
+        amount:
+          format: int64
+          type: integer
+        closed_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        grant_id:
+          type: string
+        product_id:
+          type: string
+        source:
+          type: string
+      required:
+        - amount
+        - created_at
+        - grant_id
+        - product_id
+        - source
+      type: object
+    GrantsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          type: string
+        grants:
+          items:
+            $ref: "#/components/schemas/GrantJSON"
+          type:
+            - array
+            - "null"
+        org_id:
+          type: string
+      required:
+        - grants
+        - org_id
+      type: object
+    ImportRepoRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/ImportRepoRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        clone_url:
+          type: string
+        default_branch:
+          type: string
+        full_name:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        provider:
+          type: string
+        provider_repo_id:
+          type: string
+      required:
+        - clone_url
+      type: object
+    RepoBootstrapRecord:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/RepoBootstrapRecord.json
+          format: uri
+          readOnly: true
+          type: string
+        attempt_id:
+          type: string
+        execution_id:
+          type: string
+        generation:
+          $ref: "#/components/schemas/GoldenGenerationRecord"
+        repo:
+          $ref: "#/components/schemas/RepoRecord"
+        trigger_reason:
+          type: string
+      required:
+        - repo
+        - generation
+        - execution_id
+        - attempt_id
+        - trigger_reason
+      type: object
+    RepoRecord:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/RepoRecord.json
+          format: uri
+          readOnly: true
+          type: string
+        active_golden_generation_id:
+          type: string
+        archived_at:
+          format: date-time
+          type: string
+        clone_url:
+          type: string
+        compatibility_status:
+          type: string
+        compatibility_summary: {}
+        created_at:
+          format: date-time
+          type: string
+        default_branch:
+          type: string
+        full_name:
+          type: string
+        last_error:
+          type: string
+        last_ready_sha:
+          type: string
+        last_scanned_sha:
+          type: string
+        name:
+          type: string
+        org_id:
+          format: int64
+          minimum: 0
+          type: integer
+        owner:
+          type: string
+        provider:
+          type: string
+        provider_repo_id:
+          type: string
+        repo_id:
+          type: string
+        runner_profile_slug:
+          type: string
+        state:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - repo_id
+        - org_id
+        - provider
+        - provider_repo_id
+        - owner
+        - name
+        - full_name
+        - clone_url
+        - default_branch
+        - runner_profile_slug
+        - state
+        - compatibility_status
+        - created_at
+        - updated_at
+      type: object
+    SubmitExecutionOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SubmitExecutionOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        attempt_id:
+          type: string
+        execution_id:
+          type: string
+        status:
+          type: string
+      required:
+        - execution_id
+        - attempt_id
+        - status
+      type: object
+    SubmitRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SubmitRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        default_branch:
+          type: string
+        idempotency_key:
+          type: string
+        kind:
+          type: string
+        product_id:
+          type: string
+        provider:
+          type: string
+        provider_job_id:
+          type: string
+        provider_run_id:
+          type: string
+        ref:
+          type: string
+        repo:
+          type: string
+        repo_id:
+          type: string
+        repo_url:
+          type: string
+        run_command:
+          type: string
+        workflow_job_name:
+          type: string
+        workflow_path:
+          type: string
+      required:
+        - kind
+      type: object
+    SubscribeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SubscribeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        cadence:
+          description: Billing cadence (default monthly)
+          enum:
+            - monthly
+            - annual
+          type: string
+        cancel_url:
+          maxLength: 2048
+          type: string
+        plan_id:
+          description: Plan to subscribe to
+          maxLength: 255
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+      required:
+        - plan_id
+        - success_url
+        - cancel_url
+      type: object
+    SubscriptionJSON:
+      additionalProperties: false
+      properties:
+        cadence:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        current_period_end:
+          format: date-time
+          type: string
+        current_period_start:
+          format: date-time
+          type: string
+        overage_cap_units:
+          format: int64
+          type: integer
+        plan_id:
+          type: string
+        product_id:
+          type: string
+        status:
+          type: string
+        stripe_subscription_id:
+          type: string
+        subscription_id:
+          format: int64
+          type: integer
+      required:
+        - cadence
+        - created_at
+        - plan_id
+        - product_id
+        - status
+        - subscription_id
+      type: object
+    SubscriptionsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          type: string
+        org_id:
+          type: string
+        subscriptions:
+          items:
+            $ref: "#/components/schemas/SubscriptionJSON"
+          type:
+            - array
+            - "null"
+      required:
+        - org_id
+        - subscriptions
+      type: object
+    URLOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/URLOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        url:
+          type: string
+      required:
+        - url
+      type: object
+info:
+  title: Sandbox Rental Service
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/billing/balance:
+    get:
+      operationId: get-billing-balance
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get org credit balance
+  /api/v1/billing/checkout:
+    post:
+      operationId: create-billing-checkout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create Stripe checkout session for credit purchase
+  /api/v1/billing/grants:
+    get:
+      operationId: list-billing-grants
+      parameters:
+        - description: Filter by product
+          explode: false
+          in: query
+          name: product_id
+          schema:
+            description: Filter by product
+            type: string
+        - description: Only active grants
+          explode: false
+          in: query
+          name: active
+          schema:
+            description: Only active grants
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrantsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List org credit grants
+  /api/v1/billing/subscribe:
+    post:
+      operationId: create-billing-subscription
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscribeInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create Stripe subscription checkout
+  /api/v1/billing/subscriptions:
+    get:
+      operationId: list-billing-subscriptions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List org subscriptions
+  /api/v1/executions:
+    post:
+      operationId: submit-execution
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmitExecutionOutputBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Submit a new execution
+  /api/v1/executions/{execution_id}:
+    get:
+      operationId: get-execution
+      parameters:
+        - description: Execution UUID
+          in: path
+          name: execution_id
+          required: true
+          schema:
+            description: Execution UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRecord"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get execution status and latest attempt
+  /api/v1/executions/{execution_id}/logs:
+    get:
+      operationId: get-execution-logs
+      parameters:
+        - description: Execution UUID
+          in: path
+          name: execution_id
+          required: true
+          schema:
+            description: Execution UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetExecutionLogsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get latest execution attempt log output
+  /api/v1/repos:
+    get:
+      operationId: list-repos
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/RepoRecord"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List imported repos for the current org
+    post:
+      operationId: import-repo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportRepoRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoRecord"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Import or rescan a repo for forge-metal CI
+  /api/v1/repos/{repo_id}:
+    get:
+      operationId: get-repo
+      parameters:
+        - description: Repo UUID
+          in: path
+          name: repo_id
+          required: true
+          schema:
+            description: Repo UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoRecord"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get repo state and compatibility details
+  /api/v1/repos/{repo_id}/generations:
+    get:
+      operationId: list-repo-generations
+      parameters:
+        - description: Repo UUID
+          in: path
+          name: repo_id
+          required: true
+          schema:
+            description: Repo UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/GoldenGenerationRecord"
+                type:
+                  - array
+                  - "null"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List golden generations for a repo
+  /api/v1/repos/{repo_id}/refresh:
+    post:
+      operationId: refresh-repo
+      parameters:
+        - description: Repo UUID
+          in: path
+          name: repo_id
+          required: true
+          schema:
+            description: Repo UUID
+            type: string
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoBootstrapRecord"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Queue a new golden generation for the repo
+  /api/v1/repos/{repo_id}/rescan:
+    post:
+      operationId: rescan-repo
+      parameters:
+        - description: Repo UUID
+          in: path
+          name: repo_id
+          required: true
+          schema:
+            description: Repo UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoRecord"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rescan repo workflows for forge-metal compatibility
+servers:
+  - url: http://127.0.0.1:4243
