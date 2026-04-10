@@ -99,7 +99,11 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       run.detail_url = `/jobs/${execution.execution_id}`;
 
       await assertJobsIndexHydratesExecutionList(app, execution.execution_id);
-      await assertExecutionDetailHydratesLogs(app, execution.execution_id, env.verificationLogMarker);
+      await assertExecutionDetailHydratesLogs(
+        app,
+        execution.execution_id,
+        env.verificationLogMarker,
+      );
 
       run.finished_balance = await app.waitForCondition("balance decrease", 60_000, async () => {
         await app.goto("/");
@@ -135,7 +139,11 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       const firstExecution = await launchExecutionFromRepo(app);
       run.execution_id = firstExecution.execution_id;
       run.detail_url = `/jobs/${firstExecution.execution_id}`;
-      await assertExecutionDetailHydratesLogs(app, firstExecution.execution_id, env.verificationLogMarker);
+      await assertExecutionDetailHydratesLogs(
+        app,
+        firstExecution.execution_id,
+        env.verificationLogMarker,
+      );
 
       const refreshedRepoMeta = await app.pushVerificationRepoRevision(`${app.runID}-refresh`);
       const refreshedGolden = await refreshRepoGolden(app, importedRepo.repo_id, refreshedRepoMeta);
@@ -153,13 +161,21 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       run.detail_url = `/jobs/${secondExecution.execution_id}`;
 
       await waitForExecutionSuccess(app, secondExecution.execution_id, env.verificationLogMarker);
-      await assertExecutionDetailHydratesLogs(app, secondExecution.execution_id, env.verificationLogMarker);
+      await assertExecutionDetailHydratesLogs(
+        app,
+        secondExecution.execution_id,
+        env.verificationLogMarker,
+      );
 
-      run.finished_balance = await app.waitForCondition("balance decrease after refresh execution", 60_000, async () => {
-        await app.goto("/");
-        const currentBalance = await app.readBalance();
-        return currentBalance < run.started_balance ? currentBalance : false;
-      });
+      run.finished_balance = await app.waitForCondition(
+        "balance decrease after refresh execution",
+        60_000,
+        async () => {
+          await app.goto("/");
+          const currentBalance = await app.readBalance();
+          return currentBalance < run.started_balance ? currentBalance : false;
+        },
+      );
 
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();

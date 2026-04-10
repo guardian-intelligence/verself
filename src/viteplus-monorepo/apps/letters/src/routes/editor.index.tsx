@@ -63,7 +63,11 @@ function EditorDashboardTable({ posts }: { posts: ReadonlyArray<ElectricPost> })
           {posts.map((post) => (
             <tr key={post.id} className="border-b border-border hover:bg-muted/50">
               <td className="py-3">
-                <Link to="/editor/$slug" params={{ slug: post.slug }} className="font-medium hover:underline">
+                <Link
+                  to="/editor/$slug"
+                  params={{ slug: post.slug }}
+                  className="font-medium hover:underline"
+                >
                   {post.title || "Untitled"}
                 </Link>
               </td>

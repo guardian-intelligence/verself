@@ -1,30 +1,27 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import type { AuthenticatedAuthState } from "@forge-metal/auth-web";
 import { BalanceCard } from "~/components/balance-card";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { balanceQuery, loadBalance } from "~/features/billing/queries";
-import { getViewer } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
-    const viewer = await getViewer();
-    if (viewer) {
-      await loadBalance(context.queryClient);
+    if (context.authState.isAuthenticated) {
+      await loadBalance(context.queryClient, context.authState);
     }
-    return { viewer };
   },
   component: Dashboard,
 });
 
 function Dashboard() {
-  const { viewer } = Route.useLoaderData();
-
-  if (!viewer) {
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
+  if (!authState.isAuthenticated) {
     return <GuestLanding />;
   }
 
-  return <MemberDashboard />;
+  return <MemberDashboard authState={authState} />;
 }
 
 function GuestLanding() {
@@ -72,8 +69,8 @@ function GuestLanding() {
   );
 }
 
-function MemberDashboard() {
-  const { data: balance } = useSuspenseQuery(balanceQuery());
+function MemberDashboard({ authState }: { authState: AuthenticatedAuthState }) {
+  const { data: balance } = useSuspenseQuery(balanceQuery(authState));
 
   return (
     <div className="space-y-8">

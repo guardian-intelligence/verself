@@ -62,6 +62,7 @@ tidy:
 	cd $(MS) && go mod tidy
 	cd $(OT) && go mod tidy
 	cd $(WL) && go mod tidy
+	cd src/viteplus-monorepo && vp fmt . --write
 
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml

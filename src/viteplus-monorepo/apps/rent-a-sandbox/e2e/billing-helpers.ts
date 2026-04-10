@@ -7,7 +7,10 @@ export async function completeStripeCheckout(app: SandboxHarness): Promise<void>
   });
 
   await app.waitForCondition("stripe card form", 30_000, async () => {
-    const cardNumberVisible = await app.page.locator("#cardNumber").isVisible().catch(() => false);
+    const cardNumberVisible = await app.page
+      .locator("#cardNumber")
+      .isVisible()
+      .catch(() => false);
     const payWithoutLinkVisible = await app.page
       .getByText("Pay without Link")
       .isVisible()
@@ -16,7 +19,12 @@ export async function completeStripeCheckout(app: SandboxHarness): Promise<void>
     return cardNumberVisible || payWithoutLinkVisible;
   });
 
-  if (await app.page.getByText("Pay without Link").isVisible().catch(() => false)) {
+  if (
+    await app.page
+      .getByText("Pay without Link")
+      .isVisible()
+      .catch(() => false)
+  ) {
     await app.page.keyboard.type("000000", { delay: 80 });
     await app.page.getByText("Pay without Link").click();
   }

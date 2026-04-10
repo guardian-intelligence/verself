@@ -25,19 +25,21 @@ import {
 import { formatDateTimeUTC } from "~/lib/format";
 
 export const Route = createFileRoute("/_authenticated/repos/$repoId")({
-  loader: ({ context, params }) => loadRepoDetail(context.queryClient, params.repoId),
+  loader: ({ context, params }) =>
+    loadRepoDetail(context.queryClient, context.authState, params.repoId),
   component: RepoDetailPage,
 });
 
 function RepoDetailPage() {
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
   const { repoId } = Route.useParams();
   const navigate = useNavigate();
-  const repo = useSuspenseQuery(repoQuery(repoId)).data;
-  const generations = useSuspenseQuery(repoGenerationsQuery(repoId)).data;
+  const repo = useSuspenseQuery(repoQuery(authState, repoId)).data;
+  const generations = useSuspenseQuery(repoGenerationsQuery(authState, repoId)).data;
 
-  const rescanMutation = useRescanRepoMutation(repoId);
-  const refreshMutation = useRefreshRepoMutation(repoId);
-  const runMutation = useRunRepoExecutionMutation(repoId, (executionId) => {
+  const rescanMutation = useRescanRepoMutation(authState, repoId);
+  const refreshMutation = useRefreshRepoMutation(authState, repoId);
+  const runMutation = useRunRepoExecutionMutation(authState, repoId, (executionId) => {
     void navigate({ to: "/jobs/$jobId", params: { jobId: executionId } });
   });
 

@@ -28,7 +28,11 @@ function isJsonObject(value: unknown): value is JsonObject {
 }
 
 function isProseMirrorMark(value: unknown): value is JsonObject {
-  return isJsonObject(value) && typeof value.type === "string" && (!("attrs" in value) || isJsonObject(value.attrs));
+  return (
+    isJsonObject(value) &&
+    typeof value.type === "string" &&
+    (!("attrs" in value) || isJsonObject(value.attrs))
+  );
 }
 
 function isProseMirrorNode(value: unknown): value is JsonObject {
@@ -41,7 +45,10 @@ function isProseMirrorNode(value: unknown): value is JsonObject {
   if ("marks" in value && (!Array.isArray(value.marks) || !value.marks.every(isProseMirrorMark))) {
     return false;
   }
-  if ("content" in value && (!Array.isArray(value.content) || !value.content.every(isProseMirrorNode))) {
+  if (
+    "content" in value &&
+    (!Array.isArray(value.content) || !value.content.every(isProseMirrorNode))
+  ) {
     return false;
   }
   if ("text" in value && typeof value.text !== "string") {

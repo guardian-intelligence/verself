@@ -8,14 +8,29 @@ import {
 } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
-import { getViewer } from "~/server-fns/auth";
+import type { AuthViewer } from "@forge-metal/auth-web";
+import { getAuthState } from "~/server-fns/auth";
 import "~/styles/app.css";
+
+const authPartitionsByQueryClient = new WeakMap<QueryClient, string | null>();
+
+function syncQueryClientAuthPartition(queryClient: QueryClient, cachePartition: string | null) {
+  const previousPartition = authPartitionsByQueryClient.get(queryClient);
+  if (previousPartition !== undefined && previousPartition !== cachePartition) {
+    queryClient.clear();
+  }
+  authPartitionsByQueryClient.set(queryClient, cachePartition);
+}
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   component: RootComponent,
-  loader: () => getViewer(),
+  beforeLoad: async ({ context }) => {
+    const authState = await getAuthState();
+    syncQueryClientAuthPartition(context.queryClient, authState.cachePartition);
+    return { authState };
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -26,9 +41,12 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const { authState, queryClient } = Route.useRouteContext();
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider
+      client={queryClient}
+      key={`auth:${authState.cachePartition ?? "anonymous"}`}
+    >
       <RootDocument>
         <Outlet />
       </RootDocument>
@@ -54,6 +72,8 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function Nav() {
+  const authState = Route.useRouteContext({ select: (context) => context.authState });
+
   return (
     <nav className="border-b border-border bg-card">
       <div className="max-w-6xl mx-auto px-4 flex items-center h-14 gap-6">
@@ -87,14 +107,14 @@ function Nav() {
           </Link>
         </div>
         <div className="ml-auto">
-          <AuthButton viewer={Route.useLoaderData()} />
+          <AuthButton viewer={authState.viewer} />
         </div>
       </div>
     </nav>
   );
 }
 
-function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> }) {
+function AuthButton({ viewer }: { viewer: AuthViewer | null }) {
   const currentLocation = useRouterState({
     select: (state) => state.location.href,
   });

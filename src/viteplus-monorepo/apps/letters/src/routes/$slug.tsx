@@ -68,7 +68,8 @@ function PostArticle({
 }: {
   post: NonNullable<Awaited<ReturnType<typeof getPostBySlug>>> | ElectricPost;
 }) {
-  const totalClaps = typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
+  const totalClaps =
+    typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
 
   return (
     <>

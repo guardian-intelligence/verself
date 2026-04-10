@@ -97,7 +97,11 @@ function stringifyErrorBody(error: unknown): string {
   return String(error);
 }
 
-function throwSandboxRentalError(path: string, response: Response | undefined, error: unknown): never {
+function throwSandboxRentalError(
+  path: string,
+  response: Response | undefined,
+  error: unknown,
+): never {
   if (!response) {
     throw error instanceof Error ? error : new Error(stringifyErrorBody(error));
   }
@@ -195,7 +199,11 @@ function parseSubscription(input: unknown) {
 export type Subscription = ReturnType<typeof parseSubscription>;
 
 function parseSubscriptionsResponse(input: unknown) {
-  const { $schema: _schema, org_id, subscriptions } = v.parse(vListBillingSubscriptionsResponse, input);
+  const {
+    $schema: _schema,
+    org_id,
+    subscriptions,
+  } = v.parse(vListBillingSubscriptionsResponse, input);
   return {
     org_id,
     subscriptions: subscriptions?.map((subscription) => parseSubscription(subscription)) ?? null,
@@ -225,10 +233,12 @@ function parseGrantsResponse(input: unknown) {
 export type GrantsResponse = ReturnType<typeof parseGrantsResponse>;
 
 function parseExecution(input: unknown) {
-  const { $schema: _schema, billing_windows, latest_attempt, ...execution } = v.parse(
-    vExecutionRecord,
-    input,
-  );
+  const {
+    $schema: _schema,
+    billing_windows,
+    latest_attempt,
+    ...execution
+  } = v.parse(vExecutionRecord, input);
   return {
     ...execution,
     billing_windows: billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)),
