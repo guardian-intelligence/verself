@@ -1,25 +1,34 @@
-import { createMiddleware } from "@tanstack/react-start";
-import { createAuthServerFns, type AuthSession } from "@forge-metal/auth-web";
-import { authConfig } from "../server/auth";
+import { createServerFn } from "@tanstack/react-start";
+import * as v from "valibot";
+import {
+  beginLogin,
+  createAuthMiddleware,
+  finishLogin,
+  getAuthViewer,
+  logout,
+  type AuthSession,
+} from "@forge-metal/auth-web";
+import { getAuthConfig } from "../server/auth";
 
-const verificationRunHeader = "X-Forge-Metal-Verification-Run";
+const loginRedirectInputSchema = v.object({
+  redirectTo: v.optional(v.nullable(v.string())),
+});
 
 export interface RentASandboxAuthContext {
-  verificationRunID?: string;
   auth: AuthSession;
 }
 
-const authServerFns = createAuthServerFns(authConfig);
-
-export const verificationRunMiddleware = createMiddleware({
-  type: "request",
-}).server(async ({ next, request }) => {
-  const verificationRunID = request.headers.get(verificationRunHeader)?.trim() || undefined;
-  return next({
-    context: verificationRunID ? { verificationRunID } : {},
-  });
+export const rentASandboxAuthMiddleware = createAuthMiddleware(getAuthConfig);
+export const getViewer = createServerFn({ method: "GET" }).handler(async () =>
+  getAuthViewer(getAuthConfig),
+);
+export const getLoginRedirectURL = createServerFn({ method: "GET" })
+  .inputValidator(loginRedirectInputSchema)
+  .handler(async ({ data }) => beginLogin(getAuthConfig(), data.redirectTo));
+export const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+  const { redirectTo } = await finishLogin(getAuthConfig());
+  return redirectTo;
 });
-
-export const rentASandboxAuthMiddleware = authServerFns.authMiddleware;
-export const { getViewer, getLoginRedirectURL, getCallbackRedirectURL, getLogoutRedirectURL } =
-  authServerFns;
+export const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () =>
+  logout(getAuthConfig),
+);

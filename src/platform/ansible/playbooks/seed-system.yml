@@ -168,19 +168,19 @@
         return_content: true
       register: seed_system_letters_project_search
       no_log: true
-      tags: [identity]
+      tags: [identity, dev-oidc]
 
     - name: Set letters project ID fact
       ansible.builtin.set_fact:
         seed_system_letters_project_id: "{{ seed_system_letters_project_search.json.result[0].id }}"
       when: seed_system_letters_project_search.json.result is defined and seed_system_letters_project_search.json.result | length > 0
-      tags: [identity]
+      tags: [identity, dev-oidc]
 
     - name: Assert letters project exists
       ansible.builtin.assert:
         that: seed_system_letters_project_id is defined
         fail_msg: "Letters Zitadel project '{{ seed_system_letters_project_name }}' not found. Run the full deploy first."
-      tags: [identity]
+      tags: [identity, dev-oidc]
 
     - name: Find Forgejo project
       ansible.builtin.uri:
@@ -401,6 +401,46 @@
       no_log: true
       tags: [identity]
 
+    - name: List existing sandbox-rental project grants
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ seed_system_sandbox_project_id }}/grants/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          limit: 200
+        status_code: 200
+        return_content: true
+      register: seed_system_sandbox_project_grants
+      no_log: true
+      tags: [identity]
+
+    - name: Set desired sandbox-rental project grants fact
+      ansible.builtin.set_fact:
+        seed_system_desired_project_grants:
+          - project_id: "{{ seed_system_sandbox_project_id }}"
+            granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            role_keys:
+              - sandbox_org_admin
+              - sandbox_org_member
+      tags: [identity]
+
+    - name: Upsert sandbox-rental project grants
+      ansible.builtin.include_tasks: tasks/upsert_project_grant.yml
+      loop: "{{ seed_system_desired_project_grants }}"
+      loop_control:
+        label: "{{ item.project_id }} -> {{ item.granted_organization_id }}"
+      vars:
+        zitadel_project_grant_base_url: "{{ seed_system_zitadel_base_url }}"
+        zitadel_project_grant_host: "{{ seed_system_zitadel_host }}"
+        zitadel_project_grant_admin_pat: "{{ seed_system_admin_pat }}"
+        zitadel_project_grants: "{{ seed_system_sandbox_project_grants }}"
+        zitadel_project_grant: "{{ item }}"
+      no_log: true
+      tags: [identity]
+
     - name: Set desired seeded authorizations fact
       ansible.builtin.set_fact:
         seed_system_desired_authorizations:
@@ -524,7 +564,7 @@
           org_name: "{{ seed_system_orgs.platform.name }}"
           org_trust_tier: platform
           target_prepaid_units: "{{ seed_system_platform_target_prepaid_units }}"
-          prepaid_source: promo
+          prepaid_source: purchase
           promotion_name: "{{ seed_system_platform_promotion_name }}"
           promotion_percent: "{{ seed_system_platform_promotion_percent }}"
         - key: acme
@@ -539,14 +579,7 @@
         label: "{{ item.key }}"
       register: seed_system_billing_result_raw
       changed_when: >-
-        (
-          seed_system_billing_result_raw.results
-          | map(attribute='stdout')
-          | map('from_json')
-          | map(attribute='deposited_units')
-          | map('int')
-          | sum
-        ) > 0
+        ((seed_system_billing_result_raw.stdout | from_json).deposited_units | int) > 0
       tags: [billing]
 
     - name: Parse billing seed results
@@ -605,7 +638,7 @@
           {{
             (
               seed_system_sandbox_env_raw.content | b64decode
-              | regex_search('^SANDBOX_FORGEJO_WEBHOOK_SECRET=(.+)$', '\\1', multiline=True)
+              | regex_findall('^SANDBOX_FORGEJO_WEBHOOK_SECRET=(.+)$', multiline=True)
               | first
             ) | default('', true) | trim
           }}
@@ -1031,7 +1064,7 @@
         body:
           name: "{{ item.item.name }}"
           redirectUris:
-            - "http://127.0.0.1:{{ item.item.port }}/callback"
+            - "http://127.0.0.1:*/callback"
           responseTypes:
             - OIDC_RESPONSE_TYPE_CODE
           grantTypes:
@@ -1040,7 +1073,7 @@
           appType: OIDC_APP_TYPE_WEB
           authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
           postLogoutRedirectUris:
-            - "http://127.0.0.1:{{ item.item.port }}"
+            - "http://127.0.0.1:*"
           devMode: true
           accessTokenType: OIDC_TOKEN_TYPE_JWT
         status_code: 200

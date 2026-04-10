@@ -1,7 +1,5 @@
-import { createMiddleware, createServerFn } from "@tanstack/react-start";
+import { createMiddleware } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
-import { useSession, getRequestUrl } from "@tanstack/react-start/server";
-import postgres from "postgres";
 
 export interface AuthUser {
   sub: string;
@@ -39,11 +37,14 @@ export interface AuthConfig {
   postLogoutRedirectPath: string;
 }
 
+type AuthConfigSource = AuthConfig | (() => AuthConfig);
+
 interface ProviderMetadata {
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;
   jwks_uri: string;
+  userinfo_endpoint?: string;
   end_session_endpoint?: string;
 }
 
@@ -151,7 +152,8 @@ const pendingLoginTTL = 5 * 60 * 1000;
 
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-const sqlCache = new Map<string, postgres.Sql<Record<string, unknown>>>();
+type SQLClient = import("postgres").Sql<Record<string, unknown>>;
+const sqlCache = new Map<string, SQLClient>();
 
 function requiredNonEmpty(value: string | undefined, label: string): string {
   const trimmed = value?.trim();
@@ -177,9 +179,14 @@ export function createAuthConfig(config: AuthConfig): AuthConfig {
   };
 }
 
-function getSQL(databaseURL: string) {
+function resolveAuthConfig(config: AuthConfigSource): AuthConfig {
+  return typeof config === "function" ? config() : config;
+}
+
+async function getSQL(databaseURL: string): Promise<SQLClient> {
   let sql = sqlCache.get(databaseURL);
   if (!sql) {
+    const { default: postgres } = await import("postgres");
     sql = postgres(databaseURL, {
       max: 5,
       idle_timeout: 20,
@@ -217,12 +224,17 @@ function getJWKS(metadata: ProviderMetadata) {
   return jwks;
 }
 
-function getBaseURL(): URL {
+async function getStartServerModule() {
+  return import("@tanstack/react-start/server");
+}
+
+async function getBaseURL(): Promise<URL> {
+  const { getRequestUrl } = await getStartServerModule();
   return new URL(getRequestUrl({ xForwardedHost: true, xForwardedProto: true }).toString());
 }
 
-function getAbsoluteURL(pathname: string): string {
-  const baseURL = getBaseURL();
+async function getAbsoluteURL(pathname: string): Promise<string> {
+  const baseURL = await getBaseURL();
   const resolvedURL = new URL(pathname, baseURL);
   // Zitadel compares post_logout_redirect_uri literally, so keep "/" as the bare origin.
   if (resolvedURL.pathname === "/" && !resolvedURL.search && !resolvedURL.hash) {
@@ -235,19 +247,44 @@ function toDate(value: string | Date): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
+function base64UrlEncode(bytes: Uint8Array): string {
+  // This module is imported by both server and client bundles, so avoid Node Buffer.
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  let output = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index] ?? 0;
+    const b = bytes[index + 1] ?? 0;
+    const c = bytes[index + 2] ?? 0;
+    const chunk = (a << 16) | (b << 8) | c;
+
+    output += alphabet[(chunk >> 18) & 0x3f];
+    output += alphabet[(chunk >> 12) & 0x3f];
+    if (index + 1 < bytes.length) {
+      output += alphabet[(chunk >> 6) & 0x3f];
+    }
+    if (index + 2 < bytes.length) {
+      output += alphabet[chunk & 0x3f];
+    }
+  }
+  return output;
+}
+
 function randomToken(bytes = 32): string {
-  return Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
+  return base64UrlEncode(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
 async function codeChallenge(verifier: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return Buffer.from(digest).toString("base64url");
+  return base64UrlEncode(new Uint8Array(digest));
 }
 
-function sanitizeRedirectTarget(redirectTo: string | null | undefined, fallback: string): string {
+async function sanitizeRedirectTarget(
+  redirectTo: string | null | undefined,
+  fallback: string,
+): Promise<string> {
   if (!redirectTo) return fallback;
   try {
-    const baseURL = getBaseURL();
+    const baseURL = await getBaseURL();
     const parsed = new URL(redirectTo, baseURL);
     if (parsed.origin !== baseURL.origin) {
       return fallback;
@@ -258,7 +295,8 @@ function sanitizeRedirectTarget(redirectTo: string | null | undefined, fallback:
   }
 }
 
-function getSessionManager(config: AuthConfig) {
+async function getSessionManager(config: AuthConfig) {
+  const { useSession } = await getStartServerModule();
   return useSession<AuthCookieData>({
     password: config.sessionPassword,
     name: config.sessionCookieName ?? `${config.appName}-session`,
@@ -270,6 +308,31 @@ function getSessionManager(config: AuthConfig) {
       secure: process.env.NODE_ENV === "production",
     },
   });
+}
+
+async function fetchUserInfo(
+  metadata: ProviderMetadata,
+  accessToken: string,
+): Promise<Record<string, unknown>> {
+  if (!metadata.userinfo_endpoint) {
+    throw new Error("OIDC provider metadata is missing userinfo_endpoint");
+  }
+  // Zitadel puts profile and role claims on userinfo even when the access token
+  // itself only carries transport-level claims.
+  const response = await fetch(metadata.userinfo_endpoint, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`OIDC userinfo request failed: ${response.status} ${await response.text()}`);
+  }
+  const payload = await response.json();
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("OIDC userinfo payload must be an object");
+  }
+  return payload as Record<string, unknown>;
 }
 
 async function exchangeToken(
@@ -389,26 +452,39 @@ function extractRoleAssignments(payload: JWTPayload): AuthRoleAssignment[] {
   });
 }
 
-function buildUserSnapshot(idTokenClaims: JWTPayload, accessTokenClaims: JWTPayload): AuthUser {
+function buildUserSnapshot(
+  idTokenClaims: JWTPayload,
+  accessTokenClaims: JWTPayload,
+  userInfoClaims: Record<string, unknown>,
+): AuthUser {
+  const mergedClaims: JWTPayload = {
+    ...accessTokenClaims,
+    ...idTokenClaims,
+    ...userInfoClaims,
+  };
   const email =
-    typeof idTokenClaims.email === "string"
-      ? idTokenClaims.email
-      : typeof accessTokenClaims.email === "string"
-        ? accessTokenClaims.email
-        : null;
+    typeof mergedClaims.email === "string"
+      ? mergedClaims.email
+      : typeof idTokenClaims.email === "string"
+        ? idTokenClaims.email
+        : typeof accessTokenClaims.email === "string"
+          ? accessTokenClaims.email
+          : null;
   const preferredUsername =
-    typeof idTokenClaims.preferred_username === "string"
-      ? idTokenClaims.preferred_username
-      : typeof accessTokenClaims.preferred_username === "string"
-        ? accessTokenClaims.preferred_username
-        : null;
+    typeof mergedClaims.preferred_username === "string"
+      ? mergedClaims.preferred_username
+      : typeof idTokenClaims.preferred_username === "string"
+        ? idTokenClaims.preferred_username
+        : typeof accessTokenClaims.preferred_username === "string"
+          ? accessTokenClaims.preferred_username
+          : null;
   const name =
-    typeof idTokenClaims.name === "string"
-      ? idTokenClaims.name
+    typeof mergedClaims.name === "string"
+      ? mergedClaims.name
       : (preferredUsername ?? email ?? idTokenClaims.sub ?? null);
   const orgID =
-    typeof accessTokenClaims["urn:zitadel:iam:user:resourceowner:id"] === "string"
-      ? (accessTokenClaims["urn:zitadel:iam:user:resourceowner:id"] as string)
+    typeof mergedClaims["urn:zitadel:iam:user:resourceowner:id"] === "string"
+      ? (mergedClaims["urn:zitadel:iam:user:resourceowner:id"] as string)
       : null;
 
   return {
@@ -417,12 +493,9 @@ function buildUserSnapshot(idTokenClaims: JWTPayload, accessTokenClaims: JWTPayl
     name,
     preferredUsername,
     orgID,
-    roles: extractRoles(accessTokenClaims),
-    roleAssignments: extractRoleAssignments(accessTokenClaims),
-    claims: {
-      ...accessTokenClaims,
-      ...idTokenClaims,
-    },
+    roles: extractRoles(mergedClaims),
+    roleAssignments: extractRoleAssignments(mergedClaims),
+    claims: mergedClaims,
   };
 }
 
@@ -465,7 +538,7 @@ async function readStoredSession(
   config: AuthConfig,
   sessionID: string,
 ): Promise<AuthSession | null> {
-  const sql = getSQL(config.sessionDatabaseURL);
+  const sql = await getSQL(config.sessionDatabaseURL);
   const [row] = await sql<StoredAuthSessionRow[]>`
     SELECT
       session_id,
@@ -500,7 +573,7 @@ async function writeStoredSession(
   tokens: TokenResponse,
   user: AuthUser,
 ): Promise<void> {
-  const sql = getSQL(config.sessionDatabaseURL);
+  const sql = await getSQL(config.sessionDatabaseURL);
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
   await sql`
     INSERT INTO auth_sessions (
@@ -526,8 +599,8 @@ async function writeStoredSession(
       ${user.name},
       ${user.preferredUsername},
       ${user.orgID},
-      ${JSON.stringify(user.roles)},
-      ${JSON.stringify(user.claims)},
+      ${user.roles},
+      ${user.claims},
       ${tokens.id_token ?? null},
       ${tokens.access_token},
       ${tokens.refresh_token ?? null},
@@ -553,7 +626,7 @@ async function writeStoredSession(
 }
 
 async function deleteStoredSession(config: AuthConfig, sessionID: string): Promise<void> {
-  const sql = getSQL(config.sessionDatabaseURL);
+  const sql = await getSQL(config.sessionDatabaseURL);
   await sql`
     DELETE FROM auth_sessions
     WHERE app_name = ${config.appName}
@@ -628,7 +701,8 @@ async function refreshStoredSession(
     audience: config.clientID,
   });
   const accessTokenClaims = decodeJwt(refreshed.access_token);
-  const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims);
+  const userInfoClaims = await fetchUserInfo(metadata, refreshed.access_token);
+  const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims, userInfoClaims);
   await writeStoredSession(config, stored.sessionID, refreshed, user);
   return {
     session: await readStoredSession(config, stored.sessionID),
@@ -645,10 +719,10 @@ export async function beginLogin(
   const state = randomToken();
   const nonce = randomToken();
   const codeVerifier = randomToken(48);
-  const redirectTo = sanitizeRedirectTarget(requestedRedirectTo, config.defaultRedirectPath);
+  const redirectTo = await sanitizeRedirectTarget(requestedRedirectTo, config.defaultRedirectPath);
   const authorizeURL = new URL(metadata.authorization_endpoint);
   authorizeURL.searchParams.set("client_id", config.clientID);
-  authorizeURL.searchParams.set("redirect_uri", getAbsoluteURL(config.callbackPath));
+  authorizeURL.searchParams.set("redirect_uri", await getAbsoluteURL(config.callbackPath));
   authorizeURL.searchParams.set("response_type", "code");
   authorizeURL.searchParams.set("scope", config.scopes.join(" "));
   authorizeURL.searchParams.set("state", state);
@@ -674,7 +748,7 @@ export async function finishLogin(config: AuthConfig): Promise<{
   redirectTo: string;
   session: AuthSession;
 }> {
-  const requestURL = getBaseURL();
+  const requestURL = await getBaseURL();
   const error = requestURL.searchParams.get("error");
   if (error) {
     const description = requestURL.searchParams.get("error_description");
@@ -707,7 +781,7 @@ export async function finishLogin(config: AuthConfig): Promise<{
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: getAbsoluteURL(config.callbackPath),
+      redirect_uri: await getAbsoluteURL(config.callbackPath),
       code_verifier: pending.codeVerifier,
     }),
   );
@@ -724,7 +798,8 @@ export async function finishLogin(config: AuthConfig): Promise<{
     throw new Error("OIDC callback nonce mismatch");
   }
   const accessTokenClaims = decodeJwt(tokens.access_token);
-  const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims);
+  const userInfoClaims = await fetchUserInfo(metadata, tokens.access_token);
+  const user = buildUserSnapshot(verifiedIDToken.payload, accessTokenClaims, userInfoClaims);
   const sessionID = crypto.randomUUID();
 
   await writeStoredSession(config, sessionID, tokens, user);
@@ -737,7 +812,7 @@ export async function finishLogin(config: AuthConfig): Promise<{
   }
 
   return {
-    redirectTo: new URL(pending.redirectTo, getBaseURL()).toString(),
+    redirectTo: new URL(pending.redirectTo, await getBaseURL()).toString(),
     session: storedSession,
   };
 }
@@ -774,9 +849,16 @@ export async function getAuthUser(config: AuthConfig): Promise<AuthUser | null> 
   return session?.user ?? null;
 }
 
-export function createAuthServerFns(config: AuthConfig) {
-  const authMiddleware = createMiddleware({ type: "function" }).server(async ({ next }) => {
-    const auth = await getAuthSession(config);
+export async function getAuthViewer(config: AuthConfigSource): Promise<AuthViewer | null> {
+  const user = await getAuthUser(resolveAuthConfig(config));
+  return user ? toAuthViewer(user) : null;
+}
+
+export function createAuthMiddleware(config: AuthConfigSource) {
+  // TanStack Start resolves server function handlers from app modules, so keep
+  // auth config lazy and server-side to avoid bundling env lookups into the client.
+  return createMiddleware({ type: "function" }).server(async ({ next }) => {
+    const auth = await getAuthSession(resolveAuthConfig(config));
     if (!auth) {
       throw new Error("Authentication required");
     }
@@ -786,57 +868,32 @@ export function createAuthServerFns(config: AuthConfig) {
       } satisfies { auth: AuthSession },
     });
   });
-
-  const getViewer = createServerFn({ method: "GET" }).handler(async () => {
-    const user = await getAuthUser(config);
-    return user ? toAuthViewer(user) : null;
-  });
-
-  const getLoginRedirectURL = createServerFn({ method: "GET" })
-    .inputValidator((data: { redirectTo?: string | null }) => data)
-    .handler(async ({ data }) => beginLogin(config, data.redirectTo));
-
-  const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
-    const { redirectTo } = await finishLogin(config);
-    return redirectTo;
-  });
-
-  const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
-    return logout(config);
-  });
-
-  return {
-    authMiddleware,
-    getViewer,
-    getLoginRedirectURL,
-    getCallbackRedirectURL,
-    getLogoutRedirectURL,
-  };
 }
 
-export async function requireAccessToken(config: AuthConfig): Promise<string> {
-  const session = await getAuthSession(config);
+export async function requireAccessToken(config: AuthConfigSource): Promise<string> {
+  const session = await getAuthSession(resolveAuthConfig(config));
   if (!session) {
     throw new Error("Authentication required");
   }
   return session.accessToken;
 }
 
-export async function logout(config: AuthConfig): Promise<string> {
-  const sessionManager = await getSessionManager(config);
+export async function logout(config: AuthConfigSource): Promise<string> {
+  const resolvedConfig = resolveAuthConfig(config);
+  const sessionManager = await getSessionManager(resolvedConfig);
   const sessionID = sessionManager.data.sessionID;
-  const stored = sessionID ? await readStoredSession(config, sessionID) : null;
+  const stored = sessionID ? await readStoredSession(resolvedConfig, sessionID) : null;
   if (sessionID) {
-    await deleteStoredSession(config, sessionID);
+    await deleteStoredSession(resolvedConfig, sessionID);
   }
   await sessionManager.clear();
 
-  const postLogoutRedirect = getAbsoluteURL(config.postLogoutRedirectPath);
+  const postLogoutRedirect = await getAbsoluteURL(resolvedConfig.postLogoutRedirectPath);
   if (!stored?.idToken) {
     return postLogoutRedirect;
   }
 
-  const metadata = await getProviderMetadata(config.issuerURL);
+  const metadata = await getProviderMetadata(resolvedConfig.issuerURL);
   if (!metadata.end_session_endpoint) {
     return postLogoutRedirect;
   }
