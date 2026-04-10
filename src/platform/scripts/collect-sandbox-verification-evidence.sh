@@ -276,11 +276,14 @@ if [[ -n "${attempt_id}" ]]; then
   COPY (
     SELECT
       attempt_id,
+      billing_window_id,
       window_seq,
-      window_seconds,
-      actual_seconds,
+      reservation_shape,
+      reserved_quantity,
+      actual_quantity,
       pricing_phase,
       state,
+      window_start,
       created_at,
       settled_at
     FROM execution_billing_windows
@@ -289,21 +292,54 @@ if [[ -n "${attempt_id}" ]]; then
   ) TO STDOUT WITH (FORMAT csv, HEADER true);
   " >"${output_dir}/postgres/execution_billing_windows.csv"
 
-  remote_psql sandbox_rental "
+  remote_psql sandbox "
   COPY (
-    SELECT reservation::text
-    FROM execution_billing_windows
-    WHERE attempt_id = '${attempt_id}'
+    SELECT
+      window_id,
+      org_id,
+      product_id,
+      plan_id,
+      source_type,
+      source_ref,
+      window_seq,
+      state,
+      reservation_shape,
+      reserved_quantity,
+      actual_quantity,
+      billable_quantity,
+      writeoff_quantity,
+      reserved_charge_units,
+      billed_charge_units,
+      writeoff_charge_units,
+      pricing_phase,
+      funding_legs,
+      window_start,
+      expires_at,
+      renew_by,
+      settled_at,
+      metering_projected_at,
+      created_at
+    FROM billing_windows
+    WHERE source_ref = '${attempt_id}'
     ORDER BY window_seq
-    LIMIT 1
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/billing_windows.csv"
+
+  remote_psql sandbox "
+  COPY (
+    SELECT funding_legs::text
+    FROM billing_windows
+    WHERE source_ref = '${attempt_id}'
+    ORDER BY window_seq
   ) TO STDOUT;
-  " >"${output_dir}/postgres/reservation.json"
+  " >"${output_dir}/postgres/billing_window_funding_legs.jsonl"
 else
   printf 'attempt_id,missing\n,true\n' >"${output_dir}/postgres/execution_billing_windows.csv"
-  : >"${output_dir}/postgres/reservation.json"
+  printf 'window_id,missing\n,true\n' >"${output_dir}/postgres/billing_windows.csv"
+  : >"${output_dir}/postgres/billing_window_funding_legs.jsonl"
 fi
 
-mapfile -t grant_ids < <(python3 - "${output_dir}/postgres/reservation.json" <<'PY'
+mapfile -t grant_ids < <(python3 - "${output_dir}/postgres/billing_window_funding_legs.jsonl" <<'PY'
 import json
 import pathlib
 import sys
@@ -312,11 +348,16 @@ path = pathlib.Path(sys.argv[1])
 raw = path.read_text(encoding="utf-8").strip()
 if not raw:
     sys.exit(0)
-reservation = json.loads(raw)
-for leg in reservation.get("grant_legs", []):
-    grant_id = leg.get("grant_id", "").strip()
-    if grant_id:
-        print(grant_id)
+seen = set()
+for line in raw.splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    for leg in json.loads(line):
+        grant_id = str(leg.get("grant_id", "")).strip()
+        if grant_id and grant_id not in seen:
+            seen.add(grant_id)
+            print(grant_id)
 PY
 )
 
@@ -352,6 +393,7 @@ Collected files:
 - clickhouse/otel_traces.tsv
 - postgres/execution.csv
 - postgres/execution_billing_windows.csv
-- postgres/reservation.json
+- postgres/billing_windows.csv
+- postgres/billing_window_funding_legs.jsonl
 - tigerbeetle/grant-*.txt
 EOF

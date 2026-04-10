@@ -192,73 +192,37 @@
       -v ON_ERROR_STOP=1
     stdin: |
       DO $$
+      DECLARE
+        table_name text;
+        sequence_name text;
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
-          EXECUTE 'ALTER TYPE subscription_status OWNER TO billing';
-        END IF;
-        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'billing_cadence') THEN
-          EXECUTE 'ALTER TYPE billing_cadence OWNER TO billing';
-        END IF;
-        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
-          EXECUTE 'ALTER TYPE task_status OWNER TO billing';
-        END IF;
+        FOREACH table_name IN ARRAY ARRAY[
+          'products',
+          'plans',
+          'orgs',
+          'subscriptions',
+          'credit_grants',
+          'billing_windows'
+        ]
+        LOOP
+          IF to_regclass('public.' || table_name) IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE public.%I OWNER TO billing', table_name);
+            EXECUTE format('GRANT ALL PRIVILEGES ON TABLE public.%I TO billing', table_name);
+          END IF;
+        END LOOP;
 
-        IF to_regclass('public.products') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.products OWNER TO billing';
-        END IF;
-        IF to_regclass('public.plans') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.plans OWNER TO billing';
-        END IF;
-        IF to_regclass('public.orgs') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.orgs OWNER TO billing';
-        END IF;
-        IF to_regclass('public.subscriptions') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.subscriptions OWNER TO billing';
-        END IF;
-        IF to_regclass('public.credit_grants') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.credit_grants OWNER TO billing';
-        END IF;
-        IF to_regclass('public.org_pricing_overrides') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.org_pricing_overrides OWNER TO billing';
-        END IF;
-        IF to_regclass('public.tasks') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.tasks OWNER TO billing';
-        END IF;
-        IF to_regclass('public.billing_events') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.billing_events OWNER TO billing';
-        END IF;
-        IF to_regclass('public.billing_cursors') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.billing_cursors OWNER TO billing';
-        END IF;
-
-        IF to_regclass('public.subscriptions_subscription_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.subscriptions_subscription_id_seq OWNER TO billing';
-        END IF;
-        IF to_regclass('public.tasks_task_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.tasks_task_id_seq OWNER TO billing';
-        END IF;
-        IF to_regclass('public.billing_events_event_id_seq') IS NOT NULL THEN
-          EXECUTE 'ALTER SEQUENCE public.billing_events_event_id_seq OWNER TO billing';
-        END IF;
+        FOREACH sequence_name IN ARRAY ARRAY[
+          'subscriptions_subscription_id_seq'
+        ]
+        LOOP
+          IF to_regclass('public.' || sequence_name) IS NOT NULL THEN
+            EXECUTE format('ALTER SEQUENCE public.%I OWNER TO billing', sequence_name);
+            EXECUTE format('GRANT ALL PRIVILEGES ON SEQUENCE public.%I TO billing', sequence_name);
+          END IF;
+        END LOOP;
       END
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO billing;
-      GRANT ALL PRIVILEGES ON TABLE
-        public.products,
-        public.plans,
-        public.orgs,
-        public.subscriptions,
-        public.credit_grants,
-        public.org_pricing_overrides,
-        public.tasks,
-        public.billing_events,
-        public.billing_cursors
-      TO billing;
-      GRANT ALL PRIVILEGES ON SEQUENCE
-        public.subscriptions_subscription_id_seq,
-        public.tasks_task_id_seq,
-        public.billing_events_event_id_seq
-      TO billing;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   changed_when: false

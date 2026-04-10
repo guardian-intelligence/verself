@@ -111,6 +111,18 @@
     that: billing_service_auth_audience | default('', true) | length > 0
     fail_msg: billing_service_auth_audience could not be resolved from Zitadel.
 
+- name: Ensure billing project roles exist
+  ansible.builtin.include_role:
+    name: zitadel_project_roles
+  vars:
+    zitadel_project_roles_admin_pat: "{{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+    zitadel_project_roles_project_id: "{{ billing_service_auth_audience }}"
+    zitadel_project_roles_definitions:
+      - key: "{{ billing_service_internal_role }}"
+        display_name: Billing Internal
+        group: billing
+  when: billing_service_auth_audience | default('', true) | length > 0
+
 # --- systemd unit ---
 
 - name: Deploy billing-service systemd unit
