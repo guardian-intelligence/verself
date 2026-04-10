@@ -164,8 +164,8 @@ export type Attempt = ReturnType<typeof normalizeAttempt>;
 function normalizeBillingWindow(input: v.InferOutput<typeof vBillingWindow>) {
   return {
     ...input,
-    actual_seconds: toOptionalSafeNumber(input.actual_seconds, "actual_seconds"),
-    window_seconds: toSafeNumber(input.window_seconds, "window_seconds"),
+    actual_quantity: toOptionalSafeNumber(input.actual_quantity, "actual_quantity"),
+    reserved_quantity: toSafeNumber(input.reserved_quantity, "reserved_quantity"),
     window_seq: toSafeNumber(input.window_seq, "window_seq"),
   };
 }
@@ -180,6 +180,7 @@ function parseBalance(input: unknown) {
     credit_pending: toSafeNumber(balance.credit_pending, "credit_pending"),
     free_tier_available: toSafeNumber(balance.free_tier_available, "free_tier_available"),
     free_tier_pending: toSafeNumber(balance.free_tier_pending, "free_tier_pending"),
+    org_id: stringifyBigInt(balance.org_id),
     total_available: toSafeNumber(balance.total_available, "total_available"),
   };
 }
@@ -190,8 +191,6 @@ function parseSubscription(input: unknown) {
   const subscription = v.parse(vSubscriptionJson, input);
   return {
     ...subscription,
-    overage_cap_units: toOptionalSafeNumber(subscription.overage_cap_units, "overage_cap_units"),
-    stripe_subscription_id: subscription.stripe_subscription_id ?? "",
     subscription_id: toSafeNumber(subscription.subscription_id, "subscription_id"),
   };
 }
@@ -199,13 +198,8 @@ function parseSubscription(input: unknown) {
 export type Subscription = ReturnType<typeof parseSubscription>;
 
 function parseSubscriptionsResponse(input: unknown) {
-  const {
-    $schema: _schema,
-    org_id,
-    subscriptions,
-  } = v.parse(vListBillingSubscriptionsResponse, input);
+  const { $schema: _schema, subscriptions } = v.parse(vListBillingSubscriptionsResponse, input);
   return {
-    org_id,
     subscriptions: subscriptions?.map((subscription) => parseSubscription(subscription)) ?? null,
   };
 }
@@ -216,16 +210,16 @@ function parseGrant(input: unknown) {
   const grant = v.parse(vGrantJson, input);
   return {
     ...grant,
-    amount: toSafeNumber(grant.amount, "amount"),
+    available: toSafeNumber(grant.available, "available"),
+    pending: toSafeNumber(grant.pending, "pending"),
   };
 }
 
 export type Grant = ReturnType<typeof parseGrant>;
 
 function parseGrantsResponse(input: unknown) {
-  const { $schema: _schema, org_id, grants } = v.parse(vGrantsOutputBody, input);
+  const { $schema: _schema, grants } = v.parse(vGrantsOutputBody, input);
   return {
-    org_id,
     grants: grants?.map((grant) => parseGrant(grant)) ?? null,
   };
 }

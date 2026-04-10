@@ -163,7 +163,18 @@ export const vBalanceOutputBody = v.strictObject({
       "Invalid value: Expected int64 to be <= 9223372036854775807",
     ),
   ),
-  org_id: v.string(),
+  org_id: v.pipe(
+    v.union([v.number(), v.string(), v.bigint()]),
+    v.transform((x) => BigInt(x)),
+    v.minValue(
+      BigInt("-9223372036854775808"),
+      "Invalid value: Expected int64 to be >= -9223372036854775808",
+    ),
+    v.maxValue(
+      BigInt("9223372036854775807"),
+      "Invalid value: Expected int64 to be <= 9223372036854775807",
+    ),
+  ),
   total_available: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
@@ -179,7 +190,7 @@ export const vBalanceOutputBody = v.strictObject({
 });
 
 export const vBillingWindow = v.strictObject({
-  actual_seconds: v.optional(
+  actual_quantity: v.optional(
     v.pipe(
       v.union([v.number(), v.string(), v.bigint()]),
       v.transform((x) => BigInt(x)),
@@ -194,11 +205,11 @@ export const vBillingWindow = v.strictObject({
     ),
   ),
   attempt_id: v.string(),
+  billing_window_id: v.string(),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   pricing_phase: v.optional(v.string()),
-  settled_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  state: v.string(),
-  window_seconds: v.pipe(
+  reservation_shape: v.string(),
+  reserved_quantity: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
     v.minValue(
@@ -210,6 +221,8 @@ export const vBillingWindow = v.strictObject({
       "Invalid value: Expected int64 to be <= 9223372036854775807",
     ),
   ),
+  settled_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  state: v.string(),
   window_seq: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
@@ -222,6 +235,7 @@ export const vBillingWindow = v.strictObject({
       "Invalid value: Expected int64 to be <= 9223372036854775807",
     ),
   ),
+  window_start: v.pipe(v.string(), v.isoTimestamp()),
 });
 
 export const vCheckoutInputBody = v.strictObject({
@@ -334,7 +348,7 @@ export const vGoldenGenerationRecord = v.strictObject({
 });
 
 export const vGrantJson = v.strictObject({
-  amount: v.pipe(
+  available: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
     v.minValue(
@@ -346,18 +360,26 @@ export const vGrantJson = v.strictObject({
       "Invalid value: Expected int64 to be <= 9223372036854775807",
     ),
   ),
-  closed_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  expires_at: v.optional(v.string()),
   grant_id: v.string(),
-  product_id: v.string(),
+  pending: v.pipe(
+    v.union([v.number(), v.string(), v.bigint()]),
+    v.transform((x) => BigInt(x)),
+    v.minValue(
+      BigInt("-9223372036854775808"),
+      "Invalid value: Expected int64 to be >= -9223372036854775808",
+    ),
+    v.maxValue(
+      BigInt("9223372036854775807"),
+      "Invalid value: Expected int64 to be <= 9223372036854775807",
+    ),
+  ),
   source: v.string(),
 });
 
 export const vGrantsOutputBody = v.strictObject({
   $schema: v.optional(v.string()),
   grants: v.nullable(v.array(vGrantJson)),
-  org_id: v.string(),
 });
 
 export const vImportRepoRequest = v.strictObject({
@@ -447,27 +469,11 @@ export const vSubscribeInputBody = v.strictObject({
 
 export const vSubscriptionJson = v.strictObject({
   cadence: v.string(),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  current_period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  overage_cap_units: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(
-        BigInt("-9223372036854775808"),
-        "Invalid value: Expected int64 to be >= -9223372036854775808",
-      ),
-      v.maxValue(
-        BigInt("9223372036854775807"),
-        "Invalid value: Expected int64 to be <= 9223372036854775807",
-      ),
-    ),
-  ),
+  current_period_end: v.optional(v.string()),
+  current_period_start: v.optional(v.string()),
   plan_id: v.string(),
   product_id: v.string(),
   status: v.string(),
-  stripe_subscription_id: v.optional(v.string()),
   subscription_id: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
@@ -484,7 +490,6 @@ export const vSubscriptionJson = v.strictObject({
 
 export const vSubscriptionsOutputBody = v.strictObject({
   $schema: v.optional(v.string()),
-  org_id: v.string(),
   subscriptions: v.nullable(v.array(vSubscriptionJson)),
 });
 
