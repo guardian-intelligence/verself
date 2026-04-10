@@ -1,6 +1,12 @@
 import { expect } from "./harness";
 import type { SandboxHarness, VerificationRepoMeta } from "./harness";
 
+const repoRedirectTimeoutMS = 30_000;
+const repoRescanTimeoutMS = 90_000;
+const repoGenerationTimeoutMS = 180_000;
+const executionHydrationTimeoutMS = 15_000;
+const executionTimeoutMS = 180_000;
+
 export async function importRepoFromURL(
   app: SandboxHarness,
   repoURL: string,
@@ -27,7 +33,7 @@ export async function importRepoFromURL(
   await defaultBranchInput.fill(defaultBranch);
   await submitButton.click();
 
-  const repoId = await app.waitForCondition("repo import redirect", 30_000, async () => {
+  const repoId = await app.waitForCondition("repo import redirect", repoRedirectTimeoutMS, async () => {
     const match = app.page.url().match(/\/repos\/([0-9a-f-]+)$/);
     return match?.[1] ?? false;
   });
@@ -76,14 +82,14 @@ export async function refreshRepoGolden(
   const refreshedSha = refreshedRepoMeta.commit_sha.slice(0, 12);
 
   await app.page.getByRole("button", { name: "Rescan" }).click();
-  await app.waitForCondition("repo rescan", 60_000, async () => {
+  await app.waitForCondition("repo rescan", repoRescanTimeoutMS, async () => {
     const scannedSHA = await readInfoCardValue(app, "Last scanned SHA");
     const state = await readRepoState(app);
     return scannedSHA === refreshedSha && state === "ready";
   });
 
   await app.page.getByRole("button", { name: /^(Prepare|Refresh) Golden$/ }).click();
-  await app.waitForCondition("repo refresh", 180_000, async () => {
+  await app.waitForCondition("repo refresh", repoGenerationTimeoutMS, async () => {
     const sourceSHA = await readInfoRowValue(app, "Source SHA");
     const state = await readRepoState(app);
     return sourceSHA === refreshedSha && state === "ready";
@@ -105,7 +111,7 @@ export async function launchExecutionFromRepo(app: SandboxHarness): Promise<{
   execution_id: string;
 }> {
   await app.page.getByRole("button", { name: "Run Execution" }).click();
-  const executionId = await app.waitForCondition("execution launch redirect", 30_000, async () => {
+  const executionId = await app.waitForCondition("execution launch redirect", repoRedirectTimeoutMS, async () => {
     const match = app.page.url().match(/\/jobs\/([0-9a-f-]+)$/);
     return match?.[1] ?? false;
   });
@@ -126,7 +132,7 @@ export async function assertJobsIndexHydratesExecutionList(
   await expect(app.page.getByRole("heading", { name: "Executions", exact: true })).toBeVisible();
   await expect(app.page.getByText("Loading executions")).toBeVisible();
 
-  await app.waitForCondition("execution list hydration", 15_000, async () => {
+  await app.waitForCondition("execution list hydration", executionHydrationTimeoutMS, async () => {
     return (await executionLink.isVisible().catch(() => false)) ? true : false;
   });
 
@@ -161,7 +167,7 @@ export async function waitForExecutionSuccess(
   logMarker: string,
 ): Promise<void> {
   const executionPrefix = executionId.slice(0, 8);
-  await app.waitForCondition("execution success", 180_000, async () => {
+  await app.waitForCondition("execution success", executionTimeoutMS, async () => {
     const headingVisible = await app.page
       .getByRole("heading", { name: executionPrefix })
       .isVisible()
@@ -180,7 +186,7 @@ export async function waitForRepoReady(app: SandboxHarness): Promise<{
   bootstrap_generation_id: string;
   bootstrap_source_sha: string;
 }> {
-  await app.waitForCondition("repo bootstrap", 180_000, async () => {
+  await app.waitForCondition("repo bootstrap", repoGenerationTimeoutMS, async () => {
     const state = await readRepoState(app);
     const executionLinkVisible = await app.page
       .getByRole("link", { name: "View bootstrap execution" })
