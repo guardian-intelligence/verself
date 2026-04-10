@@ -90,15 +90,21 @@ Automated trust tier transitions: `new` → `established` requires 3+ `payment_s
 
 Binds an org to a plan for a product. One active subscription per (org, product) pair, enforced by partial unique index.
 
+**Billing period:** anniversary-based. Each subscription's billing period is a 30-day rolling window anchored to the subscription's creation date (or the most recent plan change). On signup, the customer receives their full credit allocation immediately — no prorated first period. Period-scoped resources (grants, receivables, spend caps) are keyed to `current_period_start`.
+
+The invoice cron runs daily and processes subscriptions where `current_period_end <= now`, rather than running for all customers on a fixed calendar date. This spreads invoice generation load evenly across days.
+
+> **Future:** calendar-month billing will be supported as an option for enterprise customers who prefer it (contract-negotiated). Anniversary billing remains the default. The subscription's `current_period_start` / `current_period_end` already accommodates both models — the difference is only in how the next period's bounds are computed at rollover.
+
 | Column | Type | Purpose |
 |--------|------|---------|
 | subscription_id | BIGINT PK (IDENTITY) | |
 | org_id | TEXT FK | |
 | plan_id | TEXT FK | |
 | product_id | TEXT FK | |
-| cadence | `monthly` or `annual` | Billing cycle length |
-| current_period_start | TIMESTAMPTZ | |
-| current_period_end | TIMESTAMPTZ | |
+| cadence | `monthly` or `annual` | Billing cycle length. `monthly` = 30-day periods from subscription start. `annual` = subscription fee charged yearly, credit deposits and invoicing still on 30-day periods. |
+| current_period_start | TIMESTAMPTZ | Anchor for all period-scoped resources (grants, receivables, spend caps) |
+| current_period_end | TIMESTAMPTZ | `current_period_start + 30 days`. Invoice cron processes subscriptions where this is in the past. |
 | status | ENUM | `active`, `past_due`, `suspended`, `cancelled`, `trialing` |
 | overage_cap_units | BIGINT | Per-subscription spend cap override (nullable) |
 | prorated_from_plan_id | TEXT | Nullable. Set when this subscription was created via a mid-period plan change. References the previous plan for audit trail. |
@@ -281,7 +287,7 @@ When a customer invokes a satisfaction guarantee (within `contract.refund_window
 
 The net Revenue contribution from a guarantee invocation is negative (subscription fee refunded exceeds the settled usage value). This is the cost of the guarantee — it surfaces in operator reporting as customer acquisition cost.
 
-**Invoice generation (monthly cron):**
+**Invoice generation (daily cron — processes subscriptions where `current_period_end <= now`):**
 
 1. Aggregate ClickHouse metering rows for the billing period, grouped by `(product_id, pricing_phase)`
 2. Create invoice + usage line items in PostgreSQL
@@ -293,10 +299,12 @@ The net Revenue contribution from a guarantee invocation is negative (subscripti
 8. Compute `total_due = pretax_total + tax_total`.
 9. Finalize Stripe invoice when `total_due > 0`. Invoices with `pretax_total = 0` (platform showback, fully credited) are finalized in PostgreSQL without a Stripe counterpart — no payment means no tax obligation.
 
+**Period rollover:** after invoice generation, the cron advances the subscription: `current_period_start = current_period_end`, `current_period_end = current_period_start + 30 days`. For prepaid plans, the rollover also deposits the next period's credit grant. This keeps the anniversary anchor stable across periods.
+
 **Per-tier invoice rules:**
 
 Prepaid plans:
-- Free tier orgs: no invoice generated (usage covered by auto-deposited grants, hard stop on exhaustion).
+- Free tier orgs: no invoice generated (usage covered by auto-deposited grants, hard stop on exhaustion). Period rollover still occurs (new grant deposited).
 - Self-serve orgs with overage (hobby/pro): invoice for overage charges only. Stripe invoice charged on receipt.
 
 Postpaid plans:
