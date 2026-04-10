@@ -121,6 +121,14 @@ func registerRoutes(api huma.API, app *billingruntime.App) {
 	}, settle(app))
 
 	huma.Register(api, huma.Operation{
+		OperationID:   "renew",
+		Method:        http.MethodPost,
+		Path:          "/internal/billing/v1/renew",
+		Summary:       "Renew a metered reservation window",
+		DefaultStatus: 200,
+	}, renew(app))
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "void",
 		Method:        http.MethodPost,
 		Path:          "/internal/billing/v1/void",
@@ -330,6 +338,8 @@ type reservationJSON struct {
 	WindowSeq           uint32             `json:"window_seq"`
 	WindowSecs          uint32             `json:"window_secs"`
 	WindowStart         time.Time          `json:"window_start"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	RenewBy             time.Time          `json:"renew_by"`
 	PricingPhase        string             `json:"pricing_phase"`
 	Allocation          map[string]float64 `json:"allocation"`
 	UnitRates           map[string]uint64  `json:"unit_rates"`
@@ -345,6 +355,13 @@ type reserveOutput struct {
 }
 
 type settleInput struct {
+	Body struct {
+		Reservation   reservationJSON `json:"reservation" required:"true"`
+		ActualSeconds uint32          `json:"actual_seconds" required:"true" minimum:"1"`
+	}
+}
+
+type renewInput struct {
 	Body struct {
 		Reservation   reservationJSON `json:"reservation" required:"true"`
 		ActualSeconds uint32          `json:"actual_seconds" required:"true" minimum:"1"`
@@ -649,7 +666,7 @@ func settle(app *billingruntime.App) func(context.Context, *settleInput) (*statu
 				attribute.Int("billing.actual_seconds", int(input.Body.ActualSeconds)),
 			))
 		defer span.End()
-		if callErr := client.Settle(ctx, &reservation, input.Body.ActualSeconds); callErr != nil {
+		if callErr := client.Settle(ctx, reservation, input.Body.ActualSeconds); callErr != nil {
 			span.RecordError(callErr)
 			span.SetStatus(codes.Error, callErr.Error())
 			return nil, huma.Error500InternalServerError("settle reservation", callErr)
@@ -663,6 +680,48 @@ func settle(app *billingruntime.App) func(context.Context, *settleInput) (*statu
 			"source_type", reservation.SourceType,
 			"source_ref", reservation.SourceRef,
 			"window_seq", reservation.WindowSeq,
+			"actual_seconds", input.Body.ActualSeconds,
+		)
+		return out, nil
+	}
+}
+
+func renew(app *billingruntime.App) func(context.Context, *renewInput) (*reserveOutput, error) {
+	return func(ctx context.Context, input *renewInput) (*reserveOutput, error) {
+		client, err := requireBilling(app)
+		if err != nil {
+			return nil, err
+		}
+		reservation, convErr := input.Body.Reservation.toDomain()
+		if convErr != nil {
+			return nil, huma.Error400BadRequest("invalid reservation: " + convErr.Error())
+		}
+		ctx, span := tracer.Start(ctx, "billing.Renew",
+			trace.WithAttributes(
+				attribute.Int64("billing.job_id", int64(reservation.JobID)),
+				attribute.Int64("billing.org_id", int64(reservation.OrgID)),
+				attribute.String("billing.product_id", reservation.ProductID),
+				attribute.Int("billing.actual_seconds", int(input.Body.ActualSeconds)),
+				attribute.Int("billing.window_seq", int(reservation.WindowSeq)),
+			))
+		defer span.End()
+		next, callErr := client.Renew(ctx, reservation, input.Body.ActualSeconds)
+		if callErr != nil {
+			span.RecordError(callErr)
+			span.SetStatus(codes.Error, callErr.Error())
+			return nil, mapRenewError(callErr)
+		}
+		span.SetAttributes(attribute.Int("billing.next_window_seq", int(next.WindowSeq)))
+		out := &reserveOutput{}
+		out.Body.Reservation = reservationFromDomain(next)
+		slog.InfoContext(ctx, "billing: renewed",
+			"org_id", reservation.OrgID,
+			"product_id", reservation.ProductID,
+			"job_id", reservation.JobID,
+			"source_type", reservation.SourceType,
+			"source_ref", reservation.SourceRef,
+			"window_seq", reservation.WindowSeq,
+			"next_window_seq", next.WindowSeq,
 			"actual_seconds", input.Body.ActualSeconds,
 		)
 		return out, nil
@@ -686,7 +745,7 @@ func voidReservation(app *billingruntime.App) func(context.Context, *voidInput) 
 				attribute.String("billing.product_id", reservation.ProductID),
 			))
 		defer span.End()
-		if callErr := client.Void(ctx, &reservation); callErr != nil {
+		if callErr := client.Void(ctx, reservation); callErr != nil {
 			span.RecordError(callErr)
 			span.SetStatus(codes.Error, callErr.Error())
 			return nil, huma.Error500InternalServerError("void reservation", callErr)
@@ -862,6 +921,19 @@ func mapReserveError(err error) error {
 	}
 }
 
+func mapRenewError(err error) error {
+	switch {
+	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrNoActiveSubscription), errors.Is(err, billing.ErrSpendCapExceeded):
+		return huma.Error402PaymentRequired(err.Error())
+	case errors.Is(err, billing.ErrOrgSuspended), errors.Is(err, billing.ErrConcurrentLimitExceeded):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, billing.ErrDimensionMismatch), errors.Is(err, billing.ErrPendingTransferExpired):
+		return huma.Error400BadRequest(err.Error())
+	default:
+		return huma.Error500InternalServerError("renew", err)
+	}
+}
+
 func reservationFromDomain(reservation billing.Reservation) reservationJSON {
 	out := reservationJSON{
 		JobID:               int64(reservation.JobID),
@@ -874,6 +946,8 @@ func reservationFromDomain(reservation billing.Reservation) reservationJSON {
 		WindowSeq:           reservation.WindowSeq,
 		WindowSecs:          reservation.WindowSecs,
 		WindowStart:         reservation.WindowStart,
+		ExpiresAt:           reservation.ExpiresAt,
+		RenewBy:             reservation.RenewBy,
 		PricingPhase:        string(reservation.PricingPhase),
 		Allocation:          reservation.Allocation,
 		UnitRates:           reservation.UnitRates,
@@ -903,6 +977,8 @@ func (reservation reservationJSON) toDomain() (billing.Reservation, error) {
 		WindowSeq:           reservation.WindowSeq,
 		WindowSecs:          reservation.WindowSecs,
 		WindowStart:         reservation.WindowStart,
+		ExpiresAt:           reservation.ExpiresAt,
+		RenewBy:             reservation.RenewBy,
 		PricingPhase:        billing.PricingPhase(reservation.PricingPhase),
 		Allocation:          reservation.Allocation,
 		UnitRates:           reservation.UnitRates,

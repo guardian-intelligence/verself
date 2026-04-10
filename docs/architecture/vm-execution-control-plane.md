@@ -204,9 +204,9 @@ an attempt.
 
 In v1:
 
-- reservations are single-window
-- the enforced cap is five minutes
-- the schema still leaves room for multi-window renew later
+- reservations are 300-second windows
+- long-running attempts renew into successive windows before the current window ends
+- the schema persists every window transition durably on `execution_billing_windows`
 
 ## Attempt State Machine
 
@@ -457,10 +457,11 @@ The billing sequence is:
 7. persist the final attempt state and billing window state
 8. write the ClickHouse summary row
 
-Until `renew` exists in the service path:
+For long-running attempts:
 
-- CI attempts are capped at five minutes
-- crossing the cap is a control-plane failure, not a best-effort overrun
+- `sandbox-rental-service` renews the current billing window before `reservation.renew_by`
+- each successful renew settles the current window and persists the next reserved window
+- if renew is denied, the workload is stopped after the already-settled window
 
 ## ClickHouse Model
 

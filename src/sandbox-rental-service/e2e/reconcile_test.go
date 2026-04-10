@@ -464,6 +464,18 @@ func (c *settleFailingBillingClient) Settle(
 	return c.inner.Settle(ctx, reservation, actualSeconds, reqEditors...)
 }
 
+func (c *settleFailingBillingClient) Renew(
+	ctx context.Context,
+	reservation billingclient.Reservation,
+	actualSeconds uint32,
+	reqEditors ...billingclient.RequestEditorFn,
+) (billingclient.Reservation, error) {
+	if reservation.SourceRef == c.failedSourceRef {
+		return billingclient.Reservation{}, errors.New("forced renew failure")
+	}
+	return c.inner.Renew(ctx, reservation, actualSeconds, reqEditors...)
+}
+
 func (c *settleFailingBillingClient) Void(
 	ctx context.Context,
 	reservation billingclient.Reservation,

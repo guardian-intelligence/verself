@@ -15,50 +15,7 @@ Bootstrapping UX: single command to go from their laptop -> bare metal instance 
         NOTE: this philosophy is not yet upheld today, but it's something to keep in mind as we upgrade the codebase.
 
 * Improvements to our usage-based billing system with subscriptions + credits
-
-1. Temporal versioning on rates (the Stripe/Metronome lesson: append, don't
-  mutate)
-
-  Rate changes should be new rows with
-  an effective_at timestamp. This is what Stripe prices and Metronome rate
-  cards both do. The lookup becomes "the rate effective at the time of this
-  reservation."
-
-  2. Contract-level fields on the per-customer overlay (committed spend,
-  payment terms, temporal bounds)
-
-  org_pricing_overrides currently has org_id, plan_id, unit_rates, quotas,
-  notes. It needs: committed_monthly, payment_terms_days, effective_at,
-  ending_at, override_type (multiplier vs. overwrite). These are contract
-  fields, not pricing fields.
-
-  3. Invoice generation (the gap everyone has until they build it)
-
-  No billing system avoids this. Usage metering → aggregation → line items →
-  invoice document → payment collection. This is the only major new subsystem.
-
-  The question is whether org_pricing_overrides should be renamed to contracts
-   with added columns, or whether we keep it and add a separate contracts
-  table. The answer depends on whether a contract needs to be a separate
-  entity from a pricing override — and looking at the Metronome model, the
-  answer is yes: a contract binds commits, overrides, and payment terms
-  together as a single commercial arrangement. An org can have multiple
-  contracts over time (renewals, amendments). The override is a property of
-  the contract, not a standalone entity.
-
-  So the revised model is:
-
-  products                    — what to measure (unchanged)
-  plans                       — tier definition + list pricing (evolve:
-  temporal rates)
-  contracts                   — per-org commercial arrangement (new: absorbs
-  org_pricing_overrides)
-    └── committed spend, payment terms, discount multiplier, temporal bounds
-    └── per-product rate overrides (replaces org_pricing_overrides.unit_rates)
-  credit_grants               — prepaid balances (unchanged, add contract
-  linkage)
-  invoices + line_items       — generated monthly from metering (new)
-  product_entitlements        — tier-gated product access (new)
+* An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 
 ## Deployment Topology
 
@@ -102,9 +59,16 @@ Services that produce data for both real-time UX and long-term analytics use **a
 
 ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative but rejected — it is experimental and carries replication-slot coupling risks on a single node. The 3-node evolution of the system should introduce NATS JetStream or Kafka + Debezium for proper CDC, replacing application-level dual write with WAL-based streaming.
 
-### Entitlement
+### Billing
 
-Billing is the entitlement layer. Services call the billing-service HTTP API to reserve credits before performing work, renew reservations during long-running operations (300s windows), and settle actual usage on completion. The billing library uses two-phase TigerBeetle transfers (pending → post/void) for crash-safe fund reservation. Metering rows in ClickHouse capture per-window cost breakdowns by grant source. Concurrent admission control is policy from PostgreSQL: `orgs.trust_tier` supplies fraud caps, `plans.quotas` supplies downward-only plan caps, and `CheckQuotas` is advisory only. Financial enforcement is TigerBeetle-backed spend caps: each billing period gets a fresh spend-cap account, `Reserve` runs a linked spend-cap probe+void with the grant reservation batch, and `Settle` posts the real spend-cap debit.
+The repo strives to solve billing for online businesses.  Billing and sandbox spawning are the two core focuses of this repo. Read src/billing-service/docs/billing-architecture.md for more detail. Note that not all aspects have been implemented.
+
+The specific billing system may best be described as "credit-based subscription billing with entitlements" or "prepaid + metered hybrid".
+
+Key use cases:
+
+* Selling monthly subscriptions which grant entitlements like credits, access to certain digital goods, software licenses, priority lanes
+* Credits are consumed via metering events published by services. E.g. token inference, vCPU/RAM/Disk/Network usage, build minutes
 
 ### Inbound mail
 
@@ -129,7 +93,7 @@ arch at a high level:
 - We support only Ubuntu 24.04 on the bare metal box.
 - vm-orchestrator is the privileged Go host daemon managing Firecracker VM lifecycle (ZFS, TAP, jailer) and aggregating guest telemetry. vm-guest-telemetry is the Zig guest agent streaming 60Hz health frames over vsock port 10790.
 - Our current working bare metal box is available at `ssh ubuntu@64.34.84.75`
-- Auth: Zitadel
+- Auth: Zitadel. Everything uses Zitadel for auth except for Stalwart which has a separate auth for JMAP interaction.
 - Payments: Stripe + TigerBeetle + PostgreSQL
 - otelcol-config.yaml.j2 contains a lot of our custom otel collection config.
 

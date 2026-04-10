@@ -425,6 +425,26 @@ components:
         - checks
         - has_alerts
       type: object
+    RenewInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/RenewInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        actual_seconds:
+          format: int32
+          minimum: 1
+          type: integer
+        reservation:
+          $ref: "#/components/schemas/ReservationJSON"
+      required:
+        - reservation
+        - actual_seconds
+      type: object
     ReservationJSON:
       additionalProperties: false
       properties:
@@ -439,6 +459,9 @@ components:
           format: int64
           minimum: 0
           type: integer
+        expires_at:
+          format: date-time
+          type: string
         grant_legs:
           items:
             $ref: "#/components/schemas/GrantLegJSON"
@@ -457,6 +480,9 @@ components:
         pricing_phase:
           type: string
         product_id:
+          type: string
+        renew_by:
+          format: date-time
           type: string
         source_ref:
           type: string
@@ -493,6 +519,8 @@ components:
         - window_seq
         - window_secs
         - window_start
+        - expires_at
+        - renew_by
         - pricing_phase
         - allocation
         - unit_rates
@@ -1102,6 +1130,29 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List billing events for an org
+  /internal/billing/v1/renew:
+    post:
+      operationId: renew
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReserveOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Renew a metered reservation window
   /internal/billing/v1/reserve:
     post:
       operationId: reserve

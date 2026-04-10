@@ -44,9 +44,9 @@ func (c *Client) Reserve(ctx context.Context, req ReserveRequest) (Reservation, 
 }
 
 // Renew settles the current window, then reserves the next one from the latest grant state.
-func (c *Client) Renew(ctx context.Context, reservation *Reservation, actualSeconds uint32) error {
+func (c *Client) Renew(ctx context.Context, reservation Reservation, actualSeconds uint32) (Reservation, error) {
 	if err := c.Settle(ctx, reservation, actualSeconds); err != nil {
-		return err
+		return Reservation{}, err
 	}
 
 	next, err := c.reserveWindow(ctx, ReserveRequest{
@@ -60,15 +60,14 @@ func (c *Client) Renew(ctx context.Context, reservation *Reservation, actualSeco
 		SourceRef:       reservation.SourceRef,
 	}, reservation.WindowSeq+1, reservation.WindowStart.Add(time.Duration(actualSeconds)*time.Second).UTC())
 	if err != nil {
-		return err
+		return Reservation{}, err
 	}
 
-	*reservation = next
-	return nil
+	return next, nil
 }
 
 // Settle posts the spent portion of each pending grant leg and releases the rest.
-func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSeconds uint32) error {
+func (c *Client) Settle(ctx context.Context, reservation Reservation, actualSeconds uint32) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -150,7 +149,7 @@ func (c *Client) Settle(ctx context.Context, reservation *Reservation, actualSec
 }
 
 // Void cancels each pending grant leg for a reservation.
-func (c *Client) Void(ctx context.Context, reservation *Reservation) error {
+func (c *Client) Void(ctx context.Context, reservation Reservation) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -236,6 +235,8 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		return Reservation{}, err
 	}
 
+	expiresAt, renewBy := c.windowTiming(windowStart, now)
+
 	return Reservation{
 		JobID:               req.JobID,
 		OrgID:               req.OrgID,
@@ -247,6 +248,8 @@ func (c *Client) reserveWindow(ctx context.Context, req ReserveRequest, windowSe
 		WindowSeq:           windowSeq,
 		WindowSecs:          c.cfg.ReservationWindowSecs,
 		WindowStart:         windowStart.UTC(),
+		ExpiresAt:           expiresAt,
+		RenewBy:             renewBy,
 		PricingPhase:        phase,
 		Allocation:          cloneFloat64Map(req.Allocation),
 		UnitRates:           cloneUint64Map(unitRates),
@@ -545,6 +548,8 @@ func (c *Client) createTransfers(transfers []types.Transfer) error {
 			continue
 		case types.TransferExceedsCredits:
 			return ErrInsufficientBalance
+		case types.TransferPendingTransferExpired:
+			return ErrPendingTransferExpired
 		case types.TransferLinkedEventFailed:
 			return fmt.Errorf("transfer %d: linked event failed", result.Index)
 		case types.TransferExistsWithDifferentFlags,
@@ -746,7 +751,15 @@ func minUint64(a, b uint64) uint64 {
 	return b
 }
 
-func buildMeteringRow(reservation *Reservation, actualSeconds uint32, actualCost uint64) MeteringRow {
+func (c *Client) windowTiming(windowStart, reservedAt time.Time) (time.Time, time.Time) {
+	windowStart = windowStart.UTC()
+	reservedAt = reservedAt.UTC()
+	expiresAt := reservedAt.Add(time.Duration(c.cfg.PendingTimeoutSecs) * time.Second)
+	renewBy := windowStart.Add(time.Duration(c.cfg.ReservationWindowSecs-c.cfg.RenewSlackSecs) * time.Second)
+	return expiresAt, renewBy
+}
+
+func buildMeteringRow(reservation Reservation, actualSeconds uint32, actualCost uint64) MeteringRow {
 	// Compute per-source unit breakdown from settled grant legs.
 	var freeTier, subscription, purchase, promo, refund uint64
 	remainder := actualCost
@@ -769,6 +782,10 @@ func buildMeteringRow(reservation *Reservation, actualSeconds uint32, actualCost
 			break
 		}
 	}
+	receivableUnits := uint64(0)
+	if actualCost > 0 && len(reservation.GrantLegs) == 0 {
+		receivableUnits = actualCost
+	}
 
 	return MeteringRow{
 		OrgID:             strconv.FormatUint(uint64(reservation.OrgID), 10),
@@ -788,6 +805,9 @@ func buildMeteringRow(reservation *Reservation, actualSeconds uint32, actualCost
 		PurchaseUnits:     purchase,
 		PromoUnits:        promo,
 		RefundUnits:       refund,
+		ReceivableUnits:   receivableUnits,
+		PlanID:            reservation.PlanID,
+		CostPerSec:        reservation.CostPerSec,
 		RecordedAt:        time.Now().UTC(),
 	}
 }
