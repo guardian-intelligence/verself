@@ -53,7 +53,10 @@
       - --admin-group
       - "{{ forgejo_auth_admin_group }}"
       - --scopes
-      - "openid profile email urn:zitadel:iam:org:project:roles"
+      - >-
+        openid profile email
+        urn:zitadel:iam:org:project:id:{{ forgejo_project_id }}:aud
+        urn:zitadel:iam:org:projects:roles
   become: true
   become_user: forgejo
   environment:
@@ -88,7 +91,10 @@
       - --admin-group
       - "{{ forgejo_auth_admin_group }}"
       - --scopes
-      - "openid profile email urn:zitadel:iam:org:project:roles"
+      - >-
+        openid profile email
+        urn:zitadel:iam:org:project:id:{{ forgejo_project_id }}:aud
+        urn:zitadel:iam:org:projects:roles
   become: true
   become_user: forgejo
   environment:

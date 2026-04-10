@@ -1,8 +1,29 @@
-import { createAuthServerFns } from "@forge-metal/auth-web";
-import { authConfig } from "../server/auth";
+import { createServerFn } from "@tanstack/react-start";
+import * as v from "valibot";
+import {
+  beginLogin,
+  createAuthMiddleware,
+  finishLogin,
+  getAuthViewer,
+  logout,
+} from "@forge-metal/auth-web";
+import { getAuthConfig } from "../server/auth";
 
-const authServerFns = createAuthServerFns(authConfig);
+const loginRedirectInputSchema = v.object({
+  redirectTo: v.optional(v.nullable(v.string())),
+});
 
-export const webmailAuthMiddleware = authServerFns.authMiddleware;
-export const { getViewer, getLoginRedirectURL, getCallbackRedirectURL, getLogoutRedirectURL } =
-  authServerFns;
+export const webmailAuthMiddleware = createAuthMiddleware(getAuthConfig);
+export const getViewer = createServerFn({ method: "GET" }).handler(async () =>
+  getAuthViewer(getAuthConfig),
+);
+export const getLoginRedirectURL = createServerFn({ method: "GET" })
+  .inputValidator(loginRedirectInputSchema)
+  .handler(async ({ data }) => beginLogin(getAuthConfig(), data.redirectTo));
+export const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+  const { redirectTo } = await finishLogin(getAuthConfig());
+  return redirectTo;
+});
+export const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () =>
+  logout(getAuthConfig),
+);

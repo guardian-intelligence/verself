@@ -1,0 +1,47 @@
+- name: Resolve existing project grant
+  ansible.builtin.set_fact:
+    zitadel_existing_project_grant: >-
+      {{
+        (
+          zitadel_project_grants.json.result | default([])
+          | selectattr('grantedOrgId', 'equalto', zitadel_project_grant.granted_organization_id)
+          | list
+          | first
+        ) | default({})
+      }}
+
+- name: Create missing project grant
+  ansible.builtin.uri:
+    url: "{{ zitadel_project_grant_base_url }}/zitadel.project.v2.ProjectService/CreateProjectGrant"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ zitadel_project_grant_admin_pat }}"
+      Host: "{{ zitadel_project_grant_host }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      projectId: "{{ zitadel_project_grant.project_id }}"
+      grantedOrganizationId: "{{ zitadel_project_grant.granted_organization_id }}"
+      roleKeys: "{{ zitadel_project_grant.role_keys }}"
+    status_code: 200
+  when: zitadel_existing_project_grant == {}
+  no_log: true
+
+- name: Update changed project grant
+  ansible.builtin.uri:
+    url: "{{ zitadel_project_grant_base_url }}/zitadel.project.v2.ProjectService/UpdateProjectGrant"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ zitadel_project_grant_admin_pat }}"
+      Host: "{{ zitadel_project_grant_host }}"
+      Connect-Protocol-Version: "1"
+    body_format: json
+    body:
+      projectId: "{{ zitadel_project_grant.project_id }}"
+      grantedOrganizationId: "{{ zitadel_project_grant.granted_organization_id }}"
+      roleKeys: "{{ zitadel_project_grant.role_keys }}"
+    status_code: 200
+  when:
+    - zitadel_existing_project_grant != {}
+    - (zitadel_existing_project_grant.grantedRoleKeys | default([]) | sort) != (zitadel_project_grant.role_keys | sort)
+  no_log: true
