@@ -41,6 +41,8 @@ Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each
 
 Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (for Go client generation via oapi-codegen) and a 3.1 spec (for TypeScript client + Valibot validator generation via @hey-api/openapi-ts).
 
+When writing Huma services, please review the reference documentation https://pkg.go.dev/github.com/danielgtaylor/huma/v2#section-documentation
+
 ### Auth model
 
 Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
@@ -203,6 +205,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 * This repo is currently private and serves no customers or users. There is no backwards compatibility to maintain. This means: no compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover. 
 * Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
 * Avoid simplifying technical explanations. Details matter and the user cares about things like arcane versioning issues, subtle race conditions, preventing security issues such as timing attack vulnerability, optimizing GC pressure, understanding when abstractions leak. Simplicity should be saved for code and architecture.
+* Some directories have their own AGENTS.md file. When working inside those directories, please read them as they contain juicy context.
 
 ## Tool Use Contract
 
@@ -210,6 +213,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 * Dev tools are system-installed via `ansible-playbook playbooks/setup-dev.yml`. No `nix develop` prefix needed.
 * Apply the scientific method: create a bar-raising verification protocol for your planned task *prior* to implementing changes. The verification protocol should fail, and only then begin implementing until green.
 * Avoid using one off non-syntax-aware scripts to do large parallel changes or refactors. Use subagents for that class of tasks instead as unexpected edge cases are likely and judgement is often required.
+* `make tidy` formats go/typescript code.
 
 ## Output Contract
 
