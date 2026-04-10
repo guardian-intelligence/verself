@@ -15,7 +15,7 @@ import type {
 import type { AuthConfig, AuthConfigSource } from "./config.ts";
 
 export { createAuthConfig } from "./config.ts";
-export type { AsyncAuthConfigSource, AuthConfig, AuthConfigSource } from "./config.ts";
+export type { AuthConfig, AuthConfigSource } from "./config.ts";
 
 export {
   anonymousAuth,
@@ -833,7 +833,7 @@ function toSessionInfo(session: AuthSession | null): SessionInfo | null {
 }
 
 async function resolveAuthSnapshot(config: AuthConfigSource): Promise<ResolvedAuthSnapshot> {
-  const session = await getAuthSession(resolveAuthConfig(config));
+  const session = await getAuthSession(await resolveAuthConfig(config));
   const authState = toAuth(session);
   const user = session ? toClientUser(session.user) : null;
   const snapshot: AuthSnapshot = {
@@ -880,7 +880,7 @@ export function createAuthMiddleware(config: AuthConfigSource) {
   // TanStack Start resolves server function handlers from app modules, so keep
   // auth config lazy and server-side to avoid bundling env lookups into the client.
   return createMiddleware({ type: "function" }).server(async ({ next }) => {
-    const auth = await getAuthSession(resolveAuthConfig(config));
+    const auth = await getAuthSession(await resolveAuthConfig(config));
     if (!auth) {
       throw new Error("Authentication required");
     }
@@ -893,7 +893,7 @@ export function createAuthMiddleware(config: AuthConfigSource) {
 }
 
 export async function requireAccessToken(config: AuthConfigSource): Promise<string> {
-  const session = await getAuthSession(resolveAuthConfig(config));
+  const session = await getAuthSession(await resolveAuthConfig(config));
   if (!session) {
     throw new Error("Authentication required");
   }
@@ -901,7 +901,7 @@ export async function requireAccessToken(config: AuthConfigSource): Promise<stri
 }
 
 export async function logout(config: AuthConfigSource): Promise<string> {
-  const resolvedConfig = resolveAuthConfig(config);
+  const resolvedConfig = await resolveAuthConfig(config);
   const sessionManager = await getSessionManager(resolvedConfig);
   const sessionID = sessionManager.data.sessionID;
   const stored = sessionID ? await readStoredSession(resolvedConfig, sessionID) : null;

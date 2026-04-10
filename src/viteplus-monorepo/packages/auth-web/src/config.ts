@@ -14,8 +14,9 @@ export interface AuthConfig {
   postLogoutRedirectPath: string;
 }
 
-export type AuthConfigSource = AuthConfig | (() => AuthConfig);
-export type AsyncAuthConfigSource = AuthConfig | (() => AuthConfig | Promise<AuthConfig>);
+type MaybePromise<T> = T | Promise<T>;
+
+export type AuthConfigSource = AuthConfig | (() => MaybePromise<AuthConfig>);
 
 function requiredNonEmpty(value: string | undefined, label: string): string {
   const trimmed = value?.trim();
@@ -41,10 +42,6 @@ export function createAuthConfig(config: AuthConfig): AuthConfig {
   };
 }
 
-export function resolveAuthConfig(config: AuthConfigSource): AuthConfig {
-  return typeof config === "function" ? config() : config;
-}
-
-export async function resolveAuthConfigAsync(config: AsyncAuthConfigSource): Promise<AuthConfig> {
+export async function resolveAuthConfig(config: AuthConfigSource): Promise<AuthConfig> {
   return typeof config === "function" ? config() : config;
 }
