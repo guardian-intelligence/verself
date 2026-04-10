@@ -79,7 +79,7 @@ class BrowserMonitor {
         return true;
       }
 
-      if (request.url.includes("/v1/shape")) {
+      if (request.url.includes("/v1/shape") || request.url.includes("/_serverFn/")) {
         return false;
       }
 
