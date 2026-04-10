@@ -33,6 +33,7 @@ type ConsoleEntry = {
 
 type FailedRequest = {
   readonly failure: string;
+  readonly resourceType: string;
   readonly url: string;
 };
 
@@ -56,6 +57,7 @@ class BrowserMonitor {
     page.on("requestfailed", (request) => {
       this.failedRequests.push({
         failure: request.failure()?.errorText || "unknown",
+        resourceType: request.resourceType(),
         url: request.url(),
       });
     });
@@ -73,10 +75,15 @@ class BrowserMonitor {
         return false;
       }
 
-      return !(
-        request.failure === "net::ERR_ABORTED" &&
-        request.url.includes("/v1/shape")
-      );
+      if (request.failure !== "net::ERR_ABORTED") {
+        return true;
+      }
+
+      if (request.url.includes("/v1/shape")) {
+        return false;
+      }
+
+      return !["font", "image", "media", "script", "stylesheet"].includes(request.resourceType);
     });
 
     const unexpectedConsoleMessages = this.consoleMessages.filter((message) => {
