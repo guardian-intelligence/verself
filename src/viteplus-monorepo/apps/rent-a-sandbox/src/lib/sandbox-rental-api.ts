@@ -17,7 +17,7 @@ import {
 } from "../__generated/sandbox-rental-api/index.js";
 import {
   vAttemptRecord,
-  vBalanceOutputBody,
+  vBalanceResponse,
   vBillingWindow,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
@@ -27,8 +27,8 @@ import {
   vGetExecutionPath,
   vGetRepoPath,
   vGoldenGenerationRecord,
-  vGrantJson,
-  vGrantsOutputBody,
+  vGrantResponse,
+  vGrantsResponse,
   vImportRepoBody,
   vListBillingSubscriptionsResponse,
   vListRepoGenerationsResponse,
@@ -37,7 +37,7 @@ import {
   vRepoRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
-  vSubscriptionJson,
+  vSubscriptionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
 
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
@@ -173,14 +173,14 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vBillingWindow>) {
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
 function parseBalance(input: unknown) {
-  const { $schema: _schema, ...balance } = v.parse(vBalanceOutputBody, input);
+  const { $schema: _schema, ...balance } = v.parse(vBalanceResponse, input);
   return {
     ...balance,
     credit_available: toSafeNumber(balance.credit_available, "credit_available"),
     credit_pending: toSafeNumber(balance.credit_pending, "credit_pending"),
     free_tier_available: toSafeNumber(balance.free_tier_available, "free_tier_available"),
     free_tier_pending: toSafeNumber(balance.free_tier_pending, "free_tier_pending"),
-    org_id: stringifyBigInt(balance.org_id),
+    org_id: balance.org_id,
     total_available: toSafeNumber(balance.total_available, "total_available"),
   };
 }
@@ -188,7 +188,7 @@ function parseBalance(input: unknown) {
 export type Balance = ReturnType<typeof parseBalance>;
 
 function parseSubscription(input: unknown) {
-  const subscription = v.parse(vSubscriptionJson, input);
+  const subscription = v.parse(vSubscriptionResponse, input);
   return {
     ...subscription,
     subscription_id: toSafeNumber(subscription.subscription_id, "subscription_id"),
@@ -207,7 +207,7 @@ function parseSubscriptionsResponse(input: unknown) {
 export type SubscriptionsResponse = ReturnType<typeof parseSubscriptionsResponse>;
 
 function parseGrant(input: unknown) {
-  const grant = v.parse(vGrantJson, input);
+  const grant = v.parse(vGrantResponse, input);
   return {
     ...grant,
     available: toSafeNumber(grant.available, "available"),
@@ -218,7 +218,7 @@ function parseGrant(input: unknown) {
 export type Grant = ReturnType<typeof parseGrant>;
 
 function parseGrantsResponse(input: unknown) {
-  const { $schema: _schema, grants } = v.parse(vGrantsOutputBody, input);
+  const { $schema: _schema, grants } = v.parse(vGrantsResponse, input);
   return {
     grants: grants?.map((grant) => parseGrant(grant)) ?? null,
   };

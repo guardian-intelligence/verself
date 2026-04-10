@@ -57,10 +57,14 @@ components:
         - created_at
         - updated_at
       type: object
-    BalanceOutputBody:
+    BalanceResponse:
       additionalProperties: false
       properties:
         $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/BalanceResponse.json
+          format: uri
+          readOnly: true
           type: string
         credit_available:
           format: int64
@@ -75,17 +79,17 @@ components:
           format: int64
           type: integer
         org_id:
-          format: int64
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         total_available:
           format: int64
           type: integer
       required:
-        - credit_available
-        - credit_pending
+        - org_id
         - free_tier_available
         - free_tier_pending
-        - org_id
+        - credit_available
+        - credit_pending
         - total_available
       type: object
     BillingWindow:
@@ -360,13 +364,14 @@ components:
         - created_at
         - updated_at
       type: object
-    GrantJSON:
+    GrantResponse:
       additionalProperties: false
       properties:
         available:
           format: int64
           type: integer
         expires_at:
+          format: date-time
           type: string
         grant_id:
           type: string
@@ -381,14 +386,14 @@ components:
         - pending
         - source
       type: object
-    GrantsOutputBody:
+    GrantsResponse:
       additionalProperties: false
       properties:
         $schema:
           type: string
         grants:
           items:
-            $ref: "#/components/schemas/GrantJSON"
+            $ref: "#/components/schemas/GrantResponse"
           nullable: true
           type: array
       required:
@@ -605,14 +610,16 @@ components:
         - success_url
         - cancel_url
       type: object
-    SubscriptionJSON:
+    SubscriptionResponse:
       additionalProperties: false
       properties:
         cadence:
           type: string
         current_period_end:
+          format: date-time
           type: string
         current_period_start:
+          format: date-time
           type: string
         plan_id:
           type: string
@@ -630,14 +637,14 @@ components:
         - status
         - subscription_id
       type: object
-    SubscriptionsOutputBody:
+    SubscriptionsResponse:
       additionalProperties: false
       properties:
         $schema:
           type: string
         subscriptions:
           items:
-            $ref: "#/components/schemas/SubscriptionJSON"
+            $ref: "#/components/schemas/SubscriptionResponse"
           nullable: true
           type: array
       required:
@@ -670,7 +677,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceOutputBody"
+                $ref: "#/components/schemas/BalanceResponse"
           description: OK
         default:
           content:
@@ -725,7 +732,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GrantsOutputBody"
+                $ref: "#/components/schemas/GrantsResponse"
           description: OK
         default:
           content:
@@ -765,7 +772,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionsOutputBody"
+                $ref: "#/components/schemas/SubscriptionsResponse"
           description: OK
         default:
           content:

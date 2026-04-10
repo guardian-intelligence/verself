@@ -12,18 +12,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for CreateSubscriptionBodyCadence.
+// Defines values for CreateSubscriptionRequestCadence.
 const (
-	Annual  CreateSubscriptionBodyCadence = "annual"
-	Monthly CreateSubscriptionBodyCadence = "monthly"
+	Annual  CreateSubscriptionRequestCadence = "annual"
+	Monthly CreateSubscriptionRequestCadence = "monthly"
 )
 
-// Valid indicates whether the value is a known member of the CreateSubscriptionBodyCadence enum.
-func (e CreateSubscriptionBodyCadence) Valid() bool {
+// Valid indicates whether the value is a known member of the CreateSubscriptionRequestCadence enum.
+func (e CreateSubscriptionRequestCadence) Valid() bool {
 	switch e {
 	case Annual:
 		return true
@@ -34,8 +35,8 @@ func (e CreateSubscriptionBodyCadence) Valid() bool {
 	}
 }
 
-// BalanceOutputBody defines model for BalanceOutputBody.
-type BalanceOutputBody struct {
+// BalanceResponse defines model for BalanceResponse.
+type BalanceResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema            *string `json:"$schema,omitempty"`
 	CreditAvailable   int64   `json:"credit_available"`
@@ -46,8 +47,8 @@ type BalanceOutputBody struct {
 	TotalAvailable    int64   `json:"total_available"`
 }
 
-// CreateCheckoutBody defines model for CreateCheckoutBody.
-type CreateCheckoutBody struct {
+// CreateCheckoutRequest defines model for CreateCheckoutRequest.
+type CreateCheckoutRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema      *string `json:"$schema,omitempty"`
 	AmountCents int64   `json:"amount_cents"`
@@ -57,19 +58,19 @@ type CreateCheckoutBody struct {
 	SuccessUrl  string  `json:"success_url"`
 }
 
-// CreateSubscriptionBody defines model for CreateSubscriptionBody.
-type CreateSubscriptionBody struct {
+// CreateSubscriptionRequest defines model for CreateSubscriptionRequest.
+type CreateSubscriptionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                        `json:"$schema,omitempty"`
-	Cadence    *CreateSubscriptionBodyCadence `json:"cadence,omitempty"`
-	CancelUrl  string                         `json:"cancel_url"`
-	OrgId      int64                          `json:"org_id"`
-	PlanId     string                         `json:"plan_id"`
-	SuccessUrl string                         `json:"success_url"`
+	Schema     *string                           `json:"$schema,omitempty"`
+	Cadence    *CreateSubscriptionRequestCadence `json:"cadence,omitempty"`
+	CancelUrl  string                            `json:"cancel_url"`
+	OrgId      int64                             `json:"org_id"`
+	PlanId     string                            `json:"plan_id"`
+	SuccessUrl string                            `json:"success_url"`
 }
 
-// CreateSubscriptionBodyCadence defines model for CreateSubscriptionBody.Cadence.
-type CreateSubscriptionBodyCadence string
+// CreateSubscriptionRequestCadence defines model for CreateSubscriptionRequest.Cadence.
+type CreateSubscriptionRequestCadence string
 
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
@@ -107,24 +108,24 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// GrantJSON defines model for GrantJSON.
-type GrantJSON struct {
-	Available int64   `json:"available"`
-	ExpiresAt *string `json:"expires_at,omitempty"`
-	GrantId   string  `json:"grant_id"`
-	Pending   int64   `json:"pending"`
-	Source    string  `json:"source"`
+// GrantResponse defines model for GrantResponse.
+type GrantResponse struct {
+	Available int64      `json:"available"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	GrantId   string     `json:"grant_id"`
+	Pending   int64      `json:"pending"`
+	Source    string     `json:"source"`
 }
 
-// GrantsOutputBody defines model for GrantsOutputBody.
-type GrantsOutputBody struct {
+// GrantsResponse defines model for GrantsResponse.
+type GrantsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string      `json:"$schema,omitempty"`
-	Grants *[]GrantJSON `json:"grants"`
+	Schema *string          `json:"$schema,omitempty"`
+	Grants *[]GrantResponse `json:"grants"`
 }
 
-// ReserveInputBody defines model for ReserveInputBody.
-type ReserveInputBody struct {
+// ReserveWindowRequest defines model for ReserveWindowRequest.
+type ReserveWindowRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema          *string            `json:"$schema,omitempty"`
 	ActorId         string             `json:"actor_id"`
@@ -136,15 +137,28 @@ type ReserveInputBody struct {
 	SourceType      string             `json:"source_type"`
 }
 
-// ReserveOutputBody defines model for ReserveOutputBody.
-type ReserveOutputBody struct {
+// ReserveWindowResult defines model for ReserveWindowResult.
+type ReserveWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string               `json:"$schema,omitempty"`
-	Reservation WindowReservationJSON `json:"reservation"`
+	Schema      *string           `json:"$schema,omitempty"`
+	Reservation WindowReservation `json:"reservation"`
 }
 
-// SettleInputBody defines model for SettleInputBody.
-type SettleInputBody struct {
+// SettleResult defines model for SettleResult.
+type SettleResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string   `json:"$schema,omitempty"`
+	ActualQuantity      int32     `json:"actual_quantity"`
+	BillableQuantity    int32     `json:"billable_quantity"`
+	BilledChargeUnits   int64     `json:"billed_charge_units"`
+	SettledAt           time.Time `json:"settled_at"`
+	WindowId            string    `json:"window_id"`
+	WriteoffChargeUnits int64     `json:"writeoff_charge_units"`
+	WriteoffQuantity    int32     `json:"writeoff_quantity"`
+}
+
+// SettleWindowRequest defines model for SettleWindowRequest.
+type SettleWindowRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema         *string                 `json:"$schema,omitempty"`
 	ActualQuantity int32                   `json:"actual_quantity"`
@@ -152,69 +166,56 @@ type SettleInputBody struct {
 	WindowId       string                  `json:"window_id"`
 }
 
-// SettleOutputBody defines model for SettleOutputBody.
-type SettleOutputBody struct {
+// SubscriptionResponse defines model for SubscriptionResponse.
+type SubscriptionResponse struct {
+	Cadence            string     `json:"cadence"`
+	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
+	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
+	PlanId             string     `json:"plan_id"`
+	ProductId          string     `json:"product_id"`
+	Status             string     `json:"status"`
+	SubscriptionId     int64      `json:"subscription_id"`
+}
+
+// SubscriptionsResponse defines model for SubscriptionsResponse.
+type SubscriptionsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema              *string `json:"$schema,omitempty"`
-	ActualQuantity      int32   `json:"actual_quantity"`
-	BillableQuantity    int32   `json:"billable_quantity"`
-	BilledChargeUnits   int64   `json:"billed_charge_units"`
-	SettledAt           string  `json:"settled_at"`
-	WindowId            string  `json:"window_id"`
-	WriteoffChargeUnits int64   `json:"writeoff_charge_units"`
-	WriteoffQuantity    int32   `json:"writeoff_quantity"`
+	Schema        *string                 `json:"$schema,omitempty"`
+	Subscriptions *[]SubscriptionResponse `json:"subscriptions"`
 }
 
-// SubscriptionJSON defines model for SubscriptionJSON.
-type SubscriptionJSON struct {
-	Cadence            string  `json:"cadence"`
-	CurrentPeriodEnd   *string `json:"current_period_end,omitempty"`
-	CurrentPeriodStart *string `json:"current_period_start,omitempty"`
-	PlanId             string  `json:"plan_id"`
-	ProductId          string  `json:"product_id"`
-	Status             string  `json:"status"`
-	SubscriptionId     int64   `json:"subscription_id"`
-}
-
-// SubscriptionsOutputBody defines model for SubscriptionsOutputBody.
-type SubscriptionsOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string             `json:"$schema,omitempty"`
-	Subscriptions *[]SubscriptionJSON `json:"subscriptions"`
-}
-
-// URLOutputBody defines model for URLOutputBody.
-type URLOutputBody struct {
+// URLResponse defines model for URLResponse.
+type URLResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Url    string  `json:"url"`
 }
 
-// VoidInputBody defines model for VoidInputBody.
-type VoidInputBody struct {
+// VoidWindowRequest defines model for VoidWindowRequest.
+type VoidWindowRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string `json:"$schema,omitempty"`
 	WindowId string  `json:"window_id"`
 }
 
-// VoidOutputBody defines model for VoidOutputBody.
-type VoidOutputBody struct {
+// VoidWindowResult defines model for VoidWindowResult.
+type VoidWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string `json:"$schema,omitempty"`
 	WindowId string  `json:"window_id"`
 }
 
-// WindowReservationJSON defines model for WindowReservationJSON.
-type WindowReservationJSON struct {
+// WindowReservation defines model for WindowReservation.
+type WindowReservation struct {
 	ActorId             string             `json:"actor_id"`
 	Allocation          map[string]float64 `json:"allocation"`
 	CostPerUnit         int64              `json:"cost_per_unit"`
-	ExpiresAt           string             `json:"expires_at"`
+	ExpiresAt           time.Time          `json:"expires_at"`
 	OrgId               int64              `json:"org_id"`
 	PlanId              string             `json:"plan_id"`
 	PricingPhase        string             `json:"pricing_phase"`
 	ProductId           string             `json:"product_id"`
-	RenewBy             *string            `json:"renew_by,omitempty"`
+	RenewBy             *time.Time         `json:"renew_by,omitempty"`
 	ReservationShape    string             `json:"reservation_shape"`
 	ReservedChargeUnits int64              `json:"reserved_charge_units"`
 	ReservedQuantity    int32              `json:"reserved_quantity"`
@@ -223,7 +224,7 @@ type WindowReservationJSON struct {
 	UnitRates           map[string]int64   `json:"unit_rates"`
 	WindowId            string             `json:"window_id"`
 	WindowSeq           int32              `json:"window_seq"`
-	WindowStart         string             `json:"window_start"`
+	WindowStart         time.Time          `json:"window_start"`
 }
 
 // ListGrantsParams defines parameters for ListGrants.
@@ -233,19 +234,19 @@ type ListGrantsParams struct {
 }
 
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
-type CreateCheckoutJSONRequestBody = CreateCheckoutBody
+type CreateCheckoutJSONRequestBody = CreateCheckoutRequest
 
 // ReserveWindowJSONRequestBody defines body for ReserveWindow for application/json ContentType.
-type ReserveWindowJSONRequestBody = ReserveInputBody
+type ReserveWindowJSONRequestBody = ReserveWindowRequest
 
 // SettleWindowJSONRequestBody defines body for SettleWindow for application/json ContentType.
-type SettleWindowJSONRequestBody = SettleInputBody
+type SettleWindowJSONRequestBody = SettleWindowRequest
 
 // CreateSubscriptionJSONRequestBody defines body for CreateSubscription for application/json ContentType.
-type CreateSubscriptionJSONRequestBody = CreateSubscriptionBody
+type CreateSubscriptionJSONRequestBody = CreateSubscriptionRequest
 
 // VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
-type VoidWindowJSONRequestBody = VoidInputBody
+type VoidWindowJSONRequestBody = VoidWindowRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -932,7 +933,7 @@ type ClientWithResponsesInterface interface {
 type CreateCheckoutResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *URLOutputBody
+	JSON200                       *URLResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -955,7 +956,7 @@ func (r CreateCheckoutResponse) StatusCode() int {
 type GetBalanceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *BalanceOutputBody
+	JSON200                       *BalanceResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -978,7 +979,7 @@ func (r GetBalanceResponse) StatusCode() int {
 type ListGrantsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *GrantsOutputBody
+	JSON200                       *GrantsResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1001,7 +1002,7 @@ func (r ListGrantsResponse) StatusCode() int {
 type ListSubscriptionsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *SubscriptionsOutputBody
+	JSON200                       *SubscriptionsResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1022,10 +1023,13 @@ func (r ListSubscriptionsResponse) StatusCode() int {
 }
 
 type ReserveWindowResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *ReserveOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *ReserveWindowResult
+	ApplicationproblemJSON402 *ErrorModel
+	ApplicationproblemJSON403 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
@@ -1045,10 +1049,13 @@ func (r ReserveWindowResponse) StatusCode() int {
 }
 
 type SettleWindowResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *SettleOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *SettleResult
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
@@ -1068,10 +1075,12 @@ func (r SettleWindowResponse) StatusCode() int {
 }
 
 type CreateSubscriptionResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *URLOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *URLResponse
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+	ApplicationproblemJSON501 *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
@@ -1091,10 +1100,13 @@ func (r CreateSubscriptionResponse) StatusCode() int {
 }
 
 type VoidWindowResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *VoidOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *VoidWindowResult
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
@@ -1240,7 +1252,7 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest URLOutputBody
+		var dest URLResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1273,7 +1285,7 @@ func ParseGetBalanceResponse(rsp *http.Response) (*GetBalanceResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BalanceOutputBody
+		var dest BalanceResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1306,7 +1318,7 @@ func ParseListGrantsResponse(rsp *http.Response) (*ListGrantsResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest GrantsOutputBody
+		var dest GrantsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1339,7 +1351,7 @@ func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsRespo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SubscriptionsOutputBody
+		var dest SubscriptionsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1372,18 +1384,39 @@ func ParseReserveWindowResponse(rsp *http.Response) (*ReserveWindowResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ReserveOutputBody
+		var dest ReserveWindowResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 402:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSONDefault = &dest
+		response.ApplicationproblemJSON402 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
 
 	}
 
@@ -1405,18 +1438,39 @@ func ParseSettleWindowResponse(rsp *http.Response) (*SettleWindowResponse, error
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SettleOutputBody
+		var dest SettleResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSONDefault = &dest
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
 
 	}
 
@@ -1438,18 +1492,32 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest URLOutputBody
+		var dest URLResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSONDefault = &dest
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON501 = &dest
 
 	}
 
@@ -1471,18 +1539,39 @@ func ParseVoidWindowResponse(rsp *http.Response) (*VoidWindowResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VoidOutputBody
+		var dest VoidWindowResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSONDefault = &dest
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
 
 	}
 

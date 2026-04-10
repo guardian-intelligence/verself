@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -179,12 +180,21 @@ type GetExecutionLogsOutput struct {
 
 type EmptyInput struct{}
 
+type BalanceResponse struct {
+	OrgID             string `json:"org_id" pattern:"^[0-9]+$"`
+	FreeTierAvailable int64  `json:"free_tier_available"`
+	FreeTierPending   int64  `json:"free_tier_pending"`
+	CreditAvailable   int64  `json:"credit_available"`
+	CreditPending     int64  `json:"credit_pending"`
+	TotalAvailable    int64  `json:"total_available"`
+}
+
 type BalanceOutput struct {
-	Body billingclient.BalanceOutputBody
+	Body BalanceResponse
 }
 
 type SubscriptionsOutput struct {
-	Body billingclient.SubscriptionsOutputBody
+	Body billingclient.SubscriptionsResponse
 }
 
 type GrantsInput struct {
@@ -193,7 +203,7 @@ type GrantsInput struct {
 }
 
 type GrantsOutput struct {
-	Body billingclient.GrantsOutputBody
+	Body billingclient.GrantsResponse
 }
 
 type CheckoutInput struct {
@@ -238,6 +248,13 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 	}
 	return orgID, nil
+}
+
+func billingOrgIDParam(orgID uint64) (int64, error) {
+	if orgID > math.MaxInt64 {
+		return 0, huma.Error400BadRequest("org_id exceeds billing API int64 range")
+	}
+	return int64(orgID), nil
 }
 
 func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*RepoOutput, error) {
@@ -456,14 +473,25 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, err
 		}
-		resp, err := billing.Generated().GetBalanceWithResponse(ctx, int64(orgID))
+		billingOrgID, err := billingOrgIDParam(orgID)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := billing.Generated().GetBalanceWithResponse(ctx, billingOrgID)
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
 		if resp.JSON200 == nil {
 			return nil, huma.Error502BadGateway("billing: " + resp.Status())
 		}
-		return &BalanceOutput{Body: *resp.JSON200}, nil
+		return &BalanceOutput{Body: BalanceResponse{
+			OrgID:             strconv.FormatUint(orgID, 10),
+			FreeTierAvailable: resp.JSON200.FreeTierAvailable,
+			FreeTierPending:   resp.JSON200.FreeTierPending,
+			CreditAvailable:   resp.JSON200.CreditAvailable,
+			CreditPending:     resp.JSON200.CreditPending,
+			TotalAvailable:    resp.JSON200.TotalAvailable,
+		}}, nil
 	}
 }
 
@@ -473,7 +501,11 @@ func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context
 		if err != nil {
 			return nil, err
 		}
-		resp, err := billing.Generated().ListSubscriptionsWithResponse(ctx, int64(orgID))
+		billingOrgID, err := billingOrgIDParam(orgID)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := billing.Generated().ListSubscriptionsWithResponse(ctx, billingOrgID)
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -497,7 +529,11 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 		if input.Active {
 			params.Active = &input.Active
 		}
-		resp, err := billing.Generated().ListGrantsWithResponse(ctx, int64(orgID), params)
+		billingOrgID, err := billingOrgIDParam(orgID)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := billing.Generated().ListGrantsWithResponse(ctx, billingOrgID, params)
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -514,8 +550,12 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 		if err != nil {
 			return nil, err
 		}
+		billingOrgID, err := billingOrgIDParam(orgID)
+		if err != nil {
+			return nil, err
+		}
 		resp, err := billing.Generated().CreateCheckoutWithResponse(ctx, billingclient.CreateCheckoutJSONRequestBody{
-			OrgId:       int64(orgID),
+			OrgId:       billingOrgID,
 			ProductId:   input.Body.ProductID,
 			AmountCents: input.Body.AmountCents,
 			SuccessUrl:  input.Body.SuccessURL,
@@ -539,14 +579,18 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 		if err != nil {
 			return nil, err
 		}
+		billingOrgID, err := billingOrgIDParam(orgID)
+		if err != nil {
+			return nil, err
+		}
 		body := billingclient.CreateSubscriptionJSONRequestBody{
-			OrgId:      int64(orgID),
+			OrgId:      billingOrgID,
 			PlanId:     input.Body.PlanID,
 			SuccessUrl: input.Body.SuccessURL,
 			CancelUrl:  input.Body.CancelURL,
 		}
 		if input.Body.Cadence != "" {
-			cadence := billingclient.CreateSubscriptionBodyCadence(input.Body.Cadence)
+			cadence := billingclient.CreateSubscriptionRequestCadence(input.Body.Cadence)
 			body.Cadence = &cadence
 		}
 		resp, err := billing.Generated().CreateSubscriptionWithResponse(ctx, body)

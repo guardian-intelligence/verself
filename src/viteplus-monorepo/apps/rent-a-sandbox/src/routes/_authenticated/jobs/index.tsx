@@ -10,6 +10,7 @@ export const Route = createFileRoute("/_authenticated/jobs/")({
 
 function JobsPage() {
   const balance = Route.useLoaderData();
+  const { auth } = Route.useRouteContext();
 
   const creditsExhausted = balance.total_available <= 0;
 
@@ -56,7 +57,14 @@ function JobsPage() {
         </Callout>
       )}
 
-      <ExecutionListPanel orgId={balance.org_id} />
+      {auth.orgId ? (
+        <ExecutionListPanel orgId={auth.orgId} />
+      ) : (
+        <Callout tone="destructive" title="Missing organization">
+          Your session does not include a Zitadel resource owner ID, so executions cannot be
+          scoped safely.
+        </Callout>
+      )}
     </div>
   );
 }

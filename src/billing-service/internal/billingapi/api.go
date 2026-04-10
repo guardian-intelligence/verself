@@ -14,12 +14,20 @@ import (
 	"github.com/forge-metal/billing-service/internal/billing"
 )
 
+const defaultInternalRole = "billing_internal"
+
 type Config struct {
 	Version      string
 	ListenAddr   string
 	Client       *billing.Client
 	Logger       *slog.Logger
 	InternalRole string
+}
+
+type Handler struct {
+	client       *billing.Client
+	logger       *slog.Logger
+	internalRole string
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -32,462 +40,352 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 		config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
 	}
 	api := humago.New(mux, config)
-	registerRoutes(api, cfg)
+	RegisterRoutes(api, cfg)
 	return api
 }
 
 func OpenAPIDowngradeYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: "billing_internal"})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: "billing_internal"})
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
 	return api.OpenAPI().YAML()
 }
 
-type ErrorModel struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
-type EmptyInput struct{}
-
-type BalanceOutput struct {
-	Body BalanceOutputBody
-}
-
-type BalanceOutputBody struct {
-	OrgId             int64 `json:"org_id"`
-	FreeTierAvailable int64 `json:"free_tier_available"`
-	FreeTierPending   int64 `json:"free_tier_pending"`
-	CreditAvailable   int64 `json:"credit_available"`
-	CreditPending     int64 `json:"credit_pending"`
-	TotalAvailable    int64 `json:"total_available"`
+type body[T any] struct {
+	Body T `required:"true"`
 }
 
 type OrgPath struct {
-	OrgId int64 `path:"org_id"`
+	OrgID billing.OrgID `path:"org_id" minimum:"1"`
 }
 
 type GrantsInput struct {
 	OrgPath
-	ProductId string `query:"product_id,omitempty"`
+	ProductID string `query:"product_id,omitempty" maxLength:"255"`
 	Active    bool   `query:"active,omitempty"`
 }
 
-type GrantJSON struct {
-	GrantId   string  `json:"grant_id"`
-	Source    string  `json:"source"`
-	Available int64   `json:"available"`
-	Pending   int64   `json:"pending"`
-	ExpiresAt *string `json:"expires_at,omitempty"`
+type BalanceResponse struct {
+	OrgID             billing.OrgID `json:"org_id"`
+	FreeTierAvailable uint64        `json:"free_tier_available"`
+	FreeTierPending   uint64        `json:"free_tier_pending"`
+	CreditAvailable   uint64        `json:"credit_available"`
+	CreditPending     uint64        `json:"credit_pending"`
+	TotalAvailable    uint64        `json:"total_available"`
 }
 
-type GrantsOutput struct {
-	Body GrantsOutputBody
+type GrantResponse struct {
+	GrantID   string     `json:"grant_id"`
+	Source    string     `json:"source"`
+	Available uint64     `json:"available"`
+	Pending   uint64     `json:"pending"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
-type GrantsOutputBody struct {
-	Grants []GrantJSON `json:"grants"`
+type GrantsResponse struct {
+	Grants []GrantResponse `json:"grants"`
 }
 
-type SubscriptionsOutput struct {
-	Body SubscriptionsOutputBody
+type SubscriptionsResponse struct {
+	Subscriptions []SubscriptionResponse `json:"subscriptions"`
 }
 
-type SubscriptionsOutputBody struct {
-	Subscriptions []SubscriptionJSON `json:"subscriptions"`
+type SubscriptionResponse struct {
+	SubscriptionID     int64      `json:"subscription_id"`
+	ProductID          string     `json:"product_id"`
+	PlanID             string     `json:"plan_id"`
+	Cadence            string     `json:"cadence"`
+	Status             string     `json:"status"`
+	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
+	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
 }
 
-type SubscriptionJSON struct {
-	SubscriptionId     int64   `json:"subscription_id"`
-	ProductId          string  `json:"product_id"`
-	PlanId             string  `json:"plan_id"`
-	Cadence            string  `json:"cadence"`
-	Status             string  `json:"status"`
-	CurrentPeriodStart *string `json:"current_period_start,omitempty"`
-	CurrentPeriodEnd   *string `json:"current_period_end,omitempty"`
+type CreateCheckoutRequest struct {
+	OrgID       billing.OrgID `json:"org_id" minimum:"1"`
+	ProductID   string        `json:"product_id" minLength:"1" maxLength:"255"`
+	AmountCents int64         `json:"amount_cents" minimum:"1"`
+	SuccessURL  string        `json:"success_url" minLength:"1" maxLength:"2048"`
+	CancelURL   string        `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
-type CheckoutInput struct {
-	Body CreateCheckoutBody
+type CreateSubscriptionRequest struct {
+	OrgID      billing.OrgID `json:"org_id" minimum:"1"`
+	PlanID     string        `json:"plan_id" minLength:"1" maxLength:"255"`
+	Cadence    string        `json:"cadence,omitempty" enum:"monthly,annual"`
+	SuccessURL string        `json:"success_url" minLength:"1" maxLength:"2048"`
+	CancelURL  string        `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
-type CreateCheckoutBody struct {
-	OrgId       int64  `json:"org_id" required:"true"`
-	ProductId   string `json:"product_id" required:"true" maxLength:"255"`
-	AmountCents int64  `json:"amount_cents" required:"true" minimum:"1"`
-	SuccessUrl  string `json:"success_url" required:"true" maxLength:"2048"`
-	CancelUrl   string `json:"cancel_url" required:"true" maxLength:"2048"`
+type URLResponse struct {
+	URL string `json:"url"`
 }
 
-type CreateSubscriptionInput struct {
-	Body CreateSubscriptionBody
+type ReserveWindowRequest struct {
+	OrgID           billing.OrgID      `json:"org_id" minimum:"1"`
+	ProductID       string             `json:"product_id" minLength:"1" maxLength:"255"`
+	ActorID         string             `json:"actor_id" minLength:"1" maxLength:"255"`
+	ConcurrentCount uint64             `json:"concurrent_count" minimum:"0"`
+	SourceType      string             `json:"source_type" minLength:"1" maxLength:"255"`
+	SourceRef       string             `json:"source_ref" minLength:"1" maxLength:"255"`
+	Allocation      map[string]float64 `json:"allocation" minProperties:"1"`
 }
 
-type CreateSubscriptionBody struct {
-	OrgId      int64  `json:"org_id" required:"true"`
-	PlanId     string `json:"plan_id" required:"true" maxLength:"255"`
-	Cadence    string `json:"cadence,omitempty" enum:"monthly,annual"`
-	SuccessUrl string `json:"success_url" required:"true" maxLength:"2048"`
-	CancelUrl  string `json:"cancel_url" required:"true" maxLength:"2048"`
+type ReserveWindowResult struct {
+	Reservation billing.WindowReservation `json:"reservation"`
 }
 
-type URLOutput struct {
-	Body struct {
-		Url string `json:"url"`
-	}
-}
-
-type ReserveInput struct {
-	Body ReserveInputBody
-}
-
-type ReserveInputBody struct {
-	OrgId           int64              `json:"org_id" required:"true"`
-	ProductId       string             `json:"product_id" required:"true" maxLength:"255"`
-	ActorId         string             `json:"actor_id" required:"true" maxLength:"255"`
-	ConcurrentCount int64              `json:"concurrent_count"`
-	SourceType      string             `json:"source_type" required:"true" maxLength:"255"`
-	SourceRef       string             `json:"source_ref" required:"true" maxLength:"255"`
-	Allocation      map[string]float64 `json:"allocation" required:"true"`
-}
-
-type WindowReservationJSON struct {
-	WindowId            string             `json:"window_id"`
-	OrgId               int64              `json:"org_id"`
-	ProductId           string             `json:"product_id"`
-	PlanId              string             `json:"plan_id"`
-	ActorId             string             `json:"actor_id"`
-	SourceType          string             `json:"source_type"`
-	SourceRef           string             `json:"source_ref"`
-	WindowSeq           int32              `json:"window_seq"`
-	ReservationShape    string             `json:"reservation_shape"`
-	ReservedQuantity    int32              `json:"reserved_quantity"`
-	ReservedChargeUnits int64              `json:"reserved_charge_units"`
-	PricingPhase        string             `json:"pricing_phase"`
-	Allocation          map[string]float64 `json:"allocation"`
-	UnitRates           map[string]int64   `json:"unit_rates"`
-	CostPerUnit         int64              `json:"cost_per_unit"`
-	WindowStart         string             `json:"window_start"`
-	ExpiresAt           string             `json:"expires_at"`
-	RenewBy             *string            `json:"renew_by,omitempty"`
-}
-
-type ReserveOutput struct {
-	Body struct {
-		Reservation WindowReservationJSON `json:"reservation"`
-	}
-}
-
-type SettleInput struct {
-	Body SettleInputBody
-}
-
-type SettleInputBody struct {
-	WindowId       string         `json:"window_id" required:"true" maxLength:"255"`
-	ActualQuantity int32          `json:"actual_quantity" required:"true" minimum:"0"`
+type SettleWindowRequest struct {
+	WindowID       string         `json:"window_id" minLength:"1" maxLength:"255"`
+	ActualQuantity uint32         `json:"actual_quantity" minimum:"0"`
 	UsageSummary   map[string]any `json:"usage_summary,omitempty"`
 }
 
-type SettleOutput struct {
-	Body struct {
-		WindowId            string `json:"window_id"`
-		ActualQuantity      int32  `json:"actual_quantity"`
-		BillableQuantity    int32  `json:"billable_quantity"`
-		WriteoffQuantity    int32  `json:"writeoff_quantity"`
-		BilledChargeUnits   int64  `json:"billed_charge_units"`
-		WriteoffChargeUnits int64  `json:"writeoff_charge_units"`
-		SettledAt           string `json:"settled_at"`
+type VoidWindowRequest struct {
+	WindowID string `json:"window_id" minLength:"1" maxLength:"255"`
+}
+
+type VoidWindowResult struct {
+	WindowID string `json:"window_id"`
+}
+
+func RegisterRoutes(api huma.API, cfg Config) {
+	handler := &Handler{
+		client:       cfg.Client,
+		logger:       cfg.Logger,
+		internalRole: firstNonEmpty(cfg.InternalRole, defaultInternalRole),
+	}
+
+	public := huma.NewGroup(api, "/internal/billing/v1")
+	huma.Get(public, "/orgs/{org_id}/balance", handler.getBalance, operation("get-balance", "Get org grant balance"))
+	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
+	huma.Get(public, "/orgs/{org_id}/subscriptions", handler.listSubscriptions, operation("list-subscriptions", "List subscriptions for an org"))
+	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
+	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusNotImplemented, http.StatusInternalServerError))
+
+	service := huma.NewGroup(api, "/internal/billing/v1")
+	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
+	huma.Post(service, "/reserve", handler.reserveWindow, operation("reserve-window", "Reserve a billing window", http.StatusPaymentRequired, http.StatusForbidden, http.StatusInternalServerError))
+	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
+	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
+}
+
+func operation(id, summary string, errors ...int) func(*huma.Operation) {
+	return func(op *huma.Operation) {
+		op.OperationID = id
+		op.Summary = summary
+		op.Errors = errors
 	}
 }
 
-type VoidInput struct {
-	Body struct {
-		WindowId string `json:"window_id" required:"true" maxLength:"255"`
+func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[BalanceResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
 	}
+	balance, err := client.GetOrgBalance(ctx, input.OrgID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get balance", err)
+	}
+	return &body[BalanceResponse]{Body: BalanceResponse{
+		OrgID:             input.OrgID,
+		FreeTierAvailable: balance.FreeTierAvailable,
+		FreeTierPending:   balance.FreeTierPending,
+		CreditAvailable:   balance.CreditAvailable,
+		CreditPending:     balance.CreditPending,
+		TotalAvailable:    balance.TotalAvailable,
+	}}, nil
 }
 
-type VoidOutput struct {
-	Body struct {
-		WindowId string `json:"window_id"`
+func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[GrantsResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
 	}
-}
-
-func registerRoutes(api huma.API, cfg Config) {
-	huma.Register(api, huma.Operation{
-		OperationID: "get-balance",
-		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/balance",
-		Summary:     "Get org grant balance",
-	}, func(ctx context.Context, input *OrgPath) (*BalanceOutput, error) {
-		if cfg.Client == nil {
-			return nil, huma.Error500InternalServerError("billing client unavailable")
-		}
-		balance, err := cfg.Client.GetOrgBalance(ctx, billing.OrgID(input.OrgId))
-		if err != nil {
-			return nil, huma.Error500InternalServerError("get balance", err)
-		}
-		return &BalanceOutput{Body: BalanceOutputBody{
-			OrgId:             input.OrgId,
-			FreeTierAvailable: int64(balance.FreeTierAvailable),
-			FreeTierPending:   int64(balance.FreeTierPending),
-			CreditAvailable:   int64(balance.CreditAvailable),
-			CreditPending:     int64(balance.CreditPending),
-			TotalAvailable:    int64(balance.TotalAvailable),
-		}}, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "list-grants",
-		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/grants",
-		Summary:     "List credit grants for an org",
-	}, func(ctx context.Context, input *GrantsInput) (*GrantsOutput, error) {
-		if cfg.Client == nil {
-			return nil, huma.Error500InternalServerError("billing client unavailable")
-		}
-		grants, err := cfg.Client.ListGrantBalances(ctx, billing.OrgID(input.OrgId), input.ProductId)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("list grants", err)
-		}
-		out := make([]GrantJSON, 0, len(grants))
-		for _, grant := range grants {
-			entry := GrantJSON{
-				GrantId:   grant.GrantID.String(),
-				Source:    grant.Source.String(),
-				Available: int64(grant.Available),
-				Pending:   int64(grant.Pending),
-			}
-			if grant.ExpiresAt != nil {
-				value := grant.ExpiresAt.UTC().Format(time.RFC3339Nano)
-				entry.ExpiresAt = &value
-			}
-			out = append(out, entry)
-		}
-		return &GrantsOutput{Body: GrantsOutputBody{Grants: out}}, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID: "list-subscriptions",
-		Method:      http.MethodGet,
-		Path:        "/internal/billing/v1/orgs/{org_id}/subscriptions",
-		Summary:     "List subscriptions for an org",
-	}, func(ctx context.Context, input *OrgPath) (*SubscriptionsOutput, error) {
-		if cfg.Client == nil {
-			return nil, huma.Error500InternalServerError("billing client unavailable")
-		}
-		subscriptions, err := cfg.Client.ListSubscriptions(ctx, billing.OrgID(input.OrgId))
-		if err != nil {
-			return nil, huma.Error500InternalServerError("list subscriptions", err)
-		}
-		out := make([]SubscriptionJSON, 0, len(subscriptions))
-		for _, subscription := range subscriptions {
-			entry := SubscriptionJSON{
-				SubscriptionId: subscription.SubscriptionID,
-				ProductId:      subscription.ProductID,
-				PlanId:         subscription.PlanID,
-				Cadence:        subscription.Cadence,
-				Status:         subscription.Status,
-			}
-			if subscription.CurrentPeriodStart != nil {
-				value := subscription.CurrentPeriodStart.UTC().Format(time.RFC3339Nano)
-				entry.CurrentPeriodStart = &value
-			}
-			if subscription.CurrentPeriodEnd != nil {
-				value := subscription.CurrentPeriodEnd.UTC().Format(time.RFC3339Nano)
-				entry.CurrentPeriodEnd = &value
-			}
-			out = append(out, entry)
-		}
-		return &SubscriptionsOutput{Body: SubscriptionsOutputBody{Subscriptions: out}}, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-checkout",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/checkout",
-		Summary:       "Create a Stripe checkout session",
-		DefaultStatus: 200,
-	}, func(ctx context.Context, input *CheckoutInput) (*URLOutput, error) {
-		if cfg.Client == nil {
-			return nil, huma.Error500InternalServerError("billing client unavailable")
-		}
-		url, err := cfg.Client.CreateCheckoutSession(ctx, billing.OrgID(input.Body.OrgId), input.Body.ProductId, billing.CheckoutParams{
-			AmountCents: input.Body.AmountCents,
-			SuccessURL:  input.Body.SuccessUrl,
-			CancelURL:   input.Body.CancelUrl,
+	grants, err := client.ListGrantBalances(ctx, input.OrgID, input.ProductID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list grants", err)
+	}
+	out := make([]GrantResponse, 0, len(grants))
+	for _, grant := range grants {
+		out = append(out, GrantResponse{
+			GrantID:   grant.GrantID.String(),
+			Source:    grant.Source.String(),
+			Available: grant.Available,
+			Pending:   grant.Pending,
+			ExpiresAt: grant.ExpiresAt,
 		})
-		if err != nil {
-			return nil, huma.Error500InternalServerError("create checkout", err)
-		}
-		output := &URLOutput{}
-		output.Body.Url = url
-		return output, nil
-	})
+	}
+	return &body[GrantsResponse]{Body: GrantsResponse{Grants: out}}, nil
+}
 
-	huma.Register(api, huma.Operation{
-		OperationID:   "create-subscription",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/subscribe",
-		Summary:       "Create a Stripe subscription checkout",
-		DefaultStatus: 200,
-	}, func(ctx context.Context, input *CreateSubscriptionInput) (*URLOutput, error) {
-		if cfg.Client == nil {
-			return nil, huma.Error500InternalServerError("billing client unavailable")
-		}
-		url, err := cfg.Client.CreateSubscription(ctx, billing.OrgID(input.Body.OrgId), input.Body.PlanId, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessUrl, input.Body.CancelUrl)
-		if err != nil {
-			return nil, huma.Error501NotImplemented("subscription checkout", err)
-		}
-		output := &URLOutput{}
-		output.Body.Url = url
-		return output, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "reserve-window",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/reserve",
-		Summary:       "Reserve a billing window",
-		DefaultStatus: 200,
-	}, func(ctx context.Context, input *ReserveInput) (*ReserveOutput, error) {
-		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
-			return nil, err
-		}
-		reservation, err := cfg.Client.ReserveWindow(ctx, billing.ReserveRequest{
-			OrgID:           billing.OrgID(input.Body.OrgId),
-			ProductID:       input.Body.ProductId,
-			ActorID:         input.Body.ActorId,
-			Allocation:      input.Body.Allocation,
-			ConcurrentCount: uint64(input.Body.ConcurrentCount),
-			SourceType:      input.Body.SourceType,
-			SourceRef:       input.Body.SourceRef,
+func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[SubscriptionsResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	subscriptions, err := client.ListSubscriptions(ctx, input.OrgID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list subscriptions", err)
+	}
+	out := make([]SubscriptionResponse, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		out = append(out, SubscriptionResponse{
+			SubscriptionID:     subscription.SubscriptionID,
+			ProductID:          subscription.ProductID,
+			PlanID:             subscription.PlanID,
+			Cadence:            subscription.Cadence,
+			Status:             subscription.Status,
+			CurrentPeriodStart: subscription.CurrentPeriodStart,
+			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
 		})
-		if err != nil {
-			switch {
-			case errors.Is(err, billing.ErrInsufficientBalance):
-				return nil, huma.Error402PaymentRequired("reserve", err)
-			case errors.Is(err, billing.ErrOrgSuspended):
-				return nil, huma.Error403Forbidden("reserve", err)
-			default:
-				return nil, huma.Error500InternalServerError("reserve", err)
-			}
-		}
-		output := &ReserveOutput{}
-		output.Body.Reservation = toWindowReservationJSON(reservation)
-		return output, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "settle-window",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/settle",
-		Summary:       "Settle a reserved billing window",
-		DefaultStatus: 200,
-	}, func(ctx context.Context, input *SettleInput) (*SettleOutput, error) {
-		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
-			return nil, err
-		}
-		result, err := cfg.Client.SettleWindow(ctx, input.Body.WindowId, uint32(input.Body.ActualQuantity), input.Body.UsageSummary)
-		if err != nil {
-			switch {
-			case errors.Is(err, billing.ErrWindowNotFound):
-				return nil, huma.Error404NotFound("window not found")
-			case errors.Is(err, billing.ErrWindowAlreadyVoided):
-				return nil, huma.Error400BadRequest("window already voided")
-			default:
-				if cfg.Logger != nil {
-					cfg.Logger.ErrorContext(ctx, "settle billing window", "window_id", input.Body.WindowId, "actual_quantity", input.Body.ActualQuantity, "error", err)
-				}
-				return nil, huma.Error500InternalServerError("settle", err)
-			}
-		}
-		output := &SettleOutput{}
-		output.Body.WindowId = result.WindowID
-		output.Body.ActualQuantity = int32(result.ActualQuantity)
-		output.Body.BillableQuantity = int32(result.BillableQuantity)
-		output.Body.WriteoffQuantity = int32(result.WriteoffQuantity)
-		output.Body.BilledChargeUnits = int64(result.BilledChargeUnits)
-		output.Body.WriteoffChargeUnits = int64(result.WriteoffChargeUnits)
-		output.Body.SettledAt = result.SettledAt.UTC().Format(time.RFC3339Nano)
-		return output, nil
-	})
-
-	huma.Register(api, huma.Operation{
-		OperationID:   "void-window",
-		Method:        http.MethodPost,
-		Path:          "/internal/billing/v1/void",
-		Summary:       "Void a reserved billing window",
-		DefaultStatus: 200,
-	}, func(ctx context.Context, input *VoidInput) (*VoidOutput, error) {
-		if err := requireInternalRole(ctx, cfg.InternalRole); err != nil {
-			return nil, err
-		}
-		if err := cfg.Client.VoidWindow(ctx, input.Body.WindowId); err != nil {
-			switch {
-			case errors.Is(err, billing.ErrWindowNotFound):
-				return nil, huma.Error404NotFound("window not found")
-			case errors.Is(err, billing.ErrWindowAlreadySettled):
-				return nil, huma.Error400BadRequest("window already settled")
-			default:
-				if cfg.Logger != nil {
-					cfg.Logger.ErrorContext(ctx, "void billing window", "window_id", input.Body.WindowId, "error", err)
-				}
-				return nil, huma.Error500InternalServerError("void", err)
-			}
-		}
-		output := &VoidOutput{}
-		output.Body.WindowId = input.Body.WindowId
-		return output, nil
-	})
+	}
+	return &body[SubscriptionsResponse]{Body: SubscriptionsResponse{Subscriptions: out}}, nil
 }
 
-func requireInternalRole(ctx context.Context, role string) error {
-	identity := auth.FromContext(ctx)
-	if identity == nil {
-		return huma.Error401Unauthorized("missing identity")
+func (h *Handler) createCheckout(ctx context.Context, input *body[CreateCheckoutRequest]) (*body[URLResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
 	}
-	if role == "" {
-		role = "billing_internal"
+	url, err := client.CreateCheckoutSession(ctx, input.Body.OrgID, input.Body.ProductID, billing.CheckoutParams{
+		AmountCents: input.Body.AmountCents,
+		SuccessURL:  input.Body.SuccessURL,
+		CancelURL:   input.Body.CancelURL,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError("create checkout", err)
 	}
-	for _, candidate := range identity.Roles {
-		if candidate == role {
-			return nil
-		}
-	}
-	return huma.Error403Forbidden("missing internal billing role")
+	return &body[URLResponse]{Body: URLResponse{URL: url}}, nil
 }
 
-func toWindowReservationJSON(in billing.WindowReservation) WindowReservationJSON {
-	var renewBy *string
-	if in.RenewBy != nil {
-		value := in.RenewBy.UTC().Format(time.RFC3339Nano)
-		renewBy = &value
+func (h *Handler) createSubscription(ctx context.Context, input *body[CreateSubscriptionRequest]) (*body[URLResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
 	}
-	unitRates := make(map[string]int64, len(in.UnitRates))
-	for key, value := range in.UnitRates {
-		unitRates[key] = int64(value)
+	url, err := client.CreateSubscription(ctx, input.Body.OrgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
+	if err != nil {
+		return nil, huma.Error501NotImplemented("subscription checkout", err)
 	}
-	return WindowReservationJSON{
-		WindowId:            in.WindowID,
-		OrgId:               int64(in.OrgID),
-		ProductId:           in.ProductID,
-		PlanId:              in.PlanID,
-		ActorId:             in.ActorID,
-		SourceType:          in.SourceType,
-		SourceRef:           in.SourceRef,
-		WindowSeq:           int32(in.WindowSeq),
-		ReservationShape:    string(in.ReservationShape),
-		ReservedQuantity:    int32(in.ReservedQuantity),
-		ReservedChargeUnits: int64(in.ReservedChargeUnits),
-		PricingPhase:        string(in.PricingPhase),
-		Allocation:          in.Allocation,
-		UnitRates:           unitRates,
-		CostPerUnit:         int64(in.CostPerUnit),
-		WindowStart:         in.WindowStart.UTC().Format(time.RFC3339Nano),
-		ExpiresAt:           in.ExpiresAt.UTC().Format(time.RFC3339Nano),
-		RenewBy:             renewBy,
+	return &body[URLResponse]{Body: URLResponse{URL: url}}, nil
+}
+
+func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRequest]) (*body[ReserveWindowResult], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
 	}
+	reservation, err := client.ReserveWindow(ctx, billing.ReserveRequest{
+		OrgID:           input.Body.OrgID,
+		ProductID:       input.Body.ProductID,
+		ActorID:         input.Body.ActorID,
+		Allocation:      input.Body.Allocation,
+		ConcurrentCount: input.Body.ConcurrentCount,
+		SourceType:      input.Body.SourceType,
+		SourceRef:       input.Body.SourceRef,
+	})
+	if err != nil {
+		return nil, reserveWindowError(err)
+	}
+	return &body[ReserveWindowResult]{Body: ReserveWindowResult{Reservation: reservation}}, nil
+}
+
+func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequest]) (*body[billing.SettleResult], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	result, err := client.SettleWindow(ctx, input.Body.WindowID, input.Body.ActualQuantity, input.Body.UsageSummary)
+	if err != nil {
+		return nil, h.settleWindowError(ctx, input.Body, err)
+	}
+	return &body[billing.SettleResult]{Body: result}, nil
+}
+
+func (h *Handler) voidWindow(ctx context.Context, input *body[VoidWindowRequest]) (*body[VoidWindowResult], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	if err := client.VoidWindow(ctx, input.Body.WindowID); err != nil {
+		return nil, h.voidWindowError(ctx, input.Body.WindowID, err)
+	}
+	return &body[VoidWindowResult]{Body: VoidWindowResult{WindowID: input.Body.WindowID}}, nil
+}
+
+func (h *Handler) requireClient() (*billing.Client, error) {
+	if h.client == nil {
+		return nil, huma.Error500InternalServerError("billing client unavailable")
+	}
+	return h.client, nil
+}
+
+func reserveWindowError(err error) error {
+	switch {
+	case errors.Is(err, billing.ErrInsufficientBalance):
+		return huma.Error402PaymentRequired("reserve", err)
+	case errors.Is(err, billing.ErrOrgSuspended):
+		return huma.Error403Forbidden("reserve", err)
+	default:
+		return huma.Error500InternalServerError("reserve", err)
+	}
+}
+
+func (h *Handler) settleWindowError(ctx context.Context, input SettleWindowRequest, err error) error {
+	switch {
+	case errors.Is(err, billing.ErrWindowNotFound):
+		return huma.Error404NotFound("window not found")
+	case errors.Is(err, billing.ErrWindowAlreadyVoided):
+		return huma.Error400BadRequest("window already voided")
+	default:
+		h.logError(ctx, "settle billing window", "window_id", input.WindowID, "actual_quantity", input.ActualQuantity, "error", err)
+		return huma.Error500InternalServerError("settle", err)
+	}
+}
+
+func (h *Handler) voidWindowError(ctx context.Context, windowID string, err error) error {
+	switch {
+	case errors.Is(err, billing.ErrWindowNotFound):
+		return huma.Error404NotFound("window not found")
+	case errors.Is(err, billing.ErrWindowAlreadySettled):
+		return huma.Error400BadRequest("window already settled")
+	default:
+		h.logError(ctx, "void billing window", "window_id", windowID, "error", err)
+		return huma.Error500InternalServerError("void", err)
+	}
+}
+
+func (h *Handler) logError(ctx context.Context, msg string, args ...any) {
+	if h.logger != nil {
+		h.logger.ErrorContext(ctx, msg, args...)
+	}
+}
+
+func requireInternalRoleMiddleware(api huma.API, role string) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		identity := auth.FromContext(ctx.Context())
+		if identity == nil {
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing identity")
+			return
+		}
+		for _, candidate := range identity.Roles {
+			if candidate == role {
+				next(ctx)
+				return
+			}
+		}
+		huma.WriteErr(api, ctx, http.StatusForbidden, "missing internal billing role")
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
