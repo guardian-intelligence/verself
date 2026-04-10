@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 )
@@ -30,12 +31,6 @@ func NewFromGenerated(inner ClientWithResponsesInterface) *ServiceClient {
 	return &ServiceClient{inner: inner}
 }
 
-type (
-	Balance       = BalanceOutputBody
-	Grants        = GrantsOutputBody
-	Subscriptions = SubscriptionsOutputBody
-)
-
 type Reservation struct {
 	WindowId         string
 	JobId            int64
@@ -57,8 +52,6 @@ type Reservation struct {
 	RenewBy          time.Time
 }
 
-type SettleWindowResult = SettleOutputBody
-
 func (c *ServiceClient) Reserve(
 	ctx context.Context,
 	_ int64,
@@ -71,11 +64,19 @@ func (c *ServiceClient) Reserve(
 	allocation map[string]float64,
 	reqEditors ...RequestEditorFn,
 ) (Reservation, error) {
+	orgIDWire, err := uint64ToInt64(orgID, "org_id")
+	if err != nil {
+		return Reservation{}, err
+	}
+	concurrentCountWire, err := uint64ToInt64(concurrentCount, "concurrent_count")
+	if err != nil {
+		return Reservation{}, err
+	}
 	resp, err := c.inner.ReserveWindowWithResponse(ctx, ReserveWindowJSONRequestBody{
-		OrgId:           int64(orgID),
+		OrgId:           orgIDWire,
 		ProductId:       productID,
 		ActorId:         actorID,
-		ConcurrentCount: int64(concurrentCount),
+		ConcurrentCount: concurrentCountWire,
 		SourceType:      sourceType,
 		SourceRef:       sourceRef,
 		Allocation:      allocation,
@@ -88,31 +89,20 @@ func (c *ServiceClient) Reserve(
 	}
 	switch statusCode(resp.HTTPResponse) {
 	case http.StatusPaymentRequired:
-		return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSON402, resp.HTTPResponse))
 	case http.StatusForbidden:
-		return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
-	case http.StatusBadRequest:
-		return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSON403, resp.HTTPResponse))
+	case http.StatusUnprocessableEntity:
+		return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSON422, resp.HTTPResponse))
 	default:
-		return Reservation{}, unexpected("reserve", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+		return Reservation{}, unexpected("reserve", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 	}
 }
 
-func parseReservation(in WindowReservationJSON) (Reservation, error) {
-	windowStart, err := time.Parse(time.RFC3339Nano, in.WindowStart)
-	if err != nil {
-		return Reservation{}, fmt.Errorf("parse window_start: %w", err)
-	}
-	expiresAt, err := time.Parse(time.RFC3339Nano, in.ExpiresAt)
-	if err != nil {
-		return Reservation{}, fmt.Errorf("parse expires_at: %w", err)
-	}
+func parseReservation(in WindowReservation) (Reservation, error) {
 	var renewBy time.Time
-	if in.RenewBy != nil && *in.RenewBy != "" {
-		renewBy, err = time.Parse(time.RFC3339Nano, *in.RenewBy)
-		if err != nil {
-			return Reservation{}, fmt.Errorf("parse renew_by: %w", err)
-		}
+	if in.RenewBy != nil {
+		renewBy = in.RenewBy.UTC()
 	}
 	return Reservation{
 		WindowId:         in.WindowId,
@@ -129,16 +119,20 @@ func parseReservation(in WindowReservationJSON) (Reservation, error) {
 		Allocation:       in.Allocation,
 		UnitRates:        in.UnitRates,
 		CostPerSec:       in.CostPerUnit,
-		WindowStart:      windowStart.UTC(),
-		ExpiresAt:        expiresAt.UTC(),
-		RenewBy:          renewBy.UTC(),
+		WindowStart:      in.WindowStart.UTC(),
+		ExpiresAt:        in.ExpiresAt.UTC(),
+		RenewBy:          renewBy,
 	}, nil
 }
 
 func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, reqEditors ...RequestEditorFn) error {
+	actualQuantityWire, err := uint32ToInt32(actualQuantity, "actual_quantity")
+	if err != nil {
+		return err
+	}
 	resp, err := c.inner.SettleWindowWithResponse(ctx, SettleWindowJSONRequestBody{
 		WindowId:       reservation.WindowId,
-		ActualQuantity: int32(actualQuantity),
+		ActualQuantity: actualQuantityWire,
 	}, reqEditors...)
 	if err != nil {
 		return err
@@ -147,9 +141,9 @@ func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, act
 		return nil
 	}
 	if statusCode(resp.HTTPResponse) == http.StatusBadRequest {
-		return fmt.Errorf("billing-client: settle bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		return fmt.Errorf("billing-client: settle bad request: %s", detail(resp.ApplicationproblemJSON400, resp.HTTPResponse))
 	}
-	return unexpected("settle", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return unexpected("settle", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
 }
 
 func (c *ServiceClient) Void(ctx context.Context, reservation Reservation, reqEditors ...RequestEditorFn) error {
@@ -163,9 +157,32 @@ func (c *ServiceClient) Void(ctx context.Context, reservation Reservation, reqEd
 		return nil
 	}
 	if statusCode(resp.HTTPResponse) == http.StatusBadRequest {
-		return fmt.Errorf("billing-client: void bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		return fmt.Errorf("billing-client: void bad request: %s", detail(resp.ApplicationproblemJSON400, resp.HTTPResponse))
 	}
-	return unexpected("void", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return unexpected("void", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
+}
+
+func uint64ToInt64(value uint64, field string) (int64, error) {
+	if value > math.MaxInt64 {
+		return 0, fmt.Errorf("billing-client: %s %d exceeds generated OpenAPI int64 range", field, value)
+	}
+	return int64(value), nil
+}
+
+func uint32ToInt32(value uint32, field string) (int32, error) {
+	if value > math.MaxInt32 {
+		return 0, fmt.Errorf("billing-client: %s %d exceeds generated OpenAPI int32 range", field, value)
+	}
+	return int32(value), nil
+}
+
+func firstProblem(problems ...*ErrorModel) *ErrorModel {
+	for _, problem := range problems {
+		if problem != nil {
+			return problem
+		}
+	}
+	return nil
 }
 
 func detail(problem *ErrorModel, resp *http.Response) string {

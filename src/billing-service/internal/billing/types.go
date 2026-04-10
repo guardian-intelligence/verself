@@ -48,11 +48,11 @@ const (
 type GrantSourceType uint8
 
 const (
-	SourceFreeTier GrantSourceType = 1
+	SourceFreeTier     GrantSourceType = 1
 	SourceSubscription GrantSourceType = 2
-	SourcePurchase GrantSourceType = 3
-	SourcePromo GrantSourceType = 4
-	SourceRefund GrantSourceType = 5
+	SourcePurchase     GrantSourceType = 3
+	SourcePromo        GrantSourceType = 4
+	SourceRefund       GrantSourceType = 5
 )
 
 type Balance struct {
@@ -88,24 +88,24 @@ type WindowFundingLeg struct {
 }
 
 type WindowReservation struct {
-	WindowID             string             `json:"window_id"`
-	OrgID                OrgID              `json:"org_id"`
-	ProductID            string             `json:"product_id"`
-	PlanID               string             `json:"plan_id"`
-	ActorID              string             `json:"actor_id"`
-	SourceType           string             `json:"source_type"`
-	SourceRef            string             `json:"source_ref"`
-	WindowSeq            uint32             `json:"window_seq"`
-	ReservationShape     ReservationShape   `json:"reservation_shape"`
-	ReservedQuantity     uint32             `json:"reserved_quantity"`
-	ReservedChargeUnits  uint64             `json:"reserved_charge_units"`
-	PricingPhase         PricingPhase       `json:"pricing_phase"`
-	Allocation           map[string]float64 `json:"allocation"`
-	UnitRates            map[string]uint64  `json:"unit_rates"`
-	CostPerUnit          uint64             `json:"cost_per_unit"`
-	WindowStart          time.Time          `json:"window_start"`
-	ExpiresAt            time.Time          `json:"expires_at"`
-	RenewBy              *time.Time         `json:"renew_by,omitempty"`
+	WindowID            string             `json:"window_id"`
+	OrgID               OrgID              `json:"org_id"`
+	ProductID           string             `json:"product_id"`
+	PlanID              string             `json:"plan_id"`
+	ActorID             string             `json:"actor_id"`
+	SourceType          string             `json:"source_type"`
+	SourceRef           string             `json:"source_ref"`
+	WindowSeq           uint32             `json:"window_seq"`
+	ReservationShape    ReservationShape   `json:"reservation_shape"`
+	ReservedQuantity    uint32             `json:"reserved_quantity"`
+	ReservedChargeUnits uint64             `json:"reserved_charge_units"`
+	PricingPhase        PricingPhase       `json:"pricing_phase"`
+	Allocation          map[string]float64 `json:"allocation"`
+	UnitRates           map[string]uint64  `json:"unit_rates"`
+	CostPerUnit         uint64             `json:"cost_per_unit"`
+	WindowStart         time.Time          `json:"window_start"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	RenewBy             *time.Time         `json:"renew_by,omitempty"`
 }
 
 type ReserveRequest struct {
@@ -119,13 +119,13 @@ type ReserveRequest struct {
 }
 
 type SettleResult struct {
-	WindowID            string
-	ActualQuantity      uint32
-	BillableQuantity    uint32
-	WriteoffQuantity    uint32
-	BilledChargeUnits   uint64
-	WriteoffChargeUnits uint64
-	SettledAt           time.Time
+	WindowID            string    `json:"window_id"`
+	ActualQuantity      uint32    `json:"actual_quantity"`
+	BillableQuantity    uint32    `json:"billable_quantity"`
+	WriteoffQuantity    uint32    `json:"writeoff_quantity"`
+	BilledChargeUnits   uint64    `json:"billed_charge_units"`
+	WriteoffChargeUnits uint64    `json:"writeoff_charge_units"`
+	SettledAt           time.Time `json:"settled_at"`
 }
 
 type MeteringRow struct {
@@ -186,14 +186,14 @@ const (
 )
 
 type SubscriptionRecord struct {
-	SubscriptionID      int64
-	OrgID               string
-	ProductID           string
-	PlanID              string
-	Cadence             string
-	Status              string
-	CurrentPeriodStart  *time.Time
-	CurrentPeriodEnd    *time.Time
+	SubscriptionID     int64
+	OrgID              string
+	ProductID          string
+	PlanID             string
+	Cadence            string
+	Status             string
+	CurrentPeriodStart *time.Time
+	CurrentPeriodEnd   *time.Time
 }
 
 func ParseGrantSourceType(source string) (GrantSourceType, error) {

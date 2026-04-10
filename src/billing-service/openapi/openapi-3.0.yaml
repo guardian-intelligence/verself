@@ -1,31 +1,37 @@
 components:
   schemas:
-    BalanceOutputBody:
+    BalanceResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BalanceOutputBody.json
+          example: http://127.0.0.1:4242/schemas/BalanceResponse.json
           format: uri
           readOnly: true
           type: string
         credit_available:
           format: int64
+          minimum: 0
           type: integer
         credit_pending:
           format: int64
+          minimum: 0
           type: integer
         free_tier_available:
           format: int64
+          minimum: 0
           type: integer
         free_tier_pending:
           format: int64
+          minimum: 0
           type: integer
         org_id:
           format: int64
+          minimum: 0
           type: integer
         total_available:
           format: int64
+          minimum: 0
           type: integer
       required:
         - org_id
@@ -35,12 +41,12 @@ components:
         - credit_pending
         - total_available
       type: object
-    CreateCheckoutBody:
+    CreateCheckoutRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/CreateCheckoutBody.json
+          example: http://127.0.0.1:4242/schemas/CreateCheckoutRequest.json
           format: uri
           readOnly: true
           type: string
@@ -50,15 +56,19 @@ components:
           type: integer
         cancel_url:
           maxLength: 2048
+          minLength: 1
           type: string
         org_id:
           format: int64
+          minimum: 1
           type: integer
         product_id:
           maxLength: 255
+          minLength: 1
           type: string
         success_url:
           maxLength: 2048
+          minLength: 1
           type: string
       required:
         - org_id
@@ -67,12 +77,12 @@ components:
         - success_url
         - cancel_url
       type: object
-    CreateSubscriptionBody:
+    CreateSubscriptionRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/CreateSubscriptionBody.json
+          example: http://127.0.0.1:4242/schemas/CreateSubscriptionRequest.json
           format: uri
           readOnly: true
           type: string
@@ -83,15 +93,19 @@ components:
           type: string
         cancel_url:
           maxLength: 2048
+          minLength: 1
           type: string
         org_id:
           format: int64
+          minimum: 1
           type: integer
         plan_id:
           maxLength: 255
+          minLength: 1
           type: string
         success_url:
           maxLength: 2048
+          minLength: 1
           type: string
       required:
         - org_id
@@ -151,18 +165,21 @@ components:
           format: uri
           type: string
       type: object
-    GrantJSON:
+    GrantResponse:
       additionalProperties: false
       properties:
         available:
           format: int64
+          minimum: 0
           type: integer
         expires_at:
+          format: date-time
           type: string
         grant_id:
           type: string
         pending:
           format: int64
+          minimum: 0
           type: integer
         source:
           type: string
@@ -172,54 +189,61 @@ components:
         - available
         - pending
       type: object
-    GrantsOutputBody:
+    GrantsResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/GrantsOutputBody.json
+          example: http://127.0.0.1:4242/schemas/GrantsResponse.json
           format: uri
           readOnly: true
           type: string
         grants:
           items:
-            $ref: "#/components/schemas/GrantJSON"
+            $ref: "#/components/schemas/GrantResponse"
           nullable: true
           type: array
       required:
         - grants
       type: object
-    ReserveInputBody:
+    ReserveWindowRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/ReserveInputBody.json
+          example: http://127.0.0.1:4242/schemas/ReserveWindowRequest.json
           format: uri
           readOnly: true
           type: string
         actor_id:
           maxLength: 255
+          minLength: 1
           type: string
         allocation:
           additionalProperties:
             format: double
             type: number
+          minProperties: 1
           type: object
         concurrent_count:
           format: int64
+          minimum: 0
           type: integer
         org_id:
           format: int64
+          minimum: 1
           type: integer
         product_id:
           maxLength: 255
+          minLength: 1
           type: string
         source_ref:
           maxLength: 255
+          minLength: 1
           type: string
         source_type:
           maxLength: 255
+          minLength: 1
           type: string
       required:
         - org_id
@@ -230,26 +254,69 @@ components:
         - source_ref
         - allocation
       type: object
-    ReserveOutputBody:
+    ReserveWindowResult:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/ReserveOutputBody.json
+          example: http://127.0.0.1:4242/schemas/ReserveWindowResult.json
           format: uri
           readOnly: true
           type: string
         reservation:
-          $ref: "#/components/schemas/WindowReservationJSON"
+          $ref: "#/components/schemas/WindowReservation"
       required:
         - reservation
       type: object
-    SettleInputBody:
+    SettleResult:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/SettleInputBody.json
+          example: http://127.0.0.1:4242/schemas/SettleResult.json
+          format: uri
+          readOnly: true
+          type: string
+        actual_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+        billable_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+        billed_charge_units:
+          format: int64
+          minimum: 0
+          type: integer
+        settled_at:
+          format: date-time
+          type: string
+        window_id:
+          type: string
+        writeoff_charge_units:
+          format: int64
+          minimum: 0
+          type: integer
+        writeoff_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+        - window_id
+        - actual_quantity
+        - billable_quantity
+        - writeoff_quantity
+        - billed_charge_units
+        - writeoff_charge_units
+        - settled_at
+      type: object
+    SettleWindowRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/SettleWindowRequest.json
           format: uri
           readOnly: true
           type: string
@@ -262,56 +329,22 @@ components:
           type: object
         window_id:
           maxLength: 255
+          minLength: 1
           type: string
       required:
         - window_id
         - actual_quantity
       type: object
-    SettleOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/SettleOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        actual_quantity:
-          format: int32
-          type: integer
-        billable_quantity:
-          format: int32
-          type: integer
-        billed_charge_units:
-          format: int64
-          type: integer
-        settled_at:
-          type: string
-        window_id:
-          type: string
-        writeoff_charge_units:
-          format: int64
-          type: integer
-        writeoff_quantity:
-          format: int32
-          type: integer
-      required:
-        - window_id
-        - actual_quantity
-        - billable_quantity
-        - writeoff_quantity
-        - billed_charge_units
-        - writeoff_charge_units
-        - settled_at
-      type: object
-    SubscriptionJSON:
+    SubscriptionResponse:
       additionalProperties: false
       properties:
         cadence:
           type: string
         current_period_end:
+          format: date-time
           type: string
         current_period_start:
+          format: date-time
           type: string
         plan_id:
           type: string
@@ -329,29 +362,29 @@ components:
         - cadence
         - status
       type: object
-    SubscriptionsOutputBody:
+    SubscriptionsResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/SubscriptionsOutputBody.json
+          example: http://127.0.0.1:4242/schemas/SubscriptionsResponse.json
           format: uri
           readOnly: true
           type: string
         subscriptions:
           items:
-            $ref: "#/components/schemas/SubscriptionJSON"
+            $ref: "#/components/schemas/SubscriptionResponse"
           nullable: true
           type: array
       required:
         - subscriptions
       type: object
-    URLOutputBody:
+    URLResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/URLOutputBody.json
+          example: http://127.0.0.1:4242/schemas/URLResponse.json
           format: uri
           readOnly: true
           type: string
@@ -360,27 +393,28 @@ components:
       required:
         - url
       type: object
-    VoidInputBody:
+    VoidWindowRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/VoidInputBody.json
+          example: http://127.0.0.1:4242/schemas/VoidWindowRequest.json
           format: uri
           readOnly: true
           type: string
         window_id:
           maxLength: 255
+          minLength: 1
           type: string
       required:
         - window_id
       type: object
-    VoidOutputBody:
+    VoidWindowResult:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/VoidOutputBody.json
+          example: http://127.0.0.1:4242/schemas/VoidWindowResult.json
           format: uri
           readOnly: true
           type: string
@@ -389,7 +423,7 @@ components:
       required:
         - window_id
       type: object
-    WindowReservationJSON:
+    WindowReservation:
       additionalProperties: false
       properties:
         actor_id:
@@ -401,11 +435,14 @@ components:
           type: object
         cost_per_unit:
           format: int64
+          minimum: 0
           type: integer
         expires_at:
+          format: date-time
           type: string
         org_id:
           format: int64
+          minimum: 0
           type: integer
         plan_id:
           type: string
@@ -414,14 +451,17 @@ components:
         product_id:
           type: string
         renew_by:
+          format: date-time
           type: string
         reservation_shape:
           type: string
         reserved_charge_units:
           format: int64
+          minimum: 0
           type: integer
         reserved_quantity:
           format: int32
+          minimum: 0
           type: integer
         source_ref:
           type: string
@@ -430,14 +470,17 @@ components:
         unit_rates:
           additionalProperties:
             format: int64
+            minimum: 0
             type: integer
           type: object
         window_id:
           type: string
         window_seq:
           format: int32
+          minimum: 0
           type: integer
         window_start:
+          format: date-time
           type: string
       required:
         - window_id
@@ -470,14 +513,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateCheckoutBody"
+              $ref: "#/components/schemas/CreateCheckoutRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLOutputBody"
+                $ref: "#/components/schemas/URLResponse"
           description: OK
         default:
           content:
@@ -495,13 +538,14 @@ paths:
           required: true
           schema:
             format: int64
+            minimum: 1
             type: integer
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceOutputBody"
+                $ref: "#/components/schemas/BalanceResponse"
           description: OK
         default:
           content:
@@ -519,11 +563,13 @@ paths:
           required: true
           schema:
             format: int64
+            minimum: 1
             type: integer
         - explode: false
           in: query
           name: product_id
           schema:
+            maxLength: 255
             type: string
         - explode: false
           in: query
@@ -535,7 +581,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GrantsOutputBody"
+                $ref: "#/components/schemas/GrantsResponse"
           description: OK
         default:
           content:
@@ -553,13 +599,14 @@ paths:
           required: true
           schema:
             format: int64
+            minimum: 1
             type: integer
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionsOutputBody"
+                $ref: "#/components/schemas/SubscriptionsResponse"
           description: OK
         default:
           content:
@@ -575,21 +622,39 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReserveInputBody"
+              $ref: "#/components/schemas/ReserveWindowRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReserveOutputBody"
+                $ref: "#/components/schemas/ReserveWindowResult"
           description: OK
-        default:
+        "402":
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Error
+          description: Payment Required
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
       summary: Reserve a billing window
   /internal/billing/v1/settle:
     post:
@@ -598,21 +663,39 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SettleInputBody"
+              $ref: "#/components/schemas/SettleWindowRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SettleOutputBody"
+                $ref: "#/components/schemas/SettleResult"
           description: OK
-        default:
+        "400":
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Error
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
       summary: Settle a reserved billing window
   /internal/billing/v1/subscribe:
     post:
@@ -621,21 +704,33 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateSubscriptionBody"
+              $ref: "#/components/schemas/CreateSubscriptionRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLOutputBody"
+                $ref: "#/components/schemas/URLResponse"
           description: OK
-        default:
+        "422":
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Error
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "501":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Implemented
       summary: Create a Stripe subscription checkout
   /internal/billing/v1/void:
     post:
@@ -644,21 +739,39 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VoidInputBody"
+              $ref: "#/components/schemas/VoidWindowRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VoidOutputBody"
+                $ref: "#/components/schemas/VoidWindowResult"
           description: OK
-        default:
+        "400":
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Error
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
       summary: Void a reserved billing window
 servers:
   - url: http://127.0.0.1:4242
