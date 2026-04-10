@@ -1,13 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
-import postgres from "postgres";
-import { requireURLFromEnv } from "@forge-metal/web-env";
 import { lettersAuthMiddleware } from "./auth";
+import {
+  createPostInputSchema,
+  type JsonObject,
+  type JsonValue,
+  postOnlySlugInputSchema,
+  updatePostInputSchema,
+  withLettersDb,
+} from "./validation";
 
-const DATABASE_URL = requireURLFromEnv("DATABASE_URL");
-
-function getDb() {
-  return postgres(DATABASE_URL, { max: 5 });
-}
+type LettersSql = Parameters<typeof withLettersDb>[0] extends (sql: infer T) => unknown ? T : never;
 
 function slugify(text: string): string {
   return text
@@ -22,34 +24,64 @@ function slugify(text: string): string {
 function estimateReadingTime(content: unknown): number {
   // Count words in ProseMirror JSON content recursively
   let wordCount = 0;
-  function walk(node: any) {
+  function isJsonObject(value: JsonValue): value is JsonObject {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function walk(node: JsonValue): void {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
+    }
     if (!node) return;
-    if (node.text) {
+    if (!isJsonObject(node)) return;
+    if (typeof node.text === "string") {
       wordCount += node.text.split(/\s+/).filter(Boolean).length;
     }
     if (Array.isArray(node.content)) {
       for (const child of node.content) walk(child);
     }
   }
-  walk(content);
+
+  if (typeof content === "string" || typeof content === "number" || typeof content === "boolean") {
+    const scalarWordCount = String(content).split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil(scalarWordCount / 238));
+  }
+  if (content !== null && content !== undefined) {
+    walk(content as JsonValue);
+  }
   return Math.max(1, Math.ceil(wordCount / 238));
+}
+
+async function selectPostBySlug(sql: LettersSql, slug: string) {
+  const [post] = await sql`
+    SELECT
+      id,
+      slug,
+      title,
+      subtitle,
+      cover_image_url,
+      content::text AS content,
+      author_name,
+      status,
+      published_at,
+      reading_time_minutes,
+      total_claps,
+      tags::text AS tags,
+      created_at,
+      updated_at
+    FROM posts
+    WHERE slug = ${slug}
+    LIMIT 1
+  `;
+  return post;
 }
 
 export const createPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
-  .inputValidator(
-    (data: {
-      title: string;
-      content?: unknown;
-      subtitle?: string;
-      cover_image_url?: string;
-      tags?: string[];
-      author_name?: string;
-    }) => data,
-  )
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
+  .inputValidator(createPostInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
       const slug = slugify(data.title) || "untitled";
       const content = data.content ?? {};
       const readingTime = estimateReadingTime(content);
@@ -69,28 +101,14 @@ export const createPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error("Post creation failed");
       return { id: post.id, slug: post.slug };
-    } finally {
-      await sql.end();
-    }
-  });
+    }),
+  );
 
 export const updatePost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
-  .inputValidator(
-    (data: {
-      slug: string;
-      title?: string;
-      subtitle?: string;
-      cover_image_url?: string;
-      content?: unknown;
-      tags?: string[];
-      author_name?: string;
-      newSlug?: string;
-    }) => data,
-  )
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
+  .inputValidator(updatePostInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET
           title = COALESCE(${data.title ?? null}, title),
@@ -107,31 +125,25 @@ export const updatePost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { id: post.id, slug: post.slug };
-    } finally {
-      await sql.end();
-    }
-  });
+    }),
+  );
 
 export const deletePost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
-  .inputValidator((data: { slug: string }) => data)
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
+  .inputValidator(postOnlySlugInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
       const [post] = await sql`DELETE FROM posts WHERE slug = ${data.slug} RETURNING id`;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { deleted: true };
-    } finally {
-      await sql.end();
-    }
-  });
+    }),
+  );
 
 export const publishPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
-  .inputValidator((data: { slug: string }) => data)
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
+  .inputValidator(postOnlySlugInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET status = 'published', published_at = now(), updated_at = now()
         WHERE slug = ${data.slug}
@@ -139,17 +151,14 @@ export const publishPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { slug: post.slug, published_at: post.published_at };
-    } finally {
-      await sql.end();
-    }
-  });
+    }),
+  );
 
 export const unpublishPost = createServerFn({ method: "POST" })
   .middleware([lettersAuthMiddleware])
-  .inputValidator((data: { slug: string }) => data)
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
+  .inputValidator(postOnlySlugInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
       const [post] = await sql`
         UPDATE posts SET status = 'draft', published_at = NULL, updated_at = now()
         WHERE slug = ${data.slug}
@@ -157,20 +166,69 @@ export const unpublishPost = createServerFn({ method: "POST" })
       `;
       if (!post) throw new Error(`Post not found: ${data.slug}`);
       return { slug: post.slug };
-    } finally {
-      await sql.end();
-    }
-  });
+    }),
+  );
+
+/** Fetch all published posts for SSR, normalized to the Electric shape. */
+export const listPublishedPosts = createServerFn({ method: "GET" }).handler(async () =>
+  withLettersDb(async (sql) =>
+    sql`
+      SELECT
+        id,
+        slug,
+        title,
+        subtitle,
+        cover_image_url,
+        content::text AS content,
+        author_name,
+        status,
+        published_at,
+        reading_time_minutes,
+        total_claps,
+        tags::text AS tags,
+        created_at,
+        updated_at
+      FROM posts
+      WHERE status = 'published'
+      ORDER BY COALESCE(published_at, created_at) DESC
+    `,
+  ),
+);
+
+/** Fetch all posts for the authenticated editor, normalized to the Electric shape. */
+export const listAllPosts = createServerFn({ method: "GET" })
+  .middleware([lettersAuthMiddleware])
+  .handler(async () =>
+    withLettersDb(async (sql) =>
+      sql`
+        SELECT
+          id,
+          slug,
+          title,
+          subtitle,
+          cover_image_url,
+          content::text AS content,
+          author_name,
+          status,
+          published_at,
+          reading_time_minutes,
+          total_claps,
+          tags::text AS tags,
+          created_at,
+          updated_at
+        FROM posts
+        ORDER BY updated_at DESC
+      `,
+    ),
+  );
 
 /** Fetch a single post by slug (server-side, for SSR). */
 export const getPostBySlug = createServerFn({ method: "GET" })
-  .inputValidator((data: { slug: string }) => data)
-  .handler(async ({ data }) => {
-    const sql = getDb();
-    try {
-      const [post] = await sql`SELECT * FROM posts WHERE slug = ${data.slug} LIMIT 1`;
-      return post ?? null;
-    } finally {
-      await sql.end();
-    }
-  });
+  .inputValidator(postOnlySlugInputSchema)
+  .handler(async ({ data }) =>
+    withLettersDb(async (sql) => {
+      const post = await selectPostBySlug(sql, data.slug);
+      // SSR server-function plumbing treats bare null as a middleware payload.
+      return post ?? undefined;
+    }),
+  );

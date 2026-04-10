@@ -1,5 +1,43 @@
+import {
+  electricCollectionOptions,
+  type ElectricCollectionUtils,
+} from "@tanstack/electric-db-collection";
+import {
+  createCollection,
+  type Collection,
+  type InferSchemaOutput,
+  type NonSingleResult,
+} from "@tanstack/react-db";
+
 export type EnvSource = Record<string, string | undefined>;
 type LocationLike = { origin?: string };
+type StandardIssue = {
+  readonly message: string;
+  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined;
+};
+type StandardResult<Output> =
+  | {
+      readonly issues?: undefined;
+      readonly value: Output;
+    }
+  | {
+      readonly issues: ReadonlyArray<StandardIssue>;
+    };
+type StandardSchemaLike<Input = unknown, Output = Input> = {
+  readonly "~standard": {
+    readonly validate: (
+      value: unknown,
+      options?: { readonly libraryOptions?: Record<string, unknown> | undefined },
+    ) => StandardResult<Output> | Promise<StandardResult<Output>>;
+    readonly types?: {
+      readonly input: Input;
+      readonly output: Output;
+    } | undefined;
+    readonly vendor: string;
+    readonly version: 1;
+  };
+};
+
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digitsPattern = /^\d+$/;
@@ -151,4 +189,41 @@ export function electricEqualsWhere(column: string, validatedValue: string): str
 
 export function electricAndWhere(clauses: Array<{ column: string; value: string }>): string {
   return clauses.map(({ column, value }) => electricEqualsWhere(column, value)).join(" AND ");
+}
+
+export function createElectricShapeCollection<
+  TSchema extends StandardSchemaLike<Record<string, unknown>, Record<string, unknown>>,
+>({
+  id,
+  table,
+  schema,
+  where,
+  getKey,
+}: {
+  id: string;
+  table: string;
+  schema: TSchema;
+  where?: string;
+  getKey: (item: InferSchemaOutput<TSchema>) => string | number;
+}): Collection<
+  InferSchemaOutput<TSchema>,
+  string | number,
+  ElectricCollectionUtils<InferSchemaOutput<TSchema>>
+> &
+  NonSingleResult {
+  const options = electricCollectionOptions({
+    id,
+    schema,
+    shapeOptions: {
+      url: electricShapeURL(),
+      params: where ? { table, where } : { table },
+    },
+    getKey,
+  });
+
+  return createCollection<
+    TSchema,
+    string | number,
+    ElectricCollectionUtils<InferSchemaOutput<TSchema>>
+  >(options);
 }

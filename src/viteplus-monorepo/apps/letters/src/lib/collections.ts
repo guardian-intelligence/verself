@@ -1,53 +1,42 @@
-import { createCollection } from "@tanstack/react-db";
-import { electricCollectionOptions } from "@tanstack/electric-db-collection";
-import { electricShapeURL } from "@forge-metal/web-env";
+import * as v from "valibot";
+import { createElectricShapeCollection } from "@forge-metal/web-env";
 
-export interface ElectricPost {
-  id: string;
-  slug: string;
-  title: string;
-  subtitle: string;
-  cover_image_url: string;
-  content: string; // JSONB serialized as string by Electric
-  author_name: string;
-  status: string;
-  published_at: string | null;
-  reading_time_minutes: number;
-  total_claps: number;
-  tags: string; // TEXT[] serialized by Electric
-  created_at: string;
-  updated_at: string;
-}
+const electricPostSchema = v.object({
+  id: v.string(),
+  slug: v.string(),
+  title: v.string(),
+  subtitle: v.string(),
+  cover_image_url: v.string(),
+  content: v.string(),
+  author_name: v.string(),
+  status: v.string(),
+  published_at: v.nullable(v.string()),
+  reading_time_minutes: v.number(),
+  total_claps: v.number(),
+  tags: v.string(),
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+
+export type ElectricPost = v.InferOutput<typeof electricPostSchema>;
 
 /** Published posts — used by the public reader. */
 export function createPublishedPostsCollection() {
-  return createCollection<ElectricPost>(
-    electricCollectionOptions({
-      id: "sync-posts-published",
-      shapeOptions: {
-        url: electricShapeURL(),
-        params: {
-          table: "posts",
-          where: "status = 'published'",
-        },
-      },
-      getKey: (item: Record<string, unknown>) => String(item.id),
-    }) as any,
-  );
+  return createElectricShapeCollection({
+    id: "sync-posts-published",
+    schema: electricPostSchema,
+    table: "posts",
+    where: "status = 'published'",
+    getKey: (item) => item.id,
+  });
 }
 
 /** All posts including drafts — used by the authenticated editor. */
 export function createAllPostsCollection() {
-  return createCollection<ElectricPost>(
-    electricCollectionOptions({
-      id: "sync-posts-all",
-      shapeOptions: {
-        url: electricShapeURL(),
-        params: {
-          table: "posts",
-        },
-      },
-      getKey: (item: Record<string, unknown>) => String(item.id),
-    }) as any,
-  );
+  return createElectricShapeCollection({
+    id: "sync-posts-all",
+    schema: electricPostSchema,
+    table: "posts",
+    getKey: (item) => item.id,
+  });
 }
