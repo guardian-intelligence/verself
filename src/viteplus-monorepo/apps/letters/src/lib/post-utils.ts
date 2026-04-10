@@ -1,3 +1,4 @@
+import { formatUTCDateTime } from "@forge-metal/web-env";
 import type { JsonValue } from "~/server-fns/validation";
 
 export function parsePostTags(tags: unknown): string[] {
@@ -32,26 +33,13 @@ export function parsePostContent(content: unknown): JsonValue {
   }
 }
 
-const SHORT_POST_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-const LONG_POST_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
 export function formatPostDate(dateStr: string | null, style: "short" | "long" = "short"): string {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return "";
-  // Pin the timezone so SSR and hydration render the same calendar date.
-  return (style === "long" ? LONG_POST_DATE_FORMATTER : SHORT_POST_DATE_FORMATTER).format(date);
+  return formatUTCDateTime(
+    dateStr ?? "",
+    style === "long"
+      ? { month: "long", day: "numeric", year: "numeric" }
+      : { month: "short", day: "numeric", year: "numeric" },
+  );
 }
 
 export function sortPostsByPublishedAt<
