@@ -45,6 +45,19 @@
     group: "{{ ansible_user }}"
     mode: "0755"
 
+- name: Check whether rent-a-sandbox systemd unit exists
+  ansible.builtin.stat:
+    path: /etc/systemd/system/rent-a-sandbox.service
+  register: rent_a_sandbox_systemd_unit_file
+
+# Stop the live process before mutating .output so it never serves a partially deleted build.
+- name: Stop live rent-a-sandbox before replacing build output
+  ansible.builtin.systemd:
+    name: rent-a-sandbox
+    state: stopped
+    daemon_reload: true
+  when: rent_a_sandbox_systemd_unit_file.stat.exists
+
 - name: Remove generated rent-a-sandbox artifacts before sync
   ansible.builtin.file:
     path: "{{ item }}"
@@ -155,7 +168,6 @@
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
-  notify: Restart rent-a-sandbox
 
 - name: Build rent-a-sandbox app
   become: false
@@ -172,7 +184,6 @@
     PATH: "{{ fm_bin }}:/usr/bin:/bin"
     HOME: "/home/{{ ansible_user }}"
   changed_when: true
-  notify: Restart rent-a-sandbox
 
 - name: Set up Zitadel OIDC application
   ansible.builtin.include_tasks: zitadel_app.yml
@@ -184,14 +195,12 @@
     mode: "0640"
     owner: root
     group: "{{ ansible_user }}"
-  notify: Restart rent-a-sandbox
 
 - name: Deploy rent-a-sandbox systemd unit
   ansible.builtin.template:
     src: rent-a-sandbox.service.j2
     dest: /etc/systemd/system/rent-a-sandbox.service
     mode: "0644"
-  notify: Restart rent-a-sandbox
 
 - name: Deploy rent-a-sandbox nftables rules
   ansible.builtin.template:
