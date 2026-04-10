@@ -61,8 +61,8 @@ function JobsPage() {
         <ExecutionListPanel orgId={auth.orgId} />
       ) : (
         <Callout tone="destructive" title="Missing organization">
-          Your session does not include a Zitadel resource owner ID, so executions cannot be
-          scoped safely.
+          Your session does not include a Zitadel resource owner ID, so executions cannot be scoped
+          safely.
         </Callout>
       )}
     </div>
