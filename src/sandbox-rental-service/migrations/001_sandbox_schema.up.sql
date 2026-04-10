@@ -119,16 +119,19 @@ CREATE INDEX idx_execution_attempts_execution_id ON execution_attempts (executio
 CREATE INDEX idx_execution_attempts_state ON execution_attempts (state);
 
 CREATE TABLE execution_billing_windows (
-    attempt_id       UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
-    window_seq       INTEGER     NOT NULL,
-    reservation      JSONB       NOT NULL,
-    window_seconds   INTEGER     NOT NULL,
-    actual_seconds   INTEGER,
-    pricing_phase    TEXT        NOT NULL DEFAULT '',
-    state            TEXT        NOT NULL,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    settled_at       TIMESTAMPTZ,
-    PRIMARY KEY (attempt_id, window_seq)
+    attempt_id          UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
+    billing_window_id   TEXT        NOT NULL,
+    window_seq          INTEGER     NOT NULL,
+    reservation_shape   TEXT        NOT NULL DEFAULT 'time',
+    reserved_quantity   INTEGER     NOT NULL,
+    actual_quantity     INTEGER,
+    pricing_phase       TEXT        NOT NULL DEFAULT '',
+    state               TEXT        NOT NULL,
+    window_start        TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    settled_at          TIMESTAMPTZ,
+    PRIMARY KEY (attempt_id, window_seq),
+    UNIQUE (billing_window_id)
 );
 
 CREATE TABLE execution_logs (

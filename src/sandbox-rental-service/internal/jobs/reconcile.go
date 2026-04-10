@@ -3,7 +3,6 @@ package jobs
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -30,9 +29,13 @@ type reconcileCandidate struct {
 	StartedAt         sql.NullTime
 	CompletedAt       sql.NullTime
 	GoldenSnapshot    string
-	Reservation       billingclient.Reservation
 	WindowSeq         int
-	WindowSeconds     int
+	BillingWindowID   string
+	ReservationShape  string
+	ReservedQuantity  int
+	PricingPhase      string
+	WindowStart       time.Time
+	Reservation       billingclient.Reservation
 	OrchestratorJobID string
 }
 
@@ -55,8 +58,11 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			e.execution_id,
 			a.attempt_id,
 			w.window_seq,
-			w.window_seconds,
-			w.reservation
+			w.billing_window_id,
+			w.reservation_shape,
+			w.reserved_quantity,
+			w.pricing_phase,
+			w.window_start
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
@@ -71,22 +77,20 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 	defer rows.Close()
 
 	for rows.Next() {
-		var (
-			candidate       reconcileCandidate
-			reservationJSON []byte
-		)
+		var candidate reconcileCandidate
 		if err := rows.Scan(
 			&candidate.ExecutionID,
 			&candidate.AttemptID,
 			&candidate.WindowSeq,
-			&candidate.WindowSeconds,
-			&reservationJSON,
+			&candidate.BillingWindowID,
+			&candidate.ReservationShape,
+			&candidate.ReservedQuantity,
+			&candidate.PricingPhase,
+			&candidate.WindowStart,
 		); err != nil {
 			return fmt.Errorf("scan reserved reconciliation candidate: %w", err)
 		}
-		if err := json.Unmarshal(reservationJSON, &candidate.Reservation); err != nil {
-			return fmt.Errorf("decode reserved reconciliation reservation: %w", err)
-		}
+		candidate.Reservation = candidate.reservation()
 		if err := s.Billing.Void(ctx, candidate.Reservation); err != nil {
 			return fmt.Errorf("void stale reservation attempt %s: %w", candidate.AttemptID, err)
 		}
@@ -119,13 +123,16 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			a.completed_at,
 			a.golden_snapshot,
 			w.window_seq,
-			w.window_seconds,
+			w.billing_window_id,
+			w.reservation_shape,
+			w.reserved_quantity,
+			w.pricing_phase,
 			w.state,
-			w.reservation
+			w.window_start
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN LATERAL (
-			SELECT window_seq, window_seconds, state, reservation
+			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start
 			FROM execution_billing_windows
 			WHERE attempt_id = a.attempt_id
 			ORDER BY window_seq DESC
@@ -140,10 +147,7 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 	defer rows.Close()
 
 	for rows.Next() {
-		var (
-			candidate       reconcileCandidate
-			reservationJSON []byte
-		)
+		var candidate reconcileCandidate
 		if err := rows.Scan(
 			&candidate.ExecutionID,
 			&candidate.AttemptID,
@@ -154,15 +158,16 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			&candidate.CompletedAt,
 			&candidate.GoldenSnapshot,
 			&candidate.WindowSeq,
-			&candidate.WindowSeconds,
+			&candidate.BillingWindowID,
+			&candidate.ReservationShape,
+			&candidate.ReservedQuantity,
+			&candidate.PricingPhase,
 			&candidate.WindowState,
-			&reservationJSON,
+			&candidate.WindowStart,
 		); err != nil {
 			return fmt.Errorf("scan finalizing reconciliation candidate: %w", err)
 		}
-		if err := json.Unmarshal(reservationJSON, &candidate.Reservation); err != nil {
-			return fmt.Errorf("decode finalizing reconciliation reservation: %w", err)
-		}
+		candidate.Reservation = candidate.reservation()
 		if err := s.reconcileFinalizingCandidate(ctx, candidate); err != nil {
 			return err
 		}
@@ -231,10 +236,7 @@ func (s *Service) reconcileActiveAttempts(ctx context.Context) error {
 }
 
 func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, attemptID uuid.UUID) (reconcileCandidate, error) {
-	var (
-		candidate       reconcileCandidate
-		reservationJSON []byte
-	)
+	var candidate reconcileCandidate
 	row := s.PG.QueryRowContext(ctx, `
 		SELECT
 			e.execution_id,
@@ -246,13 +248,16 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 			a.completed_at,
 			a.golden_snapshot,
 			w.window_seq,
-			w.window_seconds,
+			w.billing_window_id,
+			w.reservation_shape,
+			w.reserved_quantity,
+			w.pricing_phase,
 			w.state,
-			w.reservation
+			w.window_start
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN LATERAL (
-			SELECT window_seq, window_seconds, state, reservation
+			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start
 			FROM execution_billing_windows
 			WHERE attempt_id = a.attempt_id
 			ORDER BY window_seq DESC
@@ -270,15 +275,16 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 		&candidate.CompletedAt,
 		&candidate.GoldenSnapshot,
 		&candidate.WindowSeq,
-		&candidate.WindowSeconds,
+		&candidate.BillingWindowID,
+		&candidate.ReservationShape,
+		&candidate.ReservedQuantity,
+		&candidate.PricingPhase,
 		&candidate.WindowState,
-		&reservationJSON,
+		&candidate.WindowStart,
 	); err != nil {
 		return reconcileCandidate{}, fmt.Errorf("load finalizing candidate %s: %w", attemptID, err)
 	}
-	if err := json.Unmarshal(reservationJSON, &candidate.Reservation); err != nil {
-		return reconcileCandidate{}, fmt.Errorf("decode finalizing reservation %s: %w", attemptID, err)
-	}
+	candidate.Reservation = candidate.reservation()
 	return candidate, nil
 }
 
@@ -306,7 +312,7 @@ func (s *Service) reconcileFinalizingCandidate(ctx context.Context, candidate re
 func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconcileCandidate) error {
 	actualSeconds := actualSecondsForReservation(candidate.Reservation, candidate.CompletedAt.Time)
 	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds)); err != nil {
-		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_seconds=%d error=%v", candidate.WindowSeq, actualSeconds, err)
+		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_quantity=%d error=%v", candidate.WindowSeq, actualSeconds, err)
 		candidate.FailureReason = "billing_settle_failed"
 		if updateErr := s.markFinalizing(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); updateErr != nil {
 			return fmt.Errorf("persist billing failure on reconciled attempt %s: %w", candidate.AttemptID, updateErr)
@@ -317,7 +323,7 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 		return nil
 	}
 	settledAt := time.Now().UTC()
-	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_seconds=%d", candidate.WindowSeq, actualSeconds)
+	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_quantity=%d", candidate.WindowSeq, actualSeconds)
 	if err := s.markWindowSettled(ctx, candidate.AttemptID, candidate.WindowSeq, actualSeconds, candidate.Reservation.PricingPhase, settledAt); err != nil {
 		return fmt.Errorf("mark reconciled window settled %s: %w", candidate.AttemptID, err)
 	}
@@ -379,7 +385,7 @@ func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID
 // for the given attempt. This ensures credits are returned to the org on lost attempts.
 func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, now time.Time) error {
 	rows, err := s.PG.QueryContext(ctx, `
-		SELECT window_seq, reservation
+		SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, window_start
 		FROM execution_billing_windows
 		WHERE attempt_id = $1 AND state = 'reserved'
 	`, attemptID)
@@ -389,25 +395,39 @@ func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, 
 	defer rows.Close()
 
 	for rows.Next() {
-		var (
-			windowSeq       int
-			reservationJSON []byte
-		)
-		if err := rows.Scan(&windowSeq, &reservationJSON); err != nil {
+		var candidate reconcileCandidate
+		if err := rows.Scan(
+			&candidate.WindowSeq,
+			&candidate.BillingWindowID,
+			&candidate.ReservationShape,
+			&candidate.ReservedQuantity,
+			&candidate.PricingPhase,
+			&candidate.WindowStart,
+		); err != nil {
 			return err
 		}
-		var reservation billingclient.Reservation
-		if err := json.Unmarshal(reservationJSON, &reservation); err != nil {
-			return fmt.Errorf("decode reservation window_seq=%d: %w", windowSeq, err)
-		}
+		reservation := candidate.reservation()
 		if err := s.Billing.Void(ctx, reservation); err != nil {
-			return fmt.Errorf("void window_seq=%d: %w", windowSeq, err)
+			return fmt.Errorf("void window_seq=%d: %w", candidate.WindowSeq, err)
 		}
-		if err := s.markWindowVoided(ctx, attemptID, windowSeq, now); err != nil {
-			return fmt.Errorf("mark window_seq=%d voided: %w", windowSeq, err)
+		if err := s.markWindowVoided(ctx, attemptID, candidate.WindowSeq, now); err != nil {
+			return fmt.Errorf("mark window_seq=%d voided: %w", candidate.WindowSeq, err)
 		}
 	}
 	return rows.Err()
+}
+
+func (candidate reconcileCandidate) reservation() billingclient.Reservation {
+	return billingclient.Reservation{
+		WindowId:         candidate.BillingWindowID,
+		SourceType:       executionSourceType,
+		SourceRef:        candidate.AttemptID.String(),
+		WindowSeq:        int32(candidate.WindowSeq),
+		ReservationShape: candidate.ReservationShape,
+		WindowSecs:       int32(candidate.ReservedQuantity),
+		PricingPhase:     candidate.PricingPhase,
+		WindowStart:      candidate.WindowStart.UTC(),
+	}
 }
 
 func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrator.JobStatus) reconcileCandidate {

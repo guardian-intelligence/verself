@@ -456,7 +456,7 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, err
 		}
-		resp, err := billing.Generated().GetOrgBalanceWithResponse(ctx, int64(orgID))
+		resp, err := billing.Generated().GetBalanceWithResponse(ctx, int64(orgID))
 		if err != nil {
 			return nil, huma.Error502BadGateway("billing service unreachable")
 		}
@@ -546,7 +546,7 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 			CancelUrl:  input.Body.CancelURL,
 		}
 		if input.Body.Cadence != "" {
-			cadence := billingclient.SubscriptionInputBodyCadence(input.Body.Cadence)
+			cadence := billingclient.CreateSubscriptionBodyCadence(input.Body.Cadence)
 			body.Cadence = &cadence
 		}
 		resp, err := billing.Generated().CreateSubscriptionWithResponse(ctx, body)

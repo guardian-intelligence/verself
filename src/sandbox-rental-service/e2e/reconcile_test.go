@@ -3,7 +3,6 @@ package e2e_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"testing"
@@ -464,18 +463,6 @@ func (c *settleFailingBillingClient) Settle(
 	return c.inner.Settle(ctx, reservation, actualSeconds, reqEditors...)
 }
 
-func (c *settleFailingBillingClient) Renew(
-	ctx context.Context,
-	reservation billingclient.Reservation,
-	actualSeconds uint32,
-	reqEditors ...billingclient.RequestEditorFn,
-) (billingclient.Reservation, error) {
-	if reservation.SourceRef == c.failedSourceRef {
-		return billingclient.Reservation{}, errors.New("forced renew failure")
-	}
-	return c.inner.Renew(ctx, reservation, actualSeconds, reqEditors...)
-}
-
 func (c *settleFailingBillingClient) Void(
 	ctx context.Context,
 	reservation billingclient.Reservation,
@@ -485,10 +472,6 @@ func (c *settleFailingBillingClient) Void(
 }
 
 func insertReconcileAttemptRows(ctx context.Context, db *sql.DB, executionID, attemptID uuid.UUID, spec reconcileInsertSpec) error {
-	reservationJSON, err := json.Marshal(spec.Reservation)
-	if err != nil {
-		return err
-	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -513,9 +496,10 @@ func insertReconcileAttemptRows(ctx context.Context, db *sql.DB, executionID, at
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_billing_windows (
-			attempt_id, window_seq, reservation, window_seconds, pricing_phase, state, created_at
-		) VALUES ($1, 0, $2::jsonb, $3, $4, $5, $6)
-	`, attemptID, string(reservationJSON), spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.WindowState, spec.UpdatedAt); err != nil {
+			attempt_id, billing_window_id, window_seq, reservation_shape,
+			reserved_quantity, pricing_phase, state, window_start, created_at
+		) VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8)
+	`, attemptID, spec.Reservation.WindowId, spec.Reservation.ReservationShape, spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.WindowState, spec.Reservation.WindowStart, spec.UpdatedAt); err != nil {
 		return err
 	}
 

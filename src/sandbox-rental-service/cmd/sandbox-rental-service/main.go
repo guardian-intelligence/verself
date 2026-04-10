@@ -25,6 +25,7 @@ import (
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/serviceauth"
 )
 
 const (
@@ -55,11 +56,15 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
 	forgejoRunnerToken := credentialOr("forgejo-runner-token", "")
+	billingClientSecret := requireCredential("billing-client-secret")
 
 	// Non-secret config via Environment=.
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
 	chAddress := envOr("SANDBOX_CH_ADDRESS", "127.0.0.1:9000")
 	billingURL := envOr("SANDBOX_BILLING_URL", "http://127.0.0.1:4242")
+	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
+	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
+	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
@@ -118,10 +123,21 @@ func run() error {
 
 	// --- billing client ---
 
+	billingAuthEditor, err := serviceauth.NewBearerTokenRequestEditor(serviceauth.ClientCredentialsConfig{
+		IssuerURL:    authIssuerURL,
+		TokenURL:     billingTokenURL,
+		ClientID:     billingClientID,
+		ClientSecret: billingClientSecret,
+		Audience:     billingAuthAudience,
+		Transport:    otelhttp.NewTransport(http.DefaultTransport),
+	})
+	if err != nil {
+		return fmt.Errorf("create billing auth editor: %w", err)
+	}
 	billingClient, err := billingclient.New(billingURL, billingclient.WithHTTPClient(&http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 		Timeout:   10 * time.Second,
-	}))
+	}), billingclient.WithRequestEditorFn(billingAuthEditor))
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}

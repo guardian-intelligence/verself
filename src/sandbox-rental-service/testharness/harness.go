@@ -44,7 +44,6 @@ type BillingClient interface {
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
 	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
-	Renew(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
 }
 
