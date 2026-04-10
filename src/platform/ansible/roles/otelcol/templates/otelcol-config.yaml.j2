@@ -286,6 +286,40 @@ receivers:
     units: [vm-orchestrator]
     resource:
       service.name: vm-orchestrator
+  journald/forgejo:
+    units: [forgejo]
+    resource:
+      service.name: forgejo
+    operators:
+      # Forgejo router logs are plain text wrapped in journald metadata.
+      # Extract MESSAGE to get the log line itself.
+      - type: move
+        from: body.MESSAGE
+        to: body
+  journald/forgejo-runner:
+    units: [forgejo-runner]
+    resource:
+      service.name: forgejo-runner
+    operators:
+      # forgejo-runner uses logrus text format: time="..." level=info msg="..."
+      - type: regex_parser
+        regex: '^time="(?P<timestamp>[^"]+)" level=(?P<level>\w+) msg="(?P<message>[^"]*)"'
+        parse_from: body.MESSAGE
+        timestamp:
+          parse_from: attributes.timestamp
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05Z"
+        severity:
+          parse_from: attributes.level
+          mapping:
+            info: INFO
+            warn: WARN
+            error: ERROR
+            debug: DEBUG
+      - type: move
+        from: attributes.message
+        to: body
+        if: attributes.message != nil
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
@@ -369,7 +403,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/vm-orchestrator, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/vm-orchestrator, journald/forgejo, journald/forgejo-runner, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
