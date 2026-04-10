@@ -7,7 +7,8 @@ const baseURL = process.env.TEST_BASE_URL ?? `https://letters.${domain}`;
 const email = process.env.TEST_EMAIL ?? `ceo@${domain}`;
 const password = process.env.TEST_PASSWORD;
 const routeBaseURL = normalizeBaseURL(baseURL);
-const appURLPattern = createURLPattern(baseURL);
+const shortTimeoutMS = 5_000;
+const pollIntervalMS = 250;
 
 if (!runId) {
   throw new Error("VERIFICATION_RUN_ID is required");
@@ -76,46 +77,53 @@ function actionableFailures(requests) {
 try {
   const title = `Verification ${runId}`;
   const body = `letters live verification ${runId}`;
+  const titleInput = page.getByPlaceholder("Post title");
+  const loginNameInput = page.locator("#loginName");
+  const passwordInput = page.locator("#password");
+  const redirectButton = page.getByRole("button", { name: /click here/i });
+  const otherUserButton = page.getByRole("button", { name: /other user/i });
+  const skipButton = page.getByRole("button", { name: /^Skip$/ });
 
   await page.goto("/editor/new");
-
-  const loginNameInput = page.locator("#loginName");
-  if (await loginNameInput.isVisible().catch(() => false)) {
-    await loginNameInput.fill(email);
-    await page.locator('button[type="submit"]').click();
-
-    const passwordInput = page.locator("#password");
-    await passwordInput.waitFor({ state: "visible", timeout: 15000 });
-    await passwordInput.fill(password);
-    await Promise.all([
-      page.waitForURL(appURLPattern, { timeout: 30000 }),
-      page.locator('button[type="submit"]').click(),
-    ]);
+  await page.waitForLoadState("domcontentloaded");
+  if (!(await titleInput.isVisible().catch(() => false))) {
+    await completeLoginFlow(page, {
+      readyLocator: titleInput,
+      loginNameInput,
+      passwordInput,
+      redirectButton,
+      otherUserButton,
+      skipButton,
+      email,
+      password,
+    });
   }
 
-  await page.getByPlaceholder("Post title").fill(title);
+  await titleInput.fill(title);
   await page.locator(".ProseMirror").click();
   await page.locator(".ProseMirror").fill(body);
 
   await Promise.all([page.getByRole("button", { name: "Publish" }).click()]);
   await page.waitForURL(
     (url) => url.pathname.startsWith("/editor/") && url.pathname !== "/editor/new",
-    { timeout: 30000 },
+    { timeout: shortTimeoutMS },
   );
 
   result.editor_url = page.url();
   result.slug = page.url().split("/").pop() ?? "";
 
-  await page.getByText("Status:").waitFor({ state: "visible", timeout: 15000 });
-  await page.getByText("Published", { exact: true }).waitFor({ state: "visible", timeout: 15000 });
+  await page.getByText("Status:").waitFor({ state: "visible", timeout: shortTimeoutMS });
+  await page
+    .getByText("Published", { exact: true })
+    .waitFor({ state: "visible", timeout: shortTimeoutMS });
 
   await page.goto("/editor", { waitUntil: "domcontentloaded" });
   const editorTitleLink = page.getByRole("link", { name: title }).first();
-  await editorTitleLink.waitFor({ state: "visible", timeout: 15000 });
+  await editorTitleLink.waitFor({ state: "visible", timeout: shortTimeoutMS });
   result.editor_index_url = page.url();
   result.editor_title_before_hydration = normalizeText(await editorTitleLink.innerText());
   await page.waitForLoadState("networkidle");
-  await editorTitleLink.waitFor({ state: "visible", timeout: 15000 });
+  await editorTitleLink.waitFor({ state: "visible", timeout: shortTimeoutMS });
   result.editor_title_after_hydration = normalizeText(await editorTitleLink.innerText());
 
   if (result.editor_title_before_hydration !== result.editor_title_after_hydration) {
@@ -130,10 +138,14 @@ try {
   result.public_url = `${baseURL}/${result.slug}`;
   await page.goto(`/${result.slug}`, { waitUntil: "domcontentloaded" });
   const article = page.locator("article");
-  await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15000 });
-  await page.getByText(body).waitFor({ state: "visible", timeout: 15000 });
+  await page
+    .getByRole("heading", { name: title })
+    .waitFor({ state: "visible", timeout: shortTimeoutMS });
+  await page.getByText(body).waitFor({ state: "visible", timeout: shortTimeoutMS });
   result.ssr_article_text = normalizeText(await article.innerText());
-  await page.getByRole("button", { name: /Clap/ }).waitFor({ state: "visible", timeout: 15000 });
+  await page
+    .getByRole("button", { name: /Clap/ })
+    .waitFor({ state: "visible", timeout: shortTimeoutMS });
 
   let sameOriginFailures = actionableFailures(failedRequests);
   if (pageErrors.length > 0 || sameOriginFailures.length > 0) {
@@ -142,8 +154,10 @@ try {
     );
   }
 
-  await page.getByRole("heading", { name: title }).waitFor({ state: "visible", timeout: 15000 });
-  await page.getByText(body).waitFor({ state: "visible", timeout: 15000 });
+  await page
+    .getByRole("heading", { name: title })
+    .waitFor({ state: "visible", timeout: shortTimeoutMS });
+  await page.getByText(body).waitFor({ state: "visible", timeout: shortTimeoutMS });
   result.hydrated_article_text = normalizeText(await article.innerText());
 
   if (result.ssr_article_text !== result.hydrated_article_text) {
@@ -192,27 +206,128 @@ try {
   await browser.close();
 }
 
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeBaseURL(baseURL) {
   return new URL(baseURL).href.replace(/\/$/, "");
 }
 
-function createURLPattern(baseURL, extraPathPatterns = []) {
-  const normalizedBaseURL = normalizeBaseURL(baseURL);
-  const basePattern = escapeRegex(normalizedBaseURL);
-  if (extraPathPatterns.length === 0) {
-    return new RegExp(`^${basePattern}(?:[/?#].*)?$`);
-  }
-
-  const pathPatterns = extraPathPatterns.map(
-    (pathPattern) => `${basePattern}${escapeRegex(pathPattern)}(?:[?#].*)?`,
-  );
-  return new RegExp(`^(?:${pathPatterns.join("|")})$`);
-}
-
 function normalizeText(value) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+async function completeLoginFlow(
+  page,
+  {
+    readyLocator,
+    loginNameInput,
+    passwordInput,
+    redirectButton,
+    otherUserButton,
+    skipButton,
+    email,
+    password,
+  },
+) {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (await readyLocator.isVisible().catch(() => false)) {
+      return;
+    }
+
+    if (await redirectButton.isVisible().catch(() => false)) {
+      await redirectButton.click();
+      await waitForAuthBoundary(page, {
+        readyLocator,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await otherUserButton.isVisible().catch(() => false)) {
+      await otherUserButton.click();
+      await waitForAuthBoundary(page, {
+        readyLocator,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await loginNameInput.isVisible().catch(() => false)) {
+      await loginNameInput.fill(email);
+      await page.locator('button[type="submit"]').click();
+      await waitForAuthBoundary(page, {
+        readyLocator,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await passwordInput.isVisible().catch(() => false)) {
+      await passwordInput.fill(password);
+      await page.locator('button[type="submit"]').click();
+      await waitForAuthBoundary(page, {
+        readyLocator,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    if (await skipButton.isVisible().catch(() => false)) {
+      await skipButton.click();
+      await waitForAuthBoundary(page, {
+        readyLocator,
+        loginNameInput,
+        passwordInput,
+        redirectButton,
+        otherUserButton,
+        skipButton,
+      });
+      continue;
+    }
+
+    await page.waitForTimeout(pollIntervalMS);
+  }
+
+  throw new Error(`Unable to complete login flow from ${page.url()}`);
+}
+
+async function waitForAuthBoundary(
+  page,
+  {
+    readyLocator,
+    loginNameInput,
+    passwordInput,
+    redirectButton,
+    otherUserButton,
+    skipButton,
+  },
+) {
+  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
+    if (
+      (await readyLocator.isVisible().catch(() => false)) ||
+      (await loginNameInput.isVisible().catch(() => false)) ||
+      (await passwordInput.isVisible().catch(() => false)) ||
+      (await redirectButton.isVisible().catch(() => false)) ||
+      (await otherUserButton.isVisible().catch(() => false)) ||
+      (await skipButton.isVisible().catch(() => false))
+    ) {
+      return;
+    }
+    await page.waitForLoadState("domcontentloaded").catch(() => {});
+    await page.waitForTimeout(pollIntervalMS);
+  }
 }
