@@ -202,17 +202,27 @@ type ReconcileOutputBody struct {
 	HasAlerts bool                  `json:"has_alerts"`
 }
 
+// RenewInputBody defines model for RenewInputBody.
+type RenewInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string         `json:"$schema,omitempty"`
+	ActualSeconds int32           `json:"actual_seconds"`
+	Reservation   ReservationJSON `json:"reservation"`
+}
+
 // ReservationJSON defines model for ReservationJSON.
 type ReservationJSON struct {
 	ActorId             string             `json:"actor_id"`
 	Allocation          map[string]float64 `json:"allocation"`
 	CostPerSec          int64              `json:"cost_per_sec"`
+	ExpiresAt           time.Time          `json:"expires_at"`
 	GrantLegs           *[]GrantLegJSON    `json:"grant_legs"`
 	JobId               int64              `json:"job_id"`
 	OrgId               int64              `json:"org_id"`
 	PlanId              string             `json:"plan_id"`
 	PricingPhase        string             `json:"pricing_phase"`
 	ProductId           string             `json:"product_id"`
+	RenewBy             time.Time          `json:"renew_by"`
 	SourceRef           string             `json:"source_ref"`
 	SourceType          string             `json:"source_type"`
 	SpendCapPeriodStart *time.Time         `json:"spend_cap_period_start,omitempty"`
@@ -360,6 +370,9 @@ type CheckQuotasJSONRequestBody = QuotaCheckInputBody
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
 type CreateCheckoutJSONRequestBody = CheckoutInputBody
 
+// RenewJSONRequestBody defines body for Renew for application/json ContentType.
+type RenewJSONRequestBody = RenewInputBody
+
 // ReserveJSONRequestBody defines body for Reserve for application/json ContentType.
 type ReserveJSONRequestBody = ReserveInputBody
 
@@ -484,6 +497,11 @@ type ClientInterface interface {
 
 	// ListUsage request
 	ListUsage(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenewWithBody request with any body
+	RenewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	Renew(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReserveWithBody request with any body
 	ReserveWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -667,6 +685,30 @@ func (c *Client) ListSubscriptions(ctx context.Context, orgId int64, reqEditors 
 
 func (c *Client) ListUsage(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListUsageRequest(c.Server, orgId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenewWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenewRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) Renew(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenewRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1269,6 +1311,46 @@ func NewListUsageRequest(server string, orgId int64, params *ListUsageParams) (*
 	return req, nil
 }
 
+// NewRenewRequest calls the generic Renew builder with application/json body
+func NewRenewRequest(server string, body RenewJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenewRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRenewRequestWithBody generates requests for Renew with any type of body
+func NewRenewRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/renew")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewReserveRequest calls the generic Reserve builder with application/json body
 func NewReserveRequest(server string, body ReserveJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1538,6 +1620,11 @@ type ClientWithResponsesInterface interface {
 
 	// ListUsageWithResponse request
 	ListUsageWithResponse(ctx context.Context, orgId int64, params *ListUsageParams, reqEditors ...RequestEditorFn) (*ListUsageResponse, error)
+
+	// RenewWithBodyWithResponse request with any body
+	RenewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenewResponse, error)
+
+	RenewWithResponse(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*RenewResponse, error)
 
 	// ReserveWithBodyWithResponse request with any body
 	ReserveWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveResponse, error)
@@ -1839,6 +1926,29 @@ func (r ListUsageResponse) StatusCode() int {
 	return 0
 }
 
+type RenewResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ReserveOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r RenewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ReserveResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
@@ -2076,6 +2186,23 @@ func (c *ClientWithResponses) ListUsageWithResponse(ctx context.Context, orgId i
 		return nil, err
 	}
 	return ParseListUsageResponse(rsp)
+}
+
+// RenewWithBodyWithResponse request with arbitrary body returning *RenewResponse
+func (c *ClientWithResponses) RenewWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenewResponse, error) {
+	rsp, err := c.RenewWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenewResponse(rsp)
+}
+
+func (c *ClientWithResponses) RenewWithResponse(ctx context.Context, body RenewJSONRequestBody, reqEditors ...RequestEditorFn) (*RenewResponse, error) {
+	rsp, err := c.Renew(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenewResponse(rsp)
 }
 
 // ReserveWithBodyWithResponse request with arbitrary body returning *ReserveResponse
@@ -2534,6 +2661,39 @@ func ParseListUsageResponse(rsp *http.Response) (*ListUsageResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest UsageOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenewResponse parses an HTTP response from a RenewWithResponse call
+func ParseRenewResponse(rsp *http.Response) (*RenewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ReserveOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

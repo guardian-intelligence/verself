@@ -95,6 +95,8 @@ type Reservation struct {
 	WindowSeq    uint32
 	WindowSecs   uint32
 	WindowStart  time.Time
+	ExpiresAt    time.Time
+	RenewBy      time.Time
 	PricingPhase PricingPhase
 	Allocation   map[string]float64
 	UnitRates    map[string]uint64
@@ -147,6 +149,9 @@ type MeteringRow struct {
 	PurchaseUnits     uint64             `ch:"purchase_units"`
 	PromoUnits        uint64             `ch:"promo_units"`
 	RefundUnits       uint64             `ch:"refund_units"`
+	ReceivableUnits   uint64             `ch:"receivable_units"`
+	PlanID            string             `ch:"plan_id"`
+	CostPerSec        uint64             `ch:"cost_per_sec"`
 	RecordedAt        time.Time          `ch:"recorded_at"`
 	TraceID           string             `ch:"trace_id"`
 }

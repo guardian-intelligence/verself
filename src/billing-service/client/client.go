@@ -111,6 +111,31 @@ func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, act
 	return unexpected("settle", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
+func (c *ServiceClient) Renew(ctx context.Context, reservation Reservation, actualSeconds uint32, reqEditors ...RequestEditorFn) (Reservation, error) {
+	resp, err := c.inner.RenewWithResponse(ctx, RenewJSONRequestBody{
+		Reservation:   reservation,
+		ActualSeconds: int32(actualSeconds),
+	}, reqEditors...)
+	if err != nil {
+		return Reservation{}, err
+	}
+	switch {
+	case resp.JSON200 != nil:
+		return resp.JSON200.Reservation, nil
+	default:
+		switch statusCode(resp.HTTPResponse) {
+		case http.StatusPaymentRequired:
+			return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		case http.StatusForbidden:
+			return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		case http.StatusBadRequest:
+			return Reservation{}, fmt.Errorf("billing-client: renew bad request: %s", detail(resp.ApplicationproblemJSONDefault, resp.HTTPResponse))
+		default:
+			return Reservation{}, unexpected("renew", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+		}
+	}
+}
+
 func (c *ServiceClient) Void(ctx context.Context, reservation Reservation, reqEditors ...RequestEditorFn) error {
 	resp, err := c.inner.VoidWithResponse(ctx, VoidJSONRequestBody{
 		Reservation: reservation,

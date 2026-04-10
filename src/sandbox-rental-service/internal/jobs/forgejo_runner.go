@@ -43,7 +43,7 @@ func (s *Service) runForgejoRunner(ctx context.Context, executionID, attemptID u
 			"FORGEJO_RUNNER_REGISTRATION_TOKEN":  strings.TrimSpace(s.ForgejoRunnerToken),
 			"FORGEJO_RUNNER_BINARY_URL":          strings.TrimSpace(s.ForgejoRunnerBinaryURL),
 			"FORGEJO_RUNNER_BINARY_SHA256":       strings.TrimSpace(s.ForgejoRunnerBinarySHA256),
-			"FORGEJO_RUNNER_JOB_TIMEOUT_SECONDS": fmt.Sprintf("%d", maxAttemptRunSeconds),
+			"FORGEJO_RUNNER_JOB_TIMEOUT_SECONDS": fmt.Sprintf("%d", runnerJobTimeoutSecs),
 			"FORGE_METAL_PROVIDER_RUN_ID":        strings.TrimSpace(req.ProviderRunID),
 			"FORGE_METAL_PROVIDER_JOB_ID":        strings.TrimSpace(req.ProviderJobID),
 			"FORGE_METAL_WORKFLOW_JOB_NAME":      strings.TrimSpace(req.WorkflowJobName),

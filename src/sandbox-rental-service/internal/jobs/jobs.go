@@ -47,7 +47,8 @@ const (
 	defaultRunCommand    = "echo hello"
 	defaultLogStream     = "stdout"
 	executionSourceType  = "execution_attempt"
-	maxAttemptRunSeconds = 300
+	renewRetryInterval   = time.Second
+	runnerJobTimeoutSecs = 7200
 )
 
 var (
@@ -81,6 +82,7 @@ type BillingClient interface {
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
 	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
+	Renew(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
 }
 
@@ -251,6 +253,11 @@ type executionOutcome struct {
 	CompletedAt    time.Time
 }
 
+type workloadResult struct {
+	err     error
+	outcome executionOutcome
+}
+
 // Submit creates a durable execution and first attempt, reserves billing, and
 // starts asynchronous execution. It returns the execution and attempt IDs
 // immediately; callers poll for completion.
@@ -388,107 +395,218 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	}
 	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_job_id=%s", req.Kind, orchestratorJobID)
 
-	// Surgical note: until billing renew exists, attempts are capped to a single
-	// 300-second reservation window. The timeout below is the enforcement point.
-	runCtx, cancel := context.WithTimeout(ctx, maxAttemptDuration())
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var (
-		outcome executionOutcome
-		err     error
-	)
+	resultCh := make(chan workloadResult, 1)
+	go func() {
+		outcome, err := s.runAttemptWorkload(runCtx, executionID, attemptID, req)
+		resultCh <- workloadResult{outcome: outcome, err: err}
+	}()
 
-	switch req.Kind {
-	case KindDirect:
-		outcome, err = s.runDirect(runCtx, executionID, attemptID, req)
-	case KindRepoExec:
-		outcome, err = s.runRepoExec(runCtx, executionID, attemptID, req)
-	case KindWarmGolden:
-		outcome, err = s.runWarmGolden(runCtx, executionID, attemptID, req)
-	case KindForgejoRunner:
-		outcome, err = s.runForgejoRunner(runCtx, executionID, attemptID, req)
-	default:
-		err = fmt.Errorf("unsupported execution kind %q", req.Kind)
-	}
+	currentReservation := reservation
+	totalChargeUnits := uint64(0)
+	forcedFailureReason := ""
+	skipFinalBilling := false
+	renewalUnresolved := false
+	pendingRenewSeconds := 0
+	nextRenewAt := reservation.RenewBy
 
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		if outcome.StartedAt.IsZero() {
-			if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
-				s.Logger.ErrorContext(ctx, "void launch failure reservation", "attempt_id", attemptID, "error", voidErr)
-				s.writeSystemLog(ctx, executionID, attemptID, "billing void failed after launch failure: %v", voidErr)
-				_ = s.markFinalizing(ctx, executionID, attemptID, executionOutcome{
-					State:         StateFinalizing,
-					FailureReason: "billing_void_failed",
-					CompletedAt:   time.Now().UTC(),
-				})
+	for {
+		var (
+			renewTimer  *time.Timer
+			renewTimerC <-chan time.Time
+		)
+		if !skipFinalBilling && !renewalUnresolved && !nextRenewAt.IsZero() {
+			timerDelay := time.Until(nextRenewAt)
+			if timerDelay < 0 {
+				timerDelay = 0
+			}
+			renewTimer = time.NewTimer(timerDelay)
+			renewTimerC = renewTimer.C
+		}
+
+		select {
+		case result := <-resultCh:
+			stopTimer(renewTimer)
+			outcome := result.outcome
+			err := result.err
+			if pendingRenewSeconds > 0 && !skipFinalBilling {
+				forcedFailureReason = "billing_renew_failed"
+				renewalUnresolved = true
+			}
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				if outcome.StartedAt.IsZero() && !skipFinalBilling && !renewalUnresolved {
+					if voidErr := s.Billing.Void(ctx, currentReservation); voidErr != nil {
+						s.Logger.ErrorContext(ctx, "void launch failure reservation", "attempt_id", attemptID, "error", voidErr)
+						s.writeSystemLog(ctx, executionID, attemptID, "billing void failed after launch failure: %v", voidErr)
+						_ = s.markFinalizing(ctx, executionID, attemptID, executionOutcome{
+							State:         StateFinalizing,
+							FailureReason: "billing_void_failed",
+							CompletedAt:   time.Now().UTC(),
+						})
+						return
+					}
+					s.writeSystemLog(ctx, executionID, attemptID, "billing voided after launch failure window_seq=%d", currentReservation.WindowSeq)
+					if err := s.markWindowVoided(ctx, attemptID, int(currentReservation.WindowSeq), time.Now().UTC()); err != nil {
+						s.Logger.ErrorContext(ctx, "mark window voided", "attempt_id", attemptID, "error", err)
+					}
+					terminalOutcome := outcome
+					terminalOutcome.State = StateFailed
+					if terminalOutcome.FailureReason == "" {
+						terminalOutcome.FailureReason = failureReasonFromError(err)
+					}
+					terminalOutcome.CompletedAt = time.Now().UTC()
+					if termErr := s.markTerminal(ctx, executionID, attemptID, terminalOutcome); termErr != nil {
+						s.Logger.ErrorContext(ctx, "mark terminal launch failure", "execution_id", executionID, "attempt_id", attemptID, "error", termErr)
+					}
+					return
+				}
+			}
+
+			if forcedFailureReason != "" {
+				outcome.State = StateFailed
+				outcome.FailureReason = forcedFailureReason
+			}
+			if outcome.State == "" {
+				if outcome.ExitCode == 0 {
+					outcome.State = StateSucceeded
+				} else {
+					outcome.State = StateFailed
+				}
+			}
+			if outcome.CompletedAt.IsZero() {
+				outcome.CompletedAt = time.Now().UTC()
+			}
+			if outcome.StartedAt.IsZero() {
+				outcome.StartedAt = outcome.CompletedAt
+			}
+			if outcome.DurationMs == 0 {
+				outcome.DurationMs = outcome.CompletedAt.Sub(outcome.StartedAt).Milliseconds()
+			}
+
+			if skipFinalBilling || renewalUnresolved {
+				if renewalUnresolved {
+					s.writeSystemLog(ctx, executionID, attemptID, "execution stopped with unresolved billing renew window_seq=%d", currentReservation.WindowSeq)
+				}
+				if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
+					s.Logger.ErrorContext(ctx, "mark terminal without final billing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+					return
+				}
+				if req.Kind == KindWarmGolden {
+					if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
+						s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
+					}
+				}
+				s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
 				return
 			}
-			s.writeSystemLog(ctx, executionID, attemptID, "billing voided after launch failure window_seq=%d", reservation.WindowSeq)
-			if err := s.markWindowVoided(ctx, attemptID, int(reservation.WindowSeq), time.Now().UTC()); err != nil {
-				s.Logger.ErrorContext(ctx, "mark window voided", "attempt_id", attemptID, "error", err)
+
+			if err := s.markFinalizing(ctx, executionID, attemptID, outcome); err != nil {
+				s.Logger.ErrorContext(ctx, "mark finalizing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+				return
 			}
-			terminalOutcome := outcome
-			terminalOutcome.State = StateFailed
-			if terminalOutcome.FailureReason == "" {
-				terminalOutcome.FailureReason = failureReasonFromError(err)
+			s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
+
+			actualSeconds := actualSecondsForReservation(currentReservation, outcome.CompletedAt)
+			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualSeconds)); settleErr != nil {
+				s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, actualSeconds, settleErr, totalChargeUnits)
+				return
 			}
-			terminalOutcome.CompletedAt = time.Now().UTC()
-			if termErr := s.markTerminal(ctx, executionID, attemptID, terminalOutcome); termErr != nil {
-				s.Logger.ErrorContext(ctx, "mark terminal launch failure", "execution_id", executionID, "attempt_id", attemptID, "error", termErr)
+			windowChargeUnits := chargeUnits(currentReservation.CostPerSec, actualSeconds)
+			totalChargeUnits += windowChargeUnits
+			settledAt := time.Now().UTC()
+			s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_seconds=%d charge_units=%d", currentReservation.WindowSeq, actualSeconds, windowChargeUnits)
+			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), actualSeconds, currentReservation.PricingPhase, settledAt); err != nil {
+				s.Logger.ErrorContext(ctx, "mark window settled", "attempt_id", attemptID, "error", err)
+				return
 			}
+
+			if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
+				s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
+				s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing settled: %v", err)
+				return
+			}
+			if req.Kind == KindWarmGolden {
+				if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
+					s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
+				}
+			}
+
+			s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
 			return
+		case <-renewTimerC:
+			if skipFinalBilling || renewalUnresolved {
+				continue
+			}
+			if pendingRenewSeconds == 0 {
+				pendingRenewSeconds = actualSecondsForReservation(currentReservation, time.Now().UTC())
+			}
+
+			nextReservation, renewErr := s.Billing.Renew(ctx, currentReservation, uint32(pendingRenewSeconds))
+			if renewErr == nil {
+				windowChargeUnits := chargeUnits(currentReservation.CostPerSec, pendingRenewSeconds)
+				totalChargeUnits += windowChargeUnits
+				settledAt := time.Now().UTC()
+				if err := s.markWindowRenewed(ctx, attemptID, currentReservation, pendingRenewSeconds, nextReservation, settledAt); err != nil {
+					s.Logger.ErrorContext(ctx, "mark window renewed", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "error", err)
+					if markErr := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), pendingRenewSeconds, currentReservation.PricingPhase, settledAt); markErr != nil {
+						s.Logger.ErrorContext(ctx, "mark renewed window settled fallback", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "error", markErr)
+					}
+					if voidErr := s.Billing.Void(ctx, nextReservation); voidErr != nil {
+						s.Logger.ErrorContext(ctx, "void renewed reservation after persistence failure", "attempt_id", attemptID, "window_seq", nextReservation.WindowSeq, "error", voidErr)
+						forcedFailureReason = "billing_renew_failed"
+						renewalUnresolved = true
+					} else {
+						forcedFailureReason = "billing_renew_persist_failed"
+						skipFinalBilling = true
+					}
+					s.writeSystemLog(ctx, executionID, attemptID, "billing renew persistence failed current_window_seq=%d next_window_seq=%d error=%v", currentReservation.WindowSeq, nextReservation.WindowSeq, err)
+					pendingRenewSeconds = 0
+					nextRenewAt = time.Time{}
+					cancel()
+					continue
+				}
+				s.writeSystemLog(ctx, executionID, attemptID, "billing renewed window_seq=%d next_window_seq=%d actual_seconds=%d charge_units=%d", currentReservation.WindowSeq, nextReservation.WindowSeq, pendingRenewSeconds, windowChargeUnits)
+				currentReservation = nextReservation
+				pendingRenewSeconds = 0
+				nextRenewAt = nextReservation.RenewBy
+				continue
+			}
+
+			if errors.Is(renewErr, billingclient.ErrPaymentRequired) || errors.Is(renewErr, billingclient.ErrForbidden) {
+				renewedSeconds := pendingRenewSeconds
+				windowChargeUnits := chargeUnits(currentReservation.CostPerSec, pendingRenewSeconds)
+				totalChargeUnits += windowChargeUnits
+				settledAt := time.Now().UTC()
+				if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), pendingRenewSeconds, currentReservation.PricingPhase, settledAt); err != nil {
+					s.Logger.ErrorContext(ctx, "mark window settled after renew denial", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "error", err)
+				}
+				forcedFailureReason = renewFailureReason(renewErr)
+				skipFinalBilling = true
+				pendingRenewSeconds = 0
+				nextRenewAt = time.Time{}
+				s.writeSystemLog(ctx, executionID, attemptID, "billing renew denied window_seq=%d actual_seconds=%d error=%v", currentReservation.WindowSeq, renewedSeconds, renewErr)
+				cancel()
+				continue
+			}
+
+			s.Logger.ErrorContext(ctx, "billing renew retry", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "actual_seconds", pendingRenewSeconds, "error", renewErr)
+			s.writeSystemLog(ctx, executionID, attemptID, "billing renew retrying window_seq=%d actual_seconds=%d error=%v", currentReservation.WindowSeq, pendingRenewSeconds, renewErr)
+			windowEnd := currentReservation.WindowStart.Add(time.Duration(currentReservation.WindowSecs) * time.Second)
+			if !time.Now().UTC().Before(windowEnd) {
+				forcedFailureReason = "billing_renew_failed"
+				renewalUnresolved = true
+				pendingRenewSeconds = 0
+				nextRenewAt = time.Time{}
+				cancel()
+				continue
+			}
+			nextRenewAt = time.Now().UTC().Add(renewRetryInterval)
 		}
 	}
-
-	if outcome.State == "" {
-		if outcome.ExitCode == 0 {
-			outcome.State = StateSucceeded
-		} else {
-			outcome.State = StateFailed
-		}
-	}
-	if outcome.CompletedAt.IsZero() {
-		outcome.CompletedAt = time.Now().UTC()
-	}
-	if outcome.StartedAt.IsZero() {
-		outcome.StartedAt = outcome.CompletedAt
-	}
-	if outcome.DurationMs == 0 {
-		outcome.DurationMs = outcome.CompletedAt.Sub(outcome.StartedAt).Milliseconds()
-	}
-
-	if err := s.markFinalizing(ctx, executionID, attemptID, outcome); err != nil {
-		s.Logger.ErrorContext(ctx, "mark finalizing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
-		return
-	}
-	s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
-
-	actualSeconds := actualSecondsForBilling(outcome.DurationMs, int(reservation.WindowSecs))
-	if settleErr := s.Billing.Settle(ctx, reservation, uint32(actualSeconds)); settleErr != nil {
-		s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, reservation, outcome, actualSeconds, settleErr)
-		return
-	}
-	settledAt := time.Now().UTC()
-	s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_seconds=%d charge_units=%d", reservation.WindowSeq, actualSeconds, chargeUnits(reservation.CostPerSec, actualSeconds))
-	if err := s.markWindowSettled(ctx, attemptID, int(reservation.WindowSeq), actualSeconds, reservation.PricingPhase, settledAt); err != nil {
-		s.Logger.ErrorContext(ctx, "mark window settled", "attempt_id", attemptID, "error", err)
-		return
-	}
-
-	if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
-		s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
-		s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing settled: %v", err)
-		return
-	}
-	if req.Kind == KindWarmGolden {
-		if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
-			s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
-		}
-	}
-
-	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, outcome, chargeUnits(reservation.CostPerSec, actualSeconds))
 }
 
 func (s *Service) handleSettleFailure(
@@ -501,6 +619,7 @@ func (s *Service) handleSettleFailure(
 	outcome executionOutcome,
 	actualSeconds int,
 	settleErr error,
+	totalChargeUnits uint64,
 ) {
 	failureOutcome := outcome
 	failureOutcome.State = StateFailed
@@ -542,7 +661,34 @@ func (s *Service) handleSettleFailure(
 		return
 	}
 
-	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, failureOutcome, 0)
+	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, failureOutcome, totalChargeUnits)
+}
+
+func (s *Service) runAttemptWorkload(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
+	switch req.Kind {
+	case KindDirect:
+		return s.runDirect(ctx, executionID, attemptID, req)
+	case KindRepoExec:
+		return s.runRepoExec(ctx, executionID, attemptID, req)
+	case KindWarmGolden:
+		return s.runWarmGolden(ctx, executionID, attemptID, req)
+	case KindForgejoRunner:
+		return s.runForgejoRunner(ctx, executionID, attemptID, req)
+	default:
+		return executionOutcome{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
+	}
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
 }
 
 func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
@@ -1051,6 +1197,42 @@ func (s *Service) markReserved(ctx context.Context, executionID, attemptID uuid.
 	return tx.Commit()
 }
 
+func (s *Service) markWindowRenewed(ctx context.Context, attemptID uuid.UUID, current billingclient.Reservation, actualSeconds int, next billingclient.Reservation, settledAt time.Time) error {
+	nextReservationJSON, err := json.Marshal(next)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.PG.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE execution_billing_windows
+		SET actual_seconds = $3, pricing_phase = $4, state = 'settled', settled_at = $5
+		WHERE attempt_id = $1 AND window_seq = $2
+	`, attemptID, current.WindowSeq, actualSeconds, current.PricingPhase, settledAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO execution_billing_windows (
+			attempt_id, window_seq, reservation, window_seconds, pricing_phase, state, created_at
+		) VALUES ($1, $2, $3::jsonb, $4, $5, 'reserved', $6)
+	`, attemptID, next.WindowSeq, string(nextReservationJSON), next.WindowSecs, next.PricingPhase, settledAt); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE execution_attempts
+		SET updated_at = $2
+		WHERE attempt_id = $1
+	`, attemptID, settledAt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid.UUID, orchestratorJobID, traceID string, now time.Time) error {
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
@@ -1395,7 +1577,7 @@ func (s *Service) recordExecutionCompletion(
 		"execution_id", executionID,
 		"attempt_id", attemptID,
 		"state", outcome.State,
-		"actual_seconds", actualSecondsForBilling(outcome.DurationMs, int(reservation.WindowSecs)),
+		"actual_seconds", actualSecondsForReservation(reservation, outcome.CompletedAt),
 		"charge_units", charge,
 		"pricing_phase", reservation.PricingPhase,
 	)
@@ -1584,6 +1766,25 @@ func reserveFailureReason(err error) string {
 	}
 }
 
+func renewFailureReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, billingclient.ErrPaymentRequired):
+		if strings.Contains(err.Error(), "spend cap") {
+			return "spend_cap_exceeded"
+		}
+		return "insufficient_balance"
+	case errors.Is(err, billingclient.ErrForbidden):
+		if strings.Contains(err.Error(), "org suspended") {
+			return "org_suspended"
+		}
+		return "billing_renew_denied"
+	default:
+		return "billing_renew_failed"
+	}
+}
+
 func failureReasonFromError(err error) string {
 	if err == nil {
 		return ""
@@ -1613,15 +1814,22 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func actualSecondsForBilling(durationMs int64, windowSeconds int) int {
-	if durationMs <= 0 {
+func actualSecondsForReservation(reservation billingclient.Reservation, endedAt time.Time) int {
+	return actualSecondsForWindow(reservation.WindowStart, endedAt, int(reservation.WindowSecs))
+}
+
+func actualSecondsForWindow(windowStart, endedAt time.Time, windowSeconds int) int {
+	if windowSeconds <= 0 {
 		return 1
 	}
-	seconds := int(durationMs / 1000)
+	if endedAt.IsZero() {
+		endedAt = time.Now().UTC()
+	}
+	startedAt := windowStart.UTC()
+	seconds := int(endedAt.UTC().Sub(startedAt) / time.Second)
 	if seconds <= 0 {
 		seconds = 1
 	}
-	// Surgical note: clamp to the reserved window until billing renew is wired.
 	if seconds > windowSeconds {
 		return windowSeconds
 	}
@@ -1640,8 +1848,4 @@ func uuidString(id *uuid.UUID) string {
 		return ""
 	}
 	return id.String()
-}
-
-func maxAttemptDuration() time.Duration {
-	return time.Duration(maxAttemptRunSeconds) * time.Second
 }

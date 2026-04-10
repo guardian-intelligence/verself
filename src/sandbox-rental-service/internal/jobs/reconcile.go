@@ -124,7 +124,13 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			w.reservation
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		JOIN LATERAL (
+			SELECT window_seq, window_seconds, state, reservation
+			FROM execution_billing_windows
+			WHERE attempt_id = a.attempt_id
+			ORDER BY window_seq DESC
+			LIMIT 1
+		) w ON true
 		WHERE a.state = 'finalizing'
 		  AND w.state IN ('reserved', 'settled', 'voided')
 	`)
@@ -245,7 +251,13 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 			w.reservation
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
-		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		JOIN LATERAL (
+			SELECT window_seq, window_seconds, state, reservation
+			FROM execution_billing_windows
+			WHERE attempt_id = a.attempt_id
+			ORDER BY window_seq DESC
+			LIMIT 1
+		) w ON true
 		WHERE e.execution_id = $1 AND a.attempt_id = $2
 	`, executionID, attemptID)
 	if err := row.Scan(
@@ -292,7 +304,7 @@ func (s *Service) reconcileFinalizingCandidate(ctx context.Context, candidate re
 }
 
 func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconcileCandidate) error {
-	actualSeconds := actualSecondsForBilling(candidate.DurationMs, candidate.WindowSeconds)
+	actualSeconds := actualSecondsForReservation(candidate.Reservation, candidate.CompletedAt.Time)
 	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds)); err != nil {
 		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_seconds=%d error=%v", candidate.WindowSeq, actualSeconds, err)
 		candidate.FailureReason = "billing_settle_failed"
