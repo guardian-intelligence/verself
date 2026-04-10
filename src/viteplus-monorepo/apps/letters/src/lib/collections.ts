@@ -1,5 +1,8 @@
 import * as v from "valibot";
-import { createElectricShapeCollection } from "@forge-metal/web-env";
+import {
+  createElectricShapeCollection,
+  electricStringifiedIntegerSchema,
+} from "@forge-metal/web-env";
 
 const electricPostSchema = v.object({
   id: v.string(),
@@ -11,8 +14,8 @@ const electricPostSchema = v.object({
   author_name: v.string(),
   status: v.string(),
   published_at: v.nullable(v.string()),
-  reading_time_minutes: v.number(),
-  total_claps: v.number(),
+  reading_time_minutes: electricStringifiedIntegerSchema,
+  total_claps: electricStringifiedIntegerSchema,
   tags: v.string(),
   created_at: v.string(),
   updated_at: v.string(),

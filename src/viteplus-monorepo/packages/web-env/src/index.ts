@@ -8,6 +8,7 @@ import {
   type InferSchemaOutput,
   type NonSingleResult,
 } from "@tanstack/react-db";
+import * as v from "valibot";
 
 export type EnvSource = Record<string, string | undefined>;
 type LocationLike = { origin?: string };
@@ -41,6 +42,8 @@ type StandardSchemaLike<Input = unknown, Output = Input> = {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const digitsPattern = /^\d+$/;
+const electricIntegerPattern = /^-?\d+$/;
+const electricBooleanPattern = /^(?:true|false)$/;
 const electricOpaqueIDPattern = /^[A-Za-z0-9._:-]+$/;
 
 function readEnv(env: EnvSource, name: string): string | undefined {
@@ -182,6 +185,18 @@ export function requireElectricOpaqueID(value: string, label: string): string {
   }
   return trimmed;
 }
+
+// Electric serializes PostgreSQL ints and booleans as strings in payloads.
+export const electricStringifiedIntegerSchema = v.union([
+  v.pipe(v.number(), v.integer()),
+  v.pipe(v.string(), v.regex(electricIntegerPattern), v.transform(Number)),
+]);
+
+// Electric serializes PostgreSQL booleans as "true"/"false" strings in payloads.
+export const electricStringifiedBooleanSchema = v.union([
+  v.boolean(),
+  v.pipe(v.string(), v.regex(electricBooleanPattern), v.transform((value) => value === "true")),
+]);
 
 export function electricEqualsWhere(column: string, validatedValue: string): string {
   return `${column} = '${validatedValue}'`;
