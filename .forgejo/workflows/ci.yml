@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Hello from forge-metal CI
+        run: |
+          echo "hello world"
+          echo "commit: ${{ github.sha }}"
+          echo "ref: ${{ github.ref }}"
+          uname -a
