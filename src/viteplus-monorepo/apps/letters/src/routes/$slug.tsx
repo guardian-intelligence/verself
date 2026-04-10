@@ -6,6 +6,7 @@ import { TiptapRenderer } from "~/components/tiptap-renderer";
 import { ClapButton } from "~/components/clap-button";
 import { ReadingProgress } from "~/components/reading-progress";
 import { getPostBySlug } from "~/server-fns/posts";
+import { formatPostDate, parsePostContent } from "~/lib/post-utils";
 
 export const Route = createFileRoute("/$slug")({
   component: PostPage,
@@ -30,26 +31,9 @@ export const Route = createFileRoute("/$slug")({
   },
 });
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
 function PostPage() {
   const { post: ssrPost } = Route.useLoaderData();
-
-  // Live-sync the post for real-time clap count updates
-  const collection = useMemo(() => createPublishedPostsCollection(), []);
-  const { data: livePosts } = useLiveQuery((q) => q.from({ p: collection }), [collection]);
-  const livePost = useMemo(
-    () => (livePosts as ElectricPost[] | undefined)?.find((p) => p.slug === ssrPost?.slug),
-    [livePosts, ssrPost?.slug],
-  );
-
-  const post = livePost ?? ssrPost;
-
-  if (!post) {
+  if (!ssrPost) {
     return (
       <div className="max-w-3xl mx-auto px-6 py-24 text-center">
         <h1 className="text-2xl font-bold mb-2">Post not found</h1>
@@ -58,8 +42,33 @@ function PostPage() {
     );
   }
 
-  const totalClaps =
-    typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
+  return (
+    <ClientOnly fallback={<PostArticle post={ssrPost} />}>
+      <LivePostArticle ssrPost={ssrPost} />
+    </ClientOnly>
+  );
+}
+
+function LivePostArticle({
+  ssrPost,
+}: {
+  ssrPost: NonNullable<Awaited<ReturnType<typeof getPostBySlug>>>;
+}) {
+  const collection = useMemo(() => createPublishedPostsCollection(), []);
+  const { data: livePosts } = useLiveQuery((q) => q.from({ p: collection }), [collection]);
+  const livePost = useMemo(
+    () => (livePosts as ElectricPost[] | undefined)?.find((post) => post.slug === ssrPost.slug),
+    [livePosts, ssrPost.slug],
+  );
+  return <PostArticle post={livePost ?? ssrPost} />;
+}
+
+function PostArticle({
+  post,
+}: {
+  post: NonNullable<Awaited<ReturnType<typeof getPostBySlug>>> | ElectricPost;
+}) {
+  const totalClaps = typeof post.total_claps === "number" ? post.total_claps : Number(post.total_claps) || 0;
 
   return (
     <>
@@ -87,14 +96,14 @@ function PostPage() {
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             {post.author_name && <span>{post.author_name}</span>}
             {post.author_name && <span aria-hidden>·</span>}
-            <span>{formatDate(post.published_at)}</span>
+            <span>{formatPostDate(post.published_at, "long")}</span>
             <span aria-hidden>·</span>
             <span>{post.reading_time_minutes} min read</span>
           </div>
         </header>
 
         {/* Content */}
-        <TiptapRenderer content={post.content} className="prose-letters" />
+        <TiptapRenderer content={parsePostContent(post.content)} className="prose-letters" />
       </article>
 
       {/* Clap button */}

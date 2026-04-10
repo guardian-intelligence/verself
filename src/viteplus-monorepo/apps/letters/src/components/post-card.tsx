@@ -1,27 +1,23 @@
 import { Link } from "@tanstack/react-router";
 import type { ElectricPost } from "~/lib/collections";
+import { formatPostDate, parsePostTags } from "~/lib/post-utils";
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
+type PostCardPost = Pick<
+  ElectricPost,
+  | "cover_image_url"
+  | "id"
+  | "published_at"
+  | "reading_time_minutes"
+  | "slug"
+  | "subtitle"
+  | "title"
+  | "total_claps"
+> & {
+  tags: unknown;
+};
 
-function parseTags(tags: string): string[] {
-  if (!tags) return [];
-  // Electric serializes TEXT[] as a string like {tag1,tag2}
-  if (tags.startsWith("{") && tags.endsWith("}")) {
-    return tags.slice(1, -1).split(",").filter(Boolean);
-  }
-  try {
-    return JSON.parse(tags);
-  } catch {
-    return [];
-  }
-}
-
-export function PostCard({ post }: { post: ElectricPost }) {
-  const tags = parseTags(post.tags);
+export function PostCard({ post }: { post: PostCardPost }) {
+  const tags = parsePostTags(post.tags);
 
   return (
     <Link to="/$slug" params={{ slug: post.slug }} className="group block">
@@ -35,7 +31,7 @@ export function PostCard({ post }: { post: ElectricPost }) {
               <p className="text-muted-foreground text-base mb-3 line-clamp-2">{post.subtitle}</p>
             )}
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{formatDate(post.published_at)}</span>
+              <span>{formatPostDate(post.published_at)}</span>
               <span aria-hidden>·</span>
               <span>{post.reading_time_minutes} min read</span>
               {post.total_claps > 0 && (

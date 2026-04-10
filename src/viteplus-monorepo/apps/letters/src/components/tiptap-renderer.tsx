@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import { generateHTML } from "@tiptap/html";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -10,21 +11,31 @@ interface TiptapRendererProps {
   className?: string;
 }
 
+function isJSONContent(value: unknown): value is JSONContent {
+  return typeof value === "object" && value !== null;
+}
+
 export function TiptapRenderer({ content, className }: TiptapRendererProps) {
-  if (!content || typeof content !== "object") {
+  if (!content) {
     return <div className={className} />;
   }
 
-  // Parse string content (Electric serializes JSONB as string)
-  let doc: Record<string, unknown>;
+  let doc: JSONContent;
   if (typeof content === "string") {
     try {
-      doc = JSON.parse(content);
+      const parsed = JSON.parse(content);
+      if (!isJSONContent(parsed)) {
+        return <div className={className}>{content}</div>;
+      }
+      doc = parsed;
     } catch {
-      return <div className={className}>{String(content)}</div>;
+      return <div className={className}>{content}</div>;
     }
   } else {
-    doc = content as Record<string, unknown>;
+    if (!isJSONContent(content)) {
+      return <div className={className}>{String(content)}</div>;
+    }
+    doc = content;
   }
 
   // Empty document
@@ -32,7 +43,7 @@ export function TiptapRenderer({ content, className }: TiptapRendererProps) {
     return <div className={className} />;
   }
 
-  const html = generateHTML(doc as any, extensions);
+  const html = generateHTML(doc, extensions);
 
   return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }

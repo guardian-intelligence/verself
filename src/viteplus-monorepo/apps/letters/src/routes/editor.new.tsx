@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, lazy, Suspense } from "react";
+import type { JsonValue } from "~/server-fns/validation";
 import { createPost, publishPost } from "~/server-fns/posts";
 
 const TiptapEditor = lazy(() =>
@@ -17,7 +18,7 @@ function NewPostPage() {
   const [coverImageUrl, setCoverImageUrl] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [tags, setTags] = useState("");
-  const [content, setContent] = useState<unknown>(null);
+  const [content, setContent] = useState<JsonValue>();
   const [saving, setSaving] = useState(false);
 
   async function handleSave(publish: boolean) {
@@ -40,7 +41,7 @@ function NewPostPage() {
       if (publish) {
         await publishPost({ data: { slug: result.slug } });
       }
-      void navigate({ to: "/editor/$slug", params: { slug: result.slug } });
+      await navigate({ to: "/editor/$slug", params: { slug: result.slug } });
     } catch (err) {
       console.error("Failed to save:", err);
     } finally {
