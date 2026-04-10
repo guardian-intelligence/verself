@@ -104,7 +104,7 @@ sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SAND
 sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none SANDBOX_SEED_VERIFY=1
 	cd $(FM) && ./scripts/sandbox-middle.sh
 
-sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live repo-exec verification
+sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
 	cd $(FM) && ./scripts/verify-sandbox-live.sh
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]

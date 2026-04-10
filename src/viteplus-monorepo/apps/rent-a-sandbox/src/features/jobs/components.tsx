@@ -6,6 +6,7 @@ import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
 import { type ElectricExecution } from "~/lib/collections";
+import { formatDateTimeUTC } from "~/lib/format";
 import { formatExecutionRepo, useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
@@ -253,7 +254,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
                 <ExecutionStatusBadge status={execution.status} />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
-                {new Date(execution.created_at).toLocaleString()}
+                {formatDateTimeUTC(execution.created_at)}
               </td>
             </tr>
           ))}

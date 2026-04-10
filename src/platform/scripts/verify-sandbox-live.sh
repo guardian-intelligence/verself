@@ -44,6 +44,7 @@ env \
   FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
   BASE_URL="${BASE_URL:-https://rentasandbox.${VERIFICATION_DOMAIN}}" \
   FORGE_METAL_RECORD_ARTIFACTS="1" \
+  FORGE_METAL_SANDBOX_PROOF="1" \
   VERIFICATION_RUN_ID="${run_id}" \
   VERIFICATION_RUN_JSON_PATH="${artifact_dir}/run.json" \
   VERIFICATION_REPO_URL="${verification_repo_url}" \
@@ -51,8 +52,9 @@ env \
   VERIFICATION_LOG_MARKER="FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE" \
   bash -lc '
     cd "$1"
-    vp exec playwright test e2e/repo-exec-live.spec.ts \
+    vp exec playwright test e2e/repo-journeys.live.spec.ts \
       --project=chromium \
+      --grep "full lifecycle proof imports executes refreshes and executes again" \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${artifact_dir}/playwright-results"
 playwright_status=$?
