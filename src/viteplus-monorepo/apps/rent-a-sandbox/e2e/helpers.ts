@@ -6,6 +6,7 @@ import { env } from "./env";
 
 const execFile = promisify(execFileCallback);
 export const verificationRunHeader = "X-Forge-Metal-Verification-Run";
+const routeBaseURL = normalizeBaseURL(env.baseURL);
 const authOrLoginURL = createURLPattern(env.zitadelBaseURL, ["/ui/login"]);
 const appURL = createURLPattern(env.baseURL);
 const postPasswordURL = createURLPattern(env.baseURL, ["/ui/mfa"]);
@@ -190,7 +191,7 @@ export async function installVerificationHeader(
   context: BrowserContext,
   verificationRunID: string,
 ): Promise<void> {
-  await context.route(`${env.baseURL}/**`, async (route) => {
+  await context.route(`${routeBaseURL}/**`, async (route) => {
     await route.continue({
       headers: {
         ...route.request().headers(),
@@ -226,9 +227,20 @@ export async function pushVerificationRepoRevision(
 }
 
 function createURLPattern(baseURL: string, extraPathPatterns: string[] = []): RegExp {
-  const hostPattern = escapeRegex(new URL(baseURL).host);
-  const pathPatterns = extraPathPatterns.map((pathPattern) => escapeRegex(pathPattern));
-  return new RegExp([hostPattern, ...pathPatterns].join("|"));
+  const normalizedBaseURL = normalizeBaseURL(baseURL);
+  const basePattern = escapeRegex(normalizedBaseURL);
+  if (extraPathPatterns.length === 0) {
+    return new RegExp(`^${basePattern}(?:[/?#].*)?$`);
+  }
+
+  const pathPatterns = extraPathPatterns.map(
+    (pathPattern) => `${basePattern}${escapeRegex(pathPattern)}(?:[?#].*)?`,
+  );
+  return new RegExp(`^(?:${pathPatterns.join("|")})$`);
+}
+
+function normalizeBaseURL(baseURL: string): string {
+  return new URL(baseURL).href.replace(/\/$/, "");
 }
 
 function escapeRegex(value: string): string {

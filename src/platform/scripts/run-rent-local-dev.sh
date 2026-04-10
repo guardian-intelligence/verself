@@ -14,6 +14,7 @@ state_file="${RENT_DEV_STATE_FILE:-/tmp/forge-metal-rent-dev.env}"
 remote_env_path="${RENT_DEV_REMOTE_ENV_PATH:-/etc/rent-a-sandbox/env}"
 control_dir="$(mktemp -d)"
 control_socket="${control_dir}/ssh-control"
+state_file_tmp="$(mktemp "${state_file}.XXXXXX")"
 
 cleanup() {
   set +e
@@ -22,6 +23,8 @@ cleanup() {
       -o IPQoS=none -o StrictHostKeyChecking=no \
       "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" >/dev/null 2>&1 || true
   fi
+  rm -f "${state_file}"
+  rm -f "${state_file_tmp}"
   rm -rf "${control_dir}"
 }
 trap cleanup EXIT INT TERM
@@ -178,7 +181,7 @@ export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-rent-a-sandbox}"
 export RENT_DEV_LOCAL_APP_PORT="${local_app_port}"
 export BASE_URL="${BASE_URL:-http://127.0.0.1:${local_app_port}}"
 
-cat >"${state_file}" <<EOF
+cat >"${state_file_tmp}" <<EOF
 export FORGE_METAL_DOMAIN=${FORGE_METAL_DOMAIN}
 export AUTH_SUBDOMAIN=${AUTH_SUBDOMAIN}
 export AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
@@ -193,6 +196,11 @@ export RENT_DEV_LOCAL_APP_PORT=${RENT_DEV_LOCAL_APP_PORT}
 export BASE_URL=${BASE_URL}
 export TEST_BASE_URL=${BASE_URL}
 EOF
+chmod 600 "${state_file_tmp}"
+
+if [[ "${print_env_only}" != "1" ]]; then
+  mv -f "${state_file_tmp}" "${state_file}"
+fi
 
 cat >&2 <<EOF
 rent-a-sandbox local dev
@@ -206,10 +214,10 @@ rent-a-sandbox local dev
 EOF
 
 if [[ "${print_env_only}" == "1" ]]; then
-  cat "${state_file}"
+  cat "${state_file_tmp}"
   printf '%s\n' "vp run @forge-metal/rent-a-sandbox#dev"
   exit 0
 fi
 
 cd "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo"
-exec vp run @forge-metal/rent-a-sandbox#dev
+vp run @forge-metal/rent-a-sandbox#dev
