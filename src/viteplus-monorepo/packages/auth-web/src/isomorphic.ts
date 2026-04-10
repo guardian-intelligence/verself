@@ -44,7 +44,10 @@ export const authenticatedAuthSchema = v.object({
 
 export type AuthenticatedAuth = v.InferOutput<typeof authenticatedAuthSchema>;
 
-export const authSchema = v.variant("isAuthenticated", [anonymousAuthSchema, authenticatedAuthSchema]);
+export const authSchema = v.variant("isAuthenticated", [
+  anonymousAuthSchema,
+  authenticatedAuthSchema,
+]);
 
 export type Auth = v.InferOutput<typeof authSchema>;
 
@@ -154,7 +157,10 @@ export function authCacheKey(snapshot: AuthSnapshot): string {
   return `auth:${snapshot.auth.cachePartition ?? "anonymous"}`;
 }
 
-export function syncAuthPartitionedCache(cache: AuthPartitionedCache, snapshot: AuthSnapshot): void {
+export function syncAuthPartitionedCache(
+  cache: AuthPartitionedCache,
+  snapshot: AuthSnapshot,
+): void {
   const cachePartition = snapshot.auth.cachePartition;
   const previousPartition = authPartitionsByCache.get(cache);
   if (previousPartition !== undefined && previousPartition !== cachePartition) {

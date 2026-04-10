@@ -1,6 +1,12 @@
 import { createContext, createElement, type ReactNode, useContext } from "react";
 import { parseAuthSnapshot } from "./isomorphic.ts";
-import type { Auth, AuthSnapshot, AuthenticatedAuth, ClientUser, SessionInfo } from "./isomorphic.ts";
+import type {
+  Auth,
+  AuthSnapshot,
+  AuthenticatedAuth,
+  ClientUser,
+  SessionInfo,
+} from "./isomorphic.ts";
 
 export type {
   AnonymousAuth,
@@ -137,9 +143,7 @@ export function useSignedInAuth(): AuthenticatedAuth {
 }
 
 export function useUser(): UseUserReturn {
-  const {
-    snapshot,
-  } = useAuthContextValue();
+  const { snapshot } = useAuthContextValue();
   if (!snapshot.isSignedIn) {
     return {
       isLoaded: true,
@@ -155,9 +159,7 @@ export function useUser(): UseUserReturn {
 }
 
 export function useSession(): UseSessionReturn {
-  const {
-    snapshot,
-  } = useAuthContextValue();
+  const { snapshot } = useAuthContextValue();
   if (!snapshot.isSignedIn) {
     return {
       isLoaded: true,
