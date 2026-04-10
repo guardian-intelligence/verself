@@ -9,6 +9,7 @@ export default defineConfig({
       "**/dist/**",
       "**/.output/**",
       "**/node_modules/**",
+      "**/__generated/**",
       "**/routeTree.gen.ts",
       "**/e2e/**",
       "**/playwright.config.ts",

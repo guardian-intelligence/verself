@@ -1,4 +1,4 @@
-import { createAuthConfig } from "@forge-metal/auth-web";
+import { createAuthConfig } from "@forge-metal/auth-web/config";
 import { deriveAuthIssuerURL, requireEnv, requireURLFromEnv } from "@forge-metal/web-env";
 
 export function getAuthConfig() {
