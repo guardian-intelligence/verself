@@ -1,6 +1,7 @@
 import { createFileRoute, getRouteApi, Link, Outlet } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import { formatUTCDateTime } from "@forge-metal/web-env";
 import {
   createEmailMailboxCollection,
   createEmailCollection,
@@ -155,17 +156,20 @@ function EmailRow({ email, mailboxId }: { email: ElectricEmail; mailboxId: strin
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return "";
+  }
   const now = new Date();
   const isToday =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
+    d.getUTCFullYear() === now.getUTCFullYear() &&
+    d.getUTCMonth() === now.getUTCMonth() &&
+    d.getUTCDate() === now.getUTCDate();
   if (isToday) {
-    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return formatUTCDateTime(d, { hour: "numeric", minute: "2-digit" });
   }
-  const isThisYear = d.getFullYear() === now.getFullYear();
+  const isThisYear = d.getUTCFullYear() === now.getUTCFullYear();
   if (isThisYear) {
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return formatUTCDateTime(d, { month: "short", day: "numeric" });
   }
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" });
+  return formatUTCDateTime(d, { month: "short", day: "numeric", year: "2-digit" });
 }

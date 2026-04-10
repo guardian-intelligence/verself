@@ -2,6 +2,7 @@ import { createFileRoute, getRouteApi, useNavigate } from "@tanstack/react-route
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
+import { formatUTCDateTime } from "@forge-metal/web-env";
 import {
   flagEmail,
   getEmailBody,
@@ -171,13 +172,14 @@ function EmailToolbar({
       <div className="flex-1" />
 
       <span className="text-xs text-muted-foreground">
-        {new Date(email.received_at).toLocaleDateString(undefined, {
+        {formatUTCDateTime(email.received_at, {
           weekday: "short",
           month: "short",
           day: "numeric",
           year: "numeric",
           hour: "numeric",
           minute: "2-digit",
+          timeZoneName: "short",
         })}
       </span>
     </div>

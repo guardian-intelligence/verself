@@ -10,6 +10,8 @@ import {
 } from "@tanstack/react-db";
 import * as v from "valibot";
 
+export * from "./time";
+
 export type EnvSource = Record<string, string | undefined>;
 type LocationLike = { origin?: string };
 type StandardIssue = {
