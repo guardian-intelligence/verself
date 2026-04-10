@@ -72,6 +72,29 @@
   when: not forgejo_automation_user_exists
   changed_when: true
 
+# Forgejo CLI has no change-role subcommand — --admin is only on create.
+# The automation user needs admin API access to register SSH keys and create
+# repos on behalf of other users (e.g. POST /api/v1/admin/users/{user}/keys).
+- name: Check if Forgejo automation user is already admin
+  ansible.builtin.command:
+    cmd: >
+      sqlite3 /var/lib/forgejo/data/forgejo.db
+      "SELECT is_admin FROM user WHERE lower_name = '{{ forgejo_automation_username | lower }}';"
+  become: true
+  become_user: forgejo
+  register: forgejo_admin_check
+  changed_when: false
+
+- name: Promote Forgejo automation user to admin
+  ansible.builtin.command:
+    cmd: >
+      sqlite3 /var/lib/forgejo/data/forgejo.db
+      "UPDATE user SET is_admin = 1 WHERE lower_name = '{{ forgejo_automation_username | lower }}';"
+  become: true
+  become_user: forgejo
+  when: forgejo_admin_check.stdout | trim != '1'
+  changed_when: true
+
 - name: Generate Forgejo automation token
   ansible.builtin.command:
     argv:

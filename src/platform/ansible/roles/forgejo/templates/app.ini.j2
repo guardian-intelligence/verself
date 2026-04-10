@@ -38,8 +38,11 @@ ROOT_PATH = /var/lib/forgejo/log
 INSTALL_LOCK = true
 
 [service]
-; Manual signup form is disabled; users register automatically via Zitadel OIDC.
-DISABLE_REGISTRATION = true
+; DISABLE_REGISTRATION must be false for OIDC auto-account-creation to work.
+; When true, it blocks ALL registration including from external auth sources.
+; ALLOW_ONLY_EXTERNAL_REGISTRATION = true hides the manual signup form while
+; still allowing Zitadel OIDC to auto-create accounts on first login.
+DISABLE_REGISTRATION = false
 ALLOW_ONLY_EXTERNAL_REGISTRATION = true
 REQUIRE_SIGNIN_VIEW = false
 ; Disable both HTTP basic auth and Forgejo's built-in password sign-in UI.
