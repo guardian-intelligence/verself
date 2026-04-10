@@ -20,3 +20,13 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 CREATE INDEX IF NOT EXISTS auth_sessions_app_subject_idx
   ON auth_sessions (app_name, subject);
+
+ALTER TABLE auth_sessions
+  ADD COLUMN IF NOT EXISTS client_cache_partition TEXT;
+
+UPDATE auth_sessions
+SET client_cache_partition = md5(session_id || ':' || app_name || ':client-cache-partition')
+WHERE client_cache_partition IS NULL;
+
+ALTER TABLE auth_sessions
+  ALTER COLUMN client_cache_partition SET NOT NULL;
