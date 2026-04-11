@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 
@@ -15,9 +16,12 @@ import (
 )
 
 type windowRateContext struct {
-	PlanID      string            `json:"plan_id"`
-	UnitRates   map[string]uint64 `json:"unit_rates"`
-	CostPerUnit uint64            `json:"cost_per_unit"`
+	PlanID               string            `json:"plan_id"`
+	UnitRates            map[string]uint64 `json:"unit_rates"`
+	RateBuckets          map[string]string `json:"rate_buckets"`
+	ComponentCostPerUnit map[string]uint64 `json:"component_cost_per_unit"`
+	BucketCostPerUnit    map[string]uint64 `json:"bucket_cost_per_unit"`
+	CostPerUnit          uint64            `json:"cost_per_unit"`
 }
 
 type persistedWindow struct {
@@ -60,7 +64,14 @@ type productPlanConfig struct {
 	PlanID        string
 	BillingMode   string
 	UnitRates     map[string]uint64
+	RateBuckets   map[string]string
 	ReservePolicy ReservePolicy
+}
+
+type fundingLegSettlement struct {
+	Leg        WindowFundingLeg
+	PostAmount uint64
+	Void       bool
 }
 
 func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowReservation, error) {
@@ -88,11 +99,12 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		return WindowReservation{}, ErrUnsupportedBilling
 	}
 
-	costPerUnit, err := computeCostPerUnit(req.Allocation, config.UnitRates)
+	rateContext, err := computeRateBreakdown(req.ProductID, req.Allocation, config.UnitRates, config.RateBuckets)
 	if err != nil {
 		return WindowReservation{}, err
 	}
-	quantity, chargeUnits, err := c.pickReservationQuantity(ctx, req.OrgID, req.ProductID, config.ReservePolicy, costPerUnit)
+	rateContext.PlanID = config.PlanID
+	quantity, chargeUnits, bucketChargeUnits, err := c.pickReservationQuantityByBucket(ctx, req.OrgID, req.ProductID, config.ReservePolicy, rateContext.BucketCostPerUnit)
 	if err != nil {
 		return WindowReservation{}, err
 	}
@@ -105,16 +117,11 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	windowStart := c.clock().UTC()
 	expiresAt, renewBy := windowTiming(windowStart, config.ReservePolicy, c.cfg.PendingTimeoutSecs, quantity)
 
-	legs, err := c.reserveFunding(ctx, windowID, req.OrgID, req.ProductID, chargeUnits)
+	legs, err := c.reserveBucketFunding(ctx, windowID, req.OrgID, req.ProductID, bucketChargeUnits)
 	if err != nil {
 		return WindowReservation{}, err
 	}
 
-	rateContext := windowRateContext{
-		PlanID:      config.PlanID,
-		UnitRates:   cloneUint64Map(config.UnitRates),
-		CostPerUnit: costPerUnit,
-	}
 	fundingJSON, err := json.Marshal(legs)
 	if err != nil {
 		_ = c.voidReservedFunding(ctx, windowID, legs)
@@ -162,8 +169,8 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		ReservedChargeUnits: chargeUnits,
 		PricingPhase:        PricingPhaseIncluded,
 		Allocation:          cloneFloat64Map(req.Allocation),
-		UnitRates:           cloneUint64Map(config.UnitRates),
-		CostPerUnit:         costPerUnit,
+		UnitRates:           cloneUint64Map(rateContext.UnitRates),
+		CostPerUnit:         rateContext.CostPerUnit,
 		WindowStart:         windowStart,
 		ActivatedAt:         nil,
 		ExpiresAt:           expiresAt,
@@ -251,42 +258,48 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 
 	billableQuantity := minUint32(actualQuantity, window.ReservedQuantity)
 	writeoffQuantity := actualQuantity - billableQuantity
-	billedChargeUnits, err := safeMulUint64(window.RateContext.CostPerUnit, uint64(billableQuantity))
+	bucketBilledUnits, billedChargeUnits, err := bucketChargeUnitsForQuantity(window, billableQuantity)
 	if err != nil {
 		return SettleResult{}, fmt.Errorf("billed charge units: %w", err)
 	}
-	writeoffChargeUnits, err := safeMulUint64(window.RateContext.CostPerUnit, uint64(writeoffQuantity))
+	rateContext, err := completeRateContext(window)
+	if err != nil {
+		return SettleResult{}, fmt.Errorf("load rate context: %w", err)
+	}
+	writeoffChargeUnits, err := safeMulUint64(rateContext.CostPerUnit, uint64(writeoffQuantity))
 	if err != nil {
 		return SettleResult{}, fmt.Errorf("writeoff charge units: %w", err)
 	}
 
-	transfers := make([]types.Transfer, 0, len(window.FundingLegs))
-	remaining := billedChargeUnits
-	for idx, leg := range window.FundingLegs {
+	settlements, err := settleFundingLegsByBucket(normalizeFundingLegBuckets(window.FundingLegs, window.ProductID), bucketBilledUnits)
+	if err != nil {
+		return SettleResult{}, fmt.Errorf("settle funding allocation: %w", err)
+	}
+	transfers := make([]types.Transfer, 0, len(settlements))
+	for idx, settlement := range settlements {
 		if idx > math.MaxUint8 {
 			return SettleResult{}, fmt.Errorf("funding leg %d exceeds tigerbeetle limit", idx)
 		}
-		postAmount := minUint64(leg.Amount, remaining)
-		if postAmount > 0 {
+		if settlement.PostAmount > 0 {
 			transfers = append(transfers, types.Transfer{
 				ID:        WindowTransferID(window.WindowID, uint8(idx), KindSettlement).raw,
-				PendingID: leg.TransferID.raw,
-				Amount:    types.ToUint128(postAmount),
+				PendingID: settlement.Leg.TransferID.raw,
+				Amount:    types.ToUint128(settlement.PostAmount),
 				Ledger:    1,
 				Code:      uint16(KindReservation),
 				Flags:     types.TransferFlags{PostPendingTransfer: true}.ToUint16(),
 			})
-			remaining -= postAmount
 			continue
 		}
 		transfers = append(transfers, types.Transfer{
 			ID:        WindowTransferID(window.WindowID, uint8(idx), KindVoid).raw,
-			PendingID: leg.TransferID.raw,
+			PendingID: settlement.Leg.TransferID.raw,
 			Ledger:    1,
 			Code:      uint16(KindReservation),
 			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
 		})
 	}
+	linkTransfers(transfers)
 	if err := c.createTransfers(transfers); err != nil {
 		return SettleResult{}, fmt.Errorf("settle funding legs: %w", err)
 	}
@@ -371,7 +384,7 @@ func (c *Client) ProjectPendingWindows(ctx context.Context, limit int) (int, err
 			SELECT window_id
 			FROM billing_windows
 			WHERE state = 'settled' AND metering_projected_at IS NULL
-			ORDER BY created_at
+			ORDER BY (last_projection_error <> ''), created_at
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		`).Scan(&windowID)
@@ -438,65 +451,106 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 			endedAt = *window.SettledAt
 		}
 	}
+	rateContext, err := completeRateContext(window)
+	if err != nil {
+		return MeteringRow{}, err
+	}
 
 	row := MeteringRow{
-		WindowID:            window.WindowID,
-		OrgID:               strconv.FormatUint(uint64(window.OrgID), 10),
-		ActorID:             window.ActorID,
-		ProductID:           window.ProductID,
-		SourceType:          window.SourceType,
-		SourceRef:           window.SourceRef,
-		WindowSeq:           window.WindowSeq,
-		ReservationShape:    string(window.ReservationShape),
-		StartedAt:           startedAt,
-		EndedAt:             endedAt,
-		ReservedQuantity:    uint64(window.ReservedQuantity),
-		ActualQuantity:      uint64(window.ActualQuantity),
-		BillableQuantity:    uint64(window.BillableQuantity),
-		WriteoffQuantity:    uint64(window.WriteoffQuantity),
-		PricingPhase:        string(window.PricingPhase),
-		Dimensions:          cloneFloat64Map(window.Allocation),
-		ChargeUnits:         window.BilledChargeUnits,
-		WriteoffChargeUnits: window.WriteoffChargeUnits,
-		PlanID:              window.PlanID,
-		CostPerUnit:         window.RateContext.CostPerUnit,
-		RecordedAt:          time.Now().UTC(),
+		WindowID:                window.WindowID,
+		OrgID:                   strconv.FormatUint(uint64(window.OrgID), 10),
+		ActorID:                 window.ActorID,
+		ProductID:               window.ProductID,
+		SourceType:              window.SourceType,
+		SourceRef:               window.SourceRef,
+		WindowSeq:               window.WindowSeq,
+		ReservationShape:        string(window.ReservationShape),
+		StartedAt:               startedAt,
+		EndedAt:                 endedAt,
+		ReservedQuantity:        uint64(window.ReservedQuantity),
+		ActualQuantity:          uint64(window.ActualQuantity),
+		BillableQuantity:        uint64(window.BillableQuantity),
+		WriteoffQuantity:        uint64(window.WriteoffQuantity),
+		PricingPhase:            string(window.PricingPhase),
+		Dimensions:              cloneFloat64Map(window.Allocation),
+		ComponentQuantities:     componentQuantitiesForQuantity(window.Allocation, window.BillableQuantity),
+		ComponentChargeUnits:    map[string]uint64{},
+		BucketChargeUnits:       map[string]uint64{},
+		ChargeUnits:             window.BilledChargeUnits,
+		WriteoffChargeUnits:     window.WriteoffChargeUnits,
+		BucketFreeTierUnits:     map[string]uint64{},
+		BucketSubscriptionUnits: map[string]uint64{},
+		BucketPurchaseUnits:     map[string]uint64{},
+		BucketPromoUnits:        map[string]uint64{},
+		BucketRefundUnits:       map[string]uint64{},
+		BucketReceivableUnits:   map[string]uint64{},
+		PlanID:                  window.PlanID,
+		CostPerUnit:             rateContext.CostPerUnit,
+		RecordedAt:              time.Now().UTC(),
 	}
-	remaining := window.BilledChargeUnits
-	for _, leg := range window.FundingLegs {
-		amount := minUint64(leg.Amount, remaining)
-		remaining -= amount
+	componentCharges, bucketCharges, err := componentAndBucketChargeUnitsForQuantity(window, window.BillableQuantity)
+	if err != nil {
+		return MeteringRow{}, err
+	}
+	row.ComponentChargeUnits = componentCharges
+	row.BucketChargeUnits = bucketCharges
+	settlements, err := settleFundingLegsByBucket(normalizeFundingLegBuckets(window.FundingLegs, window.ProductID), bucketCharges)
+	if err != nil {
+		return MeteringRow{}, err
+	}
+	for _, settlement := range settlements {
+		leg := settlement.Leg
+		amount := settlement.PostAmount
+		if amount == 0 {
+			continue
+		}
 		switch leg.Source {
 		case SourceFreeTier:
 			row.FreeTierUnits += amount
+			if err := addMapUint64(row.BucketFreeTierUnits, leg.BucketID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		case SourceSubscription:
 			row.SubscriptionUnits += amount
+			if err := addMapUint64(row.BucketSubscriptionUnits, leg.BucketID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		case SourcePurchase:
 			row.PurchaseUnits += amount
+			if err := addMapUint64(row.BucketPurchaseUnits, leg.BucketID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		case SourcePromo:
 			row.PromoUnits += amount
+			if err := addMapUint64(row.BucketPromoUnits, leg.BucketID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		case SourceRefund:
 			row.RefundUnits += amount
+			if err := addMapUint64(row.BucketRefundUnits, leg.BucketID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		}
 	}
 	return row, nil
 }
 
-func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID string) (productPlanConfig, error) {
+func (c *Client) loadPlanConfig(ctx context.Context, _ OrgID, productID string) (productPlanConfig, error) {
 	var (
 		planID            string
 		billingMode       string
 		unitRatesJSON     []byte
+		rateBucketsJSON   []byte
 		reservePolicyJSON []byte
 	)
 
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT p.plan_id, p.billing_mode, p.unit_rates::text, pr.reserve_policy::text
+		SELECT p.plan_id, p.billing_mode, p.unit_rates::text, p.rate_buckets::text, pr.reserve_policy::text
 		FROM plans p
 		JOIN products pr ON pr.product_id = p.product_id
 		WHERE p.product_id = $1 AND p.is_default AND p.active
 		LIMIT 1
-	`, productID).Scan(&planID, &billingMode, &unitRatesJSON, &reservePolicyJSON)
+	`, productID).Scan(&planID, &billingMode, &unitRatesJSON, &rateBucketsJSON, &reservePolicyJSON)
 	if err == sql.ErrNoRows {
 		return productPlanConfig{}, ErrNoDefaultPlan
 	}
@@ -505,6 +559,10 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 	}
 
 	unitRates, err := decodeUint64Map(unitRatesJSON)
+	if err != nil {
+		return productPlanConfig{}, err
+	}
+	rateBuckets, err := decodeStringMap(rateBucketsJSON)
 	if err != nil {
 		return productPlanConfig{}, err
 	}
@@ -525,100 +583,203 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 		PlanID:        planID,
 		BillingMode:   billingMode,
 		UnitRates:     unitRates,
+		RateBuckets:   rateBuckets,
 		ReservePolicy: reservePolicy,
 	}, nil
 }
 
-func (c *Client) pickReservationQuantity(ctx context.Context, orgID OrgID, productID string, policy ReservePolicy, costPerUnit uint64) (uint32, uint64, error) {
-	if costPerUnit == 0 {
-		return policy.TargetQuantity, 0, nil
-	}
-	grants, err := c.ListGrantBalances(ctx, orgID, productID)
-	if err != nil {
-		return 0, 0, err
-	}
-	var available uint64
-	for _, grant := range grants {
-		available, err = safeAddUint64(available, grant.Available)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-	targetChargeUnits, err := safeMulUint64(uint64(policy.TargetQuantity), costPerUnit)
-	if err != nil {
-		return 0, 0, err
-	}
-	minChargeUnits, err := safeMulUint64(uint64(policy.MinQuantity), costPerUnit)
-	if err != nil {
-		return 0, 0, err
-	}
-	if available >= targetChargeUnits {
-		return policy.TargetQuantity, targetChargeUnits, nil
-	}
-	if !policy.AllowPartialReserve || available < minChargeUnits {
-		return 0, 0, ErrInsufficientBalance
-	}
-	quantity := uint32(available / costPerUnit)
-	if quantity < policy.MinQuantity {
-		return 0, 0, ErrInsufficientBalance
-	}
-	if quantity > policy.TargetQuantity {
-		quantity = policy.TargetQuantity
-	}
-	chargeUnits, err := safeMulUint64(uint64(quantity), costPerUnit)
-	if err != nil {
-		return 0, 0, err
-	}
-	return quantity, chargeUnits, nil
-}
-
-func (c *Client) reserveFunding(ctx context.Context, windowID string, orgID OrgID, productID string, chargeUnits uint64) ([]WindowFundingLeg, error) {
-	grants, err := c.ListGrantBalances(ctx, orgID, productID)
-	if err != nil {
-		return nil, err
-	}
-	legs := make([]WindowFundingLeg, 0, len(grants))
-	transfers := make([]types.Transfer, 0, len(grants))
-	remaining := chargeUnits
-	for idx, grant := range grants {
-		if remaining == 0 {
-			break
-		}
-		if grant.Available == 0 {
+func (c *Client) pickReservationQuantityByBucket(
+	ctx context.Context,
+	orgID OrgID,
+	productID string,
+	policy ReservePolicy,
+	bucketCostPerUnit map[string]uint64,
+) (uint32, uint64, map[string]uint64, error) {
+	availableByBucket := make(map[string]uint64, len(bucketCostPerUnit))
+	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
+		if bucketCostPerUnit[bucketID] == 0 {
 			continue
 		}
-		amount := minUint64(grant.Available, remaining)
-		transferID := WindowTransferID(windowID, uint8(idx), KindReservation)
-		legs = append(legs, WindowFundingLeg{
-			GrantID:    grant.GrantID,
-			TransferID: transferID,
-			Amount:     amount,
-			Source:     grant.Source,
-		})
-		transfers = append(transfers, types.Transfer{
-			ID:              transferID.raw,
-			DebitAccountID:  GrantAccountID(grant.GrantID).raw,
-			CreditAccountID: OperatorAccountID(AcctRevenue).raw,
-			Amount:          types.ToUint128(amount),
-			Timeout:         c.cfg.PendingTimeoutSecs,
-			Ledger:          1,
-			Code:            uint16(KindReservation),
-			Flags:           types.TransferFlags{Pending: true}.ToUint16(),
-		})
-		remaining -= amount
+		grants, err := c.listGrantBalancesByBucket(ctx, orgID, productID, bucketID)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		for _, grant := range grants {
+			available, err := safeAddUint64(availableByBucket[bucketID], grant.Available)
+			if err != nil {
+				return 0, 0, nil, err
+			}
+			availableByBucket[bucketID] = available
+		}
 	}
-	if remaining > 0 {
-		return nil, ErrInsufficientBalance
+	return pickBucketReservationQuantity(policy, bucketCostPerUnit, availableByBucket)
+}
+
+func pickBucketReservationQuantity(
+	policy ReservePolicy,
+	bucketCostPerUnit map[string]uint64,
+	availableByBucket map[string]uint64,
+) (uint32, uint64, map[string]uint64, error) {
+	if policy.TargetQuantity == 0 {
+		return 0, 0, nil, fmt.Errorf("reserve policy target_quantity is required")
 	}
+	minQuantity := policy.MinQuantity
+	if minQuantity == 0 {
+		minQuantity = policy.TargetQuantity
+	}
+
+	quantity := policy.TargetQuantity
+	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
+		costPerUnit := bucketCostPerUnit[bucketID]
+		if costPerUnit == 0 {
+			continue
+		}
+		targetChargeUnits, err := safeMulUint64(uint64(policy.TargetQuantity), costPerUnit)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if availableByBucket[bucketID] >= targetChargeUnits {
+			continue
+		}
+		if !policy.AllowPartialReserve {
+			return 0, 0, nil, ErrInsufficientBalance
+		}
+		affordableQuantity := uint32(availableByBucket[bucketID] / costPerUnit)
+		if affordableQuantity < quantity {
+			quantity = affordableQuantity
+		}
+	}
+	if quantity < minQuantity {
+		return 0, 0, nil, ErrInsufficientBalance
+	}
+
+	var totalChargeUnits uint64
+	bucketChargeUnits := make(map[string]uint64, len(bucketCostPerUnit))
+	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
+		chargeUnits, err := safeMulUint64(uint64(quantity), bucketCostPerUnit[bucketID])
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if chargeUnits == 0 {
+			continue
+		}
+		bucketChargeUnits[bucketID] = chargeUnits
+		totalChargeUnits, err = safeAddUint64(totalChargeUnits, chargeUnits)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+	}
+	return quantity, totalChargeUnits, bucketChargeUnits, nil
+}
+
+func (c *Client) reserveBucketFunding(
+	ctx context.Context,
+	windowID string,
+	orgID OrgID,
+	productID string,
+	bucketChargeUnits map[string]uint64,
+) ([]WindowFundingLeg, error) {
+	legs := make([]WindowFundingLeg, 0, len(bucketChargeUnits))
+	transfers := make([]types.Transfer, 0, len(bucketChargeUnits))
+	for _, bucketID := range sortedUint64MapKeys(bucketChargeUnits) {
+		remaining := bucketChargeUnits[bucketID]
+		if remaining == 0 {
+			continue
+		}
+		grants, err := c.listGrantBalancesByBucket(ctx, orgID, productID, bucketID)
+		if err != nil {
+			return nil, err
+		}
+		for _, grant := range grants {
+			if remaining == 0 {
+				break
+			}
+			if grant.Available == 0 {
+				continue
+			}
+			if len(legs) > math.MaxUint8 {
+				return nil, fmt.Errorf("funding legs exceed tigerbeetle transfer id limit")
+			}
+			amount := minUint64(grant.Available, remaining)
+			transferID := WindowTransferID(windowID, uint8(len(legs)), KindReservation)
+			legs = append(legs, WindowFundingLeg{
+				GrantID:    grant.GrantID,
+				TransferID: transferID,
+				BucketID:   bucketID,
+				Amount:     amount,
+				Source:     grant.Source,
+			})
+			transfers = append(transfers, types.Transfer{
+				ID:              transferID.raw,
+				DebitAccountID:  GrantAccountID(grant.GrantID).raw,
+				CreditAccountID: OperatorAccountID(AcctRevenue).raw,
+				Amount:          types.ToUint128(amount),
+				Timeout:         c.cfg.PendingTimeoutSecs,
+				Ledger:          1,
+				Code:            uint16(KindReservation),
+				Flags:           types.TransferFlags{Pending: true}.ToUint16(),
+			})
+			remaining -= amount
+		}
+		if remaining > 0 {
+			return nil, ErrInsufficientBalance
+		}
+	}
+	linkTransfers(transfers)
 	if err := c.createTransfers(transfers); err != nil {
 		return nil, err
 	}
 	return legs, nil
 }
 
+func settleFundingLegsByBucket(
+	legs []WindowFundingLeg,
+	billedByBucket map[string]uint64,
+) ([]fundingLegSettlement, error) {
+	remaining := cloneUint64Map(billedByBucket)
+	if remaining == nil {
+		remaining = map[string]uint64{}
+	}
+	actions := make([]fundingLegSettlement, 0, len(legs))
+	for _, leg := range legs {
+		postAmount := minUint64(leg.Amount, remaining[leg.BucketID])
+		if postAmount > 0 {
+			remaining[leg.BucketID] -= postAmount
+		}
+		actions = append(actions, fundingLegSettlement{
+			Leg:        leg,
+			PostAmount: postAmount,
+			Void:       postAmount == 0,
+		})
+	}
+	for _, bucketID := range sortedUint64MapKeys(remaining) {
+		if remaining[bucketID] != 0 {
+			return nil, fmt.Errorf("bucket %s has %d unfunded billed charge units", bucketID, remaining[bucketID])
+		}
+	}
+	return actions, nil
+}
+
+func normalizeFundingLegBuckets(legs []WindowFundingLeg, fallbackBucketID string) []WindowFundingLeg {
+	if len(legs) == 0 {
+		return nil
+	}
+	out := make([]WindowFundingLeg, len(legs))
+	copy(out, legs)
+	for i := range out {
+		if out[i].BucketID == "" {
+			out[i].BucketID = fallbackBucketID
+		}
+	}
+	return out
+}
+
 func (c *Client) voidReservedFunding(ctx context.Context, windowID string, legs []WindowFundingLeg) error {
 	transfers := make([]types.Transfer, 0, len(legs))
 	for idx, leg := range legs {
+		if idx > math.MaxUint8 {
+			return fmt.Errorf("funding leg %d exceeds tigerbeetle transfer id limit", idx)
+		}
 		transfers = append(transfers, types.Transfer{
 			ID:        WindowTransferID(windowID, uint8(idx), KindVoid).raw,
 			PendingID: leg.TransferID.raw,
@@ -627,6 +788,7 @@ func (c *Client) voidReservedFunding(ctx context.Context, windowID string, legs 
 			Flags:     types.TransferFlags{VoidPendingTransfer: true}.ToUint16(),
 		})
 	}
+	linkTransfers(transfers)
 	if err := c.createTransfers(transfers); err != nil {
 		return fmt.Errorf("void reserved funding: %w", err)
 	}
@@ -824,23 +986,186 @@ func activatedRenewBy(window persistedWindow, activatedAt time.Time) *time.Time 
 	return &renewAt
 }
 
-func computeCostPerUnit(allocation map[string]float64, unitRates map[string]uint64) (uint64, error) {
-	var total float64
-	for dimension, quantity := range allocation {
+func computeRateBreakdown(
+	productID string,
+	allocation map[string]float64,
+	unitRates map[string]uint64,
+	rateBuckets map[string]string,
+) (windowRateContext, error) {
+	breakdown := windowRateContext{
+		UnitRates:            cloneUint64Map(unitRates),
+		RateBuckets:          cloneStringMap(rateBuckets),
+		ComponentCostPerUnit: make(map[string]uint64, len(allocation)),
+		BucketCostPerUnit:    map[string]uint64{},
+	}
+	for _, dimension := range sortedFloat64MapKeys(allocation) {
+		quantity := allocation[dimension]
 		if quantity < 0 {
-			return 0, fmt.Errorf("allocation %s must be non-negative", dimension)
+			return windowRateContext{}, fmt.Errorf("allocation %s must be non-negative", dimension)
 		}
 		rate, ok := unitRates[dimension]
 		if !ok {
-			return 0, fmt.Errorf("%w: %s", ErrDimensionMismatch, dimension)
+			return windowRateContext{}, fmt.Errorf("%w: %s", ErrDimensionMismatch, dimension)
 		}
-		total += quantity * float64(rate)
+		rawComponentCost := quantity * float64(rate)
+		rounded := math.Round(rawComponentCost)
+		if math.Abs(rawComponentCost-rounded) > 1e-9 {
+			return windowRateContext{}, fmt.Errorf("non-integral component cost_per_unit %s %.9f", dimension, rawComponentCost)
+		}
+		if rounded < 0 || rounded > float64(^uint64(0)) {
+			return windowRateContext{}, fmt.Errorf("component cost_per_unit %s overflows uint64", dimension)
+		}
+		componentCost := uint64(rounded)
+		breakdown.ComponentCostPerUnit[dimension] = componentCost
+		bucketID := bucketForDimension(productID, dimension, rateBuckets)
+		if err := addMapUint64(breakdown.BucketCostPerUnit, bucketID, componentCost); err != nil {
+			return windowRateContext{}, fmt.Errorf("add bucket cost %s: %w", bucketID, err)
+		}
+		var err error
+		breakdown.CostPerUnit, err = safeAddUint64(breakdown.CostPerUnit, componentCost)
+		if err != nil {
+			return windowRateContext{}, err
+		}
 	}
-	rounded := math.Round(total)
-	if math.Abs(total-rounded) > 1e-9 {
-		return 0, fmt.Errorf("non-integral cost_per_unit %.9f", total)
+	return breakdown, nil
+}
+
+func bucketChargeUnitsForQuantity(window persistedWindow, quantity uint32) (map[string]uint64, uint64, error) {
+	_, bucketCharges, err := componentAndBucketChargeUnitsForQuantity(window, quantity)
+	if err != nil {
+		return nil, 0, err
 	}
-	return uint64(rounded), nil
+	var total uint64
+	for _, bucketID := range sortedUint64MapKeys(bucketCharges) {
+		total, err = safeAddUint64(total, bucketCharges[bucketID])
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return bucketCharges, total, nil
+}
+
+func componentAndBucketChargeUnitsForQuantity(window persistedWindow, quantity uint32) (map[string]uint64, map[string]uint64, error) {
+	rateContext, err := completeRateContext(window)
+	if err != nil {
+		return nil, nil, err
+	}
+	componentCharges := make(map[string]uint64, len(rateContext.ComponentCostPerUnit))
+	for _, componentID := range sortedUint64MapKeys(rateContext.ComponentCostPerUnit) {
+		chargeUnits, err := safeMulUint64(uint64(quantity), rateContext.ComponentCostPerUnit[componentID])
+		if err != nil {
+			return nil, nil, err
+		}
+		if chargeUnits != 0 {
+			componentCharges[componentID] = chargeUnits
+		}
+	}
+	bucketCharges := make(map[string]uint64, len(rateContext.BucketCostPerUnit))
+	for _, bucketID := range sortedUint64MapKeys(rateContext.BucketCostPerUnit) {
+		chargeUnits, err := safeMulUint64(uint64(quantity), rateContext.BucketCostPerUnit[bucketID])
+		if err != nil {
+			return nil, nil, err
+		}
+		if chargeUnits != 0 {
+			bucketCharges[bucketID] = chargeUnits
+		}
+	}
+	return componentCharges, bucketCharges, nil
+}
+
+func completeRateContext(window persistedWindow) (windowRateContext, error) {
+	rateContext := window.RateContext
+	if rateContext.PlanID == "" {
+		rateContext.PlanID = window.PlanID
+	}
+	if len(rateContext.ComponentCostPerUnit) > 0 && len(rateContext.BucketCostPerUnit) > 0 {
+		return rateContext, nil
+	}
+	if len(rateContext.UnitRates) > 0 {
+		breakdown, err := computeRateBreakdown(window.ProductID, window.Allocation, rateContext.UnitRates, rateContext.RateBuckets)
+		if err != nil {
+			return windowRateContext{}, err
+		}
+		breakdown.PlanID = rateContext.PlanID
+		return breakdown, nil
+	}
+	if rateContext.CostPerUnit == 0 {
+		rateContext.ComponentCostPerUnit = map[string]uint64{}
+		rateContext.BucketCostPerUnit = map[string]uint64{}
+		return rateContext, nil
+	}
+	rateContext.ComponentCostPerUnit = map[string]uint64{}
+	rateContext.BucketCostPerUnit = map[string]uint64{window.ProductID: rateContext.CostPerUnit}
+	return rateContext, nil
+}
+
+func componentQuantitiesForQuantity(allocation map[string]float64, quantity uint32) map[string]float64 {
+	if len(allocation) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(allocation))
+	for key, value := range allocation {
+		out[key] = value * float64(quantity)
+	}
+	return out
+}
+
+func bucketForDimension(productID string, dimension string, rateBuckets map[string]string) string {
+	if bucketID := rateBuckets[dimension]; bucketID != "" {
+		return bucketID
+	}
+	return productID
+}
+
+func addMapUint64(out map[string]uint64, key string, amount uint64) error {
+	if key == "" {
+		return fmt.Errorf("map key is required")
+	}
+	if amount == 0 {
+		return nil
+	}
+	sum, err := safeAddUint64(out[key], amount)
+	if err != nil {
+		return err
+	}
+	out[key] = sum
+	return nil
+}
+
+func sortedUint64MapKeys(values map[string]uint64) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedFloat64MapKeys(values map[string]float64) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func linkTransfers(transfers []types.Transfer) {
+	if len(transfers) < 2 {
+		return
+	}
+	for idx := 0; idx < len(transfers)-1; idx++ {
+		// TigerBeetle linked batches are atomic only when every transfer except the final one carries Linked.
+		flags := transfers[idx].TransferFlags()
+		flags.Linked = true
+		transfers[idx].Flags = flags.ToUint16()
+	}
 }
 
 func ulidString() string {

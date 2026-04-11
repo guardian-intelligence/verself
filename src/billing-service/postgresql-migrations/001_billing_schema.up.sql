@@ -25,6 +25,7 @@ CREATE TABLE plans (
     billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
     included_credits         BIGINT,
     unit_rates               JSONB       NOT NULL,
+    rate_buckets             JSONB       NOT NULL DEFAULT '{}'::jsonb,
     overage_unit_rates       JSONB       NOT NULL DEFAULT '{}'::jsonb,
     quotas                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     is_default               BOOLEAN     NOT NULL DEFAULT false,
@@ -62,6 +63,7 @@ CREATE TABLE credit_grants (
     grant_id             TEXT        PRIMARY KEY,
     org_id               TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
     product_id           TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    bucket_id            TEXT        NOT NULL CHECK (bucket_id <> ''),
     amount               BIGINT      NOT NULL CHECK (amount >= 0),
     source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
     contract_id          TEXT        NOT NULL DEFAULT '',
@@ -72,11 +74,11 @@ CREATE TABLE credit_grants (
 );
 
 CREATE INDEX idx_credit_grants_open
-    ON credit_grants (org_id, product_id, expires_at, grant_id)
+    ON credit_grants (org_id, product_id, bucket_id, expires_at, grant_id)
     WHERE closed_at IS NULL;
 
 CREATE UNIQUE INDEX idx_credit_grants_stripe_reference
-    ON credit_grants (org_id, product_id, stripe_reference_id)
+    ON credit_grants (org_id, product_id, bucket_id, stripe_reference_id)
     WHERE stripe_reference_id <> '';
 
 CREATE TABLE billing_windows (

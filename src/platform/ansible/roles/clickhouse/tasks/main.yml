@@ -126,6 +126,19 @@
 - name: Apply ClickHouse migrations
   when: clickhouse_should_reset_schema
   block:
+    - name: Remove deployed migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/migrations
+        state: absent
+
+    - name: Create deployed migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     - name: Upload migrations
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../migrations/"

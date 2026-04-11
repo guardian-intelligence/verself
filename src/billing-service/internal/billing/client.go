@@ -14,12 +14,12 @@ import (
 )
 
 type Client struct {
-	tb     tb.Client
-	pg     *sql.DB
-	stripe *stripe.Client
+	tb       tb.Client
+	pg       *sql.DB
+	stripe   *stripe.Client
 	metering MeteringWriter
-	cfg    Config
-	clock  func() time.Time
+	cfg      Config
+	clock    func() time.Time
 }
 
 func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering MeteringWriter, cfg Config) (*Client, error) {
@@ -40,12 +40,12 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering Meter
 	}
 
 	client := &Client{
-		tb:     tbClient,
-		pg:     pg,
-		stripe: sc,
+		tb:       tbClient,
+		pg:       pg,
+		stripe:   sc,
 		metering: metering,
-		cfg:    cfg,
-		clock:  time.Now,
+		cfg:      cfg,
+		clock:    time.Now,
 	}
 	if err := client.createAccounts(operatorAccounts()); err != nil {
 		return nil, fmt.Errorf("ensure operator accounts: %w", err)
@@ -159,9 +159,20 @@ func (c *Client) GetOrgBalance(ctx context.Context, orgID OrgID) (Balance, error
 }
 
 func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
+	return c.listGrantBalances(ctx, orgID, productID, "")
+}
+
+func (c *Client) listGrantBalancesByBucket(ctx context.Context, orgID OrgID, productID, bucketID string) ([]GrantBalance, error) {
+	if bucketID == "" {
+		return nil, fmt.Errorf("bucket_id is required")
+	}
+	return c.listGrantBalances(ctx, orgID, productID, bucketID)
+}
+
+func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID string, bucketID string) ([]GrantBalance, error) {
 	now := c.clock().UTC()
 	query := `
-		SELECT grant_id, source, expires_at
+		SELECT grant_id, product_id, bucket_id, source, expires_at
 		FROM credit_grants
 		WHERE org_id = $1
 		  AND closed_at IS NULL
@@ -171,6 +182,10 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	if productID != "" {
 		query += " AND product_id = $3"
 		args = append(args, productID)
+	}
+	if bucketID != "" {
+		query += fmt.Sprintf(" AND bucket_id = $%d", len(args)+1)
+		args = append(args, bucketID)
 	}
 	query += " ORDER BY expires_at ASC NULLS LAST, grant_id ASC"
 
@@ -182,6 +197,8 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 
 	type rowGrant struct {
 		GrantID   GrantID
+		ProductID string
+		BucketID  string
 		Source    GrantSourceType
 		ExpiresAt *time.Time
 	}
@@ -189,9 +206,11 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	accountIDs := make([]types.Uint128, 0, 8)
 	for rows.Next() {
 		var grantIDText string
+		var grantProductID string
+		var bucketID string
 		var sourceText string
 		var expiresAt sql.NullTime
-		if err := rows.Scan(&grantIDText, &sourceText, &expiresAt); err != nil {
+		if err := rows.Scan(&grantIDText, &grantProductID, &bucketID, &sourceText, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan grant: %w", err)
 		}
 		grantID, err := ParseGrantID(grantIDText)
@@ -207,7 +226,10 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 			value := expiresAt.Time.UTC()
 			expiresAtPtr = &value
 		}
-		grantRows = append(grantRows, rowGrant{GrantID: grantID, Source: source, ExpiresAt: expiresAtPtr})
+		if bucketID == "" {
+			bucketID = grantProductID
+		}
+		grantRows = append(grantRows, rowGrant{GrantID: grantID, ProductID: grantProductID, BucketID: bucketID, Source: source, ExpiresAt: expiresAtPtr})
 		accountIDs = append(accountIDs, GrantAccountID(grantID).raw)
 	}
 	if err := rows.Err(); err != nil {
@@ -242,6 +264,8 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 		}
 		out = append(out, GrantBalance{
 			GrantID:   rowGrant.GrantID,
+			ProductID: rowGrant.ProductID,
+			BucketID:  rowGrant.BucketID,
 			Source:    rowGrant.Source,
 			ExpiresAt: rowGrant.ExpiresAt,
 			Available: available,
@@ -259,12 +283,18 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 	if err != nil {
 		return GrantBalance{}, err
 	}
+	if grant.ProductID == "" {
+		return GrantBalance{}, fmt.Errorf("grant product_id is required")
+	}
+	if grant.BucketID == "" {
+		grant.BucketID = grant.ProductID
+	}
 	if grant.Amount == 0 {
 		return GrantBalance{}, fmt.Errorf("grant amount must be greater than zero")
 	}
 
 	if grant.StripeReferenceID != "" {
-		existing, err := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ProductID, grant.StripeReferenceID)
+		existing, err := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ProductID, grant.BucketID, grant.StripeReferenceID)
 		if err != nil {
 			return GrantBalance{}, err
 		}
@@ -290,30 +320,34 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 	}
 
 	_, err = c.pg.ExecContext(ctx, `
-		INSERT INTO credit_grants (grant_id, org_id, product_id, amount, source, stripe_reference_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ProductID, grant.Amount, grant.Source, grant.StripeReferenceID, grant.ExpiresAt)
+		INSERT INTO credit_grants (grant_id, org_id, product_id, bucket_id, amount, source, stripe_reference_id, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ProductID, grant.BucketID, grant.Amount, grant.Source, grant.StripeReferenceID, grant.ExpiresAt)
 	if err != nil {
 		return GrantBalance{}, fmt.Errorf("insert grant row: %w", err)
 	}
 
 	return GrantBalance{
 		GrantID:   grantID,
+		ProductID: grant.ProductID,
+		BucketID:  grant.BucketID,
 		Source:    sourceType,
 		ExpiresAt: grant.ExpiresAt,
 		Available: grant.Amount,
 	}, nil
 }
 
-func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, productID, stripeRef string) (*GrantBalance, error) {
+func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, productID, bucketID, stripeRef string) (*GrantBalance, error) {
 	var grantIDText string
+	var grantProductID string
+	var grantBucketID string
 	var sourceText string
 	var expiresAt sql.NullTime
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT grant_id, source, expires_at
+		SELECT grant_id, product_id, bucket_id, source, expires_at
 		FROM credit_grants
-		WHERE org_id = $1 AND product_id = $2 AND stripe_reference_id = $3
-	`, strconv.FormatUint(uint64(orgID), 10), productID, stripeRef).Scan(&grantIDText, &sourceText, &expiresAt)
+		WHERE org_id = $1 AND product_id = $2 AND bucket_id = $3 AND stripe_reference_id = $4
+	`, strconv.FormatUint(uint64(orgID), 10), productID, bucketID, stripeRef).Scan(&grantIDText, &grantProductID, &grantBucketID, &sourceText, &expiresAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -351,6 +385,8 @@ func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, produc
 	}
 	return &GrantBalance{
 		GrantID:   grantID,
+		ProductID: grantProductID,
+		BucketID:  grantBucketID,
 		Source:    source,
 		ExpiresAt: expiresAtPtr,
 		Available: available,
@@ -450,6 +486,20 @@ func decodeUint64Map(raw []byte) (map[string]uint64, error) {
 	return out, nil
 }
 
+func decodeStringMap(raw []byte) (map[string]string, error) {
+	if len(raw) == 0 {
+		return map[string]string{}, nil
+	}
+	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("decode string map: %w", err)
+	}
+	if out == nil {
+		return map[string]string{}, nil
+	}
+	return out, nil
+}
+
 func cloneFloat64Map(in map[string]float64) map[string]float64 {
 	if len(in) == 0 {
 		return nil
@@ -466,6 +516,17 @@ func cloneUint64Map(in map[string]uint64) map[string]uint64 {
 		return nil
 	}
 	out := make(map[string]uint64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
 	for key, value := range in {
 		out[key] = value
 	}
