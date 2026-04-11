@@ -297,7 +297,7 @@ row that carries `org_id`.
 
 Private repository access is a separate credential plane. A webhook proves that
 an event was delivered through a configured endpoint; it does not grant clone
-access for private code. Private repo imports, golden warming, and CI fetches
+access for private code. Private repo imports and future service-owned CI fetches
 need an org-owned git credential such as a deploy key, provider app
 installation token, or host-specific machine token. Store those as integration
 secrets scoped to organization, provider, provider host, and minimal repository

@@ -16,7 +16,7 @@ test.describe("Rent-a-Sandbox Shell", () => {
       await app.assertStableRoute({
         path: "/",
         ready: app.page.getByText("Sign in to manage sandboxes"),
-        expectedText: ["Rent-a-Sandbox", "Sign in to manage sandboxes", "Firecracker CI sandboxes"],
+        expectedText: ["Rent-a-Sandbox", "Sign in to manage sandboxes", "Firecracker sandboxes"],
         exactText: true,
       });
 

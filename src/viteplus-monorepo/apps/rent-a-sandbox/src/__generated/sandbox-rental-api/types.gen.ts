@@ -116,7 +116,6 @@ export type SandboxAttemptRecord = {
   exit_code?: number;
   failure_reason?: string;
   orchestrator_job_id?: string;
-  runner_name?: string;
   started_at?: string;
   state: string;
   stderr_bytes?: number;
@@ -229,7 +228,6 @@ export type SandboxExecutionRecord = {
   readonly $schema?: string;
   actor_id: string;
   billing_windows?: Array<SandboxBillingWindow> | null;
-  commit_sha?: string;
   correlation_id?: string;
   created_at: string;
   default_branch?: string;
@@ -240,8 +238,6 @@ export type SandboxExecutionRecord = {
   org_id: string;
   product_id: string;
   provider?: string;
-  provider_job_id?: string;
-  provider_run_id?: string;
   ref?: string;
   repo?: string;
   repo_id?: string;
@@ -249,8 +245,6 @@ export type SandboxExecutionRecord = {
   run_command?: string;
   status: string;
   updated_at: string;
-  workflow_job_name?: string;
-  workflow_path?: string;
 };
 
 export type SandboxImportRepoRequest = {
@@ -325,15 +319,11 @@ export type SandboxSubmitRequest = {
   kind: string;
   product_id?: string;
   provider?: string;
-  provider_job_id?: string;
-  provider_run_id?: string;
   ref?: string;
   repo?: string;
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
-  workflow_job_name?: string;
-  workflow_path?: string;
 };
 
 export type SandboxWebhookEndpointRecord = {
@@ -464,7 +454,6 @@ export type SandboxExecutionLogsWritable = {
 export type SandboxExecutionRecordWritable = {
   actor_id: string;
   billing_windows?: Array<SandboxBillingWindow> | null;
-  commit_sha?: string;
   correlation_id?: string;
   created_at: string;
   default_branch?: string;
@@ -475,8 +464,6 @@ export type SandboxExecutionRecordWritable = {
   org_id: string;
   product_id: string;
   provider?: string;
-  provider_job_id?: string;
-  provider_run_id?: string;
   ref?: string;
   repo?: string;
   repo_id?: string;
@@ -484,8 +471,6 @@ export type SandboxExecutionRecordWritable = {
   run_command?: string;
   status: string;
   updated_at: string;
-  workflow_job_name?: string;
-  workflow_path?: string;
 };
 
 export type SandboxImportRepoRequestWritable = {
@@ -540,15 +525,11 @@ export type SandboxSubmitRequestWritable = {
   kind: string;
   product_id?: string;
   provider?: string;
-  provider_job_id?: string;
-  provider_run_id?: string;
   ref?: string;
   repo?: string;
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
-  workflow_job_name?: string;
-  workflow_path?: string;
 };
 
 export type GetBillingBalanceData = {

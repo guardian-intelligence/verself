@@ -83,47 +83,38 @@ type BillingClient interface {
 }
 
 type SubmitRequest struct {
-	Kind            string `json:"kind"`
-	ProductID       string `json:"product_id,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	IdempotencyKey  string `json:"idempotency_key,omitempty"`
-	RepoID          string `json:"repo_id,omitempty"`
-	Repo            string `json:"repo,omitempty"`
-	RepoURL         string `json:"repo_url,omitempty"`
-	Ref             string `json:"ref,omitempty"`
-	DefaultBranch   string `json:"default_branch,omitempty"`
-	RunCommand      string `json:"run_command,omitempty"`
-	WorkflowPath    string `json:"workflow_path,omitempty"`
-	WorkflowJobName string `json:"workflow_job_name,omitempty"`
-	ProviderRunID   string `json:"provider_run_id,omitempty"`
-	ProviderJobID   string `json:"provider_job_id,omitempty"`
+	Kind           string `json:"kind"`
+	ProductID      string `json:"product_id,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	RepoID         string `json:"repo_id,omitempty"`
+	Repo           string `json:"repo,omitempty"`
+	RepoURL        string `json:"repo_url,omitempty"`
+	Ref            string `json:"ref,omitempty"`
+	DefaultBranch  string `json:"default_branch,omitempty"`
+	RunCommand     string `json:"run_command,omitempty"`
 }
 
 type ExecutionRecord struct {
-	ExecutionID     uuid.UUID       `json:"execution_id"`
-	OrgID           uint64          `json:"org_id"`
-	ActorID         string          `json:"actor_id"`
-	Kind            string          `json:"kind"`
-	Provider        string          `json:"provider,omitempty"`
-	ProductID       string          `json:"product_id"`
-	Status          string          `json:"status"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
-	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
-	RepoID          string          `json:"repo_id,omitempty"`
-	Repo            string          `json:"repo,omitempty"`
-	RepoURL         string          `json:"repo_url,omitempty"`
-	Ref             string          `json:"ref,omitempty"`
-	DefaultBranch   string          `json:"default_branch,omitempty"`
-	RunCommand      string          `json:"run_command,omitempty"`
-	CommitSHA       string          `json:"commit_sha,omitempty"`
-	WorkflowPath    string          `json:"workflow_path,omitempty"`
-	WorkflowJobName string          `json:"workflow_job_name,omitempty"`
-	ProviderRunID   string          `json:"provider_run_id,omitempty"`
-	ProviderJobID   string          `json:"provider_job_id,omitempty"`
-	LatestAttempt   AttemptRecord   `json:"latest_attempt"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	BillingWindows  []BillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID    uuid.UUID       `json:"execution_id"`
+	OrgID          uint64          `json:"org_id"`
+	ActorID        string          `json:"actor_id"`
+	Kind           string          `json:"kind"`
+	Provider       string          `json:"provider,omitempty"`
+	ProductID      string          `json:"product_id"`
+	Status         string          `json:"status"`
+	CorrelationID  string          `json:"correlation_id,omitempty"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	RepoID         string          `json:"repo_id,omitempty"`
+	Repo           string          `json:"repo,omitempty"`
+	RepoURL        string          `json:"repo_url,omitempty"`
+	Ref            string          `json:"ref,omitempty"`
+	DefaultBranch  string          `json:"default_branch,omitempty"`
+	RunCommand     string          `json:"run_command,omitempty"`
+	LatestAttempt  AttemptRecord   `json:"latest_attempt"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	BillingWindows []BillingWindow `json:"billing_windows,omitempty"`
 }
 
 type AttemptRecord struct {
@@ -132,7 +123,6 @@ type AttemptRecord struct {
 	State             string     `json:"state"`
 	OrchestratorJobID string     `json:"orchestrator_job_id,omitempty"`
 	BillingJobID      int64      `json:"billing_job_id,omitempty"`
-	RunnerName        string     `json:"runner_name,omitempty"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ExitCode          int        `json:"exit_code,omitempty"`
 	DurationMs        int64      `json:"duration_ms,omitempty"`
@@ -184,12 +174,6 @@ type JobEventRow struct {
 	Ref               string    `ch:"ref"`
 	DefaultBranch     string    `ch:"default_branch"`
 	RunCommand        string    `ch:"run_command"`
-	CommitSHA         string    `ch:"commit_sha"`
-	WorkflowPath      string    `ch:"workflow_path"`
-	WorkflowJobName   string    `ch:"workflow_job_name"`
-	ProviderRunID     string    `ch:"provider_run_id"`
-	ProviderJobID     string    `ch:"provider_job_id"`
-	RunnerName        string    `ch:"runner_name"`
 	Status            string    `ch:"status"`
 	ExitCode          int32     `ch:"exit_code"`
 	DurationMs        int64     `ch:"duration_ms"`
@@ -240,8 +224,6 @@ type executionOutcome struct {
 	StderrBytes   uint64
 	Metrics       *vmorchestrator.VMMetrics
 	Logs          string
-	CommitSHA     string
-	RunnerName    string
 	StartedAt     time.Time
 	CompletedAt   time.Time
 }
@@ -825,23 +807,17 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			COALESCE(e.repo_id::text, ''),
 			e.repo,
 			e.repo_url,
-			e.ref,
-			e.default_branch,
-			e.run_command,
-			e.commit_sha,
-			e.workflow_path,
-			e.workflow_job_name,
-			e.provider_run_id,
-			e.provider_job_id,
-			e.created_at,
-			e.updated_at,
+				e.ref,
+				e.default_branch,
+				e.run_command,
+				e.created_at,
+				e.updated_at,
 			a.attempt_id,
 			a.attempt_seq,
 			a.state,
-			a.orchestrator_job_id,
-			COALESCE(a.billing_job_id, 0),
-			a.runner_name,
-			a.failure_reason,
+				a.orchestrator_job_id,
+				COALESCE(a.billing_job_id, 0),
+				a.failure_reason,
 			COALESCE(a.exit_code, 0),
 			COALESCE(a.duration_ms, 0),
 			COALESCE(a.zfs_written, 0),
@@ -882,11 +858,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.Ref,
 		&record.DefaultBranch,
 		&record.RunCommand,
-		&record.CommitSHA,
-		&record.WorkflowPath,
-		&record.WorkflowJobName,
-		&record.ProviderRunID,
-		&record.ProviderJobID,
 		&record.CreatedAt,
 		&record.UpdatedAt,
 		&attempt.AttemptID,
@@ -894,7 +865,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&attempt.State,
 		&attempt.OrchestratorJobID,
 		&attempt.BillingJobID,
-		&attempt.RunnerName,
 		&attempt.FailureReason,
 		&attempt.ExitCode,
 		&attempt.DurationMs,
@@ -1042,18 +1012,16 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 		repoID = parsedRepoID
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO executions (
-			execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
-			idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
-			workflow_path, workflow_job_name, provider_run_id, provider_job_id,
-			latest_attempt_id, created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19,
-			$20, $21, $21
-		)
-	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
+			INSERT INTO executions (
+				execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
+				idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
+				latest_attempt_id, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
+				$16, $17, $17
+			)
+		`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, attemptID, now); err != nil {
 		return err
 	}
 
@@ -1197,12 +1165,11 @@ func (s *Service) markFinalizing(ctx context.Context, executionID, attemptID uui
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE executions
-		SET status = $2,
-		    commit_sha = CASE WHEN $3 <> '' THEN $3 ELSE commit_sha END,
-		    updated_at = $4
-		WHERE execution_id = $1
-	`, executionID, StateFinalizing, outcome.CommitSHA, outcome.CompletedAt); err != nil {
+			UPDATE executions
+			SET status = $2,
+			    updated_at = $3
+			WHERE execution_id = $1
+		`, executionID, StateFinalizing, outcome.CompletedAt); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1232,12 +1199,11 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE executions
-		SET status = $2,
-		    commit_sha = CASE WHEN $3 <> '' THEN $3 ELSE commit_sha END,
-		    updated_at = $4
-		WHERE execution_id = $1
-	`, executionID, outcome.State, outcome.CommitSHA, outcome.CompletedAt); err != nil {
+			UPDATE executions
+			SET status = $2,
+			    updated_at = $3
+			WHERE execution_id = $1
+		`, executionID, outcome.State, outcome.CompletedAt); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1292,17 +1258,6 @@ func (s *Service) failWithoutBilling(ctx context.Context, executionID, attemptID
 		return err
 	}
 	return tx.Commit()
-}
-
-func (s *Service) updateExecutionPreparedFields(ctx context.Context, executionID uuid.UUID, commitSHA, runCommand string) error {
-	_, err := s.PG.ExecContext(ctx, `
-		UPDATE executions
-		SET commit_sha = CASE WHEN $2 <> '' THEN $2 ELSE commit_sha END,
-		    run_command = CASE WHEN $3 <> '' THEN $3 ELSE run_command END,
-		    updated_at = now()
-		WHERE execution_id = $1
-	`, executionID, commitSHA, runCommand)
-	return err
 }
 
 func (s *Service) updateExecutionRunCommand(ctx context.Context, executionID uuid.UUID, runCommand string) error {
@@ -1446,12 +1401,6 @@ func (s *Service) recordExecutionCompletion(
 		Ref:               req.Ref,
 		DefaultBranch:     req.DefaultBranch,
 		RunCommand:        req.RunCommand,
-		CommitSHA:         outcome.CommitSHA,
-		WorkflowPath:      req.WorkflowPath,
-		WorkflowJobName:   req.WorkflowJobName,
-		ProviderRunID:     req.ProviderRunID,
-		ProviderJobID:     req.ProviderJobID,
-		RunnerName:        outcome.RunnerName,
 		Status:            outcome.State,
 		ExitCode:          int32(outcome.ExitCode),
 		DurationMs:        outcome.DurationMs,
@@ -1513,10 +1462,6 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	req.Ref = strings.TrimSpace(req.Ref)
 	req.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
 	req.RunCommand = strings.TrimSpace(req.RunCommand)
-	req.WorkflowPath = strings.TrimSpace(req.WorkflowPath)
-	req.WorkflowJobName = strings.TrimSpace(req.WorkflowJobName)
-	req.ProviderRunID = strings.TrimSpace(req.ProviderRunID)
-	req.ProviderJobID = strings.TrimSpace(req.ProviderJobID)
 
 	if req.Kind == "" {
 		req.Kind = KindDirect

@@ -6,8 +6,8 @@ source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
 output_json="${1:-}"
-repo_name="${VERIFICATION_REPO_NAME:-sandbox-verification-next-bun}"
-fixture_dir="${VERIFICATION_FIXTURE_DIR:-${VERIFICATION_PLATFORM_ROOT}/test/fixtures/next-bun-monorepo}"
+repo_name="${VERIFICATION_REPO_NAME:-sandbox-verification-metadata}"
+fixture_dir="${VERIFICATION_FIXTURE_DIR:-${VERIFICATION_PLATFORM_ROOT}/test/fixtures/metadata-repo}"
 revision="${VERIFICATION_REPO_REVISION:-seed}"
 
 if [[ ! -d "${fixture_dir}" ]]; then
@@ -55,7 +55,7 @@ payload = {
     "name": repo_name,
     "auto_init": False,
     "default_branch": "main",
-    "description": "Public toy Next.js monorepo for sandbox live verification",
+    "description": "Public metadata-only repository for sandbox live verification",
     "private": False,
 }
 json.dump(payload, sys.stdout)
@@ -76,8 +76,8 @@ esac
 push_dir="${tmp_dir}/repo"
 mkdir -p "${push_dir}"
 cp -R "${fixture_dir}/." "${push_dir}/"
-mkdir -p "${push_dir}/.forge-metal"
-printf '%s\n' "${revision}" >"${push_dir}/.forge-metal/verification-revision.txt"
+mkdir -p "${push_dir}/.verification"
+printf '%s\n' "${revision}" >"${push_dir}/.verification/revision.txt"
 
 git -C "${push_dir}" init --initial-branch=main >/dev/null
 git -C "${push_dir}" config user.name "forge-metal verification"

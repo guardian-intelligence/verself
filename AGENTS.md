@@ -188,7 +188,7 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, forgejo-runner, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into fm_bin
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match running kernel).
@@ -207,7 +207,7 @@ Read the Makefile for other common task automation.
 | `playbooks/deprovision.yml` | Destroy bare metal infrastructure, remove inventory |
 | `playbooks/dev-single-node.yml` | Deploy to single node (idempotent) |
 | `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra) |
-| `playbooks/guest-rootfs.yml` | Build guest rootfs and stage CI artifacts |
+| `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts |
 | `playbooks/hyperdx-dashboards.yml` | Sync HyperDX dashboards without full redeploy |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
@@ -256,7 +256,7 @@ Architecture documents live with the service they describe:
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
 * Do not speculate about host-level causes (resource exhaustion, network issues, etc.) without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to environmental factors.
 * Do not stop work short of verifying your changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them as needed. In fact, prefer to do that over time-consuming and tricky migrations during this early phase of development.
-* The repo has a fixture flow that seeds Forgejo repos, warms their goldens, opens PRs, and waits for CI.
+* The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through sandbox-rental-service, and verifies ClickHouse evidence.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
 * When editing byte-layouts, avoid piecemeal edits as that's how you end up with contradictions.
 * Destructive commands like `git restore`, `git checkout -- <file>`, `rm -rf` will be blocked.

@@ -33,4 +33,4 @@ The current database layout is:
 
 The OTel tables live in `default`, not in an `otel` database.
 
-Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged CI artifacts changed. It rebuilds and restages the Firecracker guest artifacts without touching the rest of the platform.
+Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged Firecracker guest artifacts changed. It rebuilds and restages the guest artifacts without touching the rest of the platform.

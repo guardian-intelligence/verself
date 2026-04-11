@@ -2,8 +2,7 @@ import { expect } from "./harness";
 import type { SandboxHarness, VerificationRepoMeta } from "./harness";
 
 const repoRedirectTimeoutMS = 30_000;
-const repoRescanTimeoutMS = 90_000;
-const repoGenerationTimeoutMS = 180_000;
+const repoScanTimeoutMS = 180_000;
 const executionHydrationTimeoutMS = 15_000;
 const executionTimeoutMS = 180_000;
 
@@ -12,9 +11,7 @@ export async function importRepoFromURL(
   repoURL: string,
   defaultBranch = "main",
 ): Promise<{
-  bootstrap_execution_id: string;
-  bootstrap_generation_id: string;
-  bootstrap_source_sha: string;
+  import_scanned_sha: string;
   repo_id: string;
   repo_name: string;
 }> {
@@ -43,12 +40,10 @@ export async function importRepoFromURL(
   );
 
   const repoName = await app.readText(app.page.getByRole("heading", { level: 1 }).first());
-  const bootstrap = await waitForRepoReady(app);
+  const ready = await waitForRepoReady(app);
 
   return {
-    bootstrap_execution_id: bootstrap.bootstrap_execution_id,
-    bootstrap_generation_id: bootstrap.bootstrap_generation_id,
-    bootstrap_source_sha: bootstrap.bootstrap_source_sha,
+    import_scanned_sha: ready.last_scanned_sha,
     repo_id: repoId,
     repo_name: repoName,
   };
@@ -58,26 +53,24 @@ export async function assertRepoDetailSSRStable(
   app: SandboxHarness,
   repoId: string,
   repoName: string,
-  expectedSourceSHA: string,
+  expectedScannedSHA: string,
 ): Promise<void> {
-  const shaPrefix = expectedSourceSHA.slice(0, 12);
-  await app.expectSSRHTML(`/repos/${repoId}`, [repoName, "Active Golden", shaPrefix]);
+  const shaPrefix = expectedScannedSHA.slice(0, 12);
+  await app.expectSSRHTML(`/repos/${repoId}`, [repoName, "Repo Contract", shaPrefix]);
   await app.assertStableRoute({
     path: `/repos/${repoId}`,
     ready: app.page.getByRole("heading", { name: repoName }),
-    expectedText: [repoName, "Active Golden", "Repo Contract", shaPrefix],
+    expectedText: [repoName, "Last scanned SHA", "Repository Scan", "Repo Contract", shaPrefix],
   });
   await expect(app.page.getByText("ready", { exact: true }).first()).toBeVisible();
 }
 
-export async function refreshRepoGolden(
+export async function rescanRepoMetadata(
   app: SandboxHarness,
   repoId: string,
   refreshedRepoMeta: VerificationRepoMeta,
 ): Promise<{
-  refresh_execution_id: string;
-  refresh_generation_id: string;
-  refreshed_commit_sha: string;
+  rescan_scanned_sha: string;
 }> {
   await app.goto(`/repos/${repoId}`);
   const repoHeading = app.page.getByRole("heading", { level: 1 }).first();
@@ -86,34 +79,32 @@ export async function refreshRepoGolden(
   const refreshedSha = refreshedRepoMeta.commit_sha.slice(0, 12);
 
   await app.page.getByRole("button", { name: "Rescan" }).click();
-  await app.waitForCondition("repo rescan", repoRescanTimeoutMS, async () => {
+  await app.waitForCondition("repo rescan", repoScanTimeoutMS, async () => {
     const scannedSHA = await readInfoCardValue(app, "Last scanned SHA");
     const state = await readRepoState(app);
     return scannedSHA === refreshedSha && state === "ready";
   });
 
-  await app.page.getByRole("button", { name: /^(Prepare|Refresh) Golden$/ }).click();
-  await app.waitForCondition("repo refresh", repoGenerationTimeoutMS, async () => {
-    const sourceSHA = await readInfoRowValue(app, "Source SHA");
-    const state = await readRepoState(app);
-    return sourceSHA === refreshedSha && state === "ready";
-  });
-
-  const executionHref = await app.page
-    .getByRole("link", { name: "View bootstrap execution" })
-    .getAttribute("href");
-
   return {
-    refresh_execution_id: executionHref ? requireRouteID(executionHref, "/jobs/") : "",
-    refresh_generation_id: await readInfoRowValue(app, "Generation"),
-    refreshed_commit_sha: refreshedRepoMeta.commit_sha,
+    rescan_scanned_sha: refreshedRepoMeta.commit_sha,
   };
 }
 
-export async function launchExecutionFromRepo(app: SandboxHarness): Promise<{
+export async function launchDirectExecution(
+  app: SandboxHarness,
+  runCommand: string,
+): Promise<{
   execution_id: string;
 }> {
-  await app.page.getByRole("button", { name: "Run Execution" }).click();
+  await app.expectSSRHTML("/jobs/new", ["Manual Execution", "Run command"]);
+  await app.assertStableRoute({
+    path: "/jobs/new",
+    ready: app.page.getByRole("heading", { name: "Manual Execution" }),
+    expectedText: ["Manual Execution", "Run command"],
+  });
+
+  await app.page.getByLabel("Run command").fill(runCommand);
+  await app.page.getByRole("button", { name: "Submit Execution" }).click();
   const executionId = await app.waitForCondition(
     "execution launch redirect",
     repoRedirectTimeoutMS,
@@ -194,51 +185,23 @@ export async function waitForExecutionSuccess(
   });
 }
 
-export async function waitForRepoReady(app: SandboxHarness): Promise<{
-  bootstrap_execution_id: string;
-  bootstrap_generation_id: string;
-  bootstrap_source_sha: string;
+async function waitForRepoReady(app: SandboxHarness): Promise<{
+  last_scanned_sha: string;
 }> {
-  await app.waitForCondition("repo bootstrap", repoGenerationTimeoutMS, async () => {
+  await app.waitForCondition("repo metadata scan", repoScanTimeoutMS, async () => {
     const state = await readRepoState(app);
-    const executionLinkVisible = await app.page
-      .getByRole("link", { name: "View bootstrap execution" })
-      .isVisible()
-      .catch(() => false);
-
-    return state === "ready" && executionLinkVisible;
+    const scannedSHA = await readInfoCardValue(app, "Last scanned SHA");
+    return state === "ready" && scannedSHA !== "--" ? true : false;
   });
 
-  const executionHref = await app.page
-    .getByRole("link", { name: "View bootstrap execution" })
-    .getAttribute("href");
-
   return {
-    bootstrap_execution_id: executionHref ? requireRouteID(executionHref, "/jobs/") : "",
-    bootstrap_generation_id: await readInfoRowValue(app, "Generation"),
-    bootstrap_source_sha: await readInfoRowValue(app, "Source SHA"),
+    last_scanned_sha: await readInfoCardValue(app, "Last scanned SHA"),
   };
-}
-
-export function requireRouteID(urlOrPath: string, prefix: string): string {
-  const match = urlOrPath.match(new RegExp(`${prefix}([0-9a-f-]+)`));
-  if (!match?.[1]) {
-    throw new Error(`Could not extract route id from ${urlOrPath}`);
-  }
-
-  return match[1];
 }
 
 async function readInfoCardValue(app: SandboxHarness, label: string): Promise<string> {
   const labelNode = app.page.locator(`xpath=//div[normalize-space(text())='${label}']`).first();
   const valueNode = labelNode.locator("xpath=following-sibling::div[1]");
-  await expect(valueNode).toBeVisible();
-  return (await valueNode.textContent())?.trim() ?? "";
-}
-
-async function readInfoRowValue(app: SandboxHarness, label: string): Promise<string> {
-  const labelNode = app.page.locator("span", { hasText: label }).first();
-  const valueNode = labelNode.locator("xpath=following-sibling::span[1]");
   await expect(valueNode).toBeVisible();
   return (await valueNode.textContent())?.trim() ?? "";
 }

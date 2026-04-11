@@ -7,14 +7,8 @@ export interface VerificationRun {
   repo_url: string;
   ref: string;
   repo_id: string;
-  bootstrap_generation_id: string;
-  bootstrap_execution_id: string;
-  bootstrap_attempt_id: string;
-  bootstrap_source_sha: string;
-  refresh_generation_id: string;
-  refresh_execution_id: string;
-  refresh_attempt_id: string;
-  refreshed_commit_sha: string;
+  import_scanned_sha: string;
+  rescan_scanned_sha: string;
   submit_requested_at: string;
   execution_id: string;
   attempt_id: string;
@@ -33,14 +27,8 @@ export function createVerificationRun(verificationRunID: string): VerificationRu
     repo_url: env.verificationRepoURL,
     ref: env.verificationRepoRef,
     repo_id: "",
-    bootstrap_generation_id: "",
-    bootstrap_execution_id: "",
-    bootstrap_attempt_id: "",
-    bootstrap_source_sha: "",
-    refresh_generation_id: "",
-    refresh_execution_id: "",
-    refresh_attempt_id: "",
-    refreshed_commit_sha: "",
+    import_scanned_sha: "",
+    rescan_scanned_sha: "",
     submit_requested_at: new Date().toISOString(),
     execution_id: "",
     attempt_id: "",

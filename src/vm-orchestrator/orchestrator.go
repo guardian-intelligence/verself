@@ -31,7 +31,7 @@ type Config struct {
 	Pool            string // ZFS pool name, e.g. "forgepool"
 	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
 	WorkloadDataset string // dataset for ephemeral VM job clones
-	KernelPath      string // path to vmlinux on host, e.g. "/var/lib/ci/vmlinux"
+	KernelPath      string // path to vmlinux on host
 	FirecrackerBin  string // path to firecracker binary
 	JailerBin       string // path to jailer binary
 	JailerRoot      string // chroot base dir, e.g. "/srv/jailer"
@@ -52,7 +52,7 @@ func DefaultConfig() Config {
 		Pool:            "forgepool",
 		GoldenZvol:      "golden-zvol",
 		WorkloadDataset: "workloads",
-		KernelPath:      "/var/lib/ci/vmlinux",
+		KernelPath:      "/var/lib/forge-metal/guest-artifacts/vmlinux",
 		FirecrackerBin:  "/usr/local/bin/firecracker",
 		JailerBin:       "/usr/local/bin/jailer",
 		JailerRoot:      "/srv/jailer",
@@ -70,11 +70,8 @@ func DefaultConfig() Config {
 // JobConfig describes the command to run inside the VM.
 type JobConfig struct {
 	JobID          string            `json:"job_id"`
-	PrepareCommand []string          `json:"prepare_command,omitempty"`
-	PrepareWorkDir string            `json:"prepare_work_dir,omitempty"`
 	RunCommand     []string          `json:"run_command"`
 	RunWorkDir     string            `json:"run_work_dir,omitempty"`
-	Services       []string          `json:"services,omitempty"`
 	Env            map[string]string `json:"env"`
 	BillablePhases []string          `json:"billable_phases,omitempty"`
 }
@@ -87,27 +84,25 @@ type PhaseResult struct {
 
 // JobResult holds the outcome of a VM job execution.
 type JobResult struct {
-	ExitCode             int
-	Logs                 string
-	SerialLogs           string
-	Duration             time.Duration
-	CloneTime            time.Duration
-	JailSetupTime        time.Duration
-	VMBootTime           time.Duration
-	BootToReadyDuration  time.Duration
-	PrepareDuration      time.Duration
-	RunDuration          time.Duration
-	ServiceStartDuration time.Duration
-	VMExitWaitDuration   time.Duration
-	CleanupTime          time.Duration
-	ZFSWritten           uint64
-	StdoutBytes          uint64
-	StderrBytes          uint64
-	DroppedLogBytes      uint64
-	ForcedShutdown       bool
-	PhaseResults         []PhaseResult
-	FailurePhase         string
-	Metrics              *VMMetrics
+	ExitCode            int
+	Logs                string
+	SerialLogs          string
+	Duration            time.Duration
+	CloneTime           time.Duration
+	JailSetupTime       time.Duration
+	VMBootTime          time.Duration
+	BootToReadyDuration time.Duration
+	RunDuration         time.Duration
+	VMExitWaitDuration  time.Duration
+	CleanupTime         time.Duration
+	ZFSWritten          uint64
+	StdoutBytes         uint64
+	StderrBytes         uint64
+	DroppedLogBytes     uint64
+	ForcedShutdown      bool
+	PhaseResults        []PhaseResult
+	FailurePhase        string
+	Metrics             *VMMetrics
 }
 
 const firecrackerAPIStepTimeout = 5 * time.Second
@@ -517,9 +512,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	result.Logs = controlResult.logs
 	result.SerialLogs = serialBuf.String()
 	result.ExitCode = controlResult.result.ExitCode
-	result.PrepareDuration = time.Duration(controlResult.result.PrepareDurationMS) * time.Millisecond
 	result.RunDuration = time.Duration(controlResult.result.RunDurationMS) * time.Millisecond
-	result.ServiceStartDuration = time.Duration(controlResult.result.ServiceStartDurationMS) * time.Millisecond
 	result.BootToReadyDuration = time.Duration(controlResult.hello.BootToReadyMS) * time.Millisecond
 	result.StdoutBytes = controlResult.result.StdoutBytes
 	result.StderrBytes = controlResult.result.StderrBytes

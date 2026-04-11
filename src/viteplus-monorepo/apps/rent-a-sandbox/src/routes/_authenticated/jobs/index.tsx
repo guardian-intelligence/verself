@@ -20,7 +20,7 @@ function JobsPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Executions</h1>
           <p className="text-sm text-muted-foreground">
-            Repo runs, golden preparation attempts, and VM-backed runner jobs.
+            Direct VM executions, billing windows, and logs.
           </p>
         </div>
         {creditsExhausted ? (

@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultGuestPoolCIDR   = "172.16.0.0/16"
-	defaultLeaseDir        = "/var/lib/ci/net/leases"
+	defaultLeaseDir        = "/var/lib/forge-metal/guest-artifacts/net/leases"
 	defaultIf              = "eth0"
 	pendingLeaseTTL        = 5 * time.Minute
 	defaultHostServiceIP   = "10.255.0.1"

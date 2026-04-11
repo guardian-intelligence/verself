@@ -7,7 +7,3 @@ zfs_pool: forgepool
 # Verdaccio
 verdaccio_version: "6.3.2"
 verdaccio_security_filter_version: "1.3.5"
-
-# Optional override for Forgejo Actions runner concurrency.
-# Unset uses the host vCPU count.
-# forgejo_runner_capacity: 24

@@ -348,7 +348,7 @@ func handleForgejoPush(
 		return response, nil
 	}
 
-	response.Message = "repo metadata updated; execution runner is disabled"
+	response.Message = "repo metadata updated; no execution policy is attached"
 	return response, nil
 }
 
@@ -375,7 +375,7 @@ func handleForgejoPullRequest(
 		return response, nil
 	}
 
-	response.Message = "repo metadata updated; execution runner is disabled"
+	response.Message = "repo metadata updated; no execution policy is attached"
 	return response, nil
 }
 

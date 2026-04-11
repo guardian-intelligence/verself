@@ -1,11 +1,11 @@
 ---
-# project_root points to src/platform/ (where ansible, scripts, ci live).
+# project_root points to src/platform/ (where ansible, scripts, guest artifacts live).
 # monorepo_root points to the top-level repo (where go.work lives).
 # vm-guest-telemetry is a sibling at src/vm-guest-telemetry/.
 guest_rootfs_monorepo_root: "{{ playbook_dir }}/../../../.."
 guest_rootfs_project_root: "{{ playbook_dir }}/../.."
 guest_rootfs_build_script: "{{ guest_rootfs_project_root }}/scripts/build-guest-rootfs.sh"
-guest_rootfs_versions_json: "{{ guest_rootfs_project_root }}/ci/versions.json"
+guest_rootfs_versions_json: "{{ guest_rootfs_project_root }}/guest/versions.json"
 guest_rootfs_vm_guest_telemetry_dir: "{{ guest_rootfs_project_root }}/../vm-guest-telemetry"
 guest_rootfs_remote_tmp: /tmp
 guest_rootfs_remote_path: "{{ fm_bin }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

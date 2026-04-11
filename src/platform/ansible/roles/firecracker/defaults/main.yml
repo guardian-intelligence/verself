@@ -8,14 +8,14 @@ firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000
 firecracker_jailer_gid: 10000
 firecracker_jailer_user: firecracker
-firecracker_kernel_path: /var/lib/ci/vmlinux
-firecracker_rootfs_path: /var/lib/ci/rootfs.ext4
-firecracker_guest_artifact_manifest_path: /var/lib/ci/guest-artifacts.json
-firecracker_rootfs_hash_record: /var/lib/ci/golden-zvol.rootfs.sha256
+firecracker_kernel_path: /var/lib/forge-metal/guest-artifacts/vmlinux
+firecracker_rootfs_path: /var/lib/forge-metal/guest-artifacts/rootfs.ext4
+firecracker_guest_artifact_manifest_path: /var/lib/forge-metal/guest-artifacts/guest-artifacts.json
+firecracker_rootfs_hash_record: /var/lib/forge-metal/guest-artifacts/golden-zvol.rootfs.sha256
 firecracker_refresh_base_golden: false
 firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
 firecracker_guest_pool_cidr: 172.16.0.0/16
-firecracker_net_lease_dir: /var/lib/ci/net/leases
+firecracker_net_lease_dir: /var/lib/forge-metal/guest-artifacts/net/leases
 firecracker_host_uplink_interface: ""
 firecracker_host_service_interface: fm-host0
 firecracker_host_service_ip: "{{ services.firecracker_host_service.host }}"

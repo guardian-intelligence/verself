@@ -23,8 +23,6 @@ const (
 	prSetChildSubreaper  = 36
 	ipBin                = "/sbin/ip"
 	defaultWorkDir       = "/workspace"
-	postgresUID          = 70
-	postgresGID          = 70
 	runnerUID            = 1000
 	runnerGID            = 1000
 	vmGuestTelemetryBin  = "/usr/local/bin/vm-guest-telemetry"
@@ -105,7 +103,6 @@ func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig)
 		"HOME": "/home/runner",
 		"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"TERM": "xterm",
-		"CI":   "true",
 	}
 	for key, value := range overrides {
 		envMap[key] = value
@@ -162,27 +159,6 @@ func resolveRegistryURL(env map[string]string, network vmproto.NetworkConfig) (s
 		return "http://" + network.HostServiceIP + ":4873", nil
 	}
 
-	gateway, err := routeGateway()
-	if err != nil {
-		return "", err
-	}
-	if gateway == "" {
-		return "", fmt.Errorf("unable to determine host gateway for registry access")
-	}
-	return "http://" + gateway + ":4873", nil
-}
-
-func routeGateway() (string, error) {
-	out, err := runCommandOutput(ipBin, "route", "show", "default")
-	if err != nil {
-		return "", fmt.Errorf("ip route show default: %s", strings.TrimSpace(out))
-	}
-	fields := strings.Fields(out)
-	for i := 0; i < len(fields)-1; i++ {
-		if fields[i] == "via" {
-			return strings.TrimSpace(fields[i+1]), nil
-		}
-	}
 	return "", nil
 }
 
@@ -213,23 +189,6 @@ func normalizeWorkDir(value string) string {
 		return defaultWorkDir
 	}
 	return value
-}
-
-func envWithHome(env []string, home string) []string {
-	out := make([]string, 0, len(env)+1)
-	replaced := false
-	for _, entry := range env {
-		if strings.HasPrefix(entry, "HOME=") {
-			out = append(out, "HOME="+home)
-			replaced = true
-			continue
-		}
-		out = append(out, entry)
-	}
-	if !replaced {
-		out = append(out, "HOME="+home)
-	}
-	return out
 }
 
 func mustMount(source, target, fstype string, flags uintptr, data string) {

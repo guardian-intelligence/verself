@@ -30,10 +30,10 @@ export const env = {
   verificationRunJSONPath: process.env.VERIFICATION_RUN_JSON_PATH || "",
   verificationRepoURL:
     process.env.VERIFICATION_REPO_URL ||
-    `https://git.${process.env.FORGE_METAL_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-next-bun.git`,
+    `https://git.${process.env.FORGE_METAL_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-metadata.git`,
   verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
   verificationLogMarker:
-    process.env.VERIFICATION_LOG_MARKER || "FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE",
+    process.env.VERIFICATION_LOG_MARKER || "FORGE_METAL_DIRECT_EXECUTION_COMPLETE",
   proofMode: process.env.FORGE_METAL_SANDBOX_PROOF === "1",
 
   // Stripe test card — always succeeds, no 3DS challenge.

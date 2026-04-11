@@ -14,15 +14,15 @@ fi
 case "${flow_mode}" in
   import)
     spec_path="e2e/repo-journeys.live.spec.ts"
-    grep_pattern="repo import renders a stable repo detail page after bootstrap"
+    grep_pattern="repo import renders a stable metadata detail page after scan"
     ;;
   refresh)
     spec_path="e2e/repo-journeys.live.spec.ts"
-    grep_pattern="repo refresh activates a new source sha after rescan"
+    grep_pattern="repo rescan updates metadata without preparing an execution artifact"
     ;;
   execute)
     spec_path="e2e/repo-journeys.live.spec.ts"
-    grep_pattern="repo execution preserves jobs index and job detail through hydration"
+    grep_pattern="direct execution preserves jobs index and job detail through hydration"
     ;;
   *)
     echo "unsupported sandbox repo flow: ${flow_mode}" >&2
@@ -65,7 +65,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
   VERIFICATION_REPO_URL="${verification_repo_url}" \
   VERIFICATION_REPO_REF="refs/heads/main" \
-  VERIFICATION_LOG_MARKER="FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE" \
+  VERIFICATION_LOG_MARKER="FORGE_METAL_DIRECT_EXECUTION_COMPLETE" \
   bash -lc '
     cd "$1"
     vp exec playwright test "$2" \

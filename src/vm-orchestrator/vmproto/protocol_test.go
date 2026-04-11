@@ -15,9 +15,7 @@ func TestCodecRoundTrip(t *testing.T) {
 
 	wantPayload := RunRequest{
 		JobID:           "job-1",
-		PrepareCommand:  []string{"npm", "ci"},
-		PrepareWorkDir:  "/workspace",
-		RunCommand:      []string{"npm", "test"},
+		RunCommand:      []string{"true"},
 		RunWorkDir:      "/workspace",
 		Network:         NetworkConfig{AddressCIDR: "172.16.0.2/30", Gateway: "172.16.0.1", LinkName: "eth0"},
 		ProtocolVersion: ProtocolVersion,
