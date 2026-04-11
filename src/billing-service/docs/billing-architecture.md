@@ -8,7 +8,7 @@ Reference architectures: Metronome's rate card + contract override model for pri
 
 1. **Customer never overpays.** The customer is never charged for more than they consumed. Void is the default failure mode — crashes, infrastructure outages, and incomplete work always resolve in the customer's favor. The operator eats the compute cost.
 2. **Tax is Stripe's problem.** All spend caps, committed minimums, adjustment calculations, and MFN comparisons operate on pre-tax amounts. The billing service computes `pretax_total`; Stripe computes tax, collects it, and handles remittance and filing. Tax amounts on internal invoices are read-back fields from Stripe — the billing service does not compute, reconcile, or ledger tax in TigerBeetle. Same rationale as delegating email delivery to Resend: regulatory compliance surfaces with constantly changing rules are not worth self-hosting.
-3. **Downgrades are not punitive, but not advantageous.** Unused prepaid credits from paid subscriptions (`source = 'subscription'` or `source = 'purchase'`) are carried forward as a refund grant on plan change. Free-tier grants (`source = 'free_tier'`) are forfeited. The carry-forward is capped at the prorated value of the remaining subscription term against the plan's bucketed entitlement map: `min(unused_credits, prorated_entitlement_value)`. This prevents gaming while ensuring light users aren't penalized for switching.
+3. **Downgrades are not punitive, but not advantageous.** Unused prepaid subscription entitlements (`source = 'subscription'`) are carried forward as a refund grant on plan change. Free-tier grants (`source = 'free_tier'`) are forfeited. Purchased account top-ups (`source = 'purchase'`) are not subscription material and survive plan changes without proration caps. Subscription carry-forward is capped at the prorated value of the remaining subscription term against the plan's bucketed entitlement map: `min(unused_subscription_entitlements, prorated_entitlement_value)`. This prevents gaming while ensuring light users aren't penalized for switching.
 4. **Refund promises are capped, never a blank check.** Satisfaction guarantees refund the subscription fee, not unbounded overage consumption incurred during the guarantee window. SLA credits are capped at a configurable percentage of the affected period's charges. No refund path produces an unlimited liability for the operator.
 5. **Financial state is append-only.** Corrections produce new transfers (reversals, adjustments), never mutations of existing transfers. TigerBeetle accounts and transfers are immutable by design. PostgreSQL invoices transition through `draft → finalized → paid → void` but never backward.
 
@@ -155,22 +155,35 @@ Override resolution precedence (evaluated at Reserve time):
 
 ### credit_grants
 
-Prepaid balance accounts. Used only by prepaid plans — postpaid plans use receivable accounts instead (see TigerBeetle account structure). Each grant maps 1:1 to a TigerBeetle account via the ULID half-swap (described below). Grants are consumed in waterfall order: earliest-expiring first, then ULID order within the same expiry.
+Prepaid liability accounts. Used by prepaid products; postpaid products use receivable accounts instead (see TigerBeetle account structure). Each grant maps 1:1 to a TigerBeetle account through a deterministic grant ID. Stripe-funded grants use a scope-aware deterministic ID over `(org_id, scope_type, scope_product_id, scope_bucket_id, stripe_reference_id)` so replayed payment and invoice webhooks are idempotent without collapsing distinct bucket grants.
+
+Applicability is explicit:
+
+| scope_type | scope fields | Can fund |
+|------------|--------------|----------|
+| `bucket` | `scope_product_id`, `scope_bucket_id` | Only that product bucket. Subscription entitlements use this scope. |
+| `product` | `scope_product_id` | Any bucket for that product. Product-scoped promos use this scope. |
+| `account` | empty product and bucket scope | Any product bucket for the org. Purchased top-ups use this scope. |
+
+Reserve consumes grants by applicability first: bucket grants, then product grants, then account grants. Within a scope class, grants are consumed by earliest expiry and deterministic grant ID order.
 
 | Column | Type | Purpose |
 |--------|------|---------|
-| grant_id | TEXT PK | Application-generated ULID. Decoupled from PG sequence state — survives database recreation. |
+| grant_id | TEXT PK | Deterministic application ID. Stripe-funded IDs include grant scope and Stripe reference; non-Stripe grants use the same deterministic ID namespace. |
 | org_id | TEXT FK | |
-| product_id | TEXT FK | |
+| scope_type | TEXT | `bucket`, `product`, or `account` |
+| scope_product_id | TEXT | Required for `bucket` and `product`, empty for `account` |
+| scope_bucket_id | TEXT | Required for `bucket`, empty otherwise |
 | amount | BIGINT | Initial balance in atomic units |
 | source | TEXT | `free_tier`, `subscription`, `purchase`, `promo`, `refund` |
 | contract_id | TEXT | Links commit-funded grants to their contract (nullable) |
+| stripe_reference_id | TEXT | Stripe payment intent or invoice ID when Stripe funded the grant |
 | expires_at | TIMESTAMPTZ | Null = never expires |
 | closed_at | TIMESTAMPTZ | Set when grant is fully consumed or expired. Append-only state transition. |
 
 Grant lifecycle:
 1. **Deposit**: PG INSERT + TB CreateAccount + TB pending transfer + TB post. Two-phase commit with deterministic transfer IDs for idempotency across cron and webhook paths.
-2. **Consume**: Reserve creates pending debits against grant accounts in waterfall order. Settle posts actual spend, voids remainder.
+2. **Consume**: Reserve creates pending debits against applicable grant accounts in scope precedence, expiry, and ID order. Settle posts actual spend, voids remainder.
 3. **Expire**: Sweep job finds `expires_at <= now AND closed_at IS NULL`. Balancing debit drains remaining balance. PG `closed_at` set.
 
 ### billing_windows

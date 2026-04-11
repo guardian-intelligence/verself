@@ -204,7 +204,7 @@ export type SandboxBillingCheckoutRequest = {
   amount_cents: number;
   cancel_url: string;
   /**
-   * Product to purchase credits for
+   * Product context for checkout display and metadata; purchased top-ups are account-scoped
    */
   product_id: string;
   success_url: string;
@@ -487,7 +487,7 @@ export type SandboxBillingCheckoutRequestWritable = {
   amount_cents: number;
   cancel_url: string;
   /**
-   * Product to purchase credits for
+   * Product context for checkout display and metadata; purchased top-ups are account-scoped
    */
   product_id: string;
   success_url: string;
