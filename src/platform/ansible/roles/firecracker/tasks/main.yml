@@ -383,7 +383,7 @@
   ansible.builtin.set_fact:
     firecracker_refresh_base_golden_needed: >-
       {{
-        firecracker_refresh_base_golden
+        firecracker_refresh_base_golden | bool
         or firecracker_golden_zvol_check.rc != 0
         or firecracker_golden_snapshot_check.rc != 0
         or not firecracker_golden_rootfs_hash_stat.stat.exists
