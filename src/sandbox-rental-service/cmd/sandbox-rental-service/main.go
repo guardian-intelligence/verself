@@ -32,6 +32,9 @@ const (
 	verificationRunHeader = "X-Forge-Metal-Verification-Run"
 	correlationHeader     = "X-Forge-Metal-Correlation-Id"
 	correlationCookie     = "fm_correlation_id"
+
+	sandboxAPIRequestBodyLimit = 1 << 20
+	sandboxMaxHeaderBytes      = 16 << 10
 )
 
 func main() {
@@ -193,10 +196,16 @@ func run() error {
 		authHandler.ServeHTTP(w, r)
 	})
 	rootMux.Handle("/", verificationHandler)
+	rootHandler := http.Handler(rootMux)
+	rootHandler = limitPublicAPIRequestBodies(rootHandler, sandboxAPIRequestBodyLimit)
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(rootMux, "sandbox-rental-service"),
-		ReadHeaderTimeout: 10 * time.Second,
+		Handler:           otelhttp.NewHandler(rootHandler, "sandbox-rental-service"),
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    sandboxMaxHeaderBytes,
 	}
 
 	// --- server lifecycle ---
@@ -286,6 +295,31 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func limitPublicAPIRequestBodies(next http.Handler, maxBytes int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicAPIRequestWithBody(r) {
+			if r.ContentLength > maxBytes {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isPublicAPIRequestWithBody(r *http.Request) bool {
+	if r == nil || !strings.HasPrefix(r.URL.Path, "/api/") {
+		return false
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseOptionalUint64Env(key, raw string) (uint64, error) {

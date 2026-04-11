@@ -38,6 +38,24 @@
 	}
 }
 
+(api_security_headers) {
+	header {
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+		Cross-Origin-Resource-Policy same-origin
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+	}
+}
+
+(sandbox_api_cors_headers) {
+	header {
+		Access-Control-Allow-Origin "https://{{ rent_a_sandbox_domain }}"
+		Vary Origin
+	}
+}
+
 {{ hyperdx_domain }} {
 	import access_log
 	import waf_detection
@@ -100,23 +118,56 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 {{ rent_a_sandbox_domain }} {
 	import access_log
-	import waf_detection
 
 	handle /webhooks/forgejo {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		import waf_detection
+		request_body {
+			max_size 1048576
+		}
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	@api_preflight {
+		method OPTIONS
+		path /api/*
+		header Origin *
+	}
+	handle @api_preflight {
+		import waf_blocking
+		import sandbox_api_cors_headers
+		import api_security_headers
+		header {
+			Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key, X-Forge-Metal-Correlation-Id, X-Forge-Metal-Verification-Run"
+			Access-Control-Allow-Methods "GET, POST, OPTIONS"
+			Access-Control-Max-Age 600
+		}
+		respond 204
 	}
 
 	handle /api/* {
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
+		import waf_blocking
+		request_body {
+			max_size 1048576
+		}
+		import sandbox_api_cors_headers
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
 	}
 
 	handle /v1/shape {
+		import waf_detection
 		uri query -secret
 		uri query +secret {{ caddy_electric_api_secret }}
 		reverse_proxy {{ services.electric.host }}:{{ services.electric.port }}
 	}
 
 	handle {
+		import waf_detection
 		reverse_proxy {{ services.rent_a_sandbox.host }}:{{ services.rent_a_sandbox.port }}
 	}
 }
