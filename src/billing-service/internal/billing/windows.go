@@ -536,7 +536,7 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 	return row, nil
 }
 
-func (c *Client) loadPlanConfig(ctx context.Context, _ OrgID, productID string) (productPlanConfig, error) {
+func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID string) (productPlanConfig, error) {
 	var (
 		planID            string
 		billingMode       string
@@ -546,17 +546,32 @@ func (c *Client) loadPlanConfig(ctx context.Context, _ OrgID, productID string) 
 	)
 
 	err := c.pg.QueryRowContext(ctx, `
+		WITH active_subscription AS (
+			SELECT plan_id
+			FROM subscriptions
+			WHERE org_id = $1
+			  AND product_id = $2
+			  AND status NOT IN ('canceled', 'suspended')
+			ORDER BY current_period_end DESC NULLS LAST, subscription_id DESC
+			LIMIT 1
+		)
 		SELECT p.plan_id, p.billing_mode, p.unit_rates::text, p.rate_buckets::text, pr.reserve_policy::text
 		FROM plans p
 		JOIN products pr ON pr.product_id = p.product_id
-		WHERE p.product_id = $1 AND p.is_default AND p.active
+		LEFT JOIN active_subscription s ON s.plan_id = p.plan_id
+		WHERE p.product_id = $2
+		  AND (
+			s.plan_id IS NOT NULL
+			OR (NOT EXISTS (SELECT 1 FROM active_subscription) AND p.is_default AND p.active)
+		  )
+		ORDER BY (s.plan_id IS NOT NULL) DESC
 		LIMIT 1
-	`, productID).Scan(&planID, &billingMode, &unitRatesJSON, &rateBucketsJSON, &reservePolicyJSON)
+	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &billingMode, &unitRatesJSON, &rateBucketsJSON, &reservePolicyJSON)
 	if err == sql.ErrNoRows {
 		return productPlanConfig{}, ErrNoDefaultPlan
 	}
 	if err != nil {
-		return productPlanConfig{}, fmt.Errorf("load default plan: %w", err)
+		return productPlanConfig{}, fmt.Errorf("load plan config: %w", err)
 	}
 
 	unitRates, err := decodeUint64Map(unitRatesJSON)

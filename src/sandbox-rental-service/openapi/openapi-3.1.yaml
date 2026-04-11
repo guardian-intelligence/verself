@@ -502,7 +502,7 @@ components:
           maxLength: 2048
           type: string
         product_id:
-          description: Product to purchase credits for
+          description: Product context for checkout display and metadata; purchased top-ups are account-scoped
           maxLength: 255
           type: string
         success_url:

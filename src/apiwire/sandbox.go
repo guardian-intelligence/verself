@@ -131,7 +131,7 @@ type SandboxExecutionLogs struct {
 }
 
 type SandboxBillingCheckoutRequest struct {
-	ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product to purchase credits for"`
+	ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product context for checkout display and metadata; purchased top-ups are account-scoped"`
 	AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991" doc:"Amount in cents"`
 	SuccessURL  string `json:"success_url" required:"true" maxLength:"2048"`
 	CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
