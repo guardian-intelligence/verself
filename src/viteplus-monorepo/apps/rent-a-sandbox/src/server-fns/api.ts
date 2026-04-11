@@ -33,10 +33,12 @@ import {
   getBalance as getBalanceRequest,
   getExecution as getExecutionRequest,
   getGrants as getGrantsRequest,
+  getStatement as getStatementRequest,
   getRepo as getRepoRequest,
   getRepos as getReposRequest,
   getSubscriptions as getSubscriptionsRequest,
   grantsQuerySchema,
+  statementQuerySchema,
   importRepo as importRepoRequest,
   importRepoRequestSchema,
   isSandboxRentalApiError,
@@ -55,6 +57,8 @@ import type {
   CheckoutRequest,
   Execution,
   GrantsResponse,
+  Statement,
+  StatementQuery,
   ImportRepoRequest,
   PortalRequest,
   Repo,
@@ -80,6 +84,8 @@ export type {
   Execution,
   ExecutionRequest,
   GrantsResponse,
+  Statement,
+  StatementQuery,
   ImportRepoRequest,
   PortalRequest,
   Repo,
@@ -217,6 +223,16 @@ export const getGrants = createServerFn({ method: "GET" })
   .inputValidator(grantsQuerySchema)
   .handler(async ({ context, data }) => {
     return getGrantsRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      query: data,
+    });
+  });
+
+export const getStatement = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(statementQuerySchema)
+  .handler(async ({ context, data }) => {
+    return getStatementRequest({
       ...(await sandboxRentalClientOptions(context)),
       query: data,
     });

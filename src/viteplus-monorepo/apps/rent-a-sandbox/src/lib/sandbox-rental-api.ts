@@ -5,6 +5,7 @@ import {
   createBillingPortal,
   createBillingSubscription,
   getBillingBalance,
+  getBillingStatement,
   getExecution as getGeneratedExecution,
   getRepo as getGeneratedRepo,
   importRepo as importGeneratedRepo,
@@ -18,6 +19,7 @@ import {
   vBillingBalance,
   vBillingGrant,
   vBillingGrants,
+  vBillingStatement,
   vBillingSubscription,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
@@ -25,6 +27,7 @@ import {
   vCreateBillingPortalResponse,
   vCreateBillingSubscriptionBody,
   vCreateBillingSubscriptionResponse,
+  vGetBillingStatementQuery,
   vGetExecutionPath,
   vGetRepoPath,
   vImportRepoBody,
@@ -205,6 +208,93 @@ function parseGrantsResponse(input: unknown) {
 
 export type GrantsResponse = ReturnType<typeof parseGrantsResponse>;
 
+type RawStatement = v.InferOutput<typeof vBillingStatement>;
+type RawStatementLineItem = NonNullable<RawStatement["line_items"]>[number];
+type RawStatementBucketSummary = NonNullable<RawStatement["bucket_summaries"]>[number];
+type RawStatementGrantSummary = NonNullable<RawStatement["grant_summaries"]>[number];
+
+function parseStatementLineItem(input: RawStatementLineItem) {
+  return {
+    ...input,
+    charge_units: decimalStringToSafeNumber(input.charge_units, "line_items.charge_units"),
+    unit_rate: decimalStringToSafeNumber(input.unit_rate, "line_items.unit_rate"),
+  };
+}
+
+function parseStatementBucketSummary(input: RawStatementBucketSummary) {
+  return {
+    ...input,
+    charge_units: decimalStringToSafeNumber(input.charge_units, "bucket_summaries.charge_units"),
+    free_tier_units: decimalStringToSafeNumber(
+      input.free_tier_units,
+      "bucket_summaries.free_tier_units",
+    ),
+    subscription_units: decimalStringToSafeNumber(
+      input.subscription_units,
+      "bucket_summaries.subscription_units",
+    ),
+    purchase_units: decimalStringToSafeNumber(
+      input.purchase_units,
+      "bucket_summaries.purchase_units",
+    ),
+    promo_units: decimalStringToSafeNumber(input.promo_units, "bucket_summaries.promo_units"),
+    refund_units: decimalStringToSafeNumber(input.refund_units, "bucket_summaries.refund_units"),
+    receivable_units: decimalStringToSafeNumber(
+      input.receivable_units,
+      "bucket_summaries.receivable_units",
+    ),
+    reserved_units: decimalStringToSafeNumber(
+      input.reserved_units,
+      "bucket_summaries.reserved_units",
+    ),
+  };
+}
+
+function parseStatementGrantSummary(input: RawStatementGrantSummary) {
+  return {
+    ...input,
+    available: decimalStringToSafeNumber(input.available, "grant_summaries.available"),
+    pending: decimalStringToSafeNumber(input.pending, "grant_summaries.pending"),
+  };
+}
+
+function parseStatementTotals(input: RawStatement["totals"]) {
+  return {
+    charge_units: decimalStringToSafeNumber(input.charge_units, "totals.charge_units"),
+    free_tier_units: decimalStringToSafeNumber(input.free_tier_units, "totals.free_tier_units"),
+    subscription_units: decimalStringToSafeNumber(
+      input.subscription_units,
+      "totals.subscription_units",
+    ),
+    purchase_units: decimalStringToSafeNumber(input.purchase_units, "totals.purchase_units"),
+    promo_units: decimalStringToSafeNumber(input.promo_units, "totals.promo_units"),
+    refund_units: decimalStringToSafeNumber(input.refund_units, "totals.refund_units"),
+    receivable_units: decimalStringToSafeNumber(input.receivable_units, "totals.receivable_units"),
+    reserved_units: decimalStringToSafeNumber(input.reserved_units, "totals.reserved_units"),
+    total_due_units: decimalStringToSafeNumber(input.total_due_units, "totals.total_due_units"),
+  };
+}
+
+function parseStatement(input: unknown) {
+  const {
+    $schema: _schema,
+    bucket_summaries,
+    grant_summaries,
+    line_items,
+    totals,
+    ...statement
+  } = v.parse(vBillingStatement, input);
+  return {
+    ...statement,
+    bucket_summaries: bucket_summaries?.map((bucket) => parseStatementBucketSummary(bucket)) ?? [],
+    grant_summaries: grant_summaries?.map((grant) => parseStatementGrantSummary(grant)) ?? [],
+    line_items: line_items?.map((lineItem) => parseStatementLineItem(lineItem)) ?? [],
+    totals: parseStatementTotals(totals),
+  };
+}
+
+export type Statement = ReturnType<typeof parseStatement>;
+
 function parseExecution(input: unknown) {
   const {
     $schema: _schema,
@@ -240,6 +330,17 @@ export const grantsQuerySchema = v.optional(
 );
 
 export type GrantsQuery = v.InferOutput<typeof grantsQuerySchema>;
+
+export const statementQuerySchema = v.pipe(
+  v.strictObject({
+    productId: v.string(),
+  }),
+  v.transform(({ productId }) => ({
+    product_id: v.parse(vGetBillingStatementQuery, { product_id: productId }).product_id,
+  })),
+);
+
+export type StatementQuery = v.InferOutput<typeof statementQuerySchema>;
 
 export const checkoutRequestSchema = v.pipe(
   v.strictObject({
@@ -387,6 +488,26 @@ export async function getGrants(
   }
 
   return parseGrantsResponse(result.data);
+}
+
+export async function getStatement(
+  options: SandboxRentalClientOptions & { query: StatementQuery },
+): Promise<Statement> {
+  const client = createSandboxRentalClient(options);
+  const query = v.parse(vGetBillingStatementQuery, options.query);
+  const path = "/api/v1/billing/statement";
+  const result = await getBillingStatement({
+    client,
+    query,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseStatement(result.data);
 }
 
 export async function createCheckoutSession(
