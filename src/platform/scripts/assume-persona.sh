@@ -14,6 +14,12 @@ Usage:
 
 Writes a 0600 shell env file with browser credentials and short-lived
 Zitadel client-credentials JWTs for the selected persona.
+
+These are extremely useful operator and agent utility credentials for live
+rehearsal. They cover repo-owned Zitadel IAM surfaces; provider-native
+credentials such as ClickHouse, direct Stalwart protocol passwords, and Forgejo
+API automation stay behind the existing operator Make wrappers and remote
+credstore files.
 EOF
 }
 

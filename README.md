@@ -32,7 +32,37 @@ Idempotent, no wipe. Safe to run repeatedly. Deploy a single role with `--tags`:
 cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml --tags caddy
 ```
 
-### 4. Log in
+### 4. Seed and assume rehearsal personas
+
+After deploy, seed the platform tenant, Acme tenant, billing state, mailboxes,
+and auth fixtures:
+
+```bash
+make seed-system
+```
+
+The `assume-*` targets are extremely useful utility scripts for operators and
+agents. They mint short-lived, project-scoped Zitadel tokens from the deployed
+credential store and write a `0600` env file under `artifacts/personas/`.
+
+```bash
+make assume-platform-admin
+make assume-acme-admin
+make assume-acme-member
+make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
+```
+
+`platform-admin` is for dogfooding internal platform operations. It has
+sandbox-rental, webmail/mailbox-service, Letters, and Forgejo OIDC project
+access, plus operator command hints for ClickHouse and provider-native Forgejo
+automation. `acme-admin` and `acme-member` rehearse the customer org roles used
+by rent-a-sandbox.
+
+These scripts do not export the Zitadel admin PAT, ClickHouse password,
+Stalwart direct protocol passwords, or Forgejo provider API token. Those remain
+behind the existing operator wrappers and remote credstore files.
+
+### 5. Log in
 
 ```bash
 # HyperDX admin credentials are in the SOPS-encrypted secrets file
