@@ -7,6 +7,9 @@ import type {
   CreateBillingCheckoutData,
   CreateBillingCheckoutErrors,
   CreateBillingCheckoutResponses,
+  CreateBillingPortalData,
+  CreateBillingPortalErrors,
+  CreateBillingPortalResponses,
   CreateBillingSubscriptionData,
   CreateBillingSubscriptionErrors,
   CreateBillingSubscriptionResponses,
@@ -122,6 +125,26 @@ export const listBillingGrants = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/grants",
     ...options,
+  });
+
+/**
+ * Create Stripe billing portal session
+ */
+export const createBillingPortal = <ThrowOnError extends boolean = false>(
+  options: Options<CreateBillingPortalData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateBillingPortalResponses,
+    CreateBillingPortalErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/portal",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
 /**

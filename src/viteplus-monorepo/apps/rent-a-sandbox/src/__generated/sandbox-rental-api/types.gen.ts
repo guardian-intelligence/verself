@@ -20,9 +20,11 @@ export type BillingBalance = {
 
 export type BillingGrant = {
   available: string;
+  bucket_id: string;
   expires_at?: string;
   grant_id: string;
   pending: string;
+  product_id: string;
   source: string;
 };
 
@@ -140,6 +142,14 @@ export type SandboxBillingCheckoutRequest = {
    */
   product_id: string;
   success_url: string;
+};
+
+export type SandboxBillingPortalRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  return_url: string;
 };
 
 export type SandboxBillingSubscriptionRequest = {
@@ -402,6 +412,10 @@ export type SandboxBillingCheckoutRequestWritable = {
   success_url: string;
 };
 
+export type SandboxBillingPortalRequestWritable = {
+  return_url: string;
+};
+
 export type SandboxBillingSubscriptionRequestWritable = {
   /**
    * Billing cadence (default monthly)
@@ -625,6 +639,38 @@ export type ListBillingGrantsResponses = {
 
 export type ListBillingGrantsResponse =
   ListBillingGrantsResponses[keyof ListBillingGrantsResponses];
+
+export type CreateBillingPortalData = {
+  body: SandboxBillingPortalRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/billing/portal";
+};
+
+export type CreateBillingPortalErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateBillingPortalError = CreateBillingPortalErrors[keyof CreateBillingPortalErrors];
+
+export type CreateBillingPortalResponses = {
+  /**
+   * OK
+   */
+  200: BillingUrlResponse;
+};
+
+export type CreateBillingPortalResponse =
+  CreateBillingPortalResponses[keyof CreateBillingPortalResponses];
 
 export type CreateBillingSubscriptionData = {
   body: SandboxBillingSubscriptionRequestWritable;

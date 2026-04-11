@@ -3,6 +3,7 @@
 
 export {
   createBillingCheckout,
+  createBillingPortal,
   createBillingSubscription,
   createWebhookEndpoint,
   deleteWebhookEndpoint,
@@ -37,6 +38,11 @@ export type {
   CreateBillingCheckoutErrors,
   CreateBillingCheckoutResponse,
   CreateBillingCheckoutResponses,
+  CreateBillingPortalData,
+  CreateBillingPortalError,
+  CreateBillingPortalErrors,
+  CreateBillingPortalResponse,
+  CreateBillingPortalResponses,
   CreateBillingSubscriptionData,
   CreateBillingSubscriptionError,
   CreateBillingSubscriptionErrors,
@@ -113,6 +119,8 @@ export type {
   SandboxAttemptRecord,
   SandboxBillingCheckoutRequest,
   SandboxBillingCheckoutRequestWritable,
+  SandboxBillingPortalRequest,
+  SandboxBillingPortalRequestWritable,
   SandboxBillingSubscriptionRequest,
   SandboxBillingSubscriptionRequestWritable,
   SandboxBillingWindow,
