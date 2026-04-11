@@ -1,6 +1,11 @@
 package vmorchestrator
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"reflect"
+	"testing"
+)
 
 func TestRepoURLForGuestRewritesHTTPToHostService(t *testing.T) {
 	t.Parallel()
@@ -69,5 +74,48 @@ func TestBuildInVMRepoExecJobBuildsSupervisorOperation(t *testing.T) {
 	}
 	if len(op.UserRunCommand) != 2 || op.UserRunCommand[0] != "npm" || op.UserRunCommand[1] != "test" {
 		t.Fatalf("user run command: %#v", op.UserRunCommand)
+	}
+}
+
+func TestEnsureDatasetTreatsConcurrentCreateAsSuccess(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	err := ensureDatasetWith(context.Background(), "forgepool/repo-goldens",
+		func(context.Context, string) (bool, error) {
+			calls++
+			return calls > 1, nil
+		},
+		func(context.Context, ...string) error {
+			return errors.New("dataset already exists")
+		},
+	)
+	if err != nil {
+		t.Fatalf("ensureDatasetWith: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("existence checks: got %d, want 2", calls)
+	}
+}
+
+func TestEnsureDatasetCreatesMissingDataset(t *testing.T) {
+	t.Parallel()
+
+	var gotArgs []string
+	err := ensureDatasetWith(context.Background(), "forgepool/repo-goldens",
+		func(context.Context, string) (bool, error) {
+			return false, nil
+		},
+		func(_ context.Context, args ...string) error {
+			gotArgs = append([]string(nil), args...)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ensureDatasetWith: %v", err)
+	}
+	wantArgs := []string{"create", "-p", "forgepool/repo-goldens"}
+	if !reflect.DeepEqual(gotArgs, wantArgs) {
+		t.Fatalf("zfs args: got %#v, want %#v", gotArgs, wantArgs)
 	}
 }
