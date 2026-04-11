@@ -214,6 +214,9 @@ func normalizeImportRepoRequest(req ImportRepoRequest) (ImportRepoRequest, error
 	if req.CloneURL == "" {
 		return ImportRepoRequest{}, fmt.Errorf("clone_url is required")
 	}
+	if err := validateGitCloneURLField("clone_url", req.CloneURL); err != nil {
+		return ImportRepoRequest{}, err
+	}
 	if req.FullName == "" {
 		req.FullName = repoFullNameFromCloneURL(req.CloneURL)
 	}

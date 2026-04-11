@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,7 +79,7 @@ func TestImportRepoAPI_CompatibleWorkflowBootstrapsGolden(t *testing.T) {
 
 	imported := importRepoAgainstServer(t, env.ctx, env.rentalServer.URL, env.token, env.repoPath)
 	if imported.CompatibilityStatus != "compatible" {
-		t.Fatalf("compatibility_status: got %q", imported.CompatibilityStatus)
+		t.Fatalf("compatibility_status: got %q summary=%s", imported.CompatibilityStatus, imported.CompatibilitySummary)
 	}
 	if imported.State != "preparing" && imported.State != "ready" {
 		t.Fatalf("repo state after import: got %q", imported.State)
@@ -248,7 +247,7 @@ func startRepoBootstrapEnv(t *testing.T, runner *fakeRunner) *repoBootstrapEnv {
 	}
 	authProvider := newTestAuthProvider(t)
 	stripeKeys := requireStripeTestKeys(t)
-	repoPath := createWorkflowRepo(t, map[string]string{
+	repoFixture := createWorkflowRepoFixture(t, map[string]string{
 		"package.json": `{
   "name": "example",
   "packageManager": "pnpm@10.0.0",
@@ -266,14 +265,8 @@ jobs:
     runs-on: forge-metal
     steps:
       - run: echo ok
-`,
+	`,
 	})
-	git := mustLookPath(t, "git")
-	out, err := exec.Command(git, "-C", repoPath, "rev-parse", "HEAD").CombinedOutput()
-	if err != nil {
-		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
-	}
-	repoHead := strings.TrimSpace(string(out))
 
 	billingServer := billingtestharness.NewServer(billingtestharness.Config{
 		PG:              pg.billingDB,
@@ -344,8 +337,8 @@ jobs:
 		webhookSecret: "forgejo-webhook-secret",
 		runner:        runner,
 		balanceBefore: seedCredits,
-		repoPath:      repoPath,
-		repoHead:      repoHead,
+		repoPath:      repoFixture.CloneURL,
+		repoHead:      repoFixture.Head,
 	}
 }
 
