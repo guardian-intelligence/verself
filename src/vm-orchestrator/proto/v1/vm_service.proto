@@ -32,25 +32,6 @@ message JobConfig {
   repeated string billable_phases = 5;
 }
 
-message RuntimeConfig {
-  string pool = 1;
-  string golden_zvol = 2;
-  string workload_dataset = 3;
-  string kernel_path = 4;
-  string firecracker_bin = 5;
-  string jailer_bin = 6;
-  string jailer_root = 7;
-  int32 jailer_uid = 8;
-  int32 jailer_gid = 9;
-  int32 vcpus = 10;
-  int32 memory_mib = 11;
-  string host_interface = 12;
-  string guest_pool_cidr = 13;
-  string network_lease_dir = 14;
-  string host_service_ip = 15;
-  int32 host_service_port = 16;
-}
-
 message PhaseResult {
   string name = 1;
   int32 exit_code = 2;
@@ -91,8 +72,7 @@ message JobResult {
 }
 
 message DirectJobSpec {
-  RuntimeConfig runtime_config = 1;
-  JobConfig job = 2;
+  JobConfig job = 1;
 }
 
 message CreateJobRequest {

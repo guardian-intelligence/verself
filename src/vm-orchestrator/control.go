@@ -170,15 +170,6 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 			}
 			appendLogChunk(&logBuf, msg.Data)
 			observer.OnGuestLogChunk(job.JobID, string(msg.Data))
-		case vmproto.TypeGuestEvent:
-			msg, err := vmproto.DecodePayload[vmproto.GuestEvent](env)
-			if err != nil {
-				return resultWithLogs(), err
-			}
-			observer.OnGuestEvent(job.JobID, msg)
-			if logger != nil {
-				logger.Info("guest event", "job_id", job.JobID, "kind", msg.Kind, "attrs", msg.Attrs)
-			}
 		case vmproto.TypeHeartbeat:
 		case vmproto.TypePhaseStart:
 			if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
