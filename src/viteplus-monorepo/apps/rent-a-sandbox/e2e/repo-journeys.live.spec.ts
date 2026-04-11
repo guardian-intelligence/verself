@@ -11,7 +11,15 @@ import {
 } from "./repo-helpers";
 
 function verificationRunCommand(marker: string): string {
-  return `printf '%s\\n' '${marker.replaceAll("'", "'\\''")}'`;
+  const quotedMarker = `'${marker.replaceAll("'", "'\\''")}'`;
+  return [
+    `test "$(id -u)" = "1000"`,
+    `printf '%s\\n' ${quotedMarker} > ./forge-metal-proof.txt`,
+    `printf '%s\\n' ${quotedMarker} > "$HOME/forge-metal-proof.txt"`,
+    `test -s ./forge-metal-proof.txt`,
+    `test -s "$HOME/forge-metal-proof.txt"`,
+    `printf '%s\\n' ${quotedMarker}`,
+  ].join(" && ");
 }
 
 test.describe("Rent-a-Sandbox Repo Journeys", () => {

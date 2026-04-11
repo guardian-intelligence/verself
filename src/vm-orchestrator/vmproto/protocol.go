@@ -3,6 +3,7 @@ package vmproto
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -19,7 +20,10 @@ const (
 	HeartbeatInterval = 5 * time.Second
 	HeartbeatTimeout  = 30 * time.Second
 	CancelGracePeriod = 5 * time.Second
+	MaxFrameSize      = 1024 * 1024
 )
+
+var ErrFrameTooLarge = errors.New("frame too large")
 
 type MessageType string
 
@@ -152,6 +156,9 @@ func (c *Codec) WriteEnvelope(env Envelope) error {
 	if err != nil {
 		return fmt.Errorf("marshal envelope: %w", err)
 	}
+	if len(data) > MaxFrameSize {
+		return fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, len(data), MaxFrameSize)
+	}
 	if len(data) > int(^uint32(0)) {
 		return fmt.Errorf("frame too large: %d", len(data))
 	}
@@ -172,6 +179,9 @@ func (c *Codec) ReadEnvelope() (Envelope, error) {
 		return Envelope{}, err
 	}
 	size := binary.BigEndian.Uint32(header[:])
+	if size > MaxFrameSize {
+		return Envelope{}, fmt.Errorf("%w: %d > %d", ErrFrameTooLarge, size, MaxFrameSize)
+	}
 	body := make([]byte, size)
 	if _, err := io.ReadFull(c.reader, body); err != nil {
 		return Envelope{}, err
