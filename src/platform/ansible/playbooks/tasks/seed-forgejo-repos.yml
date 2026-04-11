@@ -133,6 +133,7 @@
           username: "{{ seed_forgejo_webhook_machine_username }}"
           machine:
             name: "seed forgejo webhook {{ inventory_hostname }}"
+            accessTokenType: ACCESS_TOKEN_TYPE_JWT
         return_content: true
         status_code: [200, 201]
       register: seed_forgejo_webhook_user
@@ -157,17 +158,20 @@
 
     - name: Grant temporary webhook seed user access to sandbox-rental project
       ansible.builtin.uri:
-        url: "{{ seed_forgejo_zitadel_base_url }}/management/v1/users/{{ seed_forgejo_webhook_user_id }}/grants"
+        url: "{{ seed_forgejo_zitadel_base_url }}/zitadel.authorization.v2.AuthorizationService/CreateAuthorization"
         method: POST
         headers:
           Authorization: "Bearer {{ seed_forgejo_admin_pat }}"
           Host: "{{ seed_forgejo_zitadel_host }}"
+          Connect-Protocol-Version: "1"
         body_format: json
         body:
+          userId: "{{ seed_forgejo_webhook_user_id }}"
           projectId: "{{ seed_forgejo_sandbox_project_id }}"
+          organizationId: "{{ seed_forgejo_platform_org_id }}"
           roleKeys:
             - sandbox_org_admin
-        status_code: [200, 409]
+        status_code: 200
       no_log: true
 
     - name: Request temporary sandbox-rental webhook seed token
