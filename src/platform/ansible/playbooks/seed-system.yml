@@ -84,7 +84,6 @@
     seed_system_platform_promotion_name: platform-showback
     seed_system_platform_promotion_percent: 100
     seed_system_expires_after: 8760h
-    seed_system_sandbox_env_path: /etc/forge-metal/sandbox-rental.env
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
     seed_system_helper_remote_path: /tmp/billing-seed
 
@@ -607,91 +606,6 @@
           - "  Promotion:     {{ seed_system_platform_promotion_name }} ({{ seed_system_platform_promotion_percent }}% off)"
           - "Acme billing seeded for {{ seed_system_billing_results.acme.org_id }}"
           - "  Prepaid after: {{ seed_system_billing_results.acme.prepaid_after }}"
-      tags: [billing]
-
-    - name: Ensure forge-metal config directory exists for sandbox webhook env
-      ansible.builtin.file:
-        path: "{{ seed_system_sandbox_env_path | dirname }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      tags: [billing]
-
-    - name: Check existing sandbox webhook env file
-      ansible.builtin.stat:
-        path: "{{ seed_system_sandbox_env_path }}"
-      register: seed_system_sandbox_env_file
-      no_log: true
-      tags: [billing]
-
-    - name: Read existing sandbox webhook env file
-      ansible.builtin.slurp:
-        src: "{{ seed_system_sandbox_env_path }}"
-      register: seed_system_sandbox_env_raw
-      when: seed_system_sandbox_env_file.stat.exists
-      no_log: true
-      tags: [billing]
-
-    - name: Extract existing sandbox webhook secret
-      ansible.builtin.set_fact:
-        seed_system_sandbox_webhook_secret: >-
-          {{
-            (
-              seed_system_sandbox_env_raw.content | b64decode
-              | regex_findall('^SANDBOX_FORGEJO_WEBHOOK_SECRET=(.+)$', multiline=True)
-              | first
-            ) | default('', true) | trim
-          }}
-      when: seed_system_sandbox_env_file.stat.exists
-      no_log: true
-      tags: [billing]
-
-    - name: Generate sandbox webhook secret
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - "import secrets; print(secrets.token_hex(32))"
-      register: seed_system_generated_webhook_secret
-      changed_when: false
-      delegate_to: localhost
-      become: false
-      when: seed_system_sandbox_webhook_secret | default('', true) | trim | length == 0
-      no_log: true
-      tags: [billing]
-
-    - name: Set effective sandbox webhook secret
-      ansible.builtin.set_fact:
-        seed_system_effective_webhook_secret: >-
-          {{
-            (
-              seed_system_sandbox_webhook_secret | default('', true) | trim
-            )
-            if (seed_system_sandbox_webhook_secret | default('', true) | trim | length > 0)
-            else (seed_system_generated_webhook_secret.stdout | trim)
-          }}
-      no_log: true
-      tags: [billing]
-
-    - name: Write sandbox webhook env file
-      ansible.builtin.copy:
-        content: |
-          SANDBOX_PLATFORM_ORG_ID={{ seed_system_orgs.platform.organization_id }}
-          SANDBOX_FORGEJO_WEBHOOK_SECRET={{ seed_system_effective_webhook_secret }}
-        dest: "{{ seed_system_sandbox_env_path }}"
-        owner: root
-        group: root
-        mode: "0600"
-      register: seed_system_sandbox_env_write
-      tags: [billing]
-
-    - name: Restart sandbox-rental-service after webhook env update # noqa: no-handler
-      ansible.builtin.systemd:
-        name: sandbox-rental-service
-        state: restarted
-        daemon_reload: true
-      when: seed_system_sandbox_env_write.changed
       tags: [billing]
 
     - name: Remove billing seed helper from server
