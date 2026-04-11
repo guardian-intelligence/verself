@@ -7,7 +7,7 @@ async function getRouteSignInCallbackRedirectURL(): Promise<string> {
       import("@forge-metal/auth-web/server"),
       import("../server/auth"),
     ]);
-    const { redirectTo } = await finishLogin(await getAuthConfig());
+    const { redirectTo } = await finishLogin(getAuthConfig());
     return redirectTo;
   }
   return getSignInCallbackRedirectURL();

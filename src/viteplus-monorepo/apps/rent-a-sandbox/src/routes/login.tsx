@@ -7,7 +7,7 @@ async function getRouteSignInRedirectURL(redirectTo: string | undefined): Promis
       import("@forge-metal/auth-web/server"),
       import("../server/auth"),
     ]);
-    return beginLogin(await getAuthConfig(), redirectTo);
+    return beginLogin(getAuthConfig(), redirectTo);
   }
   return getSignInRedirectURL({
     data: redirectTo ? { redirectTo } : {},

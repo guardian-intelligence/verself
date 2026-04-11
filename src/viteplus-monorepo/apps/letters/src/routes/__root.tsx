@@ -8,14 +8,40 @@ import {
 } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
-import { getViewer } from "~/server-fns/auth";
+import { AuthProvider, useUser } from "@forge-metal/auth-web/react";
+import {
+  type Auth,
+  type AuthSnapshot,
+  authCacheKey,
+  parseAuthSnapshot,
+  syncAuthPartitionedCache,
+} from "@forge-metal/auth-web/isomorphic";
+import {
+  getClientAuthSnapshot,
+  getSignInRedirectURL,
+  getSignOutRedirectURL,
+} from "~/server-fns/auth";
 import "~/styles/app.css";
 
+async function loadAuthSnapshot(): Promise<AuthSnapshot> {
+  if (import.meta.env.SSR) {
+    const [{ getClientAuthSnapshot: readClientAuthSnapshot }, { getAuthConfig }] =
+      await Promise.all([import("@forge-metal/auth-web/server"), import("../server/auth")]);
+    return readClientAuthSnapshot(getAuthConfig());
+  }
+  return getClientAuthSnapshot();
+}
+
 export const Route = createRootRouteWithContext<{
+  auth: Auth;
   queryClient: QueryClient;
 }>()({
   component: RootComponent,
-  loader: () => getViewer(),
+  beforeLoad: async ({ context }) => {
+    const authSnapshot = await loadAuthSnapshot();
+    syncAuthPartitionedCache(context.queryClient, authSnapshot);
+    return authSnapshot;
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -26,13 +52,16 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const routeContext = Route.useRouteContext();
+  const authSnapshot = parseAuthSnapshot(routeContext);
   return (
-    <QueryClientProvider client={queryClient}>
-      <RootDocument>
-        <Outlet />
-      </RootDocument>
-    </QueryClientProvider>
+    <AuthProvider client={{ getSignInRedirectURL, getSignOutRedirectURL }} snapshot={authSnapshot}>
+      <QueryClientProvider client={routeContext.queryClient} key={authCacheKey(authSnapshot)}>
+        <RootDocument>
+          <Outlet />
+        </RootDocument>
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }
 
@@ -59,8 +88,6 @@ function RootDocument({ children }: { children: ReactNode }) {
 }
 
 function Nav() {
-  const viewer = Route.useLoaderData();
-
   return (
     <nav className="border-b border-border">
       <div className="max-w-3xl mx-auto px-6 flex items-center h-14 gap-6">
@@ -72,7 +99,7 @@ function Nav() {
           Letters
         </Link>
         <div className="ml-auto flex items-center gap-4">
-          <AuthButton viewer={viewer} />
+          <AuthButton />
         </div>
       </div>
     </nav>
@@ -89,13 +116,14 @@ function Footer() {
   );
 }
 
-function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> }) {
+function AuthButton() {
+  const { user } = useUser();
   const currentLocation = useRouterState({
     select: (state) => state.location.href,
   });
   const loginHref = `/login?redirect=${encodeURIComponent(currentLocation)}`;
 
-  if (!viewer) {
+  if (!user) {
     return (
       <a
         href={loginHref}
@@ -114,9 +142,7 @@ function AuthButton({ viewer }: { viewer: Awaited<ReturnType<typeof getViewer>> 
       >
         Write
       </Link>
-      <span className="text-muted-foreground truncate max-w-[150px]">
-        {viewer.email ?? viewer.sub}
-      </span>
+      <span className="text-muted-foreground truncate max-w-[150px]">{user.email ?? user.sub}</span>
       <a href="/logout" className="text-muted-foreground hover:text-foreground">
         Sign out
       </a>

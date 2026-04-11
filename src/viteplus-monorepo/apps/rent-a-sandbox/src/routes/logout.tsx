@@ -7,7 +7,7 @@ async function getRouteSignOutRedirectURL(): Promise<string> {
       import("@forge-metal/auth-web/server"),
       import("../server/auth"),
     ]);
-    return logout(await getAuthConfig());
+    return logout(getAuthConfig());
   }
   return getSignOutRedirectURL();
 }
