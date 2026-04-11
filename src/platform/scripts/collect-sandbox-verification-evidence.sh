@@ -256,6 +256,7 @@ if [[ -n "${attempt_id}" ]]; then
       pricing_phase,
       state,
       window_start,
+      activated_at,
       created_at,
       settled_at
     FROM execution_billing_windows
@@ -284,8 +285,10 @@ if [[ -n "${attempt_id}" ]]; then
       billed_charge_units,
       writeoff_charge_units,
       pricing_phase,
+      usage_summary,
       funding_legs,
       window_start,
+      activated_at,
       expires_at,
       renew_by,
       settled_at,
