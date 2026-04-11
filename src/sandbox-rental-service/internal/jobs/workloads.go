@@ -43,6 +43,9 @@ type PreparedWarmGolden struct {
 }
 
 func PrepareRepoExec(spec RepoExecSpec) (*PreparedRepoExec, error) {
+	if err := validateRepoExecSpec(spec); err != nil {
+		return nil, err
+	}
 	inspection, err := workload.InspectRepoRef(strings.TrimSpace(spec.RepoURL), strings.TrimSpace(spec.Ref))
 	if err != nil {
 		return nil, err
@@ -59,6 +62,9 @@ func PrepareRepoExec(spec RepoExecSpec) (*PreparedRepoExec, error) {
 }
 
 func PrepareWarmGolden(spec WarmGoldenSpec) (*PreparedWarmGolden, error) {
+	if err := validateWarmGoldenSpec(spec); err != nil {
+		return nil, err
+	}
 	inspection, err := workload.InspectRepoDefaultBranch(strings.TrimSpace(spec.RepoURL), defaultBranch(spec.DefaultBranch))
 	if err != nil {
 		return nil, err
@@ -163,6 +169,9 @@ func validateRepoTarget(target RepoTarget) error {
 	}
 	if strings.TrimSpace(target.RepoURL) == "" {
 		return fmt.Errorf("repo_url is required")
+	}
+	if err := validateGitCloneURLField("repo_url", target.RepoURL); err != nil {
+		return err
 	}
 	return nil
 }

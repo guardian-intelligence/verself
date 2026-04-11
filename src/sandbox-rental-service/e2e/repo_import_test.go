@@ -166,7 +166,17 @@ func importRepoViaAPIWithToken(t *testing.T, ctx context.Context, baseURL, token
 	return repo
 }
 
+type workflowRepoFixture struct {
+	CloneURL string
+	Head     string
+}
+
 func createWorkflowRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	return createWorkflowRepoFixture(t, files).CloneURL
+}
+
+func createWorkflowRepoFixture(t *testing.T, files map[string]string) workflowRepoFixture {
 	t.Helper()
 
 	root := t.TempDir()
@@ -191,6 +201,12 @@ func createWorkflowRepo(t *testing.T, files map[string]string) string {
 
 	runCmd(t, exec.Command(git, "-C", root, "add", "."))
 	runCmd(t, exec.Command(git, "-C", root, "commit", "-m", "fixture"))
-	return root
+	out, err := exec.Command(git, "-C", root, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
+	}
+	return workflowRepoFixture{
+		CloneURL: publicGitCloneURLForTestRepo(t, root, "acme/example.git"),
+		Head:     strings.TrimSpace(string(out)),
+	}
 }
-

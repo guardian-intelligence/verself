@@ -98,23 +98,17 @@ func TestBuildWarmGoldenRequest_DefaultsBranchAndUsesPreparePhase(t *testing.T) 
 	}
 }
 
-func TestPrepareRepoExec_CleansUpInspectionClone(t *testing.T) {
+func TestPreparedRepoExec_CleansUpInspectionDir(t *testing.T) {
 	root := t.TempDir()
 	writeManifestForJobsTest(t, root, "version = 1\nrun = [\"npm\", \"test\"]\n")
 	writePackageJSONForJobsTest(t, root, "{\n  \"name\": \"fixture\",\n  \"packageManager\": \"npm@10.0.0\"\n}\n")
 	initGitRepoForJobsTest(t, root)
 
-	prepared, err := PrepareRepoExec(RepoExecSpec{
-		JobID: "33333333-3333-3333-3333-333333333333",
-		RepoTarget: RepoTarget{
-			Repo:    "fixtures/local",
-			RepoURL: root,
-		},
-		Ref: "refs/heads/main",
-	})
+	inspection, err := workload.InspectRepoPath(root)
 	if err != nil {
-		t.Fatalf("PrepareRepoExec: %v", err)
+		t.Fatalf("InspectRepoPath: %v", err)
 	}
+	prepared := &PreparedRepoExec{Inspection: inspection}
 
 	if prepared.Inspection == nil || prepared.Inspection.Path == "" {
 		t.Fatalf("inspection path not populated")

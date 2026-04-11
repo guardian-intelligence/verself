@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -58,7 +59,7 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	authProvider := newTestAuthProvider(t)
 	defer authProvider.Close()
 	stripeKeys := requireStripeTestKeys(t)
-	repoPath, repoRef, repoHead := createFixtureRepo(t, "next-bun-monorepo")
+	repoURL, repoRef, repoHead := createFixtureRepo(t, "next-bun-monorepo")
 
 	// ---- 2. Billing service (in-process) ----
 
@@ -165,7 +166,7 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	submitBody := map[string]any{
 		"kind":       "repo_exec",
 		"repo":       "toy-next-bun-monorepo",
-		"repo_url":   repoPath,
+		"repo_url":   repoURL,
 		"ref":        repoRef,
 		"product_id": "sandbox",
 	}
@@ -330,7 +331,7 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 }
 
-func createFixtureRepo(t *testing.T, fixture string) (path, ref, head string) {
+func createFixtureRepo(t *testing.T, fixture string) (cloneURL, ref, head string) {
 	t.Helper()
 
 	repoRoot := filepath.Join(t.TempDir(), fixture)
@@ -347,7 +348,28 @@ func createFixtureRepo(t *testing.T, fixture string) (path, ref, head string) {
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
 	}
-	return repoRoot, "refs/heads/main", strings.TrimSpace(string(out))
+	return publicGitCloneURLForTestRepo(t, repoRoot, "fixtures/"+fixture+".git"), "refs/heads/main", strings.TrimSpace(string(out))
+}
+
+func publicGitCloneURLForTestRepo(t *testing.T, repoPath, urlPath string) string {
+	t.Helper()
+	cloneURL := "https://git.example.test/" + strings.TrimPrefix(urlPath, "/")
+	if !strings.HasSuffix(cloneURL, ".git") {
+		cloneURL += ".git"
+	}
+
+	count := 0
+	if existing := strings.TrimSpace(os.Getenv("GIT_CONFIG_COUNT")); existing != "" {
+		parsed, err := strconv.Atoi(existing)
+		if err != nil {
+			t.Fatalf("parse GIT_CONFIG_COUNT=%q: %v", existing, err)
+		}
+		count = parsed
+	}
+	t.Setenv("GIT_CONFIG_COUNT", strconv.Itoa(count+1))
+	t.Setenv(fmt.Sprintf("GIT_CONFIG_KEY_%d", count), "url."+repoPath+".insteadOf")
+	t.Setenv(fmt.Sprintf("GIT_CONFIG_VALUE_%d", count), cloneURL)
+	return cloneURL
 }
 
 func fixtureSourcePath(t *testing.T, fixture string) string {

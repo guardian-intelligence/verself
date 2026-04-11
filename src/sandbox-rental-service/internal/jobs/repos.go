@@ -836,6 +836,9 @@ func normalizeCreateRepoRequest(req CreateRepoRequest) (CreateRepoRequest, error
 	if req.CloneURL == "" {
 		return CreateRepoRequest{}, fmt.Errorf("clone_url is required")
 	}
+	if err := validateGitCloneURLField("clone_url", req.CloneURL); err != nil {
+		return CreateRepoRequest{}, err
+	}
 	if req.DefaultBranch == "" {
 		req.DefaultBranch = defaultBranchName
 	}

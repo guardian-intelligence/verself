@@ -1621,6 +1621,11 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	if req.Repo == "" && req.RepoURL != "" {
 		req.Repo = defaultRepoName(req.RepoURL)
 	}
+	if req.RepoURL != "" {
+		if err := validateGitCloneURLField("repo_url", req.RepoURL); err != nil {
+			return SubmitRequest{}, err
+		}
+	}
 	if req.DefaultBranch == "" {
 		req.DefaultBranch = defaultBranchName
 	}
