@@ -32,6 +32,33 @@ func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, jobID strin
 	return nil
 }
 
+func (DirectPrivOps) ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+
+	if err := validateZFSSnapshotName(snapshotName); err != nil {
+		return err
+	}
+	if strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs dataset must not include snapshot suffix: %s", dataset)
+	}
+
+	args := []string{"snapshot"}
+	for key, value := range properties {
+		args = append(args, "-o", key+"="+value)
+	}
+	target := dataset + "@" + snapshotName
+	args = append(args, target)
+
+	cmd := exec.CommandContext(ctx, "zfs", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs snapshot %s: %s: %w",
+			target, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()

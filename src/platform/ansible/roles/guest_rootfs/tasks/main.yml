@@ -20,12 +20,12 @@
     chdir: "{{ guest_rootfs_vm_guest_telemetry_dir }}"
   changed_when: true
 
-- name: Build vm-init (static, linux/amd64)
+- name: Build vm-bridge (static, linux/amd64)
   delegate_to: localhost
   become: false
   run_once: true
   ansible.builtin.command:
-    argv: [go, build, "-ldflags=-s -w", -o, /tmp/vm-init, ./src/vm-orchestrator/cmd/vm-init]
+    argv: [go, build, "-ldflags=-s -w", -o, /tmp/vm-bridge, ./src/vm-orchestrator/cmd/vm-bridge]
     chdir: "{{ guest_rootfs_monorepo_root }}"
   environment:
     CGO_ENABLED: "0"
@@ -47,10 +47,10 @@
     dest: "{{ guest_rootfs_remote_tmp }}/versions.json"
     mode: "0644"
 
-- name: Upload vm-init
+- name: Upload vm-bridge
   ansible.builtin.copy:
-    src: /tmp/vm-init
-    dest: "{{ guest_rootfs_remote_tmp }}/vm-init"
+    src: /tmp/vm-bridge
+    dest: "{{ guest_rootfs_remote_tmp }}/vm-bridge"
     mode: "0755"
 
 - name: Upload vm-guest-telemetry

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -69,6 +70,9 @@ func TestBuildRuntimeEnvUsesHostServicePlane(t *testing.T) {
 	if values["NPM_CONFIG_REGISTRY"] != "http://10.255.0.1:4873" {
 		t.Fatalf("NPM_CONFIG_REGISTRY: got %q", values["NPM_CONFIG_REGISTRY"])
 	}
+	if values["FORGE_METAL_VM_BRIDGE_SOCKET"] != bridgeSocketPath {
+		t.Fatalf("FORGE_METAL_VM_BRIDGE_SOCKET: got %q", values["FORGE_METAL_VM_BRIDGE_SOCKET"])
+	}
 }
 
 func TestBuildRuntimeEnvDoesNotForceCIOrRegistry(t *testing.T) {
@@ -104,5 +108,29 @@ func TestNormalizeWorkDirFallsBackToWorkspace(t *testing.T) {
 	}
 	if got := normalizeWorkDir("/workspace/apps/web"); got != "/workspace/apps/web" {
 		t.Fatalf("normalizeWorkDir explicit: got %q", got)
+	}
+}
+
+func TestRunCLIHelp(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	if err := runCLI([]string{"--help"}, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runCLI help: %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "vm-bridge snapshot save <ref>") {
+		t.Fatalf("help output: %q", got)
+	}
+}
+
+func TestRunCLIRejectsInvalidSnapshotRefBeforeDial(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{"snapshot", "save", "../host"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected invalid ref error")
+	}
+	if strings.Contains(err.Error(), "connect vm-bridge") {
+		t.Fatalf("expected validation before local socket dial, got %v", err)
 	}
 }

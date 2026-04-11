@@ -16,9 +16,9 @@ Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for
 
 ## Workload Boundary
 
-vm-orchestrator accepts direct VM job commands only. Repo import, repo scanning, CI policy, queueing, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle and telemetry aggregation.
+vm-orchestrator accepts direct VM job commands and host-authorized checkpoint save refs only. Repo import, repo scanning, CI policy, queueing, checkpoint ref policy, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle, safe ZFS operations, and telemetry aggregation.
 
-Guest event streams are host-derived phase/lifecycle signals; do not add workload-writable control or billing event channels.
+Guest event streams are host-derived phase/lifecycle/checkpoint signals; do not add workload-writable billing event channels. Guest checkpoint requests are untrusted input: they may name only a service-authorized ref and must never include ZFS paths, org IDs, or host dataset/version IDs.
 
 ## Shell Scripting Inside Guests
 

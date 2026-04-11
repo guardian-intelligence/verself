@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -28,18 +30,27 @@ var ErrFrameTooLarge = errors.New("frame too large")
 type MessageType string
 
 const (
-	TypeHello      MessageType = "hello"
-	TypeRunRequest MessageType = "run_request"
-	TypePhaseStart MessageType = "phase_start"
-	TypePhaseEnd   MessageType = "phase_end"
-	TypeLogChunk   MessageType = "log_chunk"
-	TypeHeartbeat  MessageType = "heartbeat"
-	TypeResult     MessageType = "result"
-	TypeFatal      MessageType = "fatal"
-	TypeCancel     MessageType = "cancel"
-	TypeAck        MessageType = "ack"
-	TypeShutdown   MessageType = "shutdown"
+	TypeHello              MessageType = "hello"
+	TypeRunRequest         MessageType = "run_request"
+	TypePhaseStart         MessageType = "phase_start"
+	TypePhaseEnd           MessageType = "phase_end"
+	TypeLogChunk           MessageType = "log_chunk"
+	TypeHeartbeat          MessageType = "heartbeat"
+	TypeResult             MessageType = "result"
+	TypeCheckpointRequest  MessageType = "checkpoint_request"
+	TypeCheckpointResponse MessageType = "checkpoint_response"
+	TypeFatal              MessageType = "fatal"
+	TypeCancel             MessageType = "cancel"
+	TypeAck                MessageType = "ack"
+	TypeShutdown           MessageType = "shutdown"
 )
+
+const (
+	CheckpointOperationSave = "save"
+	MaxCheckpointRefLen     = 128
+)
+
+var checkpointRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type Envelope struct {
 	Version int             `json:"v"`
@@ -98,6 +109,21 @@ type Result struct {
 	DroppedLogBytes uint64 `json:"dropped_log_bytes"`
 }
 
+type CheckpointRequest struct {
+	RequestID string `json:"request_id"`
+	Operation string `json:"operation"`
+	Ref       string `json:"ref"`
+}
+
+type CheckpointResponse struct {
+	RequestID string `json:"request_id"`
+	Operation string `json:"operation"`
+	Ref       string `json:"ref"`
+	Accepted  bool   `json:"accepted"`
+	VersionID string `json:"version_id,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 type Fatal struct {
 	Message string `json:"message"`
 }
@@ -112,6 +138,29 @@ type Ack struct {
 }
 
 type Shutdown struct{}
+
+func ValidateCheckpointRef(ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return errors.New("checkpoint ref is required")
+	}
+	if len(ref) > MaxCheckpointRefLen {
+		return fmt.Errorf("checkpoint ref exceeds %d bytes", MaxCheckpointRefLen)
+	}
+	if !checkpointRefPattern.MatchString(ref) {
+		return errors.New("checkpoint ref must start with an ASCII letter or digit and contain only letters, digits, '.', '_', ':', or '-'")
+	}
+	return nil
+}
+
+func ValidateCheckpointRequest(req CheckpointRequest) error {
+	switch strings.TrimSpace(req.Operation) {
+	case CheckpointOperationSave:
+	default:
+		return fmt.Errorf("unsupported checkpoint operation %q", req.Operation)
+	}
+	return ValidateCheckpointRef(req.Ref)
+}
 
 type Codec struct {
 	reader io.Reader

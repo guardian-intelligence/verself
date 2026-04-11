@@ -20,12 +20,12 @@ forge-metal/                            # Monorepo root
 │   ├── api.go                          # Service API surface
 │   ├── client.go, client_types.go      # gRPC client
 │   ├── orchestrator.go                 # VM lifecycle: create, start, stop, destroy
-│   ├── zvol.go                         # ZFS clone/destroy/snapshot/written
+│   ├── zvol.go                         # ZFS zvol helpers
 │   ├── network.go                      # TAP + CIDR lease allocator
 │   ├── telemetry_stream.go             # Guest telemetry aggregation
 │   ├── proto/                          # gRPC protobuf definitions
 │   ├── vmproto/                        # Host-guest vsock wire protocol
-│   └── cmd/vm-init/                    # Guest PID 1
+│   └── cmd/vm-bridge/                  # Guest PID 1/control bridge and in-guest snapshot CLI
 │
 │   ── Services ──────────────────────────────────────────────────────────
 │
@@ -46,12 +46,14 @@ forge-metal/                            # Monorepo root
 │   └── testharness/                    # Test utilities
 ├── src/sandbox-rental-service/         # Sandbox product backend (Go/Huma)
 │   ├── go.mod                          # imports: vm-orchestrator, billing-service/client, auth-middleware
-│   ├── cmd/sandbox-rental-service/     # Job orchestration, billing integration
+│   ├── cmd/sandbox-rental-service/     # Main service binary
 │   ├── internal/
 │   │   ├── api/                        # Huma HTTP handlers
-│   │   └── jobs/                       # Job execution logic
+│   │   ├── checkpoints/                # Target checkpoint ref/version policy
+│   │   ├── ci/                         # Target Forgejo/GitHub Actions workflow compiler
+│   │   └── jobs/                       # Execution, segment, billing, checkpoint orchestration
 │   ├── e2e/                            # End-to-end tests
-│   ├── migrations/                     # job_runs, job_logs PostgreSQL schemas
+│   ├── migrations/                     # executions, segments, checkpoints, logs PostgreSQL schemas
 │   └── testharness/                    # Test utilities
 ├── src/mailbox-service/                # Inbound mail processing (Go/Huma)
 │   ├── go.mod                          # imports: auth-middleware, otel

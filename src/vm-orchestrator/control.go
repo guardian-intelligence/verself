@@ -32,6 +32,8 @@ type guestControl struct {
 	seq uint64
 }
 
+type checkpointHandler func(vmproto.CheckpointRequest) vmproto.CheckpointResponse
+
 func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestControl, error) {
 	conn, reader, err := connectGuestBridge(ctx, udsPath, port)
 	if err != nil {
@@ -111,7 +113,7 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP string, hostServicePort int, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
+func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
 	var (
 		logBuf       strings.Builder
 		hello        vmproto.Hello
@@ -171,6 +173,26 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 			appendLogChunk(&logBuf, msg.Data)
 			observer.OnGuestLogChunk(job.JobID, string(msg.Data))
 		case vmproto.TypeHeartbeat:
+		case vmproto.TypeCheckpointRequest:
+			req, err := vmproto.DecodePayload[vmproto.CheckpointRequest](env)
+			if err != nil {
+				return resultWithLogs(), err
+			}
+			var resp vmproto.CheckpointResponse
+			if handleCheckpoint == nil {
+				resp = vmproto.CheckpointResponse{
+					RequestID: req.RequestID,
+					Operation: req.Operation,
+					Ref:       req.Ref,
+					Accepted:  false,
+					Error:     "checkpoint requests are not enabled for this VM",
+				}
+			} else {
+				resp = handleCheckpoint(req)
+			}
+			if err := c.send(vmproto.TypeCheckpointResponse, resp); err != nil {
+				return resultWithLogs(), fmt.Errorf("send checkpoint response: %w", err)
+			}
 		case vmproto.TypePhaseStart:
 			if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
 				observer.OnGuestPhaseStart(job.JobID, msg.Name)

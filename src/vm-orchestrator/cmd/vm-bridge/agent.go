@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -37,6 +38,9 @@ type agentSession struct {
 	activeChildPID  atomic.Int64
 
 	jobCancel context.CancelFunc
+
+	checkpointMu      sync.Mutex
+	checkpointWaiters map[string]chan vmproto.CheckpointResponse
 }
 
 func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal) error {
@@ -85,13 +89,24 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		return session.fail(err)
 	}
 	if err := setWallClock(runReq.HostWallclockUnixNS); err != nil {
-		session.sendLogString("system", fmt.Sprintf("[init] warning: set wall clock: %v\n", err))
+		session.sendLogString("system", fmt.Sprintf("%s warning: set wall clock: %v\n", logPrefix, err))
 	}
 
 	env, err := buildRuntimeEnv(runReq.Env, runReq.Network)
 	if err != nil {
 		return session.fail(err)
 	}
+
+	localControlCtx, localControlCancel := context.WithCancel(ctx)
+	stopLocalControl, err := session.startLocalControlServer(localControlCtx)
+	if err != nil {
+		localControlCancel()
+		return session.fail(err)
+	}
+	defer func() {
+		localControlCancel()
+		stopLocalControl()
+	}()
 
 	var (
 		runDuration time.Duration
@@ -134,7 +149,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 			if !ackedResult {
 				continue
 			}
-			session.sendLogString("system", "[init] shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
+			session.sendLogString("system", logPrefix+" shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
 			syscall.Sync()
 			return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 		case vmproto.TypeCancel:
@@ -160,6 +175,12 @@ func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.En
 			default:
 			}
 			return
+		}
+		if env.Type == vmproto.TypeCheckpointResponse {
+			resp, err := vmproto.DecodePayload[vmproto.CheckpointResponse](env)
+			if err == nil && s.deliverCheckpointResponse(resp) {
+				continue
+			}
 		}
 		select {
 		case controlCh <- env:
@@ -369,7 +390,7 @@ func (s *agentSession) runPhase(ctx context.Context, controlCh <-chan vmproto.En
 	}
 	spec, err := phaseCommand(argv, workDir, env)
 	if err != nil {
-		s.sendLogString("system", fmt.Sprintf("[init] %s resolve command: %v\n", label, err))
+		s.sendLogString("system", fmt.Sprintf("%s %s resolve command: %v\n", logPrefix, label, err))
 		return 0, 127, nil
 	}
 	duration, exitCode, err := s.runCommand(ctx, label, spec, controlCh)
@@ -407,7 +428,7 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	cmd.Env = spec.Env
 	cmd.Stdout = agentLogWriter{session: s, stream: "stdout"}
 	cmd.Stderr = agentLogWriter{session: s, stream: "stderr"}
-	// Drop customer code to an unprivileged user; vm-init remains the guest root boundary.
+	// Drop customer code to an unprivileged user; vm-bridge remains the guest root boundary.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:     true,
 		Credential: &syscall.Credential{Uid: runnerUID, Gid: runnerGID},
