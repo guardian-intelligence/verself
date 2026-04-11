@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { getBalance, getGrants, getSubscriptions } from "~/server-fns/api";
+import { getBalance, getGrants, getStatement, getSubscriptions } from "~/server-fns/api";
 
 function billingQueryKey<TParts extends readonly unknown[]>(
   auth: AuthenticatedAuth,
@@ -25,6 +25,12 @@ export const activeGrantsQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
     queryKey: billingQueryKey(auth, "grants", { active: true }),
     queryFn: () => getGrants({ data: { active: true } }),
+  });
+
+export const statementQuery = (auth: AuthenticatedAuth, productId: string) =>
+  queryOptions({
+    queryKey: billingQueryKey(auth, "statement", { productId }),
+    queryFn: () => getStatement({ data: { productId } }),
   });
 
 export async function loadBalance(queryClient: QueryClient, auth: AuthenticatedAuth) {

@@ -1,6 +1,17 @@
 import { formatUTCDateTime as formatStableUTCDateTime } from "@forge-metal/web-env";
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+const ledgerUnitsPerUSD = 10_000_000;
+const ledgerMoneyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+});
+const ledgerRateFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 6,
+});
 
 export function formatDateUTC(value: Date | number | string): string {
   return formatStableUTCDateTime(
@@ -27,4 +38,13 @@ export function formatDateTimeUTC(value: Date | number | string): string {
 
 export function formatInteger(value: number): string {
   return numberFormatter.format(value);
+}
+
+export function formatLedgerAmount(value: number): string {
+  // Stripe purchases store cents * 100,000, so 10,000,000 ledger units equals one USD.
+  return ledgerMoneyFormatter.format(value / ledgerUnitsPerUSD);
+}
+
+export function formatLedgerRate(value: number): string {
+  return `${ledgerRateFormatter.format(value / ledgerUnitsPerUSD)} / unit`;
 }
