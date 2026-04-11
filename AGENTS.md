@@ -24,6 +24,7 @@ Billing is figured out, layered on top of Stripe to make it easy to go from "Pro
         2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment.
         NOTE: this philosophy is not yet upheld today, but it's something to keep in mind as we upgrade the codebase.
 
+* Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See docs/architecture/identity-and-iam.md.
 * Improvements to our usage-based billing system with subscriptions + credits
 * An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 
@@ -31,15 +32,21 @@ Billing is figured out, layered on top of Stripe to make it easy to go from "Pro
 
 This is a deploy-together system. Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.
 
+There are three safety rings:
+
+Internet-Exposed: Frontend TanStack (src/viteplus-monorepo/apps/*) + Golang Services (src/sandbox-rental-service, src/mailbox service, src/billing-service's webhook handler). Security hardened through nftables as much as possible (always improving) + Forgejo + HyperDX
+Private Subnet/Linux Userspace: Golang internal services (billing-service), Databases (PG, ClickHouse, TigerBeetle), Self-Hosted Platform Stuff (Zitadel, Stalwart)
+Linux Root: ZFS, src/vm-orchestrator
+
 Hard product design requirement: everything must be self-hosted.
 
 Exceptions:
 
-Optional - Backblaze B2, Cloudflare R2, AWS S3 for backups (will be done through `zfs send`, not LINSTOR + DRBD) [Backups not yet implemented]
-Required - Domain Registrar (Cloudflare only for now)
-Required - Compute Provider (Latitude.sh only for now)
-Required - Email Delivery (Resend only for now, inbound done via Stalwart)
-Required - Payments, Dunning, Tax, Invoices (Stripe only for now)
+Optional - Backups (Supported Provider: None, but Backblaze B2, Cloudflare R2, and AWS S3 support planned) (will be done through `zfs send`) [Backups not yet implemented]
+Required - Domain Registrar (Supported Provider: Cloudflare only for now)
+Required - Compute Provider (Supported Provider: Latitude.sh only for now)
+Required - Email Delivery (Supported Provider: Resend only for now, inbound done via Stalwart)
+Required - Payments, Dunning, Tax, Invoices, Payment Method Managing (Supported Provider: Stripe)
 
 ## Service Architecture
 
@@ -51,11 +58,15 @@ Secrets are SOPS-encrypted in `group_vars/all/secrets.sops.yml`, written by each
 
 Go services are written with the Huma v2 framework (https://pkg.go.dev/github.com/danielgtaylor/huma/v2) to support automatic generation of clients via OpenAPI v3.1. Do not write custom clients for go services; generate them from an OpenAPI specification. Each service commits both an OpenAPI 3.0 spec (for Go client generation via oapi-codegen) and a 3.1 spec (for TypeScript client + Valibot validator generation via @hey-api/openapi-ts).
 
+Shared cross-service DTO wire language lives in `src/apiwire`; use it for Huma boundary DTOs and generated-client contracts instead of service-local 64-bit JSON encodings.
+
 When writing Huma services, please review the reference documentation https://pkg.go.dev/github.com/danielgtaylor/huma/v2#section-documentation
 
 ### Auth model
 
 Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
+
+Organization administration and product IAM are Forge Metal product concerns layered on top of Zitadel identity. Services define and enforce operation permissions; Zitadel stores identity, organization, project role, and role-assignment state; customer-editable policy documents belong to Forge Metal and should be managed through a first-party organization console or shared product widget. See docs/architecture/identity-and-iam.md.
 
 Auth at the web application level is treated *only* as a UX concern. Authentication and authorization is performed by services validating JWTs and calling out to Zitadel, and sometimes at the DB level where possible. Any violation of this principle is to be treated as a critical security concern and should be raised + fixed.
 
@@ -208,9 +219,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 
 * Ground proposals, plans, API references, and all technical discussion in primary sources. Then, think from the perspective of the user of the system. The user is a non-technical startup founder -- a sole operator of a small software company operating all services off a single bare metal box (with upgrade path to 3-node k3s for higher availability and additional capabilities).
 * When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies being stitched together so it's important to understand how everything connects.
-* You are expected to push back on poor technical decisions. Technical decisions are poor when they couple too much to a specific workflow (e.g. hardcoding Postgres in every Firecracker VM), attempt to use technology in ways its not meant to be used (e.g. using Nix inside of a firecracker VM), or are technically infeasible or "not even wrong".
 * Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming. 
-* You may be asked series of questions. Not all questions need to be answered individually. Consider the gestalt of the discussion and take a step back and address the core question underneath the questions.
 * You are not alone in this repo. Expect parallel changes in unrelated files by the user.
 * This repo is currently private and serves no customers or users. There is no backwards compatibility to maintain. This means: no compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover. 
 * Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
