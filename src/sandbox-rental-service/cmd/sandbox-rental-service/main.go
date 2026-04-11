@@ -68,6 +68,10 @@ func run() error {
 	billingClientID := requireEnv("SANDBOX_BILLING_CLIENT_ID")
 	billingTokenURL := requireEnv("SANDBOX_BILLING_TOKEN_URL")
 	billingAuthAudience := requireEnv("SANDBOX_BILLING_AUTH_AUDIENCE")
+	billingReturnOrigins, err := sandboxapi.ParseBillingReturnOrigins(requireEnv("SANDBOX_BILLING_RETURN_ORIGINS"))
+	if err != nil {
+		return fmt.Errorf("SANDBOX_BILLING_RETURN_ORIGINS: %w", err)
+	}
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
@@ -167,7 +171,9 @@ func run() error {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, billingClient)
+	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, billingClient, sandboxapi.PublicAPIConfig{
+		BillingReturnOrigins: billingReturnOrigins,
+	})
 	sandboxapi.RegisterPublicRoutes(rootMux, jobService, sandboxapi.ForgejoWebhookConfig{
 		PlatformOrgID: platformOrgID,
 		ActorID:       "system:forgejo-webhook",

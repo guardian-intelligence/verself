@@ -63,6 +63,7 @@ type Config struct {
 	ForgejoRunnerToken        string
 	ForgejoRunnerBinaryURL    string
 	ForgejoRunnerBinarySHA256 string
+	BillingReturnOrigins      []string
 	AuthCfg                   auth.Config
 	Logger                    *slog.Logger
 }
@@ -94,7 +95,9 @@ func NewServer(cfg Config) *Server {
 
 	rootMux := http.NewServeMux()
 	privateMux := http.NewServeMux()
-	sandboxapi.NewAPI(privateMux, "1.0.0", "127.0.0.1:0", svc, cfg.Billing)
+	sandboxapi.NewAPI(privateMux, "1.0.0", "127.0.0.1:0", svc, cfg.Billing, sandboxapi.PublicAPIConfig{
+		BillingReturnOrigins: cfg.BillingReturnOrigins,
+	})
 	sandboxapi.RegisterPublicRoutes(rootMux, svc, sandboxapi.ForgejoWebhookConfig{
 		PlatformOrgID: cfg.PlatformOrgID,
 		ActorID:       "system:forgejo-webhook",

@@ -279,6 +279,7 @@
       Environment=SANDBOX_BILLING_CLIENT_ID={{ sandbox_rental_service_billing_client_id }}
       Environment=SANDBOX_BILLING_TOKEN_URL={{ sandbox_rental_service_billing_token_url }}
       Environment=SANDBOX_BILLING_AUTH_AUDIENCE={{ sandbox_rental_service_billing_auth_audience }}
+      Environment=SANDBOX_BILLING_RETURN_ORIGINS=https://{{ sandbox_rental_service_domain }}
       Environment=SANDBOX_AUTH_ISSUER_URL={{ sandbox_rental_service_auth_issuer_url }}
       Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}

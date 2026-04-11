@@ -11,22 +11,26 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
 
-func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, billing *billingclient.ServiceClient) huma.API {
+type PublicAPIConfig struct {
+	BillingReturnOrigins []string
+}
+
+func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) huma.API {
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, svc, billing)
+	RegisterRoutes(api, svc, billing, publicConfig)
 	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
 func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil)
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().DowngradeYAML()
 }
 
 func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil)
+	api := NewAPI(http.NewServeMux(), version, listenAddr, nil, nil, PublicAPIConfig{})
 	return api.OpenAPI().YAML()
 }
