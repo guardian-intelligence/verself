@@ -93,6 +93,8 @@
     body_format: json
     body:
       name: "{{ billing_service_auth_project_name }}"
+      projectRoleAssertion: true
+      projectRoleCheck: true
     return_content: true
   register: billing_service_auth_project_created
   when: billing_service_auth_project == {}
@@ -110,6 +112,22 @@
   ansible.builtin.assert:
     that: billing_service_auth_audience | default('', true) | length > 0
     fail_msg: billing_service_auth_audience could not be resolved from Zitadel.
+
+- name: Ensure billing project has role assertion enabled
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ billing_service_auth_audience }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ billing_service_zitadel_admin_pat_raw.content | b64decode | trim }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ billing_service_auth_project_name }}"
+      projectRoleAssertion: true
+      projectRoleCheck: true
+    status_code: 200
+  when: billing_service_auth_project != {}
+  no_log: true
 
 - name: Ensure billing project roles exist
   ansible.builtin.include_role:

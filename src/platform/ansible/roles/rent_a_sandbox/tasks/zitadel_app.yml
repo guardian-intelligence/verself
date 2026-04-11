@@ -203,6 +203,42 @@
     rent_a_sandbox_client_id: "{{ (rent_a_sandbox_final_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
   when: rent_a_sandbox_final_app_search is not skipped
 
+- name: Ensure rent-a-sandbox OIDC app includes roles in access tokens
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{
+      rent_a_sandbox_project_id }}/apps/{{ rent_a_sandbox_app_id }}/oidc_config
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      redirectUris:
+        - "https://{{ rent_a_sandbox_domain }}/callback"
+      responseTypes:
+        - "OIDC_RESPONSE_TYPE_CODE"
+      grantTypes:
+        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+        - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+      appType: "OIDC_APP_TYPE_WEB"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      postLogoutRedirectUris:
+        - "https://{{ rent_a_sandbox_domain }}"
+      devMode: false
+      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+      accessTokenRoleAssertion: true
+      idTokenRoleAssertion: true
+      idTokenUserinfoAssertion: true
+    status_code: [200, 400]
+  register: rent_a_sandbox_oidc_config_converged
+  failed_when: >-
+    rent_a_sandbox_oidc_config_converged.status == 400
+    and 'No changes' not in (rent_a_sandbox_oidc_config_converged.json.message | default(''))
+  changed_when: rent_a_sandbox_oidc_config_converged.status == 200
+  when: rent_a_sandbox_app_id | default('', true) | length > 0
+  no_log: true
+
 - name: Persist rent-a-sandbox OIDC Web cutover marker
   ansible.builtin.copy:
     dest: /etc/credstore/rent-a-sandbox/oidc-web-cutover
