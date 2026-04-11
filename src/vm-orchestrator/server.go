@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,18 +33,19 @@ type APIServer struct {
 type managedJob struct {
 	id string
 
-	mu         sync.RWMutex
-	state      JobState
-	cancel     context.CancelFunc
-	result     *JobResult
-	err        error
-	logSeq     uint64
-	logChunks  []jobLogChunk
-	eventSeq   uint64
-	events     []jobGuestEvent
-	hello      *TelemetryHello
-	sample     *TelemetrySample
-	lastUpdate time.Time
+	mu             sync.RWMutex
+	state          JobState
+	cancel         context.CancelFunc
+	result         *JobResult
+	err            error
+	logSeq         uint64
+	logChunks      []jobLogChunk
+	eventSeq       uint64
+	events         []jobGuestEvent
+	billablePhases map[string]struct{}
+	hello          *TelemetryHello
+	sample         *TelemetrySample
+	lastUpdate     time.Time
 }
 
 type jobLogChunk struct {
@@ -87,7 +89,7 @@ func (s *APIServer) CreateJob(ctx context.Context, req *vmrpc.CreateJobRequest) 
 		cfg := configFromProto(s.cfg, spec.DirectJob.GetRuntimeConfig())
 		job := jobConfigFromProto(spec.DirectJob.GetJob())
 		job.JobID = ensureJobID(job.JobID)
-		record, err := s.createJobRecord(job.JobID)
+		record, err := s.createJobRecord(job.JobID, job.BillablePhases)
 		if err != nil {
 			return nil, err
 		}
@@ -294,7 +296,7 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	}, nil
 }
 
-func (s *APIServer) createJobRecord(jobID string) (*managedJob, error) {
+func (s *APIServer) createJobRecord(jobID string, billablePhases []string) (*managedJob, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -303,8 +305,9 @@ func (s *APIServer) createJobRecord(jobID string) (*managedJob, error) {
 	}
 
 	record := &managedJob{
-		id:    jobID,
-		state: JobStatePending,
+		id:             jobID,
+		state:          JobStatePending,
+		billablePhases: normalizeBillablePhaseSet(billablePhases),
 	}
 	s.jobs[jobID] = record
 	return record, nil
@@ -381,9 +384,17 @@ func (o *jobObserver) OnGuestEvent(_ string, event vmproto.GuestEvent) {
 	o.job.appendGuestEvent(event)
 }
 
-func (o *jobObserver) OnGuestPhaseStart(_ string, _ string) {}
+func (o *jobObserver) OnGuestPhaseStart(_ string, phase string) {
+	o.job.appendPhaseEvent("phase_started", phase, nil)
+}
 
-func (o *jobObserver) OnGuestPhaseEnd(_ string, _ PhaseResult) {}
+func (o *jobObserver) OnGuestPhaseEnd(_ string, result PhaseResult) {
+	attrs := map[string]string{
+		"exit_code":   strconv.Itoa(result.ExitCode),
+		"duration_ms": strconv.FormatInt(result.DurationMS, 10),
+	}
+	o.job.appendPhaseEvent("phase_ended", result.Name, attrs)
+}
 
 func (o *jobObserver) OnTelemetryEvent(event TelemetryEvent) {
 	o.job.recordTelemetry(event)
@@ -433,14 +444,43 @@ func (j *managedJob) appendGuestEvent(event vmproto.GuestEvent) {
 	if strings.TrimSpace(event.Kind) == "" {
 		return
 	}
+	j.appendEvent(strings.TrimSpace(event.Kind), cloneStringMap(event.Attrs))
+}
+
+func (j *managedJob) appendPhaseEvent(kind, phase string, extra map[string]string) {
+	phase = strings.TrimSpace(phase)
+	if phase == "" {
+		return
+	}
+	attrs := map[string]string{
+		"phase":                   phase,
+		"billable":                strconv.FormatBool(j.isBillablePhase(phase)),
+		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+	}
+	for key, value := range extra {
+		attrs[key] = value
+	}
+	j.appendEvent(kind, attrs)
+}
+
+func (j *managedJob) appendEvent(kind string, attrs map[string]string) {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return
+	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.eventSeq++
 	j.events = append(j.events, jobGuestEvent{
 		Seq:   j.eventSeq,
-		Kind:  strings.TrimSpace(event.Kind),
-		Attrs: cloneStringMap(event.Attrs),
+		Kind:  kind,
+		Attrs: cloneStringMap(attrs),
 	})
+}
+
+func (j *managedJob) isBillablePhase(phase string) bool {
+	_, ok := j.billablePhases[strings.TrimSpace(phase)]
+	return ok
 }
 
 func (j *managedJob) logSnapshot(offset int) ([]jobLogChunk, bool) {
@@ -567,6 +607,18 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func normalizeBillablePhaseSet(phases []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(phases))
+	for _, phase := range phases {
+		phase = strings.TrimSpace(phase)
+		if phase == "" {
+			continue
+		}
+		out[phase] = struct{}{}
+	}
+	return out
 }
 
 func totalGuestSlots(poolCIDR string) int {

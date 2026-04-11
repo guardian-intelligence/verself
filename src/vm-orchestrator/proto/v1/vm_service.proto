@@ -32,6 +32,7 @@ message JobConfig {
   string run_work_dir = 5;
   repeated string services = 6;
   map<string, string> env = 7;
+  repeated string billable_phases = 8;
 }
 
 message RuntimeConfig {

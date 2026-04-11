@@ -108,9 +108,10 @@ func run() error {
 
 	jobID := uuid.New().String()
 	job := vmorchestrator.JobConfig{
-		JobID:      jobID,
-		RunCommand: args,
-		RunWorkDir: "/workspace",
+		JobID:          jobID,
+		RunCommand:     args,
+		RunWorkDir:     "/workspace",
+		BillablePhases: []string{"run"},
 		Env: map[string]string{
 			"CI":                     "true",
 			"REPO":                   repo,
