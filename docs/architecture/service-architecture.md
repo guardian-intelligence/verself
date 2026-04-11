@@ -60,8 +60,8 @@
 
 ## Wire Contracts
 
-See [wire-contracts.md](wire-contracts.md). `src/apiwire` owns shared Huma DTOs, decimal 64-bit JSON/OpenAPI types, and cross-service field language. Service domain packages can keep native Go types, but Huma boundary structs use `apiwire` DTOs when a frontend, generated client, or another service consumes the shape.
+See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire` owns shared Huma DTOs, decimal 64-bit JSON/OpenAPI types, and cross-service field language. Service domain packages can keep native Go types, but Huma boundary structs use `apiwire` DTOs when a frontend, generated client, or another service consumes the shape.
 
 ## Identity And IAM
 
-See [identity-and-iam.md](identity-and-iam.md). Zitadel owns identity and role assignments, Forge Metal owns product policy documents and organization management UX, and each Go service owns the operation catalog it enforces.
+See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments, Forge Metal owns product policy documents and organization management UX, and each Go service owns the operation catalog it enforces.

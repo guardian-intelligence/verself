@@ -21,10 +21,10 @@ Billing is figured out, layered on top of Stripe to make it easy to go from "Pro
 * We're moving to k3s soon.
 * Broad direction: every service should do the following:
         1. Be designed for use by customers in a multi-tenant, organization-based fashion and integrated into our policy and billing abstractions.
-        2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment.
+        2. Be designed such that we are the principal customers (dogfooding, essentially). We go through the same policy and billing abstractions, except our usage is unlimited and our bill at invoice time nets to 0 after applying an adjustment. Currently not doing Mail because that's pretty simple but it would be good to dogfood that too.
         NOTE: this philosophy is not yet upheld today, but it's something to keep in mind as we upgrade the codebase.
 
-* Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See docs/architecture/identity-and-iam.md.
+* Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See src/platform/docs/identity-and-iam.md.
 * Improvements to our usage-based billing system with subscriptions + credits
 * An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 
@@ -66,7 +66,7 @@ When writing Huma services, please review the reference documentation https://pk
 
 Zitadel is the sole IdP. All Go services import `src/auth-middleware/` which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context.
 
-Organization administration and product IAM are Forge Metal product concerns layered on top of Zitadel identity. Services define and enforce operation permissions; Zitadel stores identity, organization, project role, and role-assignment state; customer-editable policy documents belong to Forge Metal and should be managed through a first-party organization console or shared product widget. See docs/architecture/identity-and-iam.md.
+Organization administration and product IAM are Forge Metal product concerns layered on top of Zitadel identity. Services define and enforce operation permissions; Zitadel stores identity, organization, project role, and role-assignment state; customer-editable policy documents belong to Forge Metal and should be managed through a first-party organization console or shared product widget. See src/platform/docs/identity-and-iam.md.
 
 Auth at the web application level is treated *only* as a UX concern. Authentication and authorization is performed by services validating JWTs and calling out to Zitadel, and sometimes at the DB level where possible. Any violation of this principle is to be treated as a critical security concern and should be raised + fixed.
 
@@ -95,7 +95,7 @@ Key use cases:
 
 ### Inbound mail
 
-Self-hosted inbound mail is done via Stalwart. See docs/architecture/inbound-mail.md for more.
+Self-hosted inbound mail is done via Stalwart. See src/mailbox-service/docs/inbound-mail.md for more.
 
 ## Supply Chain Management
 
@@ -214,6 +214,17 @@ All deploy playbooks support `--tags` for targeting individual roles (e.g. `--ta
 ## Directory Structure
 
 See docs/architecture/directory-structure.md to understand the project's directory structure
+
+## Architecture Docs
+
+Architecture documents live with the service they describe:
+
+* Inbound mail (Stalwart, mailbox-service boundary, auth, storage): `src/mailbox-service/docs/inbound-mail.md`
+* ZFS golden image lifecycle (host/guest boundary, warm/exec profiles): `src/vm-orchestrator/docs/zfs-golden-image-lifecycle.md`
+* Firecracker VM networking (TAP allocator, host service plane, nftables): `src/vm-orchestrator/docs/firecracker-vm-networking.md`
+* Wire contracts (apiwire DTO patterns, numeric safety, generated contract gate): `src/apiwire/docs/wire-contracts.md`
+* VM execution control plane (sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows): `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
+* Identity and IAM direction (Zitadel ↔ Forge Metal policy split, org console, invariants): `src/platform/docs/identity-and-iam.md`
 
 ## Assistant Contract
 
