@@ -199,6 +199,13 @@ read, persist, or refresh Zitadel bearer tokens. Frontend `beforeLoad` checks
 are useful for SSR gating, redirects, and user experience; they are not
 authorization.
 
+Do not assume a web UI persona by inserting rows into `frontend_auth.auth_sessions`.
+Those sessions are coupled to the encrypted HTTP-only cookie, OAuth state,
+nonce, PKCE, token expiry, and refresh semantics owned by the auth server
+package. UI rehearsal should drive the normal Zitadel browser login. API
+rehearsal should use seeded client-credentials machine users with project
+audience and role scopes.
+
 Only frontends need interactive OIDC applications. Go services need the Zitadel
 project/application audience that should appear in tokens; they do not own
 interactive login.
@@ -226,6 +233,41 @@ service accounts:
 - Request the audience, role, and resource-owner scopes explicitly when
   fetching the client-credentials token.
 - Delete or rotate the seed credential when it is no longer needed.
+
+## Seeded Rehearsal Personas
+
+`seed-system.yml` provisions three long-lived rehearsal personas for operators
+and agents. Each persona has a human browser login and a matching machine user
+for API rehearsal:
+
+| Persona | Human login | Machine user | Organization | Built-in roles |
+|---|---|---|---|---|
+| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | `sandbox_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
+| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | `sandbox_org_admin` |
+| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member` |
+
+Use the Make wrappers to mint short-lived token files from the deployed
+credential store:
+
+```bash
+make assume-platform-admin
+make assume-acme-admin
+make assume-acme-member
+make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
+```
+
+The default output path is `artifacts/personas/<persona>.env`, written `0600`.
+The file contains browser credentials (`BROWSER_EMAIL`, `BROWSER_PASSWORD`) and
+project-scoped access tokens such as `SANDBOX_RENTAL_ACCESS_TOKEN` and
+`MAILBOX_SERVICE_ACCESS_TOKEN`. These tokens are rehearsal credentials, not a
+new persistence layer; regenerate them from Zitadel when they expire.
+
+The platform admin persona intentionally does not export the Zitadel admin PAT,
+ClickHouse password, or Forgejo automation token. ClickHouse access remains the
+operator Make wrapper (`make clickhouse-query`) because it is not a Zitadel
+resource yet. Forgejo API automation remains provider-native
+`forgejo-automation` until Forgejo OIDC group/role claims are proven for the
+interactive UI path and a separate provider API credential model is introduced.
 
 ## External Integration Credentials
 
@@ -279,9 +321,10 @@ programmatically.
   acceptable while one service owns most product operations; once multiple
   services need customer-editable bundles, Forge Metal needs a shared policy
   source and cache invalidation story.
-- Stalwart/JMAP remains outside the Zitadel service-auth model. Treat that as a
-  documented exception until mailbox identity is folded into the same org and
-  policy model.
+- Stalwart direct JMAP/IMAP/SMTP auth remains outside the Zitadel service-auth
+  model. The repo-owned `mailbox-service` HTTP API uses Zitadel bearer tokens
+  plus `mailbox_bindings`, but direct mail protocol credentials are still
+  Stalwart-owned.
 - The single-node JWKS loopback path is not the three-node design. Remote
   Zitadel requires topology-aware JWKS discovery and service egress policy.
 
