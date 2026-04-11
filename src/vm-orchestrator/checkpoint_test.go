@@ -70,8 +70,51 @@ func TestCheckpointRequestSnapshotsActiveDatasetOnly(t *testing.T) {
 	}
 }
 
+func TestCleanupRetainsCheckpointedWorkloadDataset(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Pool = "pool"
+	cfg.WorkloadDataset = "workloads"
+	ops := &checkpointTestPrivOps{}
+	orch := New(cfg, nil, WithPrivOps(ops))
+
+	retained, err := orch.destroyDisposableWorkloadDataset(context.Background(), "pool/workloads/job-1", true)
+	if err != nil {
+		t.Fatalf("cleanup returned error: %v", err)
+	}
+	if !retained {
+		t.Fatal("expected checkpointed workload dataset to be retained")
+	}
+	if len(ops.destroys) != 0 {
+		t.Fatalf("expected no destroy calls, got %v", ops.destroys)
+	}
+}
+
+func TestCleanupDestroysUncheckpointedWorkloadDataset(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Pool = "pool"
+	cfg.WorkloadDataset = "workloads"
+	ops := &checkpointTestPrivOps{}
+	orch := New(cfg, nil, WithPrivOps(ops))
+
+	retained, err := orch.destroyDisposableWorkloadDataset(context.Background(), "pool/workloads/job-1", false)
+	if err != nil {
+		t.Fatalf("cleanup returned error: %v", err)
+	}
+	if retained {
+		t.Fatal("uncheckpointed workload dataset should not be retained")
+	}
+	if len(ops.destroys) != 1 || ops.destroys[0] != "pool/workloads/job-1" {
+		t.Fatalf("destroy calls: got %v", ops.destroys)
+	}
+}
+
 type checkpointTestPrivOps struct {
 	snapshots []checkpointSnapshotCall
+	destroys  []string
 }
 
 type checkpointSnapshotCall struct {
@@ -97,7 +140,8 @@ func (p *checkpointTestPrivOps) ZFSSnapshot(_ context.Context, dataset, snapshot
 	return nil
 }
 
-func (p *checkpointTestPrivOps) ZFSDestroy(context.Context, string) error {
+func (p *checkpointTestPrivOps) ZFSDestroy(_ context.Context, dataset string) error {
+	p.destroys = append(p.destroys, dataset)
 	return nil
 }
 

@@ -153,6 +153,16 @@ func (o *Orchestrator) workloadDatasetPrefix() string {
 	return fmt.Sprintf("%s/%s/", o.cfg.Pool, o.cfg.WorkloadDataset)
 }
 
+func (o *Orchestrator) destroyDisposableWorkloadDataset(ctx context.Context, dataset string, checkpointSaved bool) (retained bool, err error) {
+	if !strings.HasPrefix(dataset, o.workloadDatasetPrefix()) {
+		return false, nil
+	}
+	if checkpointSaved {
+		return true, nil
+	}
+	return false, o.ops.ZFSDestroy(ctx, dataset)
+}
+
 // Run executes a command inside a Firecracker VM.
 func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult, err error) {
 	return o.RunObserved(ctx, job, nil)
@@ -255,6 +265,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 
 	logger := o.logger.With("job_id", job.JobID, "dataset", dataset)
 
+	var checkpointSaved atomic.Bool
 	var cleanups []func()
 	defer func() {
 		cleanupStart := time.Now()
@@ -267,10 +278,13 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 
 	if destroyAfter {
 		cleanups = append(cleanups, func() {
-			if strings.HasPrefix(dataset, o.workloadDatasetPrefix()) {
-				if destroyErr := o.ops.ZFSDestroy(context.Background(), dataset); destroyErr != nil {
-					logger.Warn("zvol destroy failed", "err", destroyErr)
-				}
+			retained, destroyErr := o.destroyDisposableWorkloadDataset(context.Background(), dataset, checkpointSaved.Load())
+			if destroyErr != nil {
+				logger.Warn("zvol destroy failed", "err", destroyErr)
+				return
+			}
+			if retained {
+				logger.Info("retaining workload zvol because checkpoint snapshot was saved")
 			}
 		})
 	}
@@ -448,8 +462,15 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		result guestControlResult
 		err    error
 	}, 1)
+	handleCheckpoint := o.checkpointHandler(job, dataset, observer, logger)
 	go func() {
-		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, o.checkpointHandler(job, dataset, observer, logger), logger, observer)
+		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
+			resp := handleCheckpoint(req)
+			if resp.Accepted {
+				checkpointSaved.Store(true)
+			}
+			return resp
+		}, logger, observer)
 		controlDone <- struct {
 			result guestControlResult
 			err    error
