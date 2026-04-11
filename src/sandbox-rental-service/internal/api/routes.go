@@ -18,7 +18,7 @@ import (
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient) {
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "import-repo",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos",
@@ -26,21 +26,21 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		DefaultStatus: 201,
 	}, importRepo(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "list-repos",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos",
 		Summary:     "List imported repos for the current org",
 	}, listRepos(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "get-repo",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}",
 		Summary:     "Get repo state and compatibility details",
 	}, getRepo(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "rescan-repo",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos/{repo_id}/rescan",
@@ -48,14 +48,14 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		DefaultStatus: 200,
 	}, rescanRepo(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "list-repo-generations",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}/generations",
 		Summary:     "List golden generations for a repo",
 	}, listRepoGenerations(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "refresh-repo",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos/{repo_id}/refresh",
@@ -63,7 +63,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		DefaultStatus: 202,
 	}, refreshRepo(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",
@@ -71,14 +71,14 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		DefaultStatus: 201,
 	}, submitExecution(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "get-execution",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}",
 		Summary:     "Get execution status and latest attempt",
 	}, getExecution(svc))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "get-execution-logs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}/logs",
@@ -87,28 +87,28 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "get-billing-balance",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/balance",
 		Summary:     "Get org credit balance",
 	}, getBillingBalance(billing))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "list-billing-subscriptions",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/subscriptions",
 		Summary:     "List org subscriptions",
 	}, listBillingSubscriptions(billing))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID: "list-billing-grants",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/grants",
 		Summary:     "List org credit grants",
 	}, listBillingGrants(billing))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "create-billing-checkout",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/checkout",
@@ -116,7 +116,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		DefaultStatus: 200,
 	}, createBillingCheckout(billing))
 
-	huma.Register(api, huma.Operation{
+	registerSecured(api, huma.Operation{
 		OperationID:   "create-billing-subscription",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/subscribe",
@@ -205,7 +205,7 @@ type SubscribeInput struct {
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
-		return nil, huma.Error401Unauthorized("missing identity")
+		return nil, unauthorized(ctx)
 	}
 	return identity, nil
 }
@@ -217,7 +217,7 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 	}
 	orgID, err := apiwire.ParseUint64(identity.OrgID)
 	if err != nil {
-		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
+		return 0, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
 	return orgID, nil
 }
@@ -230,7 +230,7 @@ func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*Rep
 		}
 		repo, err := svc.ImportRepo(ctx, orgID, importRepoRequest(input.Body))
 		if err != nil {
-			return nil, huma.Error500InternalServerError("import repo", err)
+			return nil, internalFailure(ctx, "import-repo-failed", "import repo failed", err)
 		}
 		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
@@ -244,7 +244,7 @@ func listRepos(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListRepos
 		}
 		repos, err := svc.ListRepos(ctx, orgID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list repos", err)
+			return nil, internalFailure(ctx, "list-repos-failed", "list repos failed", err)
 		}
 		return &ListReposOutput{Body: repoRecords(repos)}, nil
 	}
@@ -258,14 +258,14 @@ func getRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput,
 		}
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
 		}
 		repo, err := svc.GetRepo(ctx, orgID, repoID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, huma.Error404NotFound("repo not found")
+				return nil, notFound(ctx, "repo-not-found", "repo not found")
 			}
-			return nil, huma.Error500InternalServerError("get repo", err)
+			return nil, internalFailure(ctx, "get-repo-failed", "get repo failed", err)
 		}
 		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
@@ -279,14 +279,14 @@ func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutp
 		}
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
 		}
 		repo, err := svc.RescanRepo(ctx, orgID, repoID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, huma.Error404NotFound("repo not found")
+				return nil, notFound(ctx, "repo-not-found", "repo not found")
 			}
-			return nil, huma.Error500InternalServerError("rescan repo", err)
+			return nil, internalFailure(ctx, "rescan-repo-failed", "rescan repo failed", err)
 		}
 		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
@@ -300,18 +300,18 @@ func listRepoGenerations(svc *jobs.Service) func(context.Context, *RepoIDPath) (
 		}
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
 		}
 		repo, err := svc.GetRepo(ctx, orgID, repoID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, huma.Error404NotFound("repo not found")
+				return nil, notFound(ctx, "repo-not-found", "repo not found")
 			}
-			return nil, huma.Error500InternalServerError("get repo", err)
+			return nil, internalFailure(ctx, "get-repo-failed", "get repo failed", err)
 		}
 		generations, err := svc.ListGoldenGenerations(ctx, repo.RepoID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list repo generations", err)
+			return nil, internalFailure(ctx, "list-repo-generations-failed", "list repo generations failed", err)
 		}
 		return &ListRepoGenerationsOutput{Body: goldenGenerationRecords(generations)}, nil
 	}
@@ -329,17 +329,17 @@ func refreshRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*Refresh
 		}
 		repoID, err := uuid.Parse(input.RepoID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid repo_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
 		}
 		record, err := svc.QueueRepoBootstrap(ctx, orgID, identity.Subject, repoID, jobs.GenerationTriggerManualRefresh)
 		if err != nil {
 			switch {
 			case errors.Is(err, jobs.ErrRepoMissing):
-				return nil, huma.Error404NotFound("repo not found")
+				return nil, notFound(ctx, "repo-not-found", "repo not found")
 			case errors.Is(err, jobs.ErrRepoNotReady):
-				return nil, huma.Error409Conflict("repo is not ready")
+				return nil, conflict(ctx, "repo-not-ready", "repo is not ready")
 			default:
-				return nil, huma.Error500InternalServerError("refresh repo", err)
+				return nil, internalFailure(ctx, "refresh-repo-failed", "refresh repo failed", err)
 			}
 		}
 		return &RefreshRepoOutput{Body: repoBootstrapRecord(*record)}, nil
@@ -362,13 +362,13 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 		if err != nil {
 			switch {
 			case errors.Is(err, jobs.ErrQuotaExceeded):
-				return nil, huma.Error429TooManyRequests("quota exceeded")
+				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
 			case errors.Is(err, jobs.ErrRepoNotReady):
-				return nil, huma.Error409Conflict("repo is not ready")
+				return nil, conflict(ctx, "repo-not-ready", "repo is not ready")
 			case errors.Is(err, billingclient.ErrPaymentRequired):
-				return nil, huma.Error402PaymentRequired("insufficient balance")
+				return nil, paymentRequired(ctx, "insufficient balance")
 			default:
-				return nil, huma.Error500InternalServerError("submit execution", err)
+				return nil, internalFailure(ctx, "submit-execution-failed", "submit execution failed", err)
 			}
 		}
 
@@ -390,15 +390,15 @@ func getExecution(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*G
 		}
 		executionID, err := uuid.Parse(input.ExecutionID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid execution_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-execution-id", "execution_id must be a UUID", err)
 		}
 
 		execution, err := svc.GetExecution(ctx, orgID, executionID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrExecutionMissing) {
-				return nil, huma.Error404NotFound("execution not found")
+				return nil, notFound(ctx, "execution-not-found", "execution not found")
 			}
-			return nil, huma.Error500InternalServerError("get execution", err)
+			return nil, internalFailure(ctx, "get-execution-failed", "get execution failed", err)
 		}
 
 		out := &GetExecutionOutput{}
@@ -415,15 +415,15 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 		}
 		executionID, err := uuid.Parse(input.ExecutionID)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid execution_id: " + err.Error())
+			return nil, badRequest(ctx, "invalid-execution-id", "execution_id must be a UUID", err)
 		}
 
 		attemptID, logs, err := svc.GetExecutionLogs(ctx, orgID, executionID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrExecutionMissing) {
-				return nil, huma.Error404NotFound("execution not found")
+				return nil, notFound(ctx, "execution-not-found", "execution not found")
 			}
-			return nil, huma.Error500InternalServerError("get execution logs", err)
+			return nil, internalFailure(ctx, "get-execution-logs-failed", "get execution logs failed", err)
 		}
 
 		out := &GetExecutionLogsOutput{}
@@ -444,7 +444,7 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		}
 		balance, err := billing.GetBalance(ctx, orgID)
 		if err != nil {
-			return nil, billingProxyError(err)
+			return nil, billingProxyError(ctx, err)
 		}
 		return &BalanceOutput{Body: balance}, nil
 	}
@@ -458,7 +458,7 @@ func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context
 		}
 		subscriptions, err := billing.ListSubscriptions(ctx, orgID)
 		if err != nil {
-			return nil, billingProxyError(err)
+			return nil, billingProxyError(ctx, err)
 		}
 		return &SubscriptionsOutput{Body: subscriptions}, nil
 	}
@@ -472,7 +472,7 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 		}
 		grants, err := billing.ListGrants(ctx, orgID, input.ProductID, input.Active)
 		if err != nil {
-			return nil, billingProxyError(err)
+			return nil, billingProxyError(ctx, err)
 		}
 		return &GrantsOutput{Body: grants}, nil
 	}
@@ -486,7 +486,7 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 		}
 		url, err := billing.CreateCheckout(ctx, orgID, input.Body.ProductID, input.Body.AmountCents, input.Body.SuccessURL, input.Body.CancelURL)
 		if err != nil {
-			return nil, billingProxyError(err)
+			return nil, billingProxyError(ctx, err)
 		}
 		out := &URLOutput{}
 		out.Body = apiwire.BillingURLResponse{URL: url}
@@ -502,7 +502,7 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 		}
 		url, err := billing.CreateSubscription(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)
 		if err != nil {
-			return nil, billingProxyError(err)
+			return nil, billingProxyError(ctx, err)
 		}
 		out := &URLOutput{}
 		out.Body = apiwire.BillingURLResponse{URL: url}
@@ -510,6 +510,6 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 	}
 }
 
-func billingProxyError(err error) error {
-	return huma.Error502BadGateway("billing: " + err.Error())
+func billingProxyError(ctx context.Context, err error) error {
+	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
 }

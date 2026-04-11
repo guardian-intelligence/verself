@@ -68,6 +68,7 @@ func newTestAuthProvider(t *testing.T) *testAuthProvider {
 func (p *testAuthProvider) signToken(t *testing.T, claims jwt.MapClaims) string {
 	t.Helper()
 
+	addDefaultSandboxRole(claims)
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = p.keyID
 
@@ -76,6 +77,25 @@ func (p *testAuthProvider) signToken(t *testing.T, claims jwt.MapClaims) string 
 		t.Fatalf("sign token: %v", err)
 	}
 	return signed
+}
+
+func addDefaultSandboxRole(claims jwt.MapClaims) {
+	for _, key := range []string{
+		"roles",
+		"role",
+		"urn:zitadel:iam:org:project:roles",
+	} {
+		if _, ok := claims[key]; ok {
+			return
+		}
+	}
+	orgID, _ := claims["urn:zitadel:iam:user:resourceowner:id"].(string)
+	if orgID == "" {
+		return
+	}
+	claims["urn:zitadel:iam:org:project:roles"] = map[string]any{
+		"sandbox_org_admin": map[string]any{orgID: "e2e"},
+	}
 }
 
 func (p *testAuthProvider) authConfig(audience string) auth.Config {

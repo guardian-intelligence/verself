@@ -692,6 +692,12 @@ components:
       required:
         - kind
       type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Zitadel-issued bearer token scoped to the sandbox-rental API audience.
+      scheme: bearer
+      type: http
 info:
   title: Sandbox Rental Service
   version: 1.0.0
@@ -713,7 +719,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Get org credit balance
+      x-forge-metal-iam:
+        action: read
+        audit_event: billing.balance.read
+        org_scope: token_org_id
+        permission: billing:read
+        rate_limit_class: read
+        resource: billing_balance
   /api/v1/billing/checkout:
     post:
       operationId: create-billing-checkout
@@ -736,7 +751,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Create Stripe checkout session for credit purchase
+      x-forge-metal-iam:
+        action: create
+        audit_event: billing.checkout.create
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        resource: billing_checkout
   /api/v1/billing/grants:
     get:
       operationId: list-billing-grants
@@ -768,7 +792,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: List org credit grants
+      x-forge-metal-iam:
+        action: list
+        audit_event: billing.grant.list
+        org_scope: token_org_id
+        permission: billing:read
+        rate_limit_class: read
+        resource: billing_grant
   /api/v1/billing/subscribe:
     post:
       operationId: create-billing-subscription
@@ -791,7 +824,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Create Stripe subscription checkout
+      x-forge-metal-iam:
+        action: create
+        audit_event: billing.subscription_checkout.create
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        resource: billing_subscription_checkout
   /api/v1/billing/subscriptions:
     get:
       operationId: list-billing-subscriptions
@@ -808,7 +850,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: List org subscriptions
+      x-forge-metal-iam:
+        action: list
+        audit_event: billing.subscription.list
+        org_scope: token_org_id
+        permission: billing:read
+        rate_limit_class: read
+        resource: billing_subscription
   /api/v1/executions:
     post:
       operationId: submit-execution
@@ -831,7 +882,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Submit a new execution
+      x-forge-metal-iam:
+        action: submit
+        audit_event: sandbox.execution.submit
+        idempotency: request_body_idempotency_key
+        org_scope: token_org_id
+        permission: sandbox:execution:submit
+        rate_limit_class: execution_submit
+        resource: execution
   /api/v1/executions/{execution_id}:
     get:
       operationId: get-execution
@@ -856,7 +917,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Get execution status and latest attempt
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.execution.read
+        org_scope: token_org_id
+        permission: sandbox:execution:read
+        rate_limit_class: read
+        resource: execution
   /api/v1/executions/{execution_id}/logs:
     get:
       operationId: get-execution-logs
@@ -881,7 +951,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Get latest execution attempt log output
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.execution.logs.read
+        org_scope: token_org_id
+        permission: sandbox:logs:read
+        rate_limit_class: logs_read
+        resource: execution_logs
   /api/v1/repos:
     get:
       operationId: list-repos
@@ -901,7 +980,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: List imported repos for the current org
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.repo.list
+        org_scope: token_org_id
+        permission: sandbox:repo:read
+        rate_limit_class: read
+        resource: repo
     post:
       operationId: import-repo
       requestBody:
@@ -923,7 +1011,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Import or rescan a repo for forge-metal CI
+      x-forge-metal-iam:
+        action: import
+        audit_event: sandbox.repo.import
+        idempotency: provider_repo_id
+        org_scope: token_org_id
+        permission: sandbox:repo:write
+        rate_limit_class: repo_mutation
+        resource: repo
   /api/v1/repos/{repo_id}:
     get:
       operationId: get-repo
@@ -948,7 +1046,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Get repo state and compatibility details
+      x-forge-metal-iam:
+        action: read
+        audit_event: sandbox.repo.read
+        org_scope: token_org_id
+        permission: sandbox:repo:read
+        rate_limit_class: read
+        resource: repo
   /api/v1/repos/{repo_id}/generations:
     get:
       operationId: list-repo-generations
@@ -976,7 +1083,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: List golden generations for a repo
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.repo_generation.list
+        org_scope: token_org_id
+        permission: sandbox:repo:read
+        rate_limit_class: read
+        resource: repo_generation
   /api/v1/repos/{repo_id}/refresh:
     post:
       operationId: refresh-repo
@@ -1001,7 +1117,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Queue a new golden generation for the repo
+      x-forge-metal-iam:
+        action: refresh
+        audit_event: sandbox.repo.refresh
+        org_scope: token_org_id
+        permission: sandbox:repo:write
+        rate_limit_class: repo_mutation
+        resource: repo
   /api/v1/repos/{repo_id}/rescan:
     post:
       operationId: rescan-repo
@@ -1026,6 +1151,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
+      security:
+        - bearerAuth: []
       summary: Rescan repo workflows for forge-metal compatibility
+      x-forge-metal-iam:
+        action: rescan
+        audit_event: sandbox.repo.rescan
+        org_scope: token_org_id
+        permission: sandbox:repo:write
+        rate_limit_class: repo_mutation
+        resource: repo
 servers:
   - url: http://127.0.0.1:4243

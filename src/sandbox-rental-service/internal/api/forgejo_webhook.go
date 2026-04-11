@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const forgejoWebhookPath = "/webhooks/forgejo"
@@ -113,7 +114,7 @@ func forgejoWebhookHandler(svc *jobs.Service, cfg ForgejoWebhookConfig) http.Han
 		ctx := jobs.WithCorrelationID(r.Context(), deliveryID)
 		response, status, err := processForgejoWebhook(ctx, svc, cfg.PlatformOrgID, actorID, eventType, deliveryID, body)
 		if err != nil {
-			http.Error(w, err.Error(), status)
+			writeForgejoWebhookError(w, r.Context(), status, err)
 			return
 		}
 
@@ -121,6 +122,15 @@ func forgejoWebhookHandler(svc *jobs.Service, cfg ForgejoWebhookConfig) http.Han
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(response)
 	}
+}
+
+func writeForgejoWebhookError(w http.ResponseWriter, ctx context.Context, status int, err error) {
+	trace.SpanFromContext(ctx).RecordError(err)
+	message := "forgejo webhook failed"
+	if status < http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	http.Error(w, message, status)
 }
 
 func processForgejoWebhook(
