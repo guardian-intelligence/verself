@@ -27,6 +27,7 @@ import type {
 } from "~/lib/identity-api";
 import {
   createCheckoutSession as createCheckoutSessionRequest,
+  createPortalSession as createPortalSessionRequest,
   createSubscriptionSession as createSubscriptionSessionRequest,
   executionIdInputSchema,
   getBalance as getBalanceRequest,
@@ -45,6 +46,7 @@ import {
   SandboxRentalApiError,
   submitDirectExecution as submitDirectExecutionRequest,
   executionRequestSchema,
+  portalRequestSchema,
   subscribeRequestSchema,
   checkoutRequestSchema,
 } from "~/lib/sandbox-rental-api";
@@ -54,6 +56,7 @@ import type {
   Execution,
   GrantsResponse,
   ImportRepoRequest,
+  PortalRequest,
   Repo,
   RepoCompatibilitySummary,
   ExecutionRequest,
@@ -78,6 +81,7 @@ export type {
   ExecutionRequest,
   GrantsResponse,
   ImportRepoRequest,
+  PortalRequest,
   Repo,
   RepoCompatibilitySummary,
   SubscribeRequest,
@@ -233,6 +237,16 @@ export const createSubscriptionSession = createServerFn({ method: "POST" })
   .inputValidator(subscribeRequestSchema)
   .handler(async ({ context, data }) => {
     return createSubscriptionSessionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const createPortalSession = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(portalRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createPortalSessionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });

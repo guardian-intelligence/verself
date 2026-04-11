@@ -2,6 +2,7 @@ import * as v from "valibot";
 import { createClient, type Client } from "../__generated/sandbox-rental-api/client/index.js";
 import {
   createBillingCheckout,
+  createBillingPortal,
   createBillingSubscription,
   getBillingBalance,
   getExecution as getGeneratedExecution,
@@ -20,6 +21,8 @@ import {
   vBillingSubscription,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
+  vCreateBillingPortalBody,
+  vCreateBillingPortalResponse,
   vCreateBillingSubscriptionBody,
   vCreateBillingSubscriptionResponse,
   vGetExecutionPath,
@@ -260,6 +263,10 @@ export const subscribeRequestSchema = vCreateBillingSubscriptionBody;
 
 export type SubscribeRequest = v.InferOutput<typeof subscribeRequestSchema>;
 
+export const portalRequestSchema = vCreateBillingPortalBody;
+
+export type PortalRequest = v.InferOutput<typeof portalRequestSchema>;
+
 type DirectExecutionRequestBody = {
   idempotency_key: string;
   kind: "direct";
@@ -315,6 +322,7 @@ export type ImportRepoRequest = v.InferOutput<typeof importRepoRequestSchema>;
 export type SubmitExecutionResponse = v.InferOutput<typeof vSubmitExecutionResponse>;
 export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutResponse>;
 export type SubscriptionSession = v.InferOutput<typeof vCreateBillingSubscriptionResponse>;
+export type PortalSession = v.InferOutput<typeof vCreateBillingPortalResponse>;
 
 export async function getBalance(options: SandboxRentalClientOptions): Promise<Balance> {
   const client = createSandboxRentalClient(options);
@@ -427,6 +435,27 @@ export async function createSubscriptionSession(
   }
 
   return v.parse(vCreateBillingSubscriptionResponse, result.data);
+}
+
+export async function createPortalSession(
+  options: SandboxRentalClientOptions & { body: PortalRequest },
+): Promise<PortalSession> {
+  const client = createSandboxRentalClient(options);
+  const body = v.parse(portalRequestSchema, options.body);
+  const path = "/api/v1/billing/portal";
+  const result = await createBillingPortal({
+    body,
+    client,
+    headers: idempotencyHeaders("billing-portal"),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return v.parse(vCreateBillingPortalResponse, result.data);
 }
 
 export async function submitDirectExecution(

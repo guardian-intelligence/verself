@@ -1,5 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { createCheckoutSession, createSubscriptionSession } from "~/server-fns/api";
+import {
+  createCheckoutSession,
+  createPortalSession,
+  createSubscriptionSession,
+} from "~/server-fns/api";
 
 const sandboxProductID = "sandbox";
 
@@ -37,5 +41,20 @@ export function useCreateSubscriptionSessionMutation() {
   });
 }
 
+export function useCreatePortalSessionMutation() {
+  return useMutation({
+    mutationFn: () =>
+      createPortalSession({
+        data: {
+          return_url: `${window.location.origin}/billing`,
+        },
+      }),
+    onSuccess: (data) => {
+      window.location.assign(data.url);
+    },
+  });
+}
+
 export { useCreateCheckoutSessionMutation as useCreditCheckoutMutation };
 export { useCreateSubscriptionSessionMutation as useSubscriptionCheckoutMutation };
+export { useCreatePortalSessionMutation as useBillingPortalMutation };

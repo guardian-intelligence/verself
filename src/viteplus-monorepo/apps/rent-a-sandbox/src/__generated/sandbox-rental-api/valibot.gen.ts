@@ -15,9 +15,11 @@ export const vBillingBalance = v.strictObject({
 
 export const vBillingGrant = v.strictObject({
   available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  bucket_id: v.string(),
   expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   grant_id: v.string(),
   pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  product_id: v.string(),
   source: v.string(),
 });
 
@@ -149,6 +151,11 @@ export const vSandboxBillingCheckoutRequest = v.strictObject({
   cancel_url: v.pipe(v.string(), v.maxLength(2048)),
   product_id: v.pipe(v.string(), v.maxLength(255)),
   success_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
+export const vSandboxBillingPortalRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  return_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
 export const vSandboxBillingSubscriptionRequest = v.strictObject({
@@ -384,6 +391,10 @@ export const vSandboxBillingCheckoutRequestWritable = v.strictObject({
   success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
+export const vSandboxBillingPortalRequestWritable = v.strictObject({
+  return_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
 export const vSandboxBillingSubscriptionRequestWritable = v.strictObject({
   cadence: v.optional(v.picklist(["monthly", "annual"])),
   cancel_url: v.pipe(v.string(), v.maxLength(2048)),
@@ -529,6 +540,17 @@ export const vListBillingGrantsQuery = v.object({
  * OK
  */
 export const vListBillingGrantsResponse = vBillingGrants;
+
+export const vCreateBillingPortalBody = vSandboxBillingPortalRequestWritable;
+
+export const vCreateBillingPortalHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vCreateBillingPortalResponse = vBillingUrlResponse;
 
 export const vCreateBillingSubscriptionBody = vSandboxBillingSubscriptionRequestWritable;
 
