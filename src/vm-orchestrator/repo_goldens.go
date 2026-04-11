@@ -64,7 +64,29 @@ func writeActiveRepoGoldenDataset(rootDir, repoKey, dataset string) error {
 }
 
 func ensureDataset(ctx context.Context, dataset string) error {
-	return runZFS(ctx, "create", "-p", dataset)
+	return ensureDatasetWith(ctx, dataset, zfsExists, runZFS)
+}
+
+func ensureDatasetWith(ctx context.Context, dataset string, exists func(context.Context, string) (bool, error), run func(context.Context, ...string) error) error {
+	alreadyExists, err := exists(ctx, dataset)
+	if err != nil {
+		return err
+	}
+	if alreadyExists {
+		return nil
+	}
+	if err := run(ctx, "create", "-p", dataset); err != nil {
+		// Parallel warmers can race on the shared repo-goldens parent dataset.
+		created, existsErr := exists(ctx, dataset)
+		if existsErr != nil {
+			return fmt.Errorf("%w; verify dataset after create failure: %v", err, existsErr)
+		}
+		if created {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func destroyDatasetRecursive(ctx context.Context, dataset string) error {
