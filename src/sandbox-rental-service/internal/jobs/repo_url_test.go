@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"context"
+	"net"
 	"strings"
 	"testing"
 
@@ -21,7 +23,7 @@ func TestNormalizeImportRepoRequestRejectsUnsafeCloneURLs(t *testing.T) {
 		{name: "link local metadata", cloneURL: "http://169.254.169.254/latest/meta-data"},
 		{name: "localhost name", cloneURL: "https://localhost/forge-metal/repo.git"},
 		{name: "userinfo", cloneURL: "https://token:secret@github.com/forge-metal/repo.git"},
-		{name: "query", cloneURL: "https://github.com/forge-metal/repo.git?token=secret"},
+		{name: "query", cloneURL: "https://93.184.216.34/forge-metal/repo.git?token=secret"},
 		{name: "non default port", cloneURL: "https://github.com:8443/forge-metal/repo.git"},
 		{name: "single label host", cloneURL: "https://forgejo/forge-metal/repo.git"},
 	}
@@ -40,16 +42,38 @@ func TestNormalizeImportRepoRequestRejectsUnsafeCloneURLs(t *testing.T) {
 
 func TestNormalizeImportRepoRequestAcceptsPublicHTTPCloneURL(t *testing.T) {
 	req, err := normalizeImportRepoRequest(ImportRepoRequest{
-		CloneURL: " https://github.com/forge-metal/repo.git ",
+		CloneURL: " https://93.184.216.34/forge-metal/repo.git ",
 	})
 	if err != nil {
 		t.Fatalf("normalizeImportRepoRequest: %v", err)
 	}
-	if req.CloneURL != "https://github.com/forge-metal/repo.git" {
+	if req.CloneURL != "https://93.184.216.34/forge-metal/repo.git" {
 		t.Fatalf("clone_url: got %q", req.CloneURL)
 	}
 	if req.FullName != "forge-metal/repo" {
 		t.Fatalf("full_name: got %q", req.FullName)
+	}
+}
+
+func TestValidateGitCloneURLFieldRejectsPrivateDNSResolution(t *testing.T) {
+	resolver := fakeGitDNSResolver{answers: map[string][]net.IPAddr{
+		"github.com": {{IP: net.ParseIP("10.0.0.7")}},
+	}}
+
+	err := validateGitCloneURLFieldWithResolver(context.Background(), resolver, "clone_url", "https://github.com/forge-metal/repo.git")
+	if err == nil || !strings.Contains(err.Error(), "resolved") {
+		t.Fatalf("validateGitCloneURLFieldWithResolver error = %v, want resolved private IP rejection", err)
+	}
+}
+
+func TestValidateGitCloneURLFieldAcceptsPublicDNSResolution(t *testing.T) {
+	resolver := fakeGitDNSResolver{answers: map[string][]net.IPAddr{
+		"github.com": {{IP: net.ParseIP("93.184.216.34")}},
+	}}
+
+	err := validateGitCloneURLFieldWithResolver(context.Background(), resolver, "clone_url", "https://github.com/forge-metal/repo.git")
+	if err != nil {
+		t.Fatalf("validateGitCloneURLFieldWithResolver: %v", err)
 	}
 }
 
@@ -63,6 +87,14 @@ func TestNormalizeSubmitRequestRejectsUnsafeRepoURL(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "repo_url") {
 		t.Fatalf("normalizeSubmitRequest error = %v, want repo_url validation error", err)
 	}
+}
+
+type fakeGitDNSResolver struct {
+	answers map[string][]net.IPAddr
+}
+
+func (r fakeGitDNSResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	return r.answers[host], nil
 }
 
 func TestBuildRepoExecRequestRejectsUnsafeRepoURL(t *testing.T) {

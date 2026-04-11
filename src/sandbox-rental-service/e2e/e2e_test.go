@@ -354,7 +354,7 @@ func createFixtureRepo(t *testing.T, fixture string) (cloneURL, ref, head string
 
 func publicGitCloneURLForTestRepo(t *testing.T, repoPath, urlPath string) string {
 	t.Helper()
-	cloneURL := "https://git.example.test/" + strings.TrimPrefix(urlPath, "/")
+	cloneURL := "https://93.184.216.34/" + strings.TrimPrefix(urlPath, "/")
 	if !strings.HasSuffix(cloneURL, ".git") {
 		cloneURL += ".git"
 	}

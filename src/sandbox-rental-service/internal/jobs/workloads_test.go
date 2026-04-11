@@ -23,7 +23,7 @@ func TestBuildRepoExecRequest_PNPMFixture(t *testing.T) {
 		JobID: "11111111-1111-1111-1111-111111111111",
 		RepoTarget: RepoTarget{
 			Repo:    "fixtures/next-pnpm-postgres",
-			RepoURL: "https://git.example.test/fixtures/next-pnpm-postgres.git",
+			RepoURL: "https://93.184.216.34/fixtures/next-pnpm-postgres.git",
 		},
 		Ref: "refs/pull/42/head",
 	}, inspection)
@@ -37,7 +37,7 @@ func TestBuildRepoExecRequest_PNPMFixture(t *testing.T) {
 	if request.Repo != "fixtures/next-pnpm-postgres" {
 		t.Fatalf("repo: got %q", request.Repo)
 	}
-	if request.RepoURL != "https://git.example.test/fixtures/next-pnpm-postgres.git" {
+	if request.RepoURL != "https://93.184.216.34/fixtures/next-pnpm-postgres.git" {
 		t.Fatalf("repo_url: got %q", request.RepoURL)
 	}
 	if request.Ref != "refs/pull/42/head" {
@@ -80,7 +80,7 @@ func TestBuildWarmGoldenRequest_DefaultsBranchAndUsesPreparePhase(t *testing.T) 
 		JobID: "22222222-2222-2222-2222-222222222222",
 		RepoTarget: RepoTarget{
 			Repo:    "fixtures/warm",
-			RepoURL: "https://git.example.test/fixtures/warm.git",
+			RepoURL: "https://93.184.216.34/fixtures/warm.git",
 		},
 	}, inspection)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestBuildRepoExecRequest_RequiresRef(t *testing.T) {
 		JobID: "44444444-4444-4444-4444-444444444444",
 		RepoTarget: RepoTarget{
 			Repo:    "fixtures/local",
-			RepoURL: "https://git.example.test/fixtures/local.git",
+			RepoURL: "https://93.184.216.34/fixtures/local.git",
 		},
 	}, inspection)
 	if err == nil || !strings.Contains(err.Error(), "repo exec ref is required") {
