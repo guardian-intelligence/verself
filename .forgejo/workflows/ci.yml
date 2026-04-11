@@ -8,7 +8,7 @@ on:
 
 jobs:
   hello:
-    runs-on: ubuntu-latest
+    runs-on: forge-metal
     steps:
       - uses: actions/checkout@v4
 
