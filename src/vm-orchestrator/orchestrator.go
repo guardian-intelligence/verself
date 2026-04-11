@@ -69,11 +69,12 @@ func DefaultConfig() Config {
 
 // JobConfig describes the command to run inside the VM.
 type JobConfig struct {
-	JobID          string            `json:"job_id"`
-	RunCommand     []string          `json:"run_command"`
-	RunWorkDir     string            `json:"run_work_dir,omitempty"`
-	Env            map[string]string `json:"env"`
-	BillablePhases []string          `json:"billable_phases,omitempty"`
+	JobID              string            `json:"job_id"`
+	RunCommand         []string          `json:"run_command"`
+	RunWorkDir         string            `json:"run_work_dir,omitempty"`
+	Env                map[string]string `json:"env"`
+	BillablePhases     []string          `json:"billable_phases,omitempty"`
+	CheckpointSaveRefs []string          `json:"checkpoint_save_refs,omitempty"`
 }
 
 type PhaseResult struct {
@@ -448,7 +449,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		err    error
 	}, 1)
 	go func() {
-		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, logger, observer)
+		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, o.checkpointHandler(job, dataset, observer, logger), logger, observer)
 		controlDone <- struct {
 			result guestControlResult
 			err    error

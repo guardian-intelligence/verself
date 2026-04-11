@@ -5,14 +5,14 @@ set -euo pipefail
 # Standard Linux paths, standard SBOM.
 #
 # LEARNING: Nix rootfs had /nix/store/ symlink farms inside the guest. Alpine gives
-# standard paths (/usr/bin/node, /usr/bin/git) that work natively with vm-init's
+# standard paths (/usr/bin/node, /usr/bin/git) that work natively with vm-bridge's
 # PATH resolution and chroot-based golden image baking.
 #
 # Two-layer architecture:
 #   Layer 1 (this script): base OS + packages -> rootfs.ext4
 #   Layer 2 (vm-orchestrator): ZFS clone per direct execution
 #
-# Requires: root, internet access, e2fsprogs. go only if no pre-built vm-init.
+# Requires: root, internet access, e2fsprogs. go only if no pre-built vm-bridge.
 # Produces: guest/output/rootfs.ext4, guest/output/sbom.txt, guest/output/guest-artifacts.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,9 +41,9 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not in PATH" >&2; exit 1; }
 command -v mke2fs >/dev/null 2>&1 || { echo "ERROR: mke2fs (e2fsprogs) not in PATH" >&2; exit 1; }
 command -v dumpe2fs >/dev/null 2>&1 || { echo "ERROR: dumpe2fs (e2fsprogs) not in PATH" >&2; exit 1; }
-# go is only required if no pre-built vm-init exists
-if [[ ! -f "$SCRIPT_DIR/vm-init" ]] && ! command -v go >/dev/null 2>&1; then
-  echo "ERROR: no pre-built vm-init and go not in PATH" >&2; exit 1
+# go is only required if no pre-built vm-bridge exists
+if [[ ! -f "$SCRIPT_DIR/vm-bridge" ]] && ! command -v go >/dev/null 2>&1; then
+  echo "ERROR: no pre-built vm-bridge and go not in PATH" >&2; exit 1
 fi
 
 # Read version pins
@@ -126,22 +126,23 @@ if ! chroot "$ROOTFS" /bin/sh -c "apk add --no-cache bun" >/dev/null 2>&1; then
 fi
 chroot "$ROOTFS" /bin/sh -c "corepack enable || true"
 
-# --- Install vm-init (static Go binary → /sbin/init) ---
+# --- Install vm-bridge (static Go binary → /sbin/init and guest CLI) ---
 # If a pre-built binary exists next to the script (for example, scp'd by Makefile), use it.
 # Otherwise, build from source (requires Go project checkout).
 # LEARNING: Alpine creates /sbin/init as a busybox symlink. `cp` follows symlinks,
 # so without this rm, cp overwrites /bin/busybox instead of replacing the symlink.
 rm -f "$ROOTFS/sbin/init"
-if [[ -f "$SCRIPT_DIR/vm-init" ]]; then
-  echo "→ using pre-built vm-init"
-  cp "$SCRIPT_DIR/vm-init" "$ROOTFS/sbin/init"
+if [[ -f "$SCRIPT_DIR/vm-bridge" ]]; then
+  echo "→ using pre-built vm-bridge"
+  install -D -m 0755 "$SCRIPT_DIR/vm-bridge" "$ROOTFS/sbin/init"
 elif command -v go >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/../vm-orchestrator/go.mod" ]]; then
-  echo "→ building vm-init from source"
-  CGO_ENABLED=0 go build -ldflags='-s -w' -o "$ROOTFS/sbin/init" "$PROJECT_ROOT/../vm-orchestrator/cmd/vm-init"
+  echo "→ building vm-bridge from source"
+  CGO_ENABLED=0 go build -ldflags='-s -w' -o "$ROOTFS/sbin/init" "$PROJECT_ROOT/../vm-orchestrator/cmd/vm-bridge"
 else
-  echo "ERROR: no pre-built vm-init and no Go project found at $PROJECT_ROOT" >&2
+  echo "ERROR: no pre-built vm-bridge and no Go project found at $PROJECT_ROOT" >&2
   exit 1
 fi
+install -D -m 0755 "$ROOTFS/sbin/init" "$ROOTFS/usr/local/bin/vm-bridge"
 
 # --- Install vm-guest-telemetry guest agent ---
 # The Zig guest agent is a required part of the Firecracker image. Prefer a
@@ -179,7 +180,7 @@ GROUP
 
 echo "nameserver 8.8.8.8" > "$ROOTFS/etc/resolv.conf"
 cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
-# Registry is injected at runtime by vm-init.
+# Registry is injected at runtime by vm-bridge.
 NPMRC
 
 # --- Create required directories ---
@@ -207,7 +208,8 @@ fi
 {
   echo
   echo "# custom_components"
-  echo "file path=/sbin/init component=vm-init sha256=$INIT_SHA256 bytes=$INIT_BYTES"
+  echo "file path=/sbin/init component=vm-bridge sha256=$INIT_SHA256 bytes=$INIT_BYTES"
+  echo "file path=/usr/local/bin/vm-bridge component=vm-bridge sha256=$INIT_SHA256 bytes=$INIT_BYTES"
   if [[ "$VM_GUEST_TELEMETRY_PRESENT" == "true" ]]; then
     echo "file path=/usr/local/bin/vm-guest-telemetry component=vm-guest-telemetry sha256=$VM_GUEST_TELEMETRY_SHA256 bytes=$VM_GUEST_TELEMETRY_BYTES"
   fi

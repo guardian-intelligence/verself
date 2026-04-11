@@ -2,7 +2,7 @@
 
 `vm-guest-telemetry` is the Zig guest agent for Firecracker VM health sampling. Written in Zig instead of Go because disk/RAM footprint matters.
 
-The agent reads guest-local state from `/proc` and streams fixed-size 128-byte frames over vsock port `10790`. The Go guest PID 1 (`vm-init`) still owns the job-control channel on vsock port `10789`.
+The agent reads guest-local state from `/proc` and streams fixed-size 128-byte frames over vsock port `10790`. The Go guest PID 1 (`vm-bridge`) owns the job-control channel on vsock port `10789`.
 
 ## Build
 
@@ -15,7 +15,7 @@ Artifacts land in `vm-guest-telemetry/zig-out/bin/`.
 
 ## Guest Artifact
 
-The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation installs it at `/usr/local/bin/vm-guest-telemetry`, and `vm-init` starts it during boot.
+The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation installs it at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
 
 ## Cross-Language Conformance
 

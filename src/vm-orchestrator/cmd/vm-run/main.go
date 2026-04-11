@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
+	"github.com/forge-metal/vm-orchestrator/vmproto"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func run() error {
 		commitSHA        string
 		timeout          string
 		traceGuestEvents bool
+		checkpointRefs   repeatedFlag
 	)
 
 	flag.StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
@@ -44,6 +46,7 @@ func run() error {
 	flag.StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
 	flag.StringVar(&timeout, "timeout", "2m", "Job timeout")
 	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream host-derived guest phase events")
+	flag.Var(&checkpointRefs, "checkpoint-save-ref", "Checkpoint ref the guest may save; repeatable")
 	flag.Parse()
 
 	args := flag.Args()
@@ -77,10 +80,11 @@ func run() error {
 
 	jobID := uuid.New().String()
 	job := vmorchestrator.JobConfig{
-		JobID:          jobID,
-		RunCommand:     args,
-		RunWorkDir:     "/workspace",
-		BillablePhases: []string{"run"},
+		JobID:              jobID,
+		RunCommand:         args,
+		RunWorkDir:         "/workspace",
+		BillablePhases:     []string{"run"},
+		CheckpointSaveRefs: []string(checkpointRefs),
 		Env: map[string]string{
 			"REPO":                   repo,
 			"FORGE_METAL_ATTEMPT_ID": jobID,
@@ -182,5 +186,22 @@ func run() error {
 	if result.ExitCode != 0 {
 		os.Exit(result.ExitCode)
 	}
+	return nil
+}
+
+type repeatedFlag []string
+
+func (f *repeatedFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return fmt.Sprint([]string(*f))
+}
+
+func (f *repeatedFlag) Set(value string) error {
+	if err := vmproto.ValidateCheckpointRef(value); err != nil {
+		return err
+	}
+	*f = append(*f, value)
 	return nil
 }

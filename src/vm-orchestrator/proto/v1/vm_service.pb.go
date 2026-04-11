@@ -129,14 +129,15 @@ func (TelemetryFrameKind) EnumDescriptor() ([]byte, []int) {
 }
 
 type JobConfig struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	RunCommand     []string               `protobuf:"bytes,2,rep,name=run_command,json=runCommand,proto3" json:"run_command,omitempty"`
-	RunWorkDir     string                 `protobuf:"bytes,3,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
-	Env            map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	BillablePhases []string               `protobuf:"bytes,5,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	JobId              string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RunCommand         []string               `protobuf:"bytes,2,rep,name=run_command,json=runCommand,proto3" json:"run_command,omitempty"`
+	RunWorkDir         string                 `protobuf:"bytes,3,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
+	Env                map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BillablePhases     []string               `protobuf:"bytes,5,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
+	CheckpointSaveRefs []string               `protobuf:"bytes,6,rep,name=checkpoint_save_refs,json=checkpointSaveRefs,proto3" json:"checkpoint_save_refs,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *JobConfig) Reset() {
@@ -200,6 +201,13 @@ func (x *JobConfig) GetEnv() map[string]string {
 func (x *JobConfig) GetBillablePhases() []string {
 	if x != nil {
 		return x.BillablePhases
+	}
+	return nil
+}
+
+func (x *JobConfig) GetCheckpointSaveRefs() []string {
+	if x != nil {
+		return x.CheckpointSaveRefs
 	}
 	return nil
 }
@@ -1880,7 +1888,7 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\x8c\x02\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xbe\x02\n" +
 	"\tJobConfig\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
 	"\vrun_command\x18\x02 \x03(\tR\n" +
@@ -1888,7 +1896,8 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\frun_work_dir\x18\x03 \x01(\tR\n" +
 	"runWorkDir\x12D\n" +
 	"\x03env\x18\x04 \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x12'\n" +
-	"\x0fbillable_phases\x18\x05 \x03(\tR\x0ebillablePhases\x1a6\n" +
+	"\x0fbillable_phases\x18\x05 \x03(\tR\x0ebillablePhases\x120\n" +
+	"\x14checkpoint_save_refs\x18\x06 \x03(\tR\x12checkpointSaveRefs\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"_\n" +

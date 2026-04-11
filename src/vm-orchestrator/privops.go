@@ -12,6 +12,7 @@ import (
 // directly instead of delegating them through a second socket layer.
 type PrivOps interface {
 	ZFSClone(ctx context.Context, snapshot, target, jobID string) error
+	ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error
 	ZFSDestroy(ctx context.Context, dataset string) error
 	TapCreate(ctx context.Context, tapName, hostCIDR string) error
 	TapUp(ctx context.Context, tapName string) error

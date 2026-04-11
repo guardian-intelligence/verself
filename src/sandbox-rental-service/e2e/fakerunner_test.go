@@ -290,6 +290,9 @@ func copyJobConfig(job vmorchestrator.JobConfig) vmorchestrator.JobConfig {
 	if job.BillablePhases != nil {
 		cloned.BillablePhases = append([]string(nil), job.BillablePhases...)
 	}
+	if job.CheckpointSaveRefs != nil {
+		cloned.CheckpointSaveRefs = append([]string(nil), job.CheckpointSaveRefs...)
+	}
 	if job.Env != nil {
 		cloned.Env = make(map[string]string, len(job.Env))
 		for key, value := range job.Env {

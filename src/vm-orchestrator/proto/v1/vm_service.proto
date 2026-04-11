@@ -30,6 +30,7 @@ message JobConfig {
   string run_work_dir = 3;
   map<string, string> env = 4;
   repeated string billable_phases = 5;
+  repeated string checkpoint_save_refs = 6;
 }
 
 message PhaseResult {

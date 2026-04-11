@@ -8,11 +8,12 @@ import (
 
 func jobConfigToProto(job JobConfig) *vmrpc.JobConfig {
 	return &vmrpc.JobConfig{
-		JobId:          job.JobID,
-		RunCommand:     cloneStringSlice(job.RunCommand),
-		RunWorkDir:     job.RunWorkDir,
-		Env:            cloneStringMap(job.Env),
-		BillablePhases: cloneStringSlice(job.BillablePhases),
+		JobId:              job.JobID,
+		RunCommand:         cloneStringSlice(job.RunCommand),
+		RunWorkDir:         job.RunWorkDir,
+		Env:                cloneStringMap(job.Env),
+		BillablePhases:     cloneStringSlice(job.BillablePhases),
+		CheckpointSaveRefs: cloneStringSlice(job.CheckpointSaveRefs),
 	}
 }
 
@@ -21,11 +22,12 @@ func jobConfigFromProto(job *vmrpc.JobConfig) JobConfig {
 		return JobConfig{}
 	}
 	return JobConfig{
-		JobID:          job.GetJobId(),
-		RunCommand:     cloneStringSlice(job.GetRunCommand()),
-		RunWorkDir:     job.GetRunWorkDir(),
-		Env:            cloneStringMap(job.GetEnv()),
-		BillablePhases: cloneStringSlice(job.GetBillablePhases()),
+		JobID:              job.GetJobId(),
+		RunCommand:         cloneStringSlice(job.GetRunCommand()),
+		RunWorkDir:         job.GetRunWorkDir(),
+		Env:                cloneStringMap(job.GetEnv()),
+		BillablePhases:     cloneStringSlice(job.GetBillablePhases()),
+		CheckpointSaveRefs: cloneStringSlice(job.GetCheckpointSaveRefs()),
 	}
 }
 

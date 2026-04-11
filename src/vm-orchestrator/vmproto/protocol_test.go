@@ -94,3 +94,19 @@ func TestWriteEnvelopeRejectsOversizedFrame(t *testing.T) {
 		t.Fatalf("expected oversized frame error, got %v", err)
 	}
 }
+
+func TestValidateCheckpointRef(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"pg-demo", "deps.v1", "db_seed:2026", "A_1"} {
+		if err := ValidateCheckpointRef(value); err != nil {
+			t.Fatalf("expected %q to be valid: %v", value, err)
+		}
+	}
+
+	for _, value := range []string{"", "../host", "has/slash", "-starts-with-dash", "has space"} {
+		if err := ValidateCheckpointRef(value); err == nil {
+			t.Fatalf("expected %q to be invalid", value)
+		}
+	}
+}

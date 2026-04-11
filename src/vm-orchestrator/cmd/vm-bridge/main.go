@@ -1,9 +1,9 @@
-// vm-init is the PID 1 init process for Firecracker workload VMs.
+// vm-bridge is the guest bridge for Firecracker workload VMs.
 //
-// It mounts a minimal Linux userspace, brings up loopback, waits for a host
-// vsock control connection, applies runtime network state from the host, runs
-// the requested workload command, and gracefully reboots to terminate the microVM
-// when told to shut down.
+// As PID 1 it mounts a minimal Linux userspace, brings up loopback, waits for a
+// host vsock control connection, applies runtime network state from the host,
+// runs the requested workload command, and exposes a local CLI control socket.
+// As a user-invoked CLI it forwards snapshot requests to the PID 1 bridge.
 package main
 
 import (
@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	logPrefix            = "[vm-bridge]"
 	prSetChildSubreaper  = 36
 	ipBin                = "/sbin/ip"
 	defaultWorkDir       = "/workspace"
@@ -30,12 +31,20 @@ const (
 )
 
 func main() {
-	if err := run(); err != nil {
-		fatal("run agent", err)
+	if len(os.Args) > 1 {
+		if err := runCLI(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "vm-bridge: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := runInit(); err != nil {
+		fatal("run bridge", err)
 	}
 }
 
-func run() error {
+func runInit() error {
 	bootStart := time.Now()
 
 	mountVirtualFilesystems()
@@ -43,7 +52,7 @@ func run() error {
 		return fmt.Errorf("configure loopback: %w", err)
 	}
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSetChildSubreaper, 1, 0); errno != 0 {
-		fmt.Fprintf(os.Stderr, "[init] warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", errno)
+		fmt.Fprintf(os.Stderr, "%s warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", logPrefix, errno)
 	}
 	maybeStartGuestTelemetry()
 
@@ -57,7 +66,7 @@ func run() error {
 	defer listener.Close()
 
 	readyAt := time.Now()
-	fmt.Fprintf(os.Stdout, "[init] vsock listener ready (%dms)\n", readyAt.Sub(bootStart).Milliseconds())
+	fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
 
 	conn, err := listener.Accept()
 	if err != nil {
@@ -97,9 +106,10 @@ func configureLoopback() error {
 
 func buildRuntimeEnv(overrides map[string]string, network vmproto.NetworkConfig) ([]string, error) {
 	envMap := map[string]string{
-		"HOME": "/home/runner",
-		"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"TERM": "xterm",
+		"HOME":                         "/home/runner",
+		"PATH":                         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"TERM":                         "xterm",
+		"FORGE_METAL_VM_BRIDGE_SOCKET": bridgeSocketPath,
 	}
 	for key, value := range overrides {
 		envMap[key] = value
@@ -205,7 +215,7 @@ func mustMkdir(path string, perm os.FileMode) {
 }
 
 func fatal(msg string, err error) {
-	fmt.Fprintf(os.Stderr, "[init] FATAL: %s: %v\n", msg, err)
+	fmt.Fprintf(os.Stderr, "%s FATAL: %s: %v\n", logPrefix, msg, err)
 	os.Exit(1)
 }
 
@@ -218,13 +228,13 @@ func maybeStartGuestTelemetry() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "[init] warning: start vm-guest-telemetry: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s warning: start vm-guest-telemetry: %v\n", logPrefix, err)
 		return
 	}
-	fmt.Fprintf(os.Stdout, "[init] vm-guest-telemetry started (pid=%d port=%d)\n", cmd.Process.Pid, vmGuestTelemetryPort)
+	fmt.Fprintf(os.Stdout, "%s vm-guest-telemetry started (pid=%d port=%d)\n", logPrefix, cmd.Process.Pid, vmGuestTelemetryPort)
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			fmt.Fprintf(os.Stderr, "[init] warning: vm-guest-telemetry exited: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%s warning: vm-guest-telemetry exited: %v\n", logPrefix, err)
 		}
 	}()
 }

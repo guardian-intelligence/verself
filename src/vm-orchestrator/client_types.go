@@ -42,6 +42,15 @@ type JobGuestEvent struct {
 	Terminal bool
 }
 
+type CheckpointEvent struct {
+	RequestID string
+	Operation string
+	Ref       string
+	Accepted  bool
+	VersionID string
+	Error     string
+}
+
 type TelemetryHello struct {
 	Seq        uint32
 	Flags      uint32

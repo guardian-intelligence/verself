@@ -73,93 +73,44 @@ sops -d --extract '["hyperdx_admin_password_base"]' src/platform/ansible/group_v
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
 
-## CI
+## Snapshot-Backed VM Farm
 
-The sandbox execution path is built around a single base guest image:
+Forge Metal's runtime direction is a checkpoint-backed Firecracker VM farm. CI,
+direct shell execution, canaries, scheduled automation, and customer workloads
+compile to the same execution model:
 
-1. start from a generic guest image
-2. clone the base zvol with ZFS for each VM job
-3. run the submitted command inside an isolated Firecracker microVM
-4. stream guest telemetry and structured guest events
-5. emit wide events to ClickHouse for inspection in HyperDX
-
-
-The optimization stack is, at a high level:
-
-- keep a single base guest zvol with the runtime agent installed
-- use ZFS for instant copy-on-write VM root disks
-- expose selected host services through the host-service plane
-- stream VM telemetry over vsock for billing and operations
-- keep repo import and CI policy outside the privileged host daemon
-
-Each VM job runs in a Firecracker microVM whose root disk is a ZFS zvol clone of the base guest image. The host orchestrator manages ZFS at the kernel level; guests have no awareness of ZFS.
-
-```
-Host (vm-orchestrator — bare metal, root, ZFS kernel module)
-│
-├── ZFS Pool (NVMe-backed)
-│   ├── golden-zvol@ready                 ← base guest image: ext4 inside zvol
-│   ├── workloads/job-abc                 ← zvol clone (~1.7ms COW, metadata-only)
-│   ├── workloads/job-def                 ← zvol clone
-│   └── workloads/job-ghi                 ← zvol clone
-│
-├── Firecracker VM (job-abc)
-│   └── /dev/vda ← /dev/zvol/pool/workloads/job-abc
-│       └── ext4 (from base image, COW diverges on write)
-│
-├── Firecracker VM (job-def)
-│   └── /dev/vda ← /dev/zvol/pool/workloads/job-def
-│
-└── Firecracker VM (job-ghi)
-    └── /dev/vda ← /dev/zvol/pool/workloads/job-ghi
+```text
+checkpoint ref -> immutable checkpoint version -> writable zvol clone -> VM segment
 ```
 
-### Why this layering
+The first product proof is a Postgres checkpoint demo: boot a VM from a large
+Postgres zvol, print `pg_size_pretty(pg_database_size(current_database()))`,
+mutate a counter, call `vm-bridge snapshot save pg-demo`, then run again
+and observe the advanced counter without copying the full database image.
 
-| Layer | Provides | Latency |
-|-------|----------|---------|
-| ZFS zvol clone | Instant COW rootfs from golden image | ~1.7ms kernel, ~5.7ms end-to-end |
-| Firecracker microVM | Process/memory/kernel isolation, deterministic execution | ~125ms from snapshot, ~3s cold boot |
-| gVisor (inside VM) | Syscall-level sandboxing for untrusted build scripts | Negligible on top of Firecracker |
+Authoritative code entry points:
 
-### Key distinctions
+- `.forgejo/workflows/ci.yml` - first Forgejo Actions tracer for `runs-on: forge-metal`.
+- `src/sandbox-rental-service/internal/jobs/` - customer execution state, billing, workflow/checkpoint policy.
+- `src/sandbox-rental-service/migrations/` - PostgreSQL state machines for executions, VM segments, checkpoint refs, checkpoint versions, and save requests.
+- `src/vm-orchestrator/` - privileged host daemon for Firecracker, TAP networking, ZFS clone/snapshot/destroy, and guest telemetry.
+- `src/vm-orchestrator/vmproto/` - host/guest vsock protocol.
+- `src/vm-orchestrator/cmd/vm-bridge/` - guest PID 1 and user-facing in-guest snapshot CLI.
+- `src/vm-guest-telemetry/` - guest telemetry sampler.
+- `src/viteplus-monorepo/apps/rent-a-sandbox/` - VM farm UI.
 
-- **zvol, not dataset.** Firecracker takes block devices (`/dev/zvol/...`), not mounted filesystems. A zvol is a ZFS block device — clone/destroy/written all work identically to datasets.
-- **Golden image is a zvol with ext4 inside.** Built from the generic guest image produced by the Firecracker rootfs playbook and reused as the base snapshot for direct VM jobs.
-- **Guest is unaware of ZFS.** It sees `/dev/vda` with ext4. No ZFS tooling needed in the VM image.
-- **Orchestrator owns all ZFS operations.** Allocate (clone), monitor (`written` bytes), teardown (destroy). Implemented in the `vm-orchestrator` host daemon.
+Hard runtime boundaries:
 
-### Orchestrator flow per job
+- ZFS snapshots are immutable; customer-facing checkpoint refs are mutable.
+- Guests may request `vm-bridge snapshot save <ref>`; they never send or receive host dataset paths.
+- `vm-bridge` is an untrusted guest client; vm-orchestrator accepts checkpoint saves only for host-authorized refs.
+- vm-orchestrator constructs all ZFS paths from trusted host-side IDs and operates only on the active segment's known writable zvol.
+- The host never mounts or fscks untrusted guest filesystems in the default checkpoint path.
+- Host-local services are exposed through the host-service plane, not DNAT to `127.0.0.1`.
 
-```
-1. zfs clone pool/golden-zvol@ready pool/workloads/job-abc  # ~1.7ms
-2. firecracker --drive path=/dev/zvol/pool/workloads/job-abc # boot VM
-3. submitted command runs inside VM
-4. VM exits
-5. zfs get written pool/workloads/job-abc                    # bytes dirtied -> ClickHouse wide event
-6. zfs destroy pool/workloads/job-abc                        # cleanup
-```
-
-### What this does NOT use
-
-- **CRIU** — process checkpointing is fragile with Node.js/V8 (timer FDs, JIT pages, epoll). Not worth the complexity when ZFS clone already eliminates the expensive part (warm caches, pre-installed deps). Process startup of `node` is ~50ms.
-- **libzfs** — shells out to `zfs` CLI like every production ZFS project (OpenZFS, Incus, DBLab, OBuilder).
-- **Nested ZFS in guest** — the guest runs ext4 on a raw block device. ZFS stays on the host where it belongs.
-
-## ZFS
-
-This project makes heavy use of ZFS. Research notes are in `docs/research/`.
-
-## Runtime Notes
-
-- The runtime API accepts direct job commands; repo import/scan metadata is owned by sandbox-rental-service.
-- Toolchain detection and repo-owned CI manifest parsing are not part of the current runtime contract.
-- The host sends structured guest phases instead of generating `bash -lc` scripts. Shell is still allowed, but only when the workload explicitly uses it in the submitted command.
-- Per-job guest config is delivered over the host-initiated vsock control stream. MMDS is not part of the steady-state runtime path.
-
---- A note on the future ---
-
-We will want long-running VMs with developer tools installed for agents to work within, with full unbounded permissions and access to project source. If they do something destructive to their sandbox we want to restore from a snapshot. If they attempt to exfiltrate secrets, we tightly control egress and only provide encrypted secrets that must go through a layer for decryption. If they attempt to perform a destructive action on production systems, we have a policy layer to prevent it.
+Current implementation still has direct execution paths while the checkpoint
+state model is being cut in. Treat docs that describe direct-only execution as
+stale unless they point back to the code above.
 
 ## Licensing
 

@@ -394,6 +394,19 @@ func (o *jobObserver) OnGuestPhaseEnd(_ string, result PhaseResult) {
 	o.job.appendPhaseEvent("phase_ended", result.Name, attrs)
 }
 
+func (o *jobObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
+	attrs := map[string]string{
+		"request_id":              event.RequestID,
+		"operation":               event.Operation,
+		"ref":                     event.Ref,
+		"accepted":                strconv.FormatBool(event.Accepted),
+		"version_id":              event.VersionID,
+		"error":                   event.Error,
+		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+	}
+	o.job.appendEvent("checkpoint_request", attrs)
+}
+
 func (o *jobObserver) OnTelemetryEvent(event TelemetryEvent) {
 	o.job.recordTelemetry(event)
 	o.server.broadcastTelemetry(event)
