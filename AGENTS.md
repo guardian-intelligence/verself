@@ -216,6 +216,7 @@ See docs/architecture/directory-structure.md to understand the project's directo
 * Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
 * Avoid simplifying technical explanations. Details matter and the user cares about things like arcane versioning issues, subtle race conditions, preventing security issues such as timing attack vulnerability, optimizing GC pressure, understanding when abstractions leak. Simplicity should be saved for code and architecture.
 * Some directories have their own AGENTS.md file. When working inside those directories, please read them as they contain juicy context.
+* Edit beyond what you intded as a result of runting linters/formatters are expected. You don't have to worry about them.
 
 ## Tool Use Contract
 
