@@ -1,7 +1,6 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import * as v from "valibot";
 import type { AuthSession } from "@forge-metal/auth-web/server";
-import { getAuthConfig } from "../server/auth";
 
 const loginRedirectInputSchema = v.object({
   redirectTo: v.optional(v.nullable(v.string())),
@@ -11,12 +10,19 @@ async function loadAuthServer() {
   return import("@forge-metal/auth-web/server");
 }
 
-// TanStack Start transforms top-level createServerFn declarations, but the
-// server-only auth module must stay behind dynamic imports for the browser graph.
+async function getWebmailAuthConfig() {
+  if (!import.meta.env.SSR) {
+    throw new Error("auth config is server-only");
+  }
+  const { getAuthConfig } = await import("../server/auth");
+  return getAuthConfig();
+}
+
+// TanStack Start resolves server functions by top-level export name; factories hide those exports from the generated resolver.
 export const webmailAuthMiddleware = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
     const { getAuthSession } = await loadAuthServer();
-    const auth = await getAuthSession(getAuthConfig());
+    const auth = await getAuthSession(await getWebmailAuthConfig());
     if (!auth) {
       throw new Error("Authentication required");
     }
@@ -27,23 +33,26 @@ export const webmailAuthMiddleware = createMiddleware({ type: "function" }).serv
     });
   },
 );
-export const getLoginRedirectURL = createServerFn({ method: "GET" })
+
+export const getClientAuthSnapshot = createServerFn({ method: "GET" }).handler(async () => {
+  const { getClientAuthSnapshot } = await loadAuthServer();
+  return getClientAuthSnapshot(getWebmailAuthConfig);
+});
+
+export const getSignInRedirectURL = createServerFn({ method: "GET" })
   .inputValidator(loginRedirectInputSchema)
   .handler(async ({ data }) => {
     const { beginLogin } = await loadAuthServer();
-    return beginLogin(getAuthConfig(), data.redirectTo);
+    return beginLogin(await getWebmailAuthConfig(), data.redirectTo);
   });
-export const getCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+
+export const getSignInCallbackRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
   const { finishLogin } = await loadAuthServer();
-  const { redirectTo } = await finishLogin(getAuthConfig());
+  const { redirectTo } = await finishLogin(await getWebmailAuthConfig());
   return redirectTo;
 });
-export const getLogoutRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
+
+export const getSignOutRedirectURL = createServerFn({ method: "GET" }).handler(async () => {
   const { logout } = await loadAuthServer();
-  return logout(getAuthConfig());
-});
-export const getViewer = createServerFn({ method: "GET" }).handler(async () => {
-  const { getClientAuthSnapshot } = await loadAuthServer();
-  const snapshot = await getClientAuthSnapshot(getAuthConfig);
-  return snapshot.user;
+  return logout(await getWebmailAuthConfig());
 });

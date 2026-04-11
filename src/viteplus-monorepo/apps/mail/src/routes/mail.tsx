@@ -8,26 +8,21 @@ import {
 } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import { anonymousAuth, requireAuth } from "@forge-metal/auth-web/isomorphic";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import {
   createMailboxCollection,
   createEmailMailboxCollection,
   createEmailCollection,
   type ElectricMailbox,
 } from "~/lib/collections";
-import { getViewer } from "~/server-fns/auth";
 import { getMailAccount, type MailAccount } from "~/server-fns/mail";
 
 export const Route = createFileRoute("/mail")({
   ssr: "data-only",
-  beforeLoad: async ({ location }) => {
-    const viewer = await getViewer();
-    if (!viewer) {
-      throw redirect({
-        to: "/login",
-        search: { redirect: location.href },
-      });
-    }
-  },
+  beforeLoad: ({ context, location }) => ({
+    auth: requireAuth(context?.auth ?? anonymousAuth, location.href),
+  }),
   loader: async ({ location }) => {
     const result = await getMailAccount();
     if (
@@ -100,21 +95,22 @@ function MailLayout() {
 }
 
 function MailShell({ account }: { account: MailAccount }) {
+  const auth = useSignedInAuth();
   const location = useLocation();
   const isMailboxRoot = location.pathname === "/mail";
   const mailboxCollection = useMemo(
-    () => createMailboxCollection(account.account_id),
-    [account.account_id],
+    () => createMailboxCollection(auth, account.account_id),
+    [account.account_id, auth.cachePartition],
   );
 
   const emailMailboxCollection = useMemo(
-    () => createEmailMailboxCollection(account.account_id),
-    [account.account_id],
+    () => createEmailMailboxCollection(auth, account.account_id),
+    [account.account_id, auth.cachePartition],
   );
 
   const emailCollection = useMemo(
-    () => createEmailCollection(account.account_id),
-    [account.account_id],
+    () => createEmailCollection(auth, account.account_id),
+    [account.account_id, auth.cachePartition],
   );
 
   const { data: mailboxes } = useLiveQuery(

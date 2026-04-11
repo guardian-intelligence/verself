@@ -1,10 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { getViewer } from "~/server-fns/auth";
+import { anonymousAuth } from "@forge-metal/auth-web/isomorphic";
 
 export const Route = createFileRoute("/")({
-  beforeLoad: async () => {
-    const viewer = await getViewer();
-    if (viewer) {
+  beforeLoad: ({ context }) => {
+    const auth = context?.auth ?? anonymousAuth;
+    if (auth.isAuthenticated) {
       throw redirect({ to: "/mail" });
     }
   },
