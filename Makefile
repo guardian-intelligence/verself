@@ -8,12 +8,13 @@ FM       := src/platform
 AW       := src/apiwire
 VMO      := src/vm-orchestrator
 BS       := src/billing-service
+IS       := src/identity-service
 AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
 OT       := src/otel
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(AW) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(IS) $(AM) $(SR) $(MS) $(OT)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
@@ -51,6 +52,7 @@ tidy:
 	cd $(AW) && go mod tidy
 	cd $(VMO) && go mod tidy
 	cd $(BS) && go mod tidy
+	cd $(IS) && go mod tidy
 	cd $(AM) && go mod tidy
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
@@ -60,6 +62,9 @@ tidy:
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 	go run ./$(BS)/cmd/billing-openapi --format 3.0 > $(BS)/openapi/openapi-3.0.yaml
 	go run ./$(BS)/cmd/billing-openapi --format 3.1 > $(BS)/openapi/openapi-3.1.yaml
+	mkdir -p $(IS)/openapi
+	go run ./$(IS)/cmd/identity-openapi --format 3.0 > $(IS)/openapi/openapi-3.0.yaml
+	go run ./$(IS)/cmd/identity-openapi --format 3.1 > $(IS)/openapi/openapi-3.1.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.0 > $(MS)/openapi/openapi-3.0.yaml
 	go run ./$(MS)/cmd/mailbox-openapi --format 3.1 > $(MS)/openapi/openapi-3.1.yaml
 	mkdir -p $(SR)/openapi
@@ -69,6 +74,8 @@ openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
 openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.0 --check
 	cd $(BS) && go run ./cmd/billing-openapi --format 3.1 --check
+	cd $(IS) && go run ./cmd/identity-openapi --format 3.0 --check
+	cd $(IS) && go run ./cmd/identity-openapi --format 3.1 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.0 --check
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
@@ -78,6 +85,7 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-safe
 	go run ./$(AW)/cmd/openapi-wire-check \
 		$(BS)/openapi/openapi-3.1.yaml \
+		$(IS)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml
 

@@ -1,0 +1,590 @@
+components:
+  schemas:
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          nullable: true
+          type: array
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          example: https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          example: 400
+          format: int64
+          maximum: 599
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          example: Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          example: https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    IdentityInviteMemberRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityInviteMemberRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          maxLength: 320
+          type: string
+        family_name:
+          maxLength: 100
+          type: string
+        given_name:
+          maxLength: 100
+          type: string
+        role_keys:
+          items:
+            type: string
+          maxItems: 16
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - email
+        - role_keys
+      type: object
+    IdentityInviteMemberResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityInviteMemberResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          type: string
+        role_keys:
+          items:
+            type: string
+          nullable: true
+          type: array
+        status:
+          type: string
+        user_id:
+          type: string
+      required:
+        - user_id
+        - email
+        - role_keys
+        - status
+      type: object
+    IdentityMember:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityMember.json
+          format: uri
+          readOnly: true
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        login_name:
+          type: string
+        role_keys:
+          items:
+            type: string
+          nullable: true
+          type: array
+        state:
+          type: string
+        user_id:
+          type: string
+      required:
+        - user_id
+        - email
+        - login_name
+        - display_name
+        - state
+        - role_keys
+      type: object
+    IdentityMembers:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityMembers.json
+          format: uri
+          readOnly: true
+          type: string
+        members:
+          items:
+            $ref: "#/components/schemas/IdentityMember"
+          nullable: true
+          type: array
+      required:
+        - members
+      type: object
+    IdentityOperation:
+      additionalProperties: false
+      properties:
+        action:
+          type: string
+        operation_id:
+          type: string
+        org_scope:
+          type: string
+        permission:
+          type: string
+        resource:
+          type: string
+      required:
+        - operation_id
+        - permission
+        - resource
+        - action
+        - org_scope
+      type: object
+    IdentityOperations:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityOperations.json
+          format: uri
+          readOnly: true
+          type: string
+        services:
+          items:
+            $ref: "#/components/schemas/IdentityServiceOperations"
+          nullable: true
+          type: array
+      required:
+        - services
+      type: object
+    IdentityOrganization:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityOrganization.json
+          format: uri
+          readOnly: true
+          type: string
+        caller:
+          $ref: "#/components/schemas/IdentityMember"
+        name:
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        permissions:
+          items:
+            type: string
+          nullable: true
+          type: array
+        policy:
+          $ref: "#/components/schemas/IdentityPolicyDocument"
+      required:
+        - org_id
+        - name
+        - caller
+        - policy
+        - permissions
+      type: object
+    IdentityPolicyDocument:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityPolicyDocument.json
+          format: uri
+          readOnly: true
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        roles:
+          items:
+            $ref: "#/components/schemas/IdentityPolicyRole"
+          nullable: true
+          type: array
+        updated_at:
+          format: date-time
+          type: string
+        updated_by:
+          type: string
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+      required:
+        - org_id
+        - version
+        - roles
+        - updated_at
+        - updated_by
+      type: object
+    IdentityPolicyRole:
+      additionalProperties: false
+      properties:
+        display_name:
+          maxLength: 200
+          type: string
+        permissions:
+          items:
+            type: string
+          maxItems: 256
+          minItems: 1
+          nullable: true
+          type: array
+        role_key:
+          maxLength: 100
+          type: string
+      required:
+        - role_key
+        - display_name
+        - permissions
+      type: object
+    IdentityPutPolicyRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityPutPolicyRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        roles:
+          items:
+            $ref: "#/components/schemas/IdentityPolicyRole"
+          maxItems: 32
+          minItems: 1
+          nullable: true
+          type: array
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+      required:
+        - version
+        - roles
+      type: object
+    IdentityServiceOperations:
+      additionalProperties: false
+      properties:
+        operations:
+          items:
+            $ref: "#/components/schemas/IdentityOperation"
+          nullable: true
+          type: array
+        service:
+          type: string
+      required:
+        - service
+        - operations
+      type: object
+    IdentityUpdateMemberRolesRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4248/schemas/IdentityUpdateMemberRolesRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        role_keys:
+          items:
+            type: string
+          maxItems: 16
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+        - role_keys
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Zitadel-issued bearer token scoped to the identity-service API audience.
+      scheme: bearer
+      type: http
+info:
+  title: Identity Service
+  version: 1.0.0
+openapi: 3.0.3
+paths:
+  /api/v1/organization:
+    get:
+      operationId: get-organization
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityOrganization"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get organization identity state
+      x-forge-metal-iam:
+        action: read
+        audit_event: identity.organization.read
+        org_scope: token_org_id
+        permission: identity:organization:read
+        rate_limit_class: read
+        resource: organization
+  /api/v1/organization/members:
+    get:
+      operationId: list-organization-members
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityMembers"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List organization members
+      x-forge-metal-iam:
+        action: list
+        audit_event: identity.organization.member.list
+        org_scope: token_org_id
+        permission: identity:member:read
+        rate_limit_class: read
+        resource: organization_member
+    post:
+      operationId: invite-organization-member
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityInviteMemberRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityInviteMemberResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Invite an organization member
+      x-forge-metal-iam:
+        action: invite
+        audit_event: identity.organization.member.invite
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:member:invite
+        rate_limit_class: member_mutation
+        request_body_max_bytes: 16384
+        resource: organization_member
+  /api/v1/organization/members/{user_id}/roles:
+    put:
+      operationId: update-organization-member-roles
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - description: Zitadel user ID
+          in: path
+          name: user_id
+          required: true
+          schema:
+            description: Zitadel user ID
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityUpdateMemberRolesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityMember"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Update organization member roles
+      x-forge-metal-iam:
+        action: write
+        audit_event: identity.organization.member.roles.write
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:member:roles:write
+        rate_limit_class: member_mutation
+        request_body_max_bytes: 16384
+        resource: organization_member_roles
+  /api/v1/organization/operations:
+    get:
+      operationId: list-organization-operations
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityOperations"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List service-declared operations available to policy documents
+      x-forge-metal-iam:
+        action: list
+        audit_event: identity.organization.operations.list
+        org_scope: token_org_id
+        permission: identity:operations:read
+        rate_limit_class: read
+        resource: service_operation
+  /api/v1/organization/policy:
+    get:
+      operationId: get-organization-policy
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityPolicyDocument"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get organization policy document
+      x-forge-metal-iam:
+        action: read
+        audit_event: identity.organization.policy.read
+        org_scope: token_org_id
+        permission: identity:policy:read
+        rate_limit_class: read
+        resource: organization_policy
+    put:
+      operationId: put-organization-policy
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityPutPolicyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityPolicyDocument"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Replace organization policy document
+      x-forge-metal-iam:
+        action: write
+        audit_event: identity.organization.policy.write
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:policy:write
+        rate_limit_class: policy_mutation
+        request_body_max_bytes: 16384
+        resource: organization_policy
+servers:
+  - url: http://127.0.0.1:4248
