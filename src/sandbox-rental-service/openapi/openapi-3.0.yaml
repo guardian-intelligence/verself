@@ -1,76 +1,5 @@
 components:
   schemas:
-    AttemptRecord:
-      additionalProperties: false
-      properties:
-        attempt_id:
-          type: string
-        attempt_seq:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        billing_job_id:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        completed_at:
-          format: date-time
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        duration_ms:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        exit_code:
-          format: int64
-          maximum: 255
-          minimum: 0
-          type: integer
-        failure_reason:
-          type: string
-        golden_snapshot:
-          type: string
-        orchestrator_job_id:
-          type: string
-        runner_name:
-          type: string
-        started_at:
-          format: date-time
-          type: string
-        state:
-          type: string
-        stderr_bytes:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        stdout_bytes:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        trace_id:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-        zfs_written:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-      required:
-        - attempt_id
-        - attempt_seq
-        - state
-        - created_at
-        - updated_at
-      type: object
     BillingBalance:
       additionalProperties: false
       properties:
@@ -189,83 +118,19 @@ components:
       required:
         - subscriptions
       type: object
-    BillingWindow:
-      additionalProperties: false
-      properties:
-        actual_quantity:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        attempt_id:
-          type: string
-        billing_window_id:
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        pricing_phase:
-          type: string
-        reservation_shape:
-          type: string
-        reserved_quantity:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        settled_at:
-          format: date-time
-          type: string
-        state:
-          type: string
-        window_seq:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        window_start:
-          format: date-time
-          type: string
-      required:
-        - attempt_id
-        - billing_window_id
-        - window_seq
-        - reservation_shape
-        - reserved_quantity
-        - state
-        - window_start
-        - created_at
-      type: object
-    CheckoutInputBody:
+    BillingURLResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/CheckoutInputBody.json
+          example: http://127.0.0.1:4243/schemas/BillingURLResponse.json
           format: uri
           readOnly: true
           type: string
-        amount_cents:
-          description: Amount in cents
-          format: int64
-          maximum: 9007199254740991
-          minimum: 1
-          type: integer
-        cancel_url:
-          maxLength: 2048
-          type: string
-        product_id:
-          description: Product to purchase credits for
-          maxLength: 255
-          type: string
-        success_url:
-          maxLength: 2048
+        url:
           type: string
       required:
-        - product_id
-        - amount_cents
-        - success_url
-        - cancel_url
+        - url
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -320,12 +185,211 @@ components:
           format: uri
           type: string
       type: object
-    ExecutionRecord:
+    SandboxAttemptRecord:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          type: string
+        attempt_seq:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        billing_job_id:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        completed_at:
+          format: date-time
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        duration_ms:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        exit_code:
+          format: int64
+          maximum: 255
+          minimum: 0
+          type: integer
+        failure_reason:
+          type: string
+        golden_snapshot:
+          type: string
+        orchestrator_job_id:
+          type: string
+        runner_name:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+        stderr_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        stdout_bytes:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        trace_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        zfs_written:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+      required:
+        - attempt_id
+        - attempt_seq
+        - state
+        - created_at
+        - updated_at
+      type: object
+    SandboxBillingCheckoutRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/ExecutionRecord.json
+          example: http://127.0.0.1:4243/schemas/SandboxBillingCheckoutRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        amount_cents:
+          description: Amount in cents
+          format: int64
+          maximum: 9007199254740991
+          minimum: 1
+          type: integer
+        cancel_url:
+          maxLength: 2048
+          type: string
+        product_id:
+          description: Product to purchase credits for
+          maxLength: 255
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+      required:
+        - product_id
+        - amount_cents
+        - success_url
+        - cancel_url
+      type: object
+    SandboxBillingSubscriptionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxBillingSubscriptionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cadence:
+          description: Billing cadence (default monthly)
+          enum:
+            - monthly
+            - annual
+          type: string
+        cancel_url:
+          maxLength: 2048
+          type: string
+        plan_id:
+          description: Plan to subscribe to
+          maxLength: 255
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+      required:
+        - plan_id
+        - success_url
+        - cancel_url
+      type: object
+    SandboxBillingWindow:
+      additionalProperties: false
+      properties:
+        actual_quantity:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        attempt_id:
+          type: string
+        billing_window_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        pricing_phase:
+          type: string
+        reservation_shape:
+          type: string
+        reserved_quantity:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        settled_at:
+          format: date-time
+          type: string
+        state:
+          type: string
+        window_seq:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        window_start:
+          format: date-time
+          type: string
+      required:
+        - attempt_id
+        - billing_window_id
+        - window_seq
+        - reservation_shape
+        - reserved_quantity
+        - state
+        - window_start
+        - created_at
+      type: object
+    SandboxExecutionLogs:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxExecutionLogs.json
+          format: uri
+          readOnly: true
+          type: string
+        attempt_id:
+          type: string
+        execution_id:
+          type: string
+        logs:
+          type: string
+      required:
+        - execution_id
+        - attempt_id
+        - logs
+      type: object
+    SandboxExecutionRecord:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxExecutionRecord.json
           format: uri
           readOnly: true
           type: string
@@ -333,7 +397,7 @@ components:
           type: string
         billing_windows:
           items:
-            $ref: "#/components/schemas/BillingWindow"
+            $ref: "#/components/schemas/SandboxBillingWindow"
           nullable: true
           type: array
         commit_sha:
@@ -354,7 +418,7 @@ components:
         kind:
           type: string
         latest_attempt:
-          $ref: "#/components/schemas/AttemptRecord"
+          $ref: "#/components/schemas/SandboxAttemptRecord"
         org_id:
           pattern: ^[0-9]+$
           type: string
@@ -396,27 +460,7 @@ components:
         - created_at
         - updated_at
       type: object
-    GetExecutionLogsOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/GetExecutionLogsOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        attempt_id:
-          type: string
-        execution_id:
-          type: string
-        logs:
-          type: string
-      required:
-        - execution_id
-        - attempt_id
-        - logs
-      type: object
-    GoldenGenerationRecord:
+    SandboxGoldenGenerationRecord:
       additionalProperties: false
       properties:
         activated_at:
@@ -468,12 +512,12 @@ components:
         - created_at
         - updated_at
       type: object
-    ImportRepoRequest:
+    SandboxImportRepoRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/ImportRepoRequest.json
+          example: http://127.0.0.1:4243/schemas/SandboxImportRepoRequest.json
           format: uri
           readOnly: true
           type: string
@@ -494,12 +538,12 @@ components:
       required:
         - clone_url
       type: object
-    RepoBootstrapRecord:
+    SandboxRepoBootstrapRecord:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/RepoBootstrapRecord.json
+          example: http://127.0.0.1:4243/schemas/SandboxRepoBootstrapRecord.json
           format: uri
           readOnly: true
           type: string
@@ -508,9 +552,9 @@ components:
         execution_id:
           type: string
         generation:
-          $ref: "#/components/schemas/GoldenGenerationRecord"
+          $ref: "#/components/schemas/SandboxGoldenGenerationRecord"
         repo:
-          $ref: "#/components/schemas/RepoRecord"
+          $ref: "#/components/schemas/SandboxRepoRecord"
         trigger_reason:
           type: string
       required:
@@ -520,12 +564,12 @@ components:
         - attempt_id
         - trigger_reason
       type: object
-    RepoRecord:
+    SandboxRepoRecord:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/RepoRecord.json
+          example: http://127.0.0.1:4243/schemas/SandboxRepoRecord.json
           format: uri
           readOnly: true
           type: string
@@ -588,12 +632,12 @@ components:
         - created_at
         - updated_at
       type: object
-    SubmitExecutionOutputBody:
+    SandboxSubmitExecutionResult:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SubmitExecutionOutputBody.json
+          example: http://127.0.0.1:4243/schemas/SandboxSubmitExecutionResult.json
           format: uri
           readOnly: true
           type: string
@@ -608,12 +652,12 @@ components:
         - attempt_id
         - status
       type: object
-    SubmitRequest:
+    SandboxSubmitRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SubmitRequest.json
+          example: http://127.0.0.1:4243/schemas/SandboxSubmitRequest.json
           format: uri
           readOnly: true
           type: string
@@ -648,50 +692,6 @@ components:
       required:
         - kind
       type: object
-    SubscribeInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SubscribeInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        cadence:
-          description: Billing cadence (default monthly)
-          enum:
-            - monthly
-            - annual
-          type: string
-        cancel_url:
-          maxLength: 2048
-          type: string
-        plan_id:
-          description: Plan to subscribe to
-          maxLength: 255
-          type: string
-        success_url:
-          maxLength: 2048
-          type: string
-      required:
-        - plan_id
-        - success_url
-        - cancel_url
-      type: object
-    URLOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/URLOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        url:
-          type: string
-      required:
-        - url
-      type: object
 info:
   title: Sandbox Rental Service
   version: 1.0.0
@@ -721,14 +721,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CheckoutInputBody"
+              $ref: "#/components/schemas/SandboxBillingCheckoutRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLOutputBody"
+                $ref: "#/components/schemas/BillingURLResponse"
           description: OK
         default:
           content:
@@ -776,14 +776,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SubscribeInputBody"
+              $ref: "#/components/schemas/SandboxBillingSubscriptionRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLOutputBody"
+                $ref: "#/components/schemas/BillingURLResponse"
           description: OK
         default:
           content:
@@ -816,14 +816,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SubmitRequest"
+              $ref: "#/components/schemas/SandboxSubmitRequest"
         required: true
       responses:
         "201":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubmitExecutionOutputBody"
+                $ref: "#/components/schemas/SandboxSubmitExecutionResult"
           description: Created
         default:
           content:
@@ -848,7 +848,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExecutionRecord"
+                $ref: "#/components/schemas/SandboxExecutionRecord"
           description: OK
         default:
           content:
@@ -873,7 +873,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GetExecutionLogsOutputBody"
+                $ref: "#/components/schemas/SandboxExecutionLogs"
           description: OK
         default:
           content:
@@ -891,7 +891,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/RepoRecord"
+                  $ref: "#/components/schemas/SandboxRepoRecord"
                 nullable: true
                 type: array
           description: OK
@@ -908,14 +908,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ImportRepoRequest"
+              $ref: "#/components/schemas/SandboxImportRepoRequest"
         required: true
       responses:
         "201":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepoRecord"
+                $ref: "#/components/schemas/SandboxRepoRecord"
           description: Created
         default:
           content:
@@ -940,7 +940,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepoRecord"
+                $ref: "#/components/schemas/SandboxRepoRecord"
           description: OK
         default:
           content:
@@ -966,7 +966,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/GoldenGenerationRecord"
+                  $ref: "#/components/schemas/SandboxGoldenGenerationRecord"
                 nullable: true
                 type: array
           description: OK
@@ -993,7 +993,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepoBootstrapRecord"
+                $ref: "#/components/schemas/SandboxRepoBootstrapRecord"
           description: Accepted
         default:
           content:
@@ -1018,7 +1018,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepoRecord"
+                $ref: "#/components/schemas/SandboxRepoRecord"
           description: OK
         default:
           content:

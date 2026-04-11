@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 )
@@ -52,8 +53,8 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// MailAccountOutputBody defines model for MailAccountOutputBody.
-type MailAccountOutputBody struct {
+// MailboxAccount defines model for MailboxAccount.
+type MailboxAccount struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema           *string `json:"$schema,omitempty"`
 	AccountId        string  `json:"account_id"`
@@ -62,8 +63,8 @@ type MailAccountOutputBody struct {
 	EmailAddress     string  `json:"email_address"`
 }
 
-// MailBodyOutputBody defines model for MailBodyOutputBody.
-type MailBodyOutputBody struct {
+// MailboxBody defines model for MailboxBody.
+type MailboxBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema    *string `json:"$schema,omitempty"`
 	AccountId string  `json:"account_id"`
@@ -73,30 +74,35 @@ type MailBodyOutputBody struct {
 	TextBody  string  `json:"text_body"`
 }
 
-// MailMoveInputBody defines model for MailMoveInputBody.
-type MailMoveInputBody struct {
+// MailboxForwarder defines model for MailboxForwarder.
+type MailboxForwarder struct {
+	Enabled                 bool       `json:"enabled"`
+	ForwardTargetConfigured bool       `json:"forward_target_configured"`
+	LastError               *string    `json:"last_error,omitempty"`
+	LastForwardedAt         *time.Time `json:"last_forwarded_at,omitempty"`
+	LastForwardedEmailId    *string    `json:"last_forwarded_email_id,omitempty"`
+	LastSyncAt              *time.Time `json:"last_sync_at,omitempty"`
+	Mailbox                 string     `json:"mailbox"`
+	Running                 bool       `json:"running"`
+}
+
+// MailboxMoveRequest defines model for MailboxMoveRequest.
+type MailboxMoveRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema    *string `json:"$schema,omitempty"`
 	MailboxId string  `json:"mailbox_id"`
 }
 
-// MailMutationOutputBody defines model for MailMutationOutputBody.
-type MailMutationOutputBody struct {
+// MailboxMutation defines model for MailboxMutation.
+type MailboxMutation struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema  *string `json:"$schema,omitempty"`
 	EmailId string  `json:"email_id"`
 	Status  string  `json:"status"`
 }
 
-// MailSyncStatusOutputBody defines model for MailSyncStatusOutputBody.
-type MailSyncStatusOutputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string     `json:"$schema,omitempty"`
-	Status interface{} `json:"status"`
-}
-
-// OperatorAccount defines model for OperatorAccount.
-type OperatorAccount struct {
+// MailboxOperatorAccount defines model for MailboxOperatorAccount.
+type MailboxOperatorAccount struct {
 	AccountId     string `json:"account_id"`
 	DisplayName   string `json:"display_name"`
 	EmailAddress  string `json:"email_address"`
@@ -105,83 +111,83 @@ type OperatorAccount struct {
 	SyncedAt      string `json:"synced_at"`
 }
 
-// OperatorAccountsOutputBody defines model for OperatorAccountsOutputBody.
-type OperatorAccountsOutputBody struct {
+// MailboxOperatorAccounts defines model for MailboxOperatorAccounts.
+type MailboxOperatorAccounts struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string            `json:"$schema,omitempty"`
-	Accounts *[]OperatorAccount `json:"accounts"`
+	Schema   *string                   `json:"$schema,omitempty"`
+	Accounts *[]MailboxOperatorAccount `json:"accounts"`
 }
 
-// OperatorAddress defines model for OperatorAddress.
-type OperatorAddress struct {
+// MailboxOperatorAddress defines model for MailboxOperatorAddress.
+type MailboxOperatorAddress struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 }
 
-// OperatorEmail defines model for OperatorEmail.
-type OperatorEmail struct {
-	AccountId     string             `json:"account_id"`
-	Cc            *[]OperatorAddress `json:"cc"`
-	EmailId       string             `json:"email_id"`
-	FromEmail     string             `json:"from_email"`
-	FromName      string             `json:"from_name"`
-	HasAttachment bool               `json:"has_attachment"`
-	IsAnswered    bool               `json:"is_answered"`
-	IsDraft       bool               `json:"is_draft"`
-	IsFlagged     bool               `json:"is_flagged"`
-	IsSeen        bool               `json:"is_seen"`
-	Keywords      map[string]bool    `json:"keywords"`
-	MailboxIds    *[]string          `json:"mailbox_ids"`
-	Preview       string             `json:"preview"`
-	ReceivedAt    string             `json:"received_at"`
-	ReplyTo       *[]OperatorAddress `json:"reply_to"`
-	SentAt        string             `json:"sent_at"`
-	Size          int64              `json:"size"`
-	Subject       string             `json:"subject"`
-	SyncedAt      string             `json:"synced_at"`
-	ThreadId      string             `json:"thread_id"`
-	To            *[]OperatorAddress `json:"to"`
+// MailboxOperatorEmail defines model for MailboxOperatorEmail.
+type MailboxOperatorEmail struct {
+	AccountId     string                    `json:"account_id"`
+	Cc            *[]MailboxOperatorAddress `json:"cc"`
+	EmailId       string                    `json:"email_id"`
+	FromEmail     string                    `json:"from_email"`
+	FromName      string                    `json:"from_name"`
+	HasAttachment bool                      `json:"has_attachment"`
+	IsAnswered    bool                      `json:"is_answered"`
+	IsDraft       bool                      `json:"is_draft"`
+	IsFlagged     bool                      `json:"is_flagged"`
+	IsSeen        bool                      `json:"is_seen"`
+	Keywords      map[string]bool           `json:"keywords"`
+	MailboxIds    *[]string                 `json:"mailbox_ids"`
+	Preview       string                    `json:"preview"`
+	ReceivedAt    string                    `json:"received_at"`
+	ReplyTo       *[]MailboxOperatorAddress `json:"reply_to"`
+	SentAt        string                    `json:"sent_at"`
+	Size          int64                     `json:"size"`
+	Subject       string                    `json:"subject"`
+	SyncedAt      string                    `json:"synced_at"`
+	ThreadId      string                    `json:"thread_id"`
+	To            *[]MailboxOperatorAddress `json:"to"`
 }
 
-// OperatorEmailDetail defines model for OperatorEmailDetail.
-type OperatorEmailDetail struct {
+// MailboxOperatorEmailDetail defines model for MailboxOperatorEmailDetail.
+type MailboxOperatorEmailDetail struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string            `json:"$schema,omitempty"`
-	AccountId     string             `json:"account_id"`
-	Cc            *[]OperatorAddress `json:"cc"`
-	EmailId       string             `json:"email_id"`
-	FetchedAt     string             `json:"fetched_at"`
-	FromEmail     string             `json:"from_email"`
-	FromName      string             `json:"from_name"`
-	HasAttachment bool               `json:"has_attachment"`
-	HtmlBody      string             `json:"html_body"`
-	IsAnswered    bool               `json:"is_answered"`
-	IsDraft       bool               `json:"is_draft"`
-	IsFlagged     bool               `json:"is_flagged"`
-	IsSeen        bool               `json:"is_seen"`
-	Keywords      map[string]bool    `json:"keywords"`
-	MailboxIds    *[]string          `json:"mailbox_ids"`
-	Preview       string             `json:"preview"`
-	ReceivedAt    string             `json:"received_at"`
-	ReplyTo       *[]OperatorAddress `json:"reply_to"`
-	SentAt        string             `json:"sent_at"`
-	Size          int64              `json:"size"`
-	Subject       string             `json:"subject"`
-	SyncedAt      string             `json:"synced_at"`
-	TextBody      string             `json:"text_body"`
-	ThreadId      string             `json:"thread_id"`
-	To            *[]OperatorAddress `json:"to"`
+	Schema        *string                   `json:"$schema,omitempty"`
+	AccountId     string                    `json:"account_id"`
+	Cc            *[]MailboxOperatorAddress `json:"cc"`
+	EmailId       string                    `json:"email_id"`
+	FetchedAt     string                    `json:"fetched_at"`
+	FromEmail     string                    `json:"from_email"`
+	FromName      string                    `json:"from_name"`
+	HasAttachment bool                      `json:"has_attachment"`
+	HtmlBody      string                    `json:"html_body"`
+	IsAnswered    bool                      `json:"is_answered"`
+	IsDraft       bool                      `json:"is_draft"`
+	IsFlagged     bool                      `json:"is_flagged"`
+	IsSeen        bool                      `json:"is_seen"`
+	Keywords      map[string]bool           `json:"keywords"`
+	MailboxIds    *[]string                 `json:"mailbox_ids"`
+	Preview       string                    `json:"preview"`
+	ReceivedAt    string                    `json:"received_at"`
+	ReplyTo       *[]MailboxOperatorAddress `json:"reply_to"`
+	SentAt        string                    `json:"sent_at"`
+	Size          int64                     `json:"size"`
+	Subject       string                    `json:"subject"`
+	SyncedAt      string                    `json:"synced_at"`
+	TextBody      string                    `json:"text_body"`
+	ThreadId      string                    `json:"thread_id"`
+	To            *[]MailboxOperatorAddress `json:"to"`
 }
 
-// OperatorEmailsOutputBody defines model for OperatorEmailsOutputBody.
-type OperatorEmailsOutputBody struct {
+// MailboxOperatorEmails defines model for MailboxOperatorEmails.
+type MailboxOperatorEmails struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string          `json:"$schema,omitempty"`
-	Emails *[]OperatorEmail `json:"emails"`
+	Schema *string                 `json:"$schema,omitempty"`
+	Emails *[]MailboxOperatorEmail `json:"emails"`
 }
 
-// OperatorMailbox defines model for OperatorMailbox.
-type OperatorMailbox struct {
+// MailboxOperatorMailbox defines model for MailboxOperatorMailbox.
+type MailboxOperatorMailbox struct {
 	AccountId     string `json:"account_id"`
 	Id            string `json:"id"`
 	Name          string `json:"name"`
@@ -195,11 +201,46 @@ type OperatorMailbox struct {
 	UnreadThreads int64  `json:"unread_threads"`
 }
 
-// OperatorMailboxesOutputBody defines model for OperatorMailboxesOutputBody.
-type OperatorMailboxesOutputBody struct {
+// MailboxOperatorMailboxes defines model for MailboxOperatorMailboxes.
+type MailboxOperatorMailboxes struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string            `json:"$schema,omitempty"`
-	Mailboxes *[]OperatorMailbox `json:"mailboxes"`
+	Schema    *string                   `json:"$schema,omitempty"`
+	Mailboxes *[]MailboxOperatorMailbox `json:"mailboxes"`
+}
+
+// MailboxServiceStatus defines model for MailboxServiceStatus.
+type MailboxServiceStatus struct {
+	Forwarder       MailboxForwarder `json:"forwarder"`
+	MailboxSync     MailboxSync      `json:"mailbox_sync"`
+	PublicBaseUrl   string           `json:"public_base_url"`
+	StalwartBaseUrl string           `json:"stalwart_base_url"`
+	StartedAt       time.Time        `json:"started_at"`
+}
+
+// MailboxServiceStatusResponse defines model for MailboxServiceStatusResponse.
+type MailboxServiceStatusResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string              `json:"$schema,omitempty"`
+	Status MailboxServiceStatus `json:"status"`
+}
+
+// MailboxSync defines model for MailboxSync.
+type MailboxSync struct {
+	Accounts        map[string]MailboxSyncAccountStatus `json:"accounts"`
+	LastDiscoveryAt *time.Time                          `json:"last_discovery_at,omitempty"`
+	LastError       *string                             `json:"last_error,omitempty"`
+	Running         bool                                `json:"running"`
+}
+
+// MailboxSyncAccountStatus defines model for MailboxSyncAccountStatus.
+type MailboxSyncAccountStatus struct {
+	AccountId       string     `json:"account_id"`
+	Connected       bool       `json:"connected"`
+	LastConnectedAt *time.Time `json:"last_connected_at,omitempty"`
+	LastError       *string    `json:"last_error,omitempty"`
+	LastEventAt     *time.Time `json:"last_event_at,omitempty"`
+	LastSyncAt      *time.Time `json:"last_sync_at,omitempty"`
+	Running         bool       `json:"running"`
 }
 
 // OperatorListEmailsParams defines parameters for OperatorListEmails.
@@ -209,7 +250,7 @@ type OperatorListEmailsParams struct {
 }
 
 // MailMoveJSONRequestBody defines body for MailMove for application/json ContentType.
-type MailMoveJSONRequestBody = MailMoveInputBody
+type MailMoveJSONRequestBody = MailboxMoveRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1061,7 +1102,7 @@ type ClientWithResponsesInterface interface {
 type MailAccountResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailAccountOutputBody
+	JSON200                       *MailboxAccount
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1084,7 +1125,7 @@ func (r MailAccountResponse) StatusCode() int {
 type MailBodyResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailBodyOutputBody
+	JSON200                       *MailboxBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1107,7 +1148,7 @@ func (r MailBodyResponse) StatusCode() int {
 type MailFlagResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1130,7 +1171,7 @@ func (r MailFlagResponse) StatusCode() int {
 type MailMoveResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1153,7 +1194,7 @@ func (r MailMoveResponse) StatusCode() int {
 type MailMarkReadResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1176,7 +1217,7 @@ func (r MailMarkReadResponse) StatusCode() int {
 type MailTrashResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1199,7 +1240,7 @@ func (r MailTrashResponse) StatusCode() int {
 type MailUnflagResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1222,7 +1263,7 @@ func (r MailUnflagResponse) StatusCode() int {
 type MailMarkUnreadResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailMutationOutputBody
+	JSON200                       *MailboxMutation
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1245,7 +1286,7 @@ func (r MailMarkUnreadResponse) StatusCode() int {
 type MailSyncStatusResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MailSyncStatusOutputBody
+	JSON200                       *MailboxServiceStatusResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1268,7 +1309,7 @@ func (r MailSyncStatusResponse) StatusCode() int {
 type OperatorListAccountsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *OperatorAccountsOutputBody
+	JSON200                       *MailboxOperatorAccounts
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1291,7 +1332,7 @@ func (r OperatorListAccountsResponse) StatusCode() int {
 type OperatorListEmailsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *OperatorEmailsOutputBody
+	JSON200                       *MailboxOperatorEmails
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1314,7 +1355,7 @@ func (r OperatorListEmailsResponse) StatusCode() int {
 type OperatorGetEmailResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *OperatorEmailDetail
+	JSON200                       *MailboxOperatorEmailDetail
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1337,7 +1378,7 @@ func (r OperatorGetEmailResponse) StatusCode() int {
 type OperatorListMailboxesResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *OperatorMailboxesOutputBody
+	JSON200                       *MailboxOperatorMailboxes
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1497,7 +1538,7 @@ func ParseMailAccountResponse(rsp *http.Response) (*MailAccountResponse, error) 
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailAccountOutputBody
+		var dest MailboxAccount
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1530,7 +1571,7 @@ func ParseMailBodyResponse(rsp *http.Response) (*MailBodyResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailBodyOutputBody
+		var dest MailboxBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1563,7 +1604,7 @@ func ParseMailFlagResponse(rsp *http.Response) (*MailFlagResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1596,7 +1637,7 @@ func ParseMailMoveResponse(rsp *http.Response) (*MailMoveResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1629,7 +1670,7 @@ func ParseMailMarkReadResponse(rsp *http.Response) (*MailMarkReadResponse, error
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1662,7 +1703,7 @@ func ParseMailTrashResponse(rsp *http.Response) (*MailTrashResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1695,7 +1736,7 @@ func ParseMailUnflagResponse(rsp *http.Response) (*MailUnflagResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1728,7 +1769,7 @@ func ParseMailMarkUnreadResponse(rsp *http.Response) (*MailMarkUnreadResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailMutationOutputBody
+		var dest MailboxMutation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1761,7 +1802,7 @@ func ParseMailSyncStatusResponse(rsp *http.Response) (*MailSyncStatusResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MailSyncStatusOutputBody
+		var dest MailboxServiceStatusResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1794,7 +1835,7 @@ func ParseOperatorListAccountsResponse(rsp *http.Response) (*OperatorListAccount
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OperatorAccountsOutputBody
+		var dest MailboxOperatorAccounts
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1827,7 +1868,7 @@ func ParseOperatorListEmailsResponse(rsp *http.Response) (*OperatorListEmailsRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OperatorEmailsOutputBody
+		var dest MailboxOperatorEmails
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1860,7 +1901,7 @@ func ParseOperatorGetEmailResponse(rsp *http.Response) (*OperatorGetEmailRespons
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OperatorEmailDetail
+		var dest MailboxOperatorEmailDetail
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1893,7 +1934,7 @@ func ParseOperatorListMailboxesResponse(rsp *http.Response) (*OperatorListMailbo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OperatorMailboxesOutputBody
+		var dest MailboxOperatorMailboxes
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

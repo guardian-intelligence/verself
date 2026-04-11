@@ -38,6 +38,16 @@ func TestDecimalUint64JSON(t *testing.T) {
 	}
 }
 
+func TestParseUint64RejectsMalformedDecimals(t *testing.T) {
+	for _, input := range []string{"", "-1", "+1", " 1", "1 ", "1.0", "18446744073709551616"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseUint64(input); err == nil {
+				t.Fatal("expected ParseUint64 to reject malformed decimal")
+			}
+		})
+	}
+}
+
 func TestDecimalInt64JSON(t *testing.T) {
 	encoded, err := json.Marshal(Int64(math.MinInt64))
 	if err != nil {
@@ -68,6 +78,16 @@ func TestDecimalInt64JSON(t *testing.T) {
 	}
 }
 
+func TestParseInt64RejectsMalformedDecimals(t *testing.T) {
+	for _, input := range []string{"", "-", "+1", " 1", "1 ", "1.0", "9223372036854775808", "-9223372036854775809"} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseInt64(input); err == nil {
+				t.Fatal("expected ParseInt64 to reject malformed decimal")
+			}
+		})
+	}
+}
+
 func TestDecimalUint64HumaSchema(t *testing.T) {
 	registry := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
 	schema := registry.Schema(reflect.TypeFor[DecimalUint64](), false, "")
@@ -75,6 +95,20 @@ func TestDecimalUint64HumaSchema(t *testing.T) {
 		t.Fatalf("expected string schema, got %q", schema.Type)
 	}
 	if schema.Pattern != decimalUint64Pattern {
+		t.Fatalf("expected decimal pattern, got %q", schema.Pattern)
+	}
+	if schema.Format != "" {
+		t.Fatalf("expected no integer format, got %q", schema.Format)
+	}
+}
+
+func TestDecimalInt64HumaSchema(t *testing.T) {
+	registry := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
+	schema := registry.Schema(reflect.TypeFor[DecimalInt64](), false, "")
+	if schema.Type != huma.TypeString {
+		t.Fatalf("expected string schema, got %q", schema.Type)
+	}
+	if schema.Pattern != decimalInt64Pattern {
 		t.Fatalf("expected decimal pattern, got %q", schema.Pattern)
 	}
 	if schema.Format != "" {

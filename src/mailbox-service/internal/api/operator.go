@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/mailbox-service/internal/jmap"
 	"github.com/forge-metal/mailbox-service/internal/mailstore"
 )
@@ -27,104 +28,19 @@ type operatorEmailListInput struct {
 }
 
 type operatorAccountsOutput struct {
-	Body struct {
-		Accounts []operatorAccount `json:"accounts"`
-	}
+	Body apiwire.MailboxOperatorAccounts
 }
 
 type operatorMailboxesOutput struct {
-	Body struct {
-		Mailboxes []operatorMailbox `json:"mailboxes"`
-	}
+	Body apiwire.MailboxOperatorMailboxes
 }
 
 type operatorEmailsOutput struct {
-	Body struct {
-		Emails []operatorEmail `json:"emails"`
-	}
+	Body apiwire.MailboxOperatorEmails
 }
 
 type operatorEmailOutput struct {
-	Body operatorEmailDetail `json:"body"`
-}
-
-type operatorAccount struct {
-	AccountID     string `json:"account_id"`
-	JMAPAccountID string `json:"jmap_account_id"`
-	EmailAddress  string `json:"email_address"`
-	DisplayName   string `json:"display_name"`
-	PrincipalType string `json:"principal_type"`
-	SyncedAt      string `json:"synced_at"`
-}
-
-type operatorMailbox struct {
-	AccountID     string `json:"account_id"`
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	ParentID      string `json:"parent_id"`
-	Role          string `json:"role"`
-	SortOrder     int    `json:"sort_order" minimum:"0" maximum:"9007199254740991"`
-	TotalEmails   int    `json:"total_emails" minimum:"0" maximum:"9007199254740991"`
-	UnreadEmails  int    `json:"unread_emails" minimum:"0" maximum:"9007199254740991"`
-	TotalThreads  int    `json:"total_threads" minimum:"0" maximum:"9007199254740991"`
-	UnreadThreads int    `json:"unread_threads" minimum:"0" maximum:"9007199254740991"`
-	SyncedAt      string `json:"synced_at"`
-}
-
-type operatorAddress struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-type operatorEmail struct {
-	AccountID     string            `json:"account_id"`
-	EmailID       string            `json:"email_id"`
-	ThreadID      string            `json:"thread_id"`
-	MailboxIDs    []string          `json:"mailbox_ids"`
-	Keywords      map[string]bool   `json:"keywords"`
-	Subject       string            `json:"subject"`
-	FromName      string            `json:"from_name"`
-	FromEmail     string            `json:"from_email"`
-	To            []operatorAddress `json:"to"`
-	Cc            []operatorAddress `json:"cc"`
-	ReplyTo       []operatorAddress `json:"reply_to"`
-	Preview       string            `json:"preview"`
-	HasAttachment bool              `json:"has_attachment"`
-	Size          int               `json:"size" minimum:"0" maximum:"9007199254740991"`
-	ReceivedAt    string            `json:"received_at"`
-	SentAt        string            `json:"sent_at"`
-	IsSeen        bool              `json:"is_seen"`
-	IsFlagged     bool              `json:"is_flagged"`
-	IsAnswered    bool              `json:"is_answered"`
-	IsDraft       bool              `json:"is_draft"`
-	SyncedAt      string            `json:"synced_at"`
-}
-
-type operatorEmailDetail struct {
-	AccountID     string            `json:"account_id"`
-	EmailID       string            `json:"email_id"`
-	ThreadID      string            `json:"thread_id"`
-	MailboxIDs    []string          `json:"mailbox_ids"`
-	Keywords      map[string]bool   `json:"keywords"`
-	Subject       string            `json:"subject"`
-	FromName      string            `json:"from_name"`
-	FromEmail     string            `json:"from_email"`
-	To            []operatorAddress `json:"to"`
-	Cc            []operatorAddress `json:"cc"`
-	ReplyTo       []operatorAddress `json:"reply_to"`
-	Preview       string            `json:"preview"`
-	HasAttachment bool              `json:"has_attachment"`
-	Size          int               `json:"size" minimum:"0" maximum:"9007199254740991"`
-	ReceivedAt    string            `json:"received_at"`
-	SentAt        string            `json:"sent_at"`
-	IsSeen        bool              `json:"is_seen"`
-	IsFlagged     bool              `json:"is_flagged"`
-	IsAnswered    bool              `json:"is_answered"`
-	IsDraft       bool              `json:"is_draft"`
-	SyncedAt      string            `json:"synced_at"`
-	TextBody      string            `json:"text_body"`
-	HTMLBody      string            `json:"html_body"`
-	FetchedAt     string            `json:"fetched_at"`
+	Body apiwire.MailboxOperatorEmailDetail `json:"body"`
 }
 
 func registerOperatorRoutes(api huma.API, svc provider) {
@@ -164,7 +80,7 @@ func operatorListAccounts(svc provider) func(context.Context, *mailboxServiceEmp
 			return nil, toHumaError("list accounts", err)
 		}
 		out := &operatorAccountsOutput{}
-		out.Body.Accounts = make([]operatorAccount, 0, len(accounts))
+		out.Body.Accounts = make([]apiwire.MailboxOperatorAccount, 0, len(accounts))
 		for _, account := range accounts {
 			out.Body.Accounts = append(out.Body.Accounts, toOperatorAccount(account))
 		}
@@ -179,7 +95,7 @@ func operatorListMailboxes(svc provider) func(context.Context, *operatorAccountP
 			return nil, toHumaError("list mailboxes", err)
 		}
 		out := &operatorMailboxesOutput{}
-		out.Body.Mailboxes = make([]operatorMailbox, 0, len(mailboxes))
+		out.Body.Mailboxes = make([]apiwire.MailboxOperatorMailbox, 0, len(mailboxes))
 		for _, mailbox := range mailboxes {
 			out.Body.Mailboxes = append(out.Body.Mailboxes, toOperatorMailbox(mailbox))
 		}
@@ -198,7 +114,7 @@ func operatorListEmails(svc provider) func(context.Context, *operatorEmailListIn
 			return nil, toHumaError("list emails", err)
 		}
 		out := &operatorEmailsOutput{}
-		out.Body.Emails = make([]operatorEmail, 0, len(emails))
+		out.Body.Emails = make([]apiwire.MailboxOperatorEmail, 0, len(emails))
 		for _, email := range emails {
 			out.Body.Emails = append(out.Body.Emails, toOperatorEmail(email))
 		}
@@ -222,8 +138,8 @@ func operatorGetEmail(svc provider) func(context.Context, *operatorEmailPathInpu
 	}
 }
 
-func toOperatorAccount(account mailstore.Account) operatorAccount {
-	return operatorAccount{
+func toOperatorAccount(account mailstore.Account) apiwire.MailboxOperatorAccount {
+	return apiwire.MailboxOperatorAccount{
 		AccountID:     account.AccountID,
 		JMAPAccountID: account.JMAPAccountID,
 		EmailAddress:  account.EmailAddress,
@@ -233,8 +149,8 @@ func toOperatorAccount(account mailstore.Account) operatorAccount {
 	}
 }
 
-func toOperatorMailbox(mailbox mailstore.Mailbox) operatorMailbox {
-	return operatorMailbox{
+func toOperatorMailbox(mailbox mailstore.Mailbox) apiwire.MailboxOperatorMailbox {
+	return apiwire.MailboxOperatorMailbox{
 		AccountID:     mailbox.AccountID,
 		ID:            mailbox.ID,
 		Name:          mailbox.Name,
@@ -249,8 +165,8 @@ func toOperatorMailbox(mailbox mailstore.Mailbox) operatorMailbox {
 	}
 }
 
-func toOperatorEmail(email mailstore.Email) operatorEmail {
-	return operatorEmail{
+func toOperatorEmail(email mailstore.Email) apiwire.MailboxOperatorEmail {
+	return apiwire.MailboxOperatorEmail{
 		AccountID:     email.AccountID,
 		EmailID:       email.ID,
 		ThreadID:      email.ThreadID,
@@ -275,8 +191,8 @@ func toOperatorEmail(email mailstore.Email) operatorEmail {
 	}
 }
 
-func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) operatorEmailDetail {
-	return operatorEmailDetail{
+func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) apiwire.MailboxOperatorEmailDetail {
+	return apiwire.MailboxOperatorEmailDetail{
 		AccountID:     email.AccountID,
 		EmailID:       email.ID,
 		ThreadID:      email.ThreadID,
@@ -304,13 +220,13 @@ func toOperatorEmailDetail(email mailstore.Email, body mailstore.EmailBody) oper
 	}
 }
 
-func toOperatorAddresses(addresses []jmap.Address) []operatorAddress {
+func toOperatorAddresses(addresses []jmap.Address) []apiwire.MailboxOperatorAddress {
 	if len(addresses) == 0 {
 		return nil
 	}
-	out := make([]operatorAddress, 0, len(addresses))
+	out := make([]apiwire.MailboxOperatorAddress, 0, len(addresses))
 	for _, address := range addresses {
-		out = append(out, operatorAddress{Name: address.Name, Email: address.Email})
+		out = append(out, apiwire.MailboxOperatorAddress{Name: address.Name, Email: address.Email})
 	}
 	return out
 }

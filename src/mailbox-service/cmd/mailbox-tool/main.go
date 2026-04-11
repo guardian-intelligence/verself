@@ -373,7 +373,7 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-func formatAddressList(list *[]mailboxclient.OperatorAddress) string {
+func formatAddressList(list *[]mailboxclient.MailboxOperatorAddress) string {
 	if list == nil || len(*list) == 0 {
 		return ""
 	}

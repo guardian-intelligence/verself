@@ -77,54 +77,6 @@ type (
 	SubscriptionResponse  = apiwire.BillingSubscription
 )
 
-type CreateCheckoutRequest struct {
-	OrgID       apiwire.DecimalUint64 `json:"org_id"`
-	ProductID   string                `json:"product_id" minLength:"1" maxLength:"255"`
-	AmountCents int64                 `json:"amount_cents" minimum:"1" maximum:"9007199254740991"`
-	SuccessURL  string                `json:"success_url" minLength:"1" maxLength:"2048"`
-	CancelURL   string                `json:"cancel_url" minLength:"1" maxLength:"2048"`
-}
-
-type CreateSubscriptionRequest struct {
-	OrgID      apiwire.DecimalUint64 `json:"org_id"`
-	PlanID     string                `json:"plan_id" minLength:"1" maxLength:"255"`
-	Cadence    string                `json:"cadence,omitempty" enum:"monthly,annual"`
-	SuccessURL string                `json:"success_url" minLength:"1" maxLength:"2048"`
-	CancelURL  string                `json:"cancel_url" minLength:"1" maxLength:"2048"`
-}
-
-type URLResponse struct {
-	URL string `json:"url"`
-}
-
-type ReserveWindowRequest struct {
-	OrgID           apiwire.DecimalUint64 `json:"org_id"`
-	ProductID       string                `json:"product_id" minLength:"1" maxLength:"255"`
-	ActorID         string                `json:"actor_id" minLength:"1" maxLength:"255"`
-	ConcurrentCount uint64                `json:"concurrent_count" minimum:"0" maximum:"9007199254740991"`
-	SourceType      string                `json:"source_type" minLength:"1" maxLength:"255"`
-	SourceRef       string                `json:"source_ref" minLength:"1" maxLength:"255"`
-	Allocation      map[string]float64    `json:"allocation" minProperties:"1"`
-}
-
-type ReserveWindowResult struct {
-	Reservation apiwire.BillingWindowReservation `json:"reservation"`
-}
-
-type SettleWindowRequest struct {
-	WindowID       string         `json:"window_id" minLength:"1" maxLength:"255"`
-	ActualQuantity uint32         `json:"actual_quantity" minimum:"0"`
-	UsageSummary   map[string]any `json:"usage_summary,omitempty"`
-}
-
-type VoidWindowRequest struct {
-	WindowID string `json:"window_id" minLength:"1" maxLength:"255"`
-}
-
-type VoidWindowResult struct {
-	WindowID string `json:"window_id"`
-}
-
 func billingOrgID(id string) (billing.OrgID, error) {
 	parsed, err := apiwire.ParseUint64(id)
 	if err != nil {
@@ -296,7 +248,7 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	return &body[SubscriptionsResponse]{Body: SubscriptionsResponse{Subscriptions: out}}, nil
 }
 
-func (h *Handler) createCheckout(ctx context.Context, input *body[CreateCheckoutRequest]) (*body[URLResponse], error) {
+func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.BillingCreateCheckoutRequest]) (*body[apiwire.BillingURLResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -313,10 +265,10 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[CreateCheckout
 	if err != nil {
 		return nil, huma.Error500InternalServerError("create checkout", err)
 	}
-	return &body[URLResponse]{Body: URLResponse{URL: url}}, nil
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createSubscription(ctx context.Context, input *body[CreateSubscriptionRequest]) (*body[URLResponse], error) {
+func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.BillingCreateSubscriptionRequest]) (*body[apiwire.BillingURLResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -329,10 +281,10 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[CreateSubs
 	if err != nil {
 		return nil, huma.Error501NotImplemented("subscription checkout", err)
 	}
-	return &body[URLResponse]{Body: URLResponse{URL: url}}, nil
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRequest]) (*body[ReserveWindowResult], error) {
+func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -353,10 +305,10 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRe
 	if err != nil {
 		return nil, reserveWindowError(err)
 	}
-	return &body[ReserveWindowResult]{Body: ReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
+	return &body[apiwire.BillingReserveWindowResult]{Body: apiwire.BillingReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
 }
 
-func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
+func (h *Handler) settleWindow(ctx context.Context, input *body[apiwire.BillingSettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -368,7 +320,7 @@ func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequ
 	return &body[apiwire.BillingSettleResult]{Body: settleResultResponse(result)}, nil
 }
 
-func (h *Handler) voidWindow(ctx context.Context, input *body[VoidWindowRequest]) (*body[VoidWindowResult], error) {
+func (h *Handler) voidWindow(ctx context.Context, input *body[apiwire.BillingVoidWindowRequest]) (*body[apiwire.BillingVoidWindowResult], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -376,7 +328,7 @@ func (h *Handler) voidWindow(ctx context.Context, input *body[VoidWindowRequest]
 	if err := client.VoidWindow(ctx, input.Body.WindowID); err != nil {
 		return nil, h.voidWindowError(ctx, input.Body.WindowID, err)
 	}
-	return &body[VoidWindowResult]{Body: VoidWindowResult{WindowID: input.Body.WindowID}}, nil
+	return &body[apiwire.BillingVoidWindowResult]{Body: apiwire.BillingVoidWindowResult{WindowID: input.Body.WindowID}}, nil
 }
 
 func (h *Handler) requireClient() (*billing.Client, error) {
@@ -397,7 +349,7 @@ func reserveWindowError(err error) error {
 	}
 }
 
-func (h *Handler) settleWindowError(ctx context.Context, input SettleWindowRequest, err error) error {
+func (h *Handler) settleWindowError(ctx context.Context, input apiwire.BillingSettleWindowRequest, err error) error {
 	switch {
 	case errors.Is(err, billing.ErrWindowNotFound):
 		return huma.Error404NotFound("window not found")

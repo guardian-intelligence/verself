@@ -86,7 +86,7 @@ func checkSchemaNode(file string, node *yaml.Node, path string, out *[]violation
 	if format != "int64" && format != "uint64" {
 		return
 	}
-	if scalarValue(mapValue(node, "type")) != "integer" {
+	if !schemaTypeIncludesInteger(mapValue(node, "type")) {
 		return
 	}
 	if scalarValue(mapValue(node, "x-js-wire")) == "bigint" {
@@ -139,6 +139,25 @@ func scalarValue(node *yaml.Node) string {
 		return ""
 	}
 	return node.Value
+}
+
+func schemaTypeIncludesInteger(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch node.Kind {
+	case yaml.ScalarNode:
+		return node.Value == "integer"
+	case yaml.SequenceNode:
+		for _, value := range node.Content {
+			if scalarValue(value) == "integer" {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 func joinPath(path, key string) string {
