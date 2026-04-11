@@ -13,6 +13,7 @@ import (
 
 	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
+	billingclient "github.com/forge-metal/billing-service/client"
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
@@ -87,6 +88,30 @@ func TestBillingProxyErrorRedactsUpstreamDetails(t *testing.T) {
 	}
 	if !strings.Contains(body, "billing service unavailable") {
 		t.Fatalf("billing proxy error body does not include stable public detail: %s", body)
+	}
+}
+
+func TestBillingProxyErrorMapsNoStripeCustomer(t *testing.T) {
+	err := billingProxyError(context.Background(), billingclient.ErrNoStripeCustomer)
+
+	var statusErr huma.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected huma status error, got %T", err)
+	}
+	if statusErr.GetStatus() != http.StatusUnprocessableEntity {
+		t.Fatalf("status: got %d want %d", statusErr.GetStatus(), http.StatusUnprocessableEntity)
+	}
+
+	payload, marshalErr := json.Marshal(err)
+	if marshalErr != nil {
+		t.Fatalf("marshal error: %v", marshalErr)
+	}
+	body := string(payload)
+	if !strings.Contains(body, "billing portal requires an existing Stripe customer") {
+		t.Fatalf("billing proxy error body does not include stable public detail: %s", body)
+	}
+	if strings.Contains(body, "billing-client:") {
+		t.Fatalf("billing proxy error leaked upstream sentinel in %s", body)
 	}
 }
 

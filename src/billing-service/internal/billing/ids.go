@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"hash/fnv"
 
 	"github.com/oklog/ulid/v2"
@@ -20,6 +21,32 @@ type (
 
 func NewGrantID() GrantID {
 	return GrantID(ulid.Make())
+}
+
+func stripeGrantID(orgID OrgID, productID, bucketID, stripeReferenceID string) GrantID {
+	h := sha256.New()
+	_, _ = h.Write([]byte("stripe-grant"))
+	hashUint64(h, uint64(orgID))
+	hashString(h, productID)
+	hashString(h, bucketID)
+	hashString(h, stripeReferenceID)
+	sum := h.Sum(nil)
+	var id GrantID
+	copy(id[:], sum[:16])
+	return id
+}
+
+func hashUint64(h hash.Hash, value uint64) {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], value)
+	_, _ = h.Write(buf[:])
+}
+
+func hashString(h hash.Hash, value string) {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(len(value)))
+	_, _ = h.Write(buf[:])
+	_, _ = h.Write([]byte(value))
 }
 
 func ParseGrantID(value string) (GrantID, error) {

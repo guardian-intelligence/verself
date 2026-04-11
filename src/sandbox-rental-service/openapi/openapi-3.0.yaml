@@ -41,6 +41,8 @@ components:
         available:
           pattern: ^[0-9]+$
           type: string
+        bucket_id:
+          type: string
         expires_at:
           format: date-time
           type: string
@@ -49,10 +51,14 @@ components:
         pending:
           pattern: ^[0-9]+$
           type: string
+        product_id:
+          type: string
         source:
           type: string
       required:
         - grant_id
+        - product_id
+        - bucket_id
         - source
         - available
         - pending
@@ -282,6 +288,21 @@ components:
         - amount_cents
         - success_url
         - cancel_url
+      type: object
+    SandboxBillingPortalRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxBillingPortalRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        return_url:
+          maxLength: 2048
+          type: string
+      required:
+        - return_url
       type: object
     SandboxBillingSubscriptionRequest:
       additionalProperties: false
@@ -861,6 +882,49 @@ paths:
         permission: billing:read
         rate_limit_class: read
         resource: billing_grant
+  /api/v1/billing/portal:
+    post:
+      operationId: create-billing-portal
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SandboxBillingPortalRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create Stripe billing portal session
+      x-forge-metal-iam:
+        action: create
+        audit_event: billing.portal.create
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        request_body_max_bytes: 8192
+        resource: billing_portal
   /api/v1/billing/subscribe:
     post:
       operationId: create-billing-subscription

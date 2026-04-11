@@ -267,6 +267,23 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		AuditEvent:     "billing.subscription_checkout.create",
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-billing-portal",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/billing/portal",
+		Summary:       "Create Stripe billing portal session",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionBillingCheckout,
+		Resource:       "billing_portal",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "billing.portal.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createBillingPortal(billing, publicConfig.BillingReturnOrigins))
 }
 
 type SubmitExecutionInput struct {
@@ -336,6 +353,10 @@ type URLOutput struct {
 
 type SubscribeInput struct {
 	Body apiwire.SandboxBillingSubscriptionRequest
+}
+
+type PortalInput struct {
+	Body apiwire.SandboxBillingPortalRequest
 }
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
@@ -610,6 +631,30 @@ func createBillingSubscription(billing *billingclient.ServiceClient, billingRetu
 	}
 }
 
+func createBillingPortal(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *PortalInput) (*URLOutput, error) {
+	return func(ctx context.Context, input *PortalInput) (*URLOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateBillingReturnURLs(ctx, billingReturnOrigins,
+			billingReturnURLField{Name: "return_url", URL: input.Body.ReturnURL},
+		); err != nil {
+			return nil, err
+		}
+		url, err := billing.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
+		if err != nil {
+			return nil, billingProxyError(ctx, err)
+		}
+		out := &URLOutput{}
+		out.Body = apiwire.BillingURLResponse{URL: url}
+		return out, nil
+	}
+}
+
 func billingProxyError(ctx context.Context, err error) error {
+	if errors.Is(err, billingclient.ErrNoStripeCustomer) {
+		return unprocessableEntity(ctx, "billing-no-stripe-customer", "billing portal requires an existing Stripe customer", err)
+	}
 	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
 }

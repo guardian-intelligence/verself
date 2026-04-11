@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/stripe/stripe-go/v85"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
@@ -293,7 +295,9 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 		return GrantBalance{}, fmt.Errorf("grant amount must be greater than zero")
 	}
 
+	grantID := NewGrantID()
 	if grant.StripeReferenceID != "" {
+		grantID = stripeGrantID(grant.OrgID, grant.ProductID, grant.BucketID, grant.StripeReferenceID)
 		existing, err := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ProductID, grant.BucketID, grant.StripeReferenceID)
 		if err != nil {
 			return GrantBalance{}, err
@@ -303,7 +307,6 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 		}
 	}
 
-	grantID := NewGrantID()
 	if err := c.createGrantAccount(grantID, grant.OrgID, sourceType); err != nil {
 		return GrantBalance{}, err
 	}
@@ -324,6 +327,15 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ProductID, grant.BucketID, grant.Amount, grant.Source, grant.StripeReferenceID, grant.ExpiresAt)
 	if err != nil {
+		if grant.StripeReferenceID != "" && isUniqueViolation(err) {
+			existing, lookupErr := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ProductID, grant.BucketID, grant.StripeReferenceID)
+			if lookupErr != nil {
+				return GrantBalance{}, fmt.Errorf("lookup grant after stripe reference conflict: %w", lookupErr)
+			}
+			if existing != nil {
+				return *existing, nil
+			}
+		}
 		return GrantBalance{}, fmt.Errorf("insert grant row: %w", err)
 	}
 
@@ -335,6 +347,11 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 		ExpiresAt: grant.ExpiresAt,
 		Available: grant.Amount,
 	}, nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && string(pqErr.Code) == "23505"
 }
 
 func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, productID, bucketID, stripeRef string) (*GrantBalance, error) {

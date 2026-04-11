@@ -8,7 +8,7 @@ Reference architectures: Metronome's rate card + contract override model for pri
 
 1. **Customer never overpays.** The customer is never charged for more than they consumed. Void is the default failure mode — crashes, infrastructure outages, and incomplete work always resolve in the customer's favor. The operator eats the compute cost.
 2. **Tax is Stripe's problem.** All spend caps, committed minimums, adjustment calculations, and MFN comparisons operate on pre-tax amounts. The billing service computes `pretax_total`; Stripe computes tax, collects it, and handles remittance and filing. Tax amounts on internal invoices are read-back fields from Stripe — the billing service does not compute, reconcile, or ledger tax in TigerBeetle. Same rationale as delegating email delivery to Resend: regulatory compliance surfaces with constantly changing rules are not worth self-hosting.
-3. **Downgrades are not punitive, but not advantageous.** Unused prepaid credits from paid subscriptions (`source = 'subscription'` or `source = 'purchase'`) are carried forward as a refund grant on plan change. Free-tier grants (`source = 'free_tier'`) are forfeited. The carry-forward is capped at the prorated subscription fee for remaining days: `min(unused_credits, included_credits × remaining_days / total_days)`. This prevents gaming (consume your full allocation on day 1, downgrade on day 2, get a prorated refund) while ensuring light users aren't penalized for switching.
+3. **Downgrades are not punitive, but not advantageous.** Unused prepaid credits from paid subscriptions (`source = 'subscription'` or `source = 'purchase'`) are carried forward as a refund grant on plan change. Free-tier grants (`source = 'free_tier'`) are forfeited. The carry-forward is capped at the prorated value of the remaining subscription term against the plan's bucketed entitlement map: `min(unused_credits, prorated_entitlement_value)`. This prevents gaming while ensuring light users aren't penalized for switching.
 4. **Refund promises are capped, never a blank check.** Satisfaction guarantees refund the subscription fee, not unbounded overage consumption incurred during the guarantee window. SLA credits are capped at a configurable percentage of the affected period's charges. No refund path produces an unlimited liability for the operator.
 5. **Financial state is append-only.** Corrections produce new transfers (reversals, adjustments), never mutations of existing transfers. TigerBeetle accounts and transfers are immutable by design. PostgreSQL invoices transition through `draft → finalized → paid → void` but never backward.
 
@@ -48,9 +48,10 @@ Tier definition and list pricing. Each plan references a product and defines the
 | product_id | TEXT FK | Which product this plan prices |
 | display_name | TEXT | Human-readable tier name |
 | billing_mode | TEXT | `prepaid` or `postpaid`. Determines the Reserve funding path (see below). |
-| included_credits | BIGINT | Prepaid only. Monthly credit allowance deposited as a grant at period start. Null for postpaid plans. |
+| included_credit_buckets | JSONB | Prepaid only. Monthly entitlement map from `bucket_id` to ledger units deposited as grants at period start. Empty for postpaid plans. |
 | unit_rates | JSONB | Rate card: `{"vcpu": 100, "memory_gb": 50}` — atomic units per second per dimension. For prepaid, applies to the included allocation. For postpaid, applies to all usage from the first unit. |
-| overage_unit_rates | JSONB | Prepaid only. Rates applied when included credits are exhausted. Null = hard stop (usage blocked until next period or upgrade). Non-null = overage pricing subject to spend cap. Ignored for postpaid plans. |
+| rate_buckets | JSONB | Dimension-to-bucket routing map. Each usage dimension/component drains a named credit bucket, allowing one plan to fund multiple entitlement lanes. |
+| overage_unit_rates | JSONB | Prepaid only. Rates applied when the bucketed entitlements are exhausted. Empty object = hard stop (usage blocked until next period or upgrade). Non-empty object = overage pricing subject to spend cap. Ignored for postpaid plans. |
 | quotas | JSONB | Concurrent limits, resource caps |
 | is_default | BOOLEAN | One default plan per product (unique partial index) |
 | tier | TEXT | `free`, `hobby`, `pro`, `enterprise` |
@@ -59,10 +60,10 @@ Tier definition and list pricing. Each plan references a product and defines the
 
 | Mode | Funding | On exhaustion | Invoice covers |
 |------|---------|---------------|----------------|
-| `prepaid` | Grant deposited from `included_credits` at period start | Hard stop (`overage_unit_rates` null) or overage pricing (spend-capped) | Overage charges only — prepaid portion already paid via subscription fee |
+| `prepaid` | Grants deposited from `included_credit_buckets` at period start, one grant per bucket | Hard stop (`overage_unit_rates = {}`) or overage pricing (spend-capped) | Overage charges only — prepaid portion already paid via subscription fee |
 | `postpaid` | TigerBeetle receivable account (no balance constraint) | N/A — never exhausts | Total usage at `unit_rates` (after contract override resolution) |
 
-Prepaid maps to self-serve tiers: the subscription fee purchases the credit allocation, usage draws it down, and exhaustion is either a hard stop or a spend-capped overage. Postpaid maps to enterprise and platform tiers: usage accrues unbounded against a receivable (an Asset account in double-entry terms — "money owed to you"), and the invoice at period end is the collection event.
+Prepaid maps to self-serve tiers: the recurring subscription fee purchases bucketed credit entitlements, usage draws them down by bucket, and exhaustion is either a hard stop or a spend-capped overage. Postpaid maps to enterprise and platform tiers: usage accrues unbounded against a receivable (an Asset account in double-entry terms — "money owed to you"), and the invoice at period end is the collection event.
 
 Rate changes follow the Stripe/Metronome immutable-price pattern: append a new plan version with an `effective_at` timestamp rather than mutating `unit_rates` in place. Historical metering rows reference the `plan_id` that was active at Reserve time, preserving the audit trail required by SOX/GAAP. Stripe chose immutable prices because their billing architecture treats pricing as a stream of events — mutation would produce temporal ambiguity across invoices, webhooks, and integrations.
 
@@ -93,11 +94,13 @@ Automated trust tier transitions: `new` → `established` requires 3+ `payment_s
 
 Binds an org to a plan for a product. One active subscription per (org, product) pair, enforced by partial unique index.
 
-**Billing period:** anniversary-based. Each subscription's billing period is a 30-day rolling window anchored to the subscription's creation date (or the most recent plan change). On signup, the customer receives their full credit allocation immediately — no prorated first period. Period-scoped resources (grants, receivables, spend caps) are keyed to `current_period_start`.
+**Billing period:** anniversary-based. Each subscription's billing period is a 30-day rolling window anchored to the subscription's creation date (or the most recent plan change). On signup, the customer receives their full bucketed entitlement allocation immediately — no prorated first period. Period-scoped resources (grants, receivables, spend caps) are keyed to `current_period_start`.
 
 The invoice cron runs daily and processes subscriptions where `current_period_end <= now`, rather than running for all customers on a fixed calendar date. This spreads invoice generation load evenly across days.
 
 > **Future:** calendar-month billing will be supported as an option for enterprise customers who prefer it (contract-negotiated). Anniversary billing remains the default. The subscription's `current_period_start` / `current_period_end` already accommodates both models — the difference is only in how the next period's bounds are computed at rollover.
+
+Subscriptions are modeled locally in PostgreSQL and are created or updated by Stripe Checkout and Stripe webhooks. Stripe collects the recurring plan payment; Stripe Customer Portal manages payment methods, invoices, and cancellation; the billing service records the local subscription row and mints the period grants. TigerBeetle remains the balance and transfer ledger for the credit grants those subscriptions fund.
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -521,7 +524,7 @@ The core billing loop for metered products is not "renew"; it is a window state 
    11b. Update the billing window row to `reserved` with receivable leg, reserved amount, rate snapshot, and expiry metadata
 ```
 
-**Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is null and grants are exhausted, Reserve returns `ErrInsufficientBalance` unless partial reserve is permitted and can produce a smaller valid window.
+**Prepaid:** the linked batch is atomic — if the spend-cap probe fails (`ExceedsCredits`) or any grant has insufficient balance, the entire batch fails. This is TigerBeetle's linked transfer semantics. If `overage_unit_rates` is empty and grants are exhausted, Reserve returns `ErrInsufficientBalance` unless partial reserve is permitted and can produce a smaller valid window.
 
 **Postpaid:** the receivable account has no `debits_must_not_exceed_credits` flag (it's an Asset, not a Liability), so the pending transfer always succeeds. There is no spend cap — postpaid plans accrue unbounded usage. The invoice at period end is the collection event.
 
@@ -630,8 +633,8 @@ Mid-period plan changes follow from design invariants 1 and 3: the customer neve
    - current_period_start = NOW()
    - current_period_end = original period end
    - prorated_from_plan_id = old plan
-4. Prorate credit deposit: included_credits × (remaining_days / total_days)
-   - New grant with source = 'subscription', expires_at = original period end
+4. Prorate credit deposit: `included_credit_buckets × (remaining_days / total_days)` at the bucket level
+   - New grants with source = 'subscription', one per bucket, `expires_at = original period end`
 5. Prorate subscription fee: charge via Stripe for (remaining_days / total_days) of the new plan fee
 ```
 
@@ -641,7 +644,7 @@ Mid-period plan changes follow from design invariants 1 and 3: the customer neve
 1. Close old subscription: SET current_period_end = NOW(), status = 'cancelled'
 2. Calculate carry-forward for paid grants (source = 'subscription' or 'purchase'):
    - unused_credits = sum of available balances across eligible grants
-   - prorated_cap = included_credits × (remaining_days / total_days)
+   - prorated_cap = entitlement_value_from `included_credit_buckets` × (remaining_days / total_days)
    - carry_forward = min(unused_credits, prorated_cap)
 3. If carry_forward > 0: create refund grant
    - source = 'refund', amount = carry_forward, expires_at = original period end
@@ -652,7 +655,7 @@ Mid-period plan changes follow from design invariants 1 and 3: the customer neve
    - current_period_start = NOW()
    - current_period_end = original period end
    - prorated_from_plan_id = old plan
-6. Prorate credit deposit: new plan's included_credits × (remaining_days / total_days)
+6. Prorate credit deposit: new plan's `included_credit_buckets × (remaining_days / total_days)` at the bucket level
 7. Prorate subscription fee: Stripe charge for remaining portion of new plan fee.
    If old plan fee > new plan fee, issue prorated refund for the difference.
 ```
@@ -681,7 +684,7 @@ Stripe is the payment collection and tax compliance layer, not the billing engin
 | Customer tax exemption | Customer API (`tax_exempt` field) | Billing service sets `none`, `exempt`, or `reverse` on the Stripe Customer. Stripe Tax acts on it. |
 | Handle disputes | Webhook: `charge.dispute.created` | Future dispute subsystem handles TB accounting |
 
-Stripe Subscriptions are not used for metered billing. This avoids the 20-item limit, proration complexity, and the coupling between usage reporting and subscription state that motivated Stripe's own meters API redesign.
+Stripe Subscriptions are used only to collect recurring plan payments and maintain the customer subscription lifecycle. Metered usage, bucket consumption, and invoice-grade settlement stay in the billing service, PostgreSQL, and TigerBeetle. That keeps Stripe out of the request-path financial ledger while still using it for payment collection, customer portal flows, and cancellation.
 
 **Why Stripe-first for tax:** Tax compliance requires maintaining jurisdiction-specific rates for ~13,000+ US tax districts alone, plus EU VAT, digital services taxes, reverse charge rules, nexus determination, and filing deadlines. This is the same class of problem as email deliverability (delegated to Resend) — regulatory compliance surfaces with constantly changing rules that are not worth self-hosting. Stripe Tax costs 0.5% per transaction.
 
@@ -827,11 +830,11 @@ The promotion ends with zero cleanup. No cron job to remove discounts, no migrat
 
 Note: this could alternatively be modeled as an adjustment (`percentage_discount` of `-0.9000` scoped to `product_id = sandbox-*`, `dimension = vcpu`). The difference: as a contract_override, the discount is visible in projected metering rows (per-second rates reflect the discount). As an adjustment, projected metering rows show full-rate and the discount appears only on the invoice. The contract_override approach is preferred for promotional pricing because it produces more accurate metering data.
 
-### Prepaid: free tier with 500 included credits, then hard stop
+### Prepaid: free tier with a 500-unit bucket entitlement, then hard stop
 
-The operator defines a `free` plan tier (`billing_mode = 'prepaid'`) with 500 included credits per month and no overage path (`overage_unit_rates = NULL`). This is the default experience for new signups.
+The operator defines a `free` plan tier (`billing_mode = 'prepaid'`) with `included_credit_buckets = {"sandbox": 500}` per month and no overage path (`overage_unit_rates = {}`). This is the default experience for new signups.
 
-No contract, overrides, or adjustments needed. The plan's `included_credits = 500` deposits a grant each billing period. When the grant is exhausted, `Reserve` returns `ErrInsufficientBalance`. The frontend shows "free tier limit reached — upgrade to continue." No invoice is generated — usage is fully covered by the prepaid grant.
+No contract, overrides, or adjustments needed. The plan's bucketed entitlement map deposits a grant each billing period. When the grant is exhausted, `Reserve` returns `ErrInsufficientBalance`. The frontend shows "free tier limit reached — upgrade to continue." No invoice is generated — usage is fully covered by the prepaid grant.
 
 ### Global promotion with MFN: CEO announces 50% off for everyone
 
@@ -900,7 +903,7 @@ If billing infrastructure is down (TigerBeetle unavailable), the Forgejo webhook
 
 ### Mid-month upgrade: Free → Pro on day 15
 
-DevShop is on the free plan (`billing_mode = 'prepaid'`, 500 au included, no overage). On April 15 they upgrade to Pro (`billing_mode = 'prepaid'`, 50,000 au included, $49/mo subscription, overage at 120 au/sec).
+DevShop is on the free plan (`billing_mode = 'prepaid'`, 500 au in the sandbox bucket, no overage). On April 15 they upgrade to Pro (`billing_mode = 'prepaid'`, 50,000 au of bucketed entitlement, $49/mo subscription, overage at 120 au/sec).
 
 **State at upgrade time:**
 - Free grant: 500 au deposited April 1, 300 au consumed, 200 au remaining

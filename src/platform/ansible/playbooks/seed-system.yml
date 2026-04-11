@@ -109,6 +109,8 @@
     seed_system_unit_rates:
       vcpu: 325
       gib: 40
+    seed_system_rate_buckets: {}
+    seed_system_included_credit_buckets: {}
     seed_system_overage_unit_rates: {}
     seed_system_quotas: {}
     seed_system_platform_target_prepaid_units: 1000000000000
@@ -749,8 +751,12 @@
           - "{{ seed_system_plan_id }}"
           - --plan-display-name
           - "{{ seed_system_plan_display_name }}"
+          - --included-credit-buckets-json
+          - "{{ seed_system_included_credit_buckets | to_json }}"
           - --unit-rates-json
           - "{{ seed_system_unit_rates | to_json }}"
+          - --rate-buckets-json
+          - "{{ seed_system_rate_buckets | to_json }}"
           - --overage-unit-rates-json
           - "{{ seed_system_overage_unit_rates | to_json }}"
           - --quotas-json
