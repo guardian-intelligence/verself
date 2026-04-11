@@ -52,9 +52,8 @@ forge-metal/                            # Monorepo root
 │   │   ├── checkpoints/                # Target checkpoint ref/version policy
 │   │   ├── ci/                         # Target Forgejo/GitHub Actions workflow compiler
 │   │   └── jobs/                       # Execution, segment, billing, checkpoint orchestration
-│   ├── e2e/                            # End-to-end tests
 │   ├── migrations/                     # executions, segments, checkpoints, logs PostgreSQL schemas
-│   └── testharness/                    # Test utilities
+│   └── openapi/                        # Generated OpenAPI specs
 ├── src/mailbox-service/                # Inbound mail processing (Go/Huma)
 │   ├── go.mod                          # imports: auth-middleware, otel
 │   ├── cmd/

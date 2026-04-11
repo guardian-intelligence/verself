@@ -56,7 +56,7 @@ var (
 	ErrBillingUnavailable = errors.New("sandbox-rental: billing unavailable")
 )
 
-// Runner abstracts VM execution. Production uses *vmorchestrator.Client; tests use a fake.
+// Runner abstracts VM execution. Production uses *vmorchestrator.Client.
 type Runner interface {
 	StartDirectJob(ctx context.Context, job vmorchestrator.JobConfig) (string, error)
 	StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(vmorchestrator.JobGuestEvent) error) error
@@ -369,7 +369,8 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 
 	traceID := traceIDFromContext(ctx)
 	orchestratorJobID := attemptID.String()
-	if err := s.markLaunching(ctx, executionID, attemptID, orchestratorJobID, traceID, time.Now().UTC()); err != nil {
+	launchTime := time.Now()
+	if err := s.markLaunching(ctx, executionID, attemptID, orchestratorJobID, traceID, launchTime.UTC()); err != nil {
 		s.Logger.ErrorContext(ctx, "mark launching", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return
 	}
@@ -410,6 +411,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		case activation := <-activationCh:
 			currentReservation = activation.reservation
 			nextWindowReserveAt = activation.reservation.RenewBy
+			s.writeSystemLog(ctx, executionID, attemptID, "environment ready in %dms", time.Since(launchTime).Milliseconds())
 			s.writeSystemLog(ctx, executionID, attemptID, "billing activated window_seq=%d started_at=%s", currentReservation.WindowSeq, activation.startedAt.Format(time.RFC3339Nano))
 		case result := <-resultCh:
 			stopTimer(windowAdvanceTimer)

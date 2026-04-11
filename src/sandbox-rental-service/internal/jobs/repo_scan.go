@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	repoScanGitCommandTimeout       = 30 * time.Second
-	defaultRepoScanConcurrency      = 2
-	repoScanAllowFileProtocolForE2E = "FORGE_METAL_REPO_SCAN_E2E_ALLOW_FILE_PROTOCOL"
+	repoScanGitCommandTimeout  = 30 * time.Second
+	defaultRepoScanConcurrency = 2
 )
 
 type ImportRepoRequest struct {
@@ -360,16 +359,9 @@ func repoScanGitCommand(ctx context.Context, args ...string) (*exec.Cmd, context
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_PROTOCOL_FROM_USER=0",
-		"GIT_ALLOW_PROTOCOL="+repoScanAllowedProtocols(),
+		"GIT_ALLOW_PROTOCOL=https",
 	)
 	return cmd, commandCtx, cancel
-}
-
-func repoScanAllowedProtocols() string {
-	if strings.TrimSpace(os.Getenv(repoScanAllowFileProtocolForE2E)) == "1" {
-		return "https:file"
-	}
-	return "https"
 }
 
 func repoFullNameFromCloneURL(cloneURL string) string {

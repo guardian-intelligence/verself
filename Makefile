@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       wipe-pg-db sandbox-inner sandbox-middle sandbox-proof
+       wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof
 
 FM       := src/platform
 AW       := src/apiwire
@@ -120,6 +120,9 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 
 verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
 	cd $(FM) && ./scripts/ensure-verification-repo.sh
+
+vm-orchestrator-proof: inventory-check ## Boot a real Firecracker VM through the deployed vm-orchestrator
+	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh
