@@ -36,6 +36,9 @@
     vm_guest_telemetry_dev_zvol: "{{ firecracker_zfs_pool }}/vm-guest-telemetry-dev-zvol"
     vm_guest_telemetry_dev_snapshot: "{{ vm_guest_telemetry_dev_zvol }}@ready"
     vm_guest_telemetry_dev_mnt: /tmp/vm-guest-telemetry-dev-mnt
+    vm_guest_telemetry_dev_socket: /tmp/vm-orchestrator-telemetry-dev.sock
+    vm_guest_telemetry_dev_pidfile: /tmp/vm-orchestrator-telemetry-dev.pid
+    vm_guest_telemetry_dev_log: /tmp/vm-orchestrator-telemetry-dev.log
     vm_guest_telemetry_upload: /tmp/vm-guest-telemetry
     vm_sleep_seconds: 8
     boot_timeout: 20
@@ -119,10 +122,43 @@
 
     - name: Boot VM, probe, and tear down dev Firecracker instance
       block:
+        - name: Stop stale telemetry dev orchestrator if present
+          ansible.builtin.shell: |
+            set -euo pipefail
+            if [[ -f {{ vm_guest_telemetry_dev_pidfile | quote }} ]]; then
+              pid="$(cat {{ vm_guest_telemetry_dev_pidfile | quote }})"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+            rm -f {{ vm_guest_telemetry_dev_pidfile | quote }} {{ vm_guest_telemetry_dev_socket | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Start temporary vm-orchestrator for dev golden
+          ansible.builtin.shell: |
+            set -euo pipefail
+            rm -f {{ vm_guest_telemetry_dev_socket | quote }} {{ vm_guest_telemetry_dev_log | quote }}
+            nohup {{ firecracker_vm_orchestrator_binary_path | quote }} \
+              -listen-unix {{ vm_guest_telemetry_dev_socket | quote }} \
+              -socket-group {{ firecracker_vm_orchestrator_socket_group | quote }} \
+              -golden-zvol vm-guest-telemetry-dev-zvol \
+              > {{ vm_guest_telemetry_dev_log | quote }} 2>&1 &
+            echo $! > {{ vm_guest_telemetry_dev_pidfile | quote }}
+          args:
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Wait for temporary telemetry dev orchestrator socket
+          ansible.builtin.wait_for:
+            path: "{{ vm_guest_telemetry_dev_socket }}"
+            state: present
+            timeout: 20
+
         - name: Boot Firecracker VM from dev golden (background)
           ansible.builtin.command: >
             {{ fm_bin }}/vm-run
-            -golden-zvol vm-guest-telemetry-dev-zvol
+            -api-socket {{ vm_guest_telemetry_dev_socket }}
             -timeout 60s
             -- sleep {{ vm_sleep_seconds }}
           async: 60
@@ -178,6 +214,20 @@
           delay: 2
           failed_when: false
           when: firecracker_job is defined
+
+        - name: Stop temporary telemetry dev orchestrator
+          ansible.builtin.shell: |
+            set -euo pipefail
+            if [[ -f {{ vm_guest_telemetry_dev_pidfile | quote }} ]]; then
+              pid="$(cat {{ vm_guest_telemetry_dev_pidfile | quote }})"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+            rm -f {{ vm_guest_telemetry_dev_pidfile | quote }} {{ vm_guest_telemetry_dev_socket | quote }}
+          args:
+            executable: /bin/bash
+          failed_when: false
+          changed_when: true
 
         - name: Destroy dev zvol
           ansible.builtin.command: "zfs destroy -r {{ vm_guest_telemetry_dev_zvol }}"

@@ -5,7 +5,6 @@
 // Usage:
 //
 //	vm-run [flags] -- <command> [args...]
-//	vm-run --golden-zvol vm-guest-telemetry-dev-zvol --timeout 60s -- sleep 30
 package main
 
 import (
@@ -36,27 +35,15 @@ func run() error {
 		apiSocket        string
 		repo             string
 		commitSHA        string
-		goldenZvol       string
-		vcpus            int
-		memoryMiB        int
 		timeout          string
-		hostInterface    string
-		guestPoolCIDR    string
-		networkLeaseDir  string
 		traceGuestEvents bool
 	)
 
 	flag.StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
 	flag.StringVar(&repo, "repo", "", "Repository URL (metadata)")
 	flag.StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
-	flag.StringVar(&goldenZvol, "golden-zvol", "", "Golden zvol name")
-	flag.IntVar(&vcpus, "vcpus", 0, "vCPU count override")
-	flag.IntVar(&memoryMiB, "memory", 0, "Memory in MiB override")
 	flag.StringVar(&timeout, "timeout", "2m", "Job timeout")
-	flag.StringVar(&hostInterface, "host-interface", "", "Host uplink interface for guest egress")
-	flag.StringVar(&guestPoolCIDR, "guest-pool-cidr", "", "IPv4 pool reserved for Firecracker guests")
-	flag.StringVar(&networkLeaseDir, "network-lease-dir", "", "Directory for persistent guest network leases")
-	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream structured guest events emitted over the control vsock")
+	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream host-derived guest phase events")
 	flag.Parse()
 
 	args := flag.Args()
@@ -70,24 +57,6 @@ func run() error {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	cfg := vmorchestrator.Config{}
-	if goldenZvol != "" {
-		cfg.GoldenZvol = goldenZvol
-	}
-	if vcpus > 0 {
-		cfg.VCPUs = vcpus
-	}
-	if memoryMiB > 0 {
-		cfg.MemoryMiB = memoryMiB
-	}
-	cfg.HostInterface = hostInterface
-	if guestPoolCIDR != "" {
-		cfg.GuestPoolCIDR = guestPoolCIDR
-	}
-	if networkLeaseDir != "" {
-		cfg.NetworkLeaseDir = networkLeaseDir
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
@@ -125,7 +94,7 @@ func run() error {
 
 	var result vmorchestrator.JobResult
 	if traceGuestEvents {
-		startedJobID, err := client.StartDirectJobWithConfig(ctx, cfg, job)
+		startedJobID, err := client.StartDirectJob(ctx, job)
 		if err != nil {
 			return fmt.Errorf("vm start: %w", err)
 		}
@@ -161,7 +130,7 @@ func run() error {
 			return fmt.Errorf("guest event stream: %w", err)
 		}
 	} else {
-		runResult, err := client.RunWithConfig(ctx, cfg, job)
+		runResult, err := client.Run(ctx, job)
 		if err != nil {
 			return fmt.Errorf("vm run: %w", err)
 		}

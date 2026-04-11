@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -96,15 +93,6 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	if err != nil {
 		return session.fail(err)
 	}
-	guestEventCleanup, err := session.startGuestEventRelay(jobCtx)
-	if err != nil {
-		return session.fail(err)
-	}
-	defer guestEventCleanup()
-	env = append(env,
-		guestEventFIFOEnv+"="+guestEventFIFOPath,
-		jobIDEnv+"="+runReq.JobID,
-	)
 
 	var (
 		runDuration time.Duration
@@ -322,72 +310,6 @@ func (s *agentSession) sendLogString(stream, value string) {
 	s.sendLogChunk(stream, []byte(value))
 }
 
-func (s *agentSession) startGuestEventRelay(ctx context.Context) (func(), error) {
-	// Tracer-bullet compromise: any guest process that can open this FIFO can emit
-	// structured control events. The production path should narrow this to a
-	// dedicated workload wrapper instead of exposing a generic write surface.
-	if err := os.MkdirAll(filepath.Dir(guestEventFIFOPath), 0o755); err != nil {
-		return nil, fmt.Errorf("mkdir guest event relay dir: %w", err)
-	}
-	if err := os.RemoveAll(guestEventFIFOPath); err != nil {
-		return nil, fmt.Errorf("remove stale guest event fifo: %w", err)
-	}
-	if err := syscall.Mkfifo(guestEventFIFOPath, 0o620); err != nil {
-		return nil, fmt.Errorf("mkfifo guest event relay: %w", err)
-	}
-	if err := os.Chown(guestEventFIFOPath, runnerUID, runnerGID); err != nil {
-		return nil, fmt.Errorf("chown guest event relay fifo: %w", err)
-	}
-
-	fifo, err := os.OpenFile(guestEventFIFOPath, os.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open guest event relay fifo: %w", err)
-	}
-
-	go s.guestEventRelayLoop(ctx, fifo)
-
-	return func() {
-		_ = fifo.Close()
-		_ = os.Remove(guestEventFIFOPath)
-	}, nil
-}
-
-func (s *agentSession) guestEventRelayLoop(ctx context.Context, fifo *os.File) {
-	scanner := bufio.NewScanner(fifo)
-	scanner.Buffer(make([]byte, 0, 4096), 64*1024)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		var event vmproto.GuestEvent
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			s.sendLogString("system", fmt.Sprintf("[init] guest event relay decode error: %v\n", err))
-			continue
-		}
-		if strings.TrimSpace(event.Kind) == "" {
-			s.sendLogString("system", "[init] guest event relay dropped empty kind\n")
-			continue
-		}
-		if err := s.sendControl(vmproto.TypeGuestEvent, event); err != nil {
-			s.sendLogString("system", fmt.Sprintf("[init] guest event relay send error: %v\n", err))
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-	}
-
-	if err := scanner.Err(); err != nil && ctx.Err() == nil && !errors.Is(err, os.ErrClosed) {
-		s.sendLogString("system", fmt.Sprintf("[init] guest event relay scanner error: %v\n", err))
-	}
-}
-
 func (s *agentSession) applyNetwork(cfg vmproto.NetworkConfig) error {
 	if strings.TrimSpace(cfg.LinkName) == "" {
 		return fmt.Errorf("network link name is required")
@@ -484,7 +406,11 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	cmd := exec.Command(spec.Path, spec.Args[1:]...)
 	cmd.Dir = spec.WorkDir
 	cmd.Env = spec.Env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// Drop customer code to an unprivileged user; vm-init remains the guest root boundary.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:     true,
+		Credential: &syscall.Credential{Uid: runnerUID, Gid: runnerGID},
+	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {

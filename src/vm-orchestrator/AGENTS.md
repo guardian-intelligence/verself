@@ -18,6 +18,8 @@ Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for
 
 vm-orchestrator accepts direct VM job commands only. Repo import, repo scanning, CI policy, queueing, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle and telemetry aggregation.
 
+Guest event streams are host-derived phase/lifecycle signals; do not add workload-writable control or billing event channels.
+
 ## Shell Scripting Inside Guests
 
 The guest rootfs is Alpine with BusyBox. When constructing shell scripts to run inside VMs:

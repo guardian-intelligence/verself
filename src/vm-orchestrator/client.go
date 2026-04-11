@@ -58,15 +58,10 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Run(ctx context.Context, job JobConfig) (JobResult, error) {
-	return c.RunWithConfig(ctx, Config{}, job)
-}
-
-func (c *Client) RunWithConfig(ctx context.Context, cfg Config, job JobConfig) (JobResult, error) {
 	status, err := c.runAndWait(ctx, &vmrpc.CreateJobRequest{
 		Spec: &vmrpc.CreateJobRequest_DirectJob{
 			DirectJob: &vmrpc.DirectJobSpec{
-				RuntimeConfig: configToProto(cfg),
-				Job:           jobConfigToProto(job),
+				Job: jobConfigToProto(job),
 			},
 		},
 	})
@@ -80,15 +75,10 @@ func (c *Client) RunWithConfig(ctx context.Context, cfg Config, job JobConfig) (
 }
 
 func (c *Client) StartDirectJob(ctx context.Context, job JobConfig) (string, error) {
-	return c.StartDirectJobWithConfig(ctx, Config{}, job)
-}
-
-func (c *Client) StartDirectJobWithConfig(ctx context.Context, cfg Config, job JobConfig) (string, error) {
 	resp, err := c.client.CreateJob(ctx, &vmrpc.CreateJobRequest{
 		Spec: &vmrpc.CreateJobRequest_DirectJob{
 			DirectJob: &vmrpc.DirectJobSpec{
-				RuntimeConfig: configToProto(cfg),
-				Job:           jobConfigToProto(job),
+				Job: jobConfigToProto(job),
 			},
 		},
 	})

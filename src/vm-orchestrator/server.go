@@ -11,7 +11,6 @@ import (
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
-	"github.com/forge-metal/vm-orchestrator/vmproto"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
@@ -86,7 +85,6 @@ func (s *APIServer) CreateJob(ctx context.Context, req *vmrpc.CreateJobRequest) 
 
 	switch spec := req.GetSpec().(type) {
 	case *vmrpc.CreateJobRequest_DirectJob:
-		cfg := configFromProto(s.cfg, spec.DirectJob.GetRuntimeConfig())
 		job := jobConfigFromProto(spec.DirectJob.GetJob())
 		job.JobID = ensureJobID(job.JobID)
 		record, err := s.createJobRecord(job.JobID, job.BillablePhases)
@@ -94,8 +92,8 @@ func (s *APIServer) CreateJob(ctx context.Context, req *vmrpc.CreateJobRequest) 
 			return nil, err
 		}
 		span.SetAttributes(attribute.String("job.id", job.JobID), attribute.String("job.kind", "direct"))
-		go s.runManagedJob(record, cfg, func(runCtx context.Context, observer RunObserver) (JobResult, error) {
-			orch := New(cfg, s.logger)
+		go s.runManagedJob(record, func(runCtx context.Context, observer RunObserver) (JobResult, error) {
+			orch := New(s.cfg, s.logger)
 			return orch.RunObserved(runCtx, job, observer)
 		})
 		return &vmrpc.CreateJobResponse{
@@ -324,7 +322,7 @@ func (s *APIServer) lookupJob(jobID string) (*managedJob, error) {
 	return record, nil
 }
 
-func (s *APIServer) runManagedJob(record *managedJob, cfg Config, runner func(context.Context, RunObserver) (JobResult, error)) {
+func (s *APIServer) runManagedJob(record *managedJob, runner func(context.Context, RunObserver) (JobResult, error)) {
 	ctx, cancel := context.WithCancel(context.Background())
 	record.setRunning(cancel)
 
@@ -378,10 +376,6 @@ func (s *APIServer) activeJobCount() int {
 
 func (o *jobObserver) OnGuestLogChunk(_ string, chunk string) {
 	o.job.appendLogChunk(chunk)
-}
-
-func (o *jobObserver) OnGuestEvent(_ string, event vmproto.GuestEvent) {
-	o.job.appendGuestEvent(event)
 }
 
 func (o *jobObserver) OnGuestPhaseStart(_ string, phase string) {
@@ -438,13 +432,6 @@ func (j *managedJob) appendLogChunk(chunk string) {
 		Seq:   j.logSeq,
 		Chunk: chunk,
 	})
-}
-
-func (j *managedJob) appendGuestEvent(event vmproto.GuestEvent) {
-	if strings.TrimSpace(event.Kind) == "" {
-		return
-	}
-	j.appendEvent(strings.TrimSpace(event.Kind), cloneStringMap(event.Attrs))
 }
 
 func (j *managedJob) appendPhaseEvent(kind, phase string, extra map[string]string) {
