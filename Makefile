@@ -107,17 +107,17 @@ inventory-check: ## Validate that the generated Ansible inventory exists
 seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
 	cd $(FM)/ansible && ansible-playbook playbooks/seed-system.yml
 
-assume-persona: inventory-check ## Write persona env file: make assume-persona PERSONA=platform-admin [OUTPUT=path] [PRINT=1]
+assume-persona: inventory-check ## Useful utility: write persona env file: make assume-persona PERSONA=platform-admin [OUTPUT=path] [PRINT=1]
 	@test -n "$(PERSONA)" || { echo "ERROR: PERSONA is required (platform-admin, acme-admin, acme-member)"; exit 1; }
 	cd $(FM) && ./scripts/assume-persona.sh "$(PERSONA)" $(ASSUME_PERSONA_FLAGS)
 
-assume-platform-admin: inventory-check ## Write env for platform admin agent persona
+assume-platform-admin: inventory-check ## Useful utility: write env for platform admin agent persona
 	cd $(FM) && ./scripts/assume-persona.sh platform-admin $(ASSUME_PERSONA_FLAGS)
 
-assume-acme-admin: inventory-check ## Write env for Acme org admin persona
+assume-acme-admin: inventory-check ## Useful utility: write env for Acme org admin persona
 	cd $(FM) && ./scripts/assume-persona.sh acme-admin $(ASSUME_PERSONA_FLAGS)
 
-assume-acme-member: inventory-check ## Write env for Acme org member persona
+assume-acme-member: inventory-check ## Useful utility: write env for Acme org member persona
 	cd $(FM) && ./scripts/assume-persona.sh acme-member $(ASSUME_PERSONA_FLAGS)
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
