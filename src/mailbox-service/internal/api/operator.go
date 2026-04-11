@@ -22,7 +22,7 @@ type operatorEmailPathInput struct {
 
 type operatorEmailListInput struct {
 	AccountID string `path:"account_id"`
-	Limit     int    `query:"limit"`
+	Limit     int    `query:"limit" maximum:"1000"`
 	MailboxID string `query:"mailbox_id"`
 }
 
@@ -63,11 +63,11 @@ type operatorMailbox struct {
 	Name          string `json:"name"`
 	ParentID      string `json:"parent_id"`
 	Role          string `json:"role"`
-	SortOrder     int    `json:"sort_order"`
-	TotalEmails   int    `json:"total_emails"`
-	UnreadEmails  int    `json:"unread_emails"`
-	TotalThreads  int    `json:"total_threads"`
-	UnreadThreads int    `json:"unread_threads"`
+	SortOrder     int    `json:"sort_order" minimum:"0" maximum:"9007199254740991"`
+	TotalEmails   int    `json:"total_emails" minimum:"0" maximum:"9007199254740991"`
+	UnreadEmails  int    `json:"unread_emails" minimum:"0" maximum:"9007199254740991"`
+	TotalThreads  int    `json:"total_threads" minimum:"0" maximum:"9007199254740991"`
+	UnreadThreads int    `json:"unread_threads" minimum:"0" maximum:"9007199254740991"`
 	SyncedAt      string `json:"synced_at"`
 }
 
@@ -90,7 +90,7 @@ type operatorEmail struct {
 	ReplyTo       []operatorAddress `json:"reply_to"`
 	Preview       string            `json:"preview"`
 	HasAttachment bool              `json:"has_attachment"`
-	Size          int               `json:"size"`
+	Size          int               `json:"size" minimum:"0" maximum:"9007199254740991"`
 	ReceivedAt    string            `json:"received_at"`
 	SentAt        string            `json:"sent_at"`
 	IsSeen        bool              `json:"is_seen"`
@@ -114,7 +114,7 @@ type operatorEmailDetail struct {
 	ReplyTo       []operatorAddress `json:"reply_to"`
 	Preview       string            `json:"preview"`
 	HasAttachment bool              `json:"has_attachment"`
-	Size          int               `json:"size"`
+	Size          int               `json:"size" minimum:"0" maximum:"9007199254740991"`
 	ReceivedAt    string            `json:"received_at"`
 	SentAt        string            `json:"sent_at"`
 	IsSeen        bool              `json:"is_seen"`

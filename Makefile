@@ -1,4 +1,4 @@
-.PHONY: build clean test test-integration lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check \
+.PHONY: build clean test test-integration lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
@@ -61,6 +61,7 @@ vet:
 
 tidy:
 	cd $(FM) && go mod tidy
+	cd $(AW) && go mod tidy
 	cd $(VMO) && go mod tidy
 	cd $(BS) && go mod tidy
 	cd $(AM) && go mod tidy
@@ -86,6 +87,13 @@ openapi-check: ## Verify committed OpenAPI specs are up to date
 	cd $(MS) && go run ./cmd/mailbox-openapi --format 3.1 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.0 --check
 	cd $(SR) && go run ./cmd/sandbox-rental-openapi --format 3.1 --check
+	$(MAKE) openapi-wire-check
+
+openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-safe
+	go run ./$(AW)/cmd/openapi-wire-check \
+		$(BS)/openapi/openapi-3.1.yaml \
+		$(MS)/openapi/openapi-3.1.yaml \
+		$(SR)/openapi/openapi-3.1.yaml
 
 setup-domain: build ## Configure Cloudflare domain (interactive wizard)
 	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)

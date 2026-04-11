@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/forge-metal/apiwire"
 	"github.com/forge-metal/mailbox-service/internal/app"
 	"github.com/forge-metal/mailbox-service/internal/mailstore"
 )
@@ -35,12 +36,14 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc provider) (huma.
 	publicAPI := humago.New(mux, publicConfig)
 	registerPublicRoutes(publicAPI, svc)
 	registerOperatorRoutes(publicAPI, svc)
+	apiwire.ApplyOpenAPIWireDefaults(publicAPI)
 
 	privateMux := http.NewServeMux()
 	privateConfig := huma.DefaultConfig("Mailbox Service", version)
 	privateConfig.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	privateAPI := humago.New(privateMux, privateConfig)
 	registerMailRoutes(privateAPI, svc)
+	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
 
 	return publicAPI, privateMux
 }
@@ -51,6 +54,7 @@ func OpenAPIDowngradeYAML(version, listenAddr string) ([]byte, error) {
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
+	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().DowngradeYAML()
 }
 
@@ -60,5 +64,6 @@ func OpenAPIYAML(version, listenAddr string) ([]byte, error) {
 	privateAPI := humago.New(http.NewServeMux(), privateConfig)
 	registerMailRoutes(privateAPI, nil)
 	registerOperatorRoutes(privateAPI, nil)
+	apiwire.ApplyOpenAPIWireDefaults(privateAPI)
 	return privateAPI.OpenAPI().YAML()
 }

@@ -54,31 +54,31 @@ type Reservation struct {
 	RenewBy          time.Time
 }
 
-func (c *ServiceClient) GetBalance(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (BalanceResponse, error) {
+func (c *ServiceClient) GetBalance(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (apiwire.BillingBalance, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
 	resp, err := c.inner.GetBalanceWithResponse(ctx, orgIDWire, reqEditors...)
 	if err != nil {
-		return BalanceResponse{}, err
+		return apiwire.BillingBalance{}, err
 	}
 	if resp.JSON200 != nil {
-		return *resp.JSON200, nil
+		return parseBillingBalance(*resp.JSON200)
 	}
-	return BalanceResponse{}, unexpected("get balance", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return apiwire.BillingBalance{}, unexpected("get balance", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-func (c *ServiceClient) ListSubscriptions(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (SubscriptionsResponse, error) {
+func (c *ServiceClient) ListSubscriptions(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (apiwire.BillingSubscriptions, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
 	resp, err := c.inner.ListSubscriptionsWithResponse(ctx, orgIDWire, reqEditors...)
 	if err != nil {
-		return SubscriptionsResponse{}, err
+		return apiwire.BillingSubscriptions{}, err
 	}
 	if resp.JSON200 != nil {
-		return *resp.JSON200, nil
+		return parseBillingSubscriptions(*resp.JSON200)
 	}
-	return SubscriptionsResponse{}, unexpected("list subscriptions", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return apiwire.BillingSubscriptions{}, unexpected("list subscriptions", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-func (c *ServiceClient) ListGrants(ctx context.Context, orgID uint64, productID string, active bool, reqEditors ...RequestEditorFn) (GrantsResponse, error) {
+func (c *ServiceClient) ListGrants(ctx context.Context, orgID uint64, productID string, active bool, reqEditors ...RequestEditorFn) (apiwire.BillingGrants, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
 	params := &ListGrantsParams{}
 	if productID != "" {
@@ -89,12 +89,12 @@ func (c *ServiceClient) ListGrants(ctx context.Context, orgID uint64, productID 
 	}
 	resp, err := c.inner.ListGrantsWithResponse(ctx, orgIDWire, params, reqEditors...)
 	if err != nil {
-		return GrantsResponse{}, err
+		return apiwire.BillingGrants{}, err
 	}
 	if resp.JSON200 != nil {
-		return *resp.JSON200, nil
+		return parseBillingGrants(*resp.JSON200)
 	}
-	return GrantsResponse{}, unexpected("list grants", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return apiwire.BillingGrants{}, unexpected("list grants", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 func (c *ServiceClient) CreateCheckout(ctx context.Context, orgID uint64, productID string, amountCents int64, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (string, error) {
@@ -181,10 +181,18 @@ func (c *ServiceClient) Reserve(
 	}
 }
 
-func parseReservation(in WindowReservationResponse) (Reservation, error) {
+func parseReservation(in BillingWindowReservation) (Reservation, error) {
 	orgID, err := apiwire.ParseUint64(in.OrgId)
 	if err != nil {
 		return Reservation{}, fmt.Errorf("billing-client: reservation org_id: %w", err)
+	}
+	unitRates, err := parseInt64UnitRates(in.UnitRates)
+	if err != nil {
+		return Reservation{}, err
+	}
+	costPerUnit, err := parseUint64DecimalAsInt64(in.CostPerUnit, "cost_per_unit")
+	if err != nil {
+		return Reservation{}, err
 	}
 	var renewBy time.Time
 	if in.RenewBy != nil {
@@ -203,12 +211,137 @@ func parseReservation(in WindowReservationResponse) (Reservation, error) {
 		WindowSecs:       in.ReservedQuantity,
 		PricingPhase:     in.PricingPhase,
 		Allocation:       in.Allocation,
-		UnitRates:        in.UnitRates,
-		CostPerSec:       in.CostPerUnit,
+		UnitRates:        unitRates,
+		CostPerSec:       costPerUnit,
 		WindowStart:      in.WindowStart.UTC(),
 		ExpiresAt:        in.ExpiresAt.UTC(),
 		RenewBy:          renewBy,
 	}, nil
+}
+
+func parseBillingBalance(in BillingBalance) (apiwire.BillingBalance, error) {
+	orgID, err := parseDecimalUint64(in.OrgId, "org_id")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	freeTierAvailable, err := parseDecimalUint64(in.FreeTierAvailable, "free_tier_available")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	freeTierPending, err := parseDecimalUint64(in.FreeTierPending, "free_tier_pending")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	creditAvailable, err := parseDecimalUint64(in.CreditAvailable, "credit_available")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	creditPending, err := parseDecimalUint64(in.CreditPending, "credit_pending")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	totalAvailable, err := parseDecimalUint64(in.TotalAvailable, "total_available")
+	if err != nil {
+		return apiwire.BillingBalance{}, err
+	}
+	return apiwire.BillingBalance{
+		OrgID:             orgID,
+		FreeTierAvailable: freeTierAvailable,
+		FreeTierPending:   freeTierPending,
+		CreditAvailable:   creditAvailable,
+		CreditPending:     creditPending,
+		TotalAvailable:    totalAvailable,
+	}, nil
+}
+
+func parseBillingGrants(in BillingGrants) (apiwire.BillingGrants, error) {
+	if in.Grants == nil {
+		return apiwire.BillingGrants{}, nil
+	}
+	out := make([]apiwire.BillingGrant, 0, len(*in.Grants))
+	for _, grant := range *in.Grants {
+		available, err := parseDecimalUint64(grant.Available, "available")
+		if err != nil {
+			return apiwire.BillingGrants{}, err
+		}
+		pending, err := parseDecimalUint64(grant.Pending, "pending")
+		if err != nil {
+			return apiwire.BillingGrants{}, err
+		}
+		out = append(out, apiwire.BillingGrant{
+			GrantID:   grant.GrantId,
+			Source:    grant.Source,
+			Available: available,
+			Pending:   pending,
+			ExpiresAt: grant.ExpiresAt,
+		})
+	}
+	return apiwire.BillingGrants{Grants: out}, nil
+}
+
+func parseBillingSubscriptions(in BillingSubscriptions) (apiwire.BillingSubscriptions, error) {
+	if in.Subscriptions == nil {
+		return apiwire.BillingSubscriptions{}, nil
+	}
+	out := make([]apiwire.BillingSubscription, 0, len(*in.Subscriptions))
+	for _, subscription := range *in.Subscriptions {
+		subscriptionID, err := parseDecimalInt64(subscription.SubscriptionId, "subscription_id")
+		if err != nil {
+			return apiwire.BillingSubscriptions{}, err
+		}
+		out = append(out, apiwire.BillingSubscription{
+			SubscriptionID:     subscriptionID,
+			ProductID:          subscription.ProductId,
+			PlanID:             subscription.PlanId,
+			Cadence:            subscription.Cadence,
+			Status:             subscription.Status,
+			CurrentPeriodStart: subscription.CurrentPeriodStart,
+			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
+		})
+	}
+	return apiwire.BillingSubscriptions{Subscriptions: out}, nil
+}
+
+func parseDecimalUint64(value string, field string) (apiwire.DecimalUint64, error) {
+	parsed, err := apiwire.ParseUint64(value)
+	if err != nil {
+		return apiwire.Uint64(0), fmt.Errorf("billing-client: %s: %w", field, err)
+	}
+	return apiwire.Uint64(parsed), nil
+}
+
+func parseDecimalInt64(value string, field string) (apiwire.DecimalInt64, error) {
+	parsed, err := apiwire.ParseInt64(value)
+	if err != nil {
+		return apiwire.Int64(0), fmt.Errorf("billing-client: %s: %w", field, err)
+	}
+	return apiwire.Int64(parsed), nil
+}
+
+func parseInt64UnitRates(in map[string]string) (map[string]int64, error) {
+	if len(in) == 0 {
+		return map[string]int64{}, nil
+	}
+	out := make(map[string]int64, len(in))
+	for unit, rate := range in {
+		parsed, err := parseUint64DecimalAsInt64(rate, "unit_rates."+unit)
+		if err != nil {
+			return nil, err
+		}
+		out[unit] = parsed
+	}
+	return out, nil
+}
+
+func parseUint64DecimalAsInt64(value string, field string) (int64, error) {
+	parsed, err := apiwire.ParseUint64(value)
+	if err != nil {
+		return 0, fmt.Errorf("billing-client: %s: %w", field, err)
+	}
+	if parsed > math.MaxInt64 {
+		return 0, fmt.Errorf("billing-client: %s %d exceeds internal int64 range", field, parsed)
+	}
+	return int64(parsed), nil
 }
 
 func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, reqEditors ...RequestEditorFn) error {

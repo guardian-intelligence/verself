@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/forge-metal/apiwire"
 	billingclient "github.com/forge-metal/billing-service/client"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
 )
@@ -15,6 +16,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, b
 	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	api := humago.New(mux, config)
 	RegisterRoutes(api, svc, billing)
+	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 

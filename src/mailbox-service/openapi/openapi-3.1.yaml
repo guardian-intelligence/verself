@@ -45,6 +45,7 @@ components:
           examples:
             - 400
           format: int64
+          maximum: 599
           type: integer
         title:
           description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
@@ -260,6 +261,8 @@ components:
           type: string
         size:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         subject:
           type: string
@@ -358,6 +361,8 @@ components:
           type: string
         size:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         subject:
           type: string
@@ -433,20 +438,30 @@ components:
           type: string
         sort_order:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         synced_at:
           type: string
         total_emails:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         total_threads:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         unread_emails:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         unread_threads:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
       required:
         - account_id
@@ -717,6 +732,7 @@ paths:
           name: limit
           schema:
             format: int64
+            maximum: 1000
             type: integer
         - explode: false
           in: query
