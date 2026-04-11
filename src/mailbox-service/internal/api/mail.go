@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/mailbox-service/internal/mailstore"
 )
@@ -17,41 +18,23 @@ type mailEmailPathInput struct {
 
 type mailMoveInput struct {
 	EmailID string `path:"email_id"`
-	Body struct {
-		MailboxID string `json:"mailbox_id" required:"true"`
-	}
+	Body    apiwire.MailboxMoveRequest
 }
 
 type mailMutationOutput struct {
-	Body struct {
-		Status  string `json:"status"`
-		EmailID string `json:"email_id"`
-	}
+	Body apiwire.MailboxMutation
 }
 
 type mailBodyOutput struct {
-	Body struct {
-		AccountID string `json:"account_id"`
-		EmailID   string `json:"email_id"`
-		TextBody  string `json:"text_body"`
-		HTMLBody  string `json:"html_body"`
-		FetchedAt string `json:"fetched_at"`
-	}
+	Body apiwire.MailboxBody
 }
 
 type mailAccountOutput struct {
-	Body struct {
-		AccountID        string `json:"account_id"`
-		EmailAddress     string `json:"email_address"`
-		DisplayName      string `json:"display_name"`
-		DefaultMailboxID string `json:"default_mailbox_id,omitempty"`
-	}
+	Body apiwire.MailboxAccount
 }
 
 type mailSyncStatusOutput struct {
-	Body struct {
-		Status any `json:"status"`
-	}
+	Body apiwire.MailboxServiceStatusResponse
 }
 
 func registerMailRoutes(api huma.API, svc provider) {
@@ -129,8 +112,7 @@ func markRead(svc provider, seen bool) func(context.Context, *mailEmailPathInput
 			return nil, toHumaError("set read state", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body.Status = "ok"
-		out.Body.EmailID = input.EmailID
+		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -145,8 +127,7 @@ func flagEmail(svc provider, flagged bool) func(context.Context, *mailEmailPathI
 			return nil, toHumaError("set flag state", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body.Status = "ok"
-		out.Body.EmailID = input.EmailID
+		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -161,8 +142,7 @@ func moveEmail(svc provider) func(context.Context, *mailMoveInput) (*mailMutatio
 			return nil, toHumaError("move email", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body.Status = "ok"
-		out.Body.EmailID = input.EmailID
+		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -177,8 +157,7 @@ func trashEmail(svc provider) func(context.Context, *mailEmailPathInput) (*mailM
 			return nil, toHumaError("trash email", err)
 		}
 		out := &mailMutationOutput{}
-		out.Body.Status = "ok"
-		out.Body.EmailID = input.EmailID
+		out.Body = apiwire.MailboxMutation{Status: "ok", EmailID: input.EmailID}
 		return out, nil
 	}
 }
@@ -194,11 +173,13 @@ func fetchBody(svc provider) func(context.Context, *mailEmailPathInput) (*mailBo
 			return nil, toHumaError("fetch email body", err)
 		}
 		out := &mailBodyOutput{}
-		out.Body.AccountID = body.AccountID
-		out.Body.EmailID = body.EmailID
-		out.Body.TextBody = body.TextBody
-		out.Body.HTMLBody = body.HTMLBody
-		out.Body.FetchedAt = body.FetchedAt.UTC().Format(time.RFC3339)
+		out.Body = apiwire.MailboxBody{
+			AccountID: body.AccountID,
+			EmailID:   body.EmailID,
+			TextBody:  body.TextBody,
+			HTMLBody:  body.HTMLBody,
+			FetchedAt: body.FetchedAt.UTC().Format(time.RFC3339),
+		}
 		return out, nil
 	}
 }
@@ -218,10 +199,12 @@ func accountInfo(svc provider) func(context.Context, *mailboxServiceEmptyInput) 
 			return nil, toHumaError("list mailboxes", err)
 		}
 		out := &mailAccountOutput{}
-		out.Body.AccountID = account.AccountID
-		out.Body.EmailAddress = account.EmailAddress
-		out.Body.DisplayName = account.DisplayName
-		out.Body.DefaultMailboxID = defaultMailboxID(mailboxes)
+		out.Body = apiwire.MailboxAccount{
+			AccountID:        account.AccountID,
+			EmailAddress:     account.EmailAddress,
+			DisplayName:      account.DisplayName,
+			DefaultMailboxID: defaultMailboxID(mailboxes),
+		}
 		return out, nil
 	}
 }
@@ -241,7 +224,7 @@ func defaultMailboxID(mailboxes []mailstore.Mailbox) string {
 func syncStatus(svc provider) func(context.Context, *mailboxServiceEmptyInput) (*mailSyncStatusOutput, error) {
 	return func(context.Context, *mailboxServiceEmptyInput) (*mailSyncStatusOutput, error) {
 		out := &mailSyncStatusOutput{}
-		out.Body.Status = svc.Status()
+		out.Body.Status = serviceStatus(svc.Status())
 		return out, nil
 	}
 }

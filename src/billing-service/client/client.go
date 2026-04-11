@@ -124,7 +124,7 @@ func (c *ServiceClient) CreateSubscription(ctx context.Context, orgID uint64, pl
 		CancelUrl:  cancelURL,
 	}
 	if cadence != "" {
-		wireCadence := CreateSubscriptionRequestCadence(cadence)
+		wireCadence := BillingCreateSubscriptionRequestCadence(cadence)
 		body.Cadence = &wireCadence
 	}
 	resp, err := c.inner.CreateSubscriptionWithResponse(ctx, body, reqEditors...)

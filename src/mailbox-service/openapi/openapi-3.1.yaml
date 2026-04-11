@@ -60,13 +60,13 @@ components:
           format: uri
           type: string
       type: object
-    MailAccountOutputBody:
+    MailboxAccount:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/MailAccountOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxAccount.json
           format: uri
           readOnly: true
           type: string
@@ -83,13 +83,13 @@ components:
         - email_address
         - display_name
       type: object
-    MailBodyOutputBody:
+    MailboxBody:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/MailBodyOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxBody.json
           format: uri
           readOnly: true
           type: string
@@ -110,13 +110,40 @@ components:
         - html_body
         - fetched_at
       type: object
-    MailMoveInputBody:
+    MailboxForwarder:
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        forward_target_configured:
+          type: boolean
+        last_error:
+          type: string
+        last_forwarded_at:
+          format: date-time
+          type: string
+        last_forwarded_email_id:
+          type: string
+        last_sync_at:
+          format: date-time
+          type: string
+        mailbox:
+          type: string
+        running:
+          type: boolean
+      required:
+        - enabled
+        - running
+        - mailbox
+        - forward_target_configured
+      type: object
+    MailboxMoveRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/MailMoveInputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxMoveRequest.json
           format: uri
           readOnly: true
           type: string
@@ -125,13 +152,13 @@ components:
       required:
         - mailbox_id
       type: object
-    MailMutationOutputBody:
+    MailboxMutation:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/MailMutationOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxMutation.json
           format: uri
           readOnly: true
           type: string
@@ -143,21 +170,7 @@ components:
         - status
         - email_id
       type: object
-    MailSyncStatusOutputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4246/schemas/MailSyncStatusOutputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        status: {}
-      required:
-        - status
-      type: object
-    OperatorAccount:
+    MailboxOperatorAccount:
       additionalProperties: false
       properties:
         account_id:
@@ -180,26 +193,26 @@ components:
         - principal_type
         - synced_at
       type: object
-    OperatorAccountsOutputBody:
+    MailboxOperatorAccounts:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/OperatorAccountsOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxOperatorAccounts.json
           format: uri
           readOnly: true
           type: string
         accounts:
           items:
-            $ref: "#/components/schemas/OperatorAccount"
+            $ref: "#/components/schemas/MailboxOperatorAccount"
           type:
             - array
             - "null"
       required:
         - accounts
       type: object
-    OperatorAddress:
+    MailboxOperatorAddress:
       additionalProperties: false
       properties:
         email:
@@ -210,14 +223,14 @@ components:
         - name
         - email
       type: object
-    OperatorEmail:
+    MailboxOperatorEmail:
       additionalProperties: false
       properties:
         account_id:
           type: string
         cc:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -253,7 +266,7 @@ components:
           type: string
         reply_to:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -272,7 +285,7 @@ components:
           type: string
         to:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -299,13 +312,13 @@ components:
         - is_draft
         - synced_at
       type: object
-    OperatorEmailDetail:
+    MailboxOperatorEmailDetail:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/OperatorEmailDetail.json
+            - http://127.0.0.1:4246/schemas/MailboxOperatorEmailDetail.json
           format: uri
           readOnly: true
           type: string
@@ -313,7 +326,7 @@ components:
           type: string
         cc:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -353,7 +366,7 @@ components:
           type: string
         reply_to:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -374,7 +387,7 @@ components:
           type: string
         to:
           items:
-            $ref: "#/components/schemas/OperatorAddress"
+            $ref: "#/components/schemas/MailboxOperatorAddress"
           type:
             - array
             - "null"
@@ -404,26 +417,26 @@ components:
         - html_body
         - fetched_at
       type: object
-    OperatorEmailsOutputBody:
+    MailboxOperatorEmails:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/OperatorEmailsOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxOperatorEmails.json
           format: uri
           readOnly: true
           type: string
         emails:
           items:
-            $ref: "#/components/schemas/OperatorEmail"
+            $ref: "#/components/schemas/MailboxOperatorEmail"
           type:
             - array
             - "null"
       required:
         - emails
       type: object
-    OperatorMailbox:
+    MailboxOperatorMailbox:
       additionalProperties: false
       properties:
         account_id:
@@ -476,24 +489,103 @@ components:
         - unread_threads
         - synced_at
       type: object
-    OperatorMailboxesOutputBody:
+    MailboxOperatorMailboxes:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4246/schemas/OperatorMailboxesOutputBody.json
+            - http://127.0.0.1:4246/schemas/MailboxOperatorMailboxes.json
           format: uri
           readOnly: true
           type: string
         mailboxes:
           items:
-            $ref: "#/components/schemas/OperatorMailbox"
+            $ref: "#/components/schemas/MailboxOperatorMailbox"
           type:
             - array
             - "null"
       required:
         - mailboxes
+      type: object
+    MailboxServiceStatus:
+      additionalProperties: false
+      properties:
+        forwarder:
+          $ref: "#/components/schemas/MailboxForwarder"
+        mailbox_sync:
+          $ref: "#/components/schemas/MailboxSync"
+        public_base_url:
+          type: string
+        stalwart_base_url:
+          type: string
+        started_at:
+          format: date-time
+          type: string
+      required:
+        - started_at
+        - stalwart_base_url
+        - public_base_url
+        - forwarder
+        - mailbox_sync
+      type: object
+    MailboxServiceStatusResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4246/schemas/MailboxServiceStatusResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          $ref: "#/components/schemas/MailboxServiceStatus"
+      required:
+        - status
+      type: object
+    MailboxSync:
+      additionalProperties: false
+      properties:
+        accounts:
+          additionalProperties:
+            $ref: "#/components/schemas/MailboxSyncAccountStatus"
+          type: object
+        last_discovery_at:
+          format: date-time
+          type: string
+        last_error:
+          type: string
+        running:
+          type: boolean
+      required:
+        - running
+        - accounts
+      type: object
+    MailboxSyncAccountStatus:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        connected:
+          type: boolean
+        last_connected_at:
+          format: date-time
+          type: string
+        last_error:
+          type: string
+        last_event_at:
+          format: date-time
+          type: string
+        last_sync_at:
+          format: date-time
+          type: string
+        running:
+          type: boolean
+      required:
+        - account_id
+        - running
+        - connected
       type: object
 info:
   title: Mailbox Service
@@ -508,7 +600,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailAccountOutputBody"
+                $ref: "#/components/schemas/MailboxAccount"
           description: OK
         default:
           content:
@@ -531,7 +623,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailBodyOutputBody"
+                $ref: "#/components/schemas/MailboxBody"
           description: OK
         default:
           content:
@@ -554,7 +646,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -576,14 +668,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MailMoveInputBody"
+              $ref: "#/components/schemas/MailboxMoveRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -606,7 +698,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -629,7 +721,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -652,7 +744,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -675,7 +767,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailMutationOutputBody"
+                $ref: "#/components/schemas/MailboxMutation"
           description: OK
         default:
           content:
@@ -692,7 +784,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MailSyncStatusOutputBody"
+                $ref: "#/components/schemas/MailboxServiceStatusResponse"
           description: OK
         default:
           content:
@@ -709,7 +801,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OperatorAccountsOutputBody"
+                $ref: "#/components/schemas/MailboxOperatorAccounts"
           description: OK
         default:
           content:
@@ -744,7 +836,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OperatorEmailsOutputBody"
+                $ref: "#/components/schemas/MailboxOperatorEmails"
           description: OK
         default:
           content:
@@ -772,7 +864,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OperatorEmailDetail"
+                $ref: "#/components/schemas/MailboxOperatorEmailDetail"
           description: OK
         default:
           content:
@@ -795,7 +887,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OperatorMailboxesOutputBody"
+                $ref: "#/components/schemas/MailboxOperatorMailboxes"
           description: OK
         default:
           content:

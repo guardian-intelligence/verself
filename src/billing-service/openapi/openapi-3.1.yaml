@@ -36,6 +36,79 @@ components:
         - credit_pending
         - total_available
       type: object
+    BillingCreateCheckoutRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingCreateCheckoutRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        amount_cents:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 1
+          type: integer
+        cancel_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        product_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        success_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - product_id
+        - amount_cents
+        - success_url
+        - cancel_url
+      type: object
+    BillingCreateSubscriptionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingCreateSubscriptionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cadence:
+          enum:
+            - monthly
+            - annual
+          type: string
+        cancel_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        plan_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        success_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - plan_id
+        - success_url
+        - cancel_url
+      type: object
     BillingGrant:
       additionalProperties: false
       properties:
@@ -77,6 +150,70 @@ components:
       required:
         - grants
       type: object
+    BillingReserveWindowRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingReserveWindowRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actor_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        allocation:
+          additionalProperties:
+            format: double
+            type: number
+          minProperties: 1
+          type: object
+        concurrent_count:
+          format: int64
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        product_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        source_ref:
+          maxLength: 255
+          minLength: 1
+          type: string
+        source_type:
+          maxLength: 255
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - product_id
+        - actor_id
+        - concurrent_count
+        - source_type
+        - source_ref
+        - allocation
+      type: object
+    BillingReserveWindowResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingReserveWindowResult.json
+          format: uri
+          readOnly: true
+          type: string
+        reservation:
+          $ref: "#/components/schemas/BillingWindowReservation"
+      required:
+        - reservation
+      type: object
     BillingSettleResult:
       additionalProperties: false
       properties:
@@ -89,10 +226,12 @@ components:
           type: string
         actual_quantity:
           format: int32
+          maximum: 4294967295
           minimum: 0
           type: integer
         billable_quantity:
           format: int32
+          maximum: 4294967295
           minimum: 0
           type: integer
         billed_charge_units:
@@ -108,6 +247,7 @@ components:
           type: string
         writeoff_quantity:
           format: int32
+          maximum: 4294967295
           minimum: 0
           type: integer
       required:
@@ -118,6 +258,32 @@ components:
         - billed_charge_units
         - writeoff_charge_units
         - settled_at
+      type: object
+    BillingSettleWindowRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingSettleWindowRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        actual_quantity:
+          format: int32
+          maximum: 4294967295
+          minimum: 0
+          type: integer
+        usage_summary:
+          additionalProperties: {}
+          type: object
+        window_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+      required:
+        - window_id
+        - actual_quantity
       type: object
     BillingSubscription:
       additionalProperties: false
@@ -165,6 +331,53 @@ components:
       required:
         - subscriptions
       type: object
+    BillingURLResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingURLResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        url:
+          type: string
+      required:
+        - url
+      type: object
+    BillingVoidWindowRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingVoidWindowRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        window_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+      required:
+        - window_id
+      type: object
+    BillingVoidWindowResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingVoidWindowResult.json
+          format: uri
+          readOnly: true
+          type: string
+        window_id:
+          type: string
+      required:
+        - window_id
+      type: object
     BillingWindowReservation:
       additionalProperties: false
       properties:
@@ -200,6 +413,7 @@ components:
           type: string
         reserved_quantity:
           format: int32
+          maximum: 4294967295
           minimum: 0
           type: integer
         source_ref:
@@ -215,6 +429,7 @@ components:
           type: string
         window_seq:
           format: int32
+          maximum: 4294967295
           minimum: 0
           type: integer
         window_start:
@@ -238,79 +453,6 @@ components:
         - cost_per_unit
         - window_start
         - expires_at
-      type: object
-    CreateCheckoutRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/CreateCheckoutRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        amount_cents:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 1
-          type: integer
-        cancel_url:
-          maxLength: 2048
-          minLength: 1
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        product_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-        success_url:
-          maxLength: 2048
-          minLength: 1
-          type: string
-      required:
-        - org_id
-        - product_id
-        - amount_cents
-        - success_url
-        - cancel_url
-      type: object
-    CreateSubscriptionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/CreateSubscriptionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        cadence:
-          enum:
-            - monthly
-            - annual
-          type: string
-        cancel_url:
-          maxLength: 2048
-          minLength: 1
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        plan_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-        success_url:
-          maxLength: 2048
-          minLength: 1
-          type: string
-      required:
-        - org_id
-        - plan_id
-        - success_url
-        - cancel_url
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -372,142 +514,6 @@ components:
           format: uri
           type: string
       type: object
-    ReserveWindowRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/ReserveWindowRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actor_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-        allocation:
-          additionalProperties:
-            format: double
-            type: number
-          minProperties: 1
-          type: object
-        concurrent_count:
-          format: int64
-          maximum: 9007199254740991
-          minimum: 0
-          type: integer
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        product_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-        source_ref:
-          maxLength: 255
-          minLength: 1
-          type: string
-        source_type:
-          maxLength: 255
-          minLength: 1
-          type: string
-      required:
-        - org_id
-        - product_id
-        - actor_id
-        - concurrent_count
-        - source_type
-        - source_ref
-        - allocation
-      type: object
-    ReserveWindowResult:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/ReserveWindowResult.json
-          format: uri
-          readOnly: true
-          type: string
-        reservation:
-          $ref: "#/components/schemas/BillingWindowReservation"
-      required:
-        - reservation
-      type: object
-    SettleWindowRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/SettleWindowRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        actual_quantity:
-          format: int32
-          minimum: 0
-          type: integer
-        usage_summary:
-          additionalProperties: {}
-          type: object
-        window_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-      required:
-        - window_id
-        - actual_quantity
-      type: object
-    URLResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/URLResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        url:
-          type: string
-      required:
-        - url
-      type: object
-    VoidWindowRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/VoidWindowRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        window_id:
-          maxLength: 255
-          minLength: 1
-          type: string
-      required:
-        - window_id
-      type: object
-    VoidWindowResult:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/VoidWindowResult.json
-          format: uri
-          readOnly: true
-          type: string
-        window_id:
-          type: string
-      required:
-        - window_id
-      type: object
 info:
   title: Billing Service
   version: 2.0.0
@@ -520,14 +526,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateCheckoutRequest"
+              $ref: "#/components/schemas/BillingCreateCheckoutRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLResponse"
+                $ref: "#/components/schemas/BillingURLResponse"
           description: OK
         default:
           content:
@@ -626,14 +632,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReserveWindowRequest"
+              $ref: "#/components/schemas/BillingReserveWindowRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ReserveWindowResult"
+                $ref: "#/components/schemas/BillingReserveWindowResult"
           description: OK
         "402":
           content:
@@ -667,7 +673,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SettleWindowRequest"
+              $ref: "#/components/schemas/BillingSettleWindowRequest"
         required: true
       responses:
         "200":
@@ -708,14 +714,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateSubscriptionRequest"
+              $ref: "#/components/schemas/BillingCreateSubscriptionRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/URLResponse"
+                $ref: "#/components/schemas/BillingURLResponse"
           description: OK
         "422":
           content:
@@ -743,14 +749,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VoidWindowRequest"
+              $ref: "#/components/schemas/BillingVoidWindowRequest"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VoidWindowResult"
+                $ref: "#/components/schemas/BillingVoidWindowResult"
           description: OK
         "400":
           content:

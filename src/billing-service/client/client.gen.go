@@ -17,14 +17,14 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for CreateSubscriptionRequestCadence.
+// Defines values for BillingCreateSubscriptionRequestCadence.
 const (
-	Annual  CreateSubscriptionRequestCadence = "annual"
-	Monthly CreateSubscriptionRequestCadence = "monthly"
+	Annual  BillingCreateSubscriptionRequestCadence = "annual"
+	Monthly BillingCreateSubscriptionRequestCadence = "monthly"
 )
 
-// Valid indicates whether the value is a known member of the CreateSubscriptionRequestCadence enum.
-func (e CreateSubscriptionRequestCadence) Valid() bool {
+// Valid indicates whether the value is a known member of the BillingCreateSubscriptionRequestCadence enum.
+func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
 	switch e {
 	case Annual:
 		return true
@@ -47,6 +47,31 @@ type BillingBalance struct {
 	TotalAvailable    string  `json:"total_available"`
 }
 
+// BillingCreateCheckoutRequest defines model for BillingCreateCheckoutRequest.
+type BillingCreateCheckoutRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string `json:"$schema,omitempty"`
+	AmountCents int64   `json:"amount_cents"`
+	CancelUrl   string  `json:"cancel_url"`
+	OrgId       string  `json:"org_id"`
+	ProductId   string  `json:"product_id"`
+	SuccessUrl  string  `json:"success_url"`
+}
+
+// BillingCreateSubscriptionRequest defines model for BillingCreateSubscriptionRequest.
+type BillingCreateSubscriptionRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                                  `json:"$schema,omitempty"`
+	Cadence    *BillingCreateSubscriptionRequestCadence `json:"cadence,omitempty"`
+	CancelUrl  string                                   `json:"cancel_url"`
+	OrgId      string                                   `json:"org_id"`
+	PlanId     string                                   `json:"plan_id"`
+	SuccessUrl string                                   `json:"success_url"`
+}
+
+// BillingCreateSubscriptionRequestCadence defines model for BillingCreateSubscriptionRequest.Cadence.
+type BillingCreateSubscriptionRequestCadence string
+
 // BillingGrant defines model for BillingGrant.
 type BillingGrant struct {
 	Available string     `json:"available"`
@@ -63,6 +88,26 @@ type BillingGrants struct {
 	Grants *[]BillingGrant `json:"grants"`
 }
 
+// BillingReserveWindowRequest defines model for BillingReserveWindowRequest.
+type BillingReserveWindowRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string            `json:"$schema,omitempty"`
+	ActorId         string             `json:"actor_id"`
+	Allocation      map[string]float64 `json:"allocation"`
+	ConcurrentCount int64              `json:"concurrent_count"`
+	OrgId           string             `json:"org_id"`
+	ProductId       string             `json:"product_id"`
+	SourceRef       string             `json:"source_ref"`
+	SourceType      string             `json:"source_type"`
+}
+
+// BillingReserveWindowResult defines model for BillingReserveWindowResult.
+type BillingReserveWindowResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                  `json:"$schema,omitempty"`
+	Reservation BillingWindowReservation `json:"reservation"`
+}
+
 // BillingSettleResult defines model for BillingSettleResult.
 type BillingSettleResult struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -74,6 +119,15 @@ type BillingSettleResult struct {
 	WindowId            string    `json:"window_id"`
 	WriteoffChargeUnits string    `json:"writeoff_charge_units"`
 	WriteoffQuantity    int32     `json:"writeoff_quantity"`
+}
+
+// BillingSettleWindowRequest defines model for BillingSettleWindowRequest.
+type BillingSettleWindowRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema         *string                 `json:"$schema,omitempty"`
+	ActualQuantity int32                   `json:"actual_quantity"`
+	UsageSummary   *map[string]interface{} `json:"usage_summary,omitempty"`
+	WindowId       string                  `json:"window_id"`
 }
 
 // BillingSubscription defines model for BillingSubscription.
@@ -92,6 +146,27 @@ type BillingSubscriptions struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string                `json:"$schema,omitempty"`
 	Subscriptions *[]BillingSubscription `json:"subscriptions"`
+}
+
+// BillingURLResponse defines model for BillingURLResponse.
+type BillingURLResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	Url    string  `json:"url"`
+}
+
+// BillingVoidWindowRequest defines model for BillingVoidWindowRequest.
+type BillingVoidWindowRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	WindowId string  `json:"window_id"`
+}
+
+// BillingVoidWindowResult defines model for BillingVoidWindowResult.
+type BillingVoidWindowResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	WindowId string  `json:"window_id"`
 }
 
 // BillingWindowReservation defines model for BillingWindowReservation.
@@ -115,31 +190,6 @@ type BillingWindowReservation struct {
 	WindowSeq           int32              `json:"window_seq"`
 	WindowStart         time.Time          `json:"window_start"`
 }
-
-// CreateCheckoutRequest defines model for CreateCheckoutRequest.
-type CreateCheckoutRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema      *string `json:"$schema,omitempty"`
-	AmountCents int64   `json:"amount_cents"`
-	CancelUrl   string  `json:"cancel_url"`
-	OrgId       string  `json:"org_id"`
-	ProductId   string  `json:"product_id"`
-	SuccessUrl  string  `json:"success_url"`
-}
-
-// CreateSubscriptionRequest defines model for CreateSubscriptionRequest.
-type CreateSubscriptionRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                           `json:"$schema,omitempty"`
-	Cadence    *CreateSubscriptionRequestCadence `json:"cadence,omitempty"`
-	CancelUrl  string                            `json:"cancel_url"`
-	OrgId      string                            `json:"org_id"`
-	PlanId     string                            `json:"plan_id"`
-	SuccessUrl string                            `json:"success_url"`
-}
-
-// CreateSubscriptionRequestCadence defines model for CreateSubscriptionRequest.Cadence.
-type CreateSubscriptionRequestCadence string
 
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
@@ -177,56 +227,6 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// ReserveWindowRequest defines model for ReserveWindowRequest.
-type ReserveWindowRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema          *string            `json:"$schema,omitempty"`
-	ActorId         string             `json:"actor_id"`
-	Allocation      map[string]float64 `json:"allocation"`
-	ConcurrentCount int64              `json:"concurrent_count"`
-	OrgId           string             `json:"org_id"`
-	ProductId       string             `json:"product_id"`
-	SourceRef       string             `json:"source_ref"`
-	SourceType      string             `json:"source_type"`
-}
-
-// ReserveWindowResult defines model for ReserveWindowResult.
-type ReserveWindowResult struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema      *string                  `json:"$schema,omitempty"`
-	Reservation BillingWindowReservation `json:"reservation"`
-}
-
-// SettleWindowRequest defines model for SettleWindowRequest.
-type SettleWindowRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema         *string                 `json:"$schema,omitempty"`
-	ActualQuantity int32                   `json:"actual_quantity"`
-	UsageSummary   *map[string]interface{} `json:"usage_summary,omitempty"`
-	WindowId       string                  `json:"window_id"`
-}
-
-// URLResponse defines model for URLResponse.
-type URLResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Url    string  `json:"url"`
-}
-
-// VoidWindowRequest defines model for VoidWindowRequest.
-type VoidWindowRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema   *string `json:"$schema,omitempty"`
-	WindowId string  `json:"window_id"`
-}
-
-// VoidWindowResult defines model for VoidWindowResult.
-type VoidWindowResult struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema   *string `json:"$schema,omitempty"`
-	WindowId string  `json:"window_id"`
-}
-
 // ListGrantsParams defines parameters for ListGrants.
 type ListGrantsParams struct {
 	ProductId *string `form:"product_id,omitempty" json:"product_id,omitempty"`
@@ -234,19 +234,19 @@ type ListGrantsParams struct {
 }
 
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
-type CreateCheckoutJSONRequestBody = CreateCheckoutRequest
+type CreateCheckoutJSONRequestBody = BillingCreateCheckoutRequest
 
 // ReserveWindowJSONRequestBody defines body for ReserveWindow for application/json ContentType.
-type ReserveWindowJSONRequestBody = ReserveWindowRequest
+type ReserveWindowJSONRequestBody = BillingReserveWindowRequest
 
 // SettleWindowJSONRequestBody defines body for SettleWindow for application/json ContentType.
-type SettleWindowJSONRequestBody = SettleWindowRequest
+type SettleWindowJSONRequestBody = BillingSettleWindowRequest
 
 // CreateSubscriptionJSONRequestBody defines body for CreateSubscription for application/json ContentType.
-type CreateSubscriptionJSONRequestBody = CreateSubscriptionRequest
+type CreateSubscriptionJSONRequestBody = BillingCreateSubscriptionRequest
 
 // VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
-type VoidWindowJSONRequestBody = VoidWindowRequest
+type VoidWindowJSONRequestBody = BillingVoidWindowRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -933,7 +933,7 @@ type ClientWithResponsesInterface interface {
 type CreateCheckoutResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *URLResponse
+	JSON200                       *BillingURLResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1025,7 +1025,7 @@ func (r ListSubscriptionsResponse) StatusCode() int {
 type ReserveWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *ReserveWindowResult
+	JSON200                   *BillingReserveWindowResult
 	ApplicationproblemJSON402 *ErrorModel
 	ApplicationproblemJSON403 *ErrorModel
 	ApplicationproblemJSON422 *ErrorModel
@@ -1077,7 +1077,7 @@ func (r SettleWindowResponse) StatusCode() int {
 type CreateSubscriptionResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *URLResponse
+	JSON200                   *BillingURLResponse
 	ApplicationproblemJSON422 *ErrorModel
 	ApplicationproblemJSON500 *ErrorModel
 	ApplicationproblemJSON501 *ErrorModel
@@ -1102,7 +1102,7 @@ func (r CreateSubscriptionResponse) StatusCode() int {
 type VoidWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *VoidWindowResult
+	JSON200                   *BillingVoidWindowResult
 	ApplicationproblemJSON400 *ErrorModel
 	ApplicationproblemJSON404 *ErrorModel
 	ApplicationproblemJSON422 *ErrorModel
@@ -1252,7 +1252,7 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest URLResponse
+		var dest BillingURLResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1384,7 +1384,7 @@ func ParseReserveWindowResponse(rsp *http.Response) (*ReserveWindowResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ReserveWindowResult
+		var dest BillingReserveWindowResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1492,7 +1492,7 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest URLResponse
+		var dest BillingURLResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1539,7 +1539,7 @@ func ParseVoidWindowResponse(rsp *http.Response) (*VoidWindowResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VoidWindowResult
+		var dest BillingVoidWindowResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

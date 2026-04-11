@@ -126,11 +126,11 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 }
 
 type SubmitExecutionInput struct {
-	Body jobs.SubmitRequest
+	Body apiwire.SandboxSubmitRequest
 }
 
 type ImportRepoInput struct {
-	Body jobs.ImportRepoRequest
+	Body apiwire.SandboxImportRepoRequest
 }
 
 type RepoIDPath struct {
@@ -138,27 +138,23 @@ type RepoIDPath struct {
 }
 
 type RepoOutput struct {
-	Body RepoRecord
+	Body apiwire.SandboxRepoRecord
 }
 
 type ListReposOutput struct {
-	Body []RepoRecord
+	Body []apiwire.SandboxRepoRecord
 }
 
 type ListRepoGenerationsOutput struct {
-	Body []jobs.GoldenGenerationRecord
+	Body []apiwire.SandboxGoldenGenerationRecord
 }
 
 type RefreshRepoOutput struct {
-	Body RepoBootstrapRecord
+	Body apiwire.SandboxRepoBootstrapRecord
 }
 
 type SubmitExecutionOutput struct {
-	Body struct {
-		ExecutionID string `json:"execution_id"`
-		AttemptID   string `json:"attempt_id"`
-		Status      string `json:"status"`
-	}
+	Body apiwire.SandboxSubmitExecutionResult
 }
 
 type ExecutionIDPath struct {
@@ -166,15 +162,11 @@ type ExecutionIDPath struct {
 }
 
 type GetExecutionOutput struct {
-	Body ExecutionRecord
+	Body apiwire.SandboxExecutionRecord
 }
 
 type GetExecutionLogsOutput struct {
-	Body struct {
-		ExecutionID string `json:"execution_id"`
-		AttemptID   string `json:"attempt_id"`
-		Logs        string `json:"logs"`
-	}
+	Body apiwire.SandboxExecutionLogs
 }
 
 type EmptyInput struct{}
@@ -199,27 +191,15 @@ type GrantsOutput struct {
 }
 
 type CheckoutInput struct {
-	Body struct {
-		ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product to purchase credits for"`
-		AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991" doc:"Amount in cents"`
-		SuccessURL  string `json:"success_url" required:"true" maxLength:"2048"`
-		CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
-	}
+	Body apiwire.SandboxBillingCheckoutRequest
 }
 
 type URLOutput struct {
-	Body struct {
-		URL string `json:"url"`
-	}
+	Body apiwire.BillingURLResponse
 }
 
 type SubscribeInput struct {
-	Body struct {
-		PlanID     string `json:"plan_id" required:"true" maxLength:"255" doc:"Plan to subscribe to"`
-		Cadence    string `json:"cadence,omitempty" enum:"monthly,annual" doc:"Billing cadence (default monthly)"`
-		SuccessURL string `json:"success_url" required:"true" maxLength:"2048"`
-		CancelURL  string `json:"cancel_url" required:"true" maxLength:"2048"`
-	}
+	Body apiwire.SandboxBillingSubscriptionRequest
 }
 
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
@@ -248,7 +228,7 @@ func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*Rep
 		if err != nil {
 			return nil, err
 		}
-		repo, err := svc.ImportRepo(ctx, orgID, input.Body)
+		repo, err := svc.ImportRepo(ctx, orgID, importRepoRequest(input.Body))
 		if err != nil {
 			return nil, huma.Error500InternalServerError("import repo", err)
 		}
@@ -333,7 +313,7 @@ func listRepoGenerations(svc *jobs.Service) func(context.Context, *RepoIDPath) (
 		if err != nil {
 			return nil, huma.Error500InternalServerError("list repo generations", err)
 		}
-		return &ListRepoGenerationsOutput{Body: generations}, nil
+		return &ListRepoGenerationsOutput{Body: goldenGenerationRecords(generations)}, nil
 	}
 }
 
@@ -378,7 +358,7 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			return nil, err
 		}
 
-		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, input.Body)
+		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, submitRequest(input.Body))
 		if err != nil {
 			switch {
 			case errors.Is(err, jobs.ErrQuotaExceeded):
@@ -393,9 +373,11 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 		}
 
 		out := &SubmitExecutionOutput{}
-		out.Body.ExecutionID = executionID.String()
-		out.Body.AttemptID = attemptID.String()
-		out.Body.Status = jobs.StateReserved
+		out.Body = apiwire.SandboxSubmitExecutionResult{
+			ExecutionID: executionID.String(),
+			AttemptID:   attemptID.String(),
+			Status:      jobs.StateReserved,
+		}
 		return out, nil
 	}
 }
@@ -445,9 +427,11 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 		}
 
 		out := &GetExecutionLogsOutput{}
-		out.Body.ExecutionID = executionID.String()
-		out.Body.AttemptID = attemptID.String()
-		out.Body.Logs = logs
+		out.Body = apiwire.SandboxExecutionLogs{
+			ExecutionID: executionID.String(),
+			AttemptID:   attemptID.String(),
+			Logs:        logs,
+		}
 		return out, nil
 	}
 }
@@ -505,7 +489,7 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 			return nil, billingProxyError(err)
 		}
 		out := &URLOutput{}
-		out.Body.URL = url
+		out.Body = apiwire.BillingURLResponse{URL: url}
 		return out, nil
 	}
 }
@@ -521,7 +505,7 @@ func createBillingSubscription(billing *billingclient.ServiceClient) func(contex
 			return nil, billingProxyError(err)
 		}
 		out := &URLOutput{}
-		out.Body.URL = url
+		out.Body = apiwire.BillingURLResponse{URL: url}
 		return out, nil
 	}
 }
