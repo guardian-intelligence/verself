@@ -176,4 +176,4 @@
 - name: Trigger identity-service restart when binary changed
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_identity_service_binary_copy.changed | default(false)
-  notify: restart identity-service
+  notify: deploy-profile restart identity-service

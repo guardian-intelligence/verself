@@ -1,0 +1,14 @@
+---
+- name: Check if identity-service unit exists for deploy profile restart
+  listen: deploy-profile restart identity-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/identity-service.service
+  register: deploy_profile_identity_service_unit_file
+
+- name: Restart identity-service from deploy profile
+  listen: deploy-profile restart identity-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: identity-service
+    state: restarted
+  when: deploy_profile_identity_service_unit_file.stat.exists
