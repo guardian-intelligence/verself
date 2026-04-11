@@ -20,11 +20,11 @@ The warm process runs entirely inside a Firecracker VM. The host never mounts th
 
 1. Host: `zfs clone` base golden to new repo-golden dataset
 2. Host: boot VM from the cloned dataset
-3. Guest: fetch from Forgejo through the host-service plane, install deps, write lockfile hashes, emit commit metadata over the guest event FIFO
-4. Host: `fsck.ext4 -n` (read-only check of guest-written data)
-5. Host: `zfs snapshot` to promote the golden
+3. Guest supervisor: fetch from Forgejo through the host-service plane, install deps as the runner user, write lockfile hashes, and return a typed manifest over vsock
+4. Host: validate clean VM exit and typed supervisor manifest
+5. Host: `zfs snapshot` to promote the golden without mounting or fscking the guest filesystem
 
-This design ensures the host never interprets guest-written filesystem metadata via `mount`. The only host-side parsing of guest data is the optional `fsck.ext4 -n` read-only check.
+This design ensures the host never interprets guest-written filesystem metadata via `mount` or `fsck`. Generic guest events are observability data, not promotion authority.
 
 ## Shell Scripting Inside Guests
 

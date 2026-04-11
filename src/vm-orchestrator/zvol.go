@@ -47,39 +47,6 @@ func zfsWritten(ctx context.Context, dataset string) (uint64, error) {
 	return strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
 }
 
-// mountZvol mounts a block device (zvol) to a temporary directory.
-// Returns the mount path. Caller must unmount when done.
-func mountZvol(ctx context.Context, devicePath string) (string, error) {
-	// Wait briefly for the zvol device node to appear after clone.
-	if err := waitForDevice(ctx, devicePath); err != nil {
-		return "", fmt.Errorf("wait for device %s: %w", devicePath, err)
-	}
-
-	mountDir, err := os.MkdirTemp("", "fc-mount-*")
-	if err != nil {
-		return "", fmt.Errorf("create mount dir: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, "mount", devicePath, mountDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		os.Remove(mountDir)
-		return "", fmt.Errorf("mount %s: %s: %w", devicePath, strings.TrimSpace(string(out)), err)
-	}
-	return mountDir, nil
-}
-
-// unmount unmounts a filesystem and removes the mount directory.
-func unmount(ctx context.Context, mountDir string) error {
-	cmd := exec.CommandContext(ctx, "umount", mountDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("umount %s: %s: %w", mountDir, strings.TrimSpace(string(out)), err)
-	}
-	os.Remove(mountDir)
-	return nil
-}
-
 // waitForDevice polls for a device node to appear (zvols take a moment
 // after clone for udev to create the node). Timeout via context.
 func waitForDevice(ctx context.Context, path string) error {

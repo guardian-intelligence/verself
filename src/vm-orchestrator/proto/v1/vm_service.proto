@@ -71,6 +71,16 @@ message VMMetrics {
   uint64 vcpu_exit_count = 8;
 }
 
+message RepoManifest {
+  string kind = 1;
+  string requested_ref = 2;
+  string resolved_commit_sha = 3;
+  string lockfile_rel_path = 4;
+  string lockfile_sha256 = 5;
+  string previous_lockfile_sha256 = 6;
+  bool install_needed = 7;
+}
+
 message JobResult {
   int32 exit_code = 1;
   string logs = 2;
@@ -93,6 +103,7 @@ message JobResult {
   repeated PhaseResult phase_results = 19;
   string failure_phase = 20;
   VMMetrics metrics = 21;
+  RepoManifest repo_manifest = 22;
 }
 
 message DirectJobSpec {
@@ -190,9 +201,7 @@ message WarmGoldenResponse {
   string target_dataset = 1;
   string previous_dataset = 2;
   bool promoted = 3;
-  bool filesystem_check_ok = 4;
   int64 clone_duration_ms = 5;
-  int64 filesystem_check_duration_ms = 6;
   int64 snapshot_promotion_duration_ms = 7;
   int64 previous_destroy_duration_ms = 8;
   string commit_sha = 9;

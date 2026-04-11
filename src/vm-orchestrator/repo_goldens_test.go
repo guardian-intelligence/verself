@@ -1,9 +1,6 @@
 package vmorchestrator
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestRepoURLForGuestRewritesHTTPToHostService(t *testing.T) {
 	t.Parallel()
@@ -34,19 +31,7 @@ func TestRepoURLForGuestRejectsNonHTTP(t *testing.T) {
 	}
 }
 
-func TestWriteGuestEventShellAttr(t *testing.T) {
-	t.Parallel()
-
-	var script strings.Builder
-	writeGuestEventShellAttr(&script, repoWarmCommitEvent, repoCommitSHAAttr, "$COMMIT_SHA")
-
-	want := "emit_guest_event '{\"kind\":\"repo_warm.commit\",\"attrs\":{\"commit_sha\":\"'\"$COMMIT_SHA\"'\"}}'\n"
-	if got := script.String(); got != want {
-		t.Fatalf("guest event shell: got %q want %q", got, want)
-	}
-}
-
-func TestBuildInVMRepoExecJobDoesNotMountOrFetchOnHost(t *testing.T) {
+func TestBuildInVMRepoExecJobBuildsSupervisorOperation(t *testing.T) {
 	t.Parallel()
 
 	job, err := buildInVMRepoExecJob(JobConfig{
@@ -57,28 +42,32 @@ func TestBuildInVMRepoExecJobDoesNotMountOrFetchOnHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildInVMRepoExecJob: %v", err)
 	}
-	if len(job.PrepareCommand) != 3 || job.PrepareCommand[0] != "sh" || job.PrepareCommand[1] != "-c" {
-		t.Fatalf("unexpected prepare command: %#v", job.PrepareCommand)
+	if len(job.PrepareCommand) != 0 || len(job.RunCommand) != 0 {
+		t.Fatalf("repo supervisor job should not carry shell phases: prepare=%#v run=%#v", job.PrepareCommand, job.RunCommand)
 	}
-	script := job.PrepareCommand[2]
-	for _, forbidden := range []string{"127.0.0.1", "route_localnet", "mount"} {
-		if strings.Contains(script, forbidden) {
-			t.Fatalf("prepare script contains forbidden host-coupled token %q:\n%s", forbidden, script)
-		}
+	op := job.RepoOperation
+	if op == nil {
+		t.Fatal("repo supervisor operation is nil")
 	}
-	if !strings.Contains(script, "REPO_URL='http://reader:secret@10.255.0.1:18080/fixtures/app.git?token=secret'") {
-		t.Fatalf("prepare script did not rewrite credentialed repo URL to host service plane:\n%s", script)
+	if op.Kind != "exec" {
+		t.Fatalf("operation kind: got %q", op.Kind)
 	}
-	if !strings.Contains(script, "REPO_URL_NO_CREDENTIALS='http://10.255.0.1:18080/fixtures/app.git'") {
-		t.Fatalf("prepare script did not compute a credential-stripped origin URL:\n%s", script)
+	if op.RepoURL != "http://reader:secret@10.255.0.1:18080/fixtures/app.git?token=secret" {
+		t.Fatalf("repo URL: got %q", op.RepoURL)
 	}
-	if !strings.Contains(script, "git remote set-url origin \"$REPO_URL_NO_CREDENTIALS\"\n") {
-		t.Fatalf("prepare script did not strip credentialed origin before repo commands:\n%s", script)
+	if op.OriginURL != "http://10.255.0.1:18080/fixtures/app.git" {
+		t.Fatalf("origin URL: got %q", op.OriginURL)
 	}
-	if !strings.Contains(script, "git fetch --depth 1 \"$REPO_URL\" 'refs/heads/main'\n") {
-		t.Fatalf("prepare script did not fetch with the credentialed URL without persisting it:\n%s", script)
+	if op.Ref != "refs/heads/main" {
+		t.Fatalf("ref: got %q", op.Ref)
 	}
-	if !strings.Contains(script, "rm -f .git/FETCH_HEAD\nunset REPO_URL\n") {
-		t.Fatalf("prepare script did not remove credential-bearing FETCH_HEAD before repo commands:\n%s", script)
+	if op.LockfileRelPath != "package-lock.json" {
+		t.Fatalf("lockfile: got %q", op.LockfileRelPath)
+	}
+	if len(op.UserPrepareCommand) != 2 || op.UserPrepareCommand[0] != "npm" || op.UserPrepareCommand[1] != "ci" {
+		t.Fatalf("user prepare command: %#v", op.UserPrepareCommand)
+	}
+	if len(op.UserRunCommand) != 2 || op.UserRunCommand[0] != "npm" || op.UserRunCommand[1] != "test" {
+		t.Fatalf("user run command: %#v", op.UserRunCommand)
 	}
 }

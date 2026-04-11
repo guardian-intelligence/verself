@@ -1,6 +1,10 @@
 package vmorchestrator
 
-import "time"
+import (
+	"time"
+
+	"github.com/forge-metal/vm-orchestrator/vmproto"
+)
 
 const (
 	DefaultSocketPath         = "/run/vm-orchestrator/api.sock"
@@ -46,6 +50,8 @@ type RepoExecMetadata struct {
 	CommitSHA      string
 }
 
+type RepoManifest = vmproto.RepoManifest
+
 type JobStatus struct {
 	JobID        string
 	State        JobState
@@ -76,9 +82,7 @@ type WarmGoldenResult struct {
 	TargetDataset             string
 	PreviousDataset           string
 	Promoted                  bool
-	FilesystemCheckOK         bool
 	CloneDuration             time.Duration
-	FilesystemCheckDuration   time.Duration
 	SnapshotPromotionDuration time.Duration
 	PreviousDestroyDuration   time.Duration
 	CommitSHA                 string

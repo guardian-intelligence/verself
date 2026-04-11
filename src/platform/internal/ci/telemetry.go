@@ -45,10 +45,8 @@ type emitWarmTelemetryInput struct {
 	Job                       vmorchestrator.JobConfig
 	JobResult                 vmorchestrator.JobResult
 	CloneDuration             time.Duration
-	FilesystemCheckDuration   time.Duration
 	SnapshotPromotionDuration time.Duration
 	PreviousDestroyDuration   time.Duration
-	FilesystemCheckOK         bool
 	Promoted                  bool
 	CreatedAt                 time.Time
 	StartedAt                 time.Time
@@ -229,10 +227,11 @@ func emitWarmTelemetry(logger *slog.Logger, input emitWarmTelemetryInput) error 
 		ServiceStartNs:          input.JobResult.ServiceStartDuration.Nanoseconds(),
 		VMExitWaitNs:            input.JobResult.VMExitWaitDuration.Nanoseconds(),
 		VMExitForced:            boolToUint8(input.JobResult.ForcedShutdown),
-		WarmFilesystemCheckNs:   input.FilesystemCheckDuration.Nanoseconds(),
 		WarmSnapshotPromotionNs: input.SnapshotPromotionDuration.Nanoseconds(),
 		WarmPreviousDestroyNs:   input.PreviousDestroyDuration.Nanoseconds(),
-		WarmFilesystemCheckOK:   boolToUint8(input.FilesystemCheckOK),
+		WarmPromotionGate:       warmPromotionGate(input),
+		WarmHostFSCheckUsed:     0,
+		WarmGuestManifestOK:     boolToUint8(input.JobResult.RepoManifest != nil),
 		StdoutBytes:             input.JobResult.StdoutBytes,
 		StderrBytes:             input.JobResult.StderrBytes,
 		DroppedLogBytes:         input.JobResult.DroppedLogBytes,
@@ -333,8 +332,10 @@ func buildWarmJobConfigJSON(input emitWarmTelemetryInput, manifestPath string, g
 		"target_dataset":          input.TargetDataset,
 		"previous_dataset":        input.PreviousDataset,
 		"promoted":                input.Promoted,
-		"filesystem_check_ok":     input.FilesystemCheckOK,
-		"filesystem_check_ns":     input.FilesystemCheckDuration.Nanoseconds(),
+		"promotion_gate":          warmPromotionGate(input),
+		"host_fs_check_used":      false,
+		"guest_manifest_ok":       input.JobResult.RepoManifest != nil,
+		"repo_manifest":           input.JobResult.RepoManifest,
 		"snapshot_promotion_ns":   input.SnapshotPromotionDuration.Nanoseconds(),
 		"previous_destroy_ns":     input.PreviousDestroyDuration.Nanoseconds(),
 		"warm_prepare_command":    input.Job.PrepareCommand,
@@ -368,6 +369,13 @@ func buildWarmJobConfigJSON(input emitWarmTelemetryInput, manifestPath string, g
 		return "", fmt.Errorf("marshal warm telemetry payload: %w", err)
 	}
 	return string(data), nil
+}
+
+func warmPromotionGate(input emitWarmTelemetryInput) string {
+	if input.JobResult.RepoManifest != nil {
+		return "guest_manifest"
+	}
+	return ""
 }
 
 func phaseExitCodes(phases []vmorchestrator.PhaseResult) map[string]int {

@@ -65,11 +65,9 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 		targetDataset             string
 		previousDataset           string
 		cloneDuration             time.Duration
-		filesystemCheckDuration   time.Duration
 		snapshotPromotionDuration time.Duration
 		previousDestroyDuration   time.Duration
 		commitSHA                 string
-		filesystemCheckOK         bool
 		promoted                  bool
 		startedAt                 time.Time
 		completedAt               time.Time
@@ -88,10 +86,8 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 			Job:                       job,
 			JobResult:                 result,
 			CloneDuration:             cloneDuration,
-			FilesystemCheckDuration:   filesystemCheckDuration,
 			SnapshotPromotionDuration: snapshotPromotionDuration,
 			PreviousDestroyDuration:   previousDestroyDuration,
-			FilesystemCheckOK:         filesystemCheckOK,
 			Promoted:                  promoted,
 			CreatedAt:                 createdAt,
 			StartedAt:                 startedAt,
@@ -140,10 +136,8 @@ func (m *Manager) Warm(ctx context.Context, req WarmRequest) (err error) {
 	targetDataset = warmResult.TargetDataset
 	previousDataset = warmResult.PreviousDataset
 	cloneDuration = warmResult.CloneDuration
-	filesystemCheckDuration = warmResult.FilesystemCheckDuration
 	snapshotPromotionDuration = warmResult.SnapshotPromotionDuration
 	previousDestroyDuration = warmResult.PreviousDestroyDuration
-	filesystemCheckOK = warmResult.FilesystemCheckOK
 	promoted = warmResult.Promoted
 	if strings.TrimSpace(warmResult.CommitSHA) != "" {
 		commitSHA = warmResult.CommitSHA

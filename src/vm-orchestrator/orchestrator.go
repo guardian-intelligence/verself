@@ -69,13 +69,14 @@ func DefaultConfig() Config {
 
 // JobConfig describes the CI job to run inside the VM.
 type JobConfig struct {
-	JobID          string            `json:"job_id"`
-	PrepareCommand []string          `json:"prepare_command,omitempty"`
-	PrepareWorkDir string            `json:"prepare_work_dir,omitempty"`
-	RunCommand     []string          `json:"run_command"`
-	RunWorkDir     string            `json:"run_work_dir,omitempty"`
-	Services       []string          `json:"services,omitempty"`
-	Env            map[string]string `json:"env"`
+	JobID          string                 `json:"job_id"`
+	PrepareCommand []string               `json:"prepare_command,omitempty"`
+	PrepareWorkDir string                 `json:"prepare_work_dir,omitempty"`
+	RunCommand     []string               `json:"run_command"`
+	RunWorkDir     string                 `json:"run_work_dir,omitempty"`
+	Services       []string               `json:"services,omitempty"`
+	Env            map[string]string      `json:"env"`
+	RepoOperation  *vmproto.RepoOperation `json:"repo_operation,omitempty"`
 }
 
 type PhaseResult struct {
@@ -107,6 +108,7 @@ type JobResult struct {
 	PhaseResults         []PhaseResult
 	FailurePhase         string
 	Metrics              *VMMetrics
+	RepoManifest         *RepoManifest
 }
 
 const firecrackerAPIStepTimeout = 5 * time.Second
@@ -168,7 +170,7 @@ func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer 
 		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 		return
 	}
-	if len(job.RunCommand) == 0 {
+	if len(job.RunCommand) == 0 && job.RepoOperation == nil {
 		err = fmt.Errorf("job run command is required")
 		return
 	}
@@ -232,7 +234,7 @@ func (o *Orchestrator) RunDatasetObserved(ctx context.Context, job JobConfig, da
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 	}
-	if len(job.RunCommand) == 0 {
+	if len(job.RunCommand) == 0 && job.RepoOperation == nil {
 		return JobResult{}, fmt.Errorf("job run command is required")
 	}
 	return o.runDataset(ctx, job, dataset, destroyAfter, observer)
@@ -523,6 +525,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	result.StdoutBytes = controlResult.result.StdoutBytes
 	result.StderrBytes = controlResult.result.StderrBytes
 	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
+	result.RepoManifest = controlResult.result.RepoManifest
 	result.PhaseResults = append([]PhaseResult(nil), controlResult.phases...)
 	result.FailurePhase = firstFailedPhase(controlResult.phases)
 	logger.Info("VM exited", "exit_code", result.ExitCode)
