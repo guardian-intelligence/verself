@@ -2,10 +2,8 @@
 # Sandbox rental service network restrictions.
 # Binds 127.0.0.1:4243 (loopback-only). Caddy reverse-proxies to it.
 #
-# The service runs as User=sandbox_rental. Egress is restricted by skuid
-# to only allow connections to PostgreSQL, ClickHouse, billing, Zitadel, and
-# local Forgejo on localhost. All other outbound traffic from this user is
-# dropped.
+# The service runs as User=sandbox_rental. Egress is restricted by skuid:
+# loopback platform dependencies plus DNS/HTTPS to public git hosts only.
 
 table inet forge_metal_sandbox_rental
 delete table inet forge_metal_sandbox_rental
@@ -33,12 +31,21 @@ table inet forge_metal_sandbox_rental {
         oifname "lo" tcp dport {{ services.clickhouse.native_port }} accept
         oifname "lo" tcp dport {{ services.billing.port }} accept
         oifname "lo" tcp dport {{ services.zitadel.port }} accept
-        # Repo-backed executions currently inspect and clone repos inside the
-        # service process before the Forgejo runner cutover is complete. Keep
-        # this loopback-only so the first pass can use public local Forgejo
-        # repos without opening general egress from the sandbox_rental user.
         oifname "lo" tcp dport {{ services.forgejo.port }} accept
         oifname "lo" tcp dport {{ services.otelcol.grpc_port }} accept
+        oifname "lo" tcp dport 53 accept
+        oifname "lo" udp dport 53 accept
+
+        # Keep public clone egress from becoming a private-network SSRF path.
+        ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 240.0.0.0/4 } drop
+        ip6 daddr { ::/128, ::1/128, ::ffff:0:0/96, 64:ff9b::/96, 100::/64, 2001::/23, 2001:db8::/32, fc00::/7, fe80::/10, ff00::/8 } drop
+
+        # DNS resolution for cloning public git repos (GitHub, GitLab, etc.).
+        tcp dport 53 accept
+        udp dport 53 accept
+
+        # HTTPS egress for cloning public git repos.
+        tcp dport 443 accept
 
         # Allow Unix socket traffic (always passes output chain).
         meta l4proto != tcp meta l4proto != udp accept
