@@ -17,7 +17,10 @@ import {
 } from "../__generated/sandbox-rental-api/index.js";
 import {
   vAttemptRecord,
-  vBalanceResponse,
+  vBillingBalance,
+  vBillingGrant,
+  vBillingGrants,
+  vBillingSubscription,
   vBillingWindow,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
@@ -27,8 +30,6 @@ import {
   vGetExecutionPath,
   vGetRepoPath,
   vGoldenGenerationRecord,
-  vGrantResponse,
-  vGrantsResponse,
   vImportRepoBody,
   vListBillingSubscriptionsResponse,
   vListRepoGenerationsResponse,
@@ -37,7 +38,6 @@ import {
   vRepoRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
-  vSubscriptionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
 
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
@@ -80,8 +80,8 @@ function toOptionalSafeNumber(value: bigint | undefined, label: string): number 
   return value === undefined ? undefined : toSafeNumber(value, label);
 }
 
-function stringifyBigInt(value: bigint): string {
-  return value.toString();
+function decimalStringToSafeNumber(value: string, label: string): number {
+  return toSafeNumber(BigInt(value), label);
 }
 
 function stringifyErrorBody(error: unknown): string {
@@ -173,26 +173,25 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vBillingWindow>) {
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
 function parseBalance(input: unknown) {
-  const { $schema: _schema, ...balance } = v.parse(vBalanceResponse, input);
+  const { $schema: _schema, ...balance } = v.parse(vBillingBalance, input);
   return {
     ...balance,
-    credit_available: toSafeNumber(balance.credit_available, "credit_available"),
-    credit_pending: toSafeNumber(balance.credit_pending, "credit_pending"),
-    free_tier_available: toSafeNumber(balance.free_tier_available, "free_tier_available"),
-    free_tier_pending: toSafeNumber(balance.free_tier_pending, "free_tier_pending"),
+    credit_available: decimalStringToSafeNumber(balance.credit_available, "credit_available"),
+    credit_pending: decimalStringToSafeNumber(balance.credit_pending, "credit_pending"),
+    free_tier_available: decimalStringToSafeNumber(
+      balance.free_tier_available,
+      "free_tier_available",
+    ),
+    free_tier_pending: decimalStringToSafeNumber(balance.free_tier_pending, "free_tier_pending"),
     org_id: balance.org_id,
-    total_available: toSafeNumber(balance.total_available, "total_available"),
+    total_available: decimalStringToSafeNumber(balance.total_available, "total_available"),
   };
 }
 
 export type Balance = ReturnType<typeof parseBalance>;
 
 function parseSubscription(input: unknown) {
-  const subscription = v.parse(vSubscriptionResponse, input);
-  return {
-    ...subscription,
-    subscription_id: toSafeNumber(subscription.subscription_id, "subscription_id"),
-  };
+  return v.parse(vBillingSubscription, input);
 }
 
 export type Subscription = ReturnType<typeof parseSubscription>;
@@ -207,18 +206,18 @@ function parseSubscriptionsResponse(input: unknown) {
 export type SubscriptionsResponse = ReturnType<typeof parseSubscriptionsResponse>;
 
 function parseGrant(input: unknown) {
-  const grant = v.parse(vGrantResponse, input);
+  const grant = v.parse(vBillingGrant, input);
   return {
     ...grant,
-    available: toSafeNumber(grant.available, "available"),
-    pending: toSafeNumber(grant.pending, "pending"),
+    available: decimalStringToSafeNumber(grant.available, "available"),
+    pending: decimalStringToSafeNumber(grant.pending, "pending"),
   };
 }
 
 export type Grant = ReturnType<typeof parseGrant>;
 
 function parseGrantsResponse(input: unknown) {
-  const { $schema: _schema, grants } = v.parse(vGrantsResponse, input);
+  const { $schema: _schema, grants } = v.parse(vBillingGrants, input);
   return {
     grants: grants?.map((grant) => parseGrant(grant)) ?? null,
   };
@@ -237,7 +236,6 @@ function parseExecution(input: unknown) {
     ...execution,
     billing_windows: billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)),
     latest_attempt: normalizeAttempt(latest_attempt),
-    org_id: stringifyBigInt(execution.org_id),
   };
 }
 
@@ -248,7 +246,6 @@ function parseRepo(input: unknown) {
   return {
     ...repo,
     compatibility_summary: parseCompatibilitySummary(compatibility_summary),
-    org_id: stringifyBigInt(repo.org_id),
   };
 }
 

@@ -1,38 +1,33 @@
 components:
   schemas:
-    BalanceResponse:
+    BillingBalance:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4242/schemas/BalanceResponse.json
+            - http://127.0.0.1:4242/schemas/BillingBalance.json
           format: uri
           readOnly: true
           type: string
         credit_available:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         credit_pending:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         free_tier_available:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         free_tier_pending:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
         org_id:
           pattern: ^[0-9]+$
           type: string
         total_available:
-          format: int64
-          minimum: 0
-          type: integer
+          pattern: ^[0-9]+$
+          type: string
       required:
         - org_id
         - free_tier_available
@@ -40,6 +35,209 @@ components:
         - credit_available
         - credit_pending
         - total_available
+      type: object
+    BillingGrant:
+      additionalProperties: false
+      properties:
+        available:
+          pattern: ^[0-9]+$
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        grant_id:
+          type: string
+        pending:
+          pattern: ^[0-9]+$
+          type: string
+        source:
+          type: string
+      required:
+        - grant_id
+        - source
+        - available
+        - pending
+      type: object
+    BillingGrants:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingGrants.json
+          format: uri
+          readOnly: true
+          type: string
+        grants:
+          items:
+            $ref: "#/components/schemas/BillingGrant"
+          type:
+            - array
+            - "null"
+      required:
+        - grants
+      type: object
+    BillingSettleResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingSettleResult.json
+          format: uri
+          readOnly: true
+          type: string
+        actual_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+        billable_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+        billed_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        settled_at:
+          format: date-time
+          type: string
+        window_id:
+          type: string
+        writeoff_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        writeoff_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+        - window_id
+        - actual_quantity
+        - billable_quantity
+        - writeoff_quantity
+        - billed_charge_units
+        - writeoff_charge_units
+        - settled_at
+      type: object
+    BillingSubscription:
+      additionalProperties: false
+      properties:
+        cadence:
+          type: string
+        current_period_end:
+          format: date-time
+          type: string
+        current_period_start:
+          format: date-time
+          type: string
+        plan_id:
+          type: string
+        product_id:
+          type: string
+        status:
+          type: string
+        subscription_id:
+          pattern: ^-?[0-9]+$
+          type: string
+      required:
+        - subscription_id
+        - product_id
+        - plan_id
+        - cadence
+        - status
+      type: object
+    BillingSubscriptions:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingSubscriptions.json
+          format: uri
+          readOnly: true
+          type: string
+        subscriptions:
+          items:
+            $ref: "#/components/schemas/BillingSubscription"
+          type:
+            - array
+            - "null"
+      required:
+        - subscriptions
+      type: object
+    BillingWindowReservation:
+      additionalProperties: false
+      properties:
+        actor_id:
+          type: string
+        allocation:
+          additionalProperties:
+            format: double
+            type: number
+          type: object
+        cost_per_unit:
+          pattern: ^[0-9]+$
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        plan_id:
+          type: string
+        pricing_phase:
+          type: string
+        product_id:
+          type: string
+        renew_by:
+          format: date-time
+          type: string
+        reservation_shape:
+          type: string
+        reserved_charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        reserved_quantity:
+          format: int32
+          minimum: 0
+          type: integer
+        source_ref:
+          type: string
+        source_type:
+          type: string
+        unit_rates:
+          additionalProperties:
+            pattern: ^[0-9]+$
+            type: string
+          type: object
+        window_id:
+          type: string
+        window_seq:
+          format: int32
+          minimum: 0
+          type: integer
+        window_start:
+          format: date-time
+          type: string
+      required:
+        - window_id
+        - org_id
+        - product_id
+        - plan_id
+        - actor_id
+        - source_type
+        - source_ref
+        - window_seq
+        - reservation_shape
+        - reserved_quantity
+        - reserved_charge_units
+        - pricing_phase
+        - allocation
+        - unit_rates
+        - cost_per_unit
+        - window_start
+        - expires_at
       type: object
     CreateCheckoutRequest:
       additionalProperties: false
@@ -53,6 +251,7 @@ components:
           type: string
         amount_cents:
           format: int64
+          maximum: 9007199254740991
           minimum: 1
           type: integer
         cancel_url:
@@ -158,6 +357,7 @@ components:
           examples:
             - 400
           format: int64
+          maximum: 599
           type: integer
         title:
           description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
@@ -171,49 +371,6 @@ components:
             - https://example.com/errors/example
           format: uri
           type: string
-      type: object
-    GrantResponse:
-      additionalProperties: false
-      properties:
-        available:
-          format: int64
-          minimum: 0
-          type: integer
-        expires_at:
-          format: date-time
-          type: string
-        grant_id:
-          type: string
-        pending:
-          format: int64
-          minimum: 0
-          type: integer
-        source:
-          type: string
-      required:
-        - grant_id
-        - source
-        - available
-        - pending
-      type: object
-    GrantsResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/GrantsResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        grants:
-          items:
-            $ref: "#/components/schemas/GrantResponse"
-          type:
-            - array
-            - "null"
-      required:
-        - grants
       type: object
     ReserveWindowRequest:
       additionalProperties: false
@@ -237,6 +394,7 @@ components:
           type: object
         concurrent_count:
           format: int64
+          maximum: 9007199254740991
           minimum: 0
           type: integer
         org_id:
@@ -274,53 +432,9 @@ components:
           readOnly: true
           type: string
         reservation:
-          $ref: "#/components/schemas/WindowReservationResponse"
+          $ref: "#/components/schemas/BillingWindowReservation"
       required:
         - reservation
-      type: object
-    SettleResult:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/SettleResult.json
-          format: uri
-          readOnly: true
-          type: string
-        actual_quantity:
-          format: int32
-          minimum: 0
-          type: integer
-        billable_quantity:
-          format: int32
-          minimum: 0
-          type: integer
-        billed_charge_units:
-          format: int64
-          minimum: 0
-          type: integer
-        settled_at:
-          format: date-time
-          type: string
-        window_id:
-          type: string
-        writeoff_charge_units:
-          format: int64
-          minimum: 0
-          type: integer
-        writeoff_quantity:
-          format: int32
-          minimum: 0
-          type: integer
-      required:
-        - window_id
-        - actual_quantity
-        - billable_quantity
-        - writeoff_quantity
-        - billed_charge_units
-        - writeoff_charge_units
-        - settled_at
       type: object
     SettleWindowRequest:
       additionalProperties: false
@@ -346,52 +460,6 @@ components:
       required:
         - window_id
         - actual_quantity
-      type: object
-    SubscriptionResponse:
-      additionalProperties: false
-      properties:
-        cadence:
-          type: string
-        current_period_end:
-          format: date-time
-          type: string
-        current_period_start:
-          format: date-time
-          type: string
-        plan_id:
-          type: string
-        product_id:
-          type: string
-        status:
-          type: string
-        subscription_id:
-          format: int64
-          type: integer
-      required:
-        - subscription_id
-        - product_id
-        - plan_id
-        - cadence
-        - status
-      type: object
-    SubscriptionsResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4242/schemas/SubscriptionsResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        subscriptions:
-          items:
-            $ref: "#/components/schemas/SubscriptionResponse"
-          type:
-            - array
-            - "null"
-      required:
-        - subscriptions
       type: object
     URLResponse:
       additionalProperties: false
@@ -440,83 +508,6 @@ components:
       required:
         - window_id
       type: object
-    WindowReservationResponse:
-      additionalProperties: false
-      properties:
-        actor_id:
-          type: string
-        allocation:
-          additionalProperties:
-            format: double
-            type: number
-          type: object
-        cost_per_unit:
-          format: int64
-          minimum: 0
-          type: integer
-        expires_at:
-          format: date-time
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        plan_id:
-          type: string
-        pricing_phase:
-          type: string
-        product_id:
-          type: string
-        renew_by:
-          format: date-time
-          type: string
-        reservation_shape:
-          type: string
-        reserved_charge_units:
-          format: int64
-          minimum: 0
-          type: integer
-        reserved_quantity:
-          format: int32
-          minimum: 0
-          type: integer
-        source_ref:
-          type: string
-        source_type:
-          type: string
-        unit_rates:
-          additionalProperties:
-            format: int64
-            minimum: 0
-            type: integer
-          type: object
-        window_id:
-          type: string
-        window_seq:
-          format: int32
-          minimum: 0
-          type: integer
-        window_start:
-          format: date-time
-          type: string
-      required:
-        - window_id
-        - org_id
-        - product_id
-        - plan_id
-        - actor_id
-        - source_type
-        - source_ref
-        - window_seq
-        - reservation_shape
-        - reserved_quantity
-        - reserved_charge_units
-        - pricing_phase
-        - allocation
-        - unit_rates
-        - cost_per_unit
-        - window_start
-        - expires_at
-      type: object
 info:
   title: Billing Service
   version: 2.0.0
@@ -560,7 +551,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceResponse"
+                $ref: "#/components/schemas/BillingBalance"
           description: OK
         default:
           content:
@@ -595,7 +586,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GrantsResponse"
+                $ref: "#/components/schemas/BillingGrants"
           description: OK
         default:
           content:
@@ -619,7 +610,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionsResponse"
+                $ref: "#/components/schemas/BillingSubscriptions"
           description: OK
         default:
           content:
@@ -683,7 +674,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SettleResult"
+                $ref: "#/components/schemas/BillingSettleResult"
           description: OK
         "400":
           content:

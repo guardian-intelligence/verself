@@ -10,6 +10,8 @@ forge-metal/                            # Monorepo root
 │
 ├── src/auth-middleware/                # OIDC JWT validation (Go library)
 │   └── go.mod                          # github.com/forge-metal/auth-middleware
+├── src/apiwire/                        # Cross-service DTO language, JSON/OpenAPI wire types
+│   └── go.mod                          # github.com/forge-metal/apiwire
 ├── src/otel/                           # Shared OTel bootstrap (Go library)
 │   └── otel.go                         # TracerProvider + MeterProvider init
 ├── src/vm-orchestrator/                # Firecracker + ZFS VM orchestrator (Go, gRPC service + library)

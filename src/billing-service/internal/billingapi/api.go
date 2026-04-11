@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -42,6 +41,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	RegisterRoutes(api, cfg)
+	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
 }
 
@@ -69,45 +69,18 @@ type GrantsInput struct {
 	Active    bool   `query:"active,omitempty"`
 }
 
-type BalanceResponse struct {
-	OrgID             apiwire.DecimalUint64 `json:"org_id"`
-	FreeTierAvailable uint64                `json:"free_tier_available"`
-	FreeTierPending   uint64                `json:"free_tier_pending"`
-	CreditAvailable   uint64                `json:"credit_available"`
-	CreditPending     uint64                `json:"credit_pending"`
-	TotalAvailable    uint64                `json:"total_available"`
-}
-
-type GrantResponse struct {
-	GrantID   string     `json:"grant_id"`
-	Source    string     `json:"source"`
-	Available uint64     `json:"available"`
-	Pending   uint64     `json:"pending"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-}
-
-type GrantsResponse struct {
-	Grants []GrantResponse `json:"grants"`
-}
-
-type SubscriptionsResponse struct {
-	Subscriptions []SubscriptionResponse `json:"subscriptions"`
-}
-
-type SubscriptionResponse struct {
-	SubscriptionID     int64      `json:"subscription_id"`
-	ProductID          string     `json:"product_id"`
-	PlanID             string     `json:"plan_id"`
-	Cadence            string     `json:"cadence"`
-	Status             string     `json:"status"`
-	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
-	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
-}
+type (
+	BalanceResponse       = apiwire.BillingBalance
+	GrantResponse         = apiwire.BillingGrant
+	GrantsResponse        = apiwire.BillingGrants
+	SubscriptionsResponse = apiwire.BillingSubscriptions
+	SubscriptionResponse  = apiwire.BillingSubscription
+)
 
 type CreateCheckoutRequest struct {
 	OrgID       apiwire.DecimalUint64 `json:"org_id"`
 	ProductID   string                `json:"product_id" minLength:"1" maxLength:"255"`
-	AmountCents int64                 `json:"amount_cents" minimum:"1"`
+	AmountCents int64                 `json:"amount_cents" minimum:"1" maximum:"9007199254740991"`
 	SuccessURL  string                `json:"success_url" minLength:"1" maxLength:"2048"`
 	CancelURL   string                `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
@@ -128,35 +101,14 @@ type ReserveWindowRequest struct {
 	OrgID           apiwire.DecimalUint64 `json:"org_id"`
 	ProductID       string                `json:"product_id" minLength:"1" maxLength:"255"`
 	ActorID         string                `json:"actor_id" minLength:"1" maxLength:"255"`
-	ConcurrentCount uint64                `json:"concurrent_count" minimum:"0"`
+	ConcurrentCount uint64                `json:"concurrent_count" minimum:"0" maximum:"9007199254740991"`
 	SourceType      string                `json:"source_type" minLength:"1" maxLength:"255"`
 	SourceRef       string                `json:"source_ref" minLength:"1" maxLength:"255"`
 	Allocation      map[string]float64    `json:"allocation" minProperties:"1"`
 }
 
 type ReserveWindowResult struct {
-	Reservation WindowReservationResponse `json:"reservation"`
-}
-
-type WindowReservationResponse struct {
-	WindowID            string                `json:"window_id"`
-	OrgID               apiwire.DecimalUint64 `json:"org_id"`
-	ProductID           string                `json:"product_id"`
-	PlanID              string                `json:"plan_id"`
-	ActorID             string                `json:"actor_id"`
-	SourceType          string                `json:"source_type"`
-	SourceRef           string                `json:"source_ref"`
-	WindowSeq           uint32                `json:"window_seq"`
-	ReservationShape    string                `json:"reservation_shape"`
-	ReservedQuantity    uint32                `json:"reserved_quantity"`
-	ReservedChargeUnits uint64                `json:"reserved_charge_units"`
-	PricingPhase        string                `json:"pricing_phase"`
-	Allocation          map[string]float64    `json:"allocation"`
-	UnitRates           map[string]uint64     `json:"unit_rates"`
-	CostPerUnit         uint64                `json:"cost_per_unit"`
-	WindowStart         time.Time             `json:"window_start"`
-	ExpiresAt           time.Time             `json:"expires_at"`
-	RenewBy             *time.Time            `json:"renew_by,omitempty"`
+	Reservation apiwire.BillingWindowReservation `json:"reservation"`
 }
 
 type SettleWindowRequest struct {
@@ -192,8 +144,8 @@ func billingOrgIDFromUint64(parsed uint64) (billing.OrgID, error) {
 	return billing.OrgID(parsed), nil
 }
 
-func windowReservationResponse(reservation billing.WindowReservation) WindowReservationResponse {
-	return WindowReservationResponse{
+func windowReservationResponse(reservation billing.WindowReservation) apiwire.BillingWindowReservation {
+	return apiwire.BillingWindowReservation{
 		WindowID:            reservation.WindowID,
 		OrgID:               apiwire.Uint64(uint64(reservation.OrgID)),
 		ProductID:           reservation.ProductID,
@@ -204,14 +156,37 @@ func windowReservationResponse(reservation billing.WindowReservation) WindowRese
 		WindowSeq:           reservation.WindowSeq,
 		ReservationShape:    string(reservation.ReservationShape),
 		ReservedQuantity:    reservation.ReservedQuantity,
-		ReservedChargeUnits: reservation.ReservedChargeUnits,
+		ReservedChargeUnits: apiwire.Uint64(reservation.ReservedChargeUnits),
 		PricingPhase:        string(reservation.PricingPhase),
 		Allocation:          reservation.Allocation,
-		UnitRates:           reservation.UnitRates,
-		CostPerUnit:         reservation.CostPerUnit,
+		UnitRates:           decimalUnitRates(reservation.UnitRates),
+		CostPerUnit:         apiwire.Uint64(reservation.CostPerUnit),
 		WindowStart:         reservation.WindowStart,
 		ExpiresAt:           reservation.ExpiresAt,
 		RenewBy:             reservation.RenewBy,
+	}
+}
+
+func decimalUnitRates(unitRates map[string]uint64) map[string]apiwire.DecimalUint64 {
+	if len(unitRates) == 0 {
+		return map[string]apiwire.DecimalUint64{}
+	}
+	out := make(map[string]apiwire.DecimalUint64, len(unitRates))
+	for unit, rate := range unitRates {
+		out[unit] = apiwire.Uint64(rate)
+	}
+	return out
+}
+
+func settleResultResponse(result billing.SettleResult) apiwire.BillingSettleResult {
+	return apiwire.BillingSettleResult{
+		WindowID:            result.WindowID,
+		ActualQuantity:      result.ActualQuantity,
+		BillableQuantity:    result.BillableQuantity,
+		WriteoffQuantity:    result.WriteoffQuantity,
+		BilledChargeUnits:   apiwire.Uint64(result.BilledChargeUnits),
+		WriteoffChargeUnits: apiwire.Uint64(result.WriteoffChargeUnits),
+		SettledAt:           result.SettledAt,
 	}
 }
 
@@ -259,11 +234,11 @@ func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[Balance
 	}
 	return &body[BalanceResponse]{Body: BalanceResponse{
 		OrgID:             apiwire.Uint64(uint64(orgID)),
-		FreeTierAvailable: balance.FreeTierAvailable,
-		FreeTierPending:   balance.FreeTierPending,
-		CreditAvailable:   balance.CreditAvailable,
-		CreditPending:     balance.CreditPending,
-		TotalAvailable:    balance.TotalAvailable,
+		FreeTierAvailable: apiwire.Uint64(balance.FreeTierAvailable),
+		FreeTierPending:   apiwire.Uint64(balance.FreeTierPending),
+		CreditAvailable:   apiwire.Uint64(balance.CreditAvailable),
+		CreditPending:     apiwire.Uint64(balance.CreditPending),
+		TotalAvailable:    apiwire.Uint64(balance.TotalAvailable),
 	}}, nil
 }
 
@@ -285,8 +260,8 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 		out = append(out, GrantResponse{
 			GrantID:   grant.GrantID.String(),
 			Source:    grant.Source.String(),
-			Available: grant.Available,
-			Pending:   grant.Pending,
+			Available: apiwire.Uint64(grant.Available),
+			Pending:   apiwire.Uint64(grant.Pending),
 			ExpiresAt: grant.ExpiresAt,
 		})
 	}
@@ -309,7 +284,7 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	out := make([]SubscriptionResponse, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
 		out = append(out, SubscriptionResponse{
-			SubscriptionID:     subscription.SubscriptionID,
+			SubscriptionID:     apiwire.Int64(subscription.SubscriptionID),
 			ProductID:          subscription.ProductID,
 			PlanID:             subscription.PlanID,
 			Cadence:            subscription.Cadence,
@@ -381,7 +356,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[ReserveWindowRe
 	return &body[ReserveWindowResult]{Body: ReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
 }
 
-func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequest]) (*body[billing.SettleResult], error) {
+func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -390,7 +365,7 @@ func (h *Handler) settleWindow(ctx context.Context, input *body[SettleWindowRequ
 	if err != nil {
 		return nil, h.settleWindowError(ctx, input.Body, err)
 	}
-	return &body[billing.SettleResult]{Body: result}, nil
+	return &body[apiwire.BillingSettleResult]{Body: settleResultResponse(result)}, nil
 }
 
 func (h *Handler) voidWindow(ctx context.Context, input *body[VoidWindowRequest]) (*body[VoidWindowResult], error) {

@@ -35,16 +35,85 @@ func (e CreateSubscriptionRequestCadence) Valid() bool {
 	}
 }
 
-// BalanceResponse defines model for BalanceResponse.
-type BalanceResponse struct {
+// BillingBalance defines model for BillingBalance.
+type BillingBalance struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema            *string `json:"$schema,omitempty"`
-	CreditAvailable   int64   `json:"credit_available"`
-	CreditPending     int64   `json:"credit_pending"`
-	FreeTierAvailable int64   `json:"free_tier_available"`
-	FreeTierPending   int64   `json:"free_tier_pending"`
+	CreditAvailable   string  `json:"credit_available"`
+	CreditPending     string  `json:"credit_pending"`
+	FreeTierAvailable string  `json:"free_tier_available"`
+	FreeTierPending   string  `json:"free_tier_pending"`
 	OrgId             string  `json:"org_id"`
-	TotalAvailable    int64   `json:"total_available"`
+	TotalAvailable    string  `json:"total_available"`
+}
+
+// BillingGrant defines model for BillingGrant.
+type BillingGrant struct {
+	Available string     `json:"available"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	GrantId   string     `json:"grant_id"`
+	Pending   string     `json:"pending"`
+	Source    string     `json:"source"`
+}
+
+// BillingGrants defines model for BillingGrants.
+type BillingGrants struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string         `json:"$schema,omitempty"`
+	Grants *[]BillingGrant `json:"grants"`
+}
+
+// BillingSettleResult defines model for BillingSettleResult.
+type BillingSettleResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema              *string   `json:"$schema,omitempty"`
+	ActualQuantity      int32     `json:"actual_quantity"`
+	BillableQuantity    int32     `json:"billable_quantity"`
+	BilledChargeUnits   string    `json:"billed_charge_units"`
+	SettledAt           time.Time `json:"settled_at"`
+	WindowId            string    `json:"window_id"`
+	WriteoffChargeUnits string    `json:"writeoff_charge_units"`
+	WriteoffQuantity    int32     `json:"writeoff_quantity"`
+}
+
+// BillingSubscription defines model for BillingSubscription.
+type BillingSubscription struct {
+	Cadence            string     `json:"cadence"`
+	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
+	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
+	PlanId             string     `json:"plan_id"`
+	ProductId          string     `json:"product_id"`
+	Status             string     `json:"status"`
+	SubscriptionId     string     `json:"subscription_id"`
+}
+
+// BillingSubscriptions defines model for BillingSubscriptions.
+type BillingSubscriptions struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string                `json:"$schema,omitempty"`
+	Subscriptions *[]BillingSubscription `json:"subscriptions"`
+}
+
+// BillingWindowReservation defines model for BillingWindowReservation.
+type BillingWindowReservation struct {
+	ActorId             string             `json:"actor_id"`
+	Allocation          map[string]float64 `json:"allocation"`
+	CostPerUnit         string             `json:"cost_per_unit"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	OrgId               string             `json:"org_id"`
+	PlanId              string             `json:"plan_id"`
+	PricingPhase        string             `json:"pricing_phase"`
+	ProductId           string             `json:"product_id"`
+	RenewBy             *time.Time         `json:"renew_by,omitempty"`
+	ReservationShape    string             `json:"reservation_shape"`
+	ReservedChargeUnits string             `json:"reserved_charge_units"`
+	ReservedQuantity    int32              `json:"reserved_quantity"`
+	SourceRef           string             `json:"source_ref"`
+	SourceType          string             `json:"source_type"`
+	UnitRates           map[string]string  `json:"unit_rates"`
+	WindowId            string             `json:"window_id"`
+	WindowSeq           int32              `json:"window_seq"`
+	WindowStart         time.Time          `json:"window_start"`
 }
 
 // CreateCheckoutRequest defines model for CreateCheckoutRequest.
@@ -108,22 +177,6 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// GrantResponse defines model for GrantResponse.
-type GrantResponse struct {
-	Available int64      `json:"available"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	GrantId   string     `json:"grant_id"`
-	Pending   int64      `json:"pending"`
-	Source    string     `json:"source"`
-}
-
-// GrantsResponse defines model for GrantsResponse.
-type GrantsResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string          `json:"$schema,omitempty"`
-	Grants *[]GrantResponse `json:"grants"`
-}
-
 // ReserveWindowRequest defines model for ReserveWindowRequest.
 type ReserveWindowRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -140,21 +193,8 @@ type ReserveWindowRequest struct {
 // ReserveWindowResult defines model for ReserveWindowResult.
 type ReserveWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema      *string                   `json:"$schema,omitempty"`
-	Reservation WindowReservationResponse `json:"reservation"`
-}
-
-// SettleResult defines model for SettleResult.
-type SettleResult struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema              *string   `json:"$schema,omitempty"`
-	ActualQuantity      int32     `json:"actual_quantity"`
-	BillableQuantity    int32     `json:"billable_quantity"`
-	BilledChargeUnits   int64     `json:"billed_charge_units"`
-	SettledAt           time.Time `json:"settled_at"`
-	WindowId            string    `json:"window_id"`
-	WriteoffChargeUnits int64     `json:"writeoff_charge_units"`
-	WriteoffQuantity    int32     `json:"writeoff_quantity"`
+	Schema      *string                  `json:"$schema,omitempty"`
+	Reservation BillingWindowReservation `json:"reservation"`
 }
 
 // SettleWindowRequest defines model for SettleWindowRequest.
@@ -164,24 +204,6 @@ type SettleWindowRequest struct {
 	ActualQuantity int32                   `json:"actual_quantity"`
 	UsageSummary   *map[string]interface{} `json:"usage_summary,omitempty"`
 	WindowId       string                  `json:"window_id"`
-}
-
-// SubscriptionResponse defines model for SubscriptionResponse.
-type SubscriptionResponse struct {
-	Cadence            string     `json:"cadence"`
-	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
-	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
-	PlanId             string     `json:"plan_id"`
-	ProductId          string     `json:"product_id"`
-	Status             string     `json:"status"`
-	SubscriptionId     int64      `json:"subscription_id"`
-}
-
-// SubscriptionsResponse defines model for SubscriptionsResponse.
-type SubscriptionsResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                 `json:"$schema,omitempty"`
-	Subscriptions *[]SubscriptionResponse `json:"subscriptions"`
 }
 
 // URLResponse defines model for URLResponse.
@@ -203,28 +225,6 @@ type VoidWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string `json:"$schema,omitempty"`
 	WindowId string  `json:"window_id"`
-}
-
-// WindowReservationResponse defines model for WindowReservationResponse.
-type WindowReservationResponse struct {
-	ActorId             string             `json:"actor_id"`
-	Allocation          map[string]float64 `json:"allocation"`
-	CostPerUnit         int64              `json:"cost_per_unit"`
-	ExpiresAt           time.Time          `json:"expires_at"`
-	OrgId               string             `json:"org_id"`
-	PlanId              string             `json:"plan_id"`
-	PricingPhase        string             `json:"pricing_phase"`
-	ProductId           string             `json:"product_id"`
-	RenewBy             *time.Time         `json:"renew_by,omitempty"`
-	ReservationShape    string             `json:"reservation_shape"`
-	ReservedChargeUnits int64              `json:"reserved_charge_units"`
-	ReservedQuantity    int32              `json:"reserved_quantity"`
-	SourceRef           string             `json:"source_ref"`
-	SourceType          string             `json:"source_type"`
-	UnitRates           map[string]int64   `json:"unit_rates"`
-	WindowId            string             `json:"window_id"`
-	WindowSeq           int32              `json:"window_seq"`
-	WindowStart         time.Time          `json:"window_start"`
 }
 
 // ListGrantsParams defines parameters for ListGrants.
@@ -956,7 +956,7 @@ func (r CreateCheckoutResponse) StatusCode() int {
 type GetBalanceResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *BalanceResponse
+	JSON200                       *BillingBalance
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -979,7 +979,7 @@ func (r GetBalanceResponse) StatusCode() int {
 type ListGrantsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *GrantsResponse
+	JSON200                       *BillingGrants
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1002,7 +1002,7 @@ func (r ListGrantsResponse) StatusCode() int {
 type ListSubscriptionsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *SubscriptionsResponse
+	JSON200                       *BillingSubscriptions
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1051,7 +1051,7 @@ func (r ReserveWindowResponse) StatusCode() int {
 type SettleWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *SettleResult
+	JSON200                   *BillingSettleResult
 	ApplicationproblemJSON400 *ErrorModel
 	ApplicationproblemJSON404 *ErrorModel
 	ApplicationproblemJSON422 *ErrorModel
@@ -1285,7 +1285,7 @@ func ParseGetBalanceResponse(rsp *http.Response) (*GetBalanceResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BalanceResponse
+		var dest BillingBalance
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1318,7 +1318,7 @@ func ParseListGrantsResponse(rsp *http.Response) (*ListGrantsResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest GrantsResponse
+		var dest BillingGrants
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1351,7 +1351,7 @@ func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsRespo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SubscriptionsResponse
+		var dest BillingSubscriptions
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1438,7 +1438,7 @@ func ParseSettleWindowResponse(rsp *http.Response) (*SettleWindowResponse, error
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SettleResult
+		var dest BillingSettleResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

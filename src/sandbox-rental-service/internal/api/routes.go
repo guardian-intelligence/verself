@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -139,11 +138,11 @@ type RepoIDPath struct {
 }
 
 type RepoOutput struct {
-	Body jobs.RepoRecord
+	Body RepoRecord
 }
 
 type ListReposOutput struct {
-	Body []jobs.RepoRecord
+	Body []RepoRecord
 }
 
 type ListRepoGenerationsOutput struct {
@@ -151,7 +150,7 @@ type ListRepoGenerationsOutput struct {
 }
 
 type RefreshRepoOutput struct {
-	Body jobs.RepoBootstrapRecord
+	Body RepoBootstrapRecord
 }
 
 type SubmitExecutionOutput struct {
@@ -167,7 +166,7 @@ type ExecutionIDPath struct {
 }
 
 type GetExecutionOutput struct {
-	Body jobs.ExecutionRecord
+	Body ExecutionRecord
 }
 
 type GetExecutionLogsOutput struct {
@@ -180,21 +179,14 @@ type GetExecutionLogsOutput struct {
 
 type EmptyInput struct{}
 
-type BalanceResponse struct {
-	OrgID             apiwire.DecimalUint64 `json:"org_id"`
-	FreeTierAvailable int64                 `json:"free_tier_available"`
-	FreeTierPending   int64                 `json:"free_tier_pending"`
-	CreditAvailable   int64                 `json:"credit_available"`
-	CreditPending     int64                 `json:"credit_pending"`
-	TotalAvailable    int64                 `json:"total_available"`
-}
+type BalanceResponse = apiwire.BillingBalance
 
 type BalanceOutput struct {
 	Body BalanceResponse
 }
 
 type SubscriptionsOutput struct {
-	Body billingclient.SubscriptionsResponse
+	Body apiwire.BillingSubscriptions
 }
 
 type GrantsInput struct {
@@ -203,13 +195,13 @@ type GrantsInput struct {
 }
 
 type GrantsOutput struct {
-	Body billingclient.GrantsResponse
+	Body apiwire.BillingGrants
 }
 
 type CheckoutInput struct {
 	Body struct {
 		ProductID   string `json:"product_id" required:"true" maxLength:"255" doc:"Product to purchase credits for"`
-		AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" doc:"Amount in cents"`
+		AmountCents int64  `json:"amount_cents" required:"true" minimum:"1" maximum:"9007199254740991" doc:"Amount in cents"`
 		SuccessURL  string `json:"success_url" required:"true" maxLength:"2048"`
 		CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
 	}
@@ -243,7 +235,7 @@ func requireOrgID(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
+	orgID, err := apiwire.ParseUint64(identity.OrgID)
 	if err != nil {
 		return 0, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
 	}
@@ -260,7 +252,7 @@ func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*Rep
 		if err != nil {
 			return nil, huma.Error500InternalServerError("import repo", err)
 		}
-		return &RepoOutput{Body: *repo}, nil
+		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
 }
 
@@ -274,7 +266,7 @@ func listRepos(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListRepos
 		if err != nil {
 			return nil, huma.Error500InternalServerError("list repos", err)
 		}
-		return &ListReposOutput{Body: repos}, nil
+		return &ListReposOutput{Body: repoRecords(repos)}, nil
 	}
 }
 
@@ -295,7 +287,7 @@ func getRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutput,
 			}
 			return nil, huma.Error500InternalServerError("get repo", err)
 		}
-		return &RepoOutput{Body: *repo}, nil
+		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
 }
 
@@ -316,7 +308,7 @@ func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutp
 			}
 			return nil, huma.Error500InternalServerError("rescan repo", err)
 		}
-		return &RepoOutput{Body: *repo}, nil
+		return &RepoOutput{Body: repoRecord(*repo)}, nil
 	}
 }
 
@@ -370,7 +362,7 @@ func refreshRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*Refresh
 				return nil, huma.Error500InternalServerError("refresh repo", err)
 			}
 		}
-		return &RefreshRepoOutput{Body: *record}, nil
+		return &RefreshRepoOutput{Body: repoBootstrapRecord(*record)}, nil
 	}
 }
 
@@ -381,9 +373,9 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			return nil, err
 		}
 
-		orgID, err := strconv.ParseUint(identity.OrgID, 10, 64)
+		orgID, err := requireOrgID(ctx)
 		if err != nil {
-			return nil, huma.Error400BadRequest("invalid org_id in token: " + identity.OrgID)
+			return nil, err
 		}
 
 		executionID, attemptID, err := svc.Submit(ctx, orgID, identity.Subject, input.Body)
@@ -428,7 +420,7 @@ func getExecution(svc *jobs.Service) func(context.Context, *ExecutionIDPath) (*G
 		}
 
 		out := &GetExecutionOutput{}
-		out.Body = *execution
+		out.Body = executionRecord(*execution)
 		return out, nil
 	}
 }
@@ -470,14 +462,7 @@ func getBillingBalance(billing *billingclient.ServiceClient) func(context.Contex
 		if err != nil {
 			return nil, billingProxyError(err)
 		}
-		return &BalanceOutput{Body: BalanceResponse{
-			OrgID:             apiwire.Uint64(orgID),
-			FreeTierAvailable: balance.FreeTierAvailable,
-			FreeTierPending:   balance.FreeTierPending,
-			CreditAvailable:   balance.CreditAvailable,
-			CreditPending:     balance.CreditPending,
-			TotalAvailable:    balance.TotalAvailable,
-		}}, nil
+		return &BalanceOutput{Body: balance}, nil
 	}
 }
 
