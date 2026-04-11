@@ -7,3 +7,4 @@ letters_dependencies_fingerprint_path: "{{ letters_install_dir }}/.pnpm-install-
 letters_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 letters_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 letters_auth_project_name: letters
+letters_force_schema_reset: false

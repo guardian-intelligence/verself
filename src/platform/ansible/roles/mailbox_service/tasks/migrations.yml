@@ -29,15 +29,17 @@
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   register: mailbox_service_pg_table_probe
+  failed_when: false
   changed_when: false
   no_log: true
 
 - name: Apply mailbox-service PostgreSQL migrations
   when: >-
-    mailbox_service_pg_migrations_remote_hash is failed
+    mailbox_service_force_schema_reset
+    or mailbox_service_pg_migrations_remote_hash is failed
     or (mailbox_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
        != (mailbox_service_pg_migrations_local_hash.stdout.split()[0] | trim)
-    or (mailbox_service_pg_table_probe.stdout | trim) == '0'
+    or (mailbox_service_pg_table_probe.stdout | default('0', true) | trim) == '0'
   block:
     - name: Remove deployed mailbox-service migrations directory
       ansible.builtin.file:
@@ -58,57 +60,15 @@
         dest: /opt/forge-metal/mailbox-service-migrations/
         mode: "0644"
 
-    - name: Stop mailbox-service before schema recreate
-      ansible.builtin.systemd:
-        name: mailbox-service
-        state: stopped
-      failed_when: false
-
-    - name: Terminate mailbox_service connections before recreate
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U postgres
-          -d postgres
-          -v ON_ERROR_STOP=1
-          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'mailbox_service' AND pid <> pg_backend_pid();"
-      environment:
-        PGPASSWORD: "{{ postgresql_admin_password }}"
-      changed_when: false
-      no_log: true
-
-    # Ansible PostgreSQL helpers can open idle connections after termination; FORCE closes that reset race.
-    - name: Drop mailbox_service database before schema recreate
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U postgres
-          -d postgres
-          -v ON_ERROR_STOP=1
-          -c "DROP DATABASE IF EXISTS mailbox_service WITH (FORCE);"
-      environment:
-        PGPASSWORD: "{{ postgresql_admin_password }}"
-      changed_when: false
-      no_log: true
-
-    - name: Create mailbox_service database
-      ansible.builtin.command:
-        cmd: >-
-          {{ fm_bin }}/psql
-          -h {{ services.postgresql.host }}
-          -p {{ services.postgresql.port }}
-          -U postgres
-          -d postgres
-          -v ON_ERROR_STOP=1
-          -c "CREATE DATABASE mailbox_service OWNER mailbox_service;"
-      environment:
-        PGPASSWORD: "{{ postgresql_admin_password }}"
-      changed_when: false
-      no_log: true
+    - name: Reset mailbox_service PostgreSQL database
+      ansible.builtin.include_role:
+        name: postgresql_db_reset
+      vars:
+        postgresql_db_reset_name: mailbox_service
+        postgresql_db_reset_owner: mailbox_service
+        postgresql_db_reset_stop_units:
+          - mailbox-service
+          - electric-mail
 
     - name: Apply mailbox-service PostgreSQL migration files
       ansible.builtin.command:
