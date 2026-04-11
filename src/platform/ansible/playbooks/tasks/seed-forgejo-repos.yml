@@ -108,6 +108,7 @@
     seed_forgejo_webhook_label: "platform-forgejo-{{ seed_forgejo_owner }}-forge-metal"
     seed_forgejo_sandbox_base_url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}"
     seed_forgejo_repo_api_url: "http://{{ services.forgejo.host }}:{{ services.forgejo.port }}/api/v1/repos/{{ seed_forgejo_owner }}/forge-metal"
+    seed_forgejo_webhook_public_base_url: "https://{{ sandbox_rental_service_domain | default('rentasandbox.' ~ forge_metal_domain, true) }}"
     seed_forgejo_webhook_events:
       - push
       - pull_request
@@ -186,6 +187,7 @@
           scope: >-
             openid profile
             urn:zitadel:iam:user:resourceowner
+            urn:zitadel:iam:org:projects:roles
             urn:zitadel:iam:org:project:id:{{ seed_forgejo_sandbox_project_id }}:aud
         url_username: "{{ seed_forgejo_webhook_machine_username }}"
         url_password: "{{ seed_forgejo_webhook_user_secret.json.clientSecret }}"
@@ -280,7 +282,7 @@
 
     - name: Set Forgejo webhook target URL
       ansible.builtin.set_fact:
-        seed_forgejo_webhook_url: "{{ seed_forgejo_sandbox_base_url }}/webhooks/ingest/{{ seed_forgejo_webhook_endpoint.endpoint_id }}"
+        seed_forgejo_webhook_url: "{{ seed_forgejo_webhook_public_base_url }}/webhooks/ingest/{{ seed_forgejo_webhook_endpoint.endpoint_id }}"
         seed_forgejo_webhook_delivery_count_before: "{{ seed_forgejo_webhook_endpoint.delivery_count | default(0) | int }}"
 
     - name: List Forgejo repo webhooks
@@ -298,12 +300,22 @@
       ansible.builtin.set_fact:
         seed_forgejo_webhook_hook: >-
           {{
-            seed_forgejo_existing_hooks.json
-            | default([])
-            | selectattr('url', 'equalto', seed_forgejo_webhook_url)
-            | list
-            | first
-            | default({})
+            (
+              seed_forgejo_existing_hooks.json
+              | default([])
+              | selectattr('url', 'equalto', seed_forgejo_webhook_url)
+              | list
+              | first
+            ) | default(
+              (
+                seed_forgejo_existing_hooks.json
+                | default([])
+                | selectattr('url', 'search', '/webhooks/ingest/' ~ seed_forgejo_webhook_endpoint.endpoint_id)
+                | list
+                | first
+              ),
+              true
+            ) | default({}, true)
           }}
 
     - name: Set Forgejo webhook reconcile decision
@@ -311,6 +323,7 @@
         seed_forgejo_webhook_hook_needs_reconcile: >-
           {{
             seed_forgejo_webhook_hook == {}
+            or (seed_forgejo_webhook_hook.url | default('')) != seed_forgejo_webhook_url
             or not (seed_forgejo_webhook_hook.active | default(false) | bool)
             or ('push' not in (seed_forgejo_webhook_hook.events | default([])))
             or ('pull_request' not in (seed_forgejo_webhook_hook.events | default([])))
@@ -485,9 +498,28 @@
   delegate_to: localhost
   become: false
   register: seed_forgejo_push
-  changed_when: "'Everything up-to-date' not in seed_forgejo_push.stderr"
+  changed_when:
+    - seed_forgejo_push.rc == 0
+    - "'Everything up-to-date' not in seed_forgejo_push.stderr"
+  failed_when:
+    - seed_forgejo_push.rc != 0
+    - "'fetch first' not in seed_forgejo_push.stderr"
+    - "'non-fast-forward' not in seed_forgejo_push.stderr"
   environment:
     GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new -p {{ services.forgejo.ssh_port }}"
+
+- name: Set Forgejo push state
+  ansible.builtin.set_fact:
+    seed_forgejo_push_state: >-
+      {{
+        'remote-ahead'
+        if seed_forgejo_push.rc != 0
+        else (
+          'up-to-date'
+          if 'Everything up-to-date' in (seed_forgejo_push.stderr | default(''))
+          else 'pushed'
+        )
+      }}
 
 - name: Test Forgejo repo webhook when seed push is up to date
   ansible.builtin.uri:
@@ -497,8 +529,8 @@
       Authorization: "token {{ seed_forgejo_automation_token }}"
     status_code: 204
   when:
-    - seed_forgejo_hook_changed | bool
-    - "'Everything up-to-date' in (seed_forgejo_push.stderr | default(''))"
+    - seed_forgejo_hook_changed | bool or seed_forgejo_push_state == 'remote-ahead'
+    - seed_forgejo_push_state != 'pushed'
   no_log: true
 
 - name: Wait for sandbox-rental webhook delivery from Forgejo seed
@@ -511,23 +543,22 @@
     status_code: 200
   register: seed_forgejo_webhook_endpoint_verify
   until: >-
-    {{
-      (
-        seed_forgejo_webhook_endpoint_verify.json
-        | default([])
-        | selectattr('endpoint_id', 'equalto', seed_forgejo_webhook_endpoint.endpoint_id)
-        | map(attribute='delivery_count')
-        | list
-        | first
-        | default(seed_forgejo_webhook_delivery_count_before)
-        | int
-      ) > (seed_forgejo_webhook_delivery_count_before | int)
-    }}
+    (
+      seed_forgejo_webhook_endpoint_verify.json
+      | default([])
+      | selectattr('endpoint_id', 'equalto', seed_forgejo_webhook_endpoint.endpoint_id)
+      | map(attribute='delivery_count')
+      | list
+      | first
+      | default(seed_forgejo_webhook_delivery_count_before)
+      | int
+    ) > (seed_forgejo_webhook_delivery_count_before | int)
   retries: 30
   delay: 1
   when: >-
     seed_forgejo_hook_changed | bool
-    or ('Everything up-to-date' not in (seed_forgejo_push.stderr | default('')))
+    or seed_forgejo_push_state == 'pushed'
+    or seed_forgejo_push_state == 'remote-ahead'
   no_log: true
 
 - name: Cleanup temporary sandbox-rental webhook seed user
@@ -550,4 +581,4 @@
       - "SSH key:      {{ 'registered' if not seed_forgejo_key_exists else 'already present' }}"
       - "Repo:         {{ 'created' if seed_forgejo_repo_check.status == 404 else 'already exists' }}"
       - "Hook:         {{ 'created/updated' if seed_forgejo_hook_changed else 'already present' }}"
-      - "Push:         {{ 'up-to-date' if 'Everything up-to-date' in (seed_forgejo_push.stderr | default('')) else 'pushed' }}"
+      - "Push:         {{ seed_forgejo_push_state }}"
