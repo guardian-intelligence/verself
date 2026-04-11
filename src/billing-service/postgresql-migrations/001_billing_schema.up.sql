@@ -103,6 +103,7 @@ CREATE TABLE billing_windows (
     usage_summary           JSONB       NOT NULL DEFAULT '{}'::jsonb,
     funding_legs            JSONB       NOT NULL DEFAULT '[]'::jsonb,
     window_start            TIMESTAMPTZ NOT NULL,
+    activated_at            TIMESTAMPTZ,
     expires_at              TIMESTAMPTZ NOT NULL,
     renew_by                TIMESTAMPTZ,
     settled_at              TIMESTAMPTZ,

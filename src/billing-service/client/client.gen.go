@@ -35,6 +35,21 @@ func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
 	}
 }
 
+// BillingActivateWindowRequest defines model for BillingActivateWindowRequest.
+type BillingActivateWindowRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string   `json:"$schema,omitempty"`
+	ActivatedAt time.Time `json:"activated_at"`
+	WindowId    string    `json:"window_id"`
+}
+
+// BillingActivateWindowResult defines model for BillingActivateWindowResult.
+type BillingActivateWindowResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                  `json:"$schema,omitempty"`
+	Reservation BillingWindowReservation `json:"reservation"`
+}
+
 // BillingBalance defines model for BillingBalance.
 type BillingBalance struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -179,6 +194,7 @@ type BillingVoidWindowResult struct {
 
 // BillingWindowReservation defines model for BillingWindowReservation.
 type BillingWindowReservation struct {
+	ActivatedAt         *time.Time         `json:"activated_at,omitempty"`
 	ActorId             string             `json:"actor_id"`
 	Allocation          map[string]float64 `json:"allocation"`
 	CostPerUnit         string             `json:"cost_per_unit"`
@@ -240,6 +256,9 @@ type ListGrantsParams struct {
 	ProductId *string `form:"product_id,omitempty" json:"product_id,omitempty"`
 	Active    *bool   `form:"active,omitempty" json:"active,omitempty"`
 }
+
+// ActivateWindowJSONRequestBody defines body for ActivateWindow for application/json ContentType.
+type ActivateWindowJSONRequestBody = BillingActivateWindowRequest
 
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
 type CreateCheckoutJSONRequestBody = BillingCreateCheckoutRequest
@@ -332,6 +351,11 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ActivateWindowWithBody request with any body
+	ActivateWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ActivateWindow(ctx context.Context, body ActivateWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateCheckoutWithBody request with any body
 	CreateCheckoutWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -370,6 +394,30 @@ type ClientInterface interface {
 	VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	VoidWindow(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ActivateWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActivateWindowRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ActivateWindow(ctx context.Context, body ActivateWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActivateWindowRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) CreateCheckoutWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -550,6 +598,46 @@ func (c *Client) VoidWindow(ctx context.Context, body VoidWindowJSONRequestBody,
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewActivateWindowRequest calls the generic ActivateWindow builder with application/json body
+func NewActivateWindowRequest(server string, body ActivateWindowJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewActivateWindowRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewActivateWindowRequestWithBody generates requests for ActivateWindow with any type of body
+func NewActivateWindowRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/activate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewCreateCheckoutRequest calls the generic CreateCheckout builder with application/json body
@@ -975,6 +1063,11 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ActivateWindowWithBodyWithResponse request with any body
+	ActivateWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActivateWindowResponse, error)
+
+	ActivateWindowWithResponse(ctx context.Context, body ActivateWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*ActivateWindowResponse, error)
+
 	// CreateCheckoutWithBodyWithResponse request with any body
 	CreateCheckoutWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
@@ -1013,6 +1106,32 @@ type ClientWithResponsesInterface interface {
 	VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
 
 	VoidWindowWithResponse(ctx context.Context, body VoidWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
+}
+
+type ActivateWindowResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingActivateWindowResult
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ActivateWindowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ActivateWindowResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type CreateCheckoutResponse struct {
@@ -1233,6 +1352,23 @@ func (r VoidWindowResponse) StatusCode() int {
 	return 0
 }
 
+// ActivateWindowWithBodyWithResponse request with arbitrary body returning *ActivateWindowResponse
+func (c *ClientWithResponses) ActivateWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActivateWindowResponse, error) {
+	rsp, err := c.ActivateWindowWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActivateWindowResponse(rsp)
+}
+
+func (c *ClientWithResponses) ActivateWindowWithResponse(ctx context.Context, body ActivateWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*ActivateWindowResponse, error) {
+	rsp, err := c.ActivateWindow(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActivateWindowResponse(rsp)
+}
+
 // CreateCheckoutWithBodyWithResponse request with arbitrary body returning *CreateCheckoutResponse
 func (c *ClientWithResponses) CreateCheckoutWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error) {
 	rsp, err := c.CreateCheckoutWithBody(ctx, contentType, body, reqEditors...)
@@ -1360,6 +1496,60 @@ func (c *ClientWithResponses) VoidWindowWithResponse(ctx context.Context, body V
 		return nil, err
 	}
 	return ParseVoidWindowResponse(rsp)
+}
+
+// ParseActivateWindowResponse parses an HTTP response from a ActivateWindowWithResponse call
+func ParseActivateWindowResponse(rsp *http.Response) (*ActivateWindowResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ActivateWindowResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingActivateWindowResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseCreateCheckoutResponse parses an HTTP response from a CreateCheckoutWithResponse call
