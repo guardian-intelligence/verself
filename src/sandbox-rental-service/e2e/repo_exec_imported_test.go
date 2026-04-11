@@ -160,9 +160,10 @@ func TestSubmitExecutionAPI_ImportedRepoRejectsPreparingRepo(t *testing.T) {
 func submitImportedRepoExec(t *testing.T, ctx context.Context, baseURL, token, repoID string) executionSubmitView {
 	t.Helper()
 	body := map[string]any{
-		"kind":       "repo_exec",
-		"product_id": "sandbox",
-		"repo_id":    repoID,
+		"kind":            "repo_exec",
+		"product_id":      "sandbox",
+		"repo_id":         repoID,
+		"idempotency_key": "e2e-imported-repo-exec-" + repoID,
 	}
 	return doJSONRequest[executionSubmitView](t, ctx, baseURL+"/api/v1/executions", token, http.MethodPost, body, http.StatusCreated)
 }
@@ -170,9 +171,10 @@ func submitImportedRepoExec(t *testing.T, ctx context.Context, baseURL, token, r
 func expectRepoExecStatus(t *testing.T, ctx context.Context, baseURL, token, repoID string, wantStatus int) {
 	t.Helper()
 	body := map[string]any{
-		"kind":       "repo_exec",
-		"product_id": "sandbox",
-		"repo_id":    repoID,
+		"kind":            "repo_exec",
+		"product_id":      "sandbox",
+		"repo_id":         repoID,
+		"idempotency_key": "e2e-imported-repo-exec-status-" + repoID,
 	}
 	_ = doJSONRequestStatusOnly(t, ctx, baseURL+"/api/v1/executions", token, http.MethodPost, body, wantStatus)
 }

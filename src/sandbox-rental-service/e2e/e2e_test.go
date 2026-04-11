@@ -164,11 +164,12 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	// ---- 6. Submit execution ----
 
 	submitBody := map[string]any{
-		"kind":       "repo_exec",
-		"repo":       "toy-next-bun-monorepo",
-		"repo_url":   repoURL,
-		"ref":        repoRef,
-		"product_id": "sandbox",
+		"kind":            "repo_exec",
+		"repo":            "toy-next-bun-monorepo",
+		"repo_url":        repoURL,
+		"ref":             repoRef,
+		"product_id":      "sandbox",
+		"idempotency_key": "e2e-repo-exec-full-flow",
 	}
 	bodyBytes, err := json.Marshal(submitBody)
 	if err != nil {

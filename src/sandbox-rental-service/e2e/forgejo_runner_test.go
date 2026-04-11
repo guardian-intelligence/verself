@@ -131,6 +131,7 @@ func submitForgejoRunner(t *testing.T, ctx context.Context, baseURL, token, repo
 		"kind":              "forgejo_runner",
 		"product_id":        "sandbox",
 		"repo_id":           repoID,
+		"idempotency_key":   "e2e-forgejo-runner-" + repoID,
 		"provider_run_id":   "run-123",
 		"provider_job_id":   "job-456",
 		"workflow_job_name": "build",

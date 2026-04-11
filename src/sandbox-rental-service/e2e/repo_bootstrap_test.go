@@ -613,6 +613,9 @@ func doJSONRequest[T any](t *testing.T, ctx context.Context, url, token, method 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if method == http.MethodPost {
+		req.Header.Set("Idempotency-Key", "e2e-request")
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -651,6 +654,9 @@ func doJSONRequestStatusOnly(t *testing.T, ctx context.Context, url, token, meth
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if method == http.MethodPost {
+		req.Header.Set("Idempotency-Key", "e2e-request")
 	}
 
 	resp, err := http.DefaultClient.Do(req)

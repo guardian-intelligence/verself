@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/forge-metal/apiwire"
 	auth "github.com/forge-metal/auth-middleware"
 )
 
@@ -111,6 +113,63 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	}
 	if identityHasPermission(scopedClient, permissionExecutionSubmit) {
 		t.Fatal("direct OAuth scope should not grant unrelated permissions")
+	}
+}
+
+func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy operationPolicy
+		input  any
+		ctx    context.Context
+	}{
+		{
+			name:   "execution body key",
+			policy: operationPolicy{Idempotency: idempotencyRequestBodyKey},
+			input:  &SubmitExecutionInput{Body: apiwire.SandboxSubmitRequest{}},
+			ctx:    context.Background(),
+		},
+		{
+			name:   "repo import provider key",
+			policy: operationPolicy{Idempotency: idempotencyProviderRepoID},
+			input:  &ImportRepoInput{Body: apiwire.SandboxImportRepoRequest{}},
+			ctx:    context.Background(),
+		},
+		{
+			name:   "header idempotency key",
+			policy: operationPolicy{Idempotency: idempotencyHeaderKey},
+			input:  &RepoIDPath{RepoID: "repo-id"},
+			ctx:    context.Background(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := requireOperationIdempotency(tc.ctx, tc.policy, tc.input)
+			var statusErr huma.StatusError
+			if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusBadRequest {
+				t.Fatalf("expected bad request idempotency error, got %#v", err)
+			}
+		})
+	}
+}
+
+func TestFixedWindowOperationRateLimiter(t *testing.T) {
+	limiter := newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
+		"repo_mutation": {Limit: 2, Window: time.Minute},
+	})
+	now := time.Unix(1700000000, 0)
+	if decision := limiter.allow("repo_mutation", "org:subject:ip", now); !decision.Allowed {
+		t.Fatalf("first request should be allowed: %#v", decision)
+	}
+	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(time.Second)); !decision.Allowed {
+		t.Fatalf("second request should be allowed: %#v", decision)
+	}
+	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(2*time.Second)); decision.Allowed || decision.RetryAfter <= 0 {
+		t.Fatalf("third request should be throttled with retry_after: %#v", decision)
+	}
+	if decision := limiter.allow("repo_mutation", "org:subject:ip", now.Add(time.Minute)); !decision.Allowed {
+		t.Fatalf("next window should be allowed: %#v", decision)
 	}
 }
 

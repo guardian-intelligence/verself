@@ -757,6 +757,7 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.checkout.create
+        idempotency: idempotency_key_header
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
@@ -830,6 +831,7 @@ paths:
       x-forge-metal-iam:
         action: create
         audit_event: billing.subscription_checkout.create
+        idempotency: idempotency_key_header
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
@@ -1123,6 +1125,7 @@ paths:
       x-forge-metal-iam:
         action: refresh
         audit_event: sandbox.repo.refresh
+        idempotency: idempotency_key_header
         org_scope: token_org_id
         permission: sandbox:repo:write
         rate_limit_class: repo_mutation
@@ -1157,6 +1160,7 @@ paths:
       x-forge-metal-iam:
         action: rescan
         audit_event: sandbox.repo.rescan
+        idempotency: idempotency_key_header
         org_scope: token_org_id
         permission: sandbox:repo:write
         rate_limit_class: repo_mutation
