@@ -26,13 +26,10 @@ enum JobState {
 
 message JobConfig {
   string job_id = 1;
-  repeated string prepare_command = 2;
-  string prepare_work_dir = 3;
-  repeated string run_command = 4;
-  string run_work_dir = 5;
-  repeated string services = 6;
-  map<string, string> env = 7;
-  repeated string billable_phases = 8;
+  repeated string run_command = 2;
+  string run_work_dir = 3;
+  map<string, string> env = 4;
+  repeated string billable_phases = 5;
 }
 
 message RuntimeConfig {
@@ -80,19 +77,17 @@ message JobResult {
   int64 jail_setup_time_ms = 6;
   int64 vm_boot_time_ms = 7;
   int64 boot_to_ready_duration_ms = 8;
-  int64 prepare_duration_ms = 9;
-  int64 run_duration_ms = 10;
-  int64 service_start_duration_ms = 11;
-  int64 vm_exit_wait_duration_ms = 12;
-  int64 cleanup_time_ms = 13;
-  uint64 zfs_written = 14;
-  uint64 stdout_bytes = 15;
-  uint64 stderr_bytes = 16;
-  uint64 dropped_log_bytes = 17;
-  bool forced_shutdown = 18;
-  repeated PhaseResult phase_results = 19;
-  string failure_phase = 20;
-  VMMetrics metrics = 21;
+  int64 run_duration_ms = 9;
+  int64 vm_exit_wait_duration_ms = 10;
+  int64 cleanup_time_ms = 11;
+  uint64 zfs_written = 12;
+  uint64 stdout_bytes = 13;
+  uint64 stderr_bytes = 14;
+  uint64 dropped_log_bytes = 15;
+  bool forced_shutdown = 16;
+  repeated PhaseResult phase_results = 17;
+  string failure_phase = 18;
+  VMMetrics metrics = 19;
 }
 
 message DirectJobSpec {

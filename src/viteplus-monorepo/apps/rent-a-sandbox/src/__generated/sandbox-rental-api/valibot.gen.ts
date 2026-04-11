@@ -108,7 +108,6 @@ export const vSandboxAttemptRecord = v.strictObject({
   ),
   failure_reason: v.optional(v.string()),
   orchestrator_job_id: v.optional(v.string()),
-  runner_name: v.optional(v.string()),
   started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   state: v.string(),
   stderr_bytes: v.optional(
@@ -230,7 +229,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   actor_id: v.string(),
   billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
-  commit_sha: v.optional(v.string()),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.optional(v.string()),
@@ -241,8 +239,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
-  provider_job_id: v.optional(v.string()),
-  provider_run_id: v.optional(v.string()),
   ref: v.optional(v.string()),
   repo: v.optional(v.string()),
   repo_id: v.optional(v.string()),
@@ -250,8 +246,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   run_command: v.optional(v.string()),
   status: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  workflow_job_name: v.optional(v.string()),
-  workflow_path: v.optional(v.string()),
 });
 
 export const vSandboxImportRepoRequest = v.strictObject({
@@ -311,15 +305,11 @@ export const vSandboxSubmitRequest = v.strictObject({
   kind: v.string(),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
-  provider_job_id: v.optional(v.string()),
-  provider_run_id: v.optional(v.string()),
   ref: v.optional(v.string()),
   repo: v.optional(v.string()),
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
-  workflow_job_name: v.optional(v.string()),
-  workflow_path: v.optional(v.string()),
 });
 
 export const vSandboxWebhookEndpointRecord = v.strictObject({
@@ -436,7 +426,6 @@ export const vSandboxExecutionLogsWritable = v.strictObject({
 export const vSandboxExecutionRecordWritable = v.strictObject({
   actor_id: v.string(),
   billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
-  commit_sha: v.optional(v.string()),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.optional(v.string()),
@@ -447,8 +436,6 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
-  provider_job_id: v.optional(v.string()),
-  provider_run_id: v.optional(v.string()),
   ref: v.optional(v.string()),
   repo: v.optional(v.string()),
   repo_id: v.optional(v.string()),
@@ -456,8 +443,6 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   run_command: v.optional(v.string()),
   status: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  workflow_job_name: v.optional(v.string()),
-  workflow_path: v.optional(v.string()),
 });
 
 export const vSandboxImportRepoRequestWritable = v.strictObject({
@@ -512,15 +497,11 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   kind: v.string(),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
-  provider_job_id: v.optional(v.string()),
-  provider_run_id: v.optional(v.string()),
   ref: v.optional(v.string()),
   repo: v.optional(v.string()),
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
-  workflow_job_name: v.optional(v.string()),
-  workflow_path: v.optional(v.string()),
 });
 
 /**

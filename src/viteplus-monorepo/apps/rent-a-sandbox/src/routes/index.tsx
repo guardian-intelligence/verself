@@ -31,7 +31,7 @@ function GuestLanding() {
     <div className="space-y-8">
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">Rent-a-Sandbox</h1>
-        <p className="text-sm text-muted-foreground">Firecracker CI sandboxes on bare metal.</p>
+        <p className="text-sm text-muted-foreground">Firecracker sandboxes on bare metal.</p>
       </div>
 
       <EmptyState
@@ -54,7 +54,7 @@ function GuestLanding() {
         >
           <h3 className="mb-1 font-semibold">Repos</h3>
           <p className="text-sm text-muted-foreground">
-            Import a repository, prepare its golden image, and track readiness.
+            Import a repository and track clone metadata.
           </p>
         </Link>
         <Link
@@ -121,7 +121,7 @@ function MemberDashboard() {
         >
           <h3 className="mb-1 font-semibold">Repos</h3>
           <p className="text-sm text-muted-foreground">
-            Import a repository, prepare its golden image, and track readiness.
+            Import a repository and track clone metadata.
           </p>
         </Link>
         <Link
@@ -129,9 +129,7 @@ function MemberDashboard() {
           className="rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
         >
           <h3 className="mb-1 font-semibold">Executions</h3>
-          <p className="text-sm text-muted-foreground">
-            Monitor repo executions, golden builds, and runner attempts.
-          </p>
+          <p className="text-sm text-muted-foreground">Monitor direct VM executions and logs.</p>
         </Link>
       </div>
 

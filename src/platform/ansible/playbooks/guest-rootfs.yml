@@ -1,20 +1,20 @@
 ---
-# Build the Firecracker guest rootfs and stage CI artifacts.
+# Build the Firecracker guest rootfs and stage guest artifacts.
 #
 # Builds Zig + Go binaries locally, uploads them to the remote host,
-# runs the Alpine rootfs builder, and copies output to /var/lib/ci/.
+# runs the Alpine rootfs builder, and copies output to /var/lib/forge-metal/guest-artifacts/.
 #
 # Usage:
 #   cd ansible && ansible-playbook playbooks/guest-rootfs.yml
 #
 # To stage artifacts only (skip the build):
-#   cd ansible && ansible-playbook playbooks/guest-rootfs.yml --tags deploy_ci_artifacts
+#   cd ansible && ansible-playbook playbooks/guest-rootfs.yml --tags deploy_guest_artifacts
 
-- name: Build guest rootfs and stage CI artifacts
+- name: Build guest rootfs and stage guest artifacts
   hosts: all
   become: true
   roles:
     - role: guest_rootfs
       tags: [guest_rootfs]
-    - role: deploy_ci_artifacts
-      tags: [deploy_ci_artifacts]
+    - role: deploy_guest_artifacts
+      tags: [deploy_guest_artifacts]

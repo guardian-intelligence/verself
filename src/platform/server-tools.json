@@ -28,13 +28,6 @@
     "sha256": "16379b564d791a48a8a6960dc772b53b6648faadf3f6cc4bb1650877d6eb2eea",
     "binary_name": "forgejo"
   },
-  "forgejo_runner": {
-    "version": "12.8.0",
-    "format": "binary",
-    "url": "https://code.forgejo.org/forgejo/runner/releases/download/v12.8.0/forgejo-runner-12.8.0-linux-amd64",
-    "sha256": "90f0a8ea246748f2a89b03ba5f0688491ada6dc34fc01f6d9a33a7a891a38018",
-    "binary_name": "forgejo-runner"
-  },
   "otelcol_contrib": {
     "version": "0.149.0",
     "format": "tarball",

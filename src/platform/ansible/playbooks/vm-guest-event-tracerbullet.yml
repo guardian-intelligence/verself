@@ -8,7 +8,7 @@
 #   mutating the deployed daemon. The live service stays untouched.
 # - The guest event relay uses a local FIFO inside the guest so a workload can
 #   emit one structured event line. That is sufficient to prove correlation,
-#   but it is intentionally broader than the eventual runner-wrapper-only path.
+#   but it is intentionally broader than a production workload wrapper.
 # - The dev golden is destroyed during teardown; no guest relay changes persist
 #   into the shared base image.
 #
@@ -229,7 +229,7 @@
               - -lc
               - |
                 payload="$(
-                  printf '{"kind":"runner_job_claimed","attrs":{"attempt_id":"%s","provider_job_id":"42","provider_run_id":"99"}}' \
+                  printf '{"kind":"workload_marker","attrs":{"attempt_id":"%s","marker":"guest-event-tracer"}}' \
                     "$FORGE_METAL_ATTEMPT_ID"
                 )"
                 printf '%s\n' "$payload" > "$FORGE_METAL_GUEST_EVENT_FIFO"
@@ -290,23 +290,19 @@
               echo "missing Job ID line" >&2
               exit 1
             fi
-            if ! grep -Fq 'runner_job_claimed' "$output"; then
-              echo "missing runner_job_claimed event" >&2
+            if ! grep -Fq 'workload_marker' "$output"; then
+              echo "missing workload_marker event" >&2
               exit 1
             fi
-            if ! grep -Fq 'provider_job_id' "$output"; then
-              echo "missing provider_job_id attr" >&2
-              exit 1
-            fi
-            if ! grep -Fq 'provider_run_id' "$output"; then
-              echo "missing provider_run_id attr" >&2
+            if ! grep -Fq 'guest-event-tracer' "$output"; then
+              echo "missing marker attr" >&2
               exit 1
             fi
             if ! grep -Fq 'guest-event-written' "$output"; then
               echo "missing guest workload output" >&2
               exit 1
             fi
-            if ! grep -Eq "\\[guest-event\\].*runner_job_claimed.*$job_id" "$output"; then
+            if ! grep -Eq "\\[guest-event\\].*workload_marker.*$job_id" "$output"; then
               echo "missing correlated guest-event id echo" >&2
               exit 1
             fi

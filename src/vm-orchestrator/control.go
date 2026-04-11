@@ -143,11 +143,8 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 
 	if err := c.send(vmproto.TypeRunRequest, vmproto.RunRequest{
 		JobID:               job.JobID,
-		PrepareCommand:      cloneStringSlice(job.PrepareCommand),
-		PrepareWorkDir:      job.PrepareWorkDir,
 		RunCommand:          cloneStringSlice(job.RunCommand),
 		RunWorkDir:          job.RunWorkDir,
-		Services:            cloneStringSlice(job.Services),
 		Env:                 cloneStringMap(job.Env),
 		Network:             lease.GuestNetworkConfig(hostServiceIP, hostServicePort),
 		HostWallclockUnixNS: time.Now().UnixNano(),

@@ -106,37 +106,22 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		jobIDEnv+"="+runReq.JobID,
 	)
 
-	serviceStartDuration, err := session.startServices(jobCtx, controlCh, runReq.Services, env)
-	if err != nil {
-		return session.fail(err)
-	}
-
 	var (
-		prepareDuration time.Duration
-		runDuration     time.Duration
-		exitCode        int
+		runDuration time.Duration
+		exitCode    int
 	)
-	prepareDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "prepare", runReq.PrepareCommand, normalizeWorkDir(runReq.PrepareWorkDir), env)
+	runDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "run", runReq.RunCommand, normalizeWorkDir(runReq.RunWorkDir), env)
 	if err != nil {
 		return session.fail(err)
-	}
-
-	if exitCode == 0 {
-		runDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "run", runReq.RunCommand, normalizeWorkDir(runReq.RunWorkDir), env)
-		if err != nil {
-			return session.fail(err)
-		}
 	}
 
 	result := vmproto.Result{
-		ExitCode:               exitCode,
-		PrepareDurationMS:      prepareDuration.Milliseconds(),
-		RunDurationMS:          runDuration.Milliseconds(),
-		ServiceStartDurationMS: serviceStartDuration.Milliseconds(),
-		BootToReadyMS:          bootToReady.Milliseconds(),
-		StdoutBytes:            session.stdoutBytes.Load(),
-		StderrBytes:            session.stderrBytes.Load(),
-		DroppedLogBytes:        session.droppedLogBytes.Load(),
+		ExitCode:        exitCode,
+		RunDurationMS:   runDuration.Milliseconds(),
+		BootToReadyMS:   bootToReady.Milliseconds(),
+		StdoutBytes:     session.stdoutBytes.Load(),
+		StderrBytes:     session.stderrBytes.Load(),
+		DroppedLogBytes: session.droppedLogBytes.Load(),
 	}
 	if err := session.sendControl(vmproto.TypeResult, result); err != nil {
 		return err
@@ -339,8 +324,8 @@ func (s *agentSession) sendLogString(stream, value string) {
 
 func (s *agentSession) startGuestEventRelay(ctx context.Context) (func(), error) {
 	// Tracer-bullet compromise: any guest process that can open this FIFO can emit
-	// structured control events. The production runner path should narrow this to a
-	// dedicated wrapper instead of exposing a generic write surface to arbitrary jobs.
+	// structured control events. The production path should narrow this to a
+	// dedicated workload wrapper instead of exposing a generic write surface.
 	if err := os.MkdirAll(filepath.Dir(guestEventFIFOPath), 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir guest event relay dir: %w", err)
 	}
@@ -457,55 +442,6 @@ func setWallClock(unixNS int64) error {
 	return nil
 }
 
-func (s *agentSession) startServices(ctx context.Context, controlCh <-chan vmproto.Envelope, services []string, env []string) (time.Duration, error) {
-	start := time.Now()
-	if len(services) == 0 {
-		return 0, nil
-	}
-	phaseExitCode := 0
-	if err := s.sendControl(vmproto.TypePhaseStart, vmproto.PhaseStart{Name: "services"}); err != nil {
-		return 0, err
-	}
-	defer func() {
-		_ = s.sendControl(vmproto.TypePhaseEnd, vmproto.PhaseEnd{
-			Name:       "services",
-			ExitCode:   phaseExitCode,
-			DurationMS: time.Since(start).Milliseconds(),
-		})
-	}()
-
-	for _, service := range services {
-		select {
-		case env := <-controlCh:
-			if env.Type == vmproto.TypeCancel {
-				s.jobCancel()
-			}
-		default:
-		}
-
-		switch service {
-		case "postgres":
-			if err := preparePostgresRuntime(); err != nil {
-				phaseExitCode = 1
-				return 0, err
-			}
-			_, exitCode, err := s.runCommand(ctx, "service:postgres", postgresCommand(env), controlCh)
-			if err != nil {
-				phaseExitCode = exitCode
-				return 0, err
-			}
-			if exitCode != 0 {
-				phaseExitCode = exitCode
-				return 0, fmt.Errorf("service postgres exited with code %d", exitCode)
-			}
-		default:
-			phaseExitCode = 1
-			return 0, fmt.Errorf("unsupported service %q", service)
-		}
-	}
-	return time.Since(start), nil
-}
-
 func (s *agentSession) runPhase(ctx context.Context, controlCh <-chan vmproto.Envelope, label string, argv []string, workDir string, env []string) (time.Duration, int, error) {
 	if len(argv) == 0 {
 		return 0, 0, nil
@@ -520,60 +456,23 @@ func (s *agentSession) runPhase(ctx context.Context, controlCh <-chan vmproto.En
 }
 
 type commandSpec struct {
-	Path       string
-	Args       []string
-	WorkDir    string
-	Env        []string
-	Credential *syscall.Credential
+	Path    string
+	Args    []string
+	WorkDir string
+	Env     []string
 }
 
 func phaseCommand(argv []string, workDir string, env []string) (commandSpec, error) {
-	return phaseCommandWithCredential(argv, workDir, env, nil)
-}
-
-func phaseCommandWithCredential(argv []string, workDir string, env []string, credential *syscall.Credential) (commandSpec, error) {
 	argv0, err := resolveCommand(argv[0])
 	if err != nil {
 		return commandSpec{}, err
 	}
 	return commandSpec{
-		Path:       argv0,
-		Args:       argv,
-		WorkDir:    workDir,
-		Env:        env,
-		Credential: credential,
+		Path:    argv0,
+		Args:    argv,
+		WorkDir: workDir,
+		Env:     env,
 	}, nil
-}
-
-func postgresCommand(env []string) commandSpec {
-	return commandSpec{
-		Path:    mustResolveCommand("pg_ctl"),
-		Args:    []string{"pg_ctl", "start", "-D", "/var/lib/postgresql/data", "-l", "/tmp/pg.log", "-w"},
-		WorkDir: "/var/lib/postgresql",
-		Env:     envWithHome(env, "/var/lib/postgresql"),
-		Credential: &syscall.Credential{
-			Uid: postgresUID,
-			Gid: postgresGID,
-		},
-	}
-}
-
-func preparePostgresRuntime() error {
-	if err := os.MkdirAll("/run/postgresql", 0o775); err != nil {
-		return fmt.Errorf("mkdir /run/postgresql: %w", err)
-	}
-	if err := os.Chown("/run/postgresql", postgresUID, postgresGID); err != nil {
-		return fmt.Errorf("chown /run/postgresql: %w", err)
-	}
-	return nil
-}
-
-func mustResolveCommand(name string) string {
-	path, err := resolveCommand(name)
-	if err != nil {
-		fatal("resolve command "+name, err)
-	}
-	return path
 }
 
 func (s *agentSession) runCommand(ctx context.Context, label string, spec commandSpec, controlCh <-chan vmproto.Envelope) (time.Duration, int, error) {
@@ -586,9 +485,6 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	cmd.Dir = spec.WorkDir
 	cmd.Env = spec.Env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if spec.Credential != nil {
-		cmd.SysProcAttr.Credential = spec.Credential
-	}
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {

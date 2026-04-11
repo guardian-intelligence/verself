@@ -7,11 +7,6 @@ forgejo_subdomain: git
 # Full domain: auto-derived as <subdomain>.<forge_metal_domain>.
 forgejo_domain: "{{ forgejo_subdomain }}.{{ forge_metal_domain }}"
 
-# Optional explicit runner capacity for Forgejo Actions jobs.
-# When unset, forge-metal defaults to the host vCPU count.
-# Forgejo runner does not support a true unbounded concurrency mode.
-forgejo_runner_capacity:
-
 # Zitadel OIDC integration
 forgejo_auth_project_name: forgejo
 forgejo_auth_source_name: Zitadel
@@ -19,7 +14,7 @@ forgejo_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 forgejo_auth_group_claim_name: forgejo_groups
 forgejo_auth_admin_group: forgejo_admin
 
-# Technical automation user for fixture seeding and repository bootstrap.
+# Technical automation user for service-driven repository fixture seeding.
 forgejo_automation_username: forgejo-automation
 forgejo_automation_full_name: Forgejo Automation
 forgejo_automation_email: "forgejo-automation@{{ forge_metal_domain }}"

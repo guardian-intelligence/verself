@@ -11,14 +11,6 @@
     state: present
     update_cache: true
 
-- name: Create forge-runner system user
-  ansible.builtin.user:
-    name: forge-runner
-    system: true
-    shell: /bin/bash
-    home: /var/lib/forge-runner
-    create_home: true
-
 - name: Create credstore parent directory
   ansible.builtin.file:
     path: /etc/credstore

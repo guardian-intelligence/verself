@@ -1,5 +1,5 @@
 ---
-# Forgejo git server + CI runner configuration.
+# Forgejo git server configuration.
 # Binaries provided by deploy_profile role (pinned static binaries).
 
 - name: Create Forgejo user
@@ -56,17 +56,3 @@
 
 - name: Ensure Forgejo automation token exists
   ansible.builtin.include_tasks: automation_user.yml
-
-- name: Deploy Forgejo Runner systemd unit
-  ansible.builtin.template:
-    src: forgejo-runner.service.j2
-    dest: /etc/systemd/system/forgejo-runner.service
-    mode: "0644"
-  notify:
-    - restart forgejo-runner
-
-- name: Flush handlers before runner registration
-  ansible.builtin.meta: flush_handlers
-
-- name: Include runner registration
-  ansible.builtin.include_tasks: register_runner.yml

@@ -1,21 +1,25 @@
 import { env } from "./env";
-import { ensureTestUserExists, expect, test } from "./harness";
+import { ensureTestUserExists, test } from "./harness";
 import {
   assertExecutionDetailHydratesLogs,
   assertJobsIndexHydratesExecutionList,
   assertRepoDetailSSRStable,
   importRepoFromURL,
-  launchExecutionFromRepo,
-  refreshRepoGolden,
+  launchDirectExecution,
+  rescanRepoMetadata,
   waitForExecutionSuccess,
 } from "./repo-helpers";
+
+function verificationRunCommand(marker: string): string {
+  return `printf '%s\\n' '${marker.replaceAll("'", "'\\''")}'`;
+}
 
 test.describe("Rent-a-Sandbox Repo Journeys", () => {
   test.beforeAll(async () => {
     await ensureTestUserExists();
   });
 
-  test("repo import renders a stable repo detail page after bootstrap", async ({ app }) => {
+  test("repo import renders a stable metadata detail page after scan", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -33,7 +37,7 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
         app,
         importedRepo.repo_id,
         importedRepo.repo_name,
-        importedRepo.bootstrap_source_sha,
+        importedRepo.import_scanned_sha,
       );
 
       run.status = "succeeded";
@@ -47,7 +51,7 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
     }
   });
 
-  test("repo refresh activates a new source sha after rescan", async ({ app }) => {
+  test("repo rescan updates metadata without preparing an execution artifact", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -60,15 +64,15 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       });
 
       const refreshedRepoMeta = await app.pushVerificationRepoRevision(`${app.runID}-refresh`);
-      const refreshedGolden = await refreshRepoGolden(app, importedRepo.repo_id, refreshedRepoMeta);
+      const rescannedRepo = await rescanRepoMetadata(app, importedRepo.repo_id, refreshedRepoMeta);
 
-      Object.assign(run, refreshedGolden);
+      Object.assign(run, rescannedRepo);
 
       await assertRepoDetailSSRStable(
         app,
         importedRepo.repo_id,
         importedRepo.repo_name,
-        refreshedRepoMeta.commit_sha,
+        rescannedRepo.rescan_scanned_sha,
       );
 
       run.status = "succeeded";
@@ -82,7 +86,9 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
     }
   });
 
-  test("repo execution preserves jobs index and job detail through hydration", async ({ app }) => {
+  test("direct execution preserves jobs index and job detail through hydration", async ({
+    app,
+  }) => {
     const run = app.createRun();
 
     try {
@@ -94,7 +100,10 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       const importedRepo = await importRepoFromURL(app, env.verificationRepoURL);
       Object.assign(run, importedRepo);
 
-      const execution = await launchExecutionFromRepo(app);
+      const execution = await launchDirectExecution(
+        app,
+        verificationRunCommand(env.verificationLogMarker),
+      );
       run.execution_id = execution.execution_id;
       run.detail_url = `/jobs/${execution.execution_id}`;
 
@@ -122,7 +131,7 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
     }
   });
 
-  test("full lifecycle proof imports executes refreshes and executes again", async ({ app }) => {
+  test("full lifecycle proof imports executes rescans and executes again", async ({ app }) => {
     test.skip(!env.proofMode, "Proof loop only");
 
     const run = app.createRun();
@@ -136,7 +145,10 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       const importedRepo = await importRepoFromURL(app, env.verificationRepoURL);
       Object.assign(run, importedRepo);
 
-      const firstExecution = await launchExecutionFromRepo(app);
+      const firstExecution = await launchDirectExecution(
+        app,
+        verificationRunCommand(env.verificationLogMarker),
+      );
       run.execution_id = firstExecution.execution_id;
       run.detail_url = `/jobs/${firstExecution.execution_id}`;
       await assertExecutionDetailHydratesLogs(
@@ -146,17 +158,20 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       );
 
       const refreshedRepoMeta = await app.pushVerificationRepoRevision(`${app.runID}-refresh`);
-      const refreshedGolden = await refreshRepoGolden(app, importedRepo.repo_id, refreshedRepoMeta);
-      Object.assign(run, refreshedGolden);
+      const rescannedRepo = await rescanRepoMetadata(app, importedRepo.repo_id, refreshedRepoMeta);
+      Object.assign(run, rescannedRepo);
 
       await assertRepoDetailSSRStable(
         app,
         importedRepo.repo_id,
         importedRepo.repo_name,
-        refreshedRepoMeta.commit_sha,
+        rescannedRepo.rescan_scanned_sha,
       );
 
-      const secondExecution = await launchExecutionFromRepo(app);
+      const secondExecution = await launchDirectExecution(
+        app,
+        verificationRunCommand(env.verificationLogMarker),
+      );
       run.execution_id = secondExecution.execution_id;
       run.detail_url = `/jobs/${secondExecution.execution_id}`;
 
@@ -168,7 +183,7 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       );
 
       run.finished_balance = await app.waitForCondition(
-        "balance decrease after refresh execution",
+        "balance decrease after rescan execution",
         60_000,
         async () => {
           await app.goto("/");

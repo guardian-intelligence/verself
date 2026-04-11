@@ -25,7 +25,7 @@ Bare-Metal Host
 │   ├── Caddy: 10.255.0.1:18080 -> Forgejo 127.0.0.1:3000
 │   └── Verdaccio: 10.255.0.1:4873
 │
-├── lease dir: /var/lib/ci/net/leases
+├── lease dir: /var/lib/forge-metal/guest-artifacts/net/leases
 │   ├── 000000.json  -> 172.16.0.0/30
 │   ├── 000001.json  -> 172.16.0.4/30
 │   └── ...

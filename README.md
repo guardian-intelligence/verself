@@ -75,7 +75,7 @@ Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let
 
 ## CI
 
-The CI path is built around repo-specific golden images:
+The sandbox execution path is built around a single base guest image:
 
 1. start from a generic guest image
 2. clone the base zvol with ZFS for each VM job

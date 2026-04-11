@@ -90,7 +90,7 @@ forge-metal/                            # Monorepo root
     │       ├── deploy_profile/         # Build + download + install all server binaries
     │       ├── base/                   # OS hardening, users, credstore, SSH
     │       ├── nftables/               # Host firewall (forge-metal-firewall.target)
-    │       ├── zfs/                    # Pool creation, golden/ci datasets
+    │       ├── zfs/                    # Pool creation and ZFS dataset layout
     │       ├── caddy/                  # Edge proxy, TLS, WAF, route allowlist
     │       ├── postgresql/             # Shared PostgreSQL (one DB per service)
     │       ├── clickhouse/             # ClickHouse config + schema bootstrap
@@ -103,7 +103,7 @@ forge-metal/                            # Monorepo root
     │       ├── rent_a_sandbox/         # TanStack Start frontend deploy
     │       ├── stalwart/               # Receive-only mail: SMTP + JMAP + cert sync
     │       ├── resend/                 # Outbound email delivery config
-    │       ├── forgejo/                # Git server + CI runner
+    │       ├── forgejo/                # Git server
     │       ├── zitadel/                # Identity provider (OIDC)
     │       ├── hyperdx/                # Observability UI + MongoDB
     │       ├── verdaccio/              # Sealed npm registry mirror

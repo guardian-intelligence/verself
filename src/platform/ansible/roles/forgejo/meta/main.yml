@@ -1,4 +1,4 @@
 ---
-# deploy_profile: provides forgejo and forgejo-runner binaries at fm_bin.
+# deploy_profile: provides the Forgejo binary at fm_bin.
 dependencies:
   - role: deploy_profile

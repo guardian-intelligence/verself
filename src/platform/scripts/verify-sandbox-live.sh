@@ -49,7 +49,7 @@ env \
   VERIFICATION_RUN_JSON_PATH="${artifact_dir}/run.json" \
   VERIFICATION_REPO_URL="${verification_repo_url}" \
   VERIFICATION_REPO_REF="refs/heads/main" \
-  VERIFICATION_LOG_MARKER="FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE" \
+  VERIFICATION_LOG_MARKER="FORGE_METAL_DIRECT_EXECUTION_COMPLETE" \
   bash -lc '
     cd "$1"
     vp exec playwright test e2e/repo-journeys.live.spec.ts \

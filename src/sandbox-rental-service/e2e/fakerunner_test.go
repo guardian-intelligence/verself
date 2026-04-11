@@ -284,14 +284,8 @@ func copyJobResult(result vmorchestrator.JobResult) *vmorchestrator.JobResult {
 
 func copyJobConfig(job vmorchestrator.JobConfig) vmorchestrator.JobConfig {
 	cloned := job
-	if job.PrepareCommand != nil {
-		cloned.PrepareCommand = append([]string(nil), job.PrepareCommand...)
-	}
 	if job.RunCommand != nil {
 		cloned.RunCommand = append([]string(nil), job.RunCommand...)
-	}
-	if job.Services != nil {
-		cloned.Services = append([]string(nil), job.Services...)
 	}
 	if job.BillablePhases != nil {
 		cloned.BillablePhases = append([]string(nil), job.BillablePhases...)

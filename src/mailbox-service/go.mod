@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.3
+	github.com/forge-metal/apiwire v0.0.0
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/jackc/pgx/v5 v5.7.6
@@ -49,6 +50,8 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/forge-metal/apiwire => ../apiwire
 
 replace github.com/forge-metal/otel => ../otel
 

@@ -14,7 +14,7 @@ variable "project_id" {
 }
 
 variable "worker_count" {
-  description = "Number of CI worker nodes to provision."
+  description = "Number of worker nodes to provision."
   type        = number
   default     = 1
 

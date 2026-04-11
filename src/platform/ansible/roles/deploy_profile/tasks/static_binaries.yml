@@ -89,15 +89,6 @@
     checksum: "sha256:{{ deploy_profile_server_tools_pins.forgejo.sha256 }}"
     mode: "0755"
 
-# ── forgejo-runner ───────────────────────────────────────────────────────────
-
-- name: Download forgejo-runner binary
-  ansible.builtin.get_url:
-    url: "{{ deploy_profile_server_tools_pins.forgejo_runner.url }}"
-    dest: "{{ fm_bin }}/forgejo-runner"
-    checksum: "sha256:{{ deploy_profile_server_tools_pins.forgejo_runner.sha256 }}"
-    mode: "0755"
-
 # ── otelcol-contrib ──────────────────────────────────────────────────────────
 
 - name: Download otelcol-contrib archive

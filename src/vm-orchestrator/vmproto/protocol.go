@@ -61,18 +61,12 @@ type NetworkConfig struct {
 
 type RunRequest struct {
 	JobID               string            `json:"job_id"`
-	PrepareCommand      []string          `json:"prepare_command,omitempty"`
-	PrepareWorkDir      string            `json:"prepare_work_dir,omitempty"`
 	RunCommand          []string          `json:"run_command"`
 	RunWorkDir          string            `json:"run_work_dir,omitempty"`
-	Services            []string          `json:"services,omitempty"`
 	Env                 map[string]string `json:"env,omitempty"`
 	Network             NetworkConfig     `json:"network"`
 	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
-	// TemplateGeneration is reserved for the next snapshot/template phase.
-	// The cold-boot runtime leaves it empty.
-	TemplateGeneration string `json:"template_generation,omitempty"`
-	ProtocolVersion    int    `json:"protocol_version"`
+	ProtocolVersion     int               `json:"protocol_version"`
 }
 
 type PhaseStart struct {
@@ -98,14 +92,12 @@ type GuestEvent struct {
 type Heartbeat struct{}
 
 type Result struct {
-	ExitCode               int    `json:"exit_code"`
-	PrepareDurationMS      int64  `json:"prepare_duration_ms"`
-	RunDurationMS          int64  `json:"run_duration_ms"`
-	ServiceStartDurationMS int64  `json:"service_start_duration_ms"`
-	BootToReadyMS          int64  `json:"boot_to_ready_ms"`
-	StdoutBytes            uint64 `json:"stdout_bytes"`
-	StderrBytes            uint64 `json:"stderr_bytes"`
-	DroppedLogBytes        uint64 `json:"dropped_log_bytes"`
+	ExitCode        int    `json:"exit_code"`
+	RunDurationMS   int64  `json:"run_duration_ms"`
+	BootToReadyMS   int64  `json:"boot_to_ready_ms"`
+	StdoutBytes     uint64 `json:"stdout_bytes"`
+	StderrBytes     uint64 `json:"stderr_bytes"`
+	DroppedLogBytes uint64 `json:"dropped_log_bytes"`
 }
 
 type Fatal struct {

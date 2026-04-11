@@ -131,13 +131,10 @@ func (TelemetryFrameKind) EnumDescriptor() ([]byte, []int) {
 type JobConfig struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	PrepareCommand []string               `protobuf:"bytes,2,rep,name=prepare_command,json=prepareCommand,proto3" json:"prepare_command,omitempty"`
-	PrepareWorkDir string                 `protobuf:"bytes,3,opt,name=prepare_work_dir,json=prepareWorkDir,proto3" json:"prepare_work_dir,omitempty"`
-	RunCommand     []string               `protobuf:"bytes,4,rep,name=run_command,json=runCommand,proto3" json:"run_command,omitempty"`
-	RunWorkDir     string                 `protobuf:"bytes,5,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
-	Services       []string               `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
-	Env            map[string]string      `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	BillablePhases []string               `protobuf:"bytes,8,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
+	RunCommand     []string               `protobuf:"bytes,2,rep,name=run_command,json=runCommand,proto3" json:"run_command,omitempty"`
+	RunWorkDir     string                 `protobuf:"bytes,3,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
+	Env            map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BillablePhases []string               `protobuf:"bytes,5,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -179,20 +176,6 @@ func (x *JobConfig) GetJobId() string {
 	return ""
 }
 
-func (x *JobConfig) GetPrepareCommand() []string {
-	if x != nil {
-		return x.PrepareCommand
-	}
-	return nil
-}
-
-func (x *JobConfig) GetPrepareWorkDir() string {
-	if x != nil {
-		return x.PrepareWorkDir
-	}
-	return ""
-}
-
 func (x *JobConfig) GetRunCommand() []string {
 	if x != nil {
 		return x.RunCommand
@@ -205,13 +188,6 @@ func (x *JobConfig) GetRunWorkDir() string {
 		return x.RunWorkDir
 	}
 	return ""
-}
-
-func (x *JobConfig) GetServices() []string {
-	if x != nil {
-		return x.Services
-	}
-	return nil
 }
 
 func (x *JobConfig) GetEnv() map[string]string {
@@ -553,30 +529,28 @@ func (x *VMMetrics) GetVcpuExitCount() uint64 {
 }
 
 type JobResult struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	ExitCode               int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
-	Logs                   string                 `protobuf:"bytes,2,opt,name=logs,proto3" json:"logs,omitempty"`
-	SerialLogs             string                 `protobuf:"bytes,3,opt,name=serial_logs,json=serialLogs,proto3" json:"serial_logs,omitempty"`
-	DurationMs             int64                  `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
-	CloneTimeMs            int64                  `protobuf:"varint,5,opt,name=clone_time_ms,json=cloneTimeMs,proto3" json:"clone_time_ms,omitempty"`
-	JailSetupTimeMs        int64                  `protobuf:"varint,6,opt,name=jail_setup_time_ms,json=jailSetupTimeMs,proto3" json:"jail_setup_time_ms,omitempty"`
-	VmBootTimeMs           int64                  `protobuf:"varint,7,opt,name=vm_boot_time_ms,json=vmBootTimeMs,proto3" json:"vm_boot_time_ms,omitempty"`
-	BootToReadyDurationMs  int64                  `protobuf:"varint,8,opt,name=boot_to_ready_duration_ms,json=bootToReadyDurationMs,proto3" json:"boot_to_ready_duration_ms,omitempty"`
-	PrepareDurationMs      int64                  `protobuf:"varint,9,opt,name=prepare_duration_ms,json=prepareDurationMs,proto3" json:"prepare_duration_ms,omitempty"`
-	RunDurationMs          int64                  `protobuf:"varint,10,opt,name=run_duration_ms,json=runDurationMs,proto3" json:"run_duration_ms,omitempty"`
-	ServiceStartDurationMs int64                  `protobuf:"varint,11,opt,name=service_start_duration_ms,json=serviceStartDurationMs,proto3" json:"service_start_duration_ms,omitempty"`
-	VmExitWaitDurationMs   int64                  `protobuf:"varint,12,opt,name=vm_exit_wait_duration_ms,json=vmExitWaitDurationMs,proto3" json:"vm_exit_wait_duration_ms,omitempty"`
-	CleanupTimeMs          int64                  `protobuf:"varint,13,opt,name=cleanup_time_ms,json=cleanupTimeMs,proto3" json:"cleanup_time_ms,omitempty"`
-	ZfsWritten             uint64                 `protobuf:"varint,14,opt,name=zfs_written,json=zfsWritten,proto3" json:"zfs_written,omitempty"`
-	StdoutBytes            uint64                 `protobuf:"varint,15,opt,name=stdout_bytes,json=stdoutBytes,proto3" json:"stdout_bytes,omitempty"`
-	StderrBytes            uint64                 `protobuf:"varint,16,opt,name=stderr_bytes,json=stderrBytes,proto3" json:"stderr_bytes,omitempty"`
-	DroppedLogBytes        uint64                 `protobuf:"varint,17,opt,name=dropped_log_bytes,json=droppedLogBytes,proto3" json:"dropped_log_bytes,omitempty"`
-	ForcedShutdown         bool                   `protobuf:"varint,18,opt,name=forced_shutdown,json=forcedShutdown,proto3" json:"forced_shutdown,omitempty"`
-	PhaseResults           []*PhaseResult         `protobuf:"bytes,19,rep,name=phase_results,json=phaseResults,proto3" json:"phase_results,omitempty"`
-	FailurePhase           string                 `protobuf:"bytes,20,opt,name=failure_phase,json=failurePhase,proto3" json:"failure_phase,omitempty"`
-	Metrics                *VMMetrics             `protobuf:"bytes,21,opt,name=metrics,proto3" json:"metrics,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ExitCode              int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Logs                  string                 `protobuf:"bytes,2,opt,name=logs,proto3" json:"logs,omitempty"`
+	SerialLogs            string                 `protobuf:"bytes,3,opt,name=serial_logs,json=serialLogs,proto3" json:"serial_logs,omitempty"`
+	DurationMs            int64                  `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	CloneTimeMs           int64                  `protobuf:"varint,5,opt,name=clone_time_ms,json=cloneTimeMs,proto3" json:"clone_time_ms,omitempty"`
+	JailSetupTimeMs       int64                  `protobuf:"varint,6,opt,name=jail_setup_time_ms,json=jailSetupTimeMs,proto3" json:"jail_setup_time_ms,omitempty"`
+	VmBootTimeMs          int64                  `protobuf:"varint,7,opt,name=vm_boot_time_ms,json=vmBootTimeMs,proto3" json:"vm_boot_time_ms,omitempty"`
+	BootToReadyDurationMs int64                  `protobuf:"varint,8,opt,name=boot_to_ready_duration_ms,json=bootToReadyDurationMs,proto3" json:"boot_to_ready_duration_ms,omitempty"`
+	RunDurationMs         int64                  `protobuf:"varint,9,opt,name=run_duration_ms,json=runDurationMs,proto3" json:"run_duration_ms,omitempty"`
+	VmExitWaitDurationMs  int64                  `protobuf:"varint,10,opt,name=vm_exit_wait_duration_ms,json=vmExitWaitDurationMs,proto3" json:"vm_exit_wait_duration_ms,omitempty"`
+	CleanupTimeMs         int64                  `protobuf:"varint,11,opt,name=cleanup_time_ms,json=cleanupTimeMs,proto3" json:"cleanup_time_ms,omitempty"`
+	ZfsWritten            uint64                 `protobuf:"varint,12,opt,name=zfs_written,json=zfsWritten,proto3" json:"zfs_written,omitempty"`
+	StdoutBytes           uint64                 `protobuf:"varint,13,opt,name=stdout_bytes,json=stdoutBytes,proto3" json:"stdout_bytes,omitempty"`
+	StderrBytes           uint64                 `protobuf:"varint,14,opt,name=stderr_bytes,json=stderrBytes,proto3" json:"stderr_bytes,omitempty"`
+	DroppedLogBytes       uint64                 `protobuf:"varint,15,opt,name=dropped_log_bytes,json=droppedLogBytes,proto3" json:"dropped_log_bytes,omitempty"`
+	ForcedShutdown        bool                   `protobuf:"varint,16,opt,name=forced_shutdown,json=forcedShutdown,proto3" json:"forced_shutdown,omitempty"`
+	PhaseResults          []*PhaseResult         `protobuf:"bytes,17,rep,name=phase_results,json=phaseResults,proto3" json:"phase_results,omitempty"`
+	FailurePhase          string                 `protobuf:"bytes,18,opt,name=failure_phase,json=failurePhase,proto3" json:"failure_phase,omitempty"`
+	Metrics               *VMMetrics             `protobuf:"bytes,19,opt,name=metrics,proto3" json:"metrics,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *JobResult) Reset() {
@@ -665,23 +639,9 @@ func (x *JobResult) GetBootToReadyDurationMs() int64 {
 	return 0
 }
 
-func (x *JobResult) GetPrepareDurationMs() int64 {
-	if x != nil {
-		return x.PrepareDurationMs
-	}
-	return 0
-}
-
 func (x *JobResult) GetRunDurationMs() int64 {
 	if x != nil {
 		return x.RunDurationMs
-	}
-	return 0
-}
-
-func (x *JobResult) GetServiceStartDurationMs() int64 {
-	if x != nil {
-		return x.ServiceStartDurationMs
 	}
 	return 0
 }
@@ -2092,18 +2052,15 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xfb\x02\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\x8c\x02\n" +
 	"\tJobConfig\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12'\n" +
-	"\x0fprepare_command\x18\x02 \x03(\tR\x0eprepareCommand\x12(\n" +
-	"\x10prepare_work_dir\x18\x03 \x01(\tR\x0eprepareWorkDir\x12\x1f\n" +
-	"\vrun_command\x18\x04 \x03(\tR\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\vrun_command\x18\x02 \x03(\tR\n" +
 	"runCommand\x12 \n" +
-	"\frun_work_dir\x18\x05 \x01(\tR\n" +
-	"runWorkDir\x12\x1a\n" +
-	"\bservices\x18\x06 \x03(\tR\bservices\x12D\n" +
-	"\x03env\x18\a \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x12'\n" +
-	"\x0fbillable_phases\x18\b \x03(\tR\x0ebillablePhases\x1a6\n" +
+	"\frun_work_dir\x18\x03 \x01(\tR\n" +
+	"runWorkDir\x12D\n" +
+	"\x03env\x18\x04 \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x12'\n" +
+	"\x0fbillable_phases\x18\x05 \x03(\tR\x0ebillablePhases\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbb\x04\n" +
@@ -2148,7 +2105,7 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"netRxBytes\x12 \n" +
 	"\fnet_tx_bytes\x18\a \x01(\x04R\n" +
 	"netTxBytes\x12&\n" +
-	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\x9b\a\n" +
+	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xb0\x06\n" +
 	"\tJobResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x12\n" +
 	"\x04logs\x18\x02 \x01(\tR\x04logs\x12\x1f\n" +
@@ -2159,22 +2116,20 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\rclone_time_ms\x18\x05 \x01(\x03R\vcloneTimeMs\x12+\n" +
 	"\x12jail_setup_time_ms\x18\x06 \x01(\x03R\x0fjailSetupTimeMs\x12%\n" +
 	"\x0fvm_boot_time_ms\x18\a \x01(\x03R\fvmBootTimeMs\x128\n" +
-	"\x19boot_to_ready_duration_ms\x18\b \x01(\x03R\x15bootToReadyDurationMs\x12.\n" +
-	"\x13prepare_duration_ms\x18\t \x01(\x03R\x11prepareDurationMs\x12&\n" +
-	"\x0frun_duration_ms\x18\n" +
-	" \x01(\x03R\rrunDurationMs\x129\n" +
-	"\x19service_start_duration_ms\x18\v \x01(\x03R\x16serviceStartDurationMs\x126\n" +
-	"\x18vm_exit_wait_duration_ms\x18\f \x01(\x03R\x14vmExitWaitDurationMs\x12&\n" +
-	"\x0fcleanup_time_ms\x18\r \x01(\x03R\rcleanupTimeMs\x12\x1f\n" +
-	"\vzfs_written\x18\x0e \x01(\x04R\n" +
+	"\x19boot_to_ready_duration_ms\x18\b \x01(\x03R\x15bootToReadyDurationMs\x12&\n" +
+	"\x0frun_duration_ms\x18\t \x01(\x03R\rrunDurationMs\x126\n" +
+	"\x18vm_exit_wait_duration_ms\x18\n" +
+	" \x01(\x03R\x14vmExitWaitDurationMs\x12&\n" +
+	"\x0fcleanup_time_ms\x18\v \x01(\x03R\rcleanupTimeMs\x12\x1f\n" +
+	"\vzfs_written\x18\f \x01(\x04R\n" +
 	"zfsWritten\x12!\n" +
-	"\fstdout_bytes\x18\x0f \x01(\x04R\vstdoutBytes\x12!\n" +
-	"\fstderr_bytes\x18\x10 \x01(\x04R\vstderrBytes\x12*\n" +
-	"\x11dropped_log_bytes\x18\x11 \x01(\x04R\x0fdroppedLogBytes\x12'\n" +
-	"\x0fforced_shutdown\x18\x12 \x01(\bR\x0eforcedShutdown\x12P\n" +
-	"\rphase_results\x18\x13 \x03(\v2+.forge_metal.vm_orchestrator.v1.PhaseResultR\fphaseResults\x12#\n" +
-	"\rfailure_phase\x18\x14 \x01(\tR\ffailurePhase\x12C\n" +
-	"\ametrics\x18\x15 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\"\xa2\x01\n" +
+	"\fstdout_bytes\x18\r \x01(\x04R\vstdoutBytes\x12!\n" +
+	"\fstderr_bytes\x18\x0e \x01(\x04R\vstderrBytes\x12*\n" +
+	"\x11dropped_log_bytes\x18\x0f \x01(\x04R\x0fdroppedLogBytes\x12'\n" +
+	"\x0fforced_shutdown\x18\x10 \x01(\bR\x0eforcedShutdown\x12P\n" +
+	"\rphase_results\x18\x11 \x03(\v2+.forge_metal.vm_orchestrator.v1.PhaseResultR\fphaseResults\x12#\n" +
+	"\rfailure_phase\x18\x12 \x01(\tR\ffailurePhase\x12C\n" +
+	"\ametrics\x18\x13 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\"\xa2\x01\n" +
 	"\rDirectJobSpec\x12T\n" +
 	"\x0eruntime_config\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.RuntimeConfigR\rruntimeConfig\x12;\n" +
 	"\x03job\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\x03job\"j\n" +

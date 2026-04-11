@@ -40,9 +40,6 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 			JobID:      jobID,
 			RunCommand: []string{"sh", "-lc", "echo parallel-start && sleep 3 && echo parallel-done"},
 			RunWorkDir: "/workspace",
-			Env: map[string]string{
-				"CI": "true",
-			},
 		}
 
 		go func(job JobConfig) {

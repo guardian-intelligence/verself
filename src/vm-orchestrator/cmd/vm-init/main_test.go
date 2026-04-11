@@ -71,6 +71,31 @@ func TestBuildRuntimeEnvUsesHostServicePlane(t *testing.T) {
 	}
 }
 
+func TestBuildRuntimeEnvDoesNotForceCIOrRegistry(t *testing.T) {
+	t.Parallel()
+
+	env, err := buildRuntimeEnv(nil, vmproto.NetworkConfig{})
+	if err != nil {
+		t.Fatalf("buildRuntimeEnv: %v", err)
+	}
+
+	values := map[string]string{}
+	for _, entry := range env {
+		key, value, found := strings.Cut(entry, "=")
+		if !found {
+			t.Fatalf("malformed env entry: %q", entry)
+		}
+		values[key] = value
+	}
+
+	if _, ok := values["CI"]; ok {
+		t.Fatalf("CI should be explicitly supplied by the caller, got %q", values["CI"])
+	}
+	if _, ok := values["NPM_CONFIG_REGISTRY"]; ok {
+		t.Fatalf("NPM_CONFIG_REGISTRY should not be injected without an explicit registry or host-service plane, got %q", values["NPM_CONFIG_REGISTRY"])
+	}
+}
+
 func TestNormalizeWorkDirFallsBackToWorkspace(t *testing.T) {
 	t.Parallel()
 

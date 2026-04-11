@@ -13,19 +13,18 @@ ssh -o StrictHostKeyChecking=no "${USER}@${HOST}" 'sudo bash -s' <<'EOF'
 set -euo pipefail
 
 echo "=== Stopping all forge-metal services ==="
-systemctl stop caddy forgejo forgejo-runner hyperdx-api hyperdx-app \
+systemctl stop caddy forgejo hyperdx-api hyperdx-app \
   zitadel clickhouse-server postgresql tigerbeetle otelcol verdaccio \
   mongod containerd nftables 2>/dev/null || true
 
 echo "=== Disabling all forge-metal services ==="
-systemctl disable caddy forgejo forgejo-runner hyperdx-api hyperdx-app \
+systemctl disable caddy forgejo hyperdx-api hyperdx-app \
   zitadel clickhouse-server postgresql tigerbeetle otelcol verdaccio \
   mongod containerd nftables 2>/dev/null || true
 
 echo "=== Removing systemd units ==="
 rm -f /etc/systemd/system/caddy.service \
       /etc/systemd/system/forgejo.service \
-      /etc/systemd/system/forgejo-runner.service \
       /etc/systemd/system/hyperdx-api.service \
       /etc/systemd/system/hyperdx-app.service \
       /etc/systemd/system/zitadel.service \
@@ -47,7 +46,7 @@ done
 
 echo "=== Removing data directories ==="
 for d in /var/lib/tigerbeetle /var/lib/forgejo /var/lib/clickhouse \
-         /var/lib/verdaccio /var/lib/forge-runner /var/lib/ci \
+         /var/lib/verdaccio /var/lib/forge-metal/guest-artifacts \
          /var/log/clickhouse-server /opt/forge-metal /opt/verdaccio \
          /var/lib/postgresql /var/lib/mongodb; do
   [ -d "$d" ] && rm -r "$d"
@@ -57,13 +56,13 @@ echo "=== Destroying ZFS pool ==="
 zpool destroy forgepool 2>/dev/null || true
 
 echo "=== Removing system users/groups ==="
-for u in forgejo zitadel clickhouse tigerbeetle forge-runner verdaccio caddy; do
+for u in forgejo zitadel clickhouse tigerbeetle verdaccio caddy; do
   userdel -r "$u" 2>/dev/null || true
   groupdel "$u" 2>/dev/null || true
 done
 
 echo "=== Removing sudoers and npm config ==="
-rm -f /etc/sudoers.d/forge-runner /etc/npmrc
+rm -f /etc/npmrc
 
 echo "=== Removing SSH hardening (will be re-applied) ==="
 rm -f /etc/ssh/sshd_config.d/99-forge-metal.conf

@@ -9,11 +9,8 @@ import (
 func jobConfigToProto(job JobConfig) *vmrpc.JobConfig {
 	return &vmrpc.JobConfig{
 		JobId:          job.JobID,
-		PrepareCommand: cloneStringSlice(job.PrepareCommand),
-		PrepareWorkDir: job.PrepareWorkDir,
 		RunCommand:     cloneStringSlice(job.RunCommand),
 		RunWorkDir:     job.RunWorkDir,
-		Services:       cloneStringSlice(job.Services),
 		Env:            cloneStringMap(job.Env),
 		BillablePhases: cloneStringSlice(job.BillablePhases),
 	}
@@ -25,11 +22,8 @@ func jobConfigFromProto(job *vmrpc.JobConfig) JobConfig {
 	}
 	return JobConfig{
 		JobID:          job.GetJobId(),
-		PrepareCommand: cloneStringSlice(job.GetPrepareCommand()),
-		PrepareWorkDir: job.GetPrepareWorkDir(),
 		RunCommand:     cloneStringSlice(job.GetRunCommand()),
 		RunWorkDir:     job.GetRunWorkDir(),
-		Services:       cloneStringSlice(job.GetServices()),
 		Env:            cloneStringMap(job.GetEnv()),
 		BillablePhases: cloneStringSlice(job.GetBillablePhases()),
 	}
@@ -37,23 +31,21 @@ func jobConfigFromProto(job *vmrpc.JobConfig) JobConfig {
 
 func jobResultToProto(result JobResult, includeOutput bool) *vmrpc.JobResult {
 	out := &vmrpc.JobResult{
-		ExitCode:               int32(result.ExitCode),
-		DurationMs:             result.Duration.Milliseconds(),
-		CloneTimeMs:            result.CloneTime.Milliseconds(),
-		JailSetupTimeMs:        result.JailSetupTime.Milliseconds(),
-		VmBootTimeMs:           result.VMBootTime.Milliseconds(),
-		BootToReadyDurationMs:  result.BootToReadyDuration.Milliseconds(),
-		PrepareDurationMs:      result.PrepareDuration.Milliseconds(),
-		RunDurationMs:          result.RunDuration.Milliseconds(),
-		ServiceStartDurationMs: result.ServiceStartDuration.Milliseconds(),
-		VmExitWaitDurationMs:   result.VMExitWaitDuration.Milliseconds(),
-		CleanupTimeMs:          result.CleanupTime.Milliseconds(),
-		ZfsWritten:             result.ZFSWritten,
-		StdoutBytes:            result.StdoutBytes,
-		StderrBytes:            result.StderrBytes,
-		DroppedLogBytes:        result.DroppedLogBytes,
-		ForcedShutdown:         result.ForcedShutdown,
-		FailurePhase:           result.FailurePhase,
+		ExitCode:              int32(result.ExitCode),
+		DurationMs:            result.Duration.Milliseconds(),
+		CloneTimeMs:           result.CloneTime.Milliseconds(),
+		JailSetupTimeMs:       result.JailSetupTime.Milliseconds(),
+		VmBootTimeMs:          result.VMBootTime.Milliseconds(),
+		BootToReadyDurationMs: result.BootToReadyDuration.Milliseconds(),
+		RunDurationMs:         result.RunDuration.Milliseconds(),
+		VmExitWaitDurationMs:  result.VMExitWaitDuration.Milliseconds(),
+		CleanupTimeMs:         result.CleanupTime.Milliseconds(),
+		ZfsWritten:            result.ZFSWritten,
+		StdoutBytes:           result.StdoutBytes,
+		StderrBytes:           result.StderrBytes,
+		DroppedLogBytes:       result.DroppedLogBytes,
+		ForcedShutdown:        result.ForcedShutdown,
+		FailurePhase:          result.FailurePhase,
 	}
 	if includeOutput {
 		out.Logs = result.Logs
@@ -89,25 +81,23 @@ func jobResultFromProto(result *vmrpc.JobResult) *JobResult {
 		return nil
 	}
 	out := &JobResult{
-		ExitCode:             int(result.GetExitCode()),
-		Logs:                 result.GetLogs(),
-		SerialLogs:           result.GetSerialLogs(),
-		Duration:             time.Duration(result.GetDurationMs()) * time.Millisecond,
-		CloneTime:            time.Duration(result.GetCloneTimeMs()) * time.Millisecond,
-		JailSetupTime:        time.Duration(result.GetJailSetupTimeMs()) * time.Millisecond,
-		VMBootTime:           time.Duration(result.GetVmBootTimeMs()) * time.Millisecond,
-		BootToReadyDuration:  time.Duration(result.GetBootToReadyDurationMs()) * time.Millisecond,
-		PrepareDuration:      time.Duration(result.GetPrepareDurationMs()) * time.Millisecond,
-		RunDuration:          time.Duration(result.GetRunDurationMs()) * time.Millisecond,
-		ServiceStartDuration: time.Duration(result.GetServiceStartDurationMs()) * time.Millisecond,
-		VMExitWaitDuration:   time.Duration(result.GetVmExitWaitDurationMs()) * time.Millisecond,
-		CleanupTime:          time.Duration(result.GetCleanupTimeMs()) * time.Millisecond,
-		ZFSWritten:           result.GetZfsWritten(),
-		StdoutBytes:          result.GetStdoutBytes(),
-		StderrBytes:          result.GetStderrBytes(),
-		DroppedLogBytes:      result.GetDroppedLogBytes(),
-		ForcedShutdown:       result.GetForcedShutdown(),
-		FailurePhase:         result.GetFailurePhase(),
+		ExitCode:            int(result.GetExitCode()),
+		Logs:                result.GetLogs(),
+		SerialLogs:          result.GetSerialLogs(),
+		Duration:            time.Duration(result.GetDurationMs()) * time.Millisecond,
+		CloneTime:           time.Duration(result.GetCloneTimeMs()) * time.Millisecond,
+		JailSetupTime:       time.Duration(result.GetJailSetupTimeMs()) * time.Millisecond,
+		VMBootTime:          time.Duration(result.GetVmBootTimeMs()) * time.Millisecond,
+		BootToReadyDuration: time.Duration(result.GetBootToReadyDurationMs()) * time.Millisecond,
+		RunDuration:         time.Duration(result.GetRunDurationMs()) * time.Millisecond,
+		VMExitWaitDuration:  time.Duration(result.GetVmExitWaitDurationMs()) * time.Millisecond,
+		CleanupTime:         time.Duration(result.GetCleanupTimeMs()) * time.Millisecond,
+		ZFSWritten:          result.GetZfsWritten(),
+		StdoutBytes:         result.GetStdoutBytes(),
+		StderrBytes:         result.GetStderrBytes(),
+		DroppedLogBytes:     result.GetDroppedLogBytes(),
+		ForcedShutdown:      result.GetForcedShutdown(),
+		FailurePhase:        result.GetFailurePhase(),
 	}
 	if metrics := result.GetMetrics(); metrics != nil {
 		out.Metrics = &VMMetrics{

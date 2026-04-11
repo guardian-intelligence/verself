@@ -19,11 +19,7 @@ function NewJobPage() {
       </div>
 
       <Callout title="Manual execution">
-        Imported repos should normally be prepared and run from the{" "}
-        <Link to="/repos" className="text-primary hover:underline">
-          Repos
-        </Link>{" "}
-        flow so they execute against an active golden image.
+        Direct executions run the submitted command in a fresh VM.
       </Callout>
 
       <ExecutionSubmissionForm

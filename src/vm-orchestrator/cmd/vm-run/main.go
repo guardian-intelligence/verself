@@ -113,7 +113,6 @@ func run() error {
 		RunWorkDir:     "/workspace",
 		BillablePhases: []string{"run"},
 		Env: map[string]string{
-			"CI":                     "true",
 			"REPO":                   repo,
 			"FORGE_METAL_ATTEMPT_ID": jobID,
 		},

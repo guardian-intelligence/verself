@@ -201,7 +201,6 @@ func TestExecutionDirectFullFlow(t *testing.T) {
 		State      string `json:"state"`
 		ExitCode   int    `json:"exit_code"`
 		DurationMs int64  `json:"duration_ms"`
-		CommitSHA  string `json:"commit_sha"`
 	}
 	type executionView struct {
 		ExecutionID string      `json:"execution_id"`

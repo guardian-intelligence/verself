@@ -220,8 +220,6 @@ components:
           type: string
         orchestrator_job_id:
           type: string
-        runner_name:
-          type: string
         started_at:
           format: date-time
           type: string
@@ -474,8 +472,6 @@ components:
             $ref: "#/components/schemas/SandboxBillingWindow"
           nullable: true
           type: array
-        commit_sha:
-          type: string
         correlation_id:
           type: string
         created_at:
@@ -498,10 +494,6 @@ components:
           type: string
         provider:
           type: string
-        provider_job_id:
-          type: string
-        provider_run_id:
-          type: string
         ref:
           type: string
         repo:
@@ -516,10 +508,6 @@ components:
           type: string
         updated_at:
           format: date-time
-          type: string
-        workflow_job_name:
-          type: string
-        workflow_path:
           type: string
       required:
         - execution_id
@@ -692,10 +680,6 @@ components:
           type: string
         provider:
           type: string
-        provider_job_id:
-          type: string
-        provider_run_id:
-          type: string
         ref:
           type: string
         repo:
@@ -705,10 +689,6 @@ components:
         repo_url:
           type: string
         run_command:
-          type: string
-        workflow_job_name:
-          type: string
-        workflow_path:
           type: string
       required:
         - kind

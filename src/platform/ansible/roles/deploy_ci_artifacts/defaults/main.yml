@@ -1,8 +1,0 @@
----
-deploy_ci_artifacts_source_dir: /tmp/ci/output
-deploy_ci_artifacts_dest_dir: /var/lib/ci
-deploy_ci_artifacts_files:
-  - rootfs.ext4
-  - vmlinux
-  - sbom.txt
-  - guest-artifacts.json

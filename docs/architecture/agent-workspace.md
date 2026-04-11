@@ -97,7 +97,7 @@ Reuses `NetworkPoolConfig`, `NetworkLease`, and `Allocator` from vm-orchestrator
 |---|---|---|
 | TAP prefix | `fc-tap-` | `qm-tap-` |
 | Pool CIDR | `172.16.0.0/16` | `172.17.0.0/16` (separate pool, no collisions) |
-| Lease dir | `/var/lib/ci/net/leases` | `/var/lib/agent-workspace/net/leases` |
+| Lease dir | `/var/lib/forge-metal/guest-artifacts/net/leases` | `/var/lib/agent-workspace/net/leases` |
 | NAT | Same masquerade pattern | Same masquerade pattern |
 
 Guests get a /30 subnet. Host is .1, guest is .2. SSH from host to guest: `ssh agent@172.17.{slot}.2`. NAT for outbound (apt, npm, git push).
@@ -119,7 +119,7 @@ Inside the VM, Claude Code has full access: filesystem, terminal, browser (via P
 
 ### Programmatic Path (Automation)
 
-For CI-triggered or webhook-triggered agent runs:
+For service-triggered or webhook-triggered agent runs:
 
 ```
 agent-workspace-service API

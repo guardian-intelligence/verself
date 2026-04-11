@@ -60,15 +60,15 @@
       failed_when: false
       register: preflight_zpool
 
-    - name: Check CI kernel exists
+    - name: Check guest kernel exists
       ansible.builtin.stat:
-        path: /var/lib/ci/vmlinux
-      register: preflight_ci_kernel
+        path: /var/lib/forge-metal/guest-artifacts/vmlinux
+      register: preflight_guest_kernel
 
-    - name: Check CI rootfs exists
+    - name: Check guest rootfs exists
       ansible.builtin.stat:
-        path: /var/lib/ci/rootfs.ext4
-      register: preflight_ci_rootfs
+        path: /var/lib/forge-metal/guest-artifacts/rootfs.ext4
+      register: preflight_guest_rootfs
 
     - name: Warn if ZFS pool is missing (firecracker role will fail)
       ansible.builtin.debug:
@@ -77,12 +77,12 @@
           will create it, but only if a suitable disk is available.
       when: preflight_zpool.rc != 0
 
-    - name: Fail if CI artifacts are missing
+    - name: Fail if guest artifacts are missing
       ansible.builtin.fail:
         msg: >-
-          CI artifacts not staged. The firecracker role requires vmlinux and rootfs.ext4
-          at /var/lib/ci/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-      when: not preflight_ci_kernel.stat.exists or not preflight_ci_rootfs.stat.exists
+          Guest artifacts not staged. The firecracker role requires vmlinux and rootfs.ext4
+          at /var/lib/forge-metal/guest-artifacts/. Run: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
+      when: not preflight_guest_kernel.stat.exists or not preflight_guest_rootfs.stat.exists
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 

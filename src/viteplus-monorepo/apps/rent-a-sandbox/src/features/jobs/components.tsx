@@ -85,7 +85,6 @@ export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
           label="ZFS Written"
           value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
         />
-        <InfoCard label="Commit" value={execution.commit_sha || "--"} />
         <InfoCard label="Kind" value={execution.kind} />
         <InfoCard label="Attempt" value={attempt.attempt_id.slice(0, 8)} />
       </div>

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# build-guest-rootfs.sh — Build an Alpine-based ext4 rootfs for Firecracker CI VMs.
+# build-guest-rootfs.sh — Build an Alpine-based ext4 rootfs for Firecracker VMs.
 # Standard Linux paths, standard SBOM.
 #
 # LEARNING: Nix rootfs had /nix/store/ symlink farms inside the guest. Alpine gives
@@ -9,27 +9,27 @@ set -euo pipefail
 # PATH resolution and chroot-based golden image baking.
 #
 # Two-layer architecture:
-#   Layer 1 (this script): base OS + packages + initdb -> rootfs.ext4
-#   Layer 2 (repo warm): repo checkout + prepare command + optional DB setup -> ZFS snapshot
+#   Layer 1 (this script): base OS + packages -> rootfs.ext4
+#   Layer 2 (vm-orchestrator): ZFS clone per direct execution
 #
 # Requires: root, internet access, e2fsprogs. go only if no pre-built vm-init.
-# Produces: ci/output/rootfs.ext4, ci/output/sbom.txt, ci/output/guest-artifacts.json
+# Produces: guest/output/rootfs.ext4, guest/output/sbom.txt, guest/output/guest-artifacts.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Support two layouts:
-# 1. Running from project root: scripts/build-guest-rootfs.sh → ci/versions.json
+# 1. Running from project root: scripts/build-guest-rootfs.sh -> guest/versions.json
 # 2. Flat scp to /tmp: /tmp/build-guest-rootfs.sh + /tmp/versions.json
-if [[ -f "$SCRIPT_DIR/../ci/versions.json" ]]; then
+if [[ -f "$SCRIPT_DIR/../guest/versions.json" ]]; then
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-  VERSIONS="$PROJECT_ROOT/ci/versions.json"
-  OUTPUT_DIR="$PROJECT_ROOT/ci/output"
+  VERSIONS="$PROJECT_ROOT/guest/versions.json"
+  OUTPUT_DIR="$PROJECT_ROOT/guest/output"
 elif [[ -f "$SCRIPT_DIR/versions.json" ]]; then
   PROJECT_ROOT="$SCRIPT_DIR"
   VERSIONS="$SCRIPT_DIR/versions.json"
-  OUTPUT_DIR="$SCRIPT_DIR/ci/output"
+  OUTPUT_DIR="$SCRIPT_DIR/guest/output"
 else
-  echo "ERROR: cannot find versions.json (looked in $SCRIPT_DIR/../ci/ and $SCRIPT_DIR/)" >&2
+  echo "ERROR: cannot find versions.json (looked in $SCRIPT_DIR/../guest/ and $SCRIPT_DIR/)" >&2
   exit 1
 fi
 
@@ -119,7 +119,7 @@ fi
 # --- Install packages via chroot ---
 echo "→ installing packages"
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
-chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils curl git nodejs npm unzip ca-certificates postgresql"
+chroot "$ROOTFS" /bin/sh -c "apk update && apk add --no-cache bash coreutils curl git nodejs npm unzip ca-certificates"
 if ! chroot "$ROOTFS" /bin/sh -c "apk add --no-cache bun" >/dev/null 2>&1; then
   echo "→ installing bun via upstream installer"
   chroot "$ROOTFS" /bin/sh -c "export BUN_INSTALL=/usr/local && curl -fsSL https://bun.sh/install | bash"
@@ -167,14 +167,12 @@ install -D -m 0755 "$VM_GUEST_TELEMETRY_SRC" "$ROOTFS/usr/local/bin/vm-guest-tel
 # --- Essential config ---
 cat > "$ROOTFS/etc/passwd" <<'PASSWD'
 root:x:0:0:root:/root:/bin/bash
-postgres:x:70:70:PostgreSQL:/var/lib/postgresql:/bin/sh
 runner:x:1000:1000:runner:/home/runner:/bin/bash
 nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
 PASSWD
 
 cat > "$ROOTFS/etc/group" <<'GROUP'
 root:x:0:
-postgres:x:70:
 runner:x:1000:
 nogroup:x:65534:
 GROUP
@@ -185,20 +183,7 @@ cat > "$ROOTFS/etc/npmrc" <<'NPMRC'
 NPMRC
 
 # --- Create required directories ---
-mkdir -p "$ROOTFS"/{etc/ci,home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,dev/shm}
-
-# --- Initialize PostgreSQL data directory ---
-echo "→ initializing PostgreSQL"
-# LEARNING: initdb needs /dev/null which doesn't exist in an unpacked tarball.
-# mknod fails because Alpine's /dev has conflicting entries. bind-mount works.
-mount --bind /dev "$ROOTFS/dev"
-chroot "$ROOTFS" su postgres -c "initdb -D /var/lib/postgresql/data --no-locale --encoding=UTF8"
-umount "$ROOTFS/dev"
-# Configure: listen on localhost, no SSL, trust local connections
-echo "listen_addresses = 'localhost'" >> "$ROOTFS/var/lib/postgresql/data/postgresql.conf"
-echo "unix_socket_directories = '/run/postgresql'" >> "$ROOTFS/var/lib/postgresql/data/postgresql.conf"
-sed -i 's/^local.*all.*all.*trust/local all all trust/' "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
-echo "host all all 127.0.0.1/32 trust" >> "$ROOTFS/var/lib/postgresql/data/pg_hba.conf"
+mkdir -p "$ROOTFS"/{home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,dev/shm}
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"
@@ -229,7 +214,7 @@ fi
 
 # --- Build ext4 image ---
 echo "→ building ext4 image (4G)"
-mke2fs -F -t ext4 -d "$ROOTFS" -L ciroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" 4G
+mke2fs -F -t ext4 -d "$ROOTFS" -L guestroot -b 4096 "$OUTPUT_DIR/rootfs.ext4" 4G
 
 # --- Emit guest artifact manifest ---
 echo "→ computing guest artifact metrics"
