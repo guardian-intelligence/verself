@@ -111,11 +111,10 @@ func (f *fakeRunner) WarmGolden(ctx context.Context, req vmorchestrator.WarmGold
 	f.warmed = true
 	f.mu.Unlock()
 	return vmorchestrator.WarmGoldenResult{
-		TargetDataset:     "golden/toy-next-bun-monorepo@0002",
-		Promoted:          true,
-		CommitSHA:         state.commitSHA,
-		JobResult:         f.result(delay),
-		FilesystemCheckOK: true,
+		TargetDataset: "golden/toy-next-bun-monorepo@0002",
+		Promoted:      true,
+		CommitSHA:     state.commitSHA,
+		JobResult:     f.result(delay),
 	}, nil
 }
 
