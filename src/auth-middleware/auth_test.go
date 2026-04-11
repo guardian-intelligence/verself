@@ -51,7 +51,11 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"email":                                 "alice@example.com",
 		"urn:zitadel:iam:user:resourceowner:id": "org-456",
+		"roles":                                 []string{"legacy-admin"},
 		"urn:zitadel:iam:org:project:roles": map[string]any{
+			"legacy-viewer": map[string]any{"org-456": "billing"},
+		},
+		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
 			"admin":  map[string]any{"org-456": "billing"},
 			"viewer": map[string]any{"org-456": "billing"},
 		},
@@ -65,6 +69,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 	handler := Middleware(Config{
 		IssuerURL: provider.URL,
 		Audience:  "billing-project",
+		ProjectID: "billing-project",
 	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity := FromContext(r.Context())
 		if identity == nil {
@@ -79,7 +84,10 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		if identity.Email != "alice@example.com" {
 			t.Fatalf("unexpected email: %q", identity.Email)
 		}
-		expectedRoles := []string{"admin", "editor", "viewer"}
+		if identity.ProjectID != "billing-project" {
+			t.Fatalf("unexpected project id: %q", identity.ProjectID)
+		}
+		expectedRoles := []string{"admin", "viewer"}
 		if len(identity.Roles) != len(expectedRoles) {
 			t.Fatalf("unexpected roles length: got %v want %v", identity.Roles, expectedRoles)
 		}
@@ -92,23 +100,13 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 			{
 				OrganizationID:   "org-456",
 				OrganizationName: "billing",
+				ProjectID:        "billing-project",
 				Role:             "admin",
 			},
 			{
 				OrganizationID:   "org-456",
 				OrganizationName: "billing",
-				ProjectID:        "999",
-				Role:             "editor",
-			},
-			{
-				OrganizationID:   "org-456",
-				OrganizationName: "billing",
-				Role:             "viewer",
-			},
-			{
-				OrganizationID:   "org-456",
-				OrganizationName: "billing",
-				ProjectID:        "999",
+				ProjectID:        "billing-project",
 				Role:             "viewer",
 			},
 		}
@@ -125,6 +123,48 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		}
 		if _, ok := identity.Raw["amr"]; !ok {
 			t.Fatal("expected raw amr claim")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss":                                   provider.URL,
+		"sub":                                   "user-123",
+		"aud":                                   []string{"identity-project"},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:user:resourceowner:id": "org-456",
+		"urn:zitadel:iam:org:project:sandbox-project:roles": map[string]any{
+			"sandbox_org_admin": map[string]any{"org-456": "billing"},
+		},
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "identity-project",
+		ProjectID: "identity-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := FromContext(r.Context())
+		if identity == nil {
+			t.Fatal("expected identity in context")
+		}
+		if len(identity.Roles) != 0 || len(identity.RoleAssignments) != 0 {
+			t.Fatalf("target project without a role claim must not inherit other project roles: %#v", identity)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))

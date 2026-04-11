@@ -65,40 +65,21 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing.T) {
 	ctx := context.Background()
 	svc := &identity.Service{
-		Store: staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
+		Store:     staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
+		ProjectID: "identity-project",
 	}
-	admin := &auth.Identity{
-		Subject: "user-1",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           identity.RoleOrgAdmin,
-		}},
-	}
+	admin := identityServiceToken("identity-project", "42", identity.RoleOrgAdmin)
 	if allowed, err := identityHasPermission(ctx, svc, admin, permissionPolicyWrite); err != nil || !allowed {
 		t.Fatal("org admin should be allowed to write policy")
 	}
 
-	wrongOrg := &auth.Identity{
-		Subject: "user-1",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "99",
-			Role:           identity.RoleOrgAdmin,
-		}},
-	}
+	wrongOrg := identityServiceToken("identity-project", "99", identity.RoleOrgAdmin)
+	wrongOrg.OrgID = "42"
 	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionPolicyWrite); err != nil || allowed {
 		t.Fatal("role assignment for another org must not grant current org")
 	}
 
-	member := &auth.Identity{
-		Subject: "user-1",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           identity.RoleOrgMember,
-		}},
-	}
+	member := identityServiceToken("identity-project", "42", identity.RoleOrgMember)
 	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead); err != nil || !allowed {
 		t.Fatal("member should be allowed to read members")
 	}
@@ -106,26 +87,53 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		t.Fatal("member should not be allowed to invite")
 	}
 
-	crossProject := &auth.Identity{
-		Subject: "user-1",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           "sandbox_org_admin",
-		}},
-	}
+	crossProject := identityServiceToken("sandbox-project", "42", "sandbox_org_admin")
 	svcWithDirectory := &identity.Service{
 		Store:     staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
-		Directory: staticDirectory{memberRoles: []string{identity.RoleOrgAdmin}},
+		Directory: &staticDirectory{},
 		ProjectID: "identity-project",
 	}
-	if allowed, err := identityHasPermission(ctx, svcWithDirectory, crossProject, permissionPolicyWrite); err != nil || !allowed {
-		t.Fatalf("identity-service directory role assignment should grant cross-project web tokens, allowed=%v err=%v", allowed, err)
+	if allowed, err := identityHasPermission(ctx, svcWithDirectory, crossProject, permissionPolicyWrite); err != nil || allowed {
+		t.Fatalf("cross-project web token must fail closed without a target project role claim, allowed=%v err=%v", allowed, err)
 	}
 
-	scoped := &auth.Identity{Subject: "user-1", OrgID: "42", Raw: map[string]any{"scope": string(permissionMemberInvite)}}
+	owner := identityServiceToken("identity-project", "42", identity.RoleForgeOrgOwner)
+	if allowed, err := identityHasPermission(ctx, svc, owner, permissionPolicyWrite); err != nil || !allowed {
+		t.Fatal("reserved forge org owner should grant all identity-service permissions")
+	}
+
+	unmarkedScope := &auth.Identity{Subject: "user-1", OrgID: "42", Raw: map[string]any{"scope": string(permissionMemberInvite)}}
+	if allowed, err := identityHasPermission(ctx, svc, unmarkedScope, permissionMemberInvite); err != nil || allowed {
+		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
+	}
+
+	scoped := &auth.Identity{
+		Subject: "credential-1",
+		OrgID:   "42",
+		Raw: map[string]any{
+			"forge_metal:credential_id": "credential-1",
+			"scope":                     string(permissionMemberInvite),
+		},
+	}
 	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite); err != nil || !allowed {
-		t.Fatal("direct OAuth scope should grant matching permission")
+		t.Fatal("API credential scope should grant matching permission")
+	}
+}
+
+func identityServiceToken(projectID, orgID string, roles ...string) *auth.Identity {
+	assignments := make([]auth.RoleAssignment, 0, len(roles))
+	for _, role := range roles {
+		assignments = append(assignments, auth.RoleAssignment{
+			ProjectID:      projectID,
+			OrganizationID: orgID,
+			Role:           role,
+		})
+	}
+	return &auth.Identity{
+		Subject:         "user-1",
+		OrgID:           orgID,
+		ProjectID:       projectID,
+		RoleAssignments: assignments,
 	}
 }
 
@@ -141,23 +149,17 @@ func (s staticPolicyStore) PutPolicy(context.Context, identity.PolicyDocument) (
 	return s.policy, nil
 }
 
-type staticDirectory struct {
-	memberRoles []string
-}
+type staticDirectory struct{}
 
-func (s staticDirectory) ListMembers(context.Context, string, string) ([]identity.Member, error) {
+func (s *staticDirectory) ListMembers(context.Context, string, string) ([]identity.Member, error) {
 	return []identity.Member{}, nil
 }
 
-func (s staticDirectory) MemberRoles(context.Context, string, string, string) ([]string, error) {
-	return append([]string(nil), s.memberRoles...), nil
-}
-
-func (s staticDirectory) InviteMember(context.Context, string, string, identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
+func (s *staticDirectory) InviteMember(context.Context, string, string, identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
 	return identity.InviteMemberResult{}, nil
 }
 
-func (s staticDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (identity.Member, error) {
+func (s *staticDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (identity.Member, error) {
 	return identity.Member{}, nil
 }
 

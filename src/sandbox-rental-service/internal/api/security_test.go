@@ -91,24 +91,12 @@ func TestBillingProxyErrorRedactsUpstreamDetails(t *testing.T) {
 }
 
 func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
-	admin := &auth.Identity{
-		OrgID: "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           roleSandboxOrgAdmin,
-		}},
-	}
+	admin := sandboxServiceToken("sandbox-project", "42", roleSandboxOrgAdmin)
 	if !identityHasPermission(admin, permissionBillingCheckout) {
 		t.Fatal("sandbox org admin should be allowed to create billing checkout")
 	}
 
-	member := &auth.Identity{
-		OrgID: "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           roleSandboxOrgMember,
-		}},
-	}
+	member := sandboxServiceToken("sandbox-project", "42", roleSandboxOrgMember)
 	if !identityHasPermission(member, permissionExecutionSubmit) {
 		t.Fatal("sandbox org member should be allowed to submit executions")
 	}
@@ -116,25 +104,62 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 		t.Fatal("sandbox org member should not be allowed to create billing checkout")
 	}
 
-	scopedClient := &auth.Identity{
+	crossProject := sandboxServiceToken("identity-project", "42", roleSandboxOrgAdmin)
+	crossProject.ProjectID = "sandbox-project"
+	if identityHasPermission(crossProject, permissionBillingCheckout) {
+		t.Fatal("role assignment for another project must not grant sandbox-rental permissions")
+	}
+
+	unmarkedScope := &auth.Identity{
 		OrgID: "42",
 		Raw: map[string]any{
 			"scope": "openid sandbox:logs:read",
 		},
 	}
+	if identityHasPermission(unmarkedScope, permissionLogsRead) {
+		t.Fatal("plain OAuth scope should not grant operation permissions without an API credential marker")
+	}
+
+	scopedClient := &auth.Identity{
+		OrgID:   "42",
+		Subject: "credential-1",
+		Raw: map[string]any{
+			"forge_metal:credential_id": "credential-1",
+			"scope":                     "openid sandbox:logs:read",
+		},
+	}
 	if !identityHasPermission(scopedClient, permissionLogsRead) {
-		t.Fatal("direct OAuth scope should grant matching operation permission")
+		t.Fatal("API credential scope should grant matching operation permission")
 	}
 	if identityHasPermission(scopedClient, permissionExecutionSubmit) {
-		t.Fatal("direct OAuth scope should not grant unrelated permissions")
+		t.Fatal("API credential scope should not grant unrelated permissions")
+	}
+}
+
+func sandboxServiceToken(projectID, orgID string, roles ...string) *auth.Identity {
+	assignments := make([]auth.RoleAssignment, 0, len(roles))
+	for _, role := range roles {
+		assignments = append(assignments, auth.RoleAssignment{
+			ProjectID:      projectID,
+			OrganizationID: orgID,
+			Role:           role,
+		})
+	}
+	return &auth.Identity{
+		Subject:         "user-1",
+		OrgID:           orgID,
+		ProjectID:       projectID,
+		RoleAssignments: assignments,
 	}
 }
 
 func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
-		Subject: "user-123",
-		OrgID:   "42",
+		Subject:   "user-123",
+		OrgID:     "42",
+		ProjectID: "sandbox-project",
 		RoleAssignments: []auth.RoleAssignment{{
+			ProjectID:      "sandbox-project",
 			OrganizationID: "42",
 			Role:           roleSandboxOrgMember,
 		}},

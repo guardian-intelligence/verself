@@ -63,7 +63,14 @@ func KnownRoleKeys() map[string]struct{} {
 	return known
 }
 
+func ReservedRoleKeys() map[string]struct{} {
+	return map[string]struct{}{
+		RoleForgeOrgOwner: {},
+	}
+}
+
 func DefaultOperations() Operations {
+	// This catalog is identity-service-only until policy documents become service-scoped bundles.
 	out := Operations{Services: make([]ServiceOperations, 0, len(defaultOperations.Services))}
 	for _, service := range defaultOperations.Services {
 		copied := ServiceOperations{
@@ -98,6 +105,9 @@ func PermissionsForRoles(policy PolicyDocument, roleKeys []string) []string {
 	roleSet := map[string]struct{}{}
 	for _, role := range roleKeys {
 		roleSet[role] = struct{}{}
+	}
+	if _, ok := roleSet[RoleForgeOrgOwner]; ok {
+		return sortedKeys(KnownPermissions())
 	}
 	permissionSet := map[string]struct{}{}
 	for _, role := range policy.Roles {

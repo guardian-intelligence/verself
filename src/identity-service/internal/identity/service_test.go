@@ -26,7 +26,7 @@ func TestValidatePolicyRejectsUnknownPermissions(t *testing.T) {
 	}
 }
 
-func TestValidatePolicyRequiresOrgAdminToKeepIdentityPermissions(t *testing.T) {
+func TestValidatePolicyAllowsEditableOrgAdminToBeConstrained(t *testing.T) {
 	policy := DefaultPolicy("42", "user-1")
 	for index, role := range policy.Roles {
 		if role.RoleKey == RoleOrgAdmin {
@@ -34,7 +34,36 @@ func TestValidatePolicyRequiresOrgAdminToKeepIdentityPermissions(t *testing.T) {
 		}
 	}
 
+	if err := ValidatePolicy(policy); err != nil {
+		t.Fatalf("editable org admin role should be constrainable: %v", err)
+	}
+}
+
+func TestValidatePolicyRejectsReservedForgeOrgOwnerRole(t *testing.T) {
+	policy := DefaultPolicy("42", "user-1")
+	policy.Roles = append(policy.Roles, PolicyRole{
+		RoleKey:     RoleForgeOrgOwner,
+		DisplayName: "Forge Org Owner",
+		Permissions: []string{
+			PermissionOrganizationRead,
+		},
+	})
+
 	if err := ValidatePolicy(policy); err == nil {
-		t.Fatal("expected weakened org admin role to be rejected")
+		t.Fatal("expected reserved forge org owner role to be rejected from editable policy")
+	}
+}
+
+func TestReservedForgeOrgOwnerGrantsAllKnownPermissions(t *testing.T) {
+	policy := DefaultPolicy("42", "user-1")
+	for index, role := range policy.Roles {
+		if role.RoleKey == RoleOrgAdmin {
+			policy.Roles[index].Permissions = []string{PermissionOrganizationRead}
+		}
+	}
+
+	permissions := PermissionsForRoles(policy, []string{RoleForgeOrgOwner})
+	if len(permissions) != len(KnownPermissions()) {
+		t.Fatalf("forge org owner permissions = %v, want all known permissions", permissions)
 	}
 }

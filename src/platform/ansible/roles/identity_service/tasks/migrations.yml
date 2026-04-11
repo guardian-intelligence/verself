@@ -113,11 +113,23 @@
         IF to_regclass('public.identity_policy_documents') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.identity_policy_documents OWNER TO identity_service';
         END IF;
+        IF to_regclass('public.identity_api_credentials') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.identity_api_credentials OWNER TO identity_service';
+        END IF;
+        IF to_regclass('public.identity_api_credential_permissions') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.identity_api_credential_permissions OWNER TO identity_service';
+        END IF;
+        IF to_regclass('public.identity_api_credential_secrets') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.identity_api_credential_secrets OWNER TO identity_service';
+        END IF;
       END
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO identity_service;
       GRANT ALL PRIVILEGES ON TABLE
-        public.identity_policy_documents
+        public.identity_policy_documents,
+        public.identity_api_credentials,
+        public.identity_api_credential_permissions,
+        public.identity_api_credential_secrets
       TO identity_service;
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"

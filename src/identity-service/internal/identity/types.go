@@ -3,8 +3,9 @@ package identity
 import "time"
 
 const (
-	RoleOrgAdmin  = "identity_org_admin"
-	RoleOrgMember = "identity_org_member"
+	RoleForgeOrgOwner = "forge_org_owner"
+	RoleOrgAdmin      = "identity_org_admin"
+	RoleOrgMember     = "identity_org_member"
 )
 
 type Principal struct {

@@ -30,7 +30,7 @@
 - name: Update changed project grant
   ansible.builtin.uri:
     url: "{{ zitadel_project_grant_base_url }}/zitadel.project.v2.ProjectService/UpdateProjectGrant"
-    method: PUT
+    method: POST
     headers:
       Authorization: "Bearer {{ zitadel_project_grant_admin_pat }}"
       Host: "{{ zitadel_project_grant_host }}"

@@ -111,6 +111,7 @@ func run() error {
 	protected := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
+		ProjectID: projectID,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", protected)

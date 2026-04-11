@@ -467,22 +467,26 @@ func identityRolesForCurrentOrg(identity *auth.Identity) []string {
 	if identity == nil {
 		return nil
 	}
-	if len(identity.RoleAssignments) > 0 && identity.OrgID != "" {
-		roles := make([]string, 0, len(identity.RoleAssignments))
-		for _, assignment := range identity.RoleAssignments {
-			if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
-				roles = append(roles, assignment.Role)
-			}
-		}
-		sort.Strings(roles)
-		return compactStrings(roles)
+	if len(identity.RoleAssignments) == 0 || identity.OrgID == "" || identity.ProjectID == "" {
+		return nil
 	}
-	roles := append([]string(nil), identity.Roles...)
+	roles := make([]string, 0, len(identity.RoleAssignments))
+	for _, assignment := range identity.RoleAssignments {
+		if assignment.ProjectID == identity.ProjectID &&
+			assignment.OrganizationID == identity.OrgID &&
+			assignment.Role != "" {
+			roles = append(roles, assignment.Role)
+		}
+	}
 	sort.Strings(roles)
 	return compactStrings(roles)
 }
 
 func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
+	credentialID, _ := identity.Raw["forge_metal:credential_id"].(string)
+	if strings.TrimSpace(credentialID) == "" {
+		return false
+	}
 	requiredText := string(required)
 	for _, claimKey := range []string{"scope", "scp", "permissions", "permission"} {
 		for _, value := range stringClaimList(identity.Raw[claimKey]) {

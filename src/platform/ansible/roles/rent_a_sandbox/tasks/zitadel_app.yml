@@ -111,6 +111,11 @@
     path: /etc/credstore/rent-a-sandbox/oidc-web-cutover
   register: rent_a_sandbox_oidc_web_cutover_marker
 
+- name: Check rent-a-sandbox OIDC client secret file
+  ansible.builtin.stat:
+    path: /etc/credstore/rent-a-sandbox/oidc-client-secret
+  register: rent_a_sandbox_oidc_secret_file
+
 - name: Set existing app fact
   ansible.builtin.set_fact:
     rent_a_sandbox_existing_app: "{{ rent_a_sandbox_app_search.json.result | default([]) | first | default({}) }}"
@@ -126,10 +131,11 @@
         and
         (
           not rent_a_sandbox_oidc_web_cutover_marker.stat.exists
+          or not rent_a_sandbox_oidc_secret_file.stat.exists
           or (
             (rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.authMethodType
             | default('')
-          ) != 'OIDC_AUTH_METHOD_TYPE_NONE'
+          ) != 'OIDC_AUTH_METHOD_TYPE_POST'
           or (
             ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.redirectUris
             | default([]) | sort)
@@ -143,7 +149,7 @@
           or (
             ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.grantTypes
             | default([]) | sort)
-            != (["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"] | sort)
+            != (["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN", "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"] | sort)
           )
           or (
             ((rent_a_sandbox_app_search.json.result | default([]) | first | default({})).oidcConfig.postLogoutRedirectUris
@@ -192,13 +198,15 @@
       grantTypes:
         - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
         - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+        - "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"
       appType: "OIDC_APP_TYPE_WEB"
-      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_POST"
       postLogoutRedirectUris:
         - "https://{{ rent_a_sandbox_domain }}"
       devMode: false
       accessTokenType: "OIDC_TOKEN_TYPE_JWT"
     status_code: 200
+    return_content: true
   register: rent_a_sandbox_app_created
   when: >-
     rent_a_sandbox_app_exists is defined
@@ -206,6 +214,14 @@
       not rent_a_sandbox_app_exists | bool
       or rent_a_sandbox_app_requires_recreate | default(false) | bool
     )
+  no_log: true
+
+- name: Set created rent-a-sandbox app credentials
+  ansible.builtin.set_fact:
+    rent_a_sandbox_app_id: "{{ rent_a_sandbox_app_created.json.appId }}"
+    rent_a_sandbox_client_id: "{{ rent_a_sandbox_app_created.json.clientId }}"
+    rent_a_sandbox_client_secret: "{{ rent_a_sandbox_app_created.json.clientSecret }}"
+  when: rent_a_sandbox_app_created is not skipped
   no_log: true
 
 - name: Re-query rent-a-sandbox OIDC application
@@ -249,8 +265,9 @@
       grantTypes:
         - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
         - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+        - "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"
       appType: "OIDC_APP_TYPE_WEB"
-      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_POST"
       postLogoutRedirectUris:
         - "https://{{ rent_a_sandbox_domain }}"
       devMode: false
@@ -267,6 +284,33 @@
   when: rent_a_sandbox_app_id | default('', true) | length > 0
   no_log: true
 
+- name: Read stored rent-a-sandbox client secret
+  ansible.builtin.slurp:
+    src: /etc/credstore/rent-a-sandbox/oidc-client-secret
+  register: rent_a_sandbox_stored_secret_raw
+  when:
+    - rent_a_sandbox_app_created is skipped
+    - rent_a_sandbox_oidc_secret_file.stat.exists
+  no_log: true
+
+- name: Set stored rent-a-sandbox client secret fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_client_secret: "{{ rent_a_sandbox_stored_secret_raw.content | b64decode | trim }}"
+  when:
+    - rent_a_sandbox_app_created is skipped
+    - rent_a_sandbox_oidc_secret_file.stat.exists
+  no_log: true
+
+- name: Store rent-a-sandbox OIDC client secret
+  ansible.builtin.copy:
+    dest: /etc/credstore/rent-a-sandbox/oidc-client-secret
+    content: "{{ rent_a_sandbox_client_secret }}"
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0640"
+  when: rent_a_sandbox_client_secret | default('', true) | length > 0
+  no_log: true
+
 - name: Persist rent-a-sandbox OIDC Web cutover marker
   ansible.builtin.copy:
     dest: /etc/credstore/rent-a-sandbox/oidc-web-cutover
@@ -276,7 +320,7 @@
     content: |
       app_id={{ rent_a_sandbox_app_id }}
       client_id={{ rent_a_sandbox_client_id }}
-      auth_method=OIDC_AUTH_METHOD_TYPE_NONE
+      auth_method=OIDC_AUTH_METHOD_TYPE_POST
   when: rent_a_sandbox_client_id | default('', true) | length > 0
 
 - name: Ensure env directory exists

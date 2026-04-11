@@ -26,7 +26,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
           "Invite Member",
           "Members",
           "Policy",
-          "Organization Admin",
+          "forge_org_owner",
           "identity-service",
           "identity:policy:write",
         ],

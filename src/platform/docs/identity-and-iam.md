@@ -97,8 +97,9 @@ The runtime identity object is:
 
 - `Subject`: Zitadel user or service-account ID from `sub`.
 - `OrgID`: active organization/resource-owner ID when present.
-- `Roles`: flat role keys for the current single-org path.
-- `RoleAssignments`: structured project-role assignments, including project ID,
+- `ProjectID`: target service project ID whose role claim was accepted.
+- `Roles`: role keys extracted only from that target service project claim.
+- `RoleAssignments`: structured target-project role assignments, including project ID,
   organization ID, role key, and organization display name.
 - `Email`: email claim when present.
 - `Raw`: the full claim map for service-specific extraction.
@@ -112,8 +113,8 @@ claim among:
 - `resource_owner`
 - `org_id`
 
-Role extraction accepts flat `roles` and `role` claims for simple fixtures, but
-the production path is Zitadel's project-role claim:
+Role extraction only accepts Zitadel's project-qualified claim for the target
+service project:
 
 ```json
 {
@@ -125,15 +126,15 @@ the production path is Zitadel's project-role claim:
 }
 ```
 
-The middleware also accepts the unqualified
-`urn:zitadel:iam:org:project:roles` claim. New provisioning should prefer the
-project-qualified claim. The requested OAuth scope uses a different spelling:
+The middleware intentionally ignores flat `roles`, `role`, and unqualified
+`urn:zitadel:iam:org:project:roles` claims for production authorization. The
+requested OAuth scope uses a different spelling:
 `urn:zitadel:iam:org:projects:roles`.
 
 When a service needs to authorize an organization-scoped operation, it must use
-role assignments whose `OrganizationID` matches the request identity's `OrgID`.
-Flat role fallback exists for in-process harnesses and early single-org callers;
-it is not the target multi-org model.
+role assignments whose `ProjectID` matches the target service project and whose
+`OrganizationID` matches the request identity's `OrgID`. Missing target audience
+or missing target project role claim fails closed.
 
 OIDC and service-account setup has several sharp edges:
 
@@ -171,25 +172,24 @@ The service boundary is:
 
 An operation policy contains the required permission, resource, action,
 organization scope, rate-limit class, idempotency rule, and audit event. The
-permission check is intentionally small: a caller is allowed if the identity has
-a direct OAuth scope equal to the permission, or if a role assignment for the
-current organization maps through the Forge Metal policy document to that
-permission.
+permission check is intentionally small: a caller is allowed if a target-project
+role assignment for the current organization maps through the Forge Metal policy
+document to that permission. Direct permission scopes are accepted only for
+Forge Metal API credential tokens carrying `forge_metal:credential_id`; normal
+human OAuth scopes are not permission grants.
 
-Direct scopes are appropriate for tightly scoped service accounts and future
-machine-to-machine grants. Human users should normally receive built-in roles
-first, then customer-editable Forge Metal policy bundles once that surface
-exists.
+API credential direct scopes are issued as exact operation permissions and must
+be checked at issuance/roll time against the creating principal's effective
+permissions. Human users should receive Zitadel project roles first, then
+customer-editable Forge Metal policy bundles once that surface exists.
 
 Embedded organization widgets are a special cross-service web-session path.
-The rent-a-sandbox frontend owns the interactive OIDC application and forwards
-the server-owned access token to `identity-service`, but Zitadel may only assert
-the frontend application's project roles in that access token. `identity-service`
-therefore treats the token as proof of subject, organization, issuer, and
-audience, then resolves the caller's identity-service project role assignment
-from Zitadel before evaluating the Forge Metal policy document. This keeps the
-authorization decision at the target service boundary without requiring browser
-access to bearer tokens or a service-local product console.
+The rent-a-sandbox frontend owns the interactive OIDC application and stores the
+browser session server-side. Before calling `identity-service`, the BFF exchanges
+the session access token for an identity-service audience token and forwards that
+resource token. `identity-service` validates the JWT locally and reads only
+`urn:zitadel:iam:org:project:<identity-service-project-id>:roles`; it does not
+resolve role assignments from Zitadel in the request path.
 
 The `x-forge-metal-iam` metadata is documentation and a generation target, not
 the security mechanism itself. The security mechanism is the service's runtime
@@ -255,8 +255,8 @@ for API rehearsal:
 
 | Persona | Human login | Machine user | Organization | Built-in roles |
 |---|---|---|---|---|
-| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | `sandbox_org_admin`, `identity_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
-| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | `sandbox_org_admin`, `identity_org_admin` |
+| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | human/browser and machine `forge_org_owner`; `sandbox_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
+| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | human/browser `forge_org_owner`; machine `identity_org_admin`; `sandbox_org_admin` |
 | `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member`, `identity_org_member` |
 
 Use the Make wrappers to mint short-lived token files from the deployed
@@ -282,7 +282,7 @@ Current access coverage:
 | Surface | `platform-admin` | `acme-admin` | `acme-member` | Credential path |
 |---|---|---|---|---|
 | rent-a-sandbox / `sandbox-rental-service` | platform `sandbox_org_admin` | Acme `sandbox_org_admin` | Acme `sandbox_org_member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
-| rent-a-sandbox organization surface / `identity-service` | platform `identity_org_admin` | Acme `identity_org_admin` | Acme `identity_org_member` | Zitadel browser login and `IDENTITY_SERVICE_ACCESS_TOKEN` |
+| rent-a-sandbox organization surface / `identity-service` | browser and machine `forge_org_owner` | browser `forge_org_owner`, machine `identity_org_admin` | Acme `identity_org_member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | webmail / `mailbox-service` | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Letters | `letters_admin` | none | none | Zitadel browser login and `LETTERS_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |

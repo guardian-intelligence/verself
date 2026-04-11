@@ -545,6 +545,7 @@
           - project_id: "{{ seed_system_identity_project_id }}"
             granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             role_keys:
+              - forge_org_owner
               - identity_org_admin
               - identity_org_member
             existing_grants: "{{ seed_system_identity_project_grants }}"
@@ -577,7 +578,7 @@
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_admin]
+            role_keys: [forge_org_owner]
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_letters_project_id }}"
@@ -617,7 +618,7 @@
           - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_admin]
+            role_keys: [forge_org_owner]
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
@@ -633,7 +634,7 @@
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_admin]
+            role_keys: [forge_org_owner]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_letters_project_id }}"

@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -80,27 +81,43 @@ func (p *testAuthProvider) signToken(t *testing.T, claims jwt.MapClaims) string 
 }
 
 func addDefaultSandboxRole(claims jwt.MapClaims) {
-	for _, key := range []string{
-		"roles",
-		"role",
-		"urn:zitadel:iam:org:project:roles",
-	} {
-		if _, ok := claims[key]; ok {
-			return
-		}
+	projectID := audienceFromClaims(claims)
+	if projectID == "" {
+		return
+	}
+	claimKey := fmt.Sprintf("urn:zitadel:iam:org:project:%s:roles", projectID)
+	if _, ok := claims[claimKey]; ok {
+		return
 	}
 	orgID, _ := claims["urn:zitadel:iam:user:resourceowner:id"].(string)
 	if orgID == "" {
 		return
 	}
-	claims["urn:zitadel:iam:org:project:roles"] = map[string]any{
+	claims[claimKey] = map[string]any{
 		"sandbox_org_admin": map[string]any{orgID: "e2e"},
 	}
+}
+
+func audienceFromClaims(claims jwt.MapClaims) string {
+	switch aud := claims["aud"].(type) {
+	case string:
+		return aud
+	case []string:
+		if len(aud) > 0 {
+			return aud[0]
+		}
+	case []any:
+		if value, ok := aud[0].(string); ok {
+			return value
+		}
+	}
+	return ""
 }
 
 func (p *testAuthProvider) authConfig(audience string) auth.Config {
 	return auth.Config{
 		IssuerURL: p.URL,
 		Audience:  audience,
+		ProjectID: audience,
 	}
 }

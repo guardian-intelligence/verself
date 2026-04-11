@@ -2,7 +2,7 @@ export interface AuthConfig {
   appName: string;
   issuerURL: string;
   clientID: string;
-  clientSecret?: string;
+  clientSecret?: string | undefined;
   sessionCookieName?: string;
   sessionDatabaseURL: string;
   sessionPassword: string;

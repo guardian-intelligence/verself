@@ -20,7 +20,6 @@ import {
 const permissionMemberInvite = "identity:member:invite";
 const permissionMemberRolesWrite = "identity:member:roles:write";
 const permissionPolicyWrite = "identity:policy:write";
-const identityOrgAdminRole = "identity_org_admin";
 
 function hasPermission(permissions: Array<string>, permission: string) {
   return permissions.includes(permission);
@@ -39,6 +38,23 @@ function roleLabel(policy: PolicyDocument, roleKey: string) {
 
 function permissionSet(permissions: Array<string>) {
   return new Set(permissions);
+}
+
+function formErrorText(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error === "number" || typeof error === "boolean") {
+    return `${error}`;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Invalid form value";
+  }
 }
 
 export function OrganizationWidget() {
@@ -283,7 +299,7 @@ function RoleCheckboxes({
           </label>
         ))}
       </div>
-      {error ? <p className="text-sm text-destructive">{String(error)}</p> : null}
+      {error ? <p className="text-sm text-destructive">{formErrorText(error)}</p> : null}
     </fieldset>
   );
 }
@@ -487,15 +503,14 @@ function PolicyEditor({
                         </div>
                       </td>
                       {field.state.value.map((role, roleIndex) => {
-                        const isAdminRole = role.role_key === identityOrgAdminRole;
                         const selectedPermissions = permissionSet(role.permissions);
                         return (
                           <td key={role.role_key} className="px-4 py-3 align-top">
                             <input
                               aria-label={`${role.display_name}: ${operation.permission}`}
                               type="checkbox"
-                              checked={isAdminRole || selectedPermissions.has(operation.permission)}
-                              disabled={!canWritePolicy || isAdminRole}
+                              checked={selectedPermissions.has(operation.permission)}
+                              disabled={!canWritePolicy}
                               onChange={(event) => {
                                 const nextRoles = field.state.value.map((nextRole, index) => {
                                   if (index !== roleIndex) return nextRole;
