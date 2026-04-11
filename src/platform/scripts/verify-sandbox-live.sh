@@ -33,7 +33,7 @@ verification_wait_for_http \
 acme_admin_password="$(verification_remote_sudo_cat /etc/credstore/seed-system/acme-admin-password)"
 
 verification_repo_url="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["loopback_repo_url"])' \
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["public_repo_url"])' \
     "${artifact_dir}/repo.json"
 )"
 

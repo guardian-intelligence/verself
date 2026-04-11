@@ -101,6 +101,7 @@ git -C "${push_dir}" remote add origin "${push_url}"
 GIT_TERMINAL_PROMPT=0 git -C "${push_dir}" push --force origin HEAD:refs/heads/main >/dev/null
 
 commit_sha="$(git -C "${push_dir}" rev-parse HEAD)"
+public_repo_url="${public_base_url}/${owner}/${repo_name}.git"
 loopback_repo_url="${loopback_base_url}/${owner}/${repo_name}.git"
 browse_url="${public_base_url}/${owner}/${repo_name}"
 
@@ -108,16 +109,17 @@ if [[ -n "${output_json}" ]]; then
   mkdir -p "$(dirname "${output_json}")"
 fi
 
-python3 - "${output_json}" "${owner}" "${repo_name}" "${commit_sha}" "${public_base_url}" "${loopback_repo_url}" "${browse_url}" <<'PY'
+python3 - "${output_json}" "${owner}" "${repo_name}" "${commit_sha}" "${public_base_url}" "${public_repo_url}" "${loopback_repo_url}" "${browse_url}" <<'PY'
 import json
 import os
 import sys
 
-output_path, owner, repo_name, commit_sha, public_base_url, loopback_repo_url, browse_url = sys.argv[1:8]
+output_path, owner, repo_name, commit_sha, public_base_url, public_repo_url, loopback_repo_url, browse_url = sys.argv[1:9]
 payload = {
     "owner": owner,
     "repo_name": repo_name,
     "public_base_url": public_base_url,
+    "public_repo_url": public_repo_url,
     "loopback_repo_url": loopback_repo_url,
     "browse_url": browse_url,
     "ref": "refs/heads/main",

@@ -46,7 +46,7 @@ VERIFICATION_REPO_REVISION="${run_id}-seed" \
   "${script_dir}/ensure-verification-repo.sh" "${repo_json_path}"
 
 verification_repo_url="$(
-  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["loopback_repo_url"])' \
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["public_repo_url"])' \
     "${repo_json_path}"
 )"
 

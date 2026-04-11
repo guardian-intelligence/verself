@@ -30,7 +30,7 @@ export const env = {
   verificationRunJSONPath: process.env.VERIFICATION_RUN_JSON_PATH || "",
   verificationRepoURL:
     process.env.VERIFICATION_REPO_URL ||
-    "http://127.0.0.1:3000/forgejo-automation/sandbox-verification-next-bun.git",
+    `https://git.${process.env.FORGE_METAL_DOMAIN || "anveio.com"}/forgejo-automation/sandbox-verification-next-bun.git`,
   verificationRepoRef: process.env.VERIFICATION_REPO_REF || "refs/heads/main",
   verificationLogMarker:
     process.env.VERIFICATION_LOG_MARKER || "FORGE_METAL_VERIFICATION_NEXT_BUN_COMPLETE",
