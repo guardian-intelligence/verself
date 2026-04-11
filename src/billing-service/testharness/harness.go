@@ -96,7 +96,8 @@ func (s *Server) SeedOrg(ctx context.Context, orgID uint64, name string, trustTi
 func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string, amount uint64, source string, stripeRef string, expiresAt time.Time) (billing.GrantBalance, error) {
 	return s.client.DepositCredits(ctx, billing.CreditGrant{
 		OrgID:             billing.OrgID(orgID),
-		ProductID:         productID,
+		ScopeType:         billing.GrantScopeProduct,
+		ScopeProductID:    productID,
 		Amount:            amount,
 		Source:            source,
 		StripeReferenceID: stripeRef,

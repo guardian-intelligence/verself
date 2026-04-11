@@ -23,12 +23,13 @@ func NewGrantID() GrantID {
 	return GrantID(ulid.Make())
 }
 
-func stripeGrantID(orgID OrgID, productID, bucketID, stripeReferenceID string) GrantID {
+func stripeGrantID(orgID OrgID, scopeType GrantScopeType, scopeProductID, scopeBucketID, stripeReferenceID string) GrantID {
 	h := sha256.New()
 	_, _ = h.Write([]byte("stripe-grant"))
 	hashUint64(h, uint64(orgID))
-	hashString(h, productID)
-	hashString(h, bucketID)
+	hashString(h, scopeType.String())
+	hashString(h, scopeProductID)
+	hashString(h, scopeBucketID)
 	hashString(h, stripeReferenceID)
 	sum := h.Sum(nil)
 	var id GrantID

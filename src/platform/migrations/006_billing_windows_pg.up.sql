@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS forge_metal.billing_windows_pg (
     usage_summary           String,
     funding_legs            String,
     window_start            DateTime64(6, 'UTC'),
+    activated_at          Nullable(DateTime64(6, 'UTC')),
     expires_at              DateTime64(6, 'UTC'),
     renew_by                Nullable(DateTime64(6, 'UTC')),
     settled_at              Nullable(DateTime64(6, 'UTC')),
