@@ -16,7 +16,7 @@ Billing figured out for you, layered on top of Stripe to make it easy to go from
 
 ## Current status
 
-1. Tearing out old forge-metal CLI tech-debt, moving everything to services and secure vm-orchestrator implementation
+1. Tearing out old forge-metal CLI tech-debt, moving everything to services and secure vm-orchestrator implementation [Done]
 2. Move GitHub/Forgejo CI integration behind explicit service APIs
 3. Create identity-service + React components so users can be parts of orgs for real and manage their identity
 4. "Manage My Payment Methods"
