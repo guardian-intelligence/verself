@@ -3,10 +3,12 @@
 #
 # Creates:
 # - platform operator user: ceo@<domain>
+# - platform agent/admin user: agent@<domain>
 # - sample customer org: Acme Corp
 # - sample customer users: acme-admin@<domain>, acme-user@<domain>
+# - machine users for assume-platform-admin, assume-acme-admin, and assume-acme-member
 # - billing seed for both platform + Acme orgs
-# - Stalwart mailboxes + CEO mailbox binding
+# - Stalwart mailboxes + seeded mailbox bindings
 # - optional dev OIDC apps and billing auth verification
 #
 # Usage:
@@ -41,6 +43,7 @@
     seed_system_sandbox_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
     seed_system_letters_project_name: "{{ letters_auth_project_name | default('letters') }}"
     seed_system_forgejo_project_name: "{{ forgejo_auth_project_name | default('forgejo') }}"
+    seed_system_mailbox_project_name: "{{ mailbox_service_auth_project_name | default('mailbox-service') }}"
 
     seed_system_users:
       ceo:
@@ -51,6 +54,14 @@
         first_name: CEO
         last_name: Operator
         password_credstore_path: "{{ seed_system_credstore_dir }}/ceo-password"
+      platform_agent:
+        key: platform_agent
+        org_key: platform
+        email: "agent@{{ forge_metal_domain }}"
+        username: agent
+        first_name: Platform
+        last_name: Agent
+        password_credstore_path: "{{ seed_system_credstore_dir }}/platform-agent-password"
       acme_admin:
         key: acme_admin
         org_key: acme
@@ -67,6 +78,26 @@
         first_name: Acme
         last_name: User
         password_credstore_path: "{{ seed_system_credstore_dir }}/acme-user-password"
+
+    seed_system_machine_users:
+      platform_admin:
+        key: platform_admin
+        org_key: platform
+        username: assume-platform-admin
+        name: "Assume Platform Admin"
+        secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-platform-admin-client-secret"
+      acme_admin:
+        key: acme_admin
+        org_key: acme
+        username: assume-acme-admin
+        name: "Assume Acme Admin"
+        secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-admin-client-secret"
+      acme_member:
+        key: acme_member
+        org_key: acme
+        username: assume-acme-member
+        name: "Assume Acme Member"
+        secret_credstore_path: "{{ seed_system_credstore_dir }}/assume-acme-member-client-secret"
 
     seed_system_product_id: sandbox
     seed_system_product_display_name: Sandbox
@@ -212,6 +243,36 @@
         fail_msg: "Forgejo Zitadel project '{{ seed_system_forgejo_project_name }}' not found. Run the full deploy first."
       tags: [identity]
 
+    - name: Find mailbox-service project
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_system_mailbox_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_system_mailbox_project_search
+      no_log: true
+      tags: [identity, dev-oidc]
+
+    - name: Set mailbox-service project ID fact
+      ansible.builtin.set_fact:
+        seed_system_mailbox_project_id: "{{ seed_system_mailbox_project_search.json.result[0].id }}"
+      when: seed_system_mailbox_project_search.json.result is defined and seed_system_mailbox_project_search.json.result | length > 0
+      tags: [identity, dev-oidc]
+
+    - name: Assert mailbox-service project exists
+      ansible.builtin.assert:
+        that: seed_system_mailbox_project_id is defined
+        fail_msg: "Mailbox-service Zitadel project '{{ seed_system_mailbox_project_name }}' not found. Run the full deploy first."
+      tags: [identity]
+
     - name: List existing organizations
       ansible.builtin.uri:
         url: "{{ seed_system_zitadel_base_url }}/v2/organizations/_search"
@@ -345,6 +406,14 @@
         label: "{{ seed_system_user.email }}"
       tags: [identity]
 
+    - name: Seed assume-persona machine users
+      ansible.builtin.include_tasks: tasks/seed-machine-user.yml
+      loop: "{{ seed_system_machine_users | dict2items | map(attribute='value') | list }}"
+      loop_control:
+        loop_var: seed_system_machine_user
+        label: "{{ seed_system_machine_user.username }}"
+      tags: [identity]
+
     - name: Ensure CEO is platform organization owner
       ansible.builtin.uri:
         url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/zitadel.internal_permission.v2.InternalPermissionService/CreateAdministrator"
@@ -456,11 +525,55 @@
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_forgejo_project_id }}"
             role_keys: [forgejo_admin]
+          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_mailbox_project_id }}"
+            role_keys: [mailbox_user]
+          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_letters_project_id }}"
+            role_keys: [letters_admin]
+          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_forgejo_project_id }}"
+            role_keys: [forgejo_admin]
+          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_mailbox_project_id }}"
+            role_keys: [mailbox_user]
           - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            role_keys: [sandbox_org_member]
+          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_letters_project_id }}"
+            role_keys: [letters_admin]
+          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_forgejo_project_id }}"
+            role_keys: [forgejo_admin]
+          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_mailbox_project_id }}"
+            role_keys: [mailbox_user]
+          - user_id: "{{ seed_system_machine_users_state.acme_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_sandbox_project_id }}"
+            role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_member]
@@ -486,9 +599,14 @@
           - "Seed identities ready for {{ seed_system_zitadel_host }}"
           - "  Platform org: {{ seed_system_orgs.platform.organization_id }}"
           - "  CEO:          {{ seed_system_users_state.ceo.email }} ({{ seed_system_users_state.ceo.password_credstore_path }})"
+          - "  Agent:        {{ seed_system_users_state.platform_agent.email }} ({{ seed_system_users_state.platform_agent.password_credstore_path }})"
+          - >-
+            {{ '  Platform API: ' ~ seed_system_machine_users_state.platform_admin.username ~
+            ' (' ~ seed_system_machine_users_state.platform_admin.secret_credstore_path ~ ')' }}
           - "  Acme org:     {{ seed_system_orgs.acme.organization_id }}"
           - "  Acme admin:   {{ seed_system_users_state.acme_admin.email }} ({{ seed_system_users_state.acme_admin.password_credstore_path }})"
           - "  Acme user:    {{ seed_system_users_state.acme_user.email }} ({{ seed_system_users_state.acme_user.password_credstore_path }})"
+          - "  Acme API:     {{ seed_system_machine_users_state.acme_admin.username }} / {{ seed_system_machine_users_state.acme_member.username }}"
           - "  Note: current auth/runtime still assumes one org per user; multi-org membership and org switching are not fully baked yet."
       tags: [identity]
 
@@ -781,10 +899,6 @@
           WHERE account_id IN ('ceo', 'agents');
           DELETE FROM mailbox_accounts
           WHERE account_id IN ('ceo', 'agents');
-          DELETE FROM mailbox_bindings
-          WHERE account_id <> 'ceo'
-             OR subject <> '{{ seed_system_users_state.ceo.user_id }}'
-             OR email_address <> '{{ seed_system_users_state.ceo.email }}';
       environment:
         PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
       changed_when: false
@@ -858,7 +972,25 @@
       when: not seed_system_mailbox_service_supports_split_credentials
       tags: [stalwart]
 
-    - name: Upsert CEO mailbox binding
+    - name: Set seeded mailbox bindings fact
+      ansible.builtin.set_fact:
+        seed_system_seeded_mailbox_bindings:
+          - subject: "{{ seed_system_users_state.ceo.user_id }}"
+            account_id: ceo
+            email_address: "{{ seed_system_users_state.ceo.email }}"
+          - subject: "{{ seed_system_users_state.platform_agent.user_id }}"
+            account_id: agents
+            email_address: "agents@{{ forge_metal_domain }}"
+          - subject: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            account_id: agents
+            email_address: "agents@{{ forge_metal_domain }}"
+      when:
+        - seed_system_users_state.ceo.user_id | default('', true) | length > 0
+        - seed_system_users_state.platform_agent.user_id | default('', true) | length > 0
+        - seed_system_machine_users_state.platform_admin.user_id | default('', true) | length > 0
+      tags: [identity, stalwart]
+
+    - name: Upsert seeded mailbox bindings
       ansible.builtin.command:
         cmd: >-
           {{ fm_bin }}/psql
@@ -869,17 +1001,19 @@
           -v ON_ERROR_STOP=1
         stdin: |
           DELETE FROM mailbox_bindings
-          WHERE account_id = 'ceo'
-            AND subject <> '{{ seed_system_users_state.ceo.user_id }}';
+          WHERE account_id IN ('ceo', 'agents');
+          {% for binding in seed_system_seeded_mailbox_bindings %}
           INSERT INTO mailbox_bindings (subject, account_id, email_address)
-          VALUES ('{{ seed_system_users_state.ceo.user_id }}', 'ceo', '{{ seed_system_users_state.ceo.email }}')
+          VALUES ('{{ binding.subject }}', '{{ binding.account_id }}', '{{ binding.email_address }}')
           ON CONFLICT (subject) DO UPDATE
           SET account_id = EXCLUDED.account_id,
               email_address = EXCLUDED.email_address;
+          {% endfor %}
       environment:
         PGPASSWORD: "{{ postgresql_mailbox_service_password }}"
       changed_when: false
       no_log: true
+      when: seed_system_seeded_mailbox_bindings | default([]) | length > 0
       tags: [identity, stalwart]
 
     - name: Print mailbox summary
@@ -900,23 +1034,6 @@
           }}
       tags: [stalwart]
 
-    - name: Find mailbox-service project for dev OIDC
-      ansible.builtin.uri:
-        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ seed_system_admin_pat }}"
-          Host: "{{ seed_system_zitadel_host }}"
-        body_format: json
-        body:
-          queries:
-            - nameQuery:
-                name: mailbox-service
-                method: TEXT_QUERY_METHOD_EQUALS
-        status_code: 200
-      register: seed_system_mailbox_project_search
-      tags: [dev-oidc]
-
     - name: Set dev OIDC project facts
       ansible.builtin.set_fact:
         seed_system_dev_oidc_apps:
@@ -924,7 +1041,7 @@
             project_id: "{{ seed_system_sandbox_project_id }}"
             port: 4244
           - name: webmail-dev
-            project_id: "{{ (seed_system_mailbox_project_search.json.result | default([]) | first | default({})).id | default('') }}"
+            project_id: "{{ seed_system_mailbox_project_id }}"
             port: 4245
           - name: letters-dev
             project_id: "{{ seed_system_letters_project_id }}"
@@ -1075,7 +1192,7 @@
             body:
               projectId: "{{ seed_system_sandbox_project_id }}"
               roleKeys:
-                - sandbox_org_member
+                - sandbox_org_admin
             status_code: [200, 409]
           no_log: true
 
@@ -1091,6 +1208,7 @@
               scope: >-
                 openid profile
                 urn:zitadel:iam:user:resourceowner
+                urn:zitadel:iam:org:projects:roles
                 urn:zitadel:iam:org:project:id:{{ seed_system_sandbox_project_id }}:aud
             url_username: "seed-system-verify-{{ inventory_hostname }}"
             url_password: "{{ seed_system_verify_secret.json.clientSecret }}"
@@ -1187,11 +1305,15 @@
           - " Operator login: https://rentasandbox.{{ forge_metal_domain }}/"
           - " CEO:            {{ seed_system_users_state.ceo.email }}"
           - " CEO password:   {{ seed_system_users_state.ceo.password_credstore_path }}"
+          - " Agent:          {{ seed_system_users_state.platform_agent.email }}"
+          - " Agent password: {{ seed_system_users_state.platform_agent.password_credstore_path }}"
+          - " Platform API:   {{ seed_system_machine_users_state.platform_admin.username }}"
           - ""
           - " Acme admin:     {{ seed_system_users_state.acme_admin.email }}"
           - " Acme password:  {{ seed_system_users_state.acme_admin.password_credstore_path }}"
           - " Acme user:      {{ seed_system_users_state.acme_user.email }}"
           - " User password:  {{ seed_system_users_state.acme_user.password_credstore_path }}"
+          - " Acme APIs:      {{ seed_system_machine_users_state.acme_admin.username }}, {{ seed_system_machine_users_state.acme_member.username }}"
           - ""
           - " Platform org:   {{ seed_system_orgs.platform.organization_id | default('(run with --tags identity)') }}"
           - " Acme org:       {{ seed_system_orgs.acme.organization_id | default('(run with --tags identity)') }}"
