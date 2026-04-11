@@ -1,15 +1,29 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 )
 
-const maxGitURLLength = 2048
+const (
+	maxGitURLLength         = 2048
+	gitURLResolutionTimeout = 2 * time.Second
+)
+
+type gitDNSResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
 
 func validateGitCloneURLField(field, raw string) error {
+	return validateGitCloneURLFieldWithResolver(context.Background(), net.DefaultResolver, field, raw)
+}
+
+func validateGitCloneURLFieldWithResolver(ctx context.Context, resolver gitDNSResolver, field, raw string) error {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return fmt.Errorf("%s is required", field)
@@ -26,10 +40,10 @@ func validateGitCloneURLField(field, raw string) error {
 		return fmt.Errorf("%s is not a valid URL: %w", field, err)
 	}
 	if !parsed.IsAbs() || parsed.Opaque != "" {
-		return fmt.Errorf("%s must be an absolute http or https URL", field)
+		return fmt.Errorf("%s must be an absolute https URL", field)
 	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf("%s scheme %q is not supported; use http or https", field, parsed.Scheme)
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("%s scheme %q is not supported; use https", field, parsed.Scheme)
 	}
 	if parsed.User != nil {
 		return fmt.Errorf("%s must not include credentials", field)
@@ -67,7 +81,48 @@ func validateGitCloneURLField(field, raw string) error {
 	if !strings.Contains(host, ".") {
 		return fmt.Errorf("%s host %q must be a public DNS name", field, host)
 	}
+	if err := validateGitDNSResolution(ctx, resolver, field, host); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateGitDNSResolution(ctx context.Context, resolver gitDNSResolver, field, host string) error {
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	resolveCtx, cancel := context.WithTimeout(ctx, gitURLResolutionTimeout)
+	defer cancel()
+
+	answers, err := resolver.LookupIPAddr(resolveCtx, host)
+	if err != nil {
+		return fmt.Errorf("%s host %q DNS resolution failed: %w", field, host, err)
+	}
+	if len(answers) == 0 {
+		return fmt.Errorf("%s host %q DNS resolution returned no addresses", field, host)
+	}
+	for _, answer := range answers {
+		addr, ok := netip.AddrFromSlice(answer.IP)
+		if !ok {
+			return fmt.Errorf("%s host %q resolved to invalid IP %q", field, host, answer.IP.String())
+		}
+		if err := validatePublicGitIP(field, addr); err != nil {
+			return fmt.Errorf("%s host %q resolved to non-public IP %q", field, host, addr.Unmap().String())
+		}
+	}
+	return nil
+}
+
+func providerHostFromCloneURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(parsed.Hostname()), "."))
+}
+
+func ProviderHostFromCloneURL(raw string) string {
+	return providerHostFromCloneURL(raw)
 }
 
 func isLocalGitHostName(host string) bool {
@@ -86,9 +141,6 @@ func validateGitURLPort(field string, parsed *url.URL) error {
 		return nil
 	}
 	if parsed.Scheme == "https" && port == "443" {
-		return nil
-	}
-	if parsed.Scheme == "http" && port == "80" {
 		return nil
 	}
 	return fmt.Errorf("%s port %q is not supported; use the default port for %s", field, port, parsed.Scheme)

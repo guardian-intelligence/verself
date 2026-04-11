@@ -53,6 +53,7 @@ type repoBootstrapEnv struct {
 	authProvider  *testAuthProvider
 	queryCHConn   anyQueryRower
 	token         string
+	webhookURL    string
 	webhookSecret string
 	runner        *fakeRunner
 	balanceBefore uint64
@@ -304,8 +305,7 @@ jobs:
 		CHDatabase:                "forge_metal",
 		Runner:                    runner,
 		Billing:                   billingHTTPClient,
-		PlatformOrgID:             testOrgID,
-		ForgejoWebhookSecret:      "forgejo-webhook-secret",
+		WebhookSecretKEK:          "0000000000000000000000000000000000000000000000000000000000000000",
 		BillingVCPUs:              2,
 		BillingMemMiB:             2048,
 		ForgejoURL:                "https://git.example.invalid",
@@ -324,6 +324,7 @@ jobs:
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID, 10),
 	})
+	webhookURL, webhookSecret := createWebhookEndpointForE2E(t, ctx, rentalServer.URL, token, "93.184.216.34")
 
 	return &repoBootstrapEnv{
 		ctx:           ctx,
@@ -334,7 +335,8 @@ jobs:
 		authProvider:  authProvider,
 		queryCHConn:   queryCHConn,
 		token:         token,
-		webhookSecret: "forgejo-webhook-secret",
+		webhookURL:    webhookURL,
+		webhookSecret: webhookSecret,
 		runner:        runner,
 		balanceBefore: seedCredits,
 		repoPath:      repoFixture.CloneURL,

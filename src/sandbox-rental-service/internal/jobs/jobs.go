@@ -228,6 +228,7 @@ type Service struct {
 	ForgejoRunnerToken        string
 	ForgejoRunnerBinaryURL    string
 	ForgejoRunnerBinarySHA256 string
+	WebhookSecretCodec        *SecretCodec
 	Logger                    *slog.Logger
 }
 

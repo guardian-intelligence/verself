@@ -47,7 +47,9 @@ var (
 type RepoRecord struct {
 	RepoID                   uuid.UUID       `json:"repo_id"`
 	OrgID                    uint64          `json:"org_id"`
+	IntegrationID            *uuid.UUID      `json:"integration_id,omitempty"`
 	Provider                 string          `json:"provider"`
+	ProviderHost             string          `json:"provider_host"`
 	ProviderRepoID           string          `json:"provider_repo_id"`
 	Owner                    string          `json:"owner"`
 	Name                     string          `json:"name"`
@@ -69,7 +71,9 @@ type RepoRecord struct {
 
 type CreateRepoRequest struct {
 	OrgID                uint64          `json:"org_id"`
+	IntegrationID        *uuid.UUID      `json:"integration_id,omitempty"`
 	Provider             string          `json:"provider"`
+	ProviderHost         string          `json:"provider_host"`
 	ProviderRepoID       string          `json:"provider_repo_id"`
 	Owner                string          `json:"owner"`
 	Name                 string          `json:"name"`
@@ -128,18 +132,18 @@ func (s *Service) CreateRepo(ctx context.Context, req CreateRepoRequest) (*RepoR
 	summary := normalizedSummary(req.CompatibilitySummary)
 
 	if _, err := s.PG.ExecContext(ctx, `
-		INSERT INTO repos (
-			repo_id, org_id, provider, provider_repo_id, owner, name, full_name,
-			clone_url, default_branch, runner_profile_slug, state,
-			compatibility_status, compatibility_summary, last_scanned_sha,
-			created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11,
-			$12, $13::jsonb, $14,
-			$15, $15
-		)
-	`, repoID, int64(req.OrgID), req.Provider, req.ProviderRepoID, req.Owner, req.Name, req.FullName,
+			INSERT INTO repos (
+				repo_id, org_id, integration_id, provider, provider_host, provider_repo_id, owner, name, full_name,
+				clone_url, default_branch, runner_profile_slug, state,
+				compatibility_status, compatibility_summary, last_scanned_sha,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9,
+				$10, $11, $12, $13,
+				$14, $15::jsonb, $16,
+				$17, $17
+			)
+		`, repoID, int64(req.OrgID), req.IntegrationID, req.Provider, req.ProviderHost, req.ProviderRepoID, req.Owner, req.Name, req.FullName,
 		req.CloneURL, req.DefaultBranch, req.RunnerProfileSlug, req.State,
 		req.CompatibilityStatus, string(summary), req.LastScannedSHA, now); err != nil {
 		return nil, fmt.Errorf("insert repo: %w", err)
@@ -151,10 +155,12 @@ func (s *Service) CreateRepo(ctx context.Context, req CreateRepoRequest) (*RepoR
 func (s *Service) GetRepo(ctx context.Context, orgID uint64, repoID uuid.UUID) (*RepoRecord, error) {
 	row := s.PG.QueryRowContext(ctx, `
 		SELECT
-			repo_id,
-			org_id,
-			provider,
-			provider_repo_id,
+				repo_id,
+				org_id,
+				COALESCE(integration_id::text, ''),
+				provider,
+				provider_host,
+				provider_repo_id,
 			owner,
 			name,
 			full_name,
@@ -188,10 +194,12 @@ func (s *Service) GetRepo(ctx context.Context, orgID uint64, repoID uuid.UUID) (
 func (s *Service) ListRepos(ctx context.Context, orgID uint64) ([]RepoRecord, error) {
 	rows, err := s.PG.QueryContext(ctx, `
 		SELECT
-			repo_id,
-			org_id,
-			provider,
-			provider_repo_id,
+				repo_id,
+				org_id,
+				COALESCE(integration_id::text, ''),
+				provider,
+				provider_host,
+				provider_repo_id,
 			owner,
 			name,
 			full_name,
@@ -338,17 +346,19 @@ func (s *Service) UpdateRepoImportMetadata(ctx context.Context, repoID uuid.UUID
 		return err
 	}
 	res, err := s.PG.ExecContext(ctx, `
-		UPDATE repos
-		SET provider = $2,
-		    provider_repo_id = $3,
-		    owner = $4,
-		    name = $5,
-		    full_name = $6,
-		    clone_url = $7,
-		    default_branch = $8,
-		    updated_at = $9
-		WHERE repo_id = $1
-	`, repoID, req.Provider, req.ProviderRepoID, req.Owner, req.Name, req.FullName, req.CloneURL, req.DefaultBranch, time.Now().UTC())
+			UPDATE repos
+			SET integration_id = COALESCE($2, integration_id),
+			    provider = $3,
+			    provider_host = $4,
+			    provider_repo_id = $5,
+			    owner = $6,
+			    name = $7,
+			    full_name = $8,
+			    clone_url = $9,
+			    default_branch = $10,
+			    updated_at = $11
+			WHERE repo_id = $1
+		`, repoID, req.IntegrationID, req.Provider, req.ProviderHost, req.ProviderRepoID, req.Owner, req.Name, req.FullName, req.CloneURL, req.DefaultBranch, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("update repo import metadata: %w", err)
 	}
@@ -678,10 +688,12 @@ func (s *Service) markGoldenGenerationFailed(ctx context.Context, generationID u
 func (s *Service) getRepoByID(ctx context.Context, repoID uuid.UUID) (*RepoRecord, error) {
 	row := s.PG.QueryRowContext(ctx, `
 		SELECT
-			repo_id,
-			org_id,
-			provider,
-			provider_repo_id,
+				repo_id,
+				org_id,
+				COALESCE(integration_id::text, ''),
+				provider,
+				provider_host,
+				provider_repo_id,
 			owner,
 			name,
 			full_name,
@@ -717,15 +729,18 @@ type rowScanner interface {
 
 func scanRepoRow(scanner rowScanner) (*RepoRecord, error) {
 	var (
-		record       RepoRecord
-		activeID     string
-		archivedAt   sql.NullTime
-		summaryBytes []byte
+		record        RepoRecord
+		integrationID string
+		activeID      string
+		archivedAt    sql.NullTime
+		summaryBytes  []byte
 	)
 	if err := scanner.Scan(
 		&record.RepoID,
 		&record.OrgID,
+		&integrationID,
 		&record.Provider,
+		&record.ProviderHost,
 		&record.ProviderRepoID,
 		&record.Owner,
 		&record.Name,
@@ -747,6 +762,7 @@ func scanRepoRow(scanner rowScanner) (*RepoRecord, error) {
 		return nil, err
 	}
 	record.CompatibilitySummary = append(json.RawMessage(nil), summaryBytes...)
+	record.IntegrationID = uuidPointer(integrationID)
 	record.ActiveGoldenGenerationID = uuidPointer(activeID)
 	if archivedAt.Valid {
 		record.ArchivedAt = &archivedAt.Time
@@ -804,6 +820,7 @@ func scanGoldenGenerationRows(rows *sql.Rows) (*GoldenGenerationRecord, error) {
 
 func normalizeCreateRepoRequest(req CreateRepoRequest) (CreateRepoRequest, error) {
 	req.Provider = strings.TrimSpace(req.Provider)
+	req.ProviderHost = strings.TrimSpace(strings.ToLower(req.ProviderHost))
 	req.ProviderRepoID = strings.TrimSpace(req.ProviderRepoID)
 	req.Owner = strings.TrimSpace(req.Owner)
 	req.Name = strings.TrimSpace(req.Name)
@@ -820,6 +837,16 @@ func normalizeCreateRepoRequest(req CreateRepoRequest) (CreateRepoRequest, error
 	}
 	if req.Provider == "" {
 		return CreateRepoRequest{}, fmt.Errorf("provider is required")
+	}
+	cloneProviderHost := providerHostFromCloneURL(req.CloneURL)
+	if req.ProviderHost == "" {
+		req.ProviderHost = cloneProviderHost
+	}
+	if req.ProviderHost == "" {
+		return CreateRepoRequest{}, fmt.Errorf("provider_host is required")
+	}
+	if cloneProviderHost != "" && req.ProviderHost != cloneProviderHost {
+		return CreateRepoRequest{}, fmt.Errorf("provider_host %q must match clone_url host %q", req.ProviderHost, cloneProviderHost)
 	}
 	if req.ProviderRepoID == "" {
 		return CreateRepoRequest{}, fmt.Errorf("provider_repo_id is required")

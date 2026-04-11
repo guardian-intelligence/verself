@@ -10,6 +10,7 @@ import (
 func importRepoRequest(request apiwire.SandboxImportRepoRequest) jobs.ImportRepoRequest {
 	return jobs.ImportRepoRequest{
 		Provider:       request.Provider,
+		ProviderHost:   request.ProviderHost,
 		ProviderRepoID: request.ProviderRepoID,
 		Owner:          request.Owner,
 		Name:           request.Name,
@@ -43,6 +44,7 @@ func repoRecord(record jobs.RepoRecord) apiwire.SandboxRepoRecord {
 		RepoID:                   record.RepoID,
 		OrgID:                    apiwire.Uint64(record.OrgID),
 		Provider:                 record.Provider,
+		ProviderHost:             record.ProviderHost,
 		ProviderRepoID:           record.ProviderRepoID,
 		Owner:                    record.Owner,
 		Name:                     record.Name,
