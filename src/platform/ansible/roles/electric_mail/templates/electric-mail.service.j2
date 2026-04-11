@@ -6,7 +6,6 @@ Wants=postgresql.service mailbox-service.service
 
 [Service]
 Type=simple
-ExecStartPre=/usr/bin/podman pull {{ electric_mail_image }}
 ExecStart=/usr/bin/podman run --rm --replace \
   --name electric-mail \
   --network=host \
