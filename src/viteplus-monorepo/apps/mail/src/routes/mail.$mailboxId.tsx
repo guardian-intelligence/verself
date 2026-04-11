@@ -1,6 +1,7 @@
 import { createFileRoute, getRouteApi, Link, Outlet } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { formatUTCDateTime } from "@forge-metal/web-env";
 import {
   createEmailMailboxCollection,
@@ -25,12 +26,16 @@ function MailboxEmailList() {
 }
 
 function EmailListPane({ accountId, mailboxId }: { accountId: string; mailboxId: string }) {
+  const auth = useSignedInAuth();
   const emailMailboxCollection = useMemo(
-    () => createEmailMailboxCollection(accountId),
-    [accountId],
+    () => createEmailMailboxCollection(auth, accountId),
+    [accountId, auth.cachePartition],
   );
 
-  const emailCollection = useMemo(() => createEmailCollection(accountId), [accountId]);
+  const emailCollection = useMemo(
+    () => createEmailCollection(auth, accountId),
+    [accountId, auth.cachePartition],
+  );
 
   const { data: emailMailboxes } = useLiveQuery(
     (q) => q.from({ em: emailMailboxCollection }),

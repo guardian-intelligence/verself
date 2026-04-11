@@ -1,12 +1,12 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { getLoginRedirectURL } from "~/server-fns/auth";
+import { getSignInRedirectURL } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
   beforeLoad: async ({ search }) => {
-    const authURL = await getLoginRedirectURL({
+    const authURL = await getSignInRedirectURL({
       data: search.redirect ? { redirectTo: search.redirect } : {},
     });
     throw redirect({ href: authURL });

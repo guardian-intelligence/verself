@@ -2,6 +2,8 @@ import { createFileRoute, getRouteApi, useNavigate } from "@tanstack/react-route
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import DOMPurify from "dompurify";
+import { authQueryKey } from "@forge-metal/auth-web/isomorphic";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { formatUTCDateTime } from "@forge-metal/web-env";
 import {
   flagEmail,
@@ -13,7 +15,6 @@ import {
 } from "~/server-fns/mail";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createEmailCollection, type ElectricEmail } from "~/lib/collections";
-import { keys } from "~/lib/query-keys";
 
 export const Route = createFileRoute("/mail/$mailboxId/$emailId")({
   ssr: "data-only",
@@ -38,16 +39,20 @@ function EmailViewer() {
 }
 
 function EmailViewerInner({ accountId, emailId }: { accountId: string; emailId: string }) {
+  const auth = useSignedInAuth();
   const { mailboxId } = Route.useParams();
   const navigate = useNavigate();
 
   const { data: body, isLoading: bodyLoading } = useQuery({
-    queryKey: keys.emailBody(emailId),
+    queryKey: authQueryKey(auth, "mail", "body", emailId),
     queryFn: () => getEmailBody({ data: { emailId } }),
     staleTime: 5 * 60_000,
   });
 
-  const emailCollection = useMemo(() => createEmailCollection(accountId), [accountId]);
+  const emailCollection = useMemo(
+    () => createEmailCollection(auth, accountId),
+    [accountId, auth.cachePartition],
+  );
 
   const { data: emails } = useLiveQuery((q) => q.from({ e: emailCollection }), [emailCollection]);
 
