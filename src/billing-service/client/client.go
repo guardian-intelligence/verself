@@ -383,15 +383,19 @@ func (c *ServiceClient) Activate(ctx context.Context, reservation Reservation, a
 	return Reservation{}, unexpected("activate", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
 }
 
-func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, reqEditors ...RequestEditorFn) error {
+func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, usageSummary map[string]any, reqEditors ...RequestEditorFn) error {
 	actualQuantityWire, err := uint32ToInt32(actualQuantity, "actual_quantity")
 	if err != nil {
 		return err
 	}
-	resp, err := c.inner.SettleWindowWithResponse(ctx, SettleWindowJSONRequestBody{
+	body := SettleWindowJSONRequestBody{
 		WindowId:       reservation.WindowId,
 		ActualQuantity: actualQuantityWire,
-	}, reqEditors...)
+	}
+	if usageSummary != nil {
+		body.UsageSummary = &usageSummary
+	}
+	resp, err := c.inner.SettleWindowWithResponse(ctx, body, reqEditors...)
 	if err != nil {
 		return err
 	}

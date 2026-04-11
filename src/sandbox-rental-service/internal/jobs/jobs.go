@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +58,10 @@ var (
 
 // Runner abstracts VM execution. Production uses *vmorchestrator.Client; tests use a fake.
 type Runner interface {
-	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	StartDirectJob(ctx context.Context, job vmorchestrator.JobConfig) (string, error)
+	StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(vmorchestrator.JobGuestEvent) error) error
+	WaitJob(ctx context.Context, jobID string, includeOutput bool) (vmorchestrator.JobStatus, error)
+	CancelJob(ctx context.Context, jobID string) (bool, error)
 }
 
 type BillingClient interface {
@@ -73,7 +77,8 @@ type BillingClient interface {
 		allocation map[string]float64,
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
-	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
+	Activate(ctx context.Context, reservation billingclient.Reservation, activatedAt time.Time, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
+	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, usageSummary map[string]any, reqEditors ...billingclient.RequestEditorFn) error
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
 }
 
@@ -153,6 +158,7 @@ type BillingWindow struct {
 	WindowStart      time.Time  `json:"window_start"`
 	CreatedAt        time.Time  `json:"created_at"`
 	SettledAt        *time.Time `json:"settled_at,omitempty"`
+	ActivatedAt      *time.Time `json:"activated_at,omitempty"`
 }
 
 type JobLogRow struct {
@@ -232,6 +238,7 @@ type executionOutcome struct {
 	ZFSWritten    uint64
 	StdoutBytes   uint64
 	StderrBytes   uint64
+	Metrics       *vmorchestrator.VMMetrics
 	Logs          string
 	CommitSHA     string
 	RunnerName    string
@@ -242,6 +249,11 @@ type executionOutcome struct {
 type workloadResult struct {
 	err     error
 	outcome executionOutcome
+}
+
+type workloadActivation struct {
+	reservation billingclient.Reservation
+	startedAt   time.Time
 }
 
 // Submit creates a durable execution and first attempt, reserves billing, and
@@ -385,8 +397,9 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	defer cancel()
 
 	resultCh := make(chan workloadResult, 1)
+	activationCh := make(chan workloadActivation, 1)
 	go func() {
-		outcome, err := s.runAttemptWorkload(runCtx, executionID, attemptID, req)
+		outcome, err := s.runAttemptWorkload(runCtx, executionID, attemptID, req, reservation, activationCh)
 		resultCh <- workloadResult{outcome: outcome, err: err}
 	}()
 
@@ -395,7 +408,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	forcedFailureReason := ""
 	skipFinalBilling := false
 	windowAdvanceUnresolved := false
-	nextWindowReserveAt := reservation.RenewBy
+	nextWindowReserveAt := time.Time{}
 
 	for {
 		var (
@@ -412,6 +425,10 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		}
 
 		select {
+		case activation := <-activationCh:
+			currentReservation = activation.reservation
+			nextWindowReserveAt = activation.reservation.RenewBy
+			s.writeSystemLog(ctx, executionID, attemptID, "billing activated window_seq=%d started_at=%s", currentReservation.WindowSeq, activation.startedAt.Format(time.RFC3339Nano))
 		case result := <-resultCh:
 			stopTimer(windowAdvanceTimer)
 			outcome := result.outcome
@@ -489,7 +506,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
 
 			actualSeconds := actualSecondsForReservation(currentReservation, outcome.CompletedAt)
-			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualSeconds)); settleErr != nil {
+			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualSeconds), usageSummaryForOutcome(outcome)); settleErr != nil {
 				s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, actualSeconds, settleErr, totalChargeUnits)
 				return
 			}
@@ -515,7 +532,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				continue
 			}
 			windowSeconds := actualSecondsForReservation(currentReservation, time.Now().UTC())
-			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(windowSeconds)); settleErr != nil {
+			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(windowSeconds), nil); settleErr != nil {
 				s.Logger.ErrorContext(ctx, "billing window advance settle", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "actual_quantity", windowSeconds, "error", settleErr)
 				s.writeSystemLog(ctx, executionID, attemptID, "billing window advance settle failed window_seq=%d actual_quantity=%d error=%v", currentReservation.WindowSeq, windowSeconds, settleErr)
 				forcedFailureReason = "billing_window_advance_failed"
@@ -634,10 +651,10 @@ func (s *Service) handleSettleFailure(
 	s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, reservation, failureOutcome, totalChargeUnits)
 }
 
-func (s *Service) runAttemptWorkload(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
+func (s *Service) runAttemptWorkload(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation) (executionOutcome, error) {
 	switch req.Kind {
 	case KindDirect:
-		return s.runDirect(ctx, executionID, attemptID, req)
+		return s.runDirect(ctx, executionID, attemptID, req, reservation, activationCh)
 	default:
 		return executionOutcome{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
@@ -655,13 +672,7 @@ func stopTimer(timer *time.Timer) {
 	}
 }
 
-func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
-	startedAt := time.Now().UTC()
-	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
-		return executionOutcome{}, err
-	}
-	s.writeSystemLog(ctx, executionID, attemptID, "running direct execution")
-
+func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation) (executionOutcome, error) {
 	command := strings.TrimSpace(req.RunCommand)
 	if command == "" {
 		command = defaultRunCommand
@@ -671,32 +682,132 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	}
 
 	jobCfg := vmorchestrator.JobConfig{
-		JobID:      attemptID.String(),
-		RunCommand: []string{"sh", "-c", command},
+		JobID:          attemptID.String(),
+		RunCommand:     []string{"sh", "-c", command},
+		BillablePhases: []string{"run"},
 		Env: map[string]string{
 			"REPO_URL": req.RepoURL,
 		},
 	}
-	result, err := s.Orchestrator.Run(ctx, jobCfg)
+
+	jobID, err := s.Orchestrator.StartDirectJob(ctx, jobCfg)
+	if err != nil {
+		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
+	}
+	if jobID != attemptID.String() {
+		err := fmt.Errorf("orchestrator job id mismatch: got %s want %s", jobID, attemptID.String())
+		_, _ = s.Orchestrator.CancelJob(context.Background(), jobID)
+		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
+	}
+	s.writeSystemLog(ctx, executionID, attemptID, "launched direct execution")
+
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+	streamErrCh := make(chan error, 1)
+	startedAtCh := make(chan time.Time, 1)
+	go func() {
+		streamErrCh <- s.Orchestrator.StreamGuestEvents(streamCtx, jobID, true, func(event vmorchestrator.JobGuestEvent) error {
+			if event.Terminal {
+				return nil
+			}
+			startedAt, ok := billablePhaseStartedAt(event)
+			if !ok {
+				return nil
+			}
+			activated, activateErr := s.activateBillableWindow(ctx, executionID, attemptID, reservation, startedAt)
+			if activateErr != nil {
+				_, _ = s.Orchestrator.CancelJob(context.Background(), jobID)
+				return activateErr
+			}
+			select {
+			case activationCh <- workloadActivation{reservation: activated, startedAt: startedAt}:
+			default:
+			}
+			select {
+			case startedAtCh <- startedAt:
+			default:
+			}
+			return nil
+		})
+	}()
+
+	status, waitErr := s.Orchestrator.WaitJob(ctx, jobID, true)
+	if waitErr != nil {
+		streamCancel()
+	}
+	streamErr := <-streamErrCh
+	var result vmorchestrator.JobResult
+	if status.Result != nil {
+		result = *status.Result
+	}
+
+	var startedAt time.Time
+	select {
+	case startedAt = <-startedAtCh:
+	default:
+	}
+	if waitErr == nil && streamErr != nil {
+		waitErr = streamErr
+	}
 	outcome := executionOutcome{
-		StartedAt:   startedAt,
 		CompletedAt: time.Now().UTC(),
 		Logs:        result.Logs,
 		ExitCode:    result.ExitCode,
 		ZFSWritten:  result.ZFSWritten,
 		StdoutBytes: result.StdoutBytes,
 		StderrBytes: result.StderrBytes,
+		Metrics:     result.Metrics,
 	}
-	outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
-	if err != nil {
+	if !startedAt.IsZero() {
+		outcome.StartedAt = startedAt
+		outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
+	}
+	if waitErr != nil {
 		outcome.State = StateFailed
-		outcome.FailureReason = failureReasonFromError(err)
-		return outcome, err
+		outcome.FailureReason = failureReasonFromError(waitErr)
+		return outcome, waitErr
 	}
 	if result.ExitCode != 0 {
 		outcome.State = StateFailed
 	}
+	if outcome.StartedAt.IsZero() {
+		err := errors.New("billable phase did not start")
+		outcome.State = StateFailed
+		outcome.FailureReason = "billable_phase_missing"
+		return outcome, err
+	}
 	return outcome, nil
+}
+
+func (s *Service) activateBillableWindow(ctx context.Context, executionID, attemptID uuid.UUID, reservation billingclient.Reservation, startedAt time.Time) (billingclient.Reservation, error) {
+	activated, err := s.Billing.Activate(ctx, reservation, startedAt)
+	if err != nil {
+		return billingclient.Reservation{}, fmt.Errorf("billing activate: %w", err)
+	}
+	if err := s.markWindowActivated(ctx, attemptID, int(activated.WindowSeq), activated.WindowStart); err != nil {
+		return billingclient.Reservation{}, fmt.Errorf("mark billing window activated: %w", err)
+	}
+	if err := s.markRunning(ctx, executionID, attemptID, activated.WindowStart); err != nil {
+		return billingclient.Reservation{}, fmt.Errorf("mark execution running: %w", err)
+	}
+	s.writeSystemLog(ctx, executionID, attemptID, "billable phase started window_seq=%d started_at=%s", activated.WindowSeq, activated.WindowStart.Format(time.RFC3339Nano))
+	return activated, nil
+}
+
+func billablePhaseStartedAt(event vmorchestrator.JobGuestEvent) (time.Time, bool) {
+	if event.Kind != "phase_started" || event.Attrs["billable"] != "true" {
+		return time.Time{}, false
+	}
+	if strings.TrimSpace(event.Attrs["phase"]) == "" {
+		return time.Time{}, false
+	}
+	if raw := strings.TrimSpace(event.Attrs["host_received_unix_nano"]); raw != "" {
+		nanos, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil && nanos > 0 {
+			return time.Unix(0, nanos).UTC(), true
+		}
+	}
+	return time.Now().UTC(), true
 }
 
 func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
@@ -869,6 +980,7 @@ func (s *Service) getBillingWindows(ctx context.Context, attemptID uuid.UUID) ([
 			pricing_phase,
 			state,
 			window_start,
+			activated_at,
 			created_at,
 			settled_at
 		FROM execution_billing_windows
@@ -883,8 +995,9 @@ func (s *Service) getBillingWindows(ctx context.Context, attemptID uuid.UUID) ([
 	var out []BillingWindow
 	for rows.Next() {
 		var (
-			window    BillingWindow
-			settledAt sql.NullTime
+			window      BillingWindow
+			activatedAt sql.NullTime
+			settledAt   sql.NullTime
 		)
 		if err := rows.Scan(
 			&window.AttemptID,
@@ -896,10 +1009,14 @@ func (s *Service) getBillingWindows(ctx context.Context, attemptID uuid.UUID) ([
 			&window.PricingPhase,
 			&window.State,
 			&window.WindowStart,
+			&activatedAt,
 			&window.CreatedAt,
 			&settledAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan billing window: %w", err)
+		}
+		if activatedAt.Valid {
+			window.ActivatedAt = &activatedAt.Time
 		}
 		if settledAt.Valid {
 			window.SettledAt = &settledAt.Time
@@ -1076,7 +1193,7 @@ func (s *Service) markFinalizing(ctx context.Context, executionID, attemptID uui
 		    completed_at = $10,
 		    updated_at = $10
 		WHERE attempt_id = $1
-	`, attemptID, StateFinalizing, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.StartedAt, outcome.CompletedAt); err != nil {
+	`, attemptID, StateFinalizing, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), nullableTime(outcome.StartedAt), outcome.CompletedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1111,7 +1228,7 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 		    completed_at = $10,
 		    updated_at = $10
 		WHERE attempt_id = $1
-	`, attemptID, outcome.State, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.StartedAt, outcome.CompletedAt); err != nil {
+	`, attemptID, outcome.State, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), nullableTime(outcome.StartedAt), outcome.CompletedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1132,6 +1249,15 @@ func (s *Service) markWindowSettled(ctx context.Context, attemptID uuid.UUID, wi
 		SET actual_quantity = $3, pricing_phase = $4, state = 'settled', settled_at = $5
 		WHERE attempt_id = $1 AND window_seq = $2
 	`, attemptID, windowSeq, actualSeconds, pricingPhase, settledAt)
+	return err
+}
+
+func (s *Service) markWindowActivated(ctx context.Context, attemptID uuid.UUID, windowSeq int, activatedAt time.Time) error {
+	_, err := s.PG.ExecContext(ctx, `
+		UPDATE execution_billing_windows
+		SET window_start = $3, activated_at = $3
+		WHERE attempt_id = $1 AND window_seq = $2
+	`, attemptID, windowSeq, activatedAt)
 	return err
 }
 
@@ -1542,6 +1668,32 @@ func chargeUnits(costPerSec int64, seconds int) uint64 {
 		return 0
 	}
 	return uint64(costPerSec) * uint64(seconds)
+}
+
+func usageSummaryForOutcome(outcome executionOutcome) map[string]any {
+	summary := map[string]any{
+		"zfs_written_bytes": outcome.ZFSWritten,
+		"stdout_bytes":      outcome.StdoutBytes,
+		"stderr_bytes":      outcome.StderrBytes,
+	}
+	if outcome.Metrics != nil {
+		summary["firecracker_boot_time_us"] = outcome.Metrics.BootTimeUs
+		summary["block_read_bytes"] = outcome.Metrics.BlockReadBytes
+		summary["block_write_bytes"] = outcome.Metrics.BlockWriteBytes
+		summary["block_read_count"] = outcome.Metrics.BlockReadCount
+		summary["block_write_count"] = outcome.Metrics.BlockWriteCount
+		summary["net_rx_bytes"] = outcome.Metrics.NetRxBytes
+		summary["net_tx_bytes"] = outcome.Metrics.NetTxBytes
+		summary["vcpu_exit_count"] = outcome.Metrics.VCPUExitCount
+	}
+	return summary
+}
+
+func nullableTime(value time.Time) sql.NullTime {
+	if value.IsZero() {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: value.UTC(), Valid: true}
 }
 
 func uuidString(id *uuid.UUID) string {

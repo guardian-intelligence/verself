@@ -455,12 +455,22 @@ func (c *settleFailingBillingClient) Settle(
 	ctx context.Context,
 	reservation billingclient.Reservation,
 	actualSeconds uint32,
+	usageSummary map[string]any,
 	reqEditors ...billingclient.RequestEditorFn,
 ) error {
 	if reservation.SourceRef == c.failedSourceRef {
 		return errors.New("forced settle failure")
 	}
-	return c.inner.Settle(ctx, reservation, actualSeconds, reqEditors...)
+	return c.inner.Settle(ctx, reservation, actualSeconds, usageSummary, reqEditors...)
+}
+
+func (c *settleFailingBillingClient) Activate(
+	ctx context.Context,
+	reservation billingclient.Reservation,
+	activatedAt time.Time,
+	reqEditors ...billingclient.RequestEditorFn,
+) (billingclient.Reservation, error) {
+	return c.inner.Activate(ctx, reservation, activatedAt, reqEditors...)
 }
 
 func (c *settleFailingBillingClient) Void(
@@ -497,9 +507,9 @@ func insertReconcileAttemptRows(ctx context.Context, db *sql.DB, executionID, at
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_billing_windows (
 			attempt_id, billing_window_id, window_seq, reservation_shape,
-			reserved_quantity, pricing_phase, state, window_start, created_at
-		) VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8)
-	`, attemptID, spec.Reservation.WindowId, spec.Reservation.ReservationShape, spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.WindowState, spec.Reservation.WindowStart, spec.UpdatedAt); err != nil {
+			reserved_quantity, pricing_phase, state, window_start, activated_at, created_at
+		) VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9)
+	`, attemptID, spec.Reservation.WindowId, spec.Reservation.ReservationShape, spec.Reservation.WindowSecs, spec.Reservation.PricingPhase, spec.WindowState, spec.Reservation.WindowStart, spec.Reservation.ActivatedAt, spec.UpdatedAt); err != nil {
 		return err
 	}
 

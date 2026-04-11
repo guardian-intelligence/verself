@@ -217,6 +217,7 @@ CREATE TABLE execution_billing_windows (
     pricing_phase       TEXT        NOT NULL DEFAULT '',
     state               TEXT        NOT NULL,
     window_start        TIMESTAMPTZ NOT NULL,
+    activated_at        TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     settled_at          TIMESTAMPTZ,
     PRIMARY KEY (attempt_id, window_seq),
