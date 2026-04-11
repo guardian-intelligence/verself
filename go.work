@@ -4,6 +4,7 @@ use (
 	./src/apiwire
 	./src/auth-middleware
 	./src/billing-service
+	./src/identity-service
 	./src/mailbox-service
 	./src/otel
 	./src/sandbox-rental-service

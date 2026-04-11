@@ -33,18 +33,18 @@ customer IDs supplied by external webhook payloads.
 
 ## Organization Surface
 
-The target product surface is a Forge Metal organization console on the auth
-host, for example `https://auth.<domain>/organization` or
-`https://auth.<domain>/organizations`. The exact route should be chosen around
-Zitadel's reserved prefixes, especially `/ui/console`, `/ui/v2/login`,
-`/oauth/v2`, `/oidc/v1`, `/v2`, `/management/v1`, and the gRPC service paths.
+The product surface is a reusable first-party organization-management React
+component in `src/viteplus-monorepo`, embedded first inside rent-a-sandbox and
+then inside the other customer-facing frontend apps. It talks to
+`identity-service` through frontend server functions; browser code does not
+receive Zitadel bearer tokens.
 
 The raw Zitadel Management Console remains an operator/admin identity tool at
-`/ui/console`; it is not the long-term customer product console. The customer
-organization console should be a Forge Metal app backed by Forge Metal server
-functions and Zitadel APIs. A Clerk-like embedded experience should be a
-first-party shared component package in `src/viteplus-monorepo`, not an iframe
-or extension of the Zitadel Console.
+`/ui/console`; it is not the long-term customer product console. A future
+standalone organization route on the auth host is still possible, for example
+`https://auth.<domain>/organization`, but it should be another embedding of the
+same component and service API rather than an iframe, a Zitadel Console
+extension, or a separate hand-built shell.
 
 Zitadel custom login UI support is relevant to replacing or branding the login
 flow, not to product policy editing. Zitadel Actions are useful for workflow
@@ -59,8 +59,9 @@ Service operation catalogs:
 - Are exposed through OpenAPI `x-forge-metal-iam`.
 - Include operation ID, permission, resource, action, org scope, rate-limit
   class, idempotency semantics, and audit event.
-- Are not `apiwire` DTOs; they describe service behavior rather than
-  request/response data.
+- The service-local Huma metadata is not an `apiwire` DTO. Public responses that
+  return an operation catalog to customers are normal request/response wire data
+  and should use `apiwire`.
 
 Zitadel role assignments:
 
@@ -79,10 +80,11 @@ Forge Metal policy documents:
   cached shared policy source once custom customer policies span multiple
   services.
 
-For v1, keep service-local policy maps and seed built-in Zitadel roles. When a
-second service needs customer-editable custom bundles, introduce a shared
-policy-contract package or service. Do not move these contracts into `apiwire`;
-`apiwire` remains for request/response wire data.
+For v1, `identity-service` owns the organization policy document and seeds the
+built-in Zitadel roles it can assign. Other services continue to own and enforce
+their operation catalogs. As more services expose customer-editable permissions,
+the policy document should reference service-declared permissions, not copied
+ad hoc permission strings.
 
 ## Runtime Token Contract
 
@@ -171,12 +173,23 @@ An operation policy contains the required permission, resource, action,
 organization scope, rate-limit class, idempotency rule, and audit event. The
 permission check is intentionally small: a caller is allowed if the identity has
 a direct OAuth scope equal to the permission, or if a role assignment for the
-current organization maps to a built-in role bundle containing that permission.
+current organization maps through the Forge Metal policy document to that
+permission.
 
 Direct scopes are appropriate for tightly scoped service accounts and future
 machine-to-machine grants. Human users should normally receive built-in roles
 first, then customer-editable Forge Metal policy bundles once that surface
 exists.
+
+Embedded organization widgets are a special cross-service web-session path.
+The rent-a-sandbox frontend owns the interactive OIDC application and forwards
+the server-owned access token to `identity-service`, but Zitadel may only assert
+the frontend application's project roles in that access token. `identity-service`
+therefore treats the token as proof of subject, organization, issuer, and
+audience, then resolves the caller's identity-service project role assignment
+from Zitadel before evaluating the Forge Metal policy document. This keeps the
+authorization decision at the target service boundary without requiring browser
+access to bearer tokens or a service-local product console.
 
 The `x-forge-metal-iam` metadata is documentation and a generation target, not
 the security mechanism itself. The security mechanism is the service's runtime
@@ -242,9 +255,9 @@ for API rehearsal:
 
 | Persona | Human login | Machine user | Organization | Built-in roles |
 |---|---|---|---|---|
-| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | `sandbox_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
-| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | `sandbox_org_admin` |
-| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member` |
+| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | `sandbox_org_admin`, `identity_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
+| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | `sandbox_org_admin`, `identity_org_admin` |
+| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member`, `identity_org_member` |
 
 Use the Make wrappers to mint short-lived token files from the deployed
 credential store. These are extremely useful utility scripts for operators and
@@ -269,6 +282,7 @@ Current access coverage:
 | Surface | `platform-admin` | `acme-admin` | `acme-member` | Credential path |
 |---|---|---|---|---|
 | rent-a-sandbox / `sandbox-rental-service` | platform `sandbox_org_admin` | Acme `sandbox_org_admin` | Acme `sandbox_org_member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
+| rent-a-sandbox organization surface / `identity-service` | platform `identity_org_admin` | Acme `identity_org_admin` | Acme `identity_org_member` | Zitadel browser login and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | webmail / `mailbox-service` | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
 | Letters | `letters_admin` | none | none | Zitadel browser login and `LETTERS_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
@@ -332,10 +346,10 @@ programmatically.
   resource owner organization. A richer multi-org UX needs an explicit active
   organization switch and services must continue filtering structured role
   assignments by that organization.
-- Built-in role-to-permission bundles currently live in service code. That is
-  acceptable while one service owns most product operations; once multiple
-  services need customer-editable bundles, Forge Metal needs a shared policy
-  source and cache invalidation story.
+- Built-in identity role-to-permission bundles currently live in
+  `identity-service`. Other services still need to publish their operation
+  catalogs into the policy-editing surface before customer-editable permissions
+  can span the full product.
 - Stalwart direct JMAP/IMAP/SMTP auth remains outside the Zitadel service-auth
   model. The repo-owned `mailbox-service` HTTP API uses Zitadel bearer tokens
   plus `mailbox_bindings`, but direct mail protocol credentials are still
@@ -349,9 +363,14 @@ Local code anchors:
 
 - `src/auth-middleware/auth.go`: JWT verification, split JWKS, identity claim
   extraction, role-assignment extraction.
+- `src/identity-service/internal/api/policy.go`: operation policy metadata,
+  policy-document-backed permission enforcement, idempotency and rate-limit
+  hooks for the organization-management API.
+- `src/identity-service/internal/identity/catalog.go`: built-in identity
+  operation catalog and default role-to-permission policy bundles.
 - `src/sandbox-rental-service/internal/api/policy.go`: operation policy
-  catalog, `x-forge-metal-iam`, role bundles, direct-scope permission checks,
-  idempotency and rate-limit hooks.
+  catalog, `x-forge-metal-iam`, sandbox role bundles, direct-scope permission
+  checks, idempotency and rate-limit hooks.
 - `src/sandbox-rental-service/internal/serviceauth/client_credentials.go`:
   service-to-service client-credentials scopes and single-node Host override.
 - `src/platform/ansible/playbooks/tasks/upsert_role_assignment.yml`: Zitadel

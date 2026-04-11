@@ -1,0 +1,76 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/forge-metal/identity-service/internal/identity"
+)
+
+const problemTypePrefix = "urn:forge-metal:problem:identity:"
+
+func problem(ctx context.Context, status int, code, detail string, cause error) error {
+	if cause != nil {
+		trace.SpanFromContext(ctx).RecordError(cause)
+	}
+	instance := ""
+	if spanContext := trace.SpanContextFromContext(ctx); spanContext.HasTraceID() {
+		instance = "urn:forge-metal:trace:" + spanContext.TraceID().String()
+	}
+	return &huma.ErrorModel{
+		Type:     problemTypePrefix + code,
+		Title:    http.StatusText(status),
+		Status:   status,
+		Detail:   detail,
+		Instance: instance,
+	}
+}
+
+func badRequest(ctx context.Context, code, detail string, cause error) error {
+	return problem(ctx, http.StatusBadRequest, code, detail, cause)
+}
+
+func unauthorized(ctx context.Context) error {
+	return problem(ctx, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
+}
+
+func forbidden(ctx context.Context, code, detail string) error {
+	return problem(ctx, http.StatusForbidden, code, detail, nil)
+}
+
+func notFound(ctx context.Context, code, detail string) error {
+	return problem(ctx, http.StatusNotFound, code, detail, nil)
+}
+
+func conflict(ctx context.Context, code, detail string, cause error) error {
+	return problem(ctx, http.StatusConflict, code, detail, cause)
+}
+
+func upstreamFailure(ctx context.Context, code, detail string, cause error) error {
+	return problem(ctx, http.StatusBadGateway, code, detail, cause)
+}
+
+func internalFailure(ctx context.Context, code, detail string, cause error) error {
+	return problem(ctx, http.StatusInternalServerError, code, detail, cause)
+}
+
+func identityError(ctx context.Context, err error) error {
+	switch {
+	case identity.IsInvalid(err):
+		return badRequest(ctx, "invalid-request", "invalid identity request", err)
+	case errors.Is(err, identity.ErrMemberMissing):
+		return notFound(ctx, "member-not-found", "organization member not found")
+	case errors.Is(err, identity.ErrPolicyConflict):
+		return conflict(ctx, "policy-version-conflict", "organization policy version conflict", err)
+	case errors.Is(err, identity.ErrZitadelUnavailable):
+		return upstreamFailure(ctx, "zitadel-unavailable", "identity provider unavailable", err)
+	case errors.Is(err, identity.ErrStoreUnavailable):
+		return internalFailure(ctx, "identity-store-unavailable", "identity store unavailable", err)
+	default:
+		return internalFailure(ctx, "identity-operation-failed", "identity operation failed", err)
+	}
+}
