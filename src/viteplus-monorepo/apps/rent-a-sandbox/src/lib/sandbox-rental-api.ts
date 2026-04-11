@@ -16,26 +16,26 @@ import {
   submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
 import {
-  vAttemptRecord,
   vBillingBalance,
   vBillingGrant,
   vBillingGrants,
   vBillingSubscription,
-  vBillingWindow,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
   vCreateBillingSubscriptionBody,
   vCreateBillingSubscriptionResponse,
-  vExecutionRecord,
   vGetExecutionPath,
   vGetRepoPath,
-  vGoldenGenerationRecord,
   vImportRepoBody,
   vListBillingSubscriptionsResponse,
   vListRepoGenerationsResponse,
   vListReposResponse,
-  vRepoBootstrapRecord,
-  vRepoRecord,
+  vSandboxAttemptRecord,
+  vSandboxBillingWindow,
+  vSandboxExecutionRecord,
+  vSandboxGoldenGenerationRecord,
+  vSandboxRepoBootstrapRecord,
+  vSandboxRepoRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
@@ -146,7 +146,7 @@ function parseCompatibilitySummary(input: unknown): RepoCompatibilitySummary | u
   return v.parse(repoCompatibilitySummarySchema, input);
 }
 
-function normalizeAttempt(input: v.InferOutput<typeof vAttemptRecord>) {
+function normalizeAttempt(input: v.InferOutput<typeof vSandboxAttemptRecord>) {
   return {
     ...input,
     attempt_seq: toSafeNumber(input.attempt_seq, "attempt_seq"),
@@ -161,7 +161,7 @@ function normalizeAttempt(input: v.InferOutput<typeof vAttemptRecord>) {
 
 export type Attempt = ReturnType<typeof normalizeAttempt>;
 
-function normalizeBillingWindow(input: v.InferOutput<typeof vBillingWindow>) {
+function normalizeBillingWindow(input: v.InferOutput<typeof vSandboxBillingWindow>) {
   return {
     ...input,
     actual_quantity: toOptionalSafeNumber(input.actual_quantity, "actual_quantity"),
@@ -231,7 +231,7 @@ function parseExecution(input: unknown) {
     billing_windows,
     latest_attempt,
     ...execution
-  } = v.parse(vExecutionRecord, input);
+  } = v.parse(vSandboxExecutionRecord, input);
   return {
     ...execution,
     billing_windows: billing_windows?.map((billingWindow) => normalizeBillingWindow(billingWindow)),
@@ -242,7 +242,7 @@ function parseExecution(input: unknown) {
 export type Execution = ReturnType<typeof parseExecution>;
 
 function parseRepo(input: unknown) {
-  const { $schema: _schema, compatibility_summary, ...repo } = v.parse(vRepoRecord, input);
+  const { $schema: _schema, compatibility_summary, ...repo } = v.parse(vSandboxRepoRecord, input);
   return {
     ...repo,
     compatibility_summary: parseCompatibilitySummary(compatibility_summary),
@@ -252,13 +252,18 @@ function parseRepo(input: unknown) {
 export type Repo = ReturnType<typeof parseRepo>;
 
 function parseGoldenGeneration(input: unknown) {
-  return v.parse(vGoldenGenerationRecord, input);
+  return v.parse(vSandboxGoldenGenerationRecord, input);
 }
 
 export type GoldenGeneration = ReturnType<typeof parseGoldenGeneration>;
 
 function parseRepoBootstrapRecord(input: unknown) {
-  const { $schema: _schema, generation, repo, ...record } = v.parse(vRepoBootstrapRecord, input);
+  const {
+    $schema: _schema,
+    generation,
+    repo,
+    ...record
+  } = v.parse(vSandboxRepoBootstrapRecord, input);
   return {
     ...record,
     generation: parseGoldenGeneration(generation),

@@ -12,7 +12,7 @@ import {
   vMailAccountResponse,
   vMailBodyResponse,
   vMailBodyPath,
-  vMailMutationOutputBody,
+  vMailboxMutation,
 } from "../__generated/mailbox-api/valibot.gen.js";
 
 export interface MailboxClientOptions {
@@ -83,7 +83,7 @@ function parseEmailBody(input: unknown) {
 export type EmailBody = ReturnType<typeof parseEmailBody>;
 
 function parseMailMutationResponse(input: unknown) {
-  const { $schema: _schema, ...response } = v.parse(vMailMutationOutputBody, input);
+  const { $schema: _schema, ...response } = v.parse(vMailboxMutation, input);
   return response;
 }
 

@@ -22,17 +22,14 @@ export const vErrorModel = v.strictObject({
         BigInt("-9223372036854775808"),
         "Invalid value: Expected int64 to be >= -9223372036854775808",
       ),
-      v.maxValue(
-        BigInt("9223372036854775807"),
-        "Invalid value: Expected int64 to be <= 9223372036854775807",
-      ),
+      v.maxValue(BigInt(599)),
     ),
   ),
   title: v.optional(v.string()),
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
-export const vMailAccountOutputBody = v.strictObject({
+export const vMailboxAccount = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   account_id: v.string(),
   default_mailbox_id: v.optional(v.string()),
@@ -40,7 +37,7 @@ export const vMailAccountOutputBody = v.strictObject({
   email_address: v.string(),
 });
 
-export const vMailBodyOutputBody = v.strictObject({
+export const vMailboxBody = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   account_id: v.string(),
   email_id: v.string(),
@@ -49,23 +46,29 @@ export const vMailBodyOutputBody = v.strictObject({
   text_body: v.string(),
 });
 
-export const vMailMoveInputBody = v.strictObject({
+export const vMailboxForwarder = v.strictObject({
+  enabled: v.boolean(),
+  forward_target_configured: v.boolean(),
+  last_error: v.optional(v.string()),
+  last_forwarded_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_forwarded_email_id: v.optional(v.string()),
+  last_sync_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  mailbox: v.string(),
+  running: v.boolean(),
+});
+
+export const vMailboxMoveRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   mailbox_id: v.string(),
 });
 
-export const vMailMutationOutputBody = v.strictObject({
+export const vMailboxMutation = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   email_id: v.string(),
   status: v.string(),
 });
 
-export const vMailSyncStatusOutputBody = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  status: v.unknown(),
-});
-
-export const vOperatorAccount = v.strictObject({
+export const vMailboxOperatorAccount = v.strictObject({
   account_id: v.string(),
   display_name: v.string(),
   email_address: v.string(),
@@ -74,19 +77,19 @@ export const vOperatorAccount = v.strictObject({
   synced_at: v.string(),
 });
 
-export const vOperatorAccountsOutputBody = v.strictObject({
+export const vMailboxOperatorAccounts = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  accounts: v.nullable(v.array(vOperatorAccount)),
+  accounts: v.nullable(v.array(vMailboxOperatorAccount)),
 });
 
-export const vOperatorAddress = v.strictObject({
+export const vMailboxOperatorAddress = v.strictObject({
   email: v.string(),
   name: v.string(),
 });
 
-export const vOperatorEmail = v.strictObject({
+export const vMailboxOperatorEmail = v.strictObject({
   account_id: v.string(),
-  cc: v.nullable(v.array(vOperatorAddress)),
+  cc: v.nullable(v.array(vMailboxOperatorAddress)),
   email_id: v.string(),
   from_email: v.string(),
   from_name: v.string(),
@@ -99,30 +102,24 @@ export const vOperatorEmail = v.strictObject({
   mailbox_ids: v.nullable(v.array(v.string())),
   preview: v.string(),
   received_at: v.string(),
-  reply_to: v.nullable(v.array(vOperatorAddress)),
+  reply_to: v.nullable(v.array(vMailboxOperatorAddress)),
   sent_at: v.string(),
   size: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   subject: v.string(),
   synced_at: v.string(),
   thread_id: v.string(),
-  to: v.nullable(v.array(vOperatorAddress)),
+  to: v.nullable(v.array(vMailboxOperatorAddress)),
 });
 
-export const vOperatorEmailDetail = v.strictObject({
+export const vMailboxOperatorEmailDetail = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   account_id: v.string(),
-  cc: v.nullable(v.array(vOperatorAddress)),
+  cc: v.nullable(v.array(vMailboxOperatorAddress)),
   email_id: v.string(),
   fetched_at: v.string(),
   from_email: v.string(),
@@ -137,33 +134,27 @@ export const vOperatorEmailDetail = v.strictObject({
   mailbox_ids: v.nullable(v.array(v.string())),
   preview: v.string(),
   received_at: v.string(),
-  reply_to: v.nullable(v.array(vOperatorAddress)),
+  reply_to: v.nullable(v.array(vMailboxOperatorAddress)),
   sent_at: v.string(),
   size: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   subject: v.string(),
   synced_at: v.string(),
   text_body: v.string(),
   thread_id: v.string(),
-  to: v.nullable(v.array(vOperatorAddress)),
+  to: v.nullable(v.array(vMailboxOperatorAddress)),
 });
 
-export const vOperatorEmailsOutputBody = v.strictObject({
+export const vMailboxOperatorEmails = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  emails: v.nullable(v.array(vOperatorEmail)),
+  emails: v.nullable(v.array(vMailboxOperatorEmail)),
 });
 
-export const vOperatorMailbox = v.strictObject({
+export const vMailboxOperatorMailbox = v.strictObject({
   account_id: v.string(),
   id: v.string(),
   name: v.string(),
@@ -172,69 +163,69 @@ export const vOperatorMailbox = v.strictObject({
   sort_order: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   synced_at: v.string(),
   total_emails: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   total_threads: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   unread_emails: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   unread_threads: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
 });
 
-export const vOperatorMailboxesOutputBody = v.strictObject({
+export const vMailboxOperatorMailboxes = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  mailboxes: v.nullable(v.array(vOperatorMailbox)),
+  mailboxes: v.nullable(v.array(vMailboxOperatorMailbox)),
+});
+
+export const vMailboxSyncAccountStatus = v.strictObject({
+  account_id: v.string(),
+  connected: v.boolean(),
+  last_connected_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_error: v.optional(v.string()),
+  last_event_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_sync_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  running: v.boolean(),
+});
+
+export const vMailboxSync = v.strictObject({
+  accounts: v.object({}),
+  last_discovery_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  last_error: v.optional(v.string()),
+  running: v.boolean(),
+});
+
+export const vMailboxServiceStatus = v.strictObject({
+  forwarder: vMailboxForwarder,
+  mailbox_sync: vMailboxSync,
+  public_base_url: v.string(),
+  stalwart_base_url: v.string(),
+  started_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vMailboxServiceStatusResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  status: vMailboxServiceStatus,
 });
 
 export const vErrorModelWritable = v.strictObject({
@@ -249,24 +240,21 @@ export const vErrorModelWritable = v.strictObject({
         BigInt("-9223372036854775808"),
         "Invalid value: Expected int64 to be >= -9223372036854775808",
       ),
-      v.maxValue(
-        BigInt("9223372036854775807"),
-        "Invalid value: Expected int64 to be <= 9223372036854775807",
-      ),
+      v.maxValue(BigInt(599)),
     ),
   ),
   title: v.optional(v.string()),
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
-export const vMailAccountOutputBodyWritable = v.strictObject({
+export const vMailboxAccountWritable = v.strictObject({
   account_id: v.string(),
   default_mailbox_id: v.optional(v.string()),
   display_name: v.string(),
   email_address: v.string(),
 });
 
-export const vMailBodyOutputBodyWritable = v.strictObject({
+export const vMailboxBodyWritable = v.strictObject({
   account_id: v.string(),
   email_id: v.string(),
   fetched_at: v.string(),
@@ -274,26 +262,22 @@ export const vMailBodyOutputBodyWritable = v.strictObject({
   text_body: v.string(),
 });
 
-export const vMailMoveInputBodyWritable = v.strictObject({
+export const vMailboxMoveRequestWritable = v.strictObject({
   mailbox_id: v.string(),
 });
 
-export const vMailMutationOutputBodyWritable = v.strictObject({
+export const vMailboxMutationWritable = v.strictObject({
   email_id: v.string(),
   status: v.string(),
 });
 
-export const vMailSyncStatusOutputBodyWritable = v.strictObject({
-  status: v.unknown(),
+export const vMailboxOperatorAccountsWritable = v.strictObject({
+  accounts: v.nullable(v.array(vMailboxOperatorAccount)),
 });
 
-export const vOperatorAccountsOutputBodyWritable = v.strictObject({
-  accounts: v.nullable(v.array(vOperatorAccount)),
-});
-
-export const vOperatorEmailDetailWritable = v.strictObject({
+export const vMailboxOperatorEmailDetailWritable = v.strictObject({
   account_id: v.string(),
-  cc: v.nullable(v.array(vOperatorAddress)),
+  cc: v.nullable(v.array(vMailboxOperatorAddress)),
   email_id: v.string(),
   fetched_at: v.string(),
   from_email: v.string(),
@@ -308,39 +292,37 @@ export const vOperatorEmailDetailWritable = v.strictObject({
   mailbox_ids: v.nullable(v.array(v.string())),
   preview: v.string(),
   received_at: v.string(),
-  reply_to: v.nullable(v.array(vOperatorAddress)),
+  reply_to: v.nullable(v.array(vMailboxOperatorAddress)),
   sent_at: v.string(),
   size: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
     v.transform((x) => BigInt(x)),
-    v.minValue(
-      BigInt("-9223372036854775808"),
-      "Invalid value: Expected int64 to be >= -9223372036854775808",
-    ),
-    v.maxValue(
-      BigInt("9223372036854775807"),
-      "Invalid value: Expected int64 to be <= 9223372036854775807",
-    ),
+    v.minValue(BigInt(0)),
+    v.maxValue(BigInt(9007199254740991)),
   ),
   subject: v.string(),
   synced_at: v.string(),
   text_body: v.string(),
   thread_id: v.string(),
-  to: v.nullable(v.array(vOperatorAddress)),
+  to: v.nullable(v.array(vMailboxOperatorAddress)),
 });
 
-export const vOperatorEmailsOutputBodyWritable = v.strictObject({
-  emails: v.nullable(v.array(vOperatorEmail)),
+export const vMailboxOperatorEmailsWritable = v.strictObject({
+  emails: v.nullable(v.array(vMailboxOperatorEmail)),
 });
 
-export const vOperatorMailboxesOutputBodyWritable = v.strictObject({
-  mailboxes: v.nullable(v.array(vOperatorMailbox)),
+export const vMailboxOperatorMailboxesWritable = v.strictObject({
+  mailboxes: v.nullable(v.array(vMailboxOperatorMailbox)),
+});
+
+export const vMailboxServiceStatusResponseWritable = v.strictObject({
+  status: vMailboxServiceStatus,
 });
 
 /**
  * OK
  */
-export const vMailAccountResponse = vMailAccountOutputBody;
+export const vMailAccountResponse = vMailboxAccount;
 
 export const vMailBodyPath = v.object({
   email_id: v.string(),
@@ -349,7 +331,7 @@ export const vMailBodyPath = v.object({
 /**
  * OK
  */
-export const vMailBodyResponse = vMailBodyOutputBody;
+export const vMailBodyResponse = vMailboxBody;
 
 export const vMailFlagPath = v.object({
   email_id: v.string(),
@@ -358,9 +340,9 @@ export const vMailFlagPath = v.object({
 /**
  * OK
  */
-export const vMailFlagResponse = vMailMutationOutputBody;
+export const vMailFlagResponse = vMailboxMutation;
 
-export const vMailMoveBody = vMailMoveInputBodyWritable;
+export const vMailMoveBody = vMailboxMoveRequestWritable;
 
 export const vMailMovePath = v.object({
   email_id: v.string(),
@@ -369,7 +351,7 @@ export const vMailMovePath = v.object({
 /**
  * OK
  */
-export const vMailMoveResponse = vMailMutationOutputBody;
+export const vMailMoveResponse = vMailboxMutation;
 
 export const vMailMarkReadPath = v.object({
   email_id: v.string(),
@@ -378,7 +360,7 @@ export const vMailMarkReadPath = v.object({
 /**
  * OK
  */
-export const vMailMarkReadResponse = vMailMutationOutputBody;
+export const vMailMarkReadResponse = vMailboxMutation;
 
 export const vMailTrashPath = v.object({
   email_id: v.string(),
@@ -387,7 +369,7 @@ export const vMailTrashPath = v.object({
 /**
  * OK
  */
-export const vMailTrashResponse = vMailMutationOutputBody;
+export const vMailTrashResponse = vMailboxMutation;
 
 export const vMailUnflagPath = v.object({
   email_id: v.string(),
@@ -396,7 +378,7 @@ export const vMailUnflagPath = v.object({
 /**
  * OK
  */
-export const vMailUnflagResponse = vMailMutationOutputBody;
+export const vMailUnflagResponse = vMailboxMutation;
 
 export const vMailMarkUnreadPath = v.object({
   email_id: v.string(),
@@ -405,17 +387,17 @@ export const vMailMarkUnreadPath = v.object({
 /**
  * OK
  */
-export const vMailMarkUnreadResponse = vMailMutationOutputBody;
+export const vMailMarkUnreadResponse = vMailboxMutation;
 
 /**
  * OK
  */
-export const vMailSyncStatusResponse = vMailSyncStatusOutputBody;
+export const vMailSyncStatusResponse = vMailboxServiceStatusResponse;
 
 /**
  * OK
  */
-export const vOperatorListAccountsResponse = vOperatorAccountsOutputBody;
+export const vOperatorListAccountsResponse = vMailboxOperatorAccounts;
 
 export const vOperatorListEmailsPath = v.object({
   account_id: v.string(),
@@ -430,10 +412,7 @@ export const vOperatorListEmailsQuery = v.object({
         BigInt("-9223372036854775808"),
         "Invalid value: Expected int64 to be >= -9223372036854775808",
       ),
-      v.maxValue(
-        BigInt("9223372036854775807"),
-        "Invalid value: Expected int64 to be <= 9223372036854775807",
-      ),
+      v.maxValue(BigInt(1000)),
     ),
   ),
   mailbox_id: v.optional(v.string()),
@@ -442,7 +421,7 @@ export const vOperatorListEmailsQuery = v.object({
 /**
  * OK
  */
-export const vOperatorListEmailsResponse = vOperatorEmailsOutputBody;
+export const vOperatorListEmailsResponse = vMailboxOperatorEmails;
 
 export const vOperatorGetEmailPath = v.object({
   account_id: v.string(),
@@ -452,7 +431,7 @@ export const vOperatorGetEmailPath = v.object({
 /**
  * OK
  */
-export const vOperatorGetEmailResponse = vOperatorEmailDetail;
+export const vOperatorGetEmailResponse = vMailboxOperatorEmailDetail;
 
 export const vOperatorListMailboxesPath = v.object({
   account_id: v.string(),
@@ -461,4 +440,4 @@ export const vOperatorListMailboxesPath = v.object({
 /**
  * OK
  */
-export const vOperatorListMailboxesResponse = vOperatorMailboxesOutputBody;
+export const vOperatorListMailboxesResponse = vMailboxOperatorMailboxes;

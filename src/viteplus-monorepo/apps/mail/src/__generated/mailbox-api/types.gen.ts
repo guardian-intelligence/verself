@@ -51,7 +51,7 @@ export type ErrorModel = {
   type?: string;
 };
 
-export type MailAccountOutputBody = {
+export type MailboxAccount = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -62,7 +62,7 @@ export type MailAccountOutputBody = {
   email_address: string;
 };
 
-export type MailBodyOutputBody = {
+export type MailboxBody = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -74,7 +74,18 @@ export type MailBodyOutputBody = {
   text_body: string;
 };
 
-export type MailMoveInputBody = {
+export type MailboxForwarder = {
+  enabled: boolean;
+  forward_target_configured: boolean;
+  last_error?: string;
+  last_forwarded_at?: string;
+  last_forwarded_email_id?: string;
+  last_sync_at?: string;
+  mailbox: string;
+  running: boolean;
+};
+
+export type MailboxMoveRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -82,7 +93,7 @@ export type MailMoveInputBody = {
   mailbox_id: string;
 };
 
-export type MailMutationOutputBody = {
+export type MailboxMutation = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -91,15 +102,7 @@ export type MailMutationOutputBody = {
   status: string;
 };
 
-export type MailSyncStatusOutputBody = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  status: unknown;
-};
-
-export type OperatorAccount = {
+export type MailboxOperatorAccount = {
   account_id: string;
   display_name: string;
   email_address: string;
@@ -108,22 +111,22 @@ export type OperatorAccount = {
   synced_at: string;
 };
 
-export type OperatorAccountsOutputBody = {
+export type MailboxOperatorAccounts = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  accounts: Array<OperatorAccount> | null;
+  accounts: Array<MailboxOperatorAccount> | null;
 };
 
-export type OperatorAddress = {
+export type MailboxOperatorAddress = {
   email: string;
   name: string;
 };
 
-export type OperatorEmail = {
+export type MailboxOperatorEmail = {
   account_id: string;
-  cc: Array<OperatorAddress> | null;
+  cc: Array<MailboxOperatorAddress> | null;
   email_id: string;
   from_email: string;
   from_name: string;
@@ -138,22 +141,22 @@ export type OperatorEmail = {
   mailbox_ids: Array<string> | null;
   preview: string;
   received_at: string;
-  reply_to: Array<OperatorAddress> | null;
+  reply_to: Array<MailboxOperatorAddress> | null;
   sent_at: string;
   size: number;
   subject: string;
   synced_at: string;
   thread_id: string;
-  to: Array<OperatorAddress> | null;
+  to: Array<MailboxOperatorAddress> | null;
 };
 
-export type OperatorEmailDetail = {
+export type MailboxOperatorEmailDetail = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
   account_id: string;
-  cc: Array<OperatorAddress> | null;
+  cc: Array<MailboxOperatorAddress> | null;
   email_id: string;
   fetched_at: string;
   from_email: string;
@@ -170,25 +173,25 @@ export type OperatorEmailDetail = {
   mailbox_ids: Array<string> | null;
   preview: string;
   received_at: string;
-  reply_to: Array<OperatorAddress> | null;
+  reply_to: Array<MailboxOperatorAddress> | null;
   sent_at: string;
   size: number;
   subject: string;
   synced_at: string;
   text_body: string;
   thread_id: string;
-  to: Array<OperatorAddress> | null;
+  to: Array<MailboxOperatorAddress> | null;
 };
 
-export type OperatorEmailsOutputBody = {
+export type MailboxOperatorEmails = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  emails: Array<OperatorEmail> | null;
+  emails: Array<MailboxOperatorEmail> | null;
 };
 
-export type OperatorMailbox = {
+export type MailboxOperatorMailbox = {
   account_id: string;
   id: string;
   name: string;
@@ -202,12 +205,47 @@ export type OperatorMailbox = {
   unread_threads: number;
 };
 
-export type OperatorMailboxesOutputBody = {
+export type MailboxOperatorMailboxes = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  mailboxes: Array<OperatorMailbox> | null;
+  mailboxes: Array<MailboxOperatorMailbox> | null;
+};
+
+export type MailboxServiceStatus = {
+  forwarder: MailboxForwarder;
+  mailbox_sync: MailboxSync;
+  public_base_url: string;
+  stalwart_base_url: string;
+  started_at: string;
+};
+
+export type MailboxServiceStatusResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  status: MailboxServiceStatus;
+};
+
+export type MailboxSync = {
+  accounts: {
+    [key: string]: MailboxSyncAccountStatus;
+  };
+  last_discovery_at?: string;
+  last_error?: string;
+  running: boolean;
+};
+
+export type MailboxSyncAccountStatus = {
+  account_id: string;
+  connected: boolean;
+  last_connected_at?: string;
+  last_error?: string;
+  last_event_at?: string;
+  last_sync_at?: string;
+  running: boolean;
 };
 
 export type ErrorModelWritable = {
@@ -237,14 +275,14 @@ export type ErrorModelWritable = {
   type?: string;
 };
 
-export type MailAccountOutputBodyWritable = {
+export type MailboxAccountWritable = {
   account_id: string;
   default_mailbox_id?: string;
   display_name: string;
   email_address: string;
 };
 
-export type MailBodyOutputBodyWritable = {
+export type MailboxBodyWritable = {
   account_id: string;
   email_id: string;
   fetched_at: string;
@@ -252,26 +290,22 @@ export type MailBodyOutputBodyWritable = {
   text_body: string;
 };
 
-export type MailMoveInputBodyWritable = {
+export type MailboxMoveRequestWritable = {
   mailbox_id: string;
 };
 
-export type MailMutationOutputBodyWritable = {
+export type MailboxMutationWritable = {
   email_id: string;
   status: string;
 };
 
-export type MailSyncStatusOutputBodyWritable = {
-  status: unknown;
+export type MailboxOperatorAccountsWritable = {
+  accounts: Array<MailboxOperatorAccount> | null;
 };
 
-export type OperatorAccountsOutputBodyWritable = {
-  accounts: Array<OperatorAccount> | null;
-};
-
-export type OperatorEmailDetailWritable = {
+export type MailboxOperatorEmailDetailWritable = {
   account_id: string;
-  cc: Array<OperatorAddress> | null;
+  cc: Array<MailboxOperatorAddress> | null;
   email_id: string;
   fetched_at: string;
   from_email: string;
@@ -288,22 +322,26 @@ export type OperatorEmailDetailWritable = {
   mailbox_ids: Array<string> | null;
   preview: string;
   received_at: string;
-  reply_to: Array<OperatorAddress> | null;
+  reply_to: Array<MailboxOperatorAddress> | null;
   sent_at: string;
   size: number;
   subject: string;
   synced_at: string;
   text_body: string;
   thread_id: string;
-  to: Array<OperatorAddress> | null;
+  to: Array<MailboxOperatorAddress> | null;
 };
 
-export type OperatorEmailsOutputBodyWritable = {
-  emails: Array<OperatorEmail> | null;
+export type MailboxOperatorEmailsWritable = {
+  emails: Array<MailboxOperatorEmail> | null;
 };
 
-export type OperatorMailboxesOutputBodyWritable = {
-  mailboxes: Array<OperatorMailbox> | null;
+export type MailboxOperatorMailboxesWritable = {
+  mailboxes: Array<MailboxOperatorMailbox> | null;
+};
+
+export type MailboxServiceStatusResponseWritable = {
+  status: MailboxServiceStatus;
 };
 
 export type MailAccountData = {
@@ -326,7 +364,7 @@ export type MailAccountResponses = {
   /**
    * OK
    */
-  200: MailAccountOutputBody;
+  200: MailboxAccount;
 };
 
 export type MailAccountResponse = MailAccountResponses[keyof MailAccountResponses];
@@ -353,7 +391,7 @@ export type MailBodyResponses = {
   /**
    * OK
    */
-  200: MailBodyOutputBody;
+  200: MailboxBody;
 };
 
 export type MailBodyResponse = MailBodyResponses[keyof MailBodyResponses];
@@ -380,13 +418,13 @@ export type MailFlagResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailFlagResponse = MailFlagResponses[keyof MailFlagResponses];
 
 export type MailMoveData = {
-  body: MailMoveInputBodyWritable;
+  body: MailboxMoveRequestWritable;
   path: {
     email_id: string;
   };
@@ -407,7 +445,7 @@ export type MailMoveResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailMoveResponse = MailMoveResponses[keyof MailMoveResponses];
@@ -434,7 +472,7 @@ export type MailMarkReadResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailMarkReadResponse = MailMarkReadResponses[keyof MailMarkReadResponses];
@@ -461,7 +499,7 @@ export type MailTrashResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailTrashResponse = MailTrashResponses[keyof MailTrashResponses];
@@ -488,7 +526,7 @@ export type MailUnflagResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailUnflagResponse = MailUnflagResponses[keyof MailUnflagResponses];
@@ -515,7 +553,7 @@ export type MailMarkUnreadResponses = {
   /**
    * OK
    */
-  200: MailMutationOutputBody;
+  200: MailboxMutation;
 };
 
 export type MailMarkUnreadResponse = MailMarkUnreadResponses[keyof MailMarkUnreadResponses];
@@ -540,7 +578,7 @@ export type MailSyncStatusResponses = {
   /**
    * OK
    */
-  200: MailSyncStatusOutputBody;
+  200: MailboxServiceStatusResponse;
 };
 
 export type MailSyncStatusResponse = MailSyncStatusResponses[keyof MailSyncStatusResponses];
@@ -566,7 +604,7 @@ export type OperatorListAccountsResponses = {
   /**
    * OK
    */
-  200: OperatorAccountsOutputBody;
+  200: MailboxOperatorAccounts;
 };
 
 export type OperatorListAccountsResponse =
@@ -597,7 +635,7 @@ export type OperatorListEmailsResponses = {
   /**
    * OK
    */
-  200: OperatorEmailsOutputBody;
+  200: MailboxOperatorEmails;
 };
 
 export type OperatorListEmailsResponse =
@@ -626,7 +664,7 @@ export type OperatorGetEmailResponses = {
   /**
    * OK
    */
-  200: OperatorEmailDetail;
+  200: MailboxOperatorEmailDetail;
 };
 
 export type OperatorGetEmailResponse = OperatorGetEmailResponses[keyof OperatorGetEmailResponses];
@@ -654,7 +692,7 @@ export type OperatorListMailboxesResponses = {
   /**
    * OK
    */
-  200: OperatorMailboxesOutputBody;
+  200: MailboxOperatorMailboxes;
 };
 
 export type OperatorListMailboxesResponse =
