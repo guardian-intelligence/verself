@@ -37,6 +37,27 @@ Billing figured out for you, layered on top of Stripe to make it easy to go from
 * Improvements to our usage-based billing system with subscriptions + credits
 * An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
 
+### VM Runtime Roadmap
+
+The runtime product is a general-purpose ultrafast VM orchestrator service, not
+only a CI backend. The same Firecracker/ZFS checkpoint substrate should support
+customer VM workloads, internal canaries, and repository CI.
+
+Roadmap shape:
+
+1. Build the VM orchestrator as a customer-facing, org-scoped service with
+   billing, policy, telemetry, and checkpoint state. Dogfood it through an
+   internal test account that runs through the same billing and policy paths as
+   customers, with invoice-time adjustments making internal usage net to zero.
+2. Use that service to run canaries against live Forge Metal services and
+   webapps. Canaries should be normal metered VM workloads with first-class logs,
+   traces, metrics, checkpoint refs, and failure state in ClickHouse/PostgreSQL,
+   not a parallel operator-only script system.
+3. Build a Blacksmith-like runner integration so customers can use Forge Metal
+   VMs as GitHub Actions runners. Dogfood the same runner API through Forgejo so
+   this repo's `.forgejo/workflows/ci.yml` executes on the same VM orchestrator
+   service exposed to customers.
+
 ## Deployment Topology
 
 This is a deploy-together system. Single-node is the default deployment. Everything runs on one box with no replication. Adding two more nodes (3 total) enables TigerBeetle consensus replication, ClickHouse ReplicatedMergeTree, Postgres streaming replication, and cross-node health monitoring with external paging. The single-node path is what we're currently working on and we will provide in the future a path to seamlessly upgrade to a three node topology with Netbird as the overlay.

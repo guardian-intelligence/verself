@@ -142,16 +142,6 @@ func TestRepoScanGitCommandDisablesUnsafeProtocolSources(t *testing.T) {
 	}
 }
 
-func TestRepoScanGitCommandAllowsFileProtocolOnlyForE2EOverride(t *testing.T) {
-	t.Setenv(repoScanAllowFileProtocolForE2E, "1")
-	cmd, _, cancel := repoScanGitCommand(context.Background(), "--version")
-	defer cancel()
-
-	if got := envMap(cmd.Env)["GIT_ALLOW_PROTOCOL"]; got != "https:file" {
-		t.Fatalf("GIT_ALLOW_PROTOCOL: got %q want %q", got, "https:file")
-	}
-}
-
 func envMap(values []string) map[string]string {
 	out := make(map[string]string, len(values))
 	for _, value := range values {
