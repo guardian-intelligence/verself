@@ -3,8 +3,15 @@ package api
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -24,6 +31,12 @@ const (
 
 	roleSandboxOrgAdmin  = "sandbox_org_admin"
 	roleSandboxOrgMember = "sandbox_org_member"
+
+	idempotencyProviderRepoID   = "provider_repo_id"
+	idempotencyRequestBodyKey   = "request_body_idempotency_key"
+	idempotencyHeaderKey        = "idempotency_key_header"
+	maxIdempotencyKeyLength     = 128
+	rateLimiterMaxWindowEntries = 10000
 )
 
 type operationPolicy struct {
@@ -43,7 +56,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "import",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "repo_mutation",
-		Idempotency:    "provider_repo_id",
+		Idempotency:    idempotencyProviderRepoID,
 		AuditEvent:     "sandbox.repo.import",
 	},
 	"list-repos": {
@@ -68,6 +81,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "rescan",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "repo_mutation",
+		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.repo.rescan",
 	},
 	"list-repo-generations": {
@@ -84,6 +98,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "refresh",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "repo_mutation",
+		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.repo.refresh",
 	},
 	"submit-execution": {
@@ -92,7 +107,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "submit",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "execution_submit",
-		Idempotency:    "request_body_idempotency_key",
+		Idempotency:    idempotencyRequestBodyKey,
 		AuditEvent:     "sandbox.execution.submit",
 	},
 	"get-execution": {
@@ -141,6 +156,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "create",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "billing.checkout.create",
 	},
 	"create-billing-subscription": {
@@ -149,6 +165,7 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Action:         "create",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "billing.subscription_checkout.create",
 	},
 }
@@ -178,11 +195,20 @@ func registerSecured[I, O any](api huma.API, op huma.Operation, handler func(con
 		panic("missing IAM policy for operation: " + op.OperationID)
 	}
 	op = withOperationPolicy(op, policy)
+	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	huma.Register(api, op, func(ctx context.Context, input *I) (*O, error) {
-		if err := authorizeOperation(ctx, policy); err != nil {
+		identity, err := enforceOperationPolicy(ctx, policy, input)
+		if err != nil {
+			auditOperation(ctx, policy, identity, "denied", err)
 			return nil, err
 		}
-		return handler(ctx, input)
+		output, err := handler(ctx, input)
+		if err != nil {
+			auditOperation(ctx, policy, identity, "error", err)
+			return nil, err
+		}
+		auditOperation(ctx, policy, identity, "allowed", nil)
+		return output, nil
 	})
 }
 
@@ -212,15 +238,21 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	return op
 }
 
-func authorizeOperation(ctx context.Context, policy operationPolicy) error {
+func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input any) (*auth.Identity, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if identityHasPermission(identity, policy.Permission) {
-		return nil
+	if !identityHasPermission(identity, policy.Permission) {
+		return identity, forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
 	}
-	return forbidden(ctx, "permission-denied", fmt.Sprintf("missing required permission %q", policy.Permission))
+	if err := requireOperationIdempotency(ctx, policy, input); err != nil {
+		return identity, err
+	}
+	if decision := apiOperationRateLimiter.allow(policy.RateLimitClass, operationRateLimitKey(ctx, identity, policy), time.Now()); !decision.Allowed {
+		return identity, rateLimitExceeded(ctx, decision.RetryAfter)
+	}
+	return identity, nil
 }
 
 func identityHasPermission(identity *auth.Identity, required permission) bool {
@@ -238,6 +270,231 @@ func identityHasPermission(identity *auth.Identity, required permission) bool {
 		}
 	}
 	return false
+}
+
+type operationRequestInfoKey struct{}
+
+type operationRequestInfo struct {
+	ClientIP       string
+	IdempotencyKey string
+}
+
+func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
+	info := operationRequestInfo{
+		ClientIP:       clientIPFromHuma(ctx),
+		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
+	}
+	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
+}
+
+func requireOperationIdempotency(ctx context.Context, policy operationPolicy, input any) error {
+	switch policy.Idempotency {
+	case "":
+		return nil
+	case idempotencyRequestBodyKey:
+		return validateIdempotencyValue(ctx, "idempotency_key", nestedStringField(input, "Body", "IdempotencyKey"))
+	case idempotencyProviderRepoID:
+		return validateIdempotencyValue(ctx, "provider_repo_id", nestedStringField(input, "Body", "ProviderRepoID"))
+	case idempotencyHeaderKey:
+		return validateIdempotencyValue(ctx, "Idempotency-Key", operationRequestInfoFromContext(ctx).IdempotencyKey)
+	default:
+		panic("unsupported idempotency policy: " + policy.Idempotency)
+	}
+}
+
+func validateIdempotencyValue(ctx context.Context, field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return badRequest(ctx, "idempotency-key-required", field+" is required for this operation", nil)
+	}
+	if len(value) > maxIdempotencyKeyLength {
+		return badRequest(ctx, "idempotency-key-too-long", field+" is too long", nil)
+	}
+	if strings.ContainsAny(value, "\x00\r\n\t") {
+		return badRequest(ctx, "idempotency-key-invalid", field+" contains unsupported characters", nil)
+	}
+	return nil
+}
+
+func nestedStringField(value any, path ...string) string {
+	current := reflectValue(value)
+	for _, name := range path {
+		if !current.IsValid() || current.Kind() != reflect.Struct {
+			return ""
+		}
+		field := current.FieldByName(name)
+		if !field.IsValid() || !field.CanInterface() {
+			return ""
+		}
+		current = reflectValue(field.Interface())
+	}
+	if !current.IsValid() || current.Kind() != reflect.String {
+		return ""
+	}
+	return current.String()
+}
+
+func reflectValue(value any) reflect.Value {
+	current := reflect.ValueOf(value)
+	for current.IsValid() && (current.Kind() == reflect.Pointer || current.Kind() == reflect.Interface) {
+		if current.IsNil() {
+			return reflect.Value{}
+		}
+		current = current.Elem()
+	}
+	return current
+}
+
+func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
+	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
+	return info
+}
+
+func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy operationPolicy) string {
+	info := operationRequestInfoFromContext(ctx)
+	parts := []string{
+		policy.RateLimitClass,
+		string(policy.Permission),
+		identity.OrgID,
+		identity.Subject,
+		info.ClientIP,
+	}
+	return strings.Join(parts, "\x00")
+}
+
+func clientIPFromHuma(ctx huma.Context) string {
+	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
+		value := strings.TrimSpace(ctx.Header(header))
+		if value == "" {
+			continue
+		}
+		if header == "X-Forwarded-For" {
+			value = strings.TrimSpace(strings.Split(value, ",")[0])
+		}
+		if value != "" {
+			return value
+		}
+	}
+	remote := strings.TrimSpace(ctx.RemoteAddr())
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		return host
+	}
+	return remote
+}
+
+func auditOperation(ctx context.Context, policy operationPolicy, identity *auth.Identity, outcome string, err error) {
+	args := []any{
+		"audit_event", policy.AuditEvent,
+		"operation_permission", policy.Permission,
+		"operation_resource", policy.Resource,
+		"operation_action", policy.Action,
+		"rate_limit_class", policy.RateLimitClass,
+		"outcome", outcome,
+	}
+	if identity != nil {
+		args = append(args,
+			"subject", identity.Subject,
+			"org_id", identity.OrgID,
+		)
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	slog.Default().InfoContext(ctx, "sandbox-rental api operation", args...)
+}
+
+type rateLimitRule struct {
+	Limit  int
+	Window time.Duration
+}
+
+type rateLimitDecision struct {
+	Allowed    bool
+	RetryAfter time.Duration
+}
+
+type rateLimitWindow struct {
+	ResetAt time.Time
+	Count   int
+}
+
+type fixedWindowOperationRateLimiter struct {
+	mu      sync.Mutex
+	rules   map[string]rateLimitRule
+	windows map[string]rateLimitWindow
+}
+
+var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
+	"read":             {Limit: 600, Window: time.Minute},
+	"logs_read":        {Limit: 120, Window: time.Minute},
+	"repo_mutation":    {Limit: 120, Window: time.Minute},
+	"execution_submit": {Limit: 120, Window: time.Minute},
+	"billing_mutation": {Limit: 60, Window: time.Minute},
+})
+
+func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {
+	copied := make(map[string]rateLimitRule, len(rules))
+	for class, rule := range rules {
+		copied[class] = rule
+	}
+	return &fixedWindowOperationRateLimiter{
+		rules:   copied,
+		windows: map[string]rateLimitWindow{},
+	}
+}
+
+func (l *fixedWindowOperationRateLimiter) allow(class, key string, now time.Time) rateLimitDecision {
+	if l == nil || class == "" {
+		return rateLimitDecision{Allowed: true}
+	}
+	rule, ok := l.rules[class]
+	if !ok || rule.Limit <= 0 || rule.Window <= 0 {
+		return rateLimitDecision{Allowed: true}
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if len(l.windows) > rateLimiterMaxWindowEntries {
+		l.pruneExpired(now)
+	}
+
+	key = class + "\x00" + key
+	window := l.windows[key]
+	if window.ResetAt.IsZero() || !now.Before(window.ResetAt) {
+		l.windows[key] = rateLimitWindow{
+			ResetAt: now.Add(rule.Window),
+			Count:   1,
+		}
+		return rateLimitDecision{Allowed: true}
+	}
+	if window.Count >= rule.Limit {
+		return rateLimitDecision{
+			Allowed:    false,
+			RetryAfter: window.ResetAt.Sub(now).Round(time.Second),
+		}
+	}
+	window.Count++
+	l.windows[key] = window
+	return rateLimitDecision{Allowed: true}
+}
+
+func (l *fixedWindowOperationRateLimiter) pruneExpired(now time.Time) {
+	for key, window := range l.windows {
+		if !now.Before(window.ResetAt) {
+			delete(l.windows, key)
+		}
+	}
+}
+
+func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
+	err := tooManyRequests(ctx, "rate-limit-exceeded", "rate limit exceeded")
+	if retryAfter <= 0 {
+		return err
+	}
+	headers := http.Header{}
+	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+	return huma.ErrorWithHeaders(err, headers)
 }
 
 func identityRolesForCurrentOrg(identity *auth.Identity) []string {
