@@ -1,6 +1,7 @@
 package vmorchestrator
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,31 @@ func TestJobObserverEmitsBillablePhaseEvents(t *testing.T) {
 	}
 	if end.Attrs["host_received_unix_nano"] == "" {
 		t.Fatal("expected host_received_unix_nano on phase end")
+	}
+}
+
+func TestManagedJobCapsBufferedLogs(t *testing.T) {
+	t.Parallel()
+
+	job := &managedJob{id: "job-1", state: JobStateRunning}
+	job.appendLogChunk(strings.Repeat("x", maxBufferedGuestLogs+1024))
+
+	chunks, terminal := job.logSnapshot(0)
+	if terminal {
+		t.Fatal("running job reported terminal log stream")
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected retained log chunks")
+	}
+
+	var total int
+	for _, chunk := range chunks {
+		total += len(chunk.Chunk)
+	}
+	if total > maxBufferedGuestLogs {
+		t.Fatalf("buffered logs exceeded cap: got %d want <= %d", total, maxBufferedGuestLogs)
+	}
+	if !strings.Contains(chunks[len(chunks)-1].Chunk, "truncated") {
+		t.Fatalf("expected truncation marker in final chunk, got %q", chunks[len(chunks)-1].Chunk)
 	}
 }

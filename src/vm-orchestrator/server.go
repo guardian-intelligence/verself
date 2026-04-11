@@ -29,6 +29,8 @@ type APIServer struct {
 	nextSubID     uint64
 }
 
+const managedJobLogTruncatedMarker = "\n[vm-orchestrator] log buffer truncated\n"
+
 type managedJob struct {
 	id string
 
@@ -38,6 +40,8 @@ type managedJob struct {
 	result         *JobResult
 	err            error
 	logSeq         uint64
+	logBytes       int
+	logTruncated   bool
 	logChunks      []jobLogChunk
 	eventSeq       uint64
 	events         []jobGuestEvent
@@ -427,7 +431,24 @@ func (j *managedJob) appendLogChunk(chunk string) {
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
+	if j.logTruncated {
+		return
+	}
+	remaining := maxBufferedGuestLogs - j.logBytes
+	if remaining <= 0 {
+		j.logTruncated = true
+		return
+	}
+	if len(chunk) > remaining {
+		j.logTruncated = true
+		if remaining <= len(managedJobLogTruncatedMarker) {
+			chunk = managedJobLogTruncatedMarker[:remaining]
+		} else {
+			chunk = chunk[:remaining-len(managedJobLogTruncatedMarker)] + managedJobLogTruncatedMarker
+		}
+	}
 	j.logSeq++
+	j.logBytes += len(chunk)
 	j.logChunks = append(j.logChunks, jobLogChunk{
 		Seq:   j.logSeq,
 		Chunk: chunk,

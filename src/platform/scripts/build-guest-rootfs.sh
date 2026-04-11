@@ -184,6 +184,7 @@ NPMRC
 
 # --- Create required directories ---
 mkdir -p "$ROOTFS"/{home/runner,workspace,dev,proc,sys,run,tmp,dev/pts,dev/shm}
+chown -R 1000:1000 "$ROOTFS/home/runner" "$ROOTFS/workspace"
 
 # --- Generate SBOM ---
 echo "→ generating SBOM"

@@ -2,6 +2,7 @@ package vmproto
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
@@ -61,5 +62,35 @@ func TestReadEnvelopeRejectsWrongVersion(t *testing.T) {
 	_, err := NewCodec(&buf, io.Discard).ReadEnvelope()
 	if err == nil || !errors.Is(err, io.EOF) && err.Error() != "unsupported protocol version 99" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestReadEnvelopeRejectsOversizedFrame(t *testing.T) {
+	t.Parallel()
+
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], 1024*1024+1)
+	buf := bytes.NewBuffer(header[:])
+
+	_, err := NewCodec(buf, io.Discard).ReadEnvelope()
+	if !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("expected oversized frame error, got %v", err)
+	}
+}
+
+func TestWriteEnvelopeRejectsOversizedFrame(t *testing.T) {
+	t.Parallel()
+
+	env, err := NewEnvelope(TypeLogChunk, 1, 1, LogChunk{
+		Stream: "stdout",
+		Data:   bytes.Repeat([]byte{'x'}, 1024*1024),
+	})
+	if err != nil {
+		t.Fatalf("NewEnvelope: %v", err)
+	}
+
+	err = NewCodec(io.Reader(bytes.NewReader(nil)), io.Discard).WriteEnvelope(env)
+	if !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("expected oversized frame error, got %v", err)
 	}
 }
