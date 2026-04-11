@@ -339,6 +339,210 @@ components:
         - window_id
         - actual_quantity
       type: object
+    BillingStatement:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingStatement.json
+          format: uri
+          readOnly: true
+          type: string
+        bucket_summaries:
+          items:
+            $ref: "#/components/schemas/BillingStatementBucketSummary"
+          nullable: true
+          type: array
+        currency:
+          type: string
+        generated_at:
+          format: date-time
+          type: string
+        grant_summaries:
+          items:
+            $ref: "#/components/schemas/BillingStatementGrantSummary"
+          nullable: true
+          type: array
+        line_items:
+          items:
+            $ref: "#/components/schemas/BillingStatementLineItem"
+          nullable: true
+          type: array
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        period_end:
+          format: date-time
+          type: string
+        period_source:
+          type: string
+        period_start:
+          format: date-time
+          type: string
+        product_id:
+          type: string
+        totals:
+          $ref: "#/components/schemas/BillingStatementTotals"
+        unit_label:
+          type: string
+      required:
+        - org_id
+        - product_id
+        - period_start
+        - period_end
+        - period_source
+        - generated_at
+        - currency
+        - unit_label
+        - line_items
+        - bucket_summaries
+        - grant_summaries
+        - totals
+      type: object
+    BillingStatementBucketSummary:
+      additionalProperties: false
+      properties:
+        bucket_id:
+          type: string
+        charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        free_tier_units:
+          pattern: ^[0-9]+$
+          type: string
+        product_id:
+          type: string
+        promo_units:
+          pattern: ^[0-9]+$
+          type: string
+        purchase_units:
+          pattern: ^[0-9]+$
+          type: string
+        receivable_units:
+          pattern: ^[0-9]+$
+          type: string
+        refund_units:
+          pattern: ^[0-9]+$
+          type: string
+        reserved_units:
+          pattern: ^[0-9]+$
+          type: string
+        subscription_units:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - product_id
+        - bucket_id
+        - charge_units
+        - free_tier_units
+        - subscription_units
+        - purchase_units
+        - promo_units
+        - refund_units
+        - receivable_units
+        - reserved_units
+      type: object
+    BillingStatementGrantSummary:
+      additionalProperties: false
+      properties:
+        available:
+          pattern: ^[0-9]+$
+          type: string
+        pending:
+          pattern: ^[0-9]+$
+          type: string
+        scope_bucket_id:
+          type: string
+        scope_product_id:
+          type: string
+        scope_type:
+          type: string
+        source:
+          type: string
+      required:
+        - scope_type
+        - scope_product_id
+        - scope_bucket_id
+        - source
+        - available
+        - pending
+      type: object
+    BillingStatementLineItem:
+      additionalProperties: false
+      properties:
+        bucket_id:
+          type: string
+        charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        component_id:
+          type: string
+        description:
+          type: string
+        plan_id:
+          type: string
+        pricing_phase:
+          type: string
+        product_id:
+          type: string
+        quantity:
+          format: double
+          type: number
+        unit_rate:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - product_id
+        - plan_id
+        - bucket_id
+        - component_id
+        - description
+        - pricing_phase
+        - quantity
+        - unit_rate
+        - charge_units
+      type: object
+    BillingStatementTotals:
+      additionalProperties: false
+      properties:
+        charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        free_tier_units:
+          pattern: ^[0-9]+$
+          type: string
+        promo_units:
+          pattern: ^[0-9]+$
+          type: string
+        purchase_units:
+          pattern: ^[0-9]+$
+          type: string
+        receivable_units:
+          pattern: ^[0-9]+$
+          type: string
+        refund_units:
+          pattern: ^[0-9]+$
+          type: string
+        reserved_units:
+          pattern: ^[0-9]+$
+          type: string
+        subscription_units:
+          pattern: ^[0-9]+$
+          type: string
+        total_due_units:
+          pattern: ^[0-9]+$
+          type: string
+      required:
+        - charge_units
+        - free_tier_units
+        - subscription_units
+        - purchase_units
+        - promo_units
+        - refund_units
+        - receivable_units
+        - reserved_units
+        - total_due_units
+      type: object
     BillingSubscription:
       additionalProperties: false
       properties:
@@ -687,6 +891,38 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List credit grants for an org
+  /internal/billing/v1/orgs/{org_id}/statement:
+    get:
+      operationId: get-statement
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            pattern: ^[0-9]+$
+            type: string
+        - explode: false
+          in: query
+          name: product_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingStatement"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get current billing statement for an org
   /internal/billing/v1/orgs/{org_id}/subscriptions:
     get:
       operationId: list-subscriptions

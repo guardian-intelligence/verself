@@ -22,6 +22,9 @@ import type {
   GetBillingBalanceData,
   GetBillingBalanceErrors,
   GetBillingBalanceResponses,
+  GetBillingStatementData,
+  GetBillingStatementErrors,
+  GetBillingStatementResponses,
   GetExecutionData,
   GetExecutionErrors,
   GetExecutionLogsData,
@@ -145,6 +148,22 @@ export const createBillingPortal = <ThrowOnError extends boolean = false>(
       "Content-Type": "application/json",
       ...options.headers,
     },
+  });
+
+/**
+ * Get current billing statement
+ */
+export const getBillingStatement = <ThrowOnError extends boolean = false>(
+  options: Options<GetBillingStatementData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    GetBillingStatementResponses,
+    GetBillingStatementErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/statement",
+    ...options,
   });
 
 /**

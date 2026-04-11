@@ -235,6 +235,20 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), listBillingGrants(billing))
 
 	registerSecured(api, secured(huma.Operation{
+		OperationID: "get-billing-statement",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/billing/statement",
+		Summary:     "Get current billing statement",
+	}, operationPolicy{
+		Permission:     permissionBillingRead,
+		Resource:       "billing_statement",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "billing.statement.read",
+	}), getBillingStatement(billing))
+
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-billing-checkout",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/checkout",
@@ -341,6 +355,14 @@ type GrantsInput struct {
 
 type GrantsOutput struct {
 	Body apiwire.BillingGrants
+}
+
+type StatementInput struct {
+	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255" doc:"Product to preview"`
+}
+
+type StatementOutput struct {
+	Body apiwire.BillingStatement
 }
 
 type CheckoutInput struct {
@@ -584,6 +606,20 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 			return nil, billingProxyError(ctx, err)
 		}
 		return &GrantsOutput{Body: grants}, nil
+	}
+}
+
+func getBillingStatement(billing *billingclient.ServiceClient) func(context.Context, *StatementInput) (*StatementOutput, error) {
+	return func(ctx context.Context, input *StatementInput) (*StatementOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		statement, err := billing.GetStatement(ctx, orgID, input.ProductID)
+		if err != nil {
+			return nil, billingProxyError(ctx, err)
+		}
+		return &StatementOutput{Body: statement}, nil
 	}
 }
 

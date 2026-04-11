@@ -29,6 +29,68 @@ export const vBillingGrants = v.strictObject({
   grants: v.nullable(v.array(vBillingGrant)),
 });
 
+export const vBillingStatementBucketSummary = v.strictObject({
+  bucket_id: v.string(),
+  charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  product_id: v.string(),
+  promo_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  purchase_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  receivable_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  refund_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vBillingStatementGrantSummary = v.strictObject({
+  available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  scope_bucket_id: v.string(),
+  scope_product_id: v.string(),
+  scope_type: v.string(),
+  source: v.string(),
+});
+
+export const vBillingStatementLineItem = v.strictObject({
+  bucket_id: v.string(),
+  charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  component_id: v.string(),
+  description: v.string(),
+  plan_id: v.string(),
+  pricing_phase: v.string(),
+  product_id: v.string(),
+  quantity: v.number(),
+  unit_rate: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vBillingStatementTotals = v.strictObject({
+  charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  promo_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  purchase_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  receivable_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  refund_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  total_due_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vBillingStatement = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  bucket_summaries: v.nullable(v.array(vBillingStatementBucketSummary)),
+  currency: v.string(),
+  generated_at: v.pipe(v.string(), v.isoTimestamp()),
+  grant_summaries: v.nullable(v.array(vBillingStatementGrantSummary)),
+  line_items: v.nullable(v.array(vBillingStatementLineItem)),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  period_end: v.pipe(v.string(), v.isoTimestamp()),
+  period_source: v.string(),
+  period_start: v.pipe(v.string(), v.isoTimestamp()),
+  product_id: v.string(),
+  totals: vBillingStatementTotals,
+  unit_label: v.string(),
+});
+
 export const vBillingSubscription = v.strictObject({
   cadence: v.string(),
   current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
@@ -353,6 +415,21 @@ export const vBillingGrantsWritable = v.strictObject({
   grants: v.nullable(v.array(vBillingGrant)),
 });
 
+export const vBillingStatementWritable = v.strictObject({
+  bucket_summaries: v.nullable(v.array(vBillingStatementBucketSummary)),
+  currency: v.string(),
+  generated_at: v.pipe(v.string(), v.isoTimestamp()),
+  grant_summaries: v.nullable(v.array(vBillingStatementGrantSummary)),
+  line_items: v.nullable(v.array(vBillingStatementLineItem)),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  period_end: v.pipe(v.string(), v.isoTimestamp()),
+  period_source: v.string(),
+  period_start: v.pipe(v.string(), v.isoTimestamp()),
+  product_id: v.string(),
+  totals: vBillingStatementTotals,
+  unit_label: v.string(),
+});
+
 export const vBillingSubscriptionsWritable = v.strictObject({
   subscriptions: v.nullable(v.array(vBillingSubscription)),
 });
@@ -552,6 +629,15 @@ export const vCreateBillingPortalHeaders = v.object({
  * OK
  */
 export const vCreateBillingPortalResponse = vBillingUrlResponse;
+
+export const vGetBillingStatementQuery = v.object({
+  product_id: v.pipe(v.string(), v.minLength(1), v.maxLength(255)),
+});
+
+/**
+ * OK
+ */
+export const vGetBillingStatementResponse = vBillingStatement;
 
 export const vCreateBillingSubscriptionBody = vSandboxBillingSubscriptionRequestWritable;
 

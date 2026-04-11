@@ -72,10 +72,16 @@ type GrantsInput struct {
 	Active    bool   `query:"active,omitempty"`
 }
 
+type StatementInput struct {
+	OrgPath
+	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255"`
+}
+
 type (
 	BalanceResponse       = apiwire.BillingBalance
 	GrantResponse         = apiwire.BillingGrant
 	GrantsResponse        = apiwire.BillingGrants
+	StatementResponse     = apiwire.BillingStatement
 	SubscriptionsResponse = apiwire.BillingSubscriptions
 	SubscriptionResponse  = apiwire.BillingSubscription
 )
@@ -156,6 +162,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	public := huma.NewGroup(api, "/internal/billing/v1")
 	huma.Get(public, "/orgs/{org_id}/balance", handler.getBalance, operation("get-balance", "Get org grant balance"))
 	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
+	huma.Get(public, "/orgs/{org_id}/statement", handler.getStatement, operation("get-statement", "Get current billing statement for an org"))
 	huma.Get(public, "/orgs/{org_id}/subscriptions", handler.listSubscriptions, operation("list-subscriptions", "List subscriptions for an org"))
 	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
 	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusInternalServerError))
@@ -227,6 +234,89 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 		})
 	}
 	return &body[GrantsResponse]{Body: GrantsResponse{Grants: out}}, nil
+}
+
+func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[StatementResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	statement, err := client.PreviewStatement(ctx, orgID, input.ProductID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get statement", err)
+	}
+	return &body[StatementResponse]{Body: statementResponse(statement)}, nil
+}
+
+func statementResponse(statement billing.Statement) apiwire.BillingStatement {
+	lineItems := make([]apiwire.BillingStatementLineItem, 0, len(statement.LineItems))
+	for _, line := range statement.LineItems {
+		lineItems = append(lineItems, apiwire.BillingStatementLineItem{
+			ProductID:    line.ProductID,
+			PlanID:       line.PlanID,
+			BucketID:     line.BucketID,
+			ComponentID:  line.ComponentID,
+			PricingPhase: line.PricingPhase,
+			Description:  line.Description,
+			Quantity:     line.Quantity,
+			UnitRate:     apiwire.Uint64(line.UnitRate),
+			ChargeUnits:  apiwire.Uint64(line.ChargeUnits),
+		})
+	}
+	bucketSummaries := make([]apiwire.BillingStatementBucketSummary, 0, len(statement.BucketSummaries))
+	for _, bucket := range statement.BucketSummaries {
+		bucketSummaries = append(bucketSummaries, apiwire.BillingStatementBucketSummary{
+			ProductID:         bucket.ProductID,
+			BucketID:          bucket.BucketID,
+			ChargeUnits:       apiwire.Uint64(bucket.ChargeUnits),
+			FreeTierUnits:     apiwire.Uint64(bucket.FreeTierUnits),
+			SubscriptionUnits: apiwire.Uint64(bucket.SubscriptionUnits),
+			PurchaseUnits:     apiwire.Uint64(bucket.PurchaseUnits),
+			PromoUnits:        apiwire.Uint64(bucket.PromoUnits),
+			RefundUnits:       apiwire.Uint64(bucket.RefundUnits),
+			ReceivableUnits:   apiwire.Uint64(bucket.ReceivableUnits),
+			ReservedUnits:     apiwire.Uint64(bucket.ReservedUnits),
+		})
+	}
+	grantSummaries := make([]apiwire.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
+	for _, grant := range statement.GrantSummaries {
+		grantSummaries = append(grantSummaries, apiwire.BillingStatementGrantSummary{
+			ScopeType:      grant.ScopeType.String(),
+			ScopeProductID: grant.ScopeProductID,
+			ScopeBucketID:  grant.ScopeBucketID,
+			Source:         grant.Source.String(),
+			Available:      apiwire.Uint64(grant.Available),
+			Pending:        apiwire.Uint64(grant.Pending),
+		})
+	}
+	return apiwire.BillingStatement{
+		OrgID:           apiwire.Uint64(uint64(statement.OrgID)),
+		ProductID:       statement.ProductID,
+		PeriodStart:     statement.PeriodStart,
+		PeriodEnd:       statement.PeriodEnd,
+		PeriodSource:    statement.PeriodSource,
+		GeneratedAt:     statement.GeneratedAt,
+		Currency:        statement.Currency,
+		UnitLabel:       statement.UnitLabel,
+		LineItems:       lineItems,
+		BucketSummaries: bucketSummaries,
+		GrantSummaries:  grantSummaries,
+		Totals: apiwire.BillingStatementTotals{
+			ChargeUnits:       apiwire.Uint64(statement.Totals.ChargeUnits),
+			FreeTierUnits:     apiwire.Uint64(statement.Totals.FreeTierUnits),
+			SubscriptionUnits: apiwire.Uint64(statement.Totals.SubscriptionUnits),
+			PurchaseUnits:     apiwire.Uint64(statement.Totals.PurchaseUnits),
+			PromoUnits:        apiwire.Uint64(statement.Totals.PromoUnits),
+			RefundUnits:       apiwire.Uint64(statement.Totals.RefundUnits),
+			ReceivableUnits:   apiwire.Uint64(statement.Totals.ReceivableUnits),
+			ReservedUnits:     apiwire.Uint64(statement.Totals.ReservedUnits),
+			TotalDueUnits:     apiwire.Uint64(statement.Totals.TotalDueUnits),
+		},
+	}
 }
 
 func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[SubscriptionsResponse], error) {

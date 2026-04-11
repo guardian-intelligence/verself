@@ -68,7 +68,7 @@
         "configType": "sql",
         "displayType": "table",
         "connectionId": "{{ hyperdx_dashboards_connection_id }}",
-        "sqlTemplate": "SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, pricing_phase, charge_units, billed_seconds, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25"
+        "sqlTemplate": "SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, plan_id, pricing_phase, charge_units, billable_quantity, cost_per_unit, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25"
       }
     }
   ]
