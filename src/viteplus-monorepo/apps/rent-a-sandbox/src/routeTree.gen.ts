@@ -15,6 +15,7 @@ import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedReposIndexRouteImport } from './routes/_authenticated/repos/index'
+import { Route as AuthenticatedOrganizationIndexRouteImport } from './routes/_authenticated/organization/index'
 import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
 import { Route as AuthenticatedBillingIndexRouteImport } from './routes/_authenticated/billing/index'
 import { Route as AuthenticatedReposNewRouteImport } from './routes/_authenticated/repos/new'
@@ -53,6 +54,12 @@ const AuthenticatedReposIndexRoute = AuthenticatedReposIndexRouteImport.update({
   path: '/repos/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOrganizationIndexRoute =
+  AuthenticatedOrganizationIndexRouteImport.update({
+    id: '/organization/',
+    path: '/organization/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
@@ -111,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/repos/new': typeof AuthenticatedReposNewRoute
   '/billing/': typeof AuthenticatedBillingIndexRoute
   '/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/organization/': typeof AuthenticatedOrganizationIndexRoute
   '/repos/': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRoutesByTo {
@@ -126,6 +134,7 @@ export interface FileRoutesByTo {
   '/repos/new': typeof AuthenticatedReposNewRoute
   '/billing': typeof AuthenticatedBillingIndexRoute
   '/jobs': typeof AuthenticatedJobsIndexRoute
+  '/organization': typeof AuthenticatedOrganizationIndexRoute
   '/repos': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRoutesById {
@@ -143,6 +152,7 @@ export interface FileRoutesById {
   '/_authenticated/repos/new': typeof AuthenticatedReposNewRoute
   '/_authenticated/billing/': typeof AuthenticatedBillingIndexRoute
   '/_authenticated/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/_authenticated/organization/': typeof AuthenticatedOrganizationIndexRoute
   '/_authenticated/repos/': typeof AuthenticatedReposIndexRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/repos/new'
     | '/billing/'
     | '/jobs/'
+    | '/organization/'
     | '/repos/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/repos/new'
     | '/billing'
     | '/jobs'
+    | '/organization'
     | '/repos'
   id:
     | '__root__'
@@ -191,6 +203,7 @@ export interface FileRouteTypes {
     | '/_authenticated/repos/new'
     | '/_authenticated/billing/'
     | '/_authenticated/jobs/'
+    | '/_authenticated/organization/'
     | '/_authenticated/repos/'
   fileRoutesById: FileRoutesById
 }
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       path: '/repos'
       fullPath: '/repos/'
       preLoaderRoute: typeof AuthenticatedReposIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/organization/': {
+      id: '/_authenticated/organization/'
+      path: '/organization'
+      fullPath: '/organization/'
+      preLoaderRoute: typeof AuthenticatedOrganizationIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/jobs/': {
@@ -314,6 +334,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedReposNewRoute: typeof AuthenticatedReposNewRoute
   AuthenticatedBillingIndexRoute: typeof AuthenticatedBillingIndexRoute
   AuthenticatedJobsIndexRoute: typeof AuthenticatedJobsIndexRoute
+  AuthenticatedOrganizationIndexRoute: typeof AuthenticatedOrganizationIndexRoute
   AuthenticatedReposIndexRoute: typeof AuthenticatedReposIndexRoute
 }
 
@@ -326,6 +347,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReposNewRoute: AuthenticatedReposNewRoute,
   AuthenticatedBillingIndexRoute: AuthenticatedBillingIndexRoute,
   AuthenticatedJobsIndexRoute: AuthenticatedJobsIndexRoute,
+  AuthenticatedOrganizationIndexRoute: AuthenticatedOrganizationIndexRoute,
   AuthenticatedReposIndexRoute: AuthenticatedReposIndexRoute,
 }
 
@@ -342,12 +364,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
