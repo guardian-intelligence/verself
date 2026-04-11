@@ -401,6 +401,22 @@
   failed_when: false
   changed_when: true
 
+- name: Wait for leftover staging zvol destroy to settle
+  ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}-staging"
+  register: firecracker_staging_zvol_absent
+  retries: 10
+  delay: 1
+  until: firecracker_staging_zvol_absent.rc != 0
+  when: firecracker_refresh_base_golden_needed
+  failed_when: false
+  changed_when: false
+
+- name: Assert leftover staging zvol is absent
+  ansible.builtin.assert:
+    that: firecracker_staging_zvol_absent.rc != 0
+    fail_msg: "Staging zvol {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}-staging still exists after destroy."
+  when: firecracker_refresh_base_golden_needed
+
 - name: Create staging zvol
   ansible.builtin.command: >
     zfs create -V {{ firecracker_golden_zvol_size }}
