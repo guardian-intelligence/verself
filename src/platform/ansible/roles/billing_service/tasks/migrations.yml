@@ -37,7 +37,7 @@
   ansible.builtin.set_fact:
     billing_service_should_reset_ledger: >-
       {{
-        billing_service_force_ledger_reset
+        (billing_service_force_ledger_reset | default(false) | bool)
         or (billing_service_pg_migrations_remote_hash is failed)
         or ((billing_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
            != (billing_service_pg_migrations_local_hash.stdout.split()[0] | trim))
@@ -45,7 +45,7 @@
       }}
 
 - name: Apply billing PostgreSQL migrations
-  when: billing_service_should_reset_ledger
+  when: billing_service_should_reset_ledger | bool
   block:
     - name: Remove deployed PostgreSQL migrations directory
       ansible.builtin.file:
@@ -65,6 +65,21 @@
         src: "{{ playbook_dir }}/../../../billing-service/postgresql-migrations/"
         dest: /opt/forge-metal/postgresql-migrations/
         mode: "0644"
+
+    - name: Probe billing callers before billing ledger reset
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "{{ item }}"
+      loop:
+        - sandbox-rental-service
+        - billing-service
+      loop_control:
+        label: "{{ item }}"
+      register: billing_service_ledger_reset_caller_states
+      failed_when: false
+      changed_when: false
 
     - name: Stop billing callers before billing ledger reset
       ansible.builtin.systemd:

@@ -207,3 +207,19 @@
     host: "{{ services.billing.host }}"
     port: "{{ services.billing.port }}"
     timeout: 30
+
+- name: Start previously active billing callers after ledger reset
+  ansible.builtin.systemd:
+    name: "{{ item.item }}"
+    state: started
+  loop: >-
+    {{
+      billing_service_ledger_reset_caller_states.results
+      | default([])
+      | selectattr('rc', 'equalto', 0)
+      | rejectattr('item', 'equalto', 'billing-service')
+      | list
+    }}
+  loop_control:
+    label: "{{ item.item }}"
+  when: billing_service_should_reset_ledger | default(false) | bool
