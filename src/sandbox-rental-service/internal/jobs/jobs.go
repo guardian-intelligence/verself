@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -26,10 +27,7 @@ import (
 var tracer = otel.Tracer("sandbox-rental-service")
 
 const (
-	KindDirect        = "direct"
-	KindRepoExec      = "repo_exec"
-	KindWarmGolden    = "warm_golden"
-	KindForgejoRunner = "forgejo_runner"
+	KindDirect = "direct"
 
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
@@ -41,29 +39,25 @@ const (
 	StateCanceled   = "canceled"
 	StateLost       = "lost"
 
-	defaultProductID     = "sandbox"
-	defaultBranchName    = "main"
-	defaultRunCommand    = "echo hello"
-	defaultLogStream     = "stdout"
-	executionSourceType  = "execution_attempt"
-	runnerJobTimeoutSecs = 7200
+	defaultProductID    = "sandbox"
+	defaultBranchName   = "main"
+	defaultRunCommand   = "echo hello"
+	defaultLogStream    = "stdout"
+	executionSourceType = "execution_attempt"
 )
 
 var (
 	ErrQuotaExceeded      = errors.New("sandbox-rental: quota exceeded")
 	ErrExecutionMissing   = errors.New("sandbox-rental: execution not found")
 	ErrRepoNotReady       = errors.New("sandbox-rental: repo not ready")
+	ErrRepoScanCapacity   = errors.New("sandbox-rental: repo scan capacity exceeded")
 	ErrRunnerUnavailable  = errors.New("sandbox-rental: runner unavailable")
 	ErrBillingUnavailable = errors.New("sandbox-rental: billing unavailable")
 )
 
-// Runner abstracts VM execution for direct sandbox jobs and repo-bound
-// workloads. Production uses *vmorchestrator.Client; tests use a fake.
+// Runner abstracts VM execution. Production uses *vmorchestrator.Client; tests use a fake.
 type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
-	RunWithConfig(ctx context.Context, cfg vmorchestrator.Config, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
-	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
-	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
 type BillingClient interface {
@@ -98,37 +92,33 @@ type SubmitRequest struct {
 	WorkflowJobName string `json:"workflow_job_name,omitempty"`
 	ProviderRunID   string `json:"provider_run_id,omitempty"`
 	ProviderJobID   string `json:"provider_job_id,omitempty"`
-
-	GoldenGenerationID *uuid.UUID `json:"-"`
-	GoldenSnapshotRef  string     `json:"-"`
 }
 
 type ExecutionRecord struct {
-	ExecutionID        uuid.UUID       `json:"execution_id"`
-	OrgID              uint64          `json:"org_id"`
-	ActorID            string          `json:"actor_id"`
-	Kind               string          `json:"kind"`
-	Provider           string          `json:"provider,omitempty"`
-	ProductID          string          `json:"product_id"`
-	Status             string          `json:"status"`
-	CorrelationID      string          `json:"correlation_id,omitempty"`
-	IdempotencyKey     string          `json:"idempotency_key,omitempty"`
-	RepoID             string          `json:"repo_id,omitempty"`
-	GoldenGenerationID string          `json:"golden_generation_id,omitempty"`
-	Repo               string          `json:"repo,omitempty"`
-	RepoURL            string          `json:"repo_url,omitempty"`
-	Ref                string          `json:"ref,omitempty"`
-	DefaultBranch      string          `json:"default_branch,omitempty"`
-	RunCommand         string          `json:"run_command,omitempty"`
-	CommitSHA          string          `json:"commit_sha,omitempty"`
-	WorkflowPath       string          `json:"workflow_path,omitempty"`
-	WorkflowJobName    string          `json:"workflow_job_name,omitempty"`
-	ProviderRunID      string          `json:"provider_run_id,omitempty"`
-	ProviderJobID      string          `json:"provider_job_id,omitempty"`
-	LatestAttempt      AttemptRecord   `json:"latest_attempt"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
-	BillingWindows     []BillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID     uuid.UUID       `json:"execution_id"`
+	OrgID           uint64          `json:"org_id"`
+	ActorID         string          `json:"actor_id"`
+	Kind            string          `json:"kind"`
+	Provider        string          `json:"provider,omitempty"`
+	ProductID       string          `json:"product_id"`
+	Status          string          `json:"status"`
+	CorrelationID   string          `json:"correlation_id,omitempty"`
+	IdempotencyKey  string          `json:"idempotency_key,omitempty"`
+	RepoID          string          `json:"repo_id,omitempty"`
+	Repo            string          `json:"repo,omitempty"`
+	RepoURL         string          `json:"repo_url,omitempty"`
+	Ref             string          `json:"ref,omitempty"`
+	DefaultBranch   string          `json:"default_branch,omitempty"`
+	RunCommand      string          `json:"run_command,omitempty"`
+	CommitSHA       string          `json:"commit_sha,omitempty"`
+	WorkflowPath    string          `json:"workflow_path,omitempty"`
+	WorkflowJobName string          `json:"workflow_job_name,omitempty"`
+	ProviderRunID   string          `json:"provider_run_id,omitempty"`
+	ProviderJobID   string          `json:"provider_job_id,omitempty"`
+	LatestAttempt   AttemptRecord   `json:"latest_attempt"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	BillingWindows  []BillingWindow `json:"billing_windows,omitempty"`
 }
 
 type AttemptRecord struct {
@@ -138,7 +128,6 @@ type AttemptRecord struct {
 	OrchestratorJobID string     `json:"orchestrator_job_id,omitempty"`
 	BillingJobID      int64      `json:"billing_job_id,omitempty"`
 	RunnerName        string     `json:"runner_name,omitempty"`
-	GoldenSnapshot    string     `json:"golden_snapshot,omitempty"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ExitCode          int        `json:"exit_code,omitempty"`
 	DurationMs        int64      `json:"duration_ms,omitempty"`
@@ -176,60 +165,57 @@ type JobLogRow struct {
 }
 
 type JobEventRow struct {
-	ExecutionID        string    `ch:"execution_id"`
-	AttemptID          string    `ch:"attempt_id"`
-	OrgID              uint64    `ch:"org_id"`
-	ActorID            string    `ch:"actor_id"`
-	Kind               string    `ch:"kind"`
-	Provider           string    `ch:"provider"`
-	ProductID          string    `ch:"product_id"`
-	RepoID             string    `ch:"repo_id"`
-	GoldenGenerationID string    `ch:"golden_generation_id"`
-	Repo               string    `ch:"repo"`
-	RepoURL            string    `ch:"repo_url"`
-	Ref                string    `ch:"ref"`
-	DefaultBranch      string    `ch:"default_branch"`
-	RunCommand         string    `ch:"run_command"`
-	CommitSHA          string    `ch:"commit_sha"`
-	WorkflowPath       string    `ch:"workflow_path"`
-	WorkflowJobName    string    `ch:"workflow_job_name"`
-	ProviderRunID      string    `ch:"provider_run_id"`
-	ProviderJobID      string    `ch:"provider_job_id"`
-	RunnerName         string    `ch:"runner_name"`
-	Status             string    `ch:"status"`
-	ExitCode           int32     `ch:"exit_code"`
-	DurationMs         int64     `ch:"duration_ms"`
-	ZFSWritten         uint64    `ch:"zfs_written"`
-	StdoutBytes        uint64    `ch:"stdout_bytes"`
-	StderrBytes        uint64    `ch:"stderr_bytes"`
-	GoldenSnapshot     string    `ch:"golden_snapshot"`
-	BillingJobID       int64     `ch:"billing_job_id"`
-	ChargeUnits        uint64    `ch:"charge_units"`
-	PricingPhase       string    `ch:"pricing_phase"`
-	CorrelationID      string    `ch:"correlation_id"`
-	VerificationRunID  string    `ch:"verification_run_id"`
-	StartedAt          time.Time `ch:"started_at"`
-	CompletedAt        time.Time `ch:"completed_at"`
-	CreatedAt          time.Time `ch:"created_at"`
-	TraceID            string    `ch:"trace_id"`
+	ExecutionID       string    `ch:"execution_id"`
+	AttemptID         string    `ch:"attempt_id"`
+	OrgID             uint64    `ch:"org_id"`
+	ActorID           string    `ch:"actor_id"`
+	Kind              string    `ch:"kind"`
+	Provider          string    `ch:"provider"`
+	ProductID         string    `ch:"product_id"`
+	RepoID            string    `ch:"repo_id"`
+	Repo              string    `ch:"repo"`
+	RepoURL           string    `ch:"repo_url"`
+	Ref               string    `ch:"ref"`
+	DefaultBranch     string    `ch:"default_branch"`
+	RunCommand        string    `ch:"run_command"`
+	CommitSHA         string    `ch:"commit_sha"`
+	WorkflowPath      string    `ch:"workflow_path"`
+	WorkflowJobName   string    `ch:"workflow_job_name"`
+	ProviderRunID     string    `ch:"provider_run_id"`
+	ProviderJobID     string    `ch:"provider_job_id"`
+	RunnerName        string    `ch:"runner_name"`
+	Status            string    `ch:"status"`
+	ExitCode          int32     `ch:"exit_code"`
+	DurationMs        int64     `ch:"duration_ms"`
+	ZFSWritten        uint64    `ch:"zfs_written"`
+	StdoutBytes       uint64    `ch:"stdout_bytes"`
+	StderrBytes       uint64    `ch:"stderr_bytes"`
+	BillingJobID      int64     `ch:"billing_job_id"`
+	ChargeUnits       uint64    `ch:"charge_units"`
+	PricingPhase      string    `ch:"pricing_phase"`
+	CorrelationID     string    `ch:"correlation_id"`
+	VerificationRunID string    `ch:"verification_run_id"`
+	StartedAt         time.Time `ch:"started_at"`
+	CompletedAt       time.Time `ch:"completed_at"`
+	CreatedAt         time.Time `ch:"created_at"`
+	TraceID           string    `ch:"trace_id"`
 }
 
 // Service manages execution submission, billing, and state transitions.
 type Service struct {
-	PG                        *sql.DB
-	CH                        driver.Conn
-	CHDatabase                string
-	Orchestrator              Runner
-	Billing                   BillingClient
-	BillingVCPUs              int
-	BillingMemMiB             int
-	ForgejoURL                string
-	ForgejoRunnerLabel        string
-	ForgejoRunnerToken        string
-	ForgejoRunnerBinaryURL    string
-	ForgejoRunnerBinarySHA256 string
-	WebhookSecretCodec        *SecretCodec
-	Logger                    *slog.Logger
+	PG                  *sql.DB
+	CH                  driver.Conn
+	CHDatabase          string
+	Orchestrator        Runner
+	Billing             BillingClient
+	BillingVCPUs        int
+	BillingMemMiB       int
+	WebhookSecretCodec  *SecretCodec
+	Logger              *slog.Logger
+	RepoScanConcurrency int
+
+	repoScanMu  sync.Mutex
+	repoScanSem chan struct{}
 }
 
 type executionSnapshot struct {
@@ -239,19 +225,18 @@ type executionSnapshot struct {
 }
 
 type executionOutcome struct {
-	State          string
-	FailureReason  string
-	ExitCode       int
-	DurationMs     int64
-	ZFSWritten     uint64
-	StdoutBytes    uint64
-	StderrBytes    uint64
-	Logs           string
-	CommitSHA      string
-	RunnerName     string
-	GoldenSnapshot string
-	StartedAt      time.Time
-	CompletedAt    time.Time
+	State         string
+	FailureReason string
+	ExitCode      int
+	DurationMs    int64
+	ZFSWritten    uint64
+	StdoutBytes   uint64
+	StderrBytes   uint64
+	Logs          string
+	CommitSHA     string
+	RunnerName    string
+	StartedAt     time.Time
+	CompletedAt   time.Time
 }
 
 type workloadResult struct {
@@ -434,15 +419,17 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			if err != nil {
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
+				s.Logger.ErrorContext(ctx, "workload failed", "execution_id", executionID, "attempt_id", attemptID, "failure_reason", outcome.FailureReason, "error", err)
 				if outcome.StartedAt.IsZero() && !skipFinalBilling && !windowAdvanceUnresolved {
 					if voidErr := s.Billing.Void(ctx, currentReservation); voidErr != nil {
 						s.Logger.ErrorContext(ctx, "void launch failure reservation", "attempt_id", attemptID, "error", voidErr)
 						s.writeSystemLog(ctx, executionID, attemptID, "billing void failed after launch failure: %v", voidErr)
-						_ = s.markFinalizing(ctx, executionID, attemptID, executionOutcome{
+						voidFailOutcome := executionOutcome{
 							State:         StateFinalizing,
 							FailureReason: "billing_void_failed",
 							CompletedAt:   time.Now().UTC(),
-						})
+						}
+						_ = s.markFinalizing(ctx, executionID, attemptID, voidFailOutcome)
 						return
 					}
 					s.writeSystemLog(ctx, executionID, attemptID, "billing voided after launch failure window_seq=%d", currentReservation.WindowSeq)
@@ -491,11 +478,6 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 					s.Logger.ErrorContext(ctx, "mark terminal without final billing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 					return
 				}
-				if req.Kind == KindWarmGolden {
-					if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
-						s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
-					}
-				}
 				s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
 				return
 			}
@@ -524,11 +506,6 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 				s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing settled: %v", err)
 				return
-			}
-			if req.Kind == KindWarmGolden {
-				if err := s.finalizeWarmGoldenGeneration(ctx, executionID, attemptID, req, outcome); err != nil {
-					s.Logger.ErrorContext(ctx, "finalize warm golden generation", "execution_id", executionID, "attempt_id", attemptID, "repo_id", req.RepoID, "generation_id", req.GoldenGenerationID, "error", err)
-				}
 			}
 
 			s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
@@ -661,12 +638,6 @@ func (s *Service) runAttemptWorkload(ctx context.Context, executionID, attemptID
 	switch req.Kind {
 	case KindDirect:
 		return s.runDirect(ctx, executionID, attemptID, req)
-	case KindRepoExec:
-		return s.runRepoExec(ctx, executionID, attemptID, req)
-	case KindWarmGolden:
-		return s.runWarmGolden(ctx, executionID, attemptID, req)
-	case KindForgejoRunner:
-		return s.runForgejoRunner(ctx, executionID, attemptID, req)
 	default:
 		return executionOutcome{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
@@ -728,183 +699,6 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	return outcome, nil
 }
 
-func (s *Service) runRepoExec(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
-	prepared, err := PrepareRepoExec(RepoExecSpec{
-		JobID: attemptID.String(),
-		RepoTarget: RepoTarget{
-			Repo:    req.Repo,
-			RepoURL: req.RepoURL,
-		},
-		Ref: req.Ref,
-	})
-	if err != nil {
-		return executionOutcome{FailureReason: "repo_prepare_failed"}, err
-	}
-	defer prepared.Cleanup()
-
-	actualRunCommand := strings.Join(prepared.Request.JobTemplate.RunCommand, " ")
-	if err := s.updateExecutionPreparedFields(ctx, executionID, prepared.Inspection.CommitSHA, actualRunCommand); err != nil {
-		return executionOutcome{FailureReason: "persist_prepared_fields_failed"}, err
-	}
-
-	startedAt := time.Now().UTC()
-	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
-		return executionOutcome{FailureReason: "mark_running_failed"}, err
-	}
-	s.writeSystemLog(ctx, executionID, attemptID, "running repo execution ref=%s repo=%s", req.Ref, req.Repo)
-
-	status, err := s.Orchestrator.ExecRepo(ctx, prepared.Request)
-	if shouldWarmRepoGolden(err, status.ErrorMessage) {
-		// Surgical note: the steady-state contract is still "push default branch to
-		// warm the golden ahead of time". For first-contact website runs we accept a
-		// colder path and warm on demand so the product does not fail immediately on
-		// a brand-new repo.
-		s.Logger.InfoContext(ctx, "repo execution warming missing golden",
-			"execution_id", executionID,
-			"attempt_id", attemptID,
-			"repo", req.Repo,
-			"default_branch", req.DefaultBranch,
-		)
-		s.writeSystemLog(ctx, executionID, attemptID, "active golden missing; warming repo golden on demand for repo=%s", req.Repo)
-		if warmErr := s.warmRepoGoldenOnDemand(ctx, req); warmErr != nil {
-			outcome := executionOutcome{
-				StartedAt:     startedAt,
-				CompletedAt:   time.Now().UTC(),
-				CommitSHA:     prepared.Inspection.CommitSHA,
-				FailureReason: failureReasonFromError(warmErr),
-				State:         StateFailed,
-			}
-			outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
-			return outcome, warmErr
-		}
-		prepared.Request.JobTemplate.JobID = uuid.NewString()
-		status, err = s.Orchestrator.ExecRepo(ctx, prepared.Request)
-	}
-	outcome := executionOutcome{
-		StartedAt:   startedAt,
-		CompletedAt: time.Now().UTC(),
-		CommitSHA:   prepared.Inspection.CommitSHA,
-	}
-	outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
-	if status.RepoExec != nil {
-		if status.RepoExec.CommitSHA != "" {
-			outcome.CommitSHA = status.RepoExec.CommitSHA
-		}
-		outcome.GoldenSnapshot = status.RepoExec.GoldenSnapshot
-	}
-	if status.Result != nil {
-		outcome.ExitCode = status.Result.ExitCode
-		outcome.Logs = status.Result.Logs
-		outcome.ZFSWritten = status.Result.ZFSWritten
-		outcome.StdoutBytes = status.Result.StdoutBytes
-		outcome.StderrBytes = status.Result.StderrBytes
-	}
-	if err != nil {
-		outcome.State = StateFailed
-		outcome.FailureReason = failureReasonFromError(err)
-		return outcome, err
-	}
-	if status.ErrorMessage != "" {
-		outcome.State = StateFailed
-		outcome.FailureReason = status.ErrorMessage
-		return outcome, errors.New(status.ErrorMessage)
-	}
-	if status.State == vmorchestrator.JobStateCanceled {
-		outcome.State = StateCanceled
-		return outcome, nil
-	}
-	if outcome.ExitCode != 0 || status.State == vmorchestrator.JobStateFailed {
-		outcome.State = StateFailed
-	}
-	return outcome, nil
-}
-
-func (s *Service) warmRepoGoldenOnDemand(ctx context.Context, req SubmitRequest) error {
-	prepared, err := PrepareWarmGolden(WarmGoldenSpec{
-		JobID: uuid.NewString(),
-		RepoTarget: RepoTarget{
-			Repo:    req.Repo,
-			RepoURL: req.RepoURL,
-		},
-		DefaultBranch: req.DefaultBranch,
-	})
-	if err != nil {
-		return err
-	}
-	defer prepared.Cleanup()
-
-	result, err := s.Orchestrator.WarmGolden(ctx, prepared.Request)
-	if err != nil {
-		return err
-	}
-	if result.ErrorMessage != "" {
-		return errors.New(result.ErrorMessage)
-	}
-	if result.JobResult.ExitCode != 0 {
-		return fmt.Errorf("warm golden failed with exit code %d", result.JobResult.ExitCode)
-	}
-	return nil
-}
-
-func (s *Service) runWarmGolden(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest) (executionOutcome, error) {
-	prepared, err := PrepareWarmGolden(WarmGoldenSpec{
-		JobID: attemptID.String(),
-		RepoTarget: RepoTarget{
-			Repo:    req.Repo,
-			RepoURL: req.RepoURL,
-		},
-		DefaultBranch: req.DefaultBranch,
-	})
-	if err != nil {
-		return executionOutcome{FailureReason: "warm_prepare_failed"}, err
-	}
-	defer prepared.Cleanup()
-
-	actualRunCommand := strings.Join(prepared.Request.Job.RunCommand, " ")
-	if err := s.updateExecutionPreparedFields(ctx, executionID, prepared.Inspection.CommitSHA, actualRunCommand); err != nil {
-		return executionOutcome{FailureReason: "persist_prepared_fields_failed"}, err
-	}
-
-	startedAt := time.Now().UTC()
-	if err := s.markRunning(ctx, executionID, attemptID, startedAt); err != nil {
-		return executionOutcome{FailureReason: "mark_running_failed"}, err
-	}
-	s.writeSystemLog(ctx, executionID, attemptID, "warming golden for repo=%s default_branch=%s", req.Repo, req.DefaultBranch)
-	if req.GoldenGenerationID != nil {
-		if err := s.SetGoldenGenerationState(ctx, *req.GoldenGenerationID, GenerationStateBuilding, "", ""); err != nil {
-			return executionOutcome{FailureReason: "mark_generation_building_failed"}, err
-		}
-	}
-
-	result, err := s.Orchestrator.WarmGolden(ctx, prepared.Request)
-	outcome := executionOutcome{
-		StartedAt:      startedAt,
-		CompletedAt:    time.Now().UTC(),
-		CommitSHA:      firstNonEmpty(result.CommitSHA, prepared.Inspection.CommitSHA),
-		GoldenSnapshot: result.TargetDataset,
-		ExitCode:       result.JobResult.ExitCode,
-		Logs:           result.JobResult.Logs,
-		ZFSWritten:     result.JobResult.ZFSWritten,
-		StdoutBytes:    result.JobResult.StdoutBytes,
-		StderrBytes:    result.JobResult.StderrBytes,
-	}
-	outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
-	if err != nil {
-		outcome.State = StateFailed
-		outcome.FailureReason = failureReasonFromError(err)
-		return outcome, err
-	}
-	if result.ErrorMessage != "" {
-		outcome.State = StateFailed
-		outcome.FailureReason = result.ErrorMessage
-		return outcome, errors.New(result.ErrorMessage)
-	}
-	if outcome.ExitCode != 0 {
-		outcome.State = StateFailed
-	}
-	return outcome, nil
-}
-
 func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
 	row := s.PG.QueryRowContext(ctx, `
 		SELECT
@@ -918,7 +712,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.correlation_id,
 			COALESCE(e.idempotency_key, ''),
 			COALESCE(e.repo_id::text, ''),
-			COALESCE(e.golden_generation_id::text, ''),
 			e.repo,
 			e.repo_url,
 			e.ref,
@@ -937,7 +730,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			a.orchestrator_job_id,
 			COALESCE(a.billing_job_id, 0),
 			a.runner_name,
-			a.golden_snapshot,
 			a.failure_reason,
 			COALESCE(a.exit_code, 0),
 			COALESCE(a.duration_ms, 0),
@@ -955,14 +747,13 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 	`, executionID, int64(orgID))
 
 	var (
-		record             ExecutionRecord
-		attempt            AttemptRecord
-		repoID             string
-		goldenGenerationID string
-		startedAt          sql.NullTime
-		completedAt        sql.NullTime
-		attemptCreatedAt   sql.NullTime
-		attemptUpdatedAt   sql.NullTime
+		record           ExecutionRecord
+		attempt          AttemptRecord
+		repoID           string
+		startedAt        sql.NullTime
+		completedAt      sql.NullTime
+		attemptCreatedAt sql.NullTime
+		attemptUpdatedAt sql.NullTime
 	)
 	if err := row.Scan(
 		&record.ExecutionID,
@@ -975,7 +766,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.CorrelationID,
 		&record.IdempotencyKey,
 		&repoID,
-		&goldenGenerationID,
 		&record.Repo,
 		&record.RepoURL,
 		&record.Ref,
@@ -994,7 +784,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&attempt.OrchestratorJobID,
 		&attempt.BillingJobID,
 		&attempt.RunnerName,
-		&attempt.GoldenSnapshot,
 		&attempt.FailureReason,
 		&attempt.ExitCode,
 		&attempt.DurationMs,
@@ -1016,7 +805,6 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		attempt.StartedAt = &startedAt.Time
 	}
 	record.RepoID = strings.TrimSpace(repoID)
-	record.GoldenGenerationID = strings.TrimSpace(goldenGenerationID)
 	if completedAt.Valid {
 		attempt.CompletedAt = &completedAt.Time
 	}
@@ -1136,24 +924,19 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 		}
 		repoID = parsedRepoID
 	}
-	var goldenGenerationID any
-	if req.GoldenGenerationID != nil {
-		goldenGenerationID = *req.GoldenGenerationID
-	}
-
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO executions (
 			execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
-			idempotency_key, repo_id, golden_generation_id, repo, repo_url, ref, default_branch, run_command,
+			idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
 			workflow_path, workflow_job_name, provider_run_id, provider_job_id,
 			latest_attempt_id, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			NULLIF($9, ''), $10, $11, $12, $13, $14, $15, $16,
-			$17, $18, $19, $20,
-			$21, $22, $22
+			NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19,
+			$20, $21, $21
 		)
-	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, goldenGenerationID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
+	`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, req.WorkflowPath, req.WorkflowJobName, req.ProviderRunID, req.ProviderJobID, attemptID, now); err != nil {
 		return err
 	}
 
@@ -1289,12 +1072,11 @@ func (s *Service) markFinalizing(ctx context.Context, executionID, attemptID uui
 		    zfs_written = $6,
 		    stdout_bytes = $7,
 		    stderr_bytes = $8,
-		    golden_snapshot = $9,
-		    started_at = COALESCE(started_at, $10),
-		    completed_at = $11,
-		    updated_at = $11
+		    started_at = COALESCE(started_at, $9),
+		    completed_at = $10,
+		    updated_at = $10
 		WHERE attempt_id = $1
-	`, attemptID, StateFinalizing, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.GoldenSnapshot, outcome.StartedAt, outcome.CompletedAt); err != nil {
+	`, attemptID, StateFinalizing, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.StartedAt, outcome.CompletedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1325,12 +1107,11 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 		    zfs_written = $6,
 		    stdout_bytes = $7,
 		    stderr_bytes = $8,
-		    golden_snapshot = $9,
-		    started_at = COALESCE(started_at, $10),
-		    completed_at = $11,
-		    updated_at = $11
+		    started_at = COALESCE(started_at, $9),
+		    completed_at = $10,
+		    updated_at = $10
 		WHERE attempt_id = $1
-	`, attemptID, outcome.State, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.GoldenSnapshot, outcome.StartedAt, outcome.CompletedAt); err != nil {
+	`, attemptID, outcome.State, outcome.FailureReason, outcome.ExitCode, outcome.DurationMs, int64(outcome.ZFSWritten), int64(outcome.StdoutBytes), int64(outcome.StderrBytes), outcome.StartedAt, outcome.CompletedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1526,42 +1307,40 @@ func (s *Service) recordExecutionCompletion(
 	}
 
 	s.writeJobEvent(ctx, JobEventRow{
-		ExecutionID:        executionID.String(),
-		AttemptID:          attemptID.String(),
-		OrgID:              orgID,
-		ActorID:            actorID,
-		Kind:               req.Kind,
-		Provider:           req.Provider,
-		ProductID:          req.ProductID,
-		RepoID:             req.RepoID,
-		GoldenGenerationID: uuidString(req.GoldenGenerationID),
-		Repo:               req.Repo,
-		RepoURL:            req.RepoURL,
-		Ref:                req.Ref,
-		DefaultBranch:      req.DefaultBranch,
-		RunCommand:         req.RunCommand,
-		CommitSHA:          outcome.CommitSHA,
-		WorkflowPath:       req.WorkflowPath,
-		WorkflowJobName:    req.WorkflowJobName,
-		ProviderRunID:      req.ProviderRunID,
-		ProviderJobID:      req.ProviderJobID,
-		RunnerName:         outcome.RunnerName,
-		Status:             outcome.State,
-		ExitCode:           int32(outcome.ExitCode),
-		DurationMs:         outcome.DurationMs,
-		ZFSWritten:         outcome.ZFSWritten,
-		StdoutBytes:        outcome.StdoutBytes,
-		StderrBytes:        outcome.StderrBytes,
-		GoldenSnapshot:     outcome.GoldenSnapshot,
-		BillingJobID:       reservation.JobId,
-		ChargeUnits:        charge,
-		PricingPhase:       reservation.PricingPhase,
-		CorrelationID:      CorrelationIDFromContext(ctx),
-		VerificationRunID:  VerificationRunIDFromContext(ctx),
-		StartedAt:          outcome.StartedAt,
-		CompletedAt:        outcome.CompletedAt,
-		CreatedAt:          outcome.StartedAt,
-		TraceID:            traceIDFromContext(ctx),
+		ExecutionID:       executionID.String(),
+		AttemptID:         attemptID.String(),
+		OrgID:             orgID,
+		ActorID:           actorID,
+		Kind:              req.Kind,
+		Provider:          req.Provider,
+		ProductID:         req.ProductID,
+		RepoID:            req.RepoID,
+		Repo:              req.Repo,
+		RepoURL:           req.RepoURL,
+		Ref:               req.Ref,
+		DefaultBranch:     req.DefaultBranch,
+		RunCommand:        req.RunCommand,
+		CommitSHA:         outcome.CommitSHA,
+		WorkflowPath:      req.WorkflowPath,
+		WorkflowJobName:   req.WorkflowJobName,
+		ProviderRunID:     req.ProviderRunID,
+		ProviderJobID:     req.ProviderJobID,
+		RunnerName:        outcome.RunnerName,
+		Status:            outcome.State,
+		ExitCode:          int32(outcome.ExitCode),
+		DurationMs:        outcome.DurationMs,
+		ZFSWritten:        outcome.ZFSWritten,
+		StdoutBytes:       outcome.StdoutBytes,
+		StderrBytes:       outcome.StderrBytes,
+		BillingJobID:      reservation.JobId,
+		ChargeUnits:       charge,
+		PricingPhase:      reservation.PricingPhase,
+		CorrelationID:     CorrelationIDFromContext(ctx),
+		VerificationRunID: VerificationRunIDFromContext(ctx),
+		StartedAt:         outcome.StartedAt,
+		CompletedAt:       outcome.CompletedAt,
+		CreatedAt:         outcome.StartedAt,
+		TraceID:           traceIDFromContext(ctx),
 	})
 	s.Logger.InfoContext(ctx, "execution completed",
 		"fm_correlation_id", CorrelationIDFromContext(ctx),
@@ -1637,35 +1416,6 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	switch req.Kind {
 	case KindDirect:
 		return req, nil
-	case KindRepoExec:
-		if req.Ref == "" {
-			if req.RepoID == "" {
-				return SubmitRequest{}, fmt.Errorf("ref is required for repo_exec")
-			}
-		}
-		if req.RepoID == "" && req.RepoURL == "" {
-			return SubmitRequest{}, fmt.Errorf("repo_url or repo_id is required for repo_exec")
-		}
-		if req.RepoID == "" && req.Repo == "" {
-			return SubmitRequest{}, fmt.Errorf("repo is required for repo_exec")
-		}
-		return req, nil
-	case KindWarmGolden:
-		if req.RepoURL == "" {
-			return SubmitRequest{}, fmt.Errorf("repo_url is required for warm_golden")
-		}
-		if req.Repo == "" {
-			return SubmitRequest{}, fmt.Errorf("repo is required for warm_golden")
-		}
-		return req, nil
-	case KindForgejoRunner:
-		if req.RepoID == "" && req.RepoURL == "" {
-			return SubmitRequest{}, fmt.Errorf("repo_id or repo_url is required for forgejo_runner")
-		}
-		if req.ProviderRunID == "" {
-			return SubmitRequest{}, fmt.Errorf("provider_run_id is required for forgejo_runner")
-		}
-		return req, nil
 	default:
 		return SubmitRequest{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
 	}
@@ -1694,41 +1444,6 @@ func (s *Service) hydrateImportedRepoRequest(ctx context.Context, orgID uint64, 
 		req.Ref = "refs/heads/" + repo.DefaultBranch
 	}
 
-	switch req.Kind {
-	case KindRepoExec:
-		if repo.State != RepoStateReady && repo.State != RepoStateDegraded {
-			return SubmitRequest{}, ErrRepoNotReady
-		}
-		if repo.ActiveGoldenGenerationID == nil {
-			return SubmitRequest{}, ErrRepoNotReady
-		}
-		req.GoldenGenerationID = repo.ActiveGoldenGenerationID
-		generation, err := s.GetGoldenGeneration(ctx, repo.RepoID, *repo.ActiveGoldenGenerationID)
-		if err != nil {
-			return SubmitRequest{}, err
-		}
-		req.GoldenSnapshotRef = generation.SnapshotRef
-	case KindWarmGolden:
-		// Warm builds are the mechanism that moves a compatible repo toward
-		// ready. Do not require an active generation here.
-	case KindForgejoRunner:
-		if repo.State != RepoStateReady && repo.State != RepoStateDegraded {
-			return SubmitRequest{}, ErrRepoNotReady
-		}
-		if repo.ActiveGoldenGenerationID == nil {
-			return SubmitRequest{}, ErrRepoNotReady
-		}
-		generation, err := s.GetGoldenGeneration(ctx, repo.RepoID, *repo.ActiveGoldenGenerationID)
-		if err != nil {
-			return SubmitRequest{}, err
-		}
-		if strings.TrimSpace(generation.SnapshotRef) == "" {
-			return SubmitRequest{}, ErrRepoNotReady
-		}
-		req.GoldenGenerationID = repo.ActiveGoldenGenerationID
-		req.GoldenSnapshotRef = generation.SnapshotRef
-	}
-
 	return req, nil
 }
 
@@ -1739,17 +1454,6 @@ func defaultRepoName(repoURL string) string {
 		return "repo"
 	}
 	return base
-}
-
-func shouldWarmRepoGolden(err error, statusMessage string) bool {
-	combined := strings.ToLower(strings.TrimSpace(statusMessage))
-	if err != nil {
-		if combined != "" {
-			combined += " "
-		}
-		combined += strings.ToLower(err.Error())
-	}
-	return strings.Contains(combined, "repo golden") && strings.Contains(combined, "run warm first")
 }
 
 func reserveFailureReason(err error) string {

@@ -1,9 +1,9 @@
 ---
 # Firecracker host setup: KVM, jailer directories, golden zvol, kernel.
-# CI artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
+# Guest artifacts (vmlinux, rootfs.ext4) are built by scripts/build-guest-rootfs.sh
 # and pre-staged to /var/lib/ci/ before this role runs.
 
-- name: Load CI version pins from repo
+- name: Load Firecracker version pins from repo
   ansible.builtin.set_fact:
     firecracker_version_pins: "{{ lookup('ansible.builtin.file', playbook_dir + '/../../ci/versions.json') | from_json }}"
 
@@ -145,7 +145,7 @@
     state: directory
     mode: "0755"
 
-- name: Create CI directories
+- name: Create guest artifact directories
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -311,27 +311,27 @@
 # --- Guest artifact verification ---
 # Artifacts built by scripts/build-guest-rootfs.sh, pre-staged to /var/lib/ci/.
 
-- name: Verify CI kernel exists
+- name: Verify guest kernel exists
   ansible.builtin.stat:
     path: "{{ firecracker_kernel_path }}"
-  register: firecracker_ci_kernel
+  register: firecracker_guest_kernel
 
-- name: Verify CI rootfs exists
+- name: Verify guest rootfs exists
   ansible.builtin.stat:
     path: "{{ firecracker_rootfs_path }}"
-  register: firecracker_ci_rootfs
+  register: firecracker_guest_rootfs
 
 - name: Verify guest artifact manifest exists
   ansible.builtin.stat:
     path: "{{ firecracker_guest_artifact_manifest_path }}"
-  register: firecracker_ci_guest_artifacts
+  register: firecracker_guest_artifacts
 
-- name: Fail if CI artifacts are missing
+- name: Fail if guest artifacts are missing
   ansible.builtin.fail:
     msg: >
-      CI artifacts not found at {{ firecracker_kernel_path }}, {{ firecracker_rootfs_path }}, and/or {{ firecracker_guest_artifact_manifest_path }}.
+      Guest artifacts not found at {{ firecracker_kernel_path }}, {{ firecracker_rootfs_path }}, and/or {{ firecracker_guest_artifact_manifest_path }}.
       Stage them with: cd ansible && ansible-playbook playbooks/guest-rootfs.yml
-  when: not firecracker_ci_kernel.stat.exists or not firecracker_ci_rootfs.stat.exists or not firecracker_ci_guest_artifacts.stat.exists
+  when: not firecracker_guest_kernel.stat.exists or not firecracker_guest_rootfs.stat.exists or not firecracker_guest_artifacts.stat.exists
 
 # --- Golden zvol ---
 
@@ -363,9 +363,9 @@
   changed_when: false
   failed_when: false
 
-- name: Compute CI rootfs checksum
+- name: Compute guest rootfs checksum
   ansible.builtin.command: "sha256sum {{ firecracker_rootfs_path }}"
-  register: firecracker_ci_rootfs_sha256
+  register: firecracker_guest_rootfs_sha256
   changed_when: false
 
 - name: Check recorded golden rootfs checksum
@@ -387,7 +387,7 @@
         or firecracker_golden_zvol_check.rc != 0
         or firecracker_golden_snapshot_check.rc != 0
         or not firecracker_golden_rootfs_hash_stat.stat.exists
-        or ((firecracker_golden_rootfs_hash.content | default('') | b64decode | trim) != (firecracker_ci_rootfs_sha256.stdout.split()[0] | trim))
+        or ((firecracker_golden_rootfs_hash.content | default('') | b64decode | trim) != (firecracker_guest_rootfs_sha256.stdout.split()[0] | trim))
       }}
 
 # --- Atomic golden zvol refresh ---
@@ -462,16 +462,10 @@
   changed_when: true
   failed_when: false
 
-- name: Prune repo goldens derived from old golden
-  ansible.builtin.command: "zfs destroy -R {{ firecracker_zfs_pool }}/repo-goldens"
-  when: firecracker_refresh_base_golden_needed
-  failed_when: false
-  changed_when: true
-
-- name: Prune CI job clones derived from old golden
+- name: Prune VM job clones derived from old golden
   ansible.builtin.shell: |
     set -euo pipefail
-    zfs list -H -o name -r {{ firecracker_zfs_pool }}/{{ firecracker_ci_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -R
+    zfs list -H -o name -r {{ firecracker_zfs_pool }}/{{ firecracker_workload_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -R
   args:
     executable: /bin/bash
   when: firecracker_refresh_base_golden_needed
@@ -493,14 +487,14 @@
 
 - name: Record golden rootfs checksum
   ansible.builtin.copy:
-    content: "{{ firecracker_ci_rootfs_sha256.stdout.split()[0] }}\n"
+    content: "{{ firecracker_guest_rootfs_sha256.stdout.split()[0] }}\n"
     dest: "{{ firecracker_rootfs_hash_record }}"
     mode: "0644"
   when: firecracker_refresh_base_golden_needed
 
-# --- CI dataset for job clones ---
+# --- Workload dataset for job clones ---
 
-- name: Ensure CI dataset exists
+- name: Ensure workload dataset exists
   community.general.zfs:
-    name: "{{ firecracker_zfs_pool }}/{{ firecracker_ci_dataset }}"
+    name: "{{ firecracker_zfs_pool }}/{{ firecracker_workload_dataset }}"
     state: present

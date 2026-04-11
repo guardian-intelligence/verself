@@ -9,9 +9,7 @@ import {
   importRepo as importGeneratedRepo,
   listBillingGrants,
   listBillingSubscriptions,
-  listRepoGenerations,
   listRepos,
-  refreshRepo as refreshGeneratedRepo,
   rescanRepo as rescanGeneratedRepo,
   submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
@@ -28,20 +26,19 @@ import {
   vGetRepoPath,
   vImportRepoBody,
   vListBillingSubscriptionsResponse,
-  vListRepoGenerationsResponse,
   vListReposResponse,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
   vSandboxExecutionRecord,
-  vSandboxGoldenGenerationRecord,
-  vSandboxRepoBootstrapRecord,
   vSandboxRepoRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
 
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
+const idempotencyKeyMaxLength = 128;
 const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
+type IdempotencyHeaders = { "Idempotency-Key": string };
 
 export interface SandboxRentalClientOptions {
   accessToken: string;
@@ -123,7 +120,18 @@ function createSandboxRentalClient(options: SandboxRentalClientOptions): Client 
   });
 }
 
-const workflowScanIssueSchema = v.strictObject({
+function createIdempotencyKey(namespace: string): string {
+  const suffix =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${namespace}:${suffix}`.slice(0, idempotencyKeyMaxLength);
+}
+
+function idempotencyHeaders(namespace: string): IdempotencyHeaders {
+  return { "Idempotency-Key": createIdempotencyKey(namespace) };
+}
+
+const repoScanIssueSchema = v.strictObject({
   path: v.string(),
   job_id: v.optional(v.string()),
   reason: v.string(),
@@ -131,12 +139,11 @@ const workflowScanIssueSchema = v.strictObject({
   details: v.optional(v.string()),
 });
 
-export type WorkflowScanIssue = v.InferOutput<typeof workflowScanIssueSchema>;
+export type RepoScanIssue = v.InferOutput<typeof repoScanIssueSchema>;
 
 export const repoCompatibilitySummarySchema = v.strictObject({
-  workflow_paths: v.optional(v.array(v.string())),
-  unsupported_labels: v.optional(v.array(v.string())),
-  issues: v.optional(v.array(workflowScanIssueSchema)),
+  mode: v.optional(v.string()),
+  issues: v.optional(v.array(repoScanIssueSchema)),
 });
 
 export type RepoCompatibilitySummary = v.InferOutput<typeof repoCompatibilitySummarySchema>;
@@ -251,28 +258,6 @@ function parseRepo(input: unknown) {
 
 export type Repo = ReturnType<typeof parseRepo>;
 
-function parseGoldenGeneration(input: unknown) {
-  return v.parse(vSandboxGoldenGenerationRecord, input);
-}
-
-export type GoldenGeneration = ReturnType<typeof parseGoldenGeneration>;
-
-function parseRepoBootstrapRecord(input: unknown) {
-  const {
-    $schema: _schema,
-    generation,
-    repo,
-    ...record
-  } = v.parse(vSandboxRepoBootstrapRecord, input);
-  return {
-    ...record,
-    generation: parseGoldenGeneration(generation),
-    repo: parseRepo(repo),
-  };
-}
-
-export type RepoBootstrapRecord = ReturnType<typeof parseRepoBootstrapRecord>;
-
 export const grantsQuerySchema = v.optional(
   v.object({
     active: v.optional(v.boolean()),
@@ -305,22 +290,30 @@ export const subscribeRequestSchema = vCreateBillingSubscriptionBody;
 
 export type SubscribeRequest = v.InferOutput<typeof subscribeRequestSchema>;
 
-export const repoExecutionRequestSchema = v.pipe(
+type DirectExecutionRequestBody = {
+  idempotency_key: string;
+  kind: "direct";
+  run_command: string;
+};
+
+export const executionRequestSchema = v.pipe(
   v.strictObject({
-    ref: v.optional(v.string()),
-    repo_id: v.optional(v.string()),
-    repo_url: v.optional(v.string()),
+    idempotency_key: v.optional(v.string()),
+    run_command: v.pipe(v.string(), v.trim(), v.minLength(1)),
   }),
   v.transform((body) => {
-    const { kind: _kind, ...requestBody } = v.parse(vSubmitExecutionBody, {
-      kind: "repo_exec",
-      ...body,
-    });
+    const providedIdempotencyKey = body.idempotency_key?.trim();
+    const requestBody: DirectExecutionRequestBody = {
+      kind: "direct",
+      idempotency_key: providedIdempotencyKey || createIdempotencyKey("execution"),
+      run_command: body.run_command,
+    };
+    v.parse(vSubmitExecutionBody, requestBody);
     return requestBody;
   }),
 );
 
-export type RepoExecutionRequest = v.InferOutput<typeof repoExecutionRequestSchema>;
+export type ExecutionRequest = v.InferInput<typeof executionRequestSchema>;
 
 export const executionIdInputSchema = v.pipe(
   v.strictObject({
@@ -426,6 +419,7 @@ export async function createCheckoutSession(
   const result = await createBillingCheckout({
     body,
     client,
+    headers: idempotencyHeaders("billing-checkout"),
     responseStyle: "fields",
     throwOnError: false,
   });
@@ -452,6 +446,7 @@ export async function createSubscriptionSession(
   const result = await createBillingSubscription({
     body: requestBody,
     client,
+    headers: idempotencyHeaders("billing-subscription"),
     responseStyle: "fields",
     throwOnError: false,
   });
@@ -463,16 +458,15 @@ export async function createSubscriptionSession(
   return v.parse(vCreateBillingSubscriptionResponse, result.data);
 }
 
-export async function submitRepoExecution(
-  options: SandboxRentalClientOptions & { body: RepoExecutionRequest },
+export async function submitDirectExecution(
+  options: SandboxRentalClientOptions & { body: ExecutionRequest },
 ): Promise<SubmitExecutionResponse> {
   const client = createSandboxRentalClient(options);
-  const body = v.parse(repoExecutionRequestSchema, options.body);
+  const body = v.parse(executionRequestSchema, options.body);
   const requestBody = {
-    kind: "repo_exec" as const,
-    ...(body.ref !== undefined ? { ref: body.ref } : {}),
-    ...(body.repo_id !== undefined ? { repo_id: body.repo_id } : {}),
-    ...(body.repo_url !== undefined ? { repo_url: body.repo_url } : {}),
+    kind: "direct" as const,
+    idempotency_key: body.idempotency_key,
+    run_command: body.run_command,
   };
   const path = "/api/v1/executions";
   const result = await submitExecution({
@@ -527,6 +521,7 @@ export async function importRepo(
   const result = await importGeneratedRepo({
     body: requestBody,
     client,
+    headers: idempotencyHeaders("repo-import"),
     responseStyle: "fields",
     throwOnError: false,
   });
@@ -583,6 +578,7 @@ export async function rescanRepo(
   const path = `/api/v1/repos/${repoId}/rescan`;
   const result = await rescanGeneratedRepo({
     client,
+    headers: idempotencyHeaders("repo-rescan"),
     path: { repo_id: repoId },
     responseStyle: "fields",
     throwOnError: false,
@@ -593,45 +589,4 @@ export async function rescanRepo(
   }
 
   return parseRepo(result.data);
-}
-
-export async function getRepoGenerations(
-  options: SandboxRentalClientOptions & { repoId: string },
-): Promise<Array<GoldenGeneration>> {
-  const client = createSandboxRentalClient(options);
-  const { repoId } = v.parse(repoIdInputSchema, { repoId: options.repoId });
-  const path = `/api/v1/repos/${repoId}/generations`;
-  const result = await listRepoGenerations({
-    client,
-    path: { repo_id: repoId },
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  const generations = v.parse(vListRepoGenerationsResponse, result.data);
-  return generations?.map((generation) => parseGoldenGeneration(generation)) ?? [];
-}
-
-export async function refreshRepo(
-  options: SandboxRentalClientOptions & { repoId: string },
-): Promise<RepoBootstrapRecord> {
-  const client = createSandboxRentalClient(options);
-  const { repoId } = v.parse(repoIdInputSchema, { repoId: options.repoId });
-  const path = `/api/v1/repos/${repoId}/refresh`;
-  const result = await refreshGeneratedRepo({
-    client,
-    path: { repo_id: repoId },
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseRepoBootstrapRecord(result.data);
 }

@@ -30,7 +30,7 @@ var tracer = otel.Tracer("vm-orchestrator")
 type Config struct {
 	Pool            string // ZFS pool name, e.g. "forgepool"
 	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
-	CIDataset       string // dataset for job clones, e.g. "ci"
+	WorkloadDataset string // dataset for ephemeral VM job clones
 	KernelPath      string // path to vmlinux on host, e.g. "/var/lib/ci/vmlinux"
 	FirecrackerBin  string // path to firecracker binary
 	JailerBin       string // path to jailer binary
@@ -51,7 +51,7 @@ func DefaultConfig() Config {
 	return Config{
 		Pool:            "forgepool",
 		GoldenZvol:      "golden-zvol",
-		CIDataset:       "ci",
+		WorkloadDataset: "workloads",
 		KernelPath:      "/var/lib/ci/vmlinux",
 		FirecrackerBin:  "/usr/local/bin/firecracker",
 		JailerBin:       "/usr/local/bin/jailer",
@@ -67,16 +67,15 @@ func DefaultConfig() Config {
 	}
 }
 
-// JobConfig describes the CI job to run inside the VM.
+// JobConfig describes the command to run inside the VM.
 type JobConfig struct {
-	JobID          string                 `json:"job_id"`
-	PrepareCommand []string               `json:"prepare_command,omitempty"`
-	PrepareWorkDir string                 `json:"prepare_work_dir,omitempty"`
-	RunCommand     []string               `json:"run_command"`
-	RunWorkDir     string                 `json:"run_work_dir,omitempty"`
-	Services       []string               `json:"services,omitempty"`
-	Env            map[string]string      `json:"env"`
-	RepoOperation  *vmproto.RepoOperation `json:"repo_operation,omitempty"`
+	JobID          string            `json:"job_id"`
+	PrepareCommand []string          `json:"prepare_command,omitempty"`
+	PrepareWorkDir string            `json:"prepare_work_dir,omitempty"`
+	RunCommand     []string          `json:"run_command"`
+	RunWorkDir     string            `json:"run_work_dir,omitempty"`
+	Services       []string          `json:"services,omitempty"`
+	Env            map[string]string `json:"env"`
 }
 
 type PhaseResult struct {
@@ -108,7 +107,6 @@ type JobResult struct {
 	PhaseResults         []PhaseResult
 	FailurePhase         string
 	Metrics              *VMMetrics
-	RepoManifest         *RepoManifest
 }
 
 const firecrackerAPIStepTimeout = 5 * time.Second
@@ -147,30 +145,30 @@ func (o *Orchestrator) goldenSnapshot() string {
 }
 
 func (o *Orchestrator) cloneDataset(jobID string) string {
-	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.CIDataset, jobID)
+	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.WorkloadDataset, jobID)
 }
 
 func (o *Orchestrator) jailDir(jobID string) string {
 	return filepath.Join(o.cfg.JailerRoot, "firecracker", jobID, "root")
 }
 
-func (o *Orchestrator) ciDatasetPrefix() string {
-	return fmt.Sprintf("%s/%s/", o.cfg.Pool, o.cfg.CIDataset)
+func (o *Orchestrator) workloadDatasetPrefix() string {
+	return fmt.Sprintf("%s/%s/", o.cfg.Pool, o.cfg.WorkloadDataset)
 }
 
-// Run executes a CI job inside a Firecracker VM.
+// Run executes a command inside a Firecracker VM.
 func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult, err error) {
 	return o.RunObserved(ctx, job, nil)
 }
 
-// RunObserved executes a CI job inside a Firecracker VM and forwards live
+// RunObserved executes a command inside a Firecracker VM and forwards live
 // guest events to observer when it is non-nil.
 func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer RunObserver) (result JobResult, err error) {
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 		return
 	}
-	if len(job.RunCommand) == 0 && job.RepoOperation == nil {
+	if len(job.RunCommand) == 0 {
 		err = fmt.Errorf("job run command is required")
 		return
 	}
@@ -234,7 +232,7 @@ func (o *Orchestrator) RunDatasetObserved(ctx context.Context, job JobConfig, da
 	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
 		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
 	}
-	if len(job.RunCommand) == 0 && job.RepoOperation == nil {
+	if len(job.RunCommand) == 0 {
 		return JobResult{}, fmt.Errorf("job run command is required")
 	}
 	return o.runDataset(ctx, job, dataset, destroyAfter, observer)
@@ -272,7 +270,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 
 	if destroyAfter {
 		cleanups = append(cleanups, func() {
-			if strings.HasPrefix(dataset, o.ciDatasetPrefix()) {
+			if strings.HasPrefix(dataset, o.workloadDatasetPrefix()) {
 				if destroyErr := o.ops.ZFSDestroy(context.Background(), dataset); destroyErr != nil {
 					logger.Warn("zvol destroy failed", "err", destroyErr)
 				}
@@ -525,7 +523,6 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	result.StdoutBytes = controlResult.result.StdoutBytes
 	result.StderrBytes = controlResult.result.StderrBytes
 	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
-	result.RepoManifest = controlResult.result.RepoManifest
 	result.PhaseResults = append([]PhaseResult(nil), controlResult.phases...)
 	result.FailurePhase = firstFailedPhase(controlResult.phases)
 	logger.Info("VM exited", "exit_code", result.ExitCode)

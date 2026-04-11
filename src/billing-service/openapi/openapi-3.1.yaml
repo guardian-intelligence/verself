@@ -73,6 +73,27 @@ components:
         - success_url
         - cancel_url
       type: object
+    BillingCreatePortalSessionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingCreatePortalSessionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        return_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - return_url
+      type: object
     BillingCreateSubscriptionRequest:
       additionalProperties: false
       properties:
@@ -625,6 +646,35 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List subscriptions for an org
+  /internal/billing/v1/portal:
+    post:
+      operationId: create-portal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCreatePortalSessionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingURLResponse"
+          description: OK
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Create a Stripe customer portal session
   /internal/billing/v1/reserve:
     post:
       operationId: reserve-window
@@ -735,12 +785,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
-        "501":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Not Implemented
       summary: Create a Stripe subscription checkout
   /internal/billing/v1/void:
     post:

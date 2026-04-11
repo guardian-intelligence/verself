@@ -4,7 +4,7 @@
 - name: Validate Cloudflare API token is configured
   ansible.builtin.fail:
     msg: >-
-      cloudflare_api_token is empty. Run: make setup-domain DOMAIN=example.com
+      cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
   when: cloudflare_api_token | default('', true) | length == 0
 
 - name: Create or update DNS records

@@ -60,11 +60,3 @@
     group: root
     mode: "0644"
   notify: Reload sshd
-
-- name: Allow forge-runner to execute forge-metal CI runs as root
-  ansible.builtin.copy:
-    content: |
-      forge-runner ALL=(root) NOPASSWD: /opt/forge-metal/profile/bin/forge-metal ci exec *
-    dest: /etc/sudoers.d/forge-runner-firecracker
-    mode: "0440"
-    validate: "visudo -cf %s"

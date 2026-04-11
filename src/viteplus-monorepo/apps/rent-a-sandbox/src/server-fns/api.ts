@@ -8,7 +8,6 @@ import {
   getExecution as getExecutionRequest,
   getGrants as getGrantsRequest,
   getRepo as getRepoRequest,
-  getRepoGenerations as getRepoGenerationsRequest,
   getRepos as getReposRequest,
   getSubscriptions as getSubscriptionsRequest,
   grantsQuerySchema,
@@ -16,12 +15,11 @@ import {
   importRepoRequestSchema,
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
-  repoExecutionRequestSchema,
   repoIdInputSchema,
-  refreshRepo as refreshRepoRequest,
   rescanRepo as rescanRepoRequest,
   SandboxRentalApiError,
-  submitRepoExecution as submitRepoExecutionRequest,
+  submitDirectExecution as submitDirectExecutionRequest,
+  executionRequestSchema,
   subscribeRequestSchema,
   checkoutRequestSchema,
 } from "~/lib/sandbox-rental-api";
@@ -32,12 +30,10 @@ import type {
   GrantsResponse,
   ImportRepoRequest,
   Repo,
-  RepoBootstrapRecord,
   RepoCompatibilitySummary,
-  RepoExecutionRequest,
+  ExecutionRequest,
   SubscribeRequest,
   SubscriptionsResponse,
-  GoldenGeneration,
 } from "~/lib/sandbox-rental-api";
 import type { AuthSession } from "@forge-metal/auth-web/server";
 import { rentASandboxAuthMiddleware } from "./auth";
@@ -50,13 +46,11 @@ export type {
   Balance,
   CheckoutRequest,
   Execution,
-  GoldenGeneration,
+  ExecutionRequest,
   GrantsResponse,
   ImportRepoRequest,
   Repo,
-  RepoBootstrapRecord,
   RepoCompatibilitySummary,
-  RepoExecutionRequest,
   SubscribeRequest,
   SubscriptionsResponse,
 };
@@ -138,11 +132,11 @@ export const createSubscriptionSession = createServerFn({ method: "POST" })
     });
   });
 
-export const submitRepoExecution = createServerFn({ method: "POST" })
+export const submitDirectExecution = createServerFn({ method: "POST" })
   .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(repoExecutionRequestSchema)
+  .inputValidator(executionRequestSchema)
   .handler(async ({ context, data }) => {
-    return submitRepoExecutionRequest({
+    return submitDirectExecutionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });
@@ -189,26 +183,6 @@ export const rescanRepo = createServerFn({ method: "POST" })
   .inputValidator(repoIdInputSchema)
   .handler(async ({ context, data }) => {
     return rescanRepoRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      repoId: data.repoId,
-    });
-  });
-
-export const getRepoGenerations = createServerFn({ method: "GET" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(repoIdInputSchema)
-  .handler(async ({ context, data }) => {
-    return getRepoGenerationsRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      repoId: data.repoId,
-    });
-  });
-
-export const refreshRepo = createServerFn({ method: "POST" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(repoIdInputSchema)
-  .handler(async ({ context, data }) => {
-    return refreshRepoRequest({
       ...(await sandboxRentalClientOptions(context)),
       repoId: data.repoId,
     });

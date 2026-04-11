@@ -1,2 +1,0 @@
-version = 1
-run = ["npm", "run", "ci"]

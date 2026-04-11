@@ -12,9 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -33,7 +30,7 @@ const (
 	testAudience        = "sandbox-project"
 )
 
-func TestExecutionRepoExecFullFlow(t *testing.T) {
+func TestExecutionDirectFullFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e tests require real databases")
 	}
@@ -59,7 +56,6 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	authProvider := newTestAuthProvider(t)
 	defer authProvider.Close()
 	stripeKeys := requireStripeTestKeys(t)
-	repoURL, repoRef, repoHead := createFixtureRepo(t, "next-bun-monorepo")
 
 	// ---- 2. Billing service (in-process) ----
 
@@ -130,12 +126,8 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 
 	runner := &fakeRunner{
-		// First repo exec forces an on-demand warm. The same attempt is then
-		// billed for the warm plus the retry, which currently totals 3s here.
-		delay:       1500 * time.Millisecond,
-		logs:        "hello from repo exec e2e\n",
-		commitSHA:   repoHead,
-		requireWarm: true,
+		delay: 200 * time.Millisecond,
+		logs:  "hello from direct e2e\n",
 	}
 
 	rentalServer := rentaltestharness.NewServer(rentaltestharness.Config{
@@ -164,12 +156,10 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	// ---- 6. Submit execution ----
 
 	submitBody := map[string]any{
-		"kind":            "repo_exec",
-		"repo":            "toy-next-bun-monorepo",
-		"repo_url":        repoURL,
-		"ref":             repoRef,
+		"kind":            "direct",
+		"run_command":     "echo hello from direct e2e",
 		"product_id":      "sandbox",
-		"idempotency_key": "e2e-repo-exec-full-flow",
+		"idempotency_key": "e2e-direct-full-flow",
 	}
 	bodyBytes, err := json.Marshal(submitBody)
 	if err != nil {
@@ -217,10 +207,7 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 		ExecutionID string      `json:"execution_id"`
 		Status      string      `json:"status"`
 		Kind        string      `json:"kind"`
-		Repo        string      `json:"repo"`
-		RepoURL     string      `json:"repo_url"`
-		Ref         string      `json:"ref"`
-		CommitSHA   string      `json:"commit_sha"`
+		RunCommand  string      `json:"run_command"`
 		Latest      attemptView `json:"latest_attempt"`
 	}
 
@@ -246,14 +233,11 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	if execution.Status != "succeeded" {
 		t.Fatalf("expected execution status=succeeded, got %q", execution.Status)
 	}
-	if execution.Kind != "repo_exec" {
-		t.Fatalf("expected kind=repo_exec, got %q", execution.Kind)
+	if execution.Kind != "direct" {
+		t.Fatalf("expected kind=direct, got %q", execution.Kind)
 	}
-	if execution.Repo != "toy-next-bun-monorepo" {
-		t.Fatalf("expected repo=toy-next-bun-monorepo, got %q", execution.Repo)
-	}
-	if execution.CommitSHA != repoHead {
-		t.Fatalf("expected commit_sha=%s, got %s", repoHead, execution.CommitSHA)
+	if execution.RunCommand != "echo hello from direct e2e" {
+		t.Fatalf("expected persisted run_command, got %q", execution.RunCommand)
 	}
 	if execution.Latest.AttemptID != submitResp.AttemptID {
 		t.Fatalf("expected latest attempt=%s, got %s", submitResp.AttemptID, execution.Latest.AttemptID)
@@ -276,14 +260,14 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 	consumed := balanceBefore - balanceAfter
 
-	const expectedCost uint64 = 900
+	const expectedCost uint64 = 300
 	if consumed != expectedCost {
 		t.Fatalf("expected %d credits consumed, got %d (before=%d after=%d)", expectedCost, consumed, balanceBefore, balanceAfter)
 	}
 
 	// ---- 10. Assert: PG execution + attempt + billing window records ----
 
-	assertExecutionProjection(t, ctx, pg.rentalDB, submitResp.ExecutionID, submitResp.AttemptID, repoHead)
+	assertExecutionProjection(t, ctx, pg.rentalDB, submitResp.ExecutionID, submitResp.AttemptID, "echo hello from direct e2e")
 	assertBillingWindow(t, ctx, pg.rentalDB, submitResp.AttemptID)
 
 	// ---- 11. Assert: ClickHouse metering ----
@@ -332,28 +316,9 @@ func TestExecutionRepoExecFullFlow(t *testing.T) {
 	}
 }
 
-func createFixtureRepo(t *testing.T, fixture string) (cloneURL, ref, head string) {
-	t.Helper()
-
-	repoRoot := filepath.Join(t.TempDir(), fixture)
-	copyDir(t, fixtureSourcePath(t, fixture), repoRoot)
-
-	git := mustLookPath(t, "git")
-	runCmd(t, exec.Command(git, "init", "--initial-branch=main", repoRoot))
-	runCmd(t, exec.Command(git, "-C", repoRoot, "config", "user.name", "Forge Metal E2E"))
-	runCmd(t, exec.Command(git, "-C", repoRoot, "config", "user.email", "e2e@forge-metal.local"))
-	runCmd(t, exec.Command(git, "-C", repoRoot, "add", "."))
-	runCmd(t, exec.Command(git, "-C", repoRoot, "commit", "-m", "fixture"))
-
-	out, err := exec.Command(git, "-C", repoRoot, "rev-parse", "HEAD").CombinedOutput()
-	if err != nil {
-		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
-	}
-	return publicGitCloneURLForTestRepo(t, repoRoot, "fixtures/"+fixture+".git"), "refs/heads/main", strings.TrimSpace(string(out))
-}
-
 func publicGitCloneURLForTestRepo(t *testing.T, repoPath, urlPath string) string {
 	t.Helper()
+	t.Setenv("FORGE_METAL_REPO_SCAN_E2E_ALLOW_FILE_PROTOCOL", "1")
 	cloneURL := "https://93.184.216.34/" + strings.TrimPrefix(urlPath, "/")
 	if !strings.HasSuffix(cloneURL, ".git") {
 		cloneURL += ".git"
@@ -373,76 +338,36 @@ func publicGitCloneURLForTestRepo(t *testing.T, repoPath, urlPath string) string
 	return cloneURL
 }
 
-func fixtureSourcePath(t *testing.T, fixture string) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve caller")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "platform", "test", "fixtures", fixture))
-}
-
-func copyDir(t *testing.T, src, dst string) {
-	t.Helper()
-
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", dst, err)
-	}
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		t.Fatalf("readdir %s: %v", src, err)
-	}
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			t.Fatalf("stat %s: %v", srcPath, err)
-		}
-		if info.IsDir() {
-			copyDir(t, srcPath, dstPath)
-			continue
-		}
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			t.Fatalf("read %s: %v", srcPath, err)
-		}
-		if err := os.WriteFile(dstPath, data, info.Mode()); err != nil {
-			t.Fatalf("write %s: %v", dstPath, err)
-		}
-	}
-}
-
-func assertExecutionProjection(t *testing.T, ctx context.Context, db *sql.DB, executionID, attemptID, commitSHA string) {
+func assertExecutionProjection(t *testing.T, ctx context.Context, db *sql.DB, executionID, attemptID, runCommand string) {
 	t.Helper()
 
 	var (
-		status          string
-		kind            string
-		latestAttemptID string
-		persistedCommit string
-		attemptState    string
-		exitCode        int
+		status           string
+		kind             string
+		latestAttemptID  string
+		persistedCommand string
+		attemptState     string
+		exitCode         int
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT e.status, e.kind, e.latest_attempt_id::text, e.commit_sha, a.state, COALESCE(a.exit_code, 0)
+		SELECT e.status, e.kind, e.latest_attempt_id::text, e.run_command, a.state, COALESCE(a.exit_code, 0)
 		FROM executions e
 		JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
 		WHERE e.execution_id = $1
-	`, executionID).Scan(&status, &kind, &latestAttemptID, &persistedCommit, &attemptState, &exitCode); err != nil {
+	`, executionID).Scan(&status, &kind, &latestAttemptID, &persistedCommand, &attemptState, &exitCode); err != nil {
 		t.Fatalf("query execution projection: %v", err)
 	}
 	if status != "succeeded" {
 		t.Fatalf("expected PG execution status=succeeded, got %q", status)
 	}
-	if kind != "repo_exec" {
-		t.Fatalf("expected PG kind=repo_exec, got %q", kind)
+	if kind != "direct" {
+		t.Fatalf("expected PG kind=direct, got %q", kind)
 	}
 	if latestAttemptID != attemptID {
 		t.Fatalf("expected latest_attempt_id=%s, got %s", attemptID, latestAttemptID)
 	}
-	if persistedCommit != commitSHA {
-		t.Fatalf("expected persisted commit_sha=%s, got %s", commitSHA, persistedCommit)
+	if persistedCommand != runCommand {
+		t.Fatalf("expected persisted run_command=%s, got %s", runCommand, persistedCommand)
 	}
 	if attemptState != "succeeded" {
 		t.Fatalf("expected PG attempt state=succeeded, got %q", attemptState)
@@ -474,8 +399,8 @@ func assertBillingWindow(t *testing.T, ctx context.Context, db *sql.DB, attemptI
 	if reservedQuantity != 300 {
 		t.Fatalf("expected reserved_quantity=300, got %d", reservedQuantity)
 	}
-	if actualQuantity != 3 {
-		t.Fatalf("expected actual_quantity=3, got %d", actualQuantity)
+	if actualQuantity != 1 {
+		t.Fatalf("expected actual_quantity=1, got %d", actualQuantity)
 	}
 	if pricingPhase == "" {
 		t.Fatal("expected non-empty pricing_phase")

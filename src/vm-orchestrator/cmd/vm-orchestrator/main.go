@@ -34,17 +34,15 @@ func run() error {
 	cfg := vmorchestrator.DefaultConfig()
 
 	var (
-		listenUnix         string
-		socketGroup        string
-		repoGoldenStateDir string
+		listenUnix  string
+		socketGroup string
 	)
 
 	flag.StringVar(&listenUnix, "listen-unix", vmorchestrator.DefaultSocketPath, "Unix socket path for the vm-orchestrator API")
 	flag.StringVar(&socketGroup, "socket-group", "vm-clients", "Group that should own the Unix API socket")
-	flag.StringVar(&repoGoldenStateDir, "repo-golden-state-dir", vmorchestrator.DefaultRepoGoldenStateDir, "Directory containing active repo-golden state files")
 	flag.StringVar(&cfg.Pool, "pool", cfg.Pool, "ZFS pool used for VM datasets")
 	flag.StringVar(&cfg.GoldenZvol, "golden-zvol", cfg.GoldenZvol, "Base guest golden zvol name")
-	flag.StringVar(&cfg.CIDataset, "ci-dataset", cfg.CIDataset, "ZFS dataset for ephemeral VM jobs")
+	flag.StringVar(&cfg.WorkloadDataset, "workload-dataset", cfg.WorkloadDataset, "ZFS dataset for ephemeral VM jobs")
 	flag.StringVar(&cfg.KernelPath, "kernel-path", cfg.KernelPath, "Path to vmlinux on the host")
 	flag.StringVar(&cfg.FirecrackerBin, "firecracker-bin", cfg.FirecrackerBin, "Path to firecracker binary")
 	flag.StringVar(&cfg.JailerBin, "jailer-bin", cfg.JailerBin, "Path to jailer binary")
@@ -100,7 +98,7 @@ func run() error {
 		grpc.MaxRecvMsgSize(maxMessageSize),
 		grpc.MaxSendMsgSize(maxMessageSize),
 	)
-	vmService := vmorchestrator.NewAPIServer(cfg, repoGoldenStateDir, logger)
+	vmService := vmorchestrator.NewAPIServer(cfg, logger)
 	vmrpc.RegisterVMServiceServer(server, vmService)
 
 	startupCtx, startupSpan := otel.Tracer("vm-orchestrator").Start(ctx, "daemon.startup")

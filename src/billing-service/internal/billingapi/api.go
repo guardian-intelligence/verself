@@ -154,7 +154,8 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
 	huma.Get(public, "/orgs/{org_id}/subscriptions", handler.listSubscriptions, operation("list-subscriptions", "List subscriptions for an org"))
 	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
-	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusNotImplemented, http.StatusInternalServerError))
+	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusInternalServerError))
+	huma.Post(public, "/portal", handler.createPortal, operation("create-portal", "Create a Stripe customer portal session", http.StatusUnprocessableEntity, http.StatusInternalServerError))
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
@@ -279,7 +280,26 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.Bi
 	}
 	url, err := client.CreateSubscription(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
 	if err != nil {
-		return nil, huma.Error501NotImplemented("subscription checkout", err)
+		return nil, huma.Error500InternalServerError("create subscription checkout", err)
+	}
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingCreatePortalSessionRequest]) (*body[apiwire.BillingURLResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := client.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
+	if err != nil {
+		if errors.Is(err, billing.ErrNoStripeCustomer) {
+			return nil, huma.Error422UnprocessableEntity("no stripe customer linked to this org", err)
+		}
+		return nil, huma.Error500InternalServerError("create portal session", err)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }

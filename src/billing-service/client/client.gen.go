@@ -58,6 +58,14 @@ type BillingCreateCheckoutRequest struct {
 	SuccessUrl  string  `json:"success_url"`
 }
 
+// BillingCreatePortalSessionRequest defines model for BillingCreatePortalSessionRequest.
+type BillingCreatePortalSessionRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	OrgId     string  `json:"org_id"`
+	ReturnUrl string  `json:"return_url"`
+}
+
 // BillingCreateSubscriptionRequest defines model for BillingCreateSubscriptionRequest.
 type BillingCreateSubscriptionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -236,6 +244,9 @@ type ListGrantsParams struct {
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
 type CreateCheckoutJSONRequestBody = BillingCreateCheckoutRequest
 
+// CreatePortalJSONRequestBody defines body for CreatePortal for application/json ContentType.
+type CreatePortalJSONRequestBody = BillingCreatePortalSessionRequest
+
 // ReserveWindowJSONRequestBody defines body for ReserveWindow for application/json ContentType.
 type ReserveWindowJSONRequestBody = BillingReserveWindowRequest
 
@@ -335,6 +346,11 @@ type ClientInterface interface {
 	// ListSubscriptions request
 	ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreatePortalWithBody request with any body
+	CreatePortalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePortal(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ReserveWindowWithBody request with any body
 	ReserveWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -406,6 +422,30 @@ func (c *Client) ListGrants(ctx context.Context, orgId string, params *ListGrant
 
 func (c *Client) ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListSubscriptionsRequest(c.Server, orgId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePortalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePortalRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePortal(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePortalRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -692,6 +732,46 @@ func NewListSubscriptionsRequest(server string, orgId string) (*http.Request, er
 	return req, nil
 }
 
+// NewCreatePortalRequest calls the generic CreatePortal builder with application/json body
+func NewCreatePortalRequest(server string, body CreatePortalJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePortalRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePortalRequestWithBody generates requests for CreatePortal with any type of body
+func NewCreatePortalRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/portal")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewReserveWindowRequest calls the generic ReserveWindow builder with application/json body
 func NewReserveWindowRequest(server string, body ReserveWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -909,6 +989,11 @@ type ClientWithResponsesInterface interface {
 	// ListSubscriptionsWithResponse request
 	ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
 
+	// CreatePortalWithBodyWithResponse request with any body
+	CreatePortalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error)
+
+	CreatePortalWithResponse(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error)
+
 	// ReserveWindowWithBodyWithResponse request with any body
 	ReserveWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error)
 
@@ -1022,6 +1107,30 @@ func (r ListSubscriptionsResponse) StatusCode() int {
 	return 0
 }
 
+type CreatePortalResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingURLResponse
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePortalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePortalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type ReserveWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
@@ -1080,7 +1189,6 @@ type CreateSubscriptionResponse struct {
 	JSON200                   *BillingURLResponse
 	ApplicationproblemJSON422 *ErrorModel
 	ApplicationproblemJSON500 *ErrorModel
-	ApplicationproblemJSON501 *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
@@ -1167,6 +1275,23 @@ func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseListSubscriptionsResponse(rsp)
+}
+
+// CreatePortalWithBodyWithResponse request with arbitrary body returning *CreatePortalResponse
+func (c *ClientWithResponses) CreatePortalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error) {
+	rsp, err := c.CreatePortalWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePortalResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePortalWithResponse(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error) {
+	rsp, err := c.CreatePortal(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePortalResponse(rsp)
 }
 
 // ReserveWindowWithBodyWithResponse request with arbitrary body returning *ReserveWindowResponse
@@ -1369,6 +1494,46 @@ func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsRespo
 	return response, nil
 }
 
+// ParseCreatePortalResponse parses an HTTP response from a CreatePortalWithResponse call
+func ParseCreatePortalResponse(rsp *http.Response) (*CreatePortalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePortalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingURLResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseReserveWindowResponse parses an HTTP response from a ReserveWindowWithResponse call
 func ParseReserveWindowResponse(rsp *http.Response) (*ReserveWindowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -1511,13 +1676,6 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON501 = &dest
 
 	}
 

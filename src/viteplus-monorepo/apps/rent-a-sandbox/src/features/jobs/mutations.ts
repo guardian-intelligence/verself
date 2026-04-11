@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authQueryKey } from "@forge-metal/auth-web/isomorphic";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { balanceQuery } from "~/features/billing/queries";
-import { submitRepoExecution, type RepoExecutionRequest } from "~/server-fns/api";
+import { submitDirectExecution, type ExecutionRequest } from "~/server-fns/api";
 
 export interface CreateExecutionResult {
   execution_id: string;
@@ -18,8 +18,8 @@ export function useCreateExecutionMutation({
   const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
-  return useMutation<CreateExecutionResult, Error, RepoExecutionRequest>({
-    mutationFn: (data: RepoExecutionRequest) => submitRepoExecution({ data }),
+  return useMutation<CreateExecutionResult, Error, ExecutionRequest>({
+    mutationFn: (data: ExecutionRequest) => submitDirectExecution({ data }),
     onSuccess: async (execution) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: authQueryKey(auth, "jobs") }),

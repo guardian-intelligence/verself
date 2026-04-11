@@ -25,9 +25,6 @@ import (
 // this interface also satisfies the internal one.
 type Runner interface {
 	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
-	RunWithConfig(ctx context.Context, cfg vmorchestrator.Config, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
-	ExecRepo(ctx context.Context, req vmorchestrator.RepoExecRequest) (vmorchestrator.JobStatus, error)
-	WarmGolden(ctx context.Context, req vmorchestrator.WarmGoldenRequest) (vmorchestrator.WarmGoldenResult, error)
 }
 
 // BillingClient abstracts the billing client dependency for tests.
@@ -50,23 +47,18 @@ type BillingClient interface {
 
 // Config holds all dependencies for a test sandbox-rental-service.
 type Config struct {
-	PG                        *sql.DB
-	CH                        driver.Conn
-	CHDatabase                string
-	Runner                    Runner
-	Billing                   *billingclient.ServiceClient
-	WebhookSecretKEK          string
-	BillingVCPUs              int
-	BillingMemMiB             int
-	ForgejoURL                string
-	ForgejoRunnerLabel        string
-	ForgejoRunnerToken        string
-	ForgejoRunnerBinaryURL    string
-	ForgejoRunnerBinarySHA256 string
-	BillingReturnOrigins      []string
-	PublicBaseURL             string
-	AuthCfg                   auth.Config
-	Logger                    *slog.Logger
+	PG                   *sql.DB
+	CH                   driver.Conn
+	CHDatabase           string
+	Runner               Runner
+	Billing              *billingclient.ServiceClient
+	WebhookSecretKEK     string
+	BillingVCPUs         int
+	BillingMemMiB        int
+	BillingReturnOrigins []string
+	PublicBaseURL        string
+	AuthCfg              auth.Config
+	Logger               *slog.Logger
 }
 
 // Server is an in-process sandbox-rental-service for e2e tests.
@@ -88,20 +80,15 @@ func NewServer(cfg Config) *Server {
 		panic(err)
 	}
 	svc := &jobs.Service{
-		PG:                        cfg.PG,
-		CH:                        cfg.CH,
-		CHDatabase:                cfg.CHDatabase,
-		Orchestrator:              cfg.Runner,
-		Billing:                   cfg.Billing,
-		BillingVCPUs:              cfg.BillingVCPUs,
-		BillingMemMiB:             cfg.BillingMemMiB,
-		ForgejoURL:                cfg.ForgejoURL,
-		ForgejoRunnerLabel:        cfg.ForgejoRunnerLabel,
-		ForgejoRunnerToken:        cfg.ForgejoRunnerToken,
-		ForgejoRunnerBinaryURL:    cfg.ForgejoRunnerBinaryURL,
-		ForgejoRunnerBinarySHA256: cfg.ForgejoRunnerBinarySHA256,
-		WebhookSecretCodec:        webhookSecretCodec,
-		Logger:                    cfg.Logger,
+		PG:                 cfg.PG,
+		CH:                 cfg.CH,
+		CHDatabase:         cfg.CHDatabase,
+		Orchestrator:       cfg.Runner,
+		Billing:            cfg.Billing,
+		BillingVCPUs:       cfg.BillingVCPUs,
+		BillingMemMiB:      cfg.BillingMemMiB,
+		WebhookSecretCodec: webhookSecretCodec,
+		Logger:             cfg.Logger,
 	}
 
 	rootMux := http.NewServeMux()

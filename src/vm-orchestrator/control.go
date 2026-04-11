@@ -150,7 +150,6 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 		Services:            cloneStringSlice(job.Services),
 		Env:                 cloneStringMap(job.Env),
 		Network:             lease.GuestNetworkConfig(hostServiceIP, hostServicePort),
-		RepoOperation:       cloneRepoOperation(job.RepoOperation),
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
 	}); err != nil {
@@ -241,23 +240,6 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 		default:
 			return resultWithLogs(), fmt.Errorf("unexpected guest message type %s", env.Type)
 		}
-	}
-}
-
-func cloneRepoOperation(op *vmproto.RepoOperation) *vmproto.RepoOperation {
-	if op == nil {
-		return nil
-	}
-	return &vmproto.RepoOperation{
-		Kind:               op.Kind,
-		RepoURL:            op.RepoURL,
-		OriginURL:          op.OriginURL,
-		Ref:                op.Ref,
-		LockfileRelPath:    op.LockfileRelPath,
-		UserPrepareCommand: cloneStringSlice(op.UserPrepareCommand),
-		UserPrepareWorkDir: op.UserPrepareWorkDir,
-		UserRunCommand:     cloneStringSlice(op.UserRunCommand),
-		UserRunWorkDir:     op.UserRunWorkDir,
 	}
 }
 

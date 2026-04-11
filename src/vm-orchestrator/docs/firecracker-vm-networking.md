@@ -1,6 +1,6 @@
 # Firecracker VM Networking
 
-Firecracker CI networking uses a host-managed allocator over a dedicated guest pool:
+Firecracker workload networking uses a host-managed allocator over a dedicated guest pool:
 
 - one configurable IPv4 guest pool, default `172.16.0.0/16`
 - one `/30` lease per VM
@@ -56,4 +56,4 @@ Bare-Metal Host
 
 ## Why not CNI or `tc-redirect-tap` yet
 
-Those approaches solve more general problems than we need right now. The current goal is bounded concurrent Firecracker CI on a single worker with deterministic cleanup and low operational complexity. A slot allocator with host-managed TAP devices gets us there without introducing another control plane.
+Those approaches solve more general problems than we need right now. The current goal is bounded concurrent Firecracker workloads on a single worker with deterministic cleanup and low operational complexity. A slot allocator with host-managed TAP devices gets us there without introducing another control plane.

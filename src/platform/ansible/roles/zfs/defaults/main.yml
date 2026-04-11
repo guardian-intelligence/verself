@@ -1,5 +1,3 @@
 ---
 zfs_pool: forgepool
-zfs_golden_dataset: golden
-zfs_ci_dataset: ci
 zfs_verdaccio_dataset: verdaccio

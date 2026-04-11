@@ -22,8 +22,9 @@ make clickhouse-shell
 
 The current database layout is:
 
-- `forge_metal.ci_events`
-- `forge_metal.vm_orchestrator_rehearsals`
+- `forge_metal.job_events`
+- `forge_metal.job_logs`
+- `forge_metal.metering`
 - `default.otel_logs`
 - `default.otel_traces`
 - `default.otel_metrics_gauge`
@@ -32,20 +33,4 @@ The current database layout is:
 
 The OTel tables live in `default`, not in an `otel` database.
 
-## CI Fixture Surface
-
-Use `ci-fixtures-pass.yml` for the common operator loop: seed the controlled example repositories, warm their goldens if needed, open PRs, and verify that the positive fixture suite succeeds on the already-deployed host.
-
-Use `ci-fixtures-fail.yml` for deterministic negative-path verification against the same deployed host state. It runs the fixture runner only; it does not reapply the broader platform roles.
-
 Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged CI artifacts changed. It rebuilds and restages the Firecracker guest artifacts without touching the rest of the platform.
-
-Use `ci-fixtures-full.yml` when you want the composed rehearsal: refresh guest artifacts first, then run the pass and fail fixture suites in one bounded-parallel fixture run. The suite list is still driven by `ci_fixtures_suites` in the Ansible role.
-
-## Suite Model
-
-`pass` contains the positive example repositories that are expected to complete with a successful Forgejo Actions result.
-
-`fail` is the negative-path suite name. The first fixture exercises a deterministic run-phase test failure and asserts the exact failure signature from exec telemetry.
-
-`full` is not a suite itself; it is the orchestration playbook that refreshes artifacts and then runs the pass and fail suites together.

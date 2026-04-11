@@ -14,6 +14,15 @@ Bootstrapping: single command to go from their laptop -> bare metal instance -> 
 Git Hosting + Fast CI through ZFS
 Billing is figured out, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, accounts receivable, dunning, invoicing, etc. 
 
+## Current status
+
+1. Tearing out old forge-metal CLI tech-debt, moving everything to services and secure vm-orchestrator implementation
+2. Move GitHub/Forgejo CI integration behind explicit service APIs
+3. Create identity-service + React components so users can be parts of orgs for real and manage their identity
+4. "Manage My Payment Methods"
+5. Billing Debug/Simulator Page
+6. First product, Subscriptions
+
 ## Direction
 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
@@ -159,8 +168,9 @@ make traces SERVICE=sandbox-rental ERRORS=1  # Combine filters
 ### TLS with a real domain (Cloudflare)
 
 ```bash
-make setup-domain DOMAIN=anveio.com
-cd src/platform/ansible && ansible-playbook playbooks/dev-single-node.yml
+cd src/platform/ansible
+sops group_vars/all/secrets.sops.yml # set forge_metal_domain and cloudflare_api_token
+ansible-playbook playbooks/dev-single-node.yml
 ```
 
 Services get subdomains automatically:
@@ -176,7 +186,7 @@ Services get subdomains automatically:
 
 All server software is managed by the `deploy_profile` Ansible role. It populates `/opt/forge-metal/profile/bin/` via three strategies:
 
-- **Go binaries** (forge-metal, billing-service): built on the controller via `go build`, copied to server
+- **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server
 - **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, forgejo-runner, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into fm_bin
@@ -199,13 +209,8 @@ Read the Makefile for other common task automation.
 | `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra) |
 | `playbooks/guest-rootfs.yml` | Build guest rootfs and stage CI artifacts |
 | `playbooks/hyperdx-dashboards.yml` | Sync HyperDX dashboards without full redeploy |
-| `playbooks/ci-fixtures.yml` | Run CI fixture suites |
-| `playbooks/ci-fixtures-pass.yml` | Run positive fixture suite |
-| `playbooks/ci-fixtures-fail.yml` | Run negative fixture suite |
-| `playbooks/ci-fixtures-full.yml` | Refresh artifacts, then run pass + fail suites |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
-| `playbooks/mirror-update.yml` | Update and scan Verdaccio mirror |
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL state and restart billing callers |
 | `playbooks/seed-system.yml` | Seed the platform tenant plus Acme tenant, billing, mailboxes, and auth verify (supports `--tags identity,billing,stalwart,verify,dev-oidc`) |
 
@@ -220,7 +225,6 @@ See docs/architecture/directory-structure.md to understand the project's directo
 Architecture documents live with the service they describe:
 
 * Inbound mail (Stalwart, mailbox-service boundary, auth, storage): `src/mailbox-service/docs/inbound-mail.md`
-* ZFS golden image lifecycle (host/guest boundary, warm/exec profiles): `src/vm-orchestrator/docs/zfs-golden-image-lifecycle.md`
 * Firecracker VM networking (TAP allocator, host service plane, nftables): `src/vm-orchestrator/docs/firecracker-vm-networking.md`
 * Wire contracts (apiwire DTO patterns, numeric safety, generated contract gate): `src/apiwire/docs/wire-contracts.md`
 * VM execution control plane (sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows): `src/sandbox-rental-service/docs/vm-execution-control-plane.md`

@@ -17,9 +17,10 @@ import (
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, PublicAPIConfig{})
+	openAPI := api.OpenAPI()
 
 	var checked int
-	for path, pathItem := range api.OpenAPI().Paths {
+	for path, pathItem := range openAPI.Paths {
 		if !strings.HasPrefix(path, "/api/") {
 			continue
 		}
@@ -42,11 +43,24 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 			if len(op.Security) != 1 || len(op.Security[0]["bearerAuth"]) != 0 {
 				t.Fatalf("%s %s must require bearerAuth with no OpenAPI scopes: %#v", op.Method, path, op.Security)
 			}
+			if rawPolicy["idempotency"] == idempotencyHeaderKey &&
+				!operationHasRequiredParameter(op, "header", "Idempotency-Key") {
+				t.Fatalf("%s %s requires Idempotency-Key but does not declare it in OpenAPI", op.Method, path)
+			}
+			if rawPolicy["idempotency"] == idempotencyRequestBodyKey &&
+				!operationHasRequiredRequestBodyProperty(openAPI, op, "idempotency_key") {
+				t.Fatalf("%s %s requires idempotency_key but does not declare it as a required request body field", op.Method, path)
+			}
+			if operationRequiresBodyBudget(*op) {
+				if rawPolicy["request_body_max_bytes"] == nil {
+					t.Fatalf("%s %s missing explicit request_body_max_bytes policy: %#v", op.Method, path, rawPolicy)
+				}
+			}
 		}
 	}
 
-	if checked != len(publicAPIOperationIDs()) {
-		t.Fatalf("checked %d public API operations, want %d", checked, len(publicAPIOperationIDs()))
+	if checked == 0 {
+		t.Fatal("checked no public API operations")
 	}
 }
 
@@ -180,8 +194,8 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 			ctx:    context.Background(),
 		},
 		{
-			name:   "repo import provider key",
-			policy: operationPolicy{Idempotency: idempotencyProviderRepoID},
+			name:   "repo import header key",
+			policy: operationPolicy{Idempotency: idempotencyHeaderKey},
 			input:  &ImportRepoInput{Body: apiwire.SandboxImportRepoRequest{}},
 			ctx:    context.Background(),
 		},
@@ -234,4 +248,49 @@ func operationsForPath(pathItem *huma.PathItem) []*huma.Operation {
 		pathItem.Options,
 		pathItem.Trace,
 	}
+}
+
+func operationHasRequiredParameter(op *huma.Operation, in, name string) bool {
+	if op == nil {
+		return false
+	}
+	for _, param := range op.Parameters {
+		if param == nil {
+			continue
+		}
+		if param.In == in && param.Name == name && param.Required {
+			return true
+		}
+	}
+	return false
+}
+
+func operationHasRequiredRequestBodyProperty(openAPI *huma.OpenAPI, op *huma.Operation, name string) bool {
+	if openAPI == nil || op == nil || op.RequestBody == nil {
+		return false
+	}
+	mediaType := op.RequestBody.Content["application/json"]
+	if mediaType == nil || mediaType.Schema == nil {
+		return false
+	}
+	schema := resolveOpenAPISchema(openAPI, mediaType.Schema)
+	if schema == nil {
+		return false
+	}
+	for _, required := range schema.Required {
+		if required == name {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveOpenAPISchema(openAPI *huma.OpenAPI, schema *huma.Schema) *huma.Schema {
+	if schema == nil || schema.Ref == "" {
+		return schema
+	}
+	if openAPI.Components == nil || openAPI.Components.Schemas == nil {
+		return nil
+	}
+	return openAPI.Components.Schemas.SchemaFromRef(schema.Ref)
 }

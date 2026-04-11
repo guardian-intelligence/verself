@@ -20,10 +20,12 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, Caddy fo
               SMTP        (TLS + WAF)
                 │          │
                 │          │ mail.<domain>
-                │          ├────────────── /jmap/session ─────► mailbox-service
+                │          ├── /api/*  ──────────────────────► mailbox-service
+                │          ├── /jmap/session ─────────────────► mailbox-service
                 │          │                                    127.0.0.1:4246
-                │          └────────────── everything else ───► Stalwart HTTP
-                │                                               127.0.0.1:8090
+                │          ├── /.well-known/jmap, /jmap/*, ──► Stalwart HTTP
+                │          │   /auth/*                          127.0.0.1:8090
+                │          └── everything else ──────────────► webmail frontend
                 │
                 ├────────────── PostgreSQL db: stalwart
                 │

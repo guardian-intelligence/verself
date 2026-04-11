@@ -373,38 +373,6 @@
   when: "'Billing Health' in hyperdx_dashboards_dashboard_ids"
 
 # --------------------------------------------------------------------------- #
-# Verdaccio Supply Chain dashboard                                             #
-# --------------------------------------------------------------------------- #
-
-- name: Render Verdaccio Supply Chain dashboard
-  ansible.builtin.set_fact:
-    hyperdx_dashboards_verdaccio_supply_chain_body: "{{ lookup('template', 'dashboards/verdaccio-supply-chain.json.j2') }}"
-
-- name: Create Verdaccio Supply Chain dashboard
-  ansible.builtin.uri:
-    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
-      Content-Type: application/json
-    body_format: json
-    body: "{{ hyperdx_dashboards_verdaccio_supply_chain_body }}"
-    status_code: [200]
-  when: "'Verdaccio Supply Chain' not in hyperdx_dashboards_dashboard_ids"
-
-- name: Update Verdaccio Supply Chain dashboard
-  ansible.builtin.uri:
-    url: "http://{{ services.hyperdx.host }}:{{ services.hyperdx.api_port }}/api/v2/dashboards/{{ hyperdx_dashboards_dashboard_ids['Verdaccio Supply Chain'] }}"
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ hyperdx_dashboards_access_key }}"
-      Content-Type: application/json
-    body_format: json
-    body: "{{ hyperdx_dashboards_verdaccio_supply_chain_body }}"
-    status_code: [200]
-  when: "'Verdaccio Supply Chain' in hyperdx_dashboards_dashboard_ids"
-
-# --------------------------------------------------------------------------- #
 # PostgreSQL dashboard                                                         #
 # --------------------------------------------------------------------------- #
 

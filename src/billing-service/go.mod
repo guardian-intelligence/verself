@@ -9,7 +9,7 @@ require (
 	github.com/forge-metal/auth-middleware v0.0.0
 	github.com/forge-metal/otel v0.0.0
 	github.com/lib/pq v1.12.3
-	github.com/oapi-codegen/runtime v1.3.1
+	github.com/oapi-codegen/runtime v1.4.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/stripe/stripe-go/v85 v85.0.0
 	github.com/tigerbeetle/tigerbeetle-go v0.16.78

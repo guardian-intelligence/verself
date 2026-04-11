@@ -36,9 +36,8 @@ function NewRepoPage() {
       </div>
 
       <div className="max-w-2xl text-sm text-muted-foreground">
-        Import a repository that already uses <code className="mx-1">runs-on: forge-metal</code>
-        in its workflow YAML. The service will scan the default branch, record any unsupported
-        labels, and queue the first golden bootstrap when the repo is compatible.
+        Import a repository to store ownership metadata and verify clone access on the default
+        branch.
       </div>
 
       <form
@@ -103,10 +102,7 @@ function NewRepoPage() {
         ) : null}
 
         <div className="rounded-md border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-          v1 supports one runner label and one runner profile:
-          <code className="mx-1">forge-metal</code>. If the default branch still uses
-          <code className="mx-1">ubuntu-latest</code>
-          or any other label, the repo will land in action required until the workflows are fixed.
+          The scan records metadata only. Executions are submitted separately as direct commands.
         </div>
 
         <form.Subscribe selector={(s) => [s.canSubmit, s.isSubmitting]}>

@@ -224,7 +224,7 @@ type RuntimeConfig struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Pool            string                 `protobuf:"bytes,1,opt,name=pool,proto3" json:"pool,omitempty"`
 	GoldenZvol      string                 `protobuf:"bytes,2,opt,name=golden_zvol,json=goldenZvol,proto3" json:"golden_zvol,omitempty"`
-	CiDataset       string                 `protobuf:"bytes,3,opt,name=ci_dataset,json=ciDataset,proto3" json:"ci_dataset,omitempty"`
+	WorkloadDataset string                 `protobuf:"bytes,3,opt,name=workload_dataset,json=workloadDataset,proto3" json:"workload_dataset,omitempty"`
 	KernelPath      string                 `protobuf:"bytes,4,opt,name=kernel_path,json=kernelPath,proto3" json:"kernel_path,omitempty"`
 	FirecrackerBin  string                 `protobuf:"bytes,5,opt,name=firecracker_bin,json=firecrackerBin,proto3" json:"firecracker_bin,omitempty"`
 	JailerBin       string                 `protobuf:"bytes,6,opt,name=jailer_bin,json=jailerBin,proto3" json:"jailer_bin,omitempty"`
@@ -286,9 +286,9 @@ func (x *RuntimeConfig) GetGoldenZvol() string {
 	return ""
 }
 
-func (x *RuntimeConfig) GetCiDataset() string {
+func (x *RuntimeConfig) GetWorkloadDataset() string {
 	if x != nil {
-		return x.CiDataset
+		return x.WorkloadDataset
 	}
 	return ""
 }
@@ -544,98 +544,6 @@ func (x *VMMetrics) GetVcpuExitCount() uint64 {
 	return 0
 }
 
-type RepoManifest struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	Kind                   string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	RequestedRef           string                 `protobuf:"bytes,2,opt,name=requested_ref,json=requestedRef,proto3" json:"requested_ref,omitempty"`
-	ResolvedCommitSha      string                 `protobuf:"bytes,3,opt,name=resolved_commit_sha,json=resolvedCommitSha,proto3" json:"resolved_commit_sha,omitempty"`
-	LockfileRelPath        string                 `protobuf:"bytes,4,opt,name=lockfile_rel_path,json=lockfileRelPath,proto3" json:"lockfile_rel_path,omitempty"`
-	LockfileSha256         string                 `protobuf:"bytes,5,opt,name=lockfile_sha256,json=lockfileSha256,proto3" json:"lockfile_sha256,omitempty"`
-	PreviousLockfileSha256 string                 `protobuf:"bytes,6,opt,name=previous_lockfile_sha256,json=previousLockfileSha256,proto3" json:"previous_lockfile_sha256,omitempty"`
-	InstallNeeded          bool                   `protobuf:"varint,7,opt,name=install_needed,json=installNeeded,proto3" json:"install_needed,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
-}
-
-func (x *RepoManifest) Reset() {
-	*x = RepoManifest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RepoManifest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepoManifest) ProtoMessage() {}
-
-func (x *RepoManifest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepoManifest.ProtoReflect.Descriptor instead.
-func (*RepoManifest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *RepoManifest) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetRequestedRef() string {
-	if x != nil {
-		return x.RequestedRef
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetResolvedCommitSha() string {
-	if x != nil {
-		return x.ResolvedCommitSha
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetLockfileRelPath() string {
-	if x != nil {
-		return x.LockfileRelPath
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetLockfileSha256() string {
-	if x != nil {
-		return x.LockfileSha256
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetPreviousLockfileSha256() string {
-	if x != nil {
-		return x.PreviousLockfileSha256
-	}
-	return ""
-}
-
-func (x *RepoManifest) GetInstallNeeded() bool {
-	if x != nil {
-		return x.InstallNeeded
-	}
-	return false
-}
-
 type JobResult struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	ExitCode               int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
@@ -659,14 +567,13 @@ type JobResult struct {
 	PhaseResults           []*PhaseResult         `protobuf:"bytes,19,rep,name=phase_results,json=phaseResults,proto3" json:"phase_results,omitempty"`
 	FailurePhase           string                 `protobuf:"bytes,20,opt,name=failure_phase,json=failurePhase,proto3" json:"failure_phase,omitempty"`
 	Metrics                *VMMetrics             `protobuf:"bytes,21,opt,name=metrics,proto3" json:"metrics,omitempty"`
-	RepoManifest           *RepoManifest          `protobuf:"bytes,22,opt,name=repo_manifest,json=repoManifest,proto3" json:"repo_manifest,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
 func (x *JobResult) Reset() {
 	*x = JobResult{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +585,7 @@ func (x *JobResult) String() string {
 func (*JobResult) ProtoMessage() {}
 
 func (x *JobResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +598,7 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
 func (*JobResult) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *JobResult) GetExitCode() int32 {
@@ -841,13 +748,6 @@ func (x *JobResult) GetMetrics() *VMMetrics {
 	return nil
 }
 
-func (x *JobResult) GetRepoManifest() *RepoManifest {
-	if x != nil {
-		return x.RepoManifest
-	}
-	return nil
-}
-
 type DirectJobSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RuntimeConfig *RuntimeConfig         `protobuf:"bytes,1,opt,name=runtime_config,json=runtimeConfig,proto3" json:"runtime_config,omitempty"`
@@ -858,7 +758,7 @@ type DirectJobSpec struct {
 
 func (x *DirectJobSpec) Reset() {
 	*x = DirectJobSpec{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +770,7 @@ func (x *DirectJobSpec) String() string {
 func (*DirectJobSpec) ProtoMessage() {}
 
 func (x *DirectJobSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +783,7 @@ func (x *DirectJobSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectJobSpec.ProtoReflect.Descriptor instead.
 func (*DirectJobSpec) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DirectJobSpec) GetRuntimeConfig() *RuntimeConfig {
@@ -900,96 +800,11 @@ func (x *DirectJobSpec) GetJob() *JobConfig {
 	return nil
 }
 
-type RepoExecSpec struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	RuntimeConfig   *RuntimeConfig         `protobuf:"bytes,1,opt,name=runtime_config,json=runtimeConfig,proto3" json:"runtime_config,omitempty"`
-	Repo            string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	RepoUrl         string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
-	Ref             string                 `protobuf:"bytes,4,opt,name=ref,proto3" json:"ref,omitempty"`
-	JobTemplate     *JobConfig             `protobuf:"bytes,5,opt,name=job_template,json=jobTemplate,proto3" json:"job_template,omitempty"`
-	LockfileRelPath string                 `protobuf:"bytes,6,opt,name=lockfile_rel_path,json=lockfileRelPath,proto3" json:"lockfile_rel_path,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *RepoExecSpec) Reset() {
-	*x = RepoExecSpec{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RepoExecSpec) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepoExecSpec) ProtoMessage() {}
-
-func (x *RepoExecSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepoExecSpec.ProtoReflect.Descriptor instead.
-func (*RepoExecSpec) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *RepoExecSpec) GetRuntimeConfig() *RuntimeConfig {
-	if x != nil {
-		return x.RuntimeConfig
-	}
-	return nil
-}
-
-func (x *RepoExecSpec) GetRepo() string {
-	if x != nil {
-		return x.Repo
-	}
-	return ""
-}
-
-func (x *RepoExecSpec) GetRepoUrl() string {
-	if x != nil {
-		return x.RepoUrl
-	}
-	return ""
-}
-
-func (x *RepoExecSpec) GetRef() string {
-	if x != nil {
-		return x.Ref
-	}
-	return ""
-}
-
-func (x *RepoExecSpec) GetJobTemplate() *JobConfig {
-	if x != nil {
-		return x.JobTemplate
-	}
-	return nil
-}
-
-func (x *RepoExecSpec) GetLockfileRelPath() string {
-	if x != nil {
-		return x.LockfileRelPath
-	}
-	return ""
-}
-
 type CreateJobRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Spec:
 	//
 	//	*CreateJobRequest_DirectJob
-	//	*CreateJobRequest_RepoExec
 	Spec          isCreateJobRequest_Spec `protobuf_oneof:"spec"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -997,7 +812,7 @@ type CreateJobRequest struct {
 
 func (x *CreateJobRequest) Reset() {
 	*x = CreateJobRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +824,7 @@ func (x *CreateJobRequest) String() string {
 func (*CreateJobRequest) ProtoMessage() {}
 
 func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +837,7 @@ func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobRequest.ProtoReflect.Descriptor instead.
 func (*CreateJobRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateJobRequest) GetSpec() isCreateJobRequest_Spec {
@@ -1041,15 +856,6 @@ func (x *CreateJobRequest) GetDirectJob() *DirectJobSpec {
 	return nil
 }
 
-func (x *CreateJobRequest) GetRepoExec() *RepoExecSpec {
-	if x != nil {
-		if x, ok := x.Spec.(*CreateJobRequest_RepoExec); ok {
-			return x.RepoExec
-		}
-	}
-	return nil
-}
-
 type isCreateJobRequest_Spec interface {
 	isCreateJobRequest_Spec()
 }
@@ -1058,13 +864,7 @@ type CreateJobRequest_DirectJob struct {
 	DirectJob *DirectJobSpec `protobuf:"bytes,1,opt,name=direct_job,json=directJob,proto3,oneof"`
 }
 
-type CreateJobRequest_RepoExec struct {
-	RepoExec *RepoExecSpec `protobuf:"bytes,2,opt,name=repo_exec,json=repoExec,proto3,oneof"`
-}
-
 func (*CreateJobRequest_DirectJob) isCreateJobRequest_Spec() {}
-
-func (*CreateJobRequest_RepoExec) isCreateJobRequest_Spec() {}
 
 type CreateJobResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1076,7 +876,7 @@ type CreateJobResponse struct {
 
 func (x *CreateJobResponse) Reset() {
 	*x = CreateJobResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1088,7 +888,7 @@ func (x *CreateJobResponse) String() string {
 func (*CreateJobResponse) ProtoMessage() {}
 
 func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1101,7 +901,7 @@ func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobResponse.ProtoReflect.Descriptor instead.
 func (*CreateJobResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateJobResponse) GetJobId() string {
@@ -1128,7 +928,7 @@ type GetJobStatusRequest struct {
 
 func (x *GetJobStatusRequest) Reset() {
 	*x = GetJobStatusRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1140,7 +940,7 @@ func (x *GetJobStatusRequest) String() string {
 func (*GetJobStatusRequest) ProtoMessage() {}
 
 func (x *GetJobStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1153,7 +953,7 @@ func (x *GetJobStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetJobStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetJobStatusRequest) GetJobId() string {
@@ -1170,98 +970,6 @@ func (x *GetJobStatusRequest) GetIncludeOutput() bool {
 	return false
 }
 
-type RepoExecMetadata struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Repo            string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
-	RepoUrl         string                 `protobuf:"bytes,2,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
-	Ref             string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
-	GoldenSnapshot  string                 `protobuf:"bytes,4,opt,name=golden_snapshot,json=goldenSnapshot,proto3" json:"golden_snapshot,omitempty"`
-	CloneDurationMs int64                  `protobuf:"varint,5,opt,name=clone_duration_ms,json=cloneDurationMs,proto3" json:"clone_duration_ms,omitempty"`
-	InstallNeeded   bool                   `protobuf:"varint,6,opt,name=install_needed,json=installNeeded,proto3" json:"install_needed,omitempty"`
-	CommitSha       string                 `protobuf:"bytes,7,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *RepoExecMetadata) Reset() {
-	*x = RepoExecMetadata{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RepoExecMetadata) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepoExecMetadata) ProtoMessage() {}
-
-func (x *RepoExecMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepoExecMetadata.ProtoReflect.Descriptor instead.
-func (*RepoExecMetadata) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *RepoExecMetadata) GetRepo() string {
-	if x != nil {
-		return x.Repo
-	}
-	return ""
-}
-
-func (x *RepoExecMetadata) GetRepoUrl() string {
-	if x != nil {
-		return x.RepoUrl
-	}
-	return ""
-}
-
-func (x *RepoExecMetadata) GetRef() string {
-	if x != nil {
-		return x.Ref
-	}
-	return ""
-}
-
-func (x *RepoExecMetadata) GetGoldenSnapshot() string {
-	if x != nil {
-		return x.GoldenSnapshot
-	}
-	return ""
-}
-
-func (x *RepoExecMetadata) GetCloneDurationMs() int64 {
-	if x != nil {
-		return x.CloneDurationMs
-	}
-	return 0
-}
-
-func (x *RepoExecMetadata) GetInstallNeeded() bool {
-	if x != nil {
-		return x.InstallNeeded
-	}
-	return false
-}
-
-func (x *RepoExecMetadata) GetCommitSha() string {
-	if x != nil {
-		return x.CommitSha
-	}
-	return ""
-}
-
 type GetJobStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1269,14 +977,13 @@ type GetJobStatusResponse struct {
 	Terminal      bool                   `protobuf:"varint,3,opt,name=terminal,proto3" json:"terminal,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	Result        *JobResult             `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
-	RepoExec      *RepoExecMetadata      `protobuf:"bytes,6,opt,name=repo_exec,json=repoExec,proto3" json:"repo_exec,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetJobStatusResponse) Reset() {
 	*x = GetJobStatusResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1288,7 +995,7 @@ func (x *GetJobStatusResponse) String() string {
 func (*GetJobStatusResponse) ProtoMessage() {}
 
 func (x *GetJobStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1301,7 +1008,7 @@ func (x *GetJobStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetJobStatusResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetJobStatusResponse) GetJobId() string {
@@ -1339,13 +1046,6 @@ func (x *GetJobStatusResponse) GetResult() *JobResult {
 	return nil
 }
 
-func (x *GetJobStatusResponse) GetRepoExec() *RepoExecMetadata {
-	if x != nil {
-		return x.RepoExec
-	}
-	return nil
-}
-
 type CancelJobRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1355,7 +1055,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1367,7 +1067,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1380,7 +1080,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CancelJobRequest) GetJobId() string {
@@ -1399,7 +1099,7 @@ type CancelJobResponse struct {
 
 func (x *CancelJobResponse) Reset() {
 	*x = CancelJobResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1411,7 +1111,7 @@ func (x *CancelJobResponse) String() string {
 func (*CancelJobResponse) ProtoMessage() {}
 
 func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1424,7 +1124,7 @@ func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CancelJobResponse) GetCanceled() bool {
@@ -1444,7 +1144,7 @@ type StreamJobLogsRequest struct {
 
 func (x *StreamJobLogsRequest) Reset() {
 	*x = StreamJobLogsRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1456,7 +1156,7 @@ func (x *StreamJobLogsRequest) String() string {
 func (*StreamJobLogsRequest) ProtoMessage() {}
 
 func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1469,7 +1169,7 @@ func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamJobLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StreamJobLogsRequest) GetJobId() string {
@@ -1497,7 +1197,7 @@ type JobLogChunk struct {
 
 func (x *JobLogChunk) Reset() {
 	*x = JobLogChunk{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1509,7 +1209,7 @@ func (x *JobLogChunk) String() string {
 func (*JobLogChunk) ProtoMessage() {}
 
 func (x *JobLogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1522,7 +1222,7 @@ func (x *JobLogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobLogChunk.ProtoReflect.Descriptor instead.
 func (*JobLogChunk) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *JobLogChunk) GetSeq() uint64 {
@@ -1556,7 +1256,7 @@ type StreamGuestEventsRequest struct {
 
 func (x *StreamGuestEventsRequest) Reset() {
 	*x = StreamGuestEventsRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1568,7 +1268,7 @@ func (x *StreamGuestEventsRequest) String() string {
 func (*StreamGuestEventsRequest) ProtoMessage() {}
 
 func (x *StreamGuestEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1581,7 +1281,7 @@ func (x *StreamGuestEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamGuestEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamGuestEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StreamGuestEventsRequest) GetJobId() string {
@@ -1611,7 +1311,7 @@ type JobGuestEvent struct {
 
 func (x *JobGuestEvent) Reset() {
 	*x = JobGuestEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1623,7 +1323,7 @@ func (x *JobGuestEvent) String() string {
 func (*JobGuestEvent) ProtoMessage() {}
 
 func (x *JobGuestEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1636,7 +1336,7 @@ func (x *JobGuestEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobGuestEvent.ProtoReflect.Descriptor instead.
 func (*JobGuestEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *JobGuestEvent) GetSeq() uint64 {
@@ -1674,198 +1374,6 @@ func (x *JobGuestEvent) GetTerminal() bool {
 	return false
 }
 
-type WarmGoldenRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	RuntimeConfig   *RuntimeConfig         `protobuf:"bytes,1,opt,name=runtime_config,json=runtimeConfig,proto3" json:"runtime_config,omitempty"`
-	Repo            string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	RepoUrl         string                 `protobuf:"bytes,3,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
-	DefaultBranch   string                 `protobuf:"bytes,4,opt,name=default_branch,json=defaultBranch,proto3" json:"default_branch,omitempty"`
-	Job             *JobConfig             `protobuf:"bytes,5,opt,name=job,proto3" json:"job,omitempty"`
-	LockfileRelPath string                 `protobuf:"bytes,6,opt,name=lockfile_rel_path,json=lockfileRelPath,proto3" json:"lockfile_rel_path,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *WarmGoldenRequest) Reset() {
-	*x = WarmGoldenRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WarmGoldenRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WarmGoldenRequest) ProtoMessage() {}
-
-func (x *WarmGoldenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WarmGoldenRequest.ProtoReflect.Descriptor instead.
-func (*WarmGoldenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *WarmGoldenRequest) GetRuntimeConfig() *RuntimeConfig {
-	if x != nil {
-		return x.RuntimeConfig
-	}
-	return nil
-}
-
-func (x *WarmGoldenRequest) GetRepo() string {
-	if x != nil {
-		return x.Repo
-	}
-	return ""
-}
-
-func (x *WarmGoldenRequest) GetRepoUrl() string {
-	if x != nil {
-		return x.RepoUrl
-	}
-	return ""
-}
-
-func (x *WarmGoldenRequest) GetDefaultBranch() string {
-	if x != nil {
-		return x.DefaultBranch
-	}
-	return ""
-}
-
-func (x *WarmGoldenRequest) GetJob() *JobConfig {
-	if x != nil {
-		return x.Job
-	}
-	return nil
-}
-
-func (x *WarmGoldenRequest) GetLockfileRelPath() string {
-	if x != nil {
-		return x.LockfileRelPath
-	}
-	return ""
-}
-
-type WarmGoldenResponse struct {
-	state                       protoimpl.MessageState `protogen:"open.v1"`
-	TargetDataset               string                 `protobuf:"bytes,1,opt,name=target_dataset,json=targetDataset,proto3" json:"target_dataset,omitempty"`
-	PreviousDataset             string                 `protobuf:"bytes,2,opt,name=previous_dataset,json=previousDataset,proto3" json:"previous_dataset,omitempty"`
-	Promoted                    bool                   `protobuf:"varint,3,opt,name=promoted,proto3" json:"promoted,omitempty"`
-	CloneDurationMs             int64                  `protobuf:"varint,5,opt,name=clone_duration_ms,json=cloneDurationMs,proto3" json:"clone_duration_ms,omitempty"`
-	SnapshotPromotionDurationMs int64                  `protobuf:"varint,7,opt,name=snapshot_promotion_duration_ms,json=snapshotPromotionDurationMs,proto3" json:"snapshot_promotion_duration_ms,omitempty"`
-	PreviousDestroyDurationMs   int64                  `protobuf:"varint,8,opt,name=previous_destroy_duration_ms,json=previousDestroyDurationMs,proto3" json:"previous_destroy_duration_ms,omitempty"`
-	CommitSha                   string                 `protobuf:"bytes,9,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
-	JobResult                   *JobResult             `protobuf:"bytes,10,opt,name=job_result,json=jobResult,proto3" json:"job_result,omitempty"`
-	ErrorMessage                string                 `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
-}
-
-func (x *WarmGoldenResponse) Reset() {
-	*x = WarmGoldenResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WarmGoldenResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WarmGoldenResponse) ProtoMessage() {}
-
-func (x *WarmGoldenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WarmGoldenResponse.ProtoReflect.Descriptor instead.
-func (*WarmGoldenResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *WarmGoldenResponse) GetTargetDataset() string {
-	if x != nil {
-		return x.TargetDataset
-	}
-	return ""
-}
-
-func (x *WarmGoldenResponse) GetPreviousDataset() string {
-	if x != nil {
-		return x.PreviousDataset
-	}
-	return ""
-}
-
-func (x *WarmGoldenResponse) GetPromoted() bool {
-	if x != nil {
-		return x.Promoted
-	}
-	return false
-}
-
-func (x *WarmGoldenResponse) GetCloneDurationMs() int64 {
-	if x != nil {
-		return x.CloneDurationMs
-	}
-	return 0
-}
-
-func (x *WarmGoldenResponse) GetSnapshotPromotionDurationMs() int64 {
-	if x != nil {
-		return x.SnapshotPromotionDurationMs
-	}
-	return 0
-}
-
-func (x *WarmGoldenResponse) GetPreviousDestroyDurationMs() int64 {
-	if x != nil {
-		return x.PreviousDestroyDurationMs
-	}
-	return 0
-}
-
-func (x *WarmGoldenResponse) GetCommitSha() string {
-	if x != nil {
-		return x.CommitSha
-	}
-	return ""
-}
-
-func (x *WarmGoldenResponse) GetJobResult() *JobResult {
-	if x != nil {
-		return x.JobResult
-	}
-	return nil
-}
-
-func (x *WarmGoldenResponse) GetErrorMessage() string {
-	if x != nil {
-		return x.ErrorMessage
-	}
-	return ""
-}
-
 type TelemetryHello struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Seq           uint32                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
@@ -1880,7 +1388,7 @@ type TelemetryHello struct {
 
 func (x *TelemetryHello) Reset() {
 	*x = TelemetryHello{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1892,7 +1400,7 @@ func (x *TelemetryHello) String() string {
 func (*TelemetryHello) ProtoMessage() {}
 
 func (x *TelemetryHello) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1905,7 +1413,7 @@ func (x *TelemetryHello) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryHello.ProtoReflect.Descriptor instead.
 func (*TelemetryHello) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TelemetryHello) GetSeq() uint32 {
@@ -1978,7 +1486,7 @@ type TelemetrySample struct {
 
 func (x *TelemetrySample) Reset() {
 	*x = TelemetrySample{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1990,7 +1498,7 @@ func (x *TelemetrySample) String() string {
 func (*TelemetrySample) ProtoMessage() {}
 
 func (x *TelemetrySample) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2003,7 +1511,7 @@ func (x *TelemetrySample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetrySample.ProtoReflect.Descriptor instead.
 func (*TelemetrySample) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TelemetrySample) GetSeq() uint32 {
@@ -2155,7 +1663,7 @@ type StreamTelemetryRequest struct {
 
 func (x *StreamTelemetryRequest) Reset() {
 	*x = StreamTelemetryRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2167,7 +1675,7 @@ func (x *StreamTelemetryRequest) String() string {
 func (*StreamTelemetryRequest) ProtoMessage() {}
 
 func (x *StreamTelemetryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2180,7 +1688,7 @@ func (x *StreamTelemetryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamTelemetryRequest.ProtoReflect.Descriptor instead.
 func (*StreamTelemetryRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StreamTelemetryRequest) GetJobId() string {
@@ -2206,7 +1714,7 @@ type TelemetryEvent struct {
 
 func (x *TelemetryEvent) Reset() {
 	*x = TelemetryEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2218,7 +1726,7 @@ func (x *TelemetryEvent) String() string {
 func (*TelemetryEvent) ProtoMessage() {}
 
 func (x *TelemetryEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2231,7 +1739,7 @@ func (x *TelemetryEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryEvent.ProtoReflect.Descriptor instead.
 func (*TelemetryEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TelemetryEvent) GetJobId() string {
@@ -2309,7 +1817,7 @@ type FleetVM struct {
 
 func (x *FleetVM) Reset() {
 	*x = FleetVM{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2321,7 +1829,7 @@ func (x *FleetVM) String() string {
 func (*FleetVM) ProtoMessage() {}
 
 func (x *FleetVM) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2334,7 +1842,7 @@ func (x *FleetVM) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetVM.ProtoReflect.Descriptor instead.
 func (*FleetVM) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *FleetVM) GetJobId() string {
@@ -2380,7 +1888,7 @@ type GetFleetSnapshotRequest struct {
 
 func (x *GetFleetSnapshotRequest) Reset() {
 	*x = GetFleetSnapshotRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2392,7 +1900,7 @@ func (x *GetFleetSnapshotRequest) String() string {
 func (*GetFleetSnapshotRequest) ProtoMessage() {}
 
 func (x *GetFleetSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2405,7 +1913,7 @@ func (x *GetFleetSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetFleetSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
 }
 
 type GetFleetSnapshotResponse struct {
@@ -2417,7 +1925,7 @@ type GetFleetSnapshotResponse struct {
 
 func (x *GetFleetSnapshotResponse) Reset() {
 	*x = GetFleetSnapshotResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2429,7 +1937,7 @@ func (x *GetFleetSnapshotResponse) String() string {
 func (*GetFleetSnapshotResponse) ProtoMessage() {}
 
 func (x *GetFleetSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2442,7 +1950,7 @@ func (x *GetFleetSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFleetSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetFleetSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetFleetSnapshotResponse) GetVms() []*FleetVM {
@@ -2460,7 +1968,7 @@ type GetCapacityRequest struct {
 
 func (x *GetCapacityRequest) Reset() {
 	*x = GetCapacityRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2472,7 +1980,7 @@ func (x *GetCapacityRequest) String() string {
 func (*GetCapacityRequest) ProtoMessage() {}
 
 func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[28]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2485,7 +1993,7 @@ func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityRequest.ProtoReflect.Descriptor instead.
 func (*GetCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
 }
 
 type GetCapacityResponse struct {
@@ -2502,7 +2010,7 @@ type GetCapacityResponse struct {
 
 func (x *GetCapacityResponse) Reset() {
 	*x = GetCapacityResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2514,7 +2022,7 @@ func (x *GetCapacityResponse) String() string {
 func (*GetCapacityResponse) ProtoMessage() {}
 
 func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2527,7 +2035,7 @@ func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityResponse.ProtoReflect.Descriptor instead.
 func (*GetCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{29}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetCapacityResponse) GetGuestPoolCidr() string {
@@ -2589,13 +2097,12 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x03env\x18\a \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xaf\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbb\x04\n" +
 	"\rRuntimeConfig\x12\x12\n" +
 	"\x04pool\x18\x01 \x01(\tR\x04pool\x12\x1f\n" +
 	"\vgolden_zvol\x18\x02 \x01(\tR\n" +
-	"goldenZvol\x12\x1d\n" +
-	"\n" +
-	"ci_dataset\x18\x03 \x01(\tR\tciDataset\x12\x1f\n" +
+	"goldenZvol\x12)\n" +
+	"\x10workload_dataset\x18\x03 \x01(\tR\x0fworkloadDataset\x12\x1f\n" +
 	"\vkernel_path\x18\x04 \x01(\tR\n" +
 	"kernelPath\x12'\n" +
 	"\x0ffirecracker_bin\x18\x05 \x01(\tR\x0efirecrackerBin\x12\x1d\n" +
@@ -2632,15 +2139,7 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"netRxBytes\x12 \n" +
 	"\fnet_tx_bytes\x18\a \x01(\x04R\n" +
 	"netTxBytes\x12&\n" +
-	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xad\x02\n" +
-	"\fRepoManifest\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x12#\n" +
-	"\rrequested_ref\x18\x02 \x01(\tR\frequestedRef\x12.\n" +
-	"\x13resolved_commit_sha\x18\x03 \x01(\tR\x11resolvedCommitSha\x12*\n" +
-	"\x11lockfile_rel_path\x18\x04 \x01(\tR\x0flockfileRelPath\x12'\n" +
-	"\x0flockfile_sha256\x18\x05 \x01(\tR\x0elockfileSha256\x128\n" +
-	"\x18previous_lockfile_sha256\x18\x06 \x01(\tR\x16previousLockfileSha256\x12%\n" +
-	"\x0einstall_needed\x18\a \x01(\bR\rinstallNeeded\"\xee\a\n" +
+	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\x9b\a\n" +
 	"\tJobResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x12\n" +
 	"\x04logs\x18\x02 \x01(\tR\x04logs\x12\x1f\n" +
@@ -2666,45 +2165,26 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x0fforced_shutdown\x18\x12 \x01(\bR\x0eforcedShutdown\x12P\n" +
 	"\rphase_results\x18\x13 \x03(\v2+.forge_metal.vm_orchestrator.v1.PhaseResultR\fphaseResults\x12#\n" +
 	"\rfailure_phase\x18\x14 \x01(\tR\ffailurePhase\x12C\n" +
-	"\ametrics\x18\x15 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\x12Q\n" +
-	"\rrepo_manifest\x18\x16 \x01(\v2,.forge_metal.vm_orchestrator.v1.RepoManifestR\frepoManifest\"\xa2\x01\n" +
+	"\ametrics\x18\x15 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\"\xa2\x01\n" +
 	"\rDirectJobSpec\x12T\n" +
 	"\x0eruntime_config\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.RuntimeConfigR\rruntimeConfig\x12;\n" +
-	"\x03job\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\x03job\"\x9f\x02\n" +
-	"\fRepoExecSpec\x12T\n" +
-	"\x0eruntime_config\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.RuntimeConfigR\rruntimeConfig\x12\x12\n" +
-	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
-	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\x12\x10\n" +
-	"\x03ref\x18\x04 \x01(\tR\x03ref\x12L\n" +
-	"\fjob_template\x18\x05 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\vjobTemplate\x12*\n" +
-	"\x11lockfile_rel_path\x18\x06 \x01(\tR\x0flockfileRelPath\"\xb7\x01\n" +
+	"\x03job\x18\x02 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\x03job\"j\n" +
 	"\x10CreateJobRequest\x12N\n" +
 	"\n" +
-	"direct_job\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.DirectJobSpecH\x00R\tdirectJob\x12K\n" +
-	"\trepo_exec\x18\x02 \x01(\v2,.forge_metal.vm_orchestrator.v1.RepoExecSpecH\x00R\brepoExecB\x06\n" +
+	"direct_job\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.DirectJobSpecH\x00R\tdirectJobB\x06\n" +
 	"\x04spec\"j\n" +
 	"\x11CreateJobResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12>\n" +
 	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.JobStateR\x05state\"S\n" +
 	"\x13GetJobStatusRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12%\n" +
-	"\x0einclude_output\x18\x02 \x01(\bR\rincludeOutput\"\xee\x01\n" +
-	"\x10RepoExecMetadata\x12\x12\n" +
-	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x19\n" +
-	"\brepo_url\x18\x02 \x01(\tR\arepoUrl\x12\x10\n" +
-	"\x03ref\x18\x03 \x01(\tR\x03ref\x12'\n" +
-	"\x0fgolden_snapshot\x18\x04 \x01(\tR\x0egoldenSnapshot\x12*\n" +
-	"\x11clone_duration_ms\x18\x05 \x01(\x03R\x0fcloneDurationMs\x12%\n" +
-	"\x0einstall_needed\x18\x06 \x01(\bR\rinstallNeeded\x12\x1d\n" +
-	"\n" +
-	"commit_sha\x18\a \x01(\tR\tcommitSha\"\xc0\x02\n" +
+	"\x0einclude_output\x18\x02 \x01(\bR\rincludeOutput\"\xf1\x01\n" +
 	"\x14GetJobStatusResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12>\n" +
 	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.JobStateR\x05state\x12\x1a\n" +
 	"\bterminal\x18\x03 \x01(\bR\bterminal\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12A\n" +
-	"\x06result\x18\x05 \x01(\v2).forge_metal.vm_orchestrator.v1.JobResultR\x06result\x12M\n" +
-	"\trepo_exec\x18\x06 \x01(\v20.forge_metal.vm_orchestrator.v1.RepoExecMetadataR\brepoExec\")\n" +
+	"\x06result\x18\x05 \x01(\v2).forge_metal.vm_orchestrator.v1.JobResultR\x06result\")\n" +
 	"\x10CancelJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"/\n" +
 	"\x11CancelJobResponse\x12\x1a\n" +
@@ -2728,27 +2208,7 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
 	"AttrsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x02\n" +
-	"\x11WarmGoldenRequest\x12T\n" +
-	"\x0eruntime_config\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.RuntimeConfigR\rruntimeConfig\x12\x12\n" +
-	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x19\n" +
-	"\brepo_url\x18\x03 \x01(\tR\arepoUrl\x12%\n" +
-	"\x0edefault_branch\x18\x04 \x01(\tR\rdefaultBranch\x12;\n" +
-	"\x03job\x18\x05 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\x03job\x12*\n" +
-	"\x11lockfile_rel_path\x18\x06 \x01(\tR\x0flockfileRelPath\"\xc2\x03\n" +
-	"\x12WarmGoldenResponse\x12%\n" +
-	"\x0etarget_dataset\x18\x01 \x01(\tR\rtargetDataset\x12)\n" +
-	"\x10previous_dataset\x18\x02 \x01(\tR\x0fpreviousDataset\x12\x1a\n" +
-	"\bpromoted\x18\x03 \x01(\bR\bpromoted\x12*\n" +
-	"\x11clone_duration_ms\x18\x05 \x01(\x03R\x0fcloneDurationMs\x12C\n" +
-	"\x1esnapshot_promotion_duration_ms\x18\a \x01(\x03R\x1bsnapshotPromotionDurationMs\x12?\n" +
-	"\x1cprevious_destroy_duration_ms\x18\b \x01(\x03R\x19previousDestroyDurationMs\x12\x1d\n" +
-	"\n" +
-	"commit_sha\x18\t \x01(\tR\tcommitSha\x12H\n" +
-	"\n" +
-	"job_result\x18\n" +
-	" \x01(\v2).forge_metal.vm_orchestrator.v1.JobResultR\tjobResult\x12#\n" +
-	"\rerror_message\x18\v \x01(\tR\ferrorMessage\"\xa5\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x01\n" +
 	"\x0eTelemetryHello\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\rR\x03seq\x12\x14\n" +
 	"\x05flags\x18\x02 \x01(\rR\x05flags\x12\x17\n" +
@@ -2820,15 +2280,13 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x12TelemetryFrameKind\x12$\n" +
 	" TELEMETRY_FRAME_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aTELEMETRY_FRAME_KIND_HELLO\x10\x01\x12\x1f\n" +
-	"\x1bTELEMETRY_FRAME_KIND_SAMPLE\x10\x022\xd2\b\n" +
+	"\x1bTELEMETRY_FRAME_KIND_SAMPLE\x10\x022\xdd\a\n" +
 	"\tVMService\x12p\n" +
 	"\tCreateJob\x120.forge_metal.vm_orchestrator.v1.CreateJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CreateJobResponse\x12y\n" +
 	"\fGetJobStatus\x123.forge_metal.vm_orchestrator.v1.GetJobStatusRequest\x1a4.forge_metal.vm_orchestrator.v1.GetJobStatusResponse\x12p\n" +
 	"\tCancelJob\x120.forge_metal.vm_orchestrator.v1.CancelJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CancelJobResponse\x12t\n" +
 	"\rStreamJobLogs\x124.forge_metal.vm_orchestrator.v1.StreamJobLogsRequest\x1a+.forge_metal.vm_orchestrator.v1.JobLogChunk0\x01\x12~\n" +
-	"\x11StreamGuestEvents\x128.forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest\x1a-.forge_metal.vm_orchestrator.v1.JobGuestEvent0\x01\x12s\n" +
-	"\n" +
-	"WarmGolden\x121.forge_metal.vm_orchestrator.v1.WarmGoldenRequest\x1a2.forge_metal.vm_orchestrator.v1.WarmGoldenResponse\x12{\n" +
+	"\x11StreamGuestEvents\x128.forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest\x1a-.forge_metal.vm_orchestrator.v1.JobGuestEvent0\x01\x12{\n" +
 	"\x0fStreamTelemetry\x126.forge_metal.vm_orchestrator.v1.StreamTelemetryRequest\x1a..forge_metal.vm_orchestrator.v1.TelemetryEvent0\x01\x12\x85\x01\n" +
 	"\x10GetFleetSnapshot\x127.forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest\x1a8.forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse\x12v\n" +
 	"\vGetCapacity\x122.forge_metal.vm_orchestrator.v1.GetCapacityRequest\x1a3.forge_metal.vm_orchestrator.v1.GetCapacityResponseB7Z5github.com/forge-metal/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
@@ -2846,7 +2304,7 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_proto_v1_vm_service_proto_goTypes = []any{
 	(JobState)(0),                    // 0: forge_metal.vm_orchestrator.v1.JobState
 	(TelemetryFrameKind)(0),          // 1: forge_metal.vm_orchestrator.v1.TelemetryFrameKind
@@ -2854,84 +2312,69 @@ var file_proto_v1_vm_service_proto_goTypes = []any{
 	(*RuntimeConfig)(nil),            // 3: forge_metal.vm_orchestrator.v1.RuntimeConfig
 	(*PhaseResult)(nil),              // 4: forge_metal.vm_orchestrator.v1.PhaseResult
 	(*VMMetrics)(nil),                // 5: forge_metal.vm_orchestrator.v1.VMMetrics
-	(*RepoManifest)(nil),             // 6: forge_metal.vm_orchestrator.v1.RepoManifest
-	(*JobResult)(nil),                // 7: forge_metal.vm_orchestrator.v1.JobResult
-	(*DirectJobSpec)(nil),            // 8: forge_metal.vm_orchestrator.v1.DirectJobSpec
-	(*RepoExecSpec)(nil),             // 9: forge_metal.vm_orchestrator.v1.RepoExecSpec
-	(*CreateJobRequest)(nil),         // 10: forge_metal.vm_orchestrator.v1.CreateJobRequest
-	(*CreateJobResponse)(nil),        // 11: forge_metal.vm_orchestrator.v1.CreateJobResponse
-	(*GetJobStatusRequest)(nil),      // 12: forge_metal.vm_orchestrator.v1.GetJobStatusRequest
-	(*RepoExecMetadata)(nil),         // 13: forge_metal.vm_orchestrator.v1.RepoExecMetadata
-	(*GetJobStatusResponse)(nil),     // 14: forge_metal.vm_orchestrator.v1.GetJobStatusResponse
-	(*CancelJobRequest)(nil),         // 15: forge_metal.vm_orchestrator.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),        // 16: forge_metal.vm_orchestrator.v1.CancelJobResponse
-	(*StreamJobLogsRequest)(nil),     // 17: forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
-	(*JobLogChunk)(nil),              // 18: forge_metal.vm_orchestrator.v1.JobLogChunk
-	(*StreamGuestEventsRequest)(nil), // 19: forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
-	(*JobGuestEvent)(nil),            // 20: forge_metal.vm_orchestrator.v1.JobGuestEvent
-	(*WarmGoldenRequest)(nil),        // 21: forge_metal.vm_orchestrator.v1.WarmGoldenRequest
-	(*WarmGoldenResponse)(nil),       // 22: forge_metal.vm_orchestrator.v1.WarmGoldenResponse
-	(*TelemetryHello)(nil),           // 23: forge_metal.vm_orchestrator.v1.TelemetryHello
-	(*TelemetrySample)(nil),          // 24: forge_metal.vm_orchestrator.v1.TelemetrySample
-	(*StreamTelemetryRequest)(nil),   // 25: forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	(*TelemetryEvent)(nil),           // 26: forge_metal.vm_orchestrator.v1.TelemetryEvent
-	(*FleetVM)(nil),                  // 27: forge_metal.vm_orchestrator.v1.FleetVM
-	(*GetFleetSnapshotRequest)(nil),  // 28: forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	(*GetFleetSnapshotResponse)(nil), // 29: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	(*GetCapacityRequest)(nil),       // 30: forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),      // 31: forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	nil,                              // 32: forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
-	nil,                              // 33: forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
+	(*JobResult)(nil),                // 6: forge_metal.vm_orchestrator.v1.JobResult
+	(*DirectJobSpec)(nil),            // 7: forge_metal.vm_orchestrator.v1.DirectJobSpec
+	(*CreateJobRequest)(nil),         // 8: forge_metal.vm_orchestrator.v1.CreateJobRequest
+	(*CreateJobResponse)(nil),        // 9: forge_metal.vm_orchestrator.v1.CreateJobResponse
+	(*GetJobStatusRequest)(nil),      // 10: forge_metal.vm_orchestrator.v1.GetJobStatusRequest
+	(*GetJobStatusResponse)(nil),     // 11: forge_metal.vm_orchestrator.v1.GetJobStatusResponse
+	(*CancelJobRequest)(nil),         // 12: forge_metal.vm_orchestrator.v1.CancelJobRequest
+	(*CancelJobResponse)(nil),        // 13: forge_metal.vm_orchestrator.v1.CancelJobResponse
+	(*StreamJobLogsRequest)(nil),     // 14: forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
+	(*JobLogChunk)(nil),              // 15: forge_metal.vm_orchestrator.v1.JobLogChunk
+	(*StreamGuestEventsRequest)(nil), // 16: forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
+	(*JobGuestEvent)(nil),            // 17: forge_metal.vm_orchestrator.v1.JobGuestEvent
+	(*TelemetryHello)(nil),           // 18: forge_metal.vm_orchestrator.v1.TelemetryHello
+	(*TelemetrySample)(nil),          // 19: forge_metal.vm_orchestrator.v1.TelemetrySample
+	(*StreamTelemetryRequest)(nil),   // 20: forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
+	(*TelemetryEvent)(nil),           // 21: forge_metal.vm_orchestrator.v1.TelemetryEvent
+	(*FleetVM)(nil),                  // 22: forge_metal.vm_orchestrator.v1.FleetVM
+	(*GetFleetSnapshotRequest)(nil),  // 23: forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
+	(*GetFleetSnapshotResponse)(nil), // 24: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
+	(*GetCapacityRequest)(nil),       // 25: forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),      // 26: forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	nil,                              // 27: forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
+	nil,                              // 28: forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
-	32, // 0: forge_metal.vm_orchestrator.v1.JobConfig.env:type_name -> forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
+	27, // 0: forge_metal.vm_orchestrator.v1.JobConfig.env:type_name -> forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
 	4,  // 1: forge_metal.vm_orchestrator.v1.JobResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
 	5,  // 2: forge_metal.vm_orchestrator.v1.JobResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
-	6,  // 3: forge_metal.vm_orchestrator.v1.JobResult.repo_manifest:type_name -> forge_metal.vm_orchestrator.v1.RepoManifest
-	3,  // 4: forge_metal.vm_orchestrator.v1.DirectJobSpec.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
-	2,  // 5: forge_metal.vm_orchestrator.v1.DirectJobSpec.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
-	3,  // 6: forge_metal.vm_orchestrator.v1.RepoExecSpec.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
-	2,  // 7: forge_metal.vm_orchestrator.v1.RepoExecSpec.job_template:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
-	8,  // 8: forge_metal.vm_orchestrator.v1.CreateJobRequest.direct_job:type_name -> forge_metal.vm_orchestrator.v1.DirectJobSpec
-	9,  // 9: forge_metal.vm_orchestrator.v1.CreateJobRequest.repo_exec:type_name -> forge_metal.vm_orchestrator.v1.RepoExecSpec
-	0,  // 10: forge_metal.vm_orchestrator.v1.CreateJobResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	0,  // 11: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	7,  // 12: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
-	13, // 13: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.repo_exec:type_name -> forge_metal.vm_orchestrator.v1.RepoExecMetadata
-	33, // 14: forge_metal.vm_orchestrator.v1.JobGuestEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
-	3,  // 15: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
-	2,  // 16: forge_metal.vm_orchestrator.v1.WarmGoldenRequest.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
-	7,  // 17: forge_metal.vm_orchestrator.v1.WarmGoldenResponse.job_result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
-	1,  // 18: forge_metal.vm_orchestrator.v1.TelemetryEvent.kind:type_name -> forge_metal.vm_orchestrator.v1.TelemetryFrameKind
-	23, // 19: forge_metal.vm_orchestrator.v1.TelemetryEvent.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	24, // 20: forge_metal.vm_orchestrator.v1.TelemetryEvent.sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	0,  // 21: forge_metal.vm_orchestrator.v1.FleetVM.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	23, // 22: forge_metal.vm_orchestrator.v1.FleetVM.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	24, // 23: forge_metal.vm_orchestrator.v1.FleetVM.latest_sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	27, // 24: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse.vms:type_name -> forge_metal.vm_orchestrator.v1.FleetVM
-	10, // 25: forge_metal.vm_orchestrator.v1.VMService.CreateJob:input_type -> forge_metal.vm_orchestrator.v1.CreateJobRequest
-	12, // 26: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:input_type -> forge_metal.vm_orchestrator.v1.GetJobStatusRequest
-	15, // 27: forge_metal.vm_orchestrator.v1.VMService.CancelJob:input_type -> forge_metal.vm_orchestrator.v1.CancelJobRequest
-	17, // 28: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:input_type -> forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
-	19, // 29: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
-	21, // 30: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:input_type -> forge_metal.vm_orchestrator.v1.WarmGoldenRequest
-	25, // 31: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:input_type -> forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	28, // 32: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:input_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	30, // 33: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	11, // 34: forge_metal.vm_orchestrator.v1.VMService.CreateJob:output_type -> forge_metal.vm_orchestrator.v1.CreateJobResponse
-	14, // 35: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:output_type -> forge_metal.vm_orchestrator.v1.GetJobStatusResponse
-	16, // 36: forge_metal.vm_orchestrator.v1.VMService.CancelJob:output_type -> forge_metal.vm_orchestrator.v1.CancelJobResponse
-	18, // 37: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:output_type -> forge_metal.vm_orchestrator.v1.JobLogChunk
-	20, // 38: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:output_type -> forge_metal.vm_orchestrator.v1.JobGuestEvent
-	22, // 39: forge_metal.vm_orchestrator.v1.VMService.WarmGolden:output_type -> forge_metal.vm_orchestrator.v1.WarmGoldenResponse
-	26, // 40: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:output_type -> forge_metal.vm_orchestrator.v1.TelemetryEvent
-	29, // 41: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:output_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	31, // 42: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	34, // [34:43] is the sub-list for method output_type
-	25, // [25:34] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	3,  // 3: forge_metal.vm_orchestrator.v1.DirectJobSpec.runtime_config:type_name -> forge_metal.vm_orchestrator.v1.RuntimeConfig
+	2,  // 4: forge_metal.vm_orchestrator.v1.DirectJobSpec.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
+	7,  // 5: forge_metal.vm_orchestrator.v1.CreateJobRequest.direct_job:type_name -> forge_metal.vm_orchestrator.v1.DirectJobSpec
+	0,  // 6: forge_metal.vm_orchestrator.v1.CreateJobResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
+	0,  // 7: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
+	6,  // 8: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
+	28, // 9: forge_metal.vm_orchestrator.v1.JobGuestEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
+	1,  // 10: forge_metal.vm_orchestrator.v1.TelemetryEvent.kind:type_name -> forge_metal.vm_orchestrator.v1.TelemetryFrameKind
+	18, // 11: forge_metal.vm_orchestrator.v1.TelemetryEvent.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
+	19, // 12: forge_metal.vm_orchestrator.v1.TelemetryEvent.sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
+	0,  // 13: forge_metal.vm_orchestrator.v1.FleetVM.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
+	18, // 14: forge_metal.vm_orchestrator.v1.FleetVM.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
+	19, // 15: forge_metal.vm_orchestrator.v1.FleetVM.latest_sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
+	22, // 16: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse.vms:type_name -> forge_metal.vm_orchestrator.v1.FleetVM
+	8,  // 17: forge_metal.vm_orchestrator.v1.VMService.CreateJob:input_type -> forge_metal.vm_orchestrator.v1.CreateJobRequest
+	10, // 18: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:input_type -> forge_metal.vm_orchestrator.v1.GetJobStatusRequest
+	12, // 19: forge_metal.vm_orchestrator.v1.VMService.CancelJob:input_type -> forge_metal.vm_orchestrator.v1.CancelJobRequest
+	14, // 20: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:input_type -> forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
+	16, // 21: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
+	20, // 22: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:input_type -> forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
+	23, // 23: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:input_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
+	25, // 24: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	9,  // 25: forge_metal.vm_orchestrator.v1.VMService.CreateJob:output_type -> forge_metal.vm_orchestrator.v1.CreateJobResponse
+	11, // 26: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:output_type -> forge_metal.vm_orchestrator.v1.GetJobStatusResponse
+	13, // 27: forge_metal.vm_orchestrator.v1.VMService.CancelJob:output_type -> forge_metal.vm_orchestrator.v1.CancelJobResponse
+	15, // 28: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:output_type -> forge_metal.vm_orchestrator.v1.JobLogChunk
+	17, // 29: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:output_type -> forge_metal.vm_orchestrator.v1.JobGuestEvent
+	21, // 30: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:output_type -> forge_metal.vm_orchestrator.v1.TelemetryEvent
+	24, // 31: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:output_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
+	26, // 32: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	25, // [25:33] is the sub-list for method output_type
+	17, // [17:25] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -2939,11 +2382,10 @@ func file_proto_v1_vm_service_proto_init() {
 	if File_proto_v1_vm_service_proto != nil {
 		return
 	}
-	file_proto_v1_vm_service_proto_msgTypes[8].OneofWrappers = []any{
+	file_proto_v1_vm_service_proto_msgTypes[6].OneofWrappers = []any{
 		(*CreateJobRequest_DirectJob)(nil),
-		(*CreateJobRequest_RepoExec)(nil),
 	}
-	file_proto_v1_vm_service_proto_msgTypes[24].OneofWrappers = []any{
+	file_proto_v1_vm_service_proto_msgTypes[19].OneofWrappers = []any{
 		(*TelemetryEvent_Hello)(nil),
 		(*TelemetryEvent_Sample)(nil),
 	}
@@ -2953,7 +2395,7 @@ func file_proto_v1_vm_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   32,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -2,11 +2,11 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"net"
+	"os"
 	"strings"
 	"testing"
-
-	"github.com/forge-metal/workload"
 )
 
 func TestNormalizeImportRepoRequestRejectsUnsafeCloneURLs(t *testing.T) {
@@ -90,7 +90,7 @@ func TestValidateGitCloneURLFieldAcceptsPublicDNSResolution(t *testing.T) {
 
 func TestNormalizeSubmitRequestRejectsUnsafeRepoURL(t *testing.T) {
 	_, err := normalizeSubmitRequest(SubmitRequest{
-		Kind:    KindRepoExec,
+		Kind:    KindDirect,
 		Repo:    "forge-metal/repo",
 		RepoURL: "http://169.254.169.254/latest/meta-data",
 		Ref:     "refs/heads/main",
@@ -108,26 +108,65 @@ func (r fakeGitDNSResolver) LookupIPAddr(_ context.Context, host string) ([]net.
 	return r.answers[host], nil
 }
 
-func TestBuildRepoExecRequestRejectsUnsafeRepoURL(t *testing.T) {
-	inspection := &workload.Inspection{
-		Manifest: &workload.Manifest{
-			Version: 1,
-			Run:     []string{"npm", "test"},
-		},
-		Toolchain: &workload.Toolchain{
-			PackageManager: workload.PackageManagerNPM,
-		},
+func TestRepoScanBudgetRejectsConcurrentScan(t *testing.T) {
+	svc := &Service{RepoScanConcurrency: 1}
+	release, err := svc.acquireRepoScanSlot(context.Background())
+	if err != nil {
+		t.Fatalf("first acquire: %v", err)
 	}
+	defer release()
 
-	_, err := BuildRepoExecRequest(RepoExecSpec{
-		JobID: "55555555-5555-5555-5555-555555555555",
-		RepoTarget: RepoTarget{
-			Repo:    "forge-metal/repo",
-			RepoURL: "file:///tmp/forge-metal-should-not-exist.git",
-		},
-		Ref: "refs/heads/main",
-	}, inspection)
-	if err == nil || !strings.Contains(err.Error(), "repo_url") {
-		t.Fatalf("BuildRepoExecRequest error = %v, want repo_url validation error", err)
+	if _, err := svc.acquireRepoScanSlot(context.Background()); err == nil || !errors.Is(err, ErrRepoScanCapacity) {
+		t.Fatalf("second acquire error = %v, want ErrRepoScanCapacity", err)
 	}
+}
+
+func TestRepoScanGitCommandDisablesUnsafeProtocolSources(t *testing.T) {
+	cmd, _, cancel := repoScanGitCommand(context.Background(), "--version")
+	defer cancel()
+
+	env := envMap(cmd.Env)
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{key: "GIT_CONFIG_NOSYSTEM", want: "1"},
+		{key: "GIT_CONFIG_GLOBAL", want: "/dev/null"},
+		{key: "GIT_TERMINAL_PROMPT", want: "0"},
+		{key: "GIT_PROTOCOL_FROM_USER", want: "0"},
+		{key: "GIT_ALLOW_PROTOCOL", want: "https"},
+	} {
+		if got := env[tc.key]; got != tc.want {
+			t.Fatalf("%s: got %q want %q", tc.key, got, tc.want)
+		}
+	}
+}
+
+func TestRepoScanGitCommandAllowsFileProtocolOnlyForE2EOverride(t *testing.T) {
+	t.Setenv(repoScanAllowFileProtocolForE2E, "1")
+	cmd, _, cancel := repoScanGitCommand(context.Background(), "--version")
+	defer cancel()
+
+	if got := envMap(cmd.Env)["GIT_ALLOW_PROTOCOL"]; got != "https:file" {
+		t.Fatalf("GIT_ALLOW_PROTOCOL: got %q want %q", got, "https:file")
+	}
+}
+
+func envMap(values []string) map[string]string {
+	out := make(map[string]string, len(values))
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if ok {
+			out[key] = val
+		}
+	}
+	for _, value := range os.Environ() {
+		key, val, ok := strings.Cut(value, "=")
+		if ok {
+			if _, exists := out[key]; !exists {
+				out[key] = val
+			}
+		}
+	}
+	return out
 }

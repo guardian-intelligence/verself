@@ -9,10 +9,9 @@ Type=simple
 ExecStart={{ firecracker_vm_orchestrator_binary_path }} \
   --listen-unix {{ firecracker_vm_orchestrator_api_socket }} \
   --socket-group {{ firecracker_vm_orchestrator_socket_group }} \
-  --repo-golden-state-dir {{ firecracker_repo_golden_state_dir }} \
   --pool {{ firecracker_zfs_pool }} \
   --golden-zvol {{ firecracker_golden_zvol }} \
-  --ci-dataset {{ firecracker_ci_dataset }} \
+  --workload-dataset {{ firecracker_workload_dataset }} \
   --kernel-path {{ firecracker_kernel_path }} \
   --firecracker-bin /usr/local/bin/firecracker \
   --jailer-bin /usr/local/bin/jailer \

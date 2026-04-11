@@ -28,7 +28,6 @@ type reconcileCandidate struct {
 	DurationMs        int64
 	StartedAt         sql.NullTime
 	CompletedAt       sql.NullTime
-	GoldenSnapshot    string
 	WindowSeq         int
 	BillingWindowID   string
 	ReservationShape  string
@@ -121,7 +120,6 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			COALESCE(a.duration_ms, 0),
 			a.started_at,
 			a.completed_at,
-			a.golden_snapshot,
 			w.window_seq,
 			w.billing_window_id,
 			w.reservation_shape,
@@ -156,7 +154,6 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			&candidate.DurationMs,
 			&candidate.StartedAt,
 			&candidate.CompletedAt,
-			&candidate.GoldenSnapshot,
 			&candidate.WindowSeq,
 			&candidate.BillingWindowID,
 			&candidate.ReservationShape,
@@ -246,7 +243,6 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 			COALESCE(a.duration_ms, 0),
 			a.started_at,
 			a.completed_at,
-			a.golden_snapshot,
 			w.window_seq,
 			w.billing_window_id,
 			w.reservation_shape,
@@ -273,7 +269,6 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 		&candidate.DurationMs,
 		&candidate.StartedAt,
 		&candidate.CompletedAt,
-		&candidate.GoldenSnapshot,
 		&candidate.WindowSeq,
 		&candidate.BillingWindowID,
 		&candidate.ReservationShape,
@@ -441,7 +436,6 @@ func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrat
 		if status.Result.Duration <= 0 {
 			candidate.DurationMs = candidate.CompletedAt.Time.Sub(candidate.StartedAt.Time).Milliseconds()
 		}
-		// GoldenSnapshot is already populated from the DB row; no override needed.
 	}
 	if status.ErrorMessage != "" {
 		candidate.FailureReason = status.ErrorMessage
@@ -459,12 +453,11 @@ func outcomeFromCandidate(candidate reconcileCandidate) executionOutcome {
 		completedAt = candidate.CompletedAt.Time
 	}
 	outcome := executionOutcome{
-		FailureReason:  strings.TrimSpace(candidate.FailureReason),
-		ExitCode:       candidate.ExitCode,
-		DurationMs:     candidate.DurationMs,
-		GoldenSnapshot: candidate.GoldenSnapshot,
-		StartedAt:      startedAt,
-		CompletedAt:    completedAt,
+		FailureReason: strings.TrimSpace(candidate.FailureReason),
+		ExitCode:      candidate.ExitCode,
+		DurationMs:    candidate.DurationMs,
+		StartedAt:     startedAt,
+		CompletedAt:   completedAt,
 	}
 	switch {
 	case outcome.FailureReason == "attempt_canceled":

@@ -10,7 +10,7 @@ argument_specs:
       firecracker_zfs_pool:
         type: str
         default: forgepool
-        description: "ZFS pool for golden zvols and CI job clones."
+        description: "ZFS pool for golden zvols and ephemeral VM job clones."
 
       firecracker_golden_zvol:
         type: str
@@ -22,10 +22,10 @@ argument_specs:
         default: "4G"
         description: "Size of the golden zvol. Must include unit (e.g. 2G, 4G)."
 
-      firecracker_ci_dataset:
+      firecracker_workload_dataset:
         type: str
-        default: ci
-        description: "ZFS dataset under firecracker_zfs_pool for ephemeral CI job clones."
+        default: workloads
+        description: "ZFS dataset under firecracker_zfs_pool for ephemeral VM job clones."
 
       firecracker_jailer_root:
         type: path
@@ -72,7 +72,7 @@ argument_specs:
         default: false
         description: >-
           Force golden zvol refresh even if the rootfs hash matches.
-          WARNING: destroys all repo goldens and CI job clones.
+          WARNING: destroys ephemeral VM job clones.
 
       firecracker_zfs_arc_max_bytes:
         type: int
@@ -118,8 +118,3 @@ argument_specs:
         type: str
         default: vm-clients
         description: "System group granted rw access to the vm-orchestrator Unix socket."
-
-      firecracker_repo_golden_state_dir:
-        type: path
-        default: /var/lib/ci/repo-goldens
-        description: "Directory storing active repo-golden dataset pointers for vm-orchestrator."

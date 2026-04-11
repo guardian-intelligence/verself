@@ -7,31 +7,9 @@ export function RepoStateBadge({ state }: { state: string }) {
   const colors: Record<string, string> = {
     importing: "bg-slate-100 text-slate-800",
     action_required: "bg-amber-100 text-amber-900",
-    waiting_for_bootstrap: "bg-yellow-100 text-yellow-900",
-    preparing: "bg-sky-100 text-sky-900",
     ready: "bg-green-100 text-green-900",
-    degraded: "bg-orange-100 text-orange-900",
     failed: "bg-red-100 text-red-900",
     archived: "bg-zinc-200 text-zinc-800",
-  };
-
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[state] ?? "bg-muted text-muted-foreground"}`}
-    >
-      {state.replaceAll("_", " ")}
-    </span>
-  );
-}
-
-export function GenerationStateBadge({ state }: { state: string }) {
-  const colors: Record<string, string> = {
-    queued: "bg-yellow-100 text-yellow-900",
-    building: "bg-sky-100 text-sky-900",
-    sanitizing: "bg-indigo-100 text-indigo-900",
-    ready: "bg-green-100 text-green-900",
-    failed: "bg-red-100 text-red-900",
-    superseded: "bg-zinc-200 text-zinc-800",
   };
 
   return (
@@ -56,11 +34,7 @@ export function RepoListEmptyState() {
   return (
     <EmptyState
       title="No repos imported yet"
-      body={
-        <>
-          Start by importing a repository that uses <code>runs-on: forge-metal</code>.
-        </>
-      }
+      body="Start by importing a repository."
       action={
         <Link
           to="/repos/new"
@@ -78,9 +52,7 @@ export function RepoListLoadingState() {
 }
 
 export function RepoDetailLoadingState() {
-  return (
-    <EmptyState title="Loading repo..." body="Fetching the repo record and generation history." />
-  );
+  return <EmptyState title="Loading repo..." body="Fetching the repo record." />;
 }
 
 export function RepoErrorBanner({ message }: { message: string }) {
@@ -109,12 +81,11 @@ export function RepoListItem({ repo }: { repo: Repo }) {
           <p className="truncate text-sm text-muted-foreground">{repo.clone_url}</p>
         </div>
         <div className="text-right text-sm text-muted-foreground">
-          <div>Profile: {repo.runner_profile_slug}</div>
           <div>Default branch: {repo.default_branch}</div>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
+      <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
         <RepoMetric
           label="Compatibility"
           value={
@@ -124,13 +95,12 @@ export function RepoListItem({ repo }: { repo: Repo }) {
           }
         />
         <RepoMetric label="Last scanned" value={shortSHA(repo.last_scanned_sha)} />
-        <RepoMetric label="Active golden" value={shortID(repo.active_golden_generation_id)} />
-        <RepoMetric label="Last ready" value={shortSHA(repo.last_ready_sha)} />
+        <RepoMetric label="Default branch" value={repo.default_branch} />
       </div>
 
       {repo.last_error || issues.length > 0 ? (
         <div className="mt-4 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-          {repo.last_error ? repo.last_error : `${issues.length} workflow issue(s) need attention`}
+          {repo.last_error ? repo.last_error : `${issues.length} scan issue(s) need attention`}
         </div>
       ) : null}
     </Link>
@@ -143,34 +113,16 @@ export function RepoCompatibilityPanel({
   summary: RepoCompatibilitySummary | undefined;
 }) {
   const issues = summary?.issues ?? [];
-  const labels = summary?.unsupported_labels ?? [];
-  const paths = summary?.workflow_paths ?? [];
+  const mode = summary?.mode === "metadata_only" ? "Metadata only" : (summary?.mode ?? "--");
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-semibold">Workflow Compatibility</h2>
+      <h2 className="text-lg font-semibold">Repository Scan</h2>
       <div className="space-y-4 rounded-lg border border-border p-4">
-        <div className="grid gap-4 text-sm md:grid-cols-3">
-          <RepoMetric label="Workflows" value={paths.length > 0 ? String(paths.length) : "0"} />
-          <RepoMetric
-            label="Unsupported labels"
-            value={labels.length > 0 ? labels.join(", ") : "none"}
-          />
+        <div className="grid gap-4 text-sm md:grid-cols-2">
+          <RepoMetric label="Mode" value={mode} />
           <RepoMetric label="Issues" value={issues.length > 0 ? String(issues.length) : "0"} />
         </div>
-
-        {paths.length > 0 ? (
-          <div>
-            <h3 className="mb-2 text-sm font-medium">Workflow files</h3>
-            <div className="flex flex-wrap gap-2">
-              {paths.map((path) => (
-                <code key={path} className="rounded bg-muted px-2 py-1 text-xs">
-                  {path}
-                </code>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         {issues.length > 0 ? (
           <div className="space-y-2">
@@ -181,7 +133,7 @@ export function RepoCompatibilityPanel({
                 className="rounded-md border border-border p-3 text-sm"
               >
                 <div className="font-medium">
-                  {issue.path || "workflow"} {issue.job_id ? `· ${issue.job_id}` : ""}
+                  {issue.path || "repo scan"} {issue.job_id ? `· ${issue.job_id}` : ""}
                 </div>
                 <div className="mt-1 text-muted-foreground">
                   {issue.reason}
@@ -212,9 +164,4 @@ export function RepoCompatibilityPanel({
 export function shortSHA(value?: string): string {
   if (!value) return "--";
   return value.slice(0, 12);
-}
-
-export function shortID(value?: string): string {
-  if (!value) return "--";
-  return value.slice(0, 8);
 }

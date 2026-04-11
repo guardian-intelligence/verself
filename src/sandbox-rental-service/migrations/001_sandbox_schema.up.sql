@@ -5,7 +5,6 @@ DROP TABLE IF EXISTS execution_logs;
 DROP TABLE IF EXISTS execution_billing_windows;
 DROP TABLE IF EXISTS execution_attempts;
 DROP TABLE IF EXISTS executions;
-DROP TABLE IF EXISTS golden_generations CASCADE;
 DROP TABLE IF EXISTS webhook_deliveries;
 DROP TABLE IF EXISTS webhook_endpoint_secrets;
 DROP TABLE IF EXISTS webhook_endpoints;
@@ -50,15 +49,11 @@ CREATE TABLE repos (
     full_name                   TEXT        NOT NULL,
     clone_url                   TEXT        NOT NULL,
     default_branch              TEXT        NOT NULL DEFAULT 'main',
-    runner_profile_slug         TEXT        NOT NULL DEFAULT 'forge-metal',
     state                       TEXT        NOT NULL CHECK (
         state IN (
             'importing',
             'action_required',
-            'waiting_for_bootstrap',
-            'preparing',
             'ready',
-            'degraded',
             'failed',
             'archived'
         )
@@ -66,8 +61,6 @@ CREATE TABLE repos (
     compatibility_status        TEXT        NOT NULL DEFAULT '',
     compatibility_summary       JSONB       NOT NULL DEFAULT '{}'::jsonb,
     last_scanned_sha            TEXT        NOT NULL DEFAULT '',
-    active_golden_generation_id UUID,
-    last_ready_sha              TEXT        NOT NULL DEFAULT '',
     last_error                  TEXT        NOT NULL DEFAULT '',
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -165,7 +158,6 @@ CREATE TABLE executions (
     correlation_id     TEXT        NOT NULL DEFAULT '',
     idempotency_key    TEXT,
     repo_id            UUID        REFERENCES repos(repo_id) ON DELETE SET NULL,
-    golden_generation_id UUID,
     repo               TEXT        NOT NULL DEFAULT '',
     repo_url           TEXT        NOT NULL DEFAULT '',
     ref                TEXT        NOT NULL DEFAULT '',
@@ -189,7 +181,6 @@ CREATE INDEX idx_executions_org_updated_at ON executions (org_id, updated_at DES
 CREATE INDEX idx_executions_status ON executions (status);
 CREATE INDEX idx_executions_correlation_id ON executions (correlation_id) WHERE correlation_id <> '';
 CREATE INDEX idx_executions_repo_id ON executions (repo_id) WHERE repo_id IS NOT NULL;
-CREATE INDEX idx_executions_golden_generation_id ON executions (golden_generation_id) WHERE golden_generation_id IS NOT NULL;
 
 CREATE TABLE execution_attempts (
     attempt_id            UUID        PRIMARY KEY,
@@ -199,7 +190,6 @@ CREATE TABLE execution_attempts (
     orchestrator_job_id   TEXT        NOT NULL DEFAULT '',
     billing_job_id        BIGINT,
     runner_name           TEXT        NOT NULL DEFAULT '',
-    golden_snapshot       TEXT        NOT NULL DEFAULT '',
     failure_reason        TEXT        NOT NULL DEFAULT '',
     exit_code             INTEGER,
     duration_ms           BIGINT,
@@ -243,46 +233,3 @@ CREATE TABLE execution_logs (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (attempt_id, seq)
 );
-
-CREATE TABLE golden_generations (
-    golden_generation_id UUID        PRIMARY KEY,
-    repo_id               UUID        NOT NULL REFERENCES repos(repo_id) ON DELETE CASCADE,
-    runner_profile_slug   TEXT        NOT NULL DEFAULT 'forge-metal',
-    source_ref            TEXT        NOT NULL,
-    source_sha            TEXT        NOT NULL,
-    state                 TEXT        NOT NULL CHECK (
-        state IN ('queued', 'building', 'sanitizing', 'ready', 'failed', 'superseded')
-    ),
-    trigger_reason        TEXT        NOT NULL DEFAULT '',
-    execution_id          UUID        REFERENCES executions(execution_id) ON DELETE SET NULL,
-    attempt_id            UUID        REFERENCES execution_attempts(attempt_id) ON DELETE SET NULL,
-    orchestrator_job_id   TEXT        NOT NULL DEFAULT '',
-    snapshot_ref          TEXT        NOT NULL DEFAULT '',
-    activated_at          TIMESTAMPTZ,
-    superseded_at         TIMESTAMPTZ,
-    failure_reason        TEXT        NOT NULL DEFAULT '',
-    failure_detail        TEXT        NOT NULL DEFAULT '',
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_golden_generations_repo_created_at
-    ON golden_generations (repo_id, runner_profile_slug, created_at DESC);
-CREATE INDEX idx_golden_generations_execution_id
-    ON golden_generations (execution_id)
-    WHERE execution_id IS NOT NULL;
-CREATE UNIQUE INDEX idx_golden_generations_active
-    ON golden_generations (repo_id, runner_profile_slug)
-    WHERE activated_at IS NOT NULL AND superseded_at IS NULL;
-
-ALTER TABLE repos
-    ADD CONSTRAINT repos_active_golden_generation_id_fkey
-    FOREIGN KEY (active_golden_generation_id)
-    REFERENCES golden_generations(golden_generation_id)
-    ON DELETE SET NULL;
-
-ALTER TABLE executions
-    ADD CONSTRAINT executions_golden_generation_id_fkey
-    FOREIGN KEY (golden_generation_id)
-    REFERENCES golden_generations(golden_generation_id)
-    ON DELETE SET NULL;

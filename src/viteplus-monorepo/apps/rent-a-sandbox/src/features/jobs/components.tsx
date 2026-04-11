@@ -11,11 +11,7 @@ import { formatDateTimeUTC } from "~/lib/format";
 import { formatExecutionRepo, useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
-import {
-  DEFAULT_EXECUTION_REF,
-  validateExecutionRef,
-  validateExecutionRepoUrl,
-} from "./validation";
+import { DEFAULT_RUN_COMMAND, validateRunCommand } from "./validation";
 import { useCreateExecutionMutation, type CreateExecutionResult } from "./mutations";
 
 export function ExecutionListPanel({ orgId }: { orgId: string }) {
@@ -109,14 +105,12 @@ export function ExecutionSubmissionForm({
   const mutation = useCreateExecutionMutation({ onSuccess });
   const form = useForm({
     defaultValues: {
-      repoUrl: "",
-      ref: DEFAULT_EXECUTION_REF,
+      runCommand: DEFAULT_RUN_COMMAND,
     },
     onSubmit: async ({ value }) => {
       mutation.reset();
       await mutation.mutateAsync({
-        repo_url: value.repoUrl,
-        ref: value.ref,
+        run_command: value.runCommand,
       });
     },
   });
@@ -131,51 +125,23 @@ export function ExecutionSubmissionForm({
       className="max-w-md space-y-4"
     >
       <form.Field
-        name="repoUrl"
+        name="runCommand"
         validators={{
-          onChange: ({ value }) => validateExecutionRepoUrl(value),
+          onChange: ({ value }) => validateRunCommand(value),
         }}
       >
         {(field) => (
           <div>
             <label htmlFor={field.name} className="text-sm font-medium">
-              Repository URL
+              Run command
             </label>
-            <input
+            <textarea
               id={field.name}
-              type="text"
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="https://git.example.com/acme/repo.git"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
-              <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
-            ) : null}
-          </div>
-        )}
-      </form.Field>
-
-      <form.Field
-        name="ref"
-        validators={{
-          onChange: ({ value }) => validateExecutionRef(value),
-        }}
-      >
-        {(field) => (
-          <div>
-            <label htmlFor={field.name} className="text-sm font-medium">
-              Ref
-            </label>
-            <input
-              id={field.name}
-              type="text"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={(e) => field.handleChange(e.target.value)}
-              placeholder="refs/heads/main"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+              rows={4}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
               <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>

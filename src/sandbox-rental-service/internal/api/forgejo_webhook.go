@@ -70,15 +70,11 @@ type webhookIngestResponse struct {
 }
 
 type forgejoWebhookResponse struct {
-	Status               string `json:"status"`
-	Event                string `json:"event"`
-	DeliveryID           string `json:"delivery_id"`
-	RepoID               string `json:"repo_id,omitempty"`
-	ExecutionID          string `json:"execution_id,omitempty"`
-	AttemptID            string `json:"attempt_id,omitempty"`
-	BootstrapExecutionID string `json:"bootstrap_execution_id,omitempty"`
-	BootstrapAttemptID   string `json:"bootstrap_attempt_id,omitempty"`
-	Message              string `json:"message,omitempty"`
+	Status     string `json:"status"`
+	Event      string `json:"event"`
+	DeliveryID string `json:"delivery_id"`
+	RepoID     string `json:"repo_id,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type webhookDeliveryOutcome struct {
@@ -339,52 +335,20 @@ func handleForgejoPush(
 
 	defaultBranchRef := "refs/heads/" + repo.DefaultBranch
 	if strings.TrimSpace(payload.Ref) == defaultBranchRef {
-		refreshedRepo := repo
 		if refreshed, rescanErr := svc.RescanRepo(ctx, delivery.OrgID, repo.RepoID); rescanErr != nil {
 			return forgejoWebhookResponse{}, fmt.Errorf("rescan repo for default branch push: %w", rescanErr)
 		} else {
-			refreshedRepo = refreshed
-		}
-		if refreshedRepo.LastReadySHA != strings.TrimSpace(payload.After) {
-			bootstrap, bootstrapErr := svc.QueueRepoBootstrap(ctx, delivery.OrgID, webhookActorID, refreshedRepo.RepoID, jobs.GenerationTriggerDefaultBranchPush)
-			if bootstrapErr != nil && !errors.Is(bootstrapErr, jobs.ErrRepoNotReady) {
-				return forgejoWebhookResponse{}, fmt.Errorf("queue repo bootstrap: %w", bootstrapErr)
-			}
-			if bootstrap != nil {
-				response.BootstrapExecutionID = bootstrap.ExecutionID.String()
-				response.BootstrapAttemptID = bootstrap.AttemptID.String()
-			}
-			repo = refreshedRepo
+			repo = refreshed
 		}
 	}
 
-	if repo.State != jobs.RepoStateReady && repo.State != jobs.RepoStateDegraded {
+	if repo.State != jobs.RepoStateReady {
 		response.Status = "repo_not_ready"
-		response.Message = "repo is not ready for forgejo runner execution"
+		response.Message = "repo metadata updated; repo is not compatible"
 		return response, nil
 	}
 
-	executionID, attemptID, err := svc.Submit(ctx, delivery.OrgID, webhookActorID, jobs.SubmitRequest{
-		Kind:            jobs.KindForgejoRunner,
-		ProductID:       "sandbox",
-		Provider:        jobs.WebhookProviderForgejo,
-		IdempotencyKey:  forgejoWebhookIdempotencyKey(delivery.EndpointID, "push", delivery.ProviderDeliveryID),
-		RepoID:          repo.RepoID.String(),
-		Ref:             strings.TrimSpace(payload.Ref),
-		ProviderRunID:   delivery.ProviderDeliveryID,
-		ProviderJobID:   strings.TrimPrefix(strings.TrimSpace(payload.Ref), "refs/"),
-		WorkflowJobName: "push",
-	})
-	if err != nil {
-		if errors.Is(err, jobs.ErrRepoNotReady) {
-			response.Status = "repo_not_ready"
-			response.Message = "repo is not ready for forgejo runner execution"
-			return response, nil
-		}
-		return forgejoWebhookResponse{}, fmt.Errorf("submit forgejo runner execution: %w", err)
-	}
-	response.ExecutionID = executionID.String()
-	response.AttemptID = attemptID.String()
+	response.Message = "repo metadata updated; execution runner is disabled"
 	return response, nil
 }
 
@@ -405,37 +369,13 @@ func handleForgejoPullRequest(
 		DeliveryID: delivery.ProviderDeliveryID,
 		RepoID:     repo.RepoID.String(),
 	}
-	if repo.State != jobs.RepoStateReady && repo.State != jobs.RepoStateDegraded {
+	if repo.State != jobs.RepoStateReady {
 		response.Status = "repo_not_ready"
-		response.Message = "repo is not ready for forgejo runner execution"
+		response.Message = "repo metadata updated; repo is not compatible"
 		return response, nil
 	}
 
-	ref := fmt.Sprintf("refs/pull/%d/head", payload.Number)
-	if payload.Number <= 0 && strings.TrimSpace(payload.PullRequest.Head.Ref) != "" {
-		ref = strings.TrimSpace(payload.PullRequest.Head.Ref)
-	}
-	executionID, attemptID, err := svc.Submit(ctx, delivery.OrgID, webhookActorID, jobs.SubmitRequest{
-		Kind:            jobs.KindForgejoRunner,
-		ProductID:       "sandbox",
-		Provider:        jobs.WebhookProviderForgejo,
-		IdempotencyKey:  forgejoWebhookIdempotencyKey(delivery.EndpointID, "pull_request", delivery.ProviderDeliveryID),
-		RepoID:          repo.RepoID.String(),
-		Ref:             ref,
-		ProviderRunID:   delivery.ProviderDeliveryID,
-		ProviderJobID:   fmt.Sprintf("pr-%d", payload.Number),
-		WorkflowJobName: "pull_request",
-	})
-	if err != nil {
-		if errors.Is(err, jobs.ErrRepoNotReady) {
-			response.Status = "repo_not_ready"
-			response.Message = "repo is not ready for forgejo runner execution"
-			return response, nil
-		}
-		return forgejoWebhookResponse{}, fmt.Errorf("submit forgejo runner execution: %w", err)
-	}
-	response.ExecutionID = executionID.String()
-	response.AttemptID = attemptID.String()
+	response.Message = "repo metadata updated; execution runner is disabled"
 	return response, nil
 }
 
@@ -498,15 +438,6 @@ func validWebhookSignatureForSecret(secret string, body []byte, provided string)
 	expected := make([]byte, hex.EncodedLen(mac.Size()))
 	hex.Encode(expected, mac.Sum(nil))
 	return hmac.Equal([]byte(provided), expected)
-}
-
-func forgejoWebhookIdempotencyKey(endpointID uuid.UUID, eventType, deliveryID string) string {
-	return strings.Join([]string{
-		"forgejo-webhook",
-		endpointID.String(),
-		strings.TrimSpace(eventType),
-		strings.TrimSpace(deliveryID),
-	}, ":")
 }
 
 func traceIDFromContext(ctx context.Context) string {

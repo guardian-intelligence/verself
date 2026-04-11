@@ -15,5 +15,5 @@ var (
 	ErrNoDefaultPlan         = errors.New("billing: no default plan")
 	ErrDimensionMismatch     = errors.New("billing: allocation dimension missing from rate card")
 	ErrPendingTransferExpired = errors.New("billing: pending transfer expired")
-	ErrSubscriptionUnsupported = errors.New("billing: subscription checkout not supported in rewritten service")
+	ErrNoStripeCustomer = errors.New("billing: org has no stripe customer")
 )

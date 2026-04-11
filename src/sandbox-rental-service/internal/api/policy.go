@@ -34,11 +34,15 @@ const (
 	roleSandboxOrgAdmin  = "sandbox_org_admin"
 	roleSandboxOrgMember = "sandbox_org_member"
 
-	idempotencyProviderRepoID   = "provider_repo_id"
 	idempotencyRequestBodyKey   = "request_body_idempotency_key"
 	idempotencyHeaderKey        = "idempotency_key_header"
 	maxIdempotencyKeyLength     = 128
 	rateLimiterMaxWindowEntries = 10000
+
+	bodyLimitNoBody        int64 = 1024
+	bodyLimitSmallJSON     int64 = 8 << 10
+	bodyLimitRepoImport    int64 = 32 << 10
+	bodyLimitExecutionPost int64 = 64 << 10
 )
 
 type operationPolicy struct {
@@ -49,162 +53,16 @@ type operationPolicy struct {
 	RateLimitClass string
 	Idempotency    string
 	AuditEvent     string
+	BodyLimitBytes int64
 }
 
-var publicAPIOperationPolicies = map[string]operationPolicy{
-	"import-repo": {
-		Permission:     permissionRepoWrite,
-		Resource:       "repo",
-		Action:         "import",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "repo_mutation",
-		Idempotency:    idempotencyProviderRepoID,
-		AuditEvent:     "sandbox.repo.import",
-	},
-	"list-repos": {
-		Permission:     permissionRepoRead,
-		Resource:       "repo",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.repo.list",
-	},
-	"get-repo": {
-		Permission:     permissionRepoRead,
-		Resource:       "repo",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.repo.read",
-	},
-	"rescan-repo": {
-		Permission:     permissionRepoWrite,
-		Resource:       "repo",
-		Action:         "rescan",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "repo_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.repo.rescan",
-	},
-	"list-repo-generations": {
-		Permission:     permissionRepoRead,
-		Resource:       "repo_generation",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.repo_generation.list",
-	},
-	"refresh-repo": {
-		Permission:     permissionRepoWrite,
-		Resource:       "repo",
-		Action:         "refresh",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "repo_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.repo.refresh",
-	},
-	"create-webhook-endpoint": {
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.create",
-	},
-	"list-webhook-endpoints": {
-		Permission:     permissionWebhookRead,
-		Resource:       "webhook_endpoint",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.webhook_endpoint.list",
-	},
-	"rotate-webhook-endpoint-secret": {
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint_secret",
-		Action:         "rotate",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.secret.rotate",
-	},
-	"delete-webhook-endpoint": {
-		Permission:     permissionWebhookWrite,
-		Resource:       "webhook_endpoint",
-		Action:         "delete",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "webhook_endpoint_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "sandbox.webhook_endpoint.delete",
-	},
-	"submit-execution": {
-		Permission:     permissionExecutionSubmit,
-		Resource:       "execution",
-		Action:         "submit",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "execution_submit",
-		Idempotency:    idempotencyRequestBodyKey,
-		AuditEvent:     "sandbox.execution.submit",
-	},
-	"get-execution": {
-		Permission:     permissionExecutionRead,
-		Resource:       "execution",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "sandbox.execution.read",
-	},
-	"get-execution-logs": {
-		Permission:     permissionLogsRead,
-		Resource:       "execution_logs",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "logs_read",
-		AuditEvent:     "sandbox.execution.logs.read",
-	},
-	"get-billing-balance": {
-		Permission:     permissionBillingRead,
-		Resource:       "billing_balance",
-		Action:         "read",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "billing.balance.read",
-	},
-	"list-billing-subscriptions": {
-		Permission:     permissionBillingRead,
-		Resource:       "billing_subscription",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "billing.subscription.list",
-	},
-	"list-billing-grants": {
-		Permission:     permissionBillingRead,
-		Resource:       "billing_grant",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "billing.grant.list",
-	},
-	"create-billing-checkout": {
-		Permission:     permissionBillingCheckout,
-		Resource:       "billing_checkout",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "billing_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "billing.checkout.create",
-	},
-	"create-billing-subscription": {
-		Permission:     permissionBillingCheckout,
-		Resource:       "billing_subscription_checkout",
-		Action:         "create",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "billing_mutation",
-		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "billing.subscription_checkout.create",
-	},
+type securedOperation struct {
+	Operation huma.Operation
+	Policy    operationPolicy
+}
+
+func secured(op huma.Operation, policy operationPolicy) securedOperation {
+	return securedOperation{Operation: op, Policy: policy}
 }
 
 var rolePermissionBundles = map[string][]permission{
@@ -228,10 +86,14 @@ var rolePermissionBundles = map[string][]permission{
 	},
 }
 
-func registerSecured[I, O any](api huma.API, op huma.Operation, handler func(context.Context, *I) (*O, error)) {
-	policy, ok := publicAPIOperationPolicies[op.OperationID]
-	if !ok {
-		panic("missing IAM policy for operation: " + op.OperationID)
+func registerSecured[I, O any](api huma.API, securedOp securedOperation, handler func(context.Context, *I) (*O, error)) {
+	op := securedOp.Operation
+	policy := securedOp.Policy
+	if op.OperationID == "" {
+		panic("missing operation ID for secured public API route")
+	}
+	if !strings.HasPrefix(op.Path, "/api/") {
+		panic("secured public API route must live under /api/: " + op.OperationID)
 	}
 	op = withOperationPolicy(op, policy)
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
@@ -255,8 +117,33 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.Permission == "" {
 		panic("empty IAM permission for operation: " + op.OperationID)
 	}
+	if policy.Resource == "" {
+		panic("empty IAM resource for operation: " + op.OperationID)
+	}
+	if policy.Action == "" {
+		panic("empty IAM action for operation: " + op.OperationID)
+	}
 	if policy.OrgScope == "" {
 		panic("empty IAM org scope for operation: " + op.OperationID)
+	}
+	if policy.RateLimitClass == "" {
+		panic("empty rate limit class for operation: " + op.OperationID)
+	}
+	if policy.AuditEvent == "" {
+		panic("empty audit event for operation: " + op.OperationID)
+	}
+	if operationRequiresBodyBudget(op) && policy.BodyLimitBytes <= 0 {
+		panic("empty request body limit for mutating operation: " + op.OperationID)
+	}
+	if policy.BodyLimitBytes > 0 {
+		op.MaxBodyBytes = policy.BodyLimitBytes
+	}
+	switch policy.Idempotency {
+	case "", idempotencyRequestBodyKey:
+	case idempotencyHeaderKey:
+		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
+	default:
+		panic("unsupported idempotency policy for operation " + op.OperationID + ": " + policy.Idempotency)
 	}
 	if op.Extensions == nil {
 		op.Extensions = map[string]any{}
@@ -272,9 +159,50 @@ func withOperationPolicy(op huma.Operation, policy operationPolicy) huma.Operati
 	if policy.Idempotency != "" {
 		iam["idempotency"] = policy.Idempotency
 	}
+	if policy.BodyLimitBytes > 0 {
+		iam["request_body_max_bytes"] = policy.BodyLimitBytes
+	}
 	op.Extensions["x-forge-metal-iam"] = iam
 	op.Security = []map[string][]string{{"bearerAuth": {}}}
 	return op
+}
+
+func operationRequiresBodyBudget(op huma.Operation) bool {
+	switch op.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
+	for _, param := range parameters {
+		if param == nil {
+			continue
+		}
+		if strings.EqualFold(param.Name, "Idempotency-Key") && param.In == "header" {
+			param.Required = true
+			return parameters
+		}
+	}
+	return append(parameters, idempotencyKeyHeaderParameter())
+}
+
+func idempotencyKeyHeaderParameter() *huma.Param {
+	minLength := 1
+	maxLength := maxIdempotencyKeyLength
+	return &huma.Param{
+		Name:        "Idempotency-Key",
+		In:          "header",
+		Description: "Stable caller-provided key used to make this mutation retry-safe.",
+		Required:    true,
+		Schema: &huma.Schema{
+			Type:      "string",
+			MinLength: &minLength,
+			MaxLength: &maxLength,
+		},
+	}
 }
 
 func enforceOperationPolicy(ctx context.Context, policy operationPolicy, input any) (*auth.Identity, error) {
@@ -332,8 +260,6 @@ func requireOperationIdempotency(ctx context.Context, policy operationPolicy, in
 		return nil
 	case idempotencyRequestBodyKey:
 		return validateIdempotencyValue(ctx, "idempotency_key", nestedStringField(input, "Body", "IdempotencyKey"))
-	case idempotencyProviderRepoID:
-		return validateIdempotencyValue(ctx, "provider_repo_id", nestedStringField(input, "Body", "ProviderRepoID"))
 	case idempotencyHeaderKey:
 		return validateIdempotencyValue(ctx, "Idempotency-Key", operationRequestInfoFromContext(ctx).IdempotencyKey)
 	default:
@@ -600,15 +526,6 @@ func compactStrings(values []string) []string {
 		previous = value
 	}
 	return out
-}
-
-func publicAPIOperationIDs() []string {
-	ids := make([]string, 0, len(publicAPIOperationPolicies))
-	for operationID := range publicAPIOperationPolicies {
-		ids = append(ids, operationID)
-	}
-	sort.Strings(ids)
-	return ids
 }
 
 func applyPublicAPISecurityScheme(api huma.API) {
