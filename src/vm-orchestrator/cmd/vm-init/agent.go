@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -406,30 +405,19 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	cmd := exec.Command(spec.Path, spec.Args[1:]...)
 	cmd.Dir = spec.WorkDir
 	cmd.Env = spec.Env
+	cmd.Stdout = agentLogWriter{session: s, stream: "stdout"}
+	cmd.Stderr = agentLogWriter{session: s, stream: "stderr"}
 	// Drop customer code to an unprivileged user; vm-init remains the guest root boundary.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:     true,
 		Credential: &syscall.Credential{Uid: runnerUID, Gid: runnerGID},
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0, 0, err
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return 0, 0, err
-	}
 	if err := cmd.Start(); err != nil {
 		return 0, 127, err
 	}
 
 	s.activeChildPID.Store(int64(cmd.Process.Pid))
-
-	var pumpWG sync.WaitGroup
-	pumpWG.Add(2)
-	go s.pumpStream("stdout", stdoutPipe, &pumpWG)
-	go s.pumpStream("stderr", stderrPipe, &pumpWG)
 
 	waitCh := make(chan error, 1)
 	go func() {
@@ -440,7 +428,6 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	for {
 		select {
 		case waitErr = <-waitCh:
-			pumpWG.Wait()
 			s.activeChildPID.Store(0)
 			duration := time.Since(start)
 			exitCode := exitCodeFromWait(waitErr)
@@ -458,7 +445,6 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 			}
 		case err := <-s.errCh:
 			terminateProcessGroup(cmd.Process.Pid)
-			pumpWG.Wait()
 			s.activeChildPID.Store(0)
 			return time.Since(start), exitCodeFromWait(waitErr), err
 		case <-ctx.Done():
@@ -467,30 +453,24 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 	}
 }
 
-func (s *agentSession) pumpStream(stream string, reader io.ReadCloser, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer reader.Close()
+type agentLogWriter struct {
+	session *agentSession
+	stream  string
+}
 
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			chunk := append([]byte(nil), buf[:n]...)
-			switch stream {
-			case "stdout":
-				s.stdoutBytes.Add(uint64(n))
-			case "stderr":
-				s.stderrBytes.Add(uint64(n))
-			}
-			s.sendLogChunk(stream, chunk)
-		}
-		if err != nil {
-			if err != io.EOF {
-				s.sendLogString("system", fmt.Sprintf("[init] stream %s error: %v\n", stream, err))
-			}
-			return
-		}
+func (w agentLogWriter) Write(data []byte) (int, error) {
+	if len(data) == 0 {
+		return 0, nil
 	}
+	chunk := append([]byte(nil), data...)
+	switch w.stream {
+	case "stdout":
+		w.session.stdoutBytes.Add(uint64(len(data)))
+	case "stderr":
+		w.session.stderrBytes.Add(uint64(len(data)))
+	}
+	w.session.sendLogChunk(w.stream, chunk)
+	return len(data), nil
 }
 
 func terminateProcessGroup(pid int) {
