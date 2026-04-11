@@ -247,6 +247,71 @@ service accounts:
   fetching the client-credentials token.
 - Delete or rotate the seed credential when it is no longer needed.
 
+## API Credential Model
+
+Customer API credentials are Forge Metal product resources backed by Zitadel
+service accounts. They are not git-provider credentials, webhook secrets, or
+human browser sessions. The durable Forge Metal resource is readable as
+metadata; secret material is returned only on creation or roll and must never be
+read back later.
+
+The researched Zitadel pattern is:
+
+- Service accounts are the machine identity model for backend/API access. They
+  provide separate audit identity, independent lifecycle, and least-privilege
+  role assignment for non-human callers.
+- Service-account access tokens presented to Forge Metal services must be JWTs.
+  A newly created Zitadel machine user must be configured for JWT access tokens;
+  opaque tokens fail local JWKS verification.
+- Private-key JWT is the default customer credential method because callers
+  exchange a short-lived signed assertion for a short-lived access token.
+  Client credentials are acceptable as the lower-friction CI/CD option when a
+  customer needs a client ID and secret in a provider secret store.
+- Personal access tokens are not the default customer-facing product API key.
+  They are long-lived bearer tokens for service accounts and should remain an
+  internal, demo, or explicit escape-hatch path only.
+
+`identity-service` owns the customer API credential lifecycle:
+
+- Create a Zitadel service account in the customer organization, or attach a new
+  credential to an existing Forge Metal-managed service account.
+- Store Forge Metal metadata: `credential_id`, `org_id`, Zitadel subject ID,
+  display name, status, policy version at issue, auth method, key or secret
+  fingerprint, created/updated/revoked timestamps, last-used telemetry, and the
+  exact allowed operation permissions.
+- List and read metadata without secret material.
+- Roll by adding a new key or client secret, returning the new secret material
+  once, and retiring the old material after a short grace window when configured.
+- Revoke by disabling/removing the Zitadel credential and marking the Forge
+  Metal credential row revoked.
+
+Issuance and roll must validate every requested permission against the current
+service-declared operation catalog and against the creating principal's
+effective permissions. A caller cannot mint a credential with permissions they
+do not currently hold. Credential scopes are exact operation permissions such as
+`sandbox:execution:submit`, `sandbox:repo:write`, `sandbox:logs:read`,
+`billing:read`, and future CI operations such as `ci:workflow:dispatch`.
+
+Token minting uses a Zitadel pre-access-token Action. The Action appends
+`forge_metal:credential_id` and an exact `permissions` claim from Forge
+Metal-owned credential metadata. It must not embed full Forge Metal policy
+documents into the token. If the Action cannot resolve an active credential or
+exact permission set, the token must not receive Forge Metal direct-permission
+claims; services already fail closed because direct permission scopes are only
+accepted when `forge_metal:credential_id` is present.
+
+Product services must continue to verify issuer, signature, expiration, and
+audience, but audience is not authorization. Zitadel can place requested
+audience values into tokens; services must still require either a target-project
+role assignment mapped through product policy or a Forge Metal API credential
+marker plus exact operation permission. Human OAuth scopes are not product
+permission grants.
+
+Revocation is not instant for already-issued JWTs when services validate tokens
+locally through JWKS. Keep API credential access-token lifetimes short. Add
+token introspection or a credential denylist only if live rehearsal shows the
+revocation window is unacceptable for customer-facing usage.
+
 ## Seeded Rehearsal Personas
 
 `seed-system.yml` provisions three long-lived rehearsal personas for operators
@@ -339,6 +404,9 @@ programmatically.
   Metal-owned state.
 - Private external-provider access tokens and deploy keys are integration
   secrets, not user sessions and not Zitadel role assignments.
+- Customer API credentials are Forge Metal-managed Zitadel service-account
+  credentials. Secret material is visible only at creation/roll; metadata
+  remains readable for audit, rotation, and revocation.
 
 ## Current Limitations
 
@@ -356,6 +424,9 @@ programmatically.
   Stalwart-owned.
 - The single-node JWKS loopback path is not the three-node design. Remote
   Zitadel requires topology-aware JWKS discovery and service egress policy.
+- Customer API credential tables exist, and services recognize
+  `forge_metal:credential_id`, but the create/list/read/roll/revoke lifecycle
+  and Zitadel pre-access-token Action are not implemented yet.
 
 ## Source Notes
 
@@ -400,3 +471,28 @@ from product organization management:
 Zitadel Actions can customize behavior such as role assignment after external
 identity-provider registration:
 <https://zitadel.com/docs/guides/manage/customize/behavior>
+
+Zitadel service accounts are the recommended machine identity model. They
+support private-key JWT, client credentials, and personal access tokens; the
+Zitadel guidance recommends private-key JWT for most service-account scenarios
+and treats PATs as convenient but long-lived bearer tokens:
+<https://zitadel.com/docs/guides/integrate/service-accounts/authenticate-service-accounts>
+
+Zitadel machine users must be configured for JWT access tokens when Forge Metal
+services validate tokens locally through JWKS:
+<https://zitadel.com/docs/reference/api/user/zitadel.user.v2.UserService.CreateUser>
+
+Zitadel's user API supports machine-user keys that are returned once and can be
+removed by key ID, matching the Forge Metal "secret visible only on create/roll"
+credential contract:
+<https://zitadel.com/docs/reference/api/user/zitadel.user.v2.UserService.AddKey>
+<https://zitadel.com/docs/reference/api/user/zitadel.user.v2.UserService.RemoveKey>
+
+Zitadel's audience guidance says `aud` must not be the only authorization check;
+services still need roles, scopes, or custom claims:
+<https://help.zitadel.com/security-best-practices-validating-audience-aud-claims-in-zitadel-access-tokens>
+
+Zitadel Actions can append permission claims during pre-access-token issuance.
+Forge Metal uses that as the mechanism for `forge_metal:credential_id` plus
+exact API credential permissions, not as a place to store full product policy:
+<https://help.zitadel.com/extend-authorization-in-zitadel-with-organization-metadata-preaccesstoken-action->

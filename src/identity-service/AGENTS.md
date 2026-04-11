@@ -87,6 +87,29 @@ that a currently issued access token immediately reflects a role update; product
 flows must either use fresh tokens where needed or tolerate the token-refresh
 boundary explicitly.
 
+## API Credentials
+
+Customer API credentials are Forge Metal-managed Zitadel service-account
+credentials. `identity-service` owns the create/list/read-metadata/roll/revoke
+surface, but product services remain the runtime authorization enforcement
+points.
+
+Default to private-key JWT credentials. Client credentials are acceptable when a
+customer needs a simpler CI/CD secret shape. Do not make personal access tokens
+the default customer-facing API key; they are long-lived bearer tokens and should
+remain an internal, demo, or explicit escape-hatch path.
+
+Secret material is visible only when created or rolled. Read/list APIs return
+metadata such as display name, status, auth method, key or secret fingerprint,
+exact operation permissions, created/revoked timestamps, and last-used
+telemetry. Never persist or return plaintext customer credential secrets.
+
+Use a Zitadel pre-access-token Action to append `forge_metal:credential_id` and
+the exact Forge Metal operation permissions granted to the active credential.
+Do not embed full Forge Metal policy documents into Zitadel tokens. Issuance and
+roll must reject any requested permission that is not in a service-declared
+operation catalog or is not held by the creating principal.
+
 ## Observability And Security
 
 Public errors should be stable problem responses with trace-backed instances and
