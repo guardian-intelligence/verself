@@ -1,21 +1,16 @@
 import { createFileRoute, Outlet, Link, redirect } from "@tanstack/react-router";
-import { getViewer } from "~/server-fns/auth";
+import { anonymousAuth, requireAuth } from "@forge-metal/auth-web/isomorphic";
 
 export const Route = createFileRoute("/editor")({
   ssr: "data-only",
-  beforeLoad: async ({ location }) => {
-    const viewer = await getViewer();
-    if (!viewer) {
-      throw redirect({
-        to: "/login",
-        search: { redirect: location.href },
-      });
-    }
-    if (!viewer.roles.includes("letters_admin")) {
+  beforeLoad: ({ context, location }) => {
+    const auth = requireAuth(context?.auth ?? anonymousAuth, location.href);
+    if (!auth.roles.includes("letters_admin")) {
       throw redirect({
         to: "/",
       });
     }
+    return { auth };
   },
   component: EditorLayout,
 });

@@ -79,7 +79,7 @@ async function resolveAuthContext(
     import("@forge-metal/auth-web/server"),
     import("../server/auth"),
   ]);
-  const auth = await getAuthSession(await getAuthConfig());
+  const auth = await getAuthSession(getAuthConfig());
   if (!auth) {
     throw new Error("Authentication required");
   }
