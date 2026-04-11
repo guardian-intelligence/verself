@@ -272,7 +272,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 	expiresAt := c.clock().UTC().AddDate(1, 0, 0)
 	_, err = c.DepositCredits(ctx, CreditGrant{
 		OrgID:             OrgID(orgID),
-		ProductID:         productID,
+		ScopeType:         GrantScopeAccount,
 		Amount:            ledgerUnits,
 		Source:            "purchase",
 		StripeReferenceID: paymentIntentID,
@@ -636,8 +636,9 @@ func (c *Client) depositSubscriptionEntitlements(ctx context.Context, state stri
 		}
 		_, err := c.DepositCredits(ctx, CreditGrant{
 			OrgID:             OrgID(orgID),
-			ProductID:         state.ProductID,
-			BucketID:          bucketID,
+			ScopeType:         GrantScopeBucket,
+			ScopeProductID:    state.ProductID,
+			ScopeBucketID:     bucketID,
 			Amount:            amount,
 			Source:            "subscription",
 			StripeReferenceID: invoiceID,

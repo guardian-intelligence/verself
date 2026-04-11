@@ -216,13 +216,14 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 	out := make([]GrantResponse, 0, len(grants))
 	for _, grant := range grants {
 		out = append(out, GrantResponse{
-			GrantID:   grant.GrantID.String(),
-			ProductID: grant.ProductID,
-			BucketID:  grant.BucketID,
-			Source:    grant.Source.String(),
-			Available: apiwire.Uint64(grant.Available),
-			Pending:   apiwire.Uint64(grant.Pending),
-			ExpiresAt: grant.ExpiresAt,
+			GrantID:        grant.GrantID.String(),
+			ScopeType:      grant.ScopeType.String(),
+			ScopeProductID: grant.ScopeProductID,
+			ScopeBucketID:  grant.ScopeBucketID,
+			Source:         grant.Source.String(),
+			Available:      apiwire.Uint64(grant.Available),
+			Pending:        apiwire.Uint64(grant.Pending),
+			ExpiresAt:      grant.ExpiresAt,
 		})
 	}
 	return &body[GrantsResponse]{Body: GrantsResponse{Grants: out}}, nil

@@ -20,11 +20,12 @@ export type BillingBalance = {
 
 export type BillingGrant = {
   available: string;
-  bucket_id: string;
   expires_at?: string;
   grant_id: string;
   pending: string;
-  product_id: string;
+  scope_bucket_id: string;
+  scope_product_id: string;
+  scope_type: string;
   source: string;
 };
 

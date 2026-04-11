@@ -117,7 +117,7 @@ function BillingPage() {
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left px-4 py-2 font-medium">Source</th>
-                <th className="text-left px-4 py-2 font-medium">Bucket</th>
+                <th className="text-left px-4 py-2 font-medium">Scope</th>
                 <th className="text-left px-4 py-2 font-medium">Available</th>
                 <th className="text-left px-4 py-2 font-medium">Pending</th>
                 <th className="text-left px-4 py-2 font-medium">Expires</th>
@@ -128,7 +128,7 @@ function BillingPage() {
                 grantRows.map((grant) => (
                   <tr key={grant.grant_id}>
                     <td className="px-4 py-2">{grant.source}</td>
-                    <td className="px-4 py-2">{`${grant.product_id}/${grant.bucket_id}`}</td>
+                    <td className="px-4 py-2">{formatGrantScope(grant)}</td>
                     <td className="px-4 py-2 font-mono">{formatInteger(grant.available)}</td>
                     <td className="px-4 py-2 font-mono">{formatInteger(grant.pending)}</td>
                     <td className="px-4 py-2 text-muted-foreground">
@@ -149,4 +149,21 @@ function BillingPage() {
       </section>
     </div>
   );
+}
+
+function formatGrantScope(grant: {
+  scope_type: string;
+  scope_product_id: string;
+  scope_bucket_id: string;
+}) {
+  switch (grant.scope_type) {
+    case "account":
+      return "Account";
+    case "product":
+      return `${grant.scope_product_id} / all buckets`;
+    case "bucket":
+      return `${grant.scope_product_id} / ${grant.scope_bucket_id}`;
+    default:
+      return grant.scope_type;
+  }
 }

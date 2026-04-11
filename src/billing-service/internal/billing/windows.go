@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -104,7 +105,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		return WindowReservation{}, err
 	}
 	rateContext.PlanID = config.PlanID
-	quantity, chargeUnits, bucketChargeUnits, err := c.pickReservationQuantityByBucket(ctx, req.OrgID, req.ProductID, config.ReservePolicy, rateContext.BucketCostPerUnit)
+	quantity, chargeUnits, bucketChargeUnits, err := c.pickReservationQuantityByFunding(ctx, req.OrgID, req.ProductID, config.ReservePolicy, rateContext.BucketCostPerUnit)
 	if err != nil {
 		return WindowReservation{}, err
 	}
@@ -117,7 +118,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	windowStart := c.clock().UTC()
 	expiresAt, renewBy := windowTiming(windowStart, config.ReservePolicy, c.cfg.PendingTimeoutSecs, quantity)
 
-	legs, err := c.reserveBucketFunding(ctx, windowID, req.OrgID, req.ProductID, bucketChargeUnits)
+	legs, err := c.reserveGrantFunding(ctx, windowID, req.OrgID, req.ProductID, bucketChargeUnits)
 	if err != nil {
 		return WindowReservation{}, err
 	}
@@ -271,7 +272,7 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 		return SettleResult{}, fmt.Errorf("writeoff charge units: %w", err)
 	}
 
-	settlements, err := settleFundingLegsByBucket(normalizeFundingLegBuckets(window.FundingLegs, window.ProductID), bucketBilledUnits)
+	settlements, err := settleFundingLegsByBucket(window.FundingLegs, bucketBilledUnits)
 	if err != nil {
 		return SettleResult{}, fmt.Errorf("settle funding allocation: %w", err)
 	}
@@ -494,7 +495,7 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 	}
 	row.ComponentChargeUnits = componentCharges
 	row.BucketChargeUnits = bucketCharges
-	settlements, err := settleFundingLegsByBucket(normalizeFundingLegBuckets(window.FundingLegs, window.ProductID), bucketCharges)
+	settlements, err := settleFundingLegsByBucket(window.FundingLegs, bucketCharges)
 	if err != nil {
 		return MeteringRow{}, err
 	}
@@ -507,27 +508,27 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 		switch leg.Source {
 		case SourceFreeTier:
 			row.FreeTierUnits += amount
-			if err := addMapUint64(row.BucketFreeTierUnits, leg.BucketID, amount); err != nil {
+			if err := addMapUint64(row.BucketFreeTierUnits, leg.ChargeBucketID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		case SourceSubscription:
 			row.SubscriptionUnits += amount
-			if err := addMapUint64(row.BucketSubscriptionUnits, leg.BucketID, amount); err != nil {
+			if err := addMapUint64(row.BucketSubscriptionUnits, leg.ChargeBucketID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		case SourcePurchase:
 			row.PurchaseUnits += amount
-			if err := addMapUint64(row.BucketPurchaseUnits, leg.BucketID, amount); err != nil {
+			if err := addMapUint64(row.BucketPurchaseUnits, leg.ChargeBucketID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		case SourcePromo:
 			row.PromoUnits += amount
-			if err := addMapUint64(row.BucketPromoUnits, leg.BucketID, amount); err != nil {
+			if err := addMapUint64(row.BucketPromoUnits, leg.ChargeBucketID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		case SourceRefund:
 			row.RefundUnits += amount
-			if err := addMapUint64(row.BucketRefundUnits, leg.BucketID, amount); err != nil {
+			if err := addMapUint64(row.BucketRefundUnits, leg.ChargeBucketID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		}
@@ -588,37 +589,25 @@ func (c *Client) loadPlanConfig(ctx context.Context, _ OrgID, productID string) 
 	}, nil
 }
 
-func (c *Client) pickReservationQuantityByBucket(
+func (c *Client) pickReservationQuantityByFunding(
 	ctx context.Context,
 	orgID OrgID,
 	productID string,
 	policy ReservePolicy,
 	bucketCostPerUnit map[string]uint64,
 ) (uint32, uint64, map[string]uint64, error) {
-	availableByBucket := make(map[string]uint64, len(bucketCostPerUnit))
-	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
-		if bucketCostPerUnit[bucketID] == 0 {
-			continue
-		}
-		grants, err := c.listGrantBalancesByBucket(ctx, orgID, productID, bucketID)
-		if err != nil {
-			return 0, 0, nil, err
-		}
-		for _, grant := range grants {
-			available, err := safeAddUint64(availableByBucket[bucketID], grant.Available)
-			if err != nil {
-				return 0, 0, nil, err
-			}
-			availableByBucket[bucketID] = available
-		}
+	grants, err := c.listScopedGrantBalancesForFunding(ctx, orgID, productID)
+	if err != nil {
+		return 0, 0, nil, err
 	}
-	return pickBucketReservationQuantity(policy, bucketCostPerUnit, availableByBucket)
+	return pickBucketReservationQuantity(productID, policy, bucketCostPerUnit, grants)
 }
 
 func pickBucketReservationQuantity(
+	productID string,
 	policy ReservePolicy,
 	bucketCostPerUnit map[string]uint64,
-	availableByBucket map[string]uint64,
+	grants []scopedGrantBalance,
 ) (uint32, uint64, map[string]uint64, error) {
 	if policy.TargetQuantity == 0 {
 		return 0, 0, nil, fmt.Errorf("reserve policy target_quantity is required")
@@ -628,31 +617,37 @@ func pickBucketReservationQuantity(
 		minQuantity = policy.TargetQuantity
 	}
 
-	quantity := policy.TargetQuantity
-	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
-		costPerUnit := bucketCostPerUnit[bucketID]
-		if costPerUnit == 0 {
-			continue
-		}
-		targetChargeUnits, err := safeMulUint64(uint64(policy.TargetQuantity), costPerUnit)
-		if err != nil {
-			return 0, 0, nil, err
-		}
-		if availableByBucket[bucketID] >= targetChargeUnits {
-			continue
-		}
-		if !policy.AllowPartialReserve {
-			return 0, 0, nil, ErrInsufficientBalance
-		}
-		affordableQuantity := uint32(availableByBucket[bucketID] / costPerUnit)
-		if affordableQuantity < quantity {
-			quantity = affordableQuantity
-		}
-	}
-	if quantity < minQuantity {
-		return 0, 0, nil, ErrInsufficientBalance
+	if !policy.AllowPartialReserve {
+		return fundedReservationQuantity(productID, policy.TargetQuantity, bucketCostPerUnit, grants)
 	}
 
+	var bestQuantity uint32
+	low := minQuantity
+	high := policy.TargetQuantity
+	for low <= high {
+		mid := low + (high-low)/2
+		_, _, _, err := fundedReservationQuantity(productID, mid, bucketCostPerUnit, grants)
+		switch {
+		case err == nil:
+			bestQuantity = mid
+			low = mid + 1
+		case errors.Is(err, ErrInsufficientBalance):
+			if mid == 0 {
+				high = 0
+				continue
+			}
+			high = mid - 1
+		default:
+			return 0, 0, nil, err
+		}
+	}
+	if bestQuantity < minQuantity {
+		return 0, 0, nil, ErrInsufficientBalance
+	}
+	return fundedReservationQuantity(productID, bestQuantity, bucketCostPerUnit, grants)
+}
+
+func fundedReservationQuantity(productID string, quantity uint32, bucketCostPerUnit map[string]uint64, grants []scopedGrantBalance) (uint32, uint64, map[string]uint64, error) {
 	var totalChargeUnits uint64
 	bucketChargeUnits := make(map[string]uint64, len(bucketCostPerUnit))
 	for _, bucketID := range sortedUint64MapKeys(bucketCostPerUnit) {
@@ -669,61 +664,56 @@ func pickBucketReservationQuantity(
 			return 0, 0, nil, err
 		}
 	}
+	if _, err := planGrantFunding(productID, bucketChargeUnits, grants); err != nil {
+		return 0, 0, nil, err
+	}
 	return quantity, totalChargeUnits, bucketChargeUnits, nil
 }
 
-func (c *Client) reserveBucketFunding(
+func (c *Client) reserveGrantFunding(
 	ctx context.Context,
 	windowID string,
 	orgID OrgID,
 	productID string,
 	bucketChargeUnits map[string]uint64,
 ) ([]WindowFundingLeg, error) {
-	legs := make([]WindowFundingLeg, 0, len(bucketChargeUnits))
-	transfers := make([]types.Transfer, 0, len(bucketChargeUnits))
-	for _, bucketID := range sortedUint64MapKeys(bucketChargeUnits) {
-		remaining := bucketChargeUnits[bucketID]
-		if remaining == 0 {
-			continue
+	grants, err := c.listScopedGrantBalancesForFunding(ctx, orgID, productID)
+	if err != nil {
+		return nil, err
+	}
+	planned, err := planGrantFunding(productID, bucketChargeUnits, grants)
+	if err != nil {
+		return nil, err
+	}
+
+	legs := make([]WindowFundingLeg, 0, len(planned))
+	transfers := make([]types.Transfer, 0, len(planned))
+	for _, plannedLeg := range planned {
+		if len(legs) > math.MaxUint8 {
+			return nil, fmt.Errorf("funding legs exceed tigerbeetle transfer id limit")
 		}
-		grants, err := c.listGrantBalancesByBucket(ctx, orgID, productID, bucketID)
-		if err != nil {
-			return nil, err
-		}
-		for _, grant := range grants {
-			if remaining == 0 {
-				break
-			}
-			if grant.Available == 0 {
-				continue
-			}
-			if len(legs) > math.MaxUint8 {
-				return nil, fmt.Errorf("funding legs exceed tigerbeetle transfer id limit")
-			}
-			amount := minUint64(grant.Available, remaining)
-			transferID := WindowTransferID(windowID, uint8(len(legs)), KindReservation)
-			legs = append(legs, WindowFundingLeg{
-				GrantID:    grant.GrantID,
-				TransferID: transferID,
-				BucketID:   bucketID,
-				Amount:     amount,
-				Source:     grant.Source,
-			})
-			transfers = append(transfers, types.Transfer{
-				ID:              transferID.raw,
-				DebitAccountID:  GrantAccountID(grant.GrantID).raw,
-				CreditAccountID: OperatorAccountID(AcctRevenue).raw,
-				Amount:          types.ToUint128(amount),
-				Timeout:         c.cfg.PendingTimeoutSecs,
-				Ledger:          1,
-				Code:            uint16(KindReservation),
-				Flags:           types.TransferFlags{Pending: true}.ToUint16(),
-			})
-			remaining -= amount
-		}
-		if remaining > 0 {
-			return nil, ErrInsufficientBalance
-		}
+		transferID := WindowTransferID(windowID, uint8(len(legs)), KindReservation)
+		legs = append(legs, WindowFundingLeg{
+			GrantID:             plannedLeg.GrantID,
+			TransferID:          transferID,
+			ChargeProductID:     plannedLeg.ChargeProductID,
+			ChargeBucketID:      plannedLeg.ChargeBucketID,
+			Amount:              plannedLeg.AmountUnits,
+			Source:              plannedLeg.Source,
+			GrantScopeType:      plannedLeg.GrantScopeType,
+			GrantScopeProductID: plannedLeg.GrantScopeProductID,
+			GrantScopeBucketID:  plannedLeg.GrantScopeBucketID,
+		})
+		transfers = append(transfers, types.Transfer{
+			ID:              transferID.raw,
+			DebitAccountID:  GrantAccountID(plannedLeg.GrantID).raw,
+			CreditAccountID: OperatorAccountID(AcctRevenue).raw,
+			Amount:          types.ToUint128(plannedLeg.AmountUnits),
+			Timeout:         c.cfg.PendingTimeoutSecs,
+			Ledger:          1,
+			Code:            uint16(KindReservation),
+			Flags:           types.TransferFlags{Pending: true}.ToUint16(),
+		})
 	}
 	linkTransfers(transfers)
 	if err := c.createTransfers(transfers); err != nil {
@@ -742,9 +732,9 @@ func settleFundingLegsByBucket(
 	}
 	actions := make([]fundingLegSettlement, 0, len(legs))
 	for _, leg := range legs {
-		postAmount := minUint64(leg.Amount, remaining[leg.BucketID])
+		postAmount := minUint64(leg.Amount, remaining[leg.ChargeBucketID])
 		if postAmount > 0 {
-			remaining[leg.BucketID] -= postAmount
+			remaining[leg.ChargeBucketID] -= postAmount
 		}
 		actions = append(actions, fundingLegSettlement{
 			Leg:        leg,
@@ -758,20 +748,6 @@ func settleFundingLegsByBucket(
 		}
 	}
 	return actions, nil
-}
-
-func normalizeFundingLegBuckets(legs []WindowFundingLeg, fallbackBucketID string) []WindowFundingLeg {
-	if len(legs) == 0 {
-		return nil
-	}
-	out := make([]WindowFundingLeg, len(legs))
-	copy(out, legs)
-	for i := range out {
-		if out[i].BucketID == "" {
-			out[i].BucketID = fallbackBucketID
-		}
-	}
-	return out
 }
 
 func (c *Client) voidReservedFunding(ctx context.Context, windowID string, legs []WindowFundingLeg) error {

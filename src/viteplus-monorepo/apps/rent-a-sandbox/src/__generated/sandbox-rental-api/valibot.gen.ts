@@ -15,11 +15,12 @@ export const vBillingBalance = v.strictObject({
 
 export const vBillingGrant = v.strictObject({
   available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  bucket_id: v.string(),
   expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   grant_id: v.string(),
   pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  product_id: v.string(),
+  scope_bucket_id: v.string(),
+  scope_product_id: v.string(),
+  scope_type: v.string(),
   source: v.string(),
 });
 

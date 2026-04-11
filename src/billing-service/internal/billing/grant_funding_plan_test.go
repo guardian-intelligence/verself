@@ -89,7 +89,7 @@ func TestPlanGrantFundingUsesProductBeforeAccountCredit(t *testing.T) {
 
 func testScopedGrant(id string, source GrantSourceType, scope GrantScopeType, productID string, bucketID string, availableUnits uint64) scopedGrantBalance {
 	return scopedGrantBalance{
-		GrantID:        stripeGrantID(42, productID, bucketID, id),
+		GrantID:        stripeGrantID(42, scope, productID, bucketID, id),
 		Source:         source,
 		ScopeType:      scope,
 		ScopeProductID: productID,

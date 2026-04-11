@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS forge_metal.metering (
+DROP TABLE IF EXISTS forge_metal.metering;
+
+CREATE TABLE forge_metal.metering (
     window_id                 String                               CODEC(ZSTD(3)),
     org_id                    LowCardinality(String)               CODEC(ZSTD(3)),
     actor_id                  String DEFAULT ''                    CODEC(ZSTD(3)),
@@ -32,10 +34,10 @@ CREATE TABLE IF NOT EXISTS forge_metal.metering (
     bucket_promo_units        Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
     bucket_refund_units       Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
     bucket_receivable_units   Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
-    plan_id                  LowCardinality(String) DEFAULT ''    CODEC(ZSTD(3)),
-    cost_per_unit            UInt64 DEFAULT 0                     CODEC(T64, ZSTD(3)),
-    recorded_at              DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3)),
-    trace_id                 String DEFAULT ''                    CODEC(ZSTD(3))
+    plan_id                   LowCardinality(String) DEFAULT ''    CODEC(ZSTD(3)),
+    cost_per_unit             UInt64 DEFAULT 0                     CODEC(T64, ZSTD(3)),
+    recorded_at               DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3)),
+    trace_id                  String DEFAULT ''                    CODEC(ZSTD(3))
 )
 ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id);

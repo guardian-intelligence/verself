@@ -134,7 +134,7 @@ func run() error {
 		expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
 		if _, err := client.DepositCredits(ctx, billing.CreditGrant{
 			OrgID:             billing.OrgID(cfg.orgID),
-			ProductID:         cfg.productID,
+			ScopeType:         billing.GrantScopeAccount,
 			Amount:            deposited,
 			Source:            cfg.prepaidSource,
 			StripeReferenceID: fmt.Sprintf("seed:%d:%s", cfg.orgID, cfg.productID),

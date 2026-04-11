@@ -297,13 +297,14 @@ func parseBillingGrants(in BillingGrants) (apiwire.BillingGrants, error) {
 			return apiwire.BillingGrants{}, err
 		}
 		out = append(out, apiwire.BillingGrant{
-			GrantID:   grant.GrantId,
-			ProductID: grant.ProductId,
-			BucketID:  grant.BucketId,
-			Source:    grant.Source,
-			Available: available,
-			Pending:   pending,
-			ExpiresAt: grant.ExpiresAt,
+			GrantID:        grant.GrantId,
+			ScopeType:      grant.ScopeType,
+			ScopeProductID: grant.ScopeProductId,
+			ScopeBucketID:  grant.ScopeBucketId,
+			Source:         grant.Source,
+			Available:      available,
+			Pending:        pending,
+			ExpiresAt:      grant.ExpiresAt,
 		})
 	}
 	return apiwire.BillingGrants{Grants: out}, nil

@@ -64,13 +64,14 @@ type Balance struct {
 }
 
 type GrantBalance struct {
-	GrantID   GrantID
-	ProductID string
-	BucketID  string
-	Source    GrantSourceType
-	ExpiresAt *time.Time
-	Available uint64
-	Pending   uint64
+	GrantID        GrantID
+	ScopeType      GrantScopeType
+	ScopeProductID string
+	ScopeBucketID  string
+	Source         GrantSourceType
+	ExpiresAt      *time.Time
+	Available      uint64
+	Pending        uint64
 }
 
 type ReservePolicy struct {
@@ -83,11 +84,15 @@ type ReservePolicy struct {
 }
 
 type WindowFundingLeg struct {
-	GrantID    GrantID         `json:"grant_id"`
-	TransferID TransferID      `json:"transfer_id"`
-	BucketID   string          `json:"bucket_id"`
-	Amount     uint64          `json:"amount"`
-	Source     GrantSourceType `json:"source"`
+	GrantID             GrantID         `json:"grant_id"`
+	TransferID          TransferID      `json:"transfer_id"`
+	ChargeProductID     string          `json:"charge_product_id"`
+	ChargeBucketID      string          `json:"charge_bucket_id"`
+	Amount              uint64          `json:"amount"`
+	Source              GrantSourceType `json:"source"`
+	GrantScopeType      GrantScopeType  `json:"grant_scope_type"`
+	GrantScopeProductID string          `json:"grant_scope_product_id"`
+	GrantScopeBucketID  string          `json:"grant_scope_bucket_id"`
 }
 
 type WindowReservation struct {
@@ -178,8 +183,9 @@ type MeteringWriter interface {
 
 type CreditGrant struct {
 	OrgID             OrgID
-	ProductID         string
-	BucketID          string
+	ScopeType         GrantScopeType
+	ScopeProductID    string
+	ScopeBucketID     string
 	Amount            uint64
 	Source            string
 	StripeReferenceID string

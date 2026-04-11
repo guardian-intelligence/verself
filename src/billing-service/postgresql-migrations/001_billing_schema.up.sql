@@ -23,7 +23,7 @@ CREATE TABLE plans (
     product_id               TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     display_name             TEXT        NOT NULL,
     billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
-    included_credit_buckets JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    included_credit_buckets  JSONB       NOT NULL DEFAULT '{}'::jsonb,
     unit_rates               JSONB       NOT NULL,
     rate_buckets             JSONB       NOT NULL DEFAULT '{}'::jsonb,
     overage_unit_rates       JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -70,23 +70,29 @@ CREATE UNIQUE INDEX idx_subscriptions_stripe_checkout_session
 CREATE TABLE credit_grants (
     grant_id             TEXT        PRIMARY KEY,
     org_id               TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
-    product_id           TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-    bucket_id            TEXT        NOT NULL CHECK (bucket_id <> ''),
+    scope_type           TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_product_id     TEXT        NOT NULL DEFAULT '',
+    scope_bucket_id      TEXT        NOT NULL DEFAULT '',
     amount               BIGINT      NOT NULL CHECK (amount >= 0),
     source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
     contract_id          TEXT        NOT NULL DEFAULT '',
     stripe_reference_id  TEXT        NOT NULL DEFAULT '',
     expires_at           TIMESTAMPTZ,
     closed_at            TIMESTAMPTZ,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+    )
 );
 
 CREATE INDEX idx_credit_grants_open
-    ON credit_grants (org_id, product_id, bucket_id, expires_at, grant_id)
+    ON credit_grants (org_id, scope_type, scope_product_id, scope_bucket_id, expires_at, grant_id)
     WHERE closed_at IS NULL;
 
 CREATE UNIQUE INDEX idx_credit_grants_stripe_reference
-    ON credit_grants (org_id, product_id, bucket_id, stripe_reference_id)
+    ON credit_grants (org_id, scope_type, scope_product_id, scope_bucket_id, stripe_reference_id)
     WHERE stripe_reference_id <> '';
 
 CREATE TABLE billing_windows (

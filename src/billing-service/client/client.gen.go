@@ -97,13 +97,14 @@ type BillingCreateSubscriptionRequestCadence string
 
 // BillingGrant defines model for BillingGrant.
 type BillingGrant struct {
-	Available string     `json:"available"`
-	BucketId  string     `json:"bucket_id"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	GrantId   string     `json:"grant_id"`
-	Pending   string     `json:"pending"`
-	ProductId string     `json:"product_id"`
-	Source    string     `json:"source"`
+	Available      string     `json:"available"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	GrantId        string     `json:"grant_id"`
+	Pending        string     `json:"pending"`
+	ScopeBucketId  string     `json:"scope_bucket_id"`
+	ScopeProductId string     `json:"scope_product_id"`
+	ScopeType      string     `json:"scope_type"`
+	Source         string     `json:"source"`
 }
 
 // BillingGrants defines model for BillingGrants.

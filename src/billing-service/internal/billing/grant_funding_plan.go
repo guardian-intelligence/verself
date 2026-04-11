@@ -10,6 +10,23 @@ const (
 	GrantScopeAccount GrantScopeType = "account"
 )
 
+func ParseGrantScopeType(scope string) (GrantScopeType, error) {
+	switch GrantScopeType(scope) {
+	case GrantScopeBucket:
+		return GrantScopeBucket, nil
+	case GrantScopeProduct:
+		return GrantScopeProduct, nil
+	case GrantScopeAccount:
+		return GrantScopeAccount, nil
+	default:
+		return "", fmt.Errorf("unknown grant scope %q", scope)
+	}
+}
+
+func (t GrantScopeType) String() string {
+	return string(t)
+}
+
 type scopedGrantBalance struct {
 	GrantID        GrantID
 	Source         GrantSourceType
@@ -20,20 +37,25 @@ type scopedGrantBalance struct {
 }
 
 type plannedGrantFundingLeg struct {
-	GrantID           GrantID
-	Source            GrantSourceType
-	AmountUnits       uint64
-	ChargeProductID   string
-	ChargeBucketID    string
-	GrantScopeType    GrantScopeType
-	GrantScopeProduct string
-	GrantScopeBucket  string
+	GrantID             GrantID
+	Source              GrantSourceType
+	AmountUnits         uint64
+	ChargeProductID     string
+	ChargeBucketID      string
+	GrantScopeType      GrantScopeType
+	GrantScopeProductID string
+	GrantScopeBucketID  string
 }
 
 // planGrantFunding applies grant-scope precedence; callers still own grant waterfall ordering.
 func planGrantFunding(productID string, bucketChargeUnits map[string]uint64, grants []scopedGrantBalance) ([]plannedGrantFundingLeg, error) {
 	if productID == "" {
 		return nil, fmt.Errorf("product_id is required")
+	}
+	for bucketID := range bucketChargeUnits {
+		if bucketID == "" {
+			return nil, fmt.Errorf("charge bucket_id is required")
+		}
 	}
 
 	remainingByBucket := cloneUint64Map(bucketChargeUnits)
@@ -59,14 +81,14 @@ func planGrantFunding(productID string, bucketChargeUnits map[string]uint64, gra
 				grantRemaining[i] -= amount
 				remainingByBucket[bucketID] -= amount
 				legs = append(legs, plannedGrantFundingLeg{
-					GrantID:           grant.GrantID,
-					Source:            grant.Source,
-					AmountUnits:       amount,
-					ChargeProductID:   productID,
-					ChargeBucketID:    bucketID,
-					GrantScopeType:    grant.ScopeType,
-					GrantScopeProduct: grant.ScopeProductID,
-					GrantScopeBucket:  grant.ScopeBucketID,
+					GrantID:             grant.GrantID,
+					Source:              grant.Source,
+					AmountUnits:         amount,
+					ChargeProductID:     productID,
+					ChargeBucketID:      bucketID,
+					GrantScopeType:      grant.ScopeType,
+					GrantScopeProductID: grant.ScopeProductID,
+					GrantScopeBucketID:  grant.ScopeBucketID,
 				})
 			}
 		}
@@ -87,27 +109,31 @@ func validateGrantForFunding(grant scopedGrantBalance) error {
 	if grant.Source == 0 {
 		return fmt.Errorf("grant source is required")
 	}
-	switch grant.ScopeType {
+	return validateGrantScope(grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID)
+}
+
+func validateGrantScope(scopeType GrantScopeType, scopeProductID string, scopeBucketID string) error {
+	switch scopeType {
 	case GrantScopeBucket:
-		if grant.ScopeProductID == "" {
+		if scopeProductID == "" {
 			return fmt.Errorf("bucket-scoped grant product_id is required")
 		}
-		if grant.ScopeBucketID == "" {
+		if scopeBucketID == "" {
 			return fmt.Errorf("bucket-scoped grant bucket_id is required")
 		}
 	case GrantScopeProduct:
-		if grant.ScopeProductID == "" {
+		if scopeProductID == "" {
 			return fmt.Errorf("product-scoped grant product_id is required")
 		}
-		if grant.ScopeBucketID != "" {
+		if scopeBucketID != "" {
 			return fmt.Errorf("product-scoped grant bucket_id must be empty")
 		}
 	case GrantScopeAccount:
-		if grant.ScopeProductID != "" || grant.ScopeBucketID != "" {
+		if scopeProductID != "" || scopeBucketID != "" {
 			return fmt.Errorf("account-scoped grant product_id and bucket_id must be empty")
 		}
 	default:
-		return fmt.Errorf("unknown grant scope %q", grant.ScopeType)
+		return fmt.Errorf("unknown grant scope %q", scopeType)
 	}
 	return nil
 }

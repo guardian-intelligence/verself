@@ -38,6 +38,7 @@ func TestPickBucketReservationShrinksToTightestFundedBucket(t *testing.T) {
 	t.Parallel()
 
 	quantity, totalChargeUnits, bucketChargeUnits, err := pickBucketReservationQuantity(
+		"sandbox",
 		ReservePolicy{
 			TargetQuantity:      10,
 			MinQuantity:         5,
@@ -47,9 +48,9 @@ func TestPickBucketReservationShrinksToTightestFundedBucket(t *testing.T) {
 			"compute": 20,
 			"storage": 500,
 		},
-		map[string]uint64{
-			"compute": 10_000,
-			"storage": 3_500,
+		[]scopedGrantBalance{
+			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", 10_000),
+			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "storage", 3_500),
 		},
 	)
 	if err != nil {
@@ -66,6 +67,7 @@ func TestPickBucketReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
 	t.Parallel()
 
 	_, _, _, err := pickBucketReservationQuantity(
+		"sandbox",
 		ReservePolicy{
 			TargetQuantity:      10,
 			MinQuantity:         8,
@@ -75,9 +77,9 @@ func TestPickBucketReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
 			"compute": 20,
 			"storage": 500,
 		},
-		map[string]uint64{
-			"compute": 10_000,
-			"storage": 3_500,
+		[]scopedGrantBalance{
+			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", 10_000),
+			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "storage", 3_500),
 		},
 	)
 	if err != ErrInsufficientBalance {
@@ -90,8 +92,8 @@ func TestSettlementFundingPostsEachBucketIndependently(t *testing.T) {
 
 	actions, err := settleFundingLegsByBucket(
 		[]WindowFundingLeg{
-			{BucketID: "compute", Amount: 140},
-			{BucketID: "storage", Amount: 3_500},
+			{ChargeBucketID: "compute", Amount: 140},
+			{ChargeBucketID: "storage", Amount: 3_500},
 		},
 		map[string]uint64{
 			"compute": 100,
@@ -154,8 +156,8 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 			},
 		},
 		FundingLegs: []WindowFundingLeg{
-			{BucketID: "compute", Amount: 140, Source: SourceSubscription},
-			{BucketID: "storage", Amount: 3_500, Source: SourceSubscription},
+			{ChargeProductID: "sandbox", ChargeBucketID: "compute", Amount: 140, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "compute"},
+			{ChargeProductID: "sandbox", ChargeBucketID: "storage", Amount: 3_500, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "storage"},
 		},
 		WindowStart: start,
 		ActivatedAt: &start,
@@ -177,6 +179,73 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 	assertEqual(t, row.BucketSubscriptionUnits["storage"], uint64(2_500), "storage subscription funding")
 	assertEqual(t, row.BucketSubscriptionUnits["compute"], uint64(100), "compute subscription funding")
 	assertEqual(t, row.SubscriptionUnits, uint64(2_600), "total subscription funding")
+}
+
+func TestBuildMeteringRowProjectsAccountCreditToChargeBucket(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	window := persistedWindow{
+		WindowID:            "window_account_credit",
+		OrgID:               42,
+		ActorID:             "actor",
+		ProductID:           "sandbox",
+		PlanID:              "sandbox-pro",
+		SourceType:          "job",
+		SourceRef:           "job_02",
+		State:               "settled",
+		ReservationShape:    ReservationShapeTime,
+		ReservedQuantity:    1,
+		ActualQuantity:      1,
+		BillableQuantity:    1,
+		ReservedChargeUnits: 100,
+		BilledChargeUnits:   100,
+		PricingPhase:        PricingPhaseIncluded,
+		Allocation: map[string]float64{
+			"premium_nvme_gib": 100,
+		},
+		RateContext: windowRateContext{
+			PlanID:      "sandbox-pro",
+			CostPerUnit: 100,
+			UnitRates: map[string]uint64{
+				"premium_nvme_gib": 1,
+			},
+			RateBuckets: map[string]string{
+				"premium_nvme_gib": "storage",
+			},
+			ComponentCostPerUnit: map[string]uint64{
+				"premium_nvme_gib": 100,
+			},
+			BucketCostPerUnit: map[string]uint64{
+				"storage": 100,
+			},
+		},
+		FundingLegs: []WindowFundingLeg{
+			{
+				ChargeProductID:     "sandbox",
+				ChargeBucketID:      "storage",
+				Amount:              100,
+				Source:              SourcePurchase,
+				GrantScopeType:      GrantScopeAccount,
+				GrantScopeProductID: "",
+				GrantScopeBucketID:  "",
+			},
+		},
+		WindowStart: start,
+		ActivatedAt: &start,
+		ExpiresAt:   start.Add(time.Minute),
+		SettledAt:   ptrTime(start.Add(time.Second)),
+	}
+
+	row, err := buildMeteringRow(window)
+	if err != nil {
+		t.Fatalf("buildMeteringRow: %v", err)
+	}
+
+	assertEqual(t, row.ComponentChargeUnits["premium_nvme_gib"], uint64(100), "premium NVMe component charge")
+	assertEqual(t, row.BucketChargeUnits["storage"], uint64(100), "storage bucket charge")
+	assertEqual(t, row.BucketPurchaseUnits["storage"], uint64(100), "storage purchase funding")
+	assertEqual(t, row.PurchaseUnits, uint64(100), "total purchase funding")
 }
 
 func assertEqual[T comparable](t *testing.T, got T, want T, label string) {
