@@ -41,6 +41,7 @@
     seed_system_acme_org_name: "Acme Corp"
 
     seed_system_sandbox_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
+    seed_system_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
     seed_system_letters_project_name: "{{ letters_auth_project_name | default('letters') }}"
     seed_system_forgejo_project_name: "{{ forgejo_auth_project_name | default('forgejo') }}"
     seed_system_mailbox_project_name: "{{ mailbox_service_auth_project_name | default('mailbox-service') }}"
@@ -182,6 +183,36 @@
         that: seed_system_sandbox_project_id is defined
         fail_msg: "Sandbox-rental Zitadel project '{{ seed_system_sandbox_project_name }}' not found. Run the full deploy first."
       tags: [identity, billing, verify, dev-oidc, forgejo]
+
+    - name: Find identity-service project
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          queries:
+            - nameQuery:
+                name: "{{ seed_system_identity_project_name }}"
+                method: TEXT_QUERY_METHOD_EQUALS
+        return_content: true
+      register: seed_system_identity_project_search
+      no_log: true
+      tags: [identity, dev-oidc]
+
+    - name: Set identity-service project ID fact
+      ansible.builtin.set_fact:
+        seed_system_identity_project_id: "{{ seed_system_identity_project_search.json.result[0].id }}"
+      when: seed_system_identity_project_search.json.result is defined and seed_system_identity_project_search.json.result | length > 0
+      tags: [identity, dev-oidc]
+
+    - name: Assert identity-service project exists
+      ansible.builtin.assert:
+        that: seed_system_identity_project_id is defined
+        fail_msg: "Identity-service Zitadel project '{{ seed_system_identity_project_name }}' not found. Run the full deploy first."
+      tags: [identity, dev-oidc]
 
     - name: Find letters project
       ansible.builtin.uri:
@@ -486,7 +517,23 @@
       no_log: true
       tags: [identity]
 
-    - name: Set desired sandbox-rental project grants fact
+    - name: List existing identity-service project grants
+      ansible.builtin.uri:
+        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/{{ seed_system_identity_project_id }}/grants/_search"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ seed_system_admin_pat }}"
+          Host: "{{ seed_system_zitadel_host }}"
+        body_format: json
+        body:
+          limit: 200
+        status_code: 200
+        return_content: true
+      register: seed_system_identity_project_grants
+      no_log: true
+      tags: [identity]
+
+    - name: Set desired service project grants fact
       ansible.builtin.set_fact:
         seed_system_desired_project_grants:
           - project_id: "{{ seed_system_sandbox_project_id }}"
@@ -494,10 +541,20 @@
             role_keys:
               - sandbox_org_admin
               - sandbox_org_member
+            existing_grants: "{{ seed_system_sandbox_project_grants }}"
+          - project_id: "{{ seed_system_identity_project_id }}"
+            granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            role_keys:
+              - identity_org_admin
+              - identity_org_member
+            existing_grants: "{{ seed_system_identity_project_grants }}"
       tags: [identity]
 
-    - name: Upsert sandbox-rental project grants
-      ansible.builtin.include_tasks: tasks/upsert_project_grant.yml
+    - name: Upsert service project grants
+      ansible.builtin.include_tasks:
+        file: tasks/upsert_project_grant.yml
+        apply:
+          tags: [identity]
       loop: "{{ seed_system_desired_project_grants }}"
       loop_control:
         label: "{{ item.project_id }} -> {{ item.granted_organization_id }}"
@@ -505,7 +562,7 @@
         zitadel_project_grant_base_url: "{{ seed_system_zitadel_base_url }}"
         zitadel_project_grant_host: "{{ seed_system_zitadel_host }}"
         zitadel_project_grant_admin_pat: "{{ seed_system_admin_pat }}"
-        zitadel_project_grants: "{{ seed_system_sandbox_project_grants }}"
+        zitadel_project_grants: "{{ item.existing_grants }}"
         zitadel_project_grant: "{{ item }}"
       no_log: true
       tags: [identity]
@@ -517,6 +574,10 @@
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_admin]
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_letters_project_id }}"
@@ -533,6 +594,10 @@
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_admin]
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_letters_project_id }}"
@@ -549,14 +614,26 @@
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_admin]
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_member]
+          - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_member]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_admin]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_letters_project_id }}"
@@ -573,14 +650,25 @@
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_admin]
+          - user_id: "{{ seed_system_machine_users_state.acme_admin.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_admin]
           - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
             role_keys: [sandbox_org_member]
+          - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
+            organization_id: "{{ seed_system_orgs.acme.organization_id }}"
+            project_id: "{{ seed_system_identity_project_id }}"
+            role_keys: [identity_org_member]
       tags: [identity]
 
     - name: Upsert seeded project authorizations
-      ansible.builtin.include_tasks: tasks/upsert_role_assignment.yml
+      ansible.builtin.include_tasks:
+        file: tasks/upsert_role_assignment.yml
+        apply:
+          tags: [identity]
       loop: "{{ seed_system_desired_authorizations }}"
       loop_control:
         label: "{{ item.user_id }} -> {{ item.project_id }}"

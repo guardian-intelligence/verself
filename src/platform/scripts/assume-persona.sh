@@ -81,21 +81,21 @@ case "${persona}" in
     machine_secret_path="/etc/credstore/seed-system/assume-platform-admin-client-secret"
     include_platform_ops=1
     mailbox_account="agents"
-    token_projects=(sandbox-rental mailbox-service letters forgejo)
+    token_projects=(sandbox-rental identity-service mailbox-service letters forgejo)
     ;;
   acme-admin)
     human_email="acme-admin@${VERIFICATION_DOMAIN}"
     human_password_path="/etc/credstore/seed-system/acme-admin-password"
     machine_username="assume-acme-admin"
     machine_secret_path="/etc/credstore/seed-system/assume-acme-admin-client-secret"
-    token_projects=(sandbox-rental)
+    token_projects=(sandbox-rental identity-service)
     ;;
   acme-member)
     human_email="acme-user@${VERIFICATION_DOMAIN}"
     human_password_path="/etc/credstore/seed-system/acme-user-password"
     machine_username="assume-acme-member"
     machine_secret_path="/etc/credstore/seed-system/assume-acme-member-client-secret"
-    token_projects=(sandbox-rental)
+    token_projects=(sandbox-rental identity-service)
     ;;
   *)
     echo "unknown persona: ${persona}" >&2
@@ -234,6 +234,11 @@ if [[ -n "${project_tokens[sandbox-rental]:-}" ]]; then
   write_export SANDBOX_RENTAL_AUTH_PROJECT_ID "${project_ids[sandbox-rental]}"
   write_export SANDBOX_RENTAL_ACCESS_TOKEN "${project_tokens[sandbox-rental]}"
   write_export SANDBOX_RENTAL_TOKEN "${project_tokens[sandbox-rental]}"
+fi
+if [[ -n "${project_tokens[identity-service]:-}" ]]; then
+  write_export IDENTITY_SERVICE_AUTH_PROJECT_ID "${project_ids[identity-service]}"
+  write_export IDENTITY_SERVICE_ACCESS_TOKEN "${project_tokens[identity-service]}"
+  write_export IDENTITY_SERVICE_TOKEN "${project_tokens[identity-service]}"
 fi
 if [[ -n "${project_tokens[mailbox-service]:-}" ]]; then
   write_export MAILBOX_SERVICE_AUTH_PROJECT_ID "${project_ids[mailbox-service]}"

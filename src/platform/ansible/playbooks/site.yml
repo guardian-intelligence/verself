@@ -138,6 +138,8 @@
       tags: [billing_service]
     - role: sandbox_rental_service
       tags: [sandbox_rental_service]
+    - role: identity_service
+      tags: [identity_service]
     - role: electric
       tags: [electric]
     - role: frontend_auth_sessions
