@@ -119,7 +119,11 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 {{ rent_a_sandbox_domain }} {
 	import access_log
 
-	handle /webhooks/forgejo {
+	@sandbox_rental_webhook_ingest {
+		method POST
+		path /webhooks/ingest/*
+	}
+	handle @sandbox_rental_webhook_ingest {
 		import waf_detection
 		request_body {
 			max_size 1048576
@@ -128,6 +132,9 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
 			header_up X-Real-IP {remote_host}
 		}
+	}
+	handle /webhooks/ingest/* {
+		respond 405
 	}
 
 	@api_preflight {

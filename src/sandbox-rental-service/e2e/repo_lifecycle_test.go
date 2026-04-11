@@ -26,7 +26,7 @@ func TestRepoLifecycleAndGoldenGenerationActivation(t *testing.T) {
 		ProviderRepoID: "repo-001",
 		Owner:          "acme",
 		Name:           "webapp",
-		CloneURL:       "https://git.example.test/acme/webapp.git",
+		CloneURL:       "https://93.184.216.34/acme/webapp.git",
 	})
 	if err != nil {
 		t.Fatalf("CreateRepo: %v", err)
@@ -239,7 +239,7 @@ func TestRepoCompatibilityActionRequired(t *testing.T) {
 		ProviderRepoID: "repo-002",
 		Owner:          "acme",
 		Name:           "legacy",
-		CloneURL:       "https://git.example.test/acme/legacy.git",
+		CloneURL:       "https://93.184.216.34/acme/legacy.git",
 	})
 	if err != nil {
 		t.Fatalf("CreateRepo: %v", err)
