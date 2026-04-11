@@ -17,8 +17,9 @@ VERIFICATION_REPO_REVISION="${run_id}-seed" \
 (
   cd "${VERIFICATION_PLATFORM_ROOT}/ansible"
   ansible-playbook -i inventory/hosts.ini playbooks/verification-reset.yml
+  ansible-playbook -i inventory/hosts.ini playbooks/guest-rootfs.yml
   ansible-playbook -i inventory/hosts.ini playbooks/dev-single-node.yml \
-    --tags deploy_profile,clickhouse,billing_service,sandbox_rental_service,electric,frontend_auth_sessions,rent_a_sandbox,otelcol,forgejo
+    --tags deploy_profile,firecracker,clickhouse,billing_service,sandbox_rental_service,electric,frontend_auth_sessions,rent_a_sandbox,otelcol,forgejo
   verification_wait_for_loopback_api "billing-service" "http://127.0.0.1:4242/readyz" "200"
   # verification-reset restarts the service stack; wait for the loopback API
   # before seed-system starts probing authz behavior against sandbox-rental.
@@ -54,7 +55,7 @@ env \
     cd "$1"
     vp exec playwright test e2e/repo-journeys.live.spec.ts \
       --project=chromium \
-      --grep "full lifecycle proof imports executes refreshes and executes again" \
+      --grep "full lifecycle proof imports executes rescans and executes again" \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${artifact_dir}/playwright-results"
 playwright_status=$?
