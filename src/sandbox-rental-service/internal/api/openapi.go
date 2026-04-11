@@ -15,6 +15,7 @@ func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, b
 	config := huma.DefaultConfig("Sandbox Rental Service", version)
 	config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + listenAddr}}
 	api := humago.New(mux, config)
+	applyPublicAPISecurityScheme(api)
 	RegisterRoutes(api, svc, billing)
 	apiwire.ApplyOpenAPIWireDefaults(api)
 	return api
