@@ -48,6 +48,7 @@ const digitsPattern = /^\d+$/;
 const electricIntegerPattern = /^-?\d+$/;
 const electricBooleanPattern = /^(?:true|false)$/;
 const electricOpaqueIDPattern = /^[A-Za-z0-9._:-]+$/;
+const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
 
 function readEnv(env: EnvSource, name: string): string | undefined {
   return env[name]?.trim();
@@ -189,10 +190,25 @@ export function requireElectricOpaqueID(value: string, label: string): string {
   return trimmed;
 }
 
+function requireSafeElectricInteger(value: number): number {
+  if (!Number.isSafeInteger(value)) {
+    throw new Error("Electric integer exceeds Number.MAX_SAFE_INTEGER");
+  }
+  return value;
+}
+
+function parseElectricInteger(value: string): number {
+  const parsed = BigInt(value);
+  if (parsed > maxSafeInteger || parsed < -maxSafeInteger) {
+    throw new Error("Electric integer exceeds Number.MAX_SAFE_INTEGER");
+  }
+  return Number(parsed);
+}
+
 // Electric serializes PostgreSQL ints and booleans as strings in payloads.
 export const electricStringifiedIntegerSchema = v.union([
-  v.pipe(v.number(), v.integer()),
-  v.pipe(v.string(), v.regex(electricIntegerPattern), v.transform(Number)),
+  v.pipe(v.number(), v.integer(), v.transform(requireSafeElectricInteger)),
+  v.pipe(v.string(), v.regex(electricIntegerPattern), v.transform(parseElectricInteger)),
 ]);
 
 // Electric serializes PostgreSQL booleans as "true"/"false" strings in payloads.
