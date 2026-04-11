@@ -114,6 +114,12 @@ function Nav() {
           >
             Billing
           </Link>
+          <Link
+            to="/organization"
+            className="text-muted-foreground hover:text-foreground [&.active]:text-foreground"
+          >
+            Organization
+          </Link>
         </div>
         <div className="ml-auto">
           <AuthButton />

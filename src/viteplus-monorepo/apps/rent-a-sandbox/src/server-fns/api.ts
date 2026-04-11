@@ -1,6 +1,31 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireURLFromEnv } from "@forge-metal/web-env";
 import {
+  IdentityApiError,
+  getMembers as getMembersRequest,
+  getOperations as getOperationsRequest,
+  getOrganization as getOrganizationRequest,
+  getPolicy as getPolicyRequest,
+  inviteMember as inviteMemberRequest,
+  inviteMemberRequestSchema,
+  isIdentityApiError,
+  putPolicy as putPolicyRequest,
+  putPolicyRequestSchema,
+  updateMemberRoles as updateMemberRolesRequest,
+  updateMemberRolesRequestSchema,
+} from "~/lib/identity-api";
+import type {
+  InviteMemberRequest,
+  InviteMemberResponse,
+  Member,
+  Operations,
+  Organization,
+  PolicyDocument,
+  PolicyRole,
+  PutPolicyRequest,
+  UpdateMemberRolesRequest,
+} from "~/lib/identity-api";
+import {
   createCheckoutSession as createCheckoutSessionRequest,
   createSubscriptionSession as createSubscriptionSessionRequest,
   executionIdInputSchema,
@@ -38,9 +63,11 @@ import type {
 import type { AuthSession } from "@forge-metal/auth-web/server";
 import { rentASandboxAuthMiddleware } from "./auth";
 
+const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
+export { IdentityApiError, isIdentityApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   Balance,
@@ -53,6 +80,17 @@ export type {
   RepoCompatibilitySummary,
   SubscribeRequest,
   SubscriptionsResponse,
+};
+export type {
+  InviteMemberRequest,
+  InviteMemberResponse,
+  Member,
+  Operations,
+  Organization,
+  PolicyDocument,
+  PolicyRole,
+  PutPolicyRequest,
+  UpdateMemberRolesRequest,
 };
 
 async function getServerVerificationRunID(): Promise<string | undefined> {
@@ -89,6 +127,68 @@ async function sandboxRentalClientOptions(context: { auth?: AuthSession } | unde
   const verificationRunID = await getServerVerificationRunID();
   return verificationRunID ? { ...options, verificationRunId: verificationRunID } : options;
 }
+
+async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
+  return {
+    accessToken: auth.accessToken,
+    baseUrl: IDENTITY_SERVICE_BASE_URL,
+  };
+}
+
+export const getOrganization = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getOrganizationRequest(await identityClientOptions(context));
+  });
+
+export const getMembers = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getMembersRequest(await identityClientOptions(context));
+  });
+
+export const inviteMember = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(inviteMemberRequestSchema)
+  .handler(async ({ context, data }) => {
+    return inviteMemberRequest({
+      ...(await identityClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const updateMemberRoles = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(updateMemberRolesRequestSchema)
+  .handler(async ({ context, data }) => {
+    return updateMemberRolesRequest({
+      ...(await identityClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const getOperations = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getOperationsRequest(await identityClientOptions(context));
+  });
+
+export const getPolicy = createServerFn({ method: "GET" })
+  .middleware([rentASandboxAuthMiddleware])
+  .handler(async ({ context }) => {
+    return getPolicyRequest(await identityClientOptions(context));
+  });
+
+export const putPolicy = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(putPolicyRequestSchema)
+  .handler(async ({ context, data }) => {
+    return putPolicyRequest({
+      ...(await identityClientOptions(context)),
+      body: data,
+    });
+  });
 
 export const getBalance = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])

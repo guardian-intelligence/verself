@@ -34,26 +34,25 @@ import {
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
+import {
+  type BearerClientOptions,
+  ServiceApiError,
+  createBearerJSONHeaders,
+  createIdempotencyKey,
+  idempotencyHeaders,
+  throwGeneratedServiceError,
+} from "./service-api";
 
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
-const idempotencyKeyMaxLength = 128;
 const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
-type IdempotencyHeaders = { "Idempotency-Key": string };
 
-export interface SandboxRentalClientOptions {
-  accessToken: string;
-  baseUrl: string;
-  fetch?: typeof fetch;
+export interface SandboxRentalClientOptions extends BearerClientOptions {
   verificationRunId?: string;
 }
 
-export class SandboxRentalApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly path: string,
-    public readonly body: string,
-  ) {
-    super(`Sandbox rental API ${status}: ${body}`);
+export class SandboxRentalApiError extends ServiceApiError {
+  constructor(status: number, path: string, body: string) {
+    super("Sandbox rental API", status, path, body);
     this.name = "SandboxRentalApiError";
   }
 }
@@ -81,34 +80,16 @@ function decimalStringToSafeNumber(value: string, label: string): number {
   return toSafeNumber(BigInt(value), label);
 }
 
-function stringifyErrorBody(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object") {
-    const detail = "detail" in error ? error.detail : undefined;
-    if (typeof detail === "string" && detail) return detail;
-    const title = "title" in error ? error.title : undefined;
-    if (typeof title === "string" && title) return title;
-    return JSON.stringify(error);
-  }
-  return String(error);
-}
-
 function throwSandboxRentalError(
   path: string,
   response: Response | undefined,
   error: unknown,
 ): never {
-  if (!response) {
-    throw error instanceof Error ? error : new Error(stringifyErrorBody(error));
-  }
-  throw new SandboxRentalApiError(response.status, path, stringifyErrorBody(error));
+  throwGeneratedServiceError(SandboxRentalApiError, path, response, error);
 }
 
 function createSandboxRentalClient(options: SandboxRentalClientOptions): Client {
-  const headers = new Headers();
-  headers.set("Accept", "application/json");
-  headers.set("Authorization", `Bearer ${options.accessToken}`);
+  const headers = createBearerJSONHeaders(options.accessToken);
   if (options.verificationRunId) {
     headers.set(verificationRunHeader, options.verificationRunId);
   }
@@ -118,17 +99,6 @@ function createSandboxRentalClient(options: SandboxRentalClientOptions): Client 
     headers,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-}
-
-function createIdempotencyKey(namespace: string): string {
-  const suffix =
-    globalThis.crypto?.randomUUID?.() ??
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `${namespace}:${suffix}`.slice(0, idempotencyKeyMaxLength);
-}
-
-function idempotencyHeaders(namespace: string): IdempotencyHeaders {
-  return { "Idempotency-Key": createIdempotencyKey(namespace) };
 }
 
 const repoScanIssueSchema = v.strictObject({
