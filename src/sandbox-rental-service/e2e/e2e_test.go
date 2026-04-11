@@ -290,6 +290,7 @@ func TestExecutionDirectFullFlow(t *testing.T) {
 	if meteringCount != 1 {
 		t.Fatalf("expected exactly 1 metering row, got %d", meteringCount)
 	}
+	assertBillingStartedAtBillablePhase(t, ctx, queryCHConn, pg.rentalDB, pg.billingDB, submitResp.AttemptID, runner.billableStartedAt())
 
 	// ---- 12. Assert: ClickHouse job_events + job_logs ----
 
@@ -313,6 +314,219 @@ func TestExecutionDirectFullFlow(t *testing.T) {
 	}
 	if logCount < 1 {
 		t.Fatalf("expected at least 1 job_log row, got %d", logCount)
+	}
+}
+
+func TestExecutionPreBillableStartFailureVoidsWithoutMetering(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e tests require real databases")
+	}
+
+	runner := &fakeRunner{
+		err:            errors.New("vm boot failed"),
+		errBeforeStart: true,
+	}
+	env := startSandboxE2EEnv(t, runner)
+	defer env.close()
+
+	token := env.authProvider.signToken(t, jwt.MapClaims{
+		"iss":                                   env.authProvider.URL,
+		"sub":                                   testUserID,
+		"aud":                                   []string{testAudience},
+		"exp":                                   time.Now().Add(time.Hour).Unix(),
+		"urn:zitadel:iam:user:resourceowner:id": strconv.FormatUint(testOrgID, 10),
+	})
+
+	balanceBefore, _, err := env.billingServer.GetBalance(env.ctx, testOrgID)
+	if err != nil {
+		t.Fatalf("get balance before: %v", err)
+	}
+
+	submitResp := submitDirectExecution(t, env.rentalServer.URL, token, "e2e-pre-billable-failure", "echo should not run")
+	execution := pollExecution(t, env.rentalServer.URL, token, submitResp.ExecutionID)
+	if execution.Status != "failed" {
+		t.Fatalf("expected failed execution, got %q", execution.Status)
+	}
+
+	if startedAt := runner.billableStartedAt(); !startedAt.IsZero() {
+		t.Fatalf("expected no billable phase start, got %s", startedAt.Format(time.RFC3339Nano))
+	}
+
+	var (
+		attemptStartedAt sql.NullTime
+		windowState      string
+	)
+	if err := env.pg.rentalDB.QueryRowContext(env.ctx, `
+		SELECT a.started_at, w.state
+		FROM execution_attempts a
+		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		WHERE a.attempt_id = $1
+	`, submitResp.AttemptID).Scan(&attemptStartedAt, &windowState); err != nil {
+		t.Fatalf("query failed attempt billing state: %v", err)
+	}
+	if attemptStartedAt.Valid {
+		t.Fatalf("expected started_at to remain null before billable phase, got %s", attemptStartedAt.Time.Format(time.RFC3339Nano))
+	}
+	if windowState != "voided" {
+		t.Fatalf("expected billing window voided, got %q", windowState)
+	}
+
+	balanceAfter, _, err := env.billingServer.GetBalance(env.ctx, testOrgID)
+	if err != nil {
+		t.Fatalf("get balance after: %v", err)
+	}
+	if balanceAfter != balanceBefore {
+		t.Fatalf("expected no credit consumption before billable start: before=%d after=%d", balanceBefore, balanceAfter)
+	}
+
+	flushBillingMetering(t, env.ctx, env.billingServer)
+	var meteringCount uint64
+	if err := env.queryCHConn.QueryRow(env.ctx,
+		"SELECT count() FROM forge_metal.metering WHERE source_ref = $1",
+		submitResp.AttemptID,
+	).Scan(&meteringCount); err != nil {
+		t.Fatalf("query pre-billable metering count: %v", err)
+	}
+	if meteringCount != 0 {
+		t.Fatalf("expected no metering rows before billable start, got %d", meteringCount)
+	}
+}
+
+type directSubmitResponse struct {
+	ExecutionID string `json:"execution_id"`
+	AttemptID   string `json:"attempt_id"`
+	Status      string `json:"status"`
+}
+
+type polledAttemptView struct {
+	AttemptID string `json:"attempt_id"`
+	State     string `json:"state"`
+}
+
+type polledExecutionView struct {
+	ExecutionID string            `json:"execution_id"`
+	Status      string            `json:"status"`
+	Latest      polledAttemptView `json:"latest_attempt"`
+}
+
+func submitDirectExecution(t *testing.T, baseURL, token, idempotencyKey, command string) directSubmitResponse {
+	t.Helper()
+
+	bodyBytes, err := json.Marshal(map[string]any{
+		"kind":            "direct",
+		"run_command":     command,
+		"product_id":      "sandbox",
+		"idempotency_key": idempotencyKey,
+	})
+	if err != nil {
+		t.Fatalf("marshal submit body: %v", err)
+	}
+	req, _ := http.NewRequest("POST", baseURL+"/api/v1/executions", strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("submit execution: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("expected submit 201, got %d", resp.StatusCode)
+	}
+
+	var submitResp directSubmitResponse
+	if err := json.NewDecoder(resp.Body).Decode(&submitResp); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+	if submitResp.ExecutionID == "" || submitResp.AttemptID == "" {
+		t.Fatalf("expected execution_id and attempt_id, got execution=%q attempt=%q", submitResp.ExecutionID, submitResp.AttemptID)
+	}
+	return submitResp
+}
+
+func pollExecution(t *testing.T, baseURL, token, executionID string) polledExecutionView {
+	t.Helper()
+
+	var execution polledExecutionView
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		pollReq, _ := http.NewRequest("GET", baseURL+"/api/v1/executions/"+executionID, nil)
+		pollReq.Header.Set("Authorization", "Bearer "+token)
+		pollResp, err := http.DefaultClient.Do(pollReq)
+		if err != nil {
+			t.Fatalf("poll execution: %v", err)
+		}
+		_ = json.NewDecoder(pollResp.Body).Decode(&execution)
+		pollResp.Body.Close()
+		if execution.Status != "queued" && execution.Status != "reserved" && execution.Status != "launching" && execution.Status != "running" && execution.Status != "finalizing" {
+			return execution
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("execution %s did not complete before deadline", executionID)
+	return execution
+}
+
+func assertBillingStartedAtBillablePhase(t *testing.T, ctx context.Context, ch anyQueryRower, rentalDB *sql.DB, billingDB *sql.DB, attemptID string, billableStartedAt time.Time) {
+	t.Helper()
+	if billableStartedAt.IsZero() {
+		t.Fatal("fake orchestrator did not emit a billable phase start")
+	}
+
+	var attemptStartedAt, rentalWindowStart, rentalActivatedAt sql.NullTime
+	if err := rentalDB.QueryRowContext(ctx, `
+		SELECT a.started_at, w.window_start, w.activated_at
+		FROM execution_attempts a
+		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
+		WHERE a.attempt_id = $1
+	`, attemptID).Scan(&attemptStartedAt, &rentalWindowStart, &rentalActivatedAt); err != nil {
+		t.Fatalf("query rental activation state: %v", err)
+	}
+	assertSQLTimeClose(t, "attempt.started_at", attemptStartedAt, billableStartedAt)
+	assertSQLTimeClose(t, "rental window_start", rentalWindowStart, billableStartedAt)
+	assertSQLTimeClose(t, "rental activated_at", rentalActivatedAt, billableStartedAt)
+
+	var billingWindowStart, billingActivatedAt sql.NullTime
+	var usageSummary string
+	if err := billingDB.QueryRowContext(ctx, `
+		SELECT window_start, activated_at, usage_summary::text
+		FROM billing_windows
+		WHERE source_ref = $1
+	`, attemptID).Scan(&billingWindowStart, &billingActivatedAt, &usageSummary); err != nil {
+		t.Fatalf("query billing activation state: %v", err)
+	}
+	assertSQLTimeClose(t, "billing window_start", billingWindowStart, billableStartedAt)
+	assertSQLTimeClose(t, "billing activated_at", billingActivatedAt, billableStartedAt)
+	if !strings.Contains(usageSummary, "net_rx_bytes") || !strings.Contains(usageSummary, "block_write_bytes") {
+		t.Fatalf("expected host usage counters in billing usage_summary, got %s", usageSummary)
+	}
+
+	var meteringStartedAt time.Time
+	if err := ch.QueryRow(ctx,
+		"SELECT started_at FROM forge_metal.metering WHERE source_ref = $1 LIMIT 1",
+		attemptID,
+	).Scan(&meteringStartedAt); err != nil {
+		t.Fatalf("query metering started_at: %v", err)
+	}
+	assertTimeClose(t, "metering started_at", meteringStartedAt, billableStartedAt)
+}
+
+func assertSQLTimeClose(t *testing.T, name string, got sql.NullTime, want time.Time) {
+	t.Helper()
+	if !got.Valid {
+		t.Fatalf("expected %s to be set", name)
+	}
+	assertTimeClose(t, name, got.Time, want)
+}
+
+func assertTimeClose(t *testing.T, name string, got, want time.Time) {
+	t.Helper()
+	delta := got.UTC().Sub(want.UTC())
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 10*time.Millisecond {
+		t.Fatalf("%s drifted from billable phase start by %s: got=%s want=%s", name, delta, got.UTC().Format(time.RFC3339Nano), want.UTC().Format(time.RFC3339Nano))
 	}
 }
 

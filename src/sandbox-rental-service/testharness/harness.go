@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
@@ -24,7 +25,10 @@ import (
 // jobs.Runner — Go structural typing means any value implementing
 // this interface also satisfies the internal one.
 type Runner interface {
-	Run(ctx context.Context, job vmorchestrator.JobConfig) (vmorchestrator.JobResult, error)
+	StartDirectJob(ctx context.Context, job vmorchestrator.JobConfig) (string, error)
+	StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(vmorchestrator.JobGuestEvent) error) error
+	WaitJob(ctx context.Context, jobID string, includeOutput bool) (vmorchestrator.JobStatus, error)
+	CancelJob(ctx context.Context, jobID string) (bool, error)
 }
 
 // BillingClient abstracts the billing client dependency for tests.
@@ -41,7 +45,8 @@ type BillingClient interface {
 		allocation map[string]float64,
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
-	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, reqEditors ...billingclient.RequestEditorFn) error
+	Activate(ctx context.Context, reservation billingclient.Reservation, activatedAt time.Time, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
+	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, usageSummary map[string]any, reqEditors ...billingclient.RequestEditorFn) error
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
 }
 

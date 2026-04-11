@@ -34,6 +34,7 @@ type reconcileCandidate struct {
 	ReservedQuantity  int
 	PricingPhase      string
 	WindowStart       time.Time
+	ActivatedAt       sql.NullTime
 	Reservation       billingclient.Reservation
 	OrchestratorJobID string
 }
@@ -61,7 +62,8 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			w.reservation_shape,
 			w.reserved_quantity,
 			w.pricing_phase,
-			w.window_start
+				w.window_start,
+				w.activated_at
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
@@ -86,6 +88,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 			&candidate.ReservedQuantity,
 			&candidate.PricingPhase,
 			&candidate.WindowStart,
+			&candidate.ActivatedAt,
 		); err != nil {
 			return fmt.Errorf("scan reserved reconciliation candidate: %w", err)
 		}
@@ -101,7 +104,6 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 		if err := s.markTerminal(ctx, candidate.ExecutionID, candidate.AttemptID, executionOutcome{
 			State:         StateFailed,
 			FailureReason: "reconciled_reserved_timeout",
-			StartedAt:     completedAt,
 			CompletedAt:   completedAt,
 		}); err != nil {
 			return fmt.Errorf("mark stale reserved attempt terminal %s: %w", candidate.AttemptID, err)
@@ -126,11 +128,12 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			w.reserved_quantity,
 			w.pricing_phase,
 			w.state,
-			w.window_start
+				w.window_start,
+				w.activated_at
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN LATERAL (
-			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start
+			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start, activated_at
 			FROM execution_billing_windows
 			WHERE attempt_id = a.attempt_id
 			ORDER BY window_seq DESC
@@ -161,6 +164,7 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 			&candidate.PricingPhase,
 			&candidate.WindowState,
 			&candidate.WindowStart,
+			&candidate.ActivatedAt,
 		); err != nil {
 			return fmt.Errorf("scan finalizing reconciliation candidate: %w", err)
 		}
@@ -249,11 +253,12 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 			w.reserved_quantity,
 			w.pricing_phase,
 			w.state,
-			w.window_start
+			w.window_start,
+			w.activated_at
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		JOIN LATERAL (
-			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start
+			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start, activated_at
 			FROM execution_billing_windows
 			WHERE attempt_id = a.attempt_id
 			ORDER BY window_seq DESC
@@ -276,6 +281,7 @@ func (s *Service) loadFinalizingCandidate(ctx context.Context, executionID, atte
 		&candidate.PricingPhase,
 		&candidate.WindowState,
 		&candidate.WindowStart,
+		&candidate.ActivatedAt,
 	); err != nil {
 		return reconcileCandidate{}, fmt.Errorf("load finalizing candidate %s: %w", attemptID, err)
 	}
@@ -305,8 +311,23 @@ func (s *Service) reconcileFinalizingCandidate(ctx context.Context, candidate re
 }
 
 func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconcileCandidate) error {
+	if candidate.Reservation.ActivatedAt == nil {
+		if !candidate.StartedAt.Valid {
+			return s.voidReconciledAttempt(ctx, candidate)
+		}
+		activated, err := s.Billing.Activate(ctx, candidate.Reservation, candidate.StartedAt.Time.UTC())
+		if err != nil {
+			return fmt.Errorf("activate reconciled attempt %s: %w", candidate.AttemptID, err)
+		}
+		candidate.Reservation = activated
+		candidate.WindowStart = activated.WindowStart
+		candidate.ActivatedAt = sql.NullTime{Time: activated.WindowStart, Valid: true}
+		if err := s.markWindowActivated(ctx, candidate.AttemptID, candidate.WindowSeq, activated.WindowStart); err != nil {
+			return fmt.Errorf("mark reconciled window activated %s: %w", candidate.AttemptID, err)
+		}
+	}
 	actualSeconds := actualSecondsForReservation(candidate.Reservation, candidate.CompletedAt.Time)
-	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds)); err != nil {
+	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds), nil); err != nil {
 		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_quantity=%d error=%v", candidate.WindowSeq, actualSeconds, err)
 		candidate.FailureReason = "billing_settle_failed"
 		if updateErr := s.markFinalizing(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); updateErr != nil {
@@ -380,7 +401,7 @@ func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID
 // for the given attempt. This ensures credits are returned to the org on lost attempts.
 func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, now time.Time) error {
 	rows, err := s.PG.QueryContext(ctx, `
-		SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, window_start
+		SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, window_start, activated_at
 		FROM execution_billing_windows
 		WHERE attempt_id = $1 AND state = 'reserved'
 	`, attemptID)
@@ -398,6 +419,7 @@ func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, 
 			&candidate.ReservedQuantity,
 			&candidate.PricingPhase,
 			&candidate.WindowStart,
+			&candidate.ActivatedAt,
 		); err != nil {
 			return err
 		}
@@ -413,6 +435,11 @@ func (s *Service) voidReservedWindows(ctx context.Context, attemptID uuid.UUID, 
 }
 
 func (candidate reconcileCandidate) reservation() billingclient.Reservation {
+	var activatedAt *time.Time
+	if candidate.ActivatedAt.Valid {
+		value := candidate.ActivatedAt.Time.UTC()
+		activatedAt = &value
+	}
 	return billingclient.Reservation{
 		WindowId:         candidate.BillingWindowID,
 		SourceType:       executionSourceType,
@@ -422,18 +449,16 @@ func (candidate reconcileCandidate) reservation() billingclient.Reservation {
 		WindowSecs:       int32(candidate.ReservedQuantity),
 		PricingPhase:     candidate.PricingPhase,
 		WindowStart:      candidate.WindowStart.UTC(),
+		ActivatedAt:      activatedAt,
 	}
 }
 
 func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrator.JobStatus) reconcileCandidate {
 	candidate.CompletedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
-	if !candidate.StartedAt.Valid {
-		candidate.StartedAt = sql.NullTime{Time: candidate.CompletedAt.Time, Valid: true}
-	}
 	if status.Result != nil {
 		candidate.ExitCode = status.Result.ExitCode
 		candidate.DurationMs = status.Result.Duration.Milliseconds()
-		if status.Result.Duration <= 0 {
+		if status.Result.Duration <= 0 && candidate.StartedAt.Valid {
 			candidate.DurationMs = candidate.CompletedAt.Time.Sub(candidate.StartedAt.Time).Milliseconds()
 		}
 	}
@@ -444,7 +469,7 @@ func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrat
 }
 
 func outcomeFromCandidate(candidate reconcileCandidate) executionOutcome {
-	startedAt := time.Now().UTC()
+	var startedAt time.Time
 	if candidate.StartedAt.Valid {
 		startedAt = candidate.StartedAt.Time
 	}
@@ -467,7 +492,7 @@ func outcomeFromCandidate(candidate reconcileCandidate) executionOutcome {
 	default:
 		outcome.State = StateFailed
 	}
-	if outcome.DurationMs == 0 {
+	if outcome.DurationMs == 0 && !outcome.StartedAt.IsZero() {
 		outcome.DurationMs = outcome.CompletedAt.Sub(outcome.StartedAt).Milliseconds()
 	}
 	return outcome
