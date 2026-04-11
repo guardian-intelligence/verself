@@ -3,7 +3,76 @@
 
 import * as v from "valibot";
 
-export const vAttemptRecord = v.strictObject({
+export const vBillingBalance = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  credit_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  credit_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  free_tier_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  free_tier_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  total_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+});
+
+export const vBillingGrant = v.strictObject({
+  available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  grant_id: v.string(),
+  pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  source: v.string(),
+});
+
+export const vBillingGrants = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  grants: v.nullable(v.array(vBillingGrant)),
+});
+
+export const vBillingSubscription = v.strictObject({
+  cadence: v.string(),
+  current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  current_period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  plan_id: v.string(),
+  product_id: v.string(),
+  status: v.string(),
+  subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
+});
+
+export const vBillingSubscriptions = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  subscriptions: v.nullable(v.array(vBillingSubscription)),
+});
+
+export const vBillingUrlResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  url: v.string(),
+});
+
+export const vErrorDetail = v.strictObject({
+  location: v.optional(v.string()),
+  message: v.optional(v.string()),
+  value: v.optional(v.unknown()),
+});
+
+export const vErrorModel = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  detail: v.optional(v.string()),
+  errors: v.nullish(v.array(vErrorDetail)),
+  instance: v.optional(v.pipe(v.string(), v.url())),
+  status: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(
+        BigInt("-9223372036854775808"),
+        "Invalid value: Expected int64 to be >= -9223372036854775808",
+      ),
+      v.maxValue(BigInt(599)),
+    ),
+  ),
+  title: v.optional(v.string()),
+  type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
+});
+
+export const vSandboxAttemptRecord = v.strictObject({
   attempt_id: v.string(),
   attempt_seq: v.pipe(
     v.union([v.number(), v.string(), v.bigint()]),
@@ -71,45 +140,28 @@ export const vAttemptRecord = v.strictObject({
   ),
 });
 
-export const vBillingBalance = v.strictObject({
+export const vSandboxBillingCheckoutRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  credit_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  credit_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  total_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  amount_cents: v.pipe(
+    v.union([v.number(), v.string(), v.bigint()]),
+    v.transform((x) => BigInt(x)),
+    v.minValue(BigInt(1)),
+    v.maxValue(BigInt(9007199254740991)),
+  ),
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  product_id: v.pipe(v.string(), v.maxLength(255)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
-export const vBillingGrant = v.strictObject({
-  available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  grant_id: v.string(),
-  pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  source: v.string(),
-});
-
-export const vBillingGrants = v.strictObject({
+export const vSandboxBillingSubscriptionRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  grants: v.nullable(v.array(vBillingGrant)),
+  cadence: v.optional(v.picklist(["monthly", "annual"])),
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  plan_id: v.pipe(v.string(), v.maxLength(255)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
-export const vBillingSubscription = v.strictObject({
-  cadence: v.string(),
-  current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  current_period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  plan_id: v.string(),
-  product_id: v.string(),
-  status: v.string(),
-  subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
-});
-
-export const vBillingSubscriptions = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  subscriptions: v.nullable(v.array(vBillingSubscription)),
-});
-
-export const vBillingWindow = v.strictObject({
+export const vSandboxBillingWindow = v.strictObject({
   actual_quantity: v.optional(
     v.pipe(
       v.union([v.number(), v.string(), v.bigint()]),
@@ -140,49 +192,17 @@ export const vBillingWindow = v.strictObject({
   window_start: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vCheckoutInputBody = v.strictObject({
+export const vSandboxExecutionLogs = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  amount_cents: v.pipe(
-    v.union([v.number(), v.string(), v.bigint()]),
-    v.transform((x) => BigInt(x)),
-    v.minValue(BigInt(1)),
-    v.maxValue(BigInt(9007199254740991)),
-  ),
-  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
-  product_id: v.pipe(v.string(), v.maxLength(255)),
-  success_url: v.pipe(v.string(), v.maxLength(2048)),
+  attempt_id: v.string(),
+  execution_id: v.string(),
+  logs: v.string(),
 });
 
-export const vErrorDetail = v.strictObject({
-  location: v.optional(v.string()),
-  message: v.optional(v.string()),
-  value: v.optional(v.unknown()),
-});
-
-export const vErrorModel = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  detail: v.optional(v.string()),
-  errors: v.nullish(v.array(vErrorDetail)),
-  instance: v.optional(v.pipe(v.string(), v.url())),
-  status: v.optional(
-    v.pipe(
-      v.union([v.number(), v.string(), v.bigint()]),
-      v.transform((x) => BigInt(x)),
-      v.minValue(
-        BigInt("-9223372036854775808"),
-        "Invalid value: Expected int64 to be >= -9223372036854775808",
-      ),
-      v.maxValue(BigInt(599)),
-    ),
-  ),
-  title: v.optional(v.string()),
-  type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
-});
-
-export const vExecutionRecord = v.strictObject({
+export const vSandboxExecutionRecord = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   actor_id: v.string(),
-  billing_windows: v.nullish(v.array(vBillingWindow)),
+  billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
   commit_sha: v.optional(v.string()),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -191,7 +211,7 @@ export const vExecutionRecord = v.strictObject({
   golden_generation_id: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
-  latest_attempt: vAttemptRecord,
+  latest_attempt: vSandboxAttemptRecord,
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
@@ -208,14 +228,7 @@ export const vExecutionRecord = v.strictObject({
   workflow_path: v.optional(v.string()),
 });
 
-export const vGetExecutionLogsOutputBody = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  attempt_id: v.string(),
-  execution_id: v.string(),
-  logs: v.string(),
-});
-
-export const vGoldenGenerationRecord = v.strictObject({
+export const vSandboxGoldenGenerationRecord = v.strictObject({
   activated_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   attempt_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -235,7 +248,7 @@ export const vGoldenGenerationRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vImportRepoRequest = v.strictObject({
+export const vSandboxImportRepoRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   clone_url: v.string(),
   default_branch: v.optional(v.string()),
@@ -246,7 +259,7 @@ export const vImportRepoRequest = v.strictObject({
   provider_repo_id: v.optional(v.string()),
 });
 
-export const vRepoRecord = v.strictObject({
+export const vSandboxRepoRecord = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   active_golden_generation_id: v.optional(v.string()),
   archived_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
@@ -270,23 +283,23 @@ export const vRepoRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vRepoBootstrapRecord = v.strictObject({
+export const vSandboxRepoBootstrapRecord = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   attempt_id: v.string(),
   execution_id: v.string(),
-  generation: vGoldenGenerationRecord,
-  repo: vRepoRecord,
+  generation: vSandboxGoldenGenerationRecord,
+  repo: vSandboxRepoRecord,
   trigger_reason: v.string(),
 });
 
-export const vSubmitExecutionOutputBody = v.strictObject({
+export const vSandboxSubmitExecutionResult = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   attempt_id: v.string(),
   execution_id: v.string(),
   status: v.string(),
 });
 
-export const vSubmitRequest = v.strictObject({
+export const vSandboxSubmitRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   default_branch: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
@@ -302,19 +315,6 @@ export const vSubmitRequest = v.strictObject({
   run_command: v.optional(v.string()),
   workflow_job_name: v.optional(v.string()),
   workflow_path: v.optional(v.string()),
-});
-
-export const vSubscribeInputBody = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  cadence: v.optional(v.picklist(["monthly", "annual"])),
-  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
-  plan_id: v.pipe(v.string(), v.maxLength(255)),
-  success_url: v.pipe(v.string(), v.maxLength(2048)),
-});
-
-export const vUrlOutputBody = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  url: v.string(),
 });
 
 export const vBillingBalanceWritable = v.strictObject({
@@ -334,16 +334,8 @@ export const vBillingSubscriptionsWritable = v.strictObject({
   subscriptions: v.nullable(v.array(vBillingSubscription)),
 });
 
-export const vCheckoutInputBodyWritable = v.strictObject({
-  amount_cents: v.pipe(
-    v.union([v.number(), v.string(), v.bigint()]),
-    v.transform((x) => BigInt(x)),
-    v.minValue(BigInt(1)),
-    v.maxValue(BigInt(9007199254740991)),
-  ),
-  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
-  product_id: v.pipe(v.string(), v.maxLength(255)),
-  success_url: v.pipe(v.string(), v.maxLength(2048)),
+export const vBillingUrlResponseWritable = v.strictObject({
+  url: v.string(),
 });
 
 export const vErrorModelWritable = v.strictObject({
@@ -365,9 +357,34 @@ export const vErrorModelWritable = v.strictObject({
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
-export const vExecutionRecordWritable = v.strictObject({
+export const vSandboxBillingCheckoutRequestWritable = v.strictObject({
+  amount_cents: v.pipe(
+    v.union([v.number(), v.string(), v.bigint()]),
+    v.transform((x) => BigInt(x)),
+    v.minValue(BigInt(1)),
+    v.maxValue(BigInt(9007199254740991)),
+  ),
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  product_id: v.pipe(v.string(), v.maxLength(255)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
+export const vSandboxBillingSubscriptionRequestWritable = v.strictObject({
+  cadence: v.optional(v.picklist(["monthly", "annual"])),
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  plan_id: v.pipe(v.string(), v.maxLength(255)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
+export const vSandboxExecutionLogsWritable = v.strictObject({
+  attempt_id: v.string(),
+  execution_id: v.string(),
+  logs: v.string(),
+});
+
+export const vSandboxExecutionRecordWritable = v.strictObject({
   actor_id: v.string(),
-  billing_windows: v.nullish(v.array(vBillingWindow)),
+  billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
   commit_sha: v.optional(v.string()),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
@@ -376,7 +393,7 @@ export const vExecutionRecordWritable = v.strictObject({
   golden_generation_id: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
-  latest_attempt: vAttemptRecord,
+  latest_attempt: vSandboxAttemptRecord,
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
@@ -393,13 +410,7 @@ export const vExecutionRecordWritable = v.strictObject({
   workflow_path: v.optional(v.string()),
 });
 
-export const vGetExecutionLogsOutputBodyWritable = v.strictObject({
-  attempt_id: v.string(),
-  execution_id: v.string(),
-  logs: v.string(),
-});
-
-export const vImportRepoRequestWritable = v.strictObject({
+export const vSandboxImportRepoRequestWritable = v.strictObject({
   clone_url: v.string(),
   default_branch: v.optional(v.string()),
   full_name: v.optional(v.string()),
@@ -409,7 +420,7 @@ export const vImportRepoRequestWritable = v.strictObject({
   provider_repo_id: v.optional(v.string()),
 });
 
-export const vRepoRecordWritable = v.strictObject({
+export const vSandboxRepoRecordWritable = v.strictObject({
   active_golden_generation_id: v.optional(v.string()),
   archived_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   clone_url: v.string(),
@@ -432,21 +443,21 @@ export const vRepoRecordWritable = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vRepoBootstrapRecordWritable = v.strictObject({
+export const vSandboxRepoBootstrapRecordWritable = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
-  generation: vGoldenGenerationRecord,
-  repo: vRepoRecordWritable,
+  generation: vSandboxGoldenGenerationRecord,
+  repo: vSandboxRepoRecordWritable,
   trigger_reason: v.string(),
 });
 
-export const vSubmitExecutionOutputBodyWritable = v.strictObject({
+export const vSandboxSubmitExecutionResultWritable = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
   status: v.string(),
 });
 
-export const vSubmitRequestWritable = v.strictObject({
+export const vSandboxSubmitRequestWritable = v.strictObject({
   default_branch: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
@@ -463,28 +474,17 @@ export const vSubmitRequestWritable = v.strictObject({
   workflow_path: v.optional(v.string()),
 });
 
-export const vSubscribeInputBodyWritable = v.strictObject({
-  cadence: v.optional(v.picklist(["monthly", "annual"])),
-  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
-  plan_id: v.pipe(v.string(), v.maxLength(255)),
-  success_url: v.pipe(v.string(), v.maxLength(2048)),
-});
-
-export const vUrlOutputBodyWritable = v.strictObject({
-  url: v.string(),
-});
-
 /**
  * OK
  */
 export const vGetBillingBalanceResponse = vBillingBalance;
 
-export const vCreateBillingCheckoutBody = vCheckoutInputBodyWritable;
+export const vCreateBillingCheckoutBody = vSandboxBillingCheckoutRequestWritable;
 
 /**
  * OK
  */
-export const vCreateBillingCheckoutResponse = vUrlOutputBody;
+export const vCreateBillingCheckoutResponse = vBillingUrlResponse;
 
 export const vListBillingGrantsQuery = v.object({
   product_id: v.optional(v.string()),
@@ -496,24 +496,24 @@ export const vListBillingGrantsQuery = v.object({
  */
 export const vListBillingGrantsResponse = vBillingGrants;
 
-export const vCreateBillingSubscriptionBody = vSubscribeInputBodyWritable;
+export const vCreateBillingSubscriptionBody = vSandboxBillingSubscriptionRequestWritable;
 
 /**
  * OK
  */
-export const vCreateBillingSubscriptionResponse = vUrlOutputBody;
+export const vCreateBillingSubscriptionResponse = vBillingUrlResponse;
 
 /**
  * OK
  */
 export const vListBillingSubscriptionsResponse = vBillingSubscriptions;
 
-export const vSubmitExecutionBody = vSubmitRequestWritable;
+export const vSubmitExecutionBody = vSandboxSubmitRequestWritable;
 
 /**
  * Created
  */
-export const vSubmitExecutionResponse = vSubmitExecutionOutputBody;
+export const vSubmitExecutionResponse = vSandboxSubmitExecutionResult;
 
 export const vGetExecutionPath = v.object({
   execution_id: v.string(),
@@ -522,7 +522,7 @@ export const vGetExecutionPath = v.object({
 /**
  * OK
  */
-export const vGetExecutionResponse = vExecutionRecord;
+export const vGetExecutionResponse = vSandboxExecutionRecord;
 
 export const vGetExecutionLogsPath = v.object({
   execution_id: v.string(),
@@ -531,19 +531,19 @@ export const vGetExecutionLogsPath = v.object({
 /**
  * OK
  */
-export const vGetExecutionLogsResponse = vGetExecutionLogsOutputBody;
+export const vGetExecutionLogsResponse = vSandboxExecutionLogs;
 
 /**
  * OK
  */
-export const vListReposResponse = v.nullable(v.array(vRepoRecord));
+export const vListReposResponse = v.nullable(v.array(vSandboxRepoRecord));
 
-export const vImportRepoBody = vImportRepoRequestWritable;
+export const vImportRepoBody = vSandboxImportRepoRequestWritable;
 
 /**
  * Created
  */
-export const vImportRepoResponse = vRepoRecord;
+export const vImportRepoResponse = vSandboxRepoRecord;
 
 export const vGetRepoPath = v.object({
   repo_id: v.string(),
@@ -552,7 +552,7 @@ export const vGetRepoPath = v.object({
 /**
  * OK
  */
-export const vGetRepoResponse = vRepoRecord;
+export const vGetRepoResponse = vSandboxRepoRecord;
 
 export const vListRepoGenerationsPath = v.object({
   repo_id: v.string(),
@@ -561,7 +561,7 @@ export const vListRepoGenerationsPath = v.object({
 /**
  * OK
  */
-export const vListRepoGenerationsResponse = v.nullable(v.array(vGoldenGenerationRecord));
+export const vListRepoGenerationsResponse = v.nullable(v.array(vSandboxGoldenGenerationRecord));
 
 export const vRefreshRepoPath = v.object({
   repo_id: v.string(),
@@ -570,7 +570,7 @@ export const vRefreshRepoPath = v.object({
 /**
  * Accepted
  */
-export const vRefreshRepoResponse = vRepoBootstrapRecord;
+export const vRefreshRepoResponse = vSandboxRepoBootstrapRecord;
 
 export const vRescanRepoPath = v.object({
   repo_id: v.string(),
@@ -579,4 +579,4 @@ export const vRescanRepoPath = v.object({
 /**
  * OK
  */
-export const vRescanRepoResponse = vRepoRecord;
+export const vRescanRepoResponse = vSandboxRepoRecord;

@@ -5,27 +5,6 @@ export type ClientOptions = {
   baseUrl: "http://127.0.0.1:4243" | (string & {});
 };
 
-export type AttemptRecord = {
-  attempt_id: string;
-  attempt_seq: number;
-  billing_job_id?: number;
-  completed_at?: string;
-  created_at: string;
-  duration_ms?: number;
-  exit_code?: number;
-  failure_reason?: string;
-  golden_snapshot?: string;
-  orchestrator_job_id?: string;
-  runner_name?: string;
-  started_at?: string;
-  state: string;
-  stderr_bytes?: number;
-  stdout_bytes?: number;
-  trace_id?: string;
-  updated_at: string;
-  zfs_written?: number;
-};
-
 export type BillingBalance = {
   /**
    * A URL to the JSON Schema for this object.
@@ -73,35 +52,12 @@ export type BillingSubscriptions = {
   subscriptions: Array<BillingSubscription> | null;
 };
 
-export type BillingWindow = {
-  actual_quantity?: number;
-  attempt_id: string;
-  billing_window_id: string;
-  created_at: string;
-  pricing_phase?: string;
-  reservation_shape: string;
-  reserved_quantity: number;
-  settled_at?: string;
-  state: string;
-  window_seq: number;
-  window_start: string;
-};
-
-export type CheckoutInputBody = {
+export type BillingUrlResponse = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  /**
-   * Amount in cents
-   */
-  amount_cents: number;
-  cancel_url: string;
-  /**
-   * Product to purchase credits for
-   */
-  product_id: string;
-  success_url: string;
+  url: string;
 };
 
 export type ErrorDetail = {
@@ -150,13 +106,92 @@ export type ErrorModel = {
   type?: string;
 };
 
-export type ExecutionRecord = {
+export type SandboxAttemptRecord = {
+  attempt_id: string;
+  attempt_seq: number;
+  billing_job_id?: number;
+  completed_at?: string;
+  created_at: string;
+  duration_ms?: number;
+  exit_code?: number;
+  failure_reason?: string;
+  golden_snapshot?: string;
+  orchestrator_job_id?: string;
+  runner_name?: string;
+  started_at?: string;
+  state: string;
+  stderr_bytes?: number;
+  stdout_bytes?: number;
+  trace_id?: string;
+  updated_at: string;
+  zfs_written?: number;
+};
+
+export type SandboxBillingCheckoutRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  /**
+   * Amount in cents
+   */
+  amount_cents: number;
+  cancel_url: string;
+  /**
+   * Product to purchase credits for
+   */
+  product_id: string;
+  success_url: string;
+};
+
+export type SandboxBillingSubscriptionRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  /**
+   * Billing cadence (default monthly)
+   */
+  cadence?: "monthly" | "annual";
+  cancel_url: string;
+  /**
+   * Plan to subscribe to
+   */
+  plan_id: string;
+  success_url: string;
+};
+
+export type SandboxBillingWindow = {
+  actual_quantity?: number;
+  attempt_id: string;
+  billing_window_id: string;
+  created_at: string;
+  pricing_phase?: string;
+  reservation_shape: string;
+  reserved_quantity: number;
+  settled_at?: string;
+  state: string;
+  window_seq: number;
+  window_start: string;
+};
+
+export type SandboxExecutionLogs = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  attempt_id: string;
+  execution_id: string;
+  logs: string;
+};
+
+export type SandboxExecutionRecord = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
   actor_id: string;
-  billing_windows?: Array<BillingWindow> | null;
+  billing_windows?: Array<SandboxBillingWindow> | null;
   commit_sha?: string;
   correlation_id?: string;
   created_at: string;
@@ -165,7 +200,7 @@ export type ExecutionRecord = {
   golden_generation_id?: string;
   idempotency_key?: string;
   kind: string;
-  latest_attempt: AttemptRecord;
+  latest_attempt: SandboxAttemptRecord;
   org_id: string;
   product_id: string;
   provider?: string;
@@ -182,17 +217,7 @@ export type ExecutionRecord = {
   workflow_path?: string;
 };
 
-export type GetExecutionLogsOutputBody = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  attempt_id: string;
-  execution_id: string;
-  logs: string;
-};
-
-export type GoldenGenerationRecord = {
+export type SandboxGoldenGenerationRecord = {
   activated_at?: string;
   attempt_id?: string;
   created_at: string;
@@ -212,7 +237,7 @@ export type GoldenGenerationRecord = {
   updated_at: string;
 };
 
-export type ImportRepoRequest = {
+export type SandboxImportRepoRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -226,19 +251,19 @@ export type ImportRepoRequest = {
   provider_repo_id?: string;
 };
 
-export type RepoBootstrapRecord = {
+export type SandboxRepoBootstrapRecord = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
   attempt_id: string;
   execution_id: string;
-  generation: GoldenGenerationRecord;
-  repo: RepoRecord;
+  generation: SandboxGoldenGenerationRecord;
+  repo: SandboxRepoRecord;
   trigger_reason: string;
 };
 
-export type RepoRecord = {
+export type SandboxRepoRecord = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -265,7 +290,7 @@ export type RepoRecord = {
   updated_at: string;
 };
 
-export type SubmitExecutionOutputBody = {
+export type SandboxSubmitExecutionResult = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -275,7 +300,7 @@ export type SubmitExecutionOutputBody = {
   status: string;
 };
 
-export type SubmitRequest = {
+export type SandboxSubmitRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -296,31 +321,6 @@ export type SubmitRequest = {
   workflow_path?: string;
 };
 
-export type SubscribeInputBody = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  /**
-   * Billing cadence (default monthly)
-   */
-  cadence?: "monthly" | "annual";
-  cancel_url: string;
-  /**
-   * Plan to subscribe to
-   */
-  plan_id: string;
-  success_url: string;
-};
-
-export type UrlOutputBody = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  url: string;
-};
-
 export type BillingBalanceWritable = {
   credit_available: string;
   credit_pending: string;
@@ -338,17 +338,8 @@ export type BillingSubscriptionsWritable = {
   subscriptions: Array<BillingSubscription> | null;
 };
 
-export type CheckoutInputBodyWritable = {
-  /**
-   * Amount in cents
-   */
-  amount_cents: number;
-  cancel_url: string;
-  /**
-   * Product to purchase credits for
-   */
-  product_id: string;
-  success_url: string;
+export type BillingUrlResponseWritable = {
+  url: string;
 };
 
 export type ErrorModelWritable = {
@@ -378,9 +369,41 @@ export type ErrorModelWritable = {
   type?: string;
 };
 
-export type ExecutionRecordWritable = {
+export type SandboxBillingCheckoutRequestWritable = {
+  /**
+   * Amount in cents
+   */
+  amount_cents: number;
+  cancel_url: string;
+  /**
+   * Product to purchase credits for
+   */
+  product_id: string;
+  success_url: string;
+};
+
+export type SandboxBillingSubscriptionRequestWritable = {
+  /**
+   * Billing cadence (default monthly)
+   */
+  cadence?: "monthly" | "annual";
+  cancel_url: string;
+  /**
+   * Plan to subscribe to
+   */
+  plan_id: string;
+  success_url: string;
+};
+
+export type SandboxExecutionLogsWritable = {
+  attempt_id: string;
+  execution_id: string;
+  logs: string;
+};
+
+export type SandboxExecutionRecordWritable = {
   actor_id: string;
-  billing_windows?: Array<BillingWindow> | null;
+  billing_windows?: Array<SandboxBillingWindow> | null;
   commit_sha?: string;
   correlation_id?: string;
   created_at: string;
@@ -389,7 +412,7 @@ export type ExecutionRecordWritable = {
   golden_generation_id?: string;
   idempotency_key?: string;
   kind: string;
-  latest_attempt: AttemptRecord;
+  latest_attempt: SandboxAttemptRecord;
   org_id: string;
   product_id: string;
   provider?: string;
@@ -406,13 +429,7 @@ export type ExecutionRecordWritable = {
   workflow_path?: string;
 };
 
-export type GetExecutionLogsOutputBodyWritable = {
-  attempt_id: string;
-  execution_id: string;
-  logs: string;
-};
-
-export type ImportRepoRequestWritable = {
+export type SandboxImportRepoRequestWritable = {
   clone_url: string;
   default_branch?: string;
   full_name?: string;
@@ -422,15 +439,15 @@ export type ImportRepoRequestWritable = {
   provider_repo_id?: string;
 };
 
-export type RepoBootstrapRecordWritable = {
+export type SandboxRepoBootstrapRecordWritable = {
   attempt_id: string;
   execution_id: string;
-  generation: GoldenGenerationRecord;
-  repo: RepoRecordWritable;
+  generation: SandboxGoldenGenerationRecord;
+  repo: SandboxRepoRecordWritable;
   trigger_reason: string;
 };
 
-export type RepoRecordWritable = {
+export type SandboxRepoRecordWritable = {
   active_golden_generation_id?: string;
   archived_at?: string;
   clone_url: string;
@@ -453,13 +470,13 @@ export type RepoRecordWritable = {
   updated_at: string;
 };
 
-export type SubmitExecutionOutputBodyWritable = {
+export type SandboxSubmitExecutionResultWritable = {
   attempt_id: string;
   execution_id: string;
   status: string;
 };
 
-export type SubmitRequestWritable = {
+export type SandboxSubmitRequestWritable = {
   default_branch?: string;
   idempotency_key?: string;
   kind: string;
@@ -474,23 +491,6 @@ export type SubmitRequestWritable = {
   run_command?: string;
   workflow_job_name?: string;
   workflow_path?: string;
-};
-
-export type SubscribeInputBodyWritable = {
-  /**
-   * Billing cadence (default monthly)
-   */
-  cadence?: "monthly" | "annual";
-  cancel_url: string;
-  /**
-   * Plan to subscribe to
-   */
-  plan_id: string;
-  success_url: string;
-};
-
-export type UrlOutputBodyWritable = {
-  url: string;
 };
 
 export type GetBillingBalanceData = {
@@ -520,7 +520,7 @@ export type GetBillingBalanceResponse =
   GetBillingBalanceResponses[keyof GetBillingBalanceResponses];
 
 export type CreateBillingCheckoutData = {
-  body: CheckoutInputBodyWritable;
+  body: SandboxBillingCheckoutRequestWritable;
   path?: never;
   query?: never;
   url: "/api/v1/billing/checkout";
@@ -540,7 +540,7 @@ export type CreateBillingCheckoutResponses = {
   /**
    * OK
    */
-  200: UrlOutputBody;
+  200: BillingUrlResponse;
 };
 
 export type CreateBillingCheckoutResponse =
@@ -582,7 +582,7 @@ export type ListBillingGrantsResponse =
   ListBillingGrantsResponses[keyof ListBillingGrantsResponses];
 
 export type CreateBillingSubscriptionData = {
-  body: SubscribeInputBodyWritable;
+  body: SandboxBillingSubscriptionRequestWritable;
   path?: never;
   query?: never;
   url: "/api/v1/billing/subscribe";
@@ -602,7 +602,7 @@ export type CreateBillingSubscriptionResponses = {
   /**
    * OK
    */
-  200: UrlOutputBody;
+  200: BillingUrlResponse;
 };
 
 export type CreateBillingSubscriptionResponse =
@@ -636,7 +636,7 @@ export type ListBillingSubscriptionsResponse =
   ListBillingSubscriptionsResponses[keyof ListBillingSubscriptionsResponses];
 
 export type SubmitExecutionData = {
-  body: SubmitRequestWritable;
+  body: SandboxSubmitRequestWritable;
   path?: never;
   query?: never;
   url: "/api/v1/executions";
@@ -655,7 +655,7 @@ export type SubmitExecutionResponses = {
   /**
    * Created
    */
-  201: SubmitExecutionOutputBody;
+  201: SandboxSubmitExecutionResult;
 };
 
 export type SubmitExecutionResponse = SubmitExecutionResponses[keyof SubmitExecutionResponses];
@@ -685,7 +685,7 @@ export type GetExecutionResponses = {
   /**
    * OK
    */
-  200: ExecutionRecord;
+  200: SandboxExecutionRecord;
 };
 
 export type GetExecutionResponse = GetExecutionResponses[keyof GetExecutionResponses];
@@ -715,7 +715,7 @@ export type GetExecutionLogsResponses = {
   /**
    * OK
    */
-  200: GetExecutionLogsOutputBody;
+  200: SandboxExecutionLogs;
 };
 
 export type GetExecutionLogsResponse = GetExecutionLogsResponses[keyof GetExecutionLogsResponses];
@@ -740,13 +740,13 @@ export type ListReposResponses = {
   /**
    * OK
    */
-  200: Array<RepoRecord> | null;
+  200: Array<SandboxRepoRecord> | null;
 };
 
 export type ListReposResponse = ListReposResponses[keyof ListReposResponses];
 
 export type ImportRepoData = {
-  body: ImportRepoRequestWritable;
+  body: SandboxImportRepoRequestWritable;
   path?: never;
   query?: never;
   url: "/api/v1/repos";
@@ -765,7 +765,7 @@ export type ImportRepoResponses = {
   /**
    * Created
    */
-  201: RepoRecord;
+  201: SandboxRepoRecord;
 };
 
 export type ImportRepoResponse = ImportRepoResponses[keyof ImportRepoResponses];
@@ -795,7 +795,7 @@ export type GetRepoResponses = {
   /**
    * OK
    */
-  200: RepoRecord;
+  200: SandboxRepoRecord;
 };
 
 export type GetRepoResponse = GetRepoResponses[keyof GetRepoResponses];
@@ -825,7 +825,7 @@ export type ListRepoGenerationsResponses = {
   /**
    * OK
    */
-  200: Array<GoldenGenerationRecord> | null;
+  200: Array<SandboxGoldenGenerationRecord> | null;
 };
 
 export type ListRepoGenerationsResponse =
@@ -856,7 +856,7 @@ export type RefreshRepoResponses = {
   /**
    * Accepted
    */
-  202: RepoBootstrapRecord;
+  202: SandboxRepoBootstrapRecord;
 };
 
 export type RefreshRepoResponse = RefreshRepoResponses[keyof RefreshRepoResponses];
@@ -886,7 +886,7 @@ export type RescanRepoResponses = {
   /**
    * OK
    */
-  200: RepoRecord;
+  200: SandboxRepoRecord;
 };
 
 export type RescanRepoResponse = RescanRepoResponses[keyof RescanRepoResponses];
