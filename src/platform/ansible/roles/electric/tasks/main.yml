@@ -63,10 +63,19 @@
 - name: Create Electric PostgreSQL role and publication
   ansible.builtin.include_tasks: pg_setup.yml
 
+- name: Check for local Electric container image
+  ansible.builtin.command:
+    cmd: "podman image exists {{ electric_image }}"
+  register: electric_image_exists
+  changed_when: false
+  failed_when: electric_image_exists.rc not in [0, 1]
+
+# Systemd restarts must not pull from Docker Hub; unauthenticated rate limits can block recovery.
 - name: Pull Electric container image
   ansible.builtin.command:
     cmd: "podman pull {{ electric_image }}"
   changed_when: true
+  when: electric_image_exists.rc != 0
 
 - name: Deploy Electric systemd unit
   ansible.builtin.template:
