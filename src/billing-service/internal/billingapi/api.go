@@ -14,7 +14,10 @@ import (
 	"github.com/forge-metal/billing-service/internal/billing"
 )
 
-const defaultInternalRole = "billing_internal"
+const (
+	defaultInternalRole         = "billing_internal"
+	problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-customer"
+)
 
 type Config struct {
 	Version      string
@@ -214,6 +217,8 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 	for _, grant := range grants {
 		out = append(out, GrantResponse{
 			GrantID:   grant.GrantID.String(),
+			ProductID: grant.ProductID,
+			BucketID:  grant.BucketID,
 			Source:    grant.Source.String(),
 			Available: apiwire.Uint64(grant.Available),
 			Pending:   apiwire.Uint64(grant.Pending),
@@ -299,7 +304,11 @@ func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingC
 	url, err := client.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
 	if err != nil {
 		if errors.Is(err, billing.ErrNoStripeCustomer) {
-			return nil, huma.Error422UnprocessableEntity("no stripe customer linked to this org", err)
+			problem := huma.Error422UnprocessableEntity("no stripe customer linked to this org", err)
+			if model, ok := problem.(*huma.ErrorModel); ok {
+				model.Type = problemTypeNoStripeCustomer
+			}
+			return nil, problem
 		}
 		return nil, huma.Error500InternalServerError("create portal session", err)
 	}

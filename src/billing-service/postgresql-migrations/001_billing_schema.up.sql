@@ -23,7 +23,7 @@ CREATE TABLE plans (
     product_id               TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     display_name             TEXT        NOT NULL,
     billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
-    included_credits         BIGINT,
+    included_credit_buckets JSONB       NOT NULL DEFAULT '{}'::jsonb,
     unit_rates               JSONB       NOT NULL,
     rate_buckets             JSONB       NOT NULL DEFAULT '{}'::jsonb,
     overage_unit_rates       JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -58,6 +58,14 @@ CREATE TABLE subscriptions (
 
 CREATE INDEX idx_subscriptions_org_product
     ON subscriptions (org_id, product_id, status, current_period_end DESC);
+
+CREATE UNIQUE INDEX idx_subscriptions_stripe_subscription
+    ON subscriptions (stripe_subscription_id)
+    WHERE stripe_subscription_id <> '';
+
+CREATE UNIQUE INDEX idx_subscriptions_stripe_checkout_session
+    ON subscriptions (stripe_checkout_session_id)
+    WHERE stripe_checkout_session_id <> '';
 
 CREATE TABLE credit_grants (
     grant_id             TEXT        PRIMARY KEY,

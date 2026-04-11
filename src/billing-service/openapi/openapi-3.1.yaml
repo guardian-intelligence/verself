@@ -172,6 +172,8 @@ components:
         available:
           pattern: ^[0-9]+$
           type: string
+        bucket_id:
+          type: string
         expires_at:
           format: date-time
           type: string
@@ -180,10 +182,14 @@ components:
         pending:
           pattern: ^[0-9]+$
           type: string
+        product_id:
+          type: string
         source:
           type: string
       required:
         - grant_id
+        - product_id
+        - bucket_id
         - source
         - available
         - pending

@@ -12,10 +12,13 @@ import (
 )
 
 var (
-	ErrPaymentRequired = errors.New("billing-client: payment required")
-	ErrForbidden       = errors.New("billing-client: forbidden")
-	ErrUnexpected      = errors.New("billing-client: unexpected response")
+	ErrPaymentRequired  = errors.New("billing-client: payment required")
+	ErrForbidden        = errors.New("billing-client: forbidden")
+	ErrNoStripeCustomer = errors.New("billing-client: no stripe customer")
+	ErrUnexpected       = errors.New("billing-client: unexpected response")
 )
+
+const problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-customer"
 
 type ServiceClient struct {
 	inner ClientWithResponsesInterface
@@ -149,6 +152,9 @@ func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, r
 	}
 	if resp.JSON200 != nil {
 		return resp.JSON200.Url, nil
+	}
+	if statusCode(resp.HTTPResponse) == http.StatusUnprocessableEntity && problemType(resp.ApplicationproblemJSON422) == problemTypeNoStripeCustomer {
+		return "", fmt.Errorf("%w: %s", ErrNoStripeCustomer, detail(resp.ApplicationproblemJSON422, resp.HTTPResponse))
 	}
 	return "", unexpected("create portal session", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 }
@@ -292,6 +298,8 @@ func parseBillingGrants(in BillingGrants) (apiwire.BillingGrants, error) {
 		}
 		out = append(out, apiwire.BillingGrant{
 			GrantID:   grant.GrantId,
+			ProductID: grant.ProductId,
+			BucketID:  grant.BucketId,
 			Source:    grant.Source,
 			Available: available,
 			Pending:   pending,
@@ -455,6 +463,13 @@ func detail(problem *ErrorModel, resp *http.Response) string {
 		return resp.Status
 	}
 	return "unknown error"
+}
+
+func problemType(problem *ErrorModel) string {
+	if problem == nil || problem.Type == nil {
+		return ""
+	}
+	return *problem.Type
 }
 
 func unexpected(op string, resp *http.Response, problem *ErrorModel) error {

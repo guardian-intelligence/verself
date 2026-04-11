@@ -17,6 +17,8 @@ type BillingBalance struct {
 
 type BillingGrant struct {
 	GrantID   string        `json:"grant_id"`
+	ProductID string        `json:"product_id"`
+	BucketID  string        `json:"bucket_id"`
 	Source    string        `json:"source"`
 	Available DecimalUint64 `json:"available"`
 	Pending   DecimalUint64 `json:"pending"`

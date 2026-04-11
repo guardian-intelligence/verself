@@ -21,27 +21,29 @@ import (
 const seedStripeSecret = "seed-test-dummy"
 
 type config struct {
-	pgDSNFile          string
-	pgDSN              string
-	tbAddress          string
-	tbClusterID        uint64
-	orgID              uint64
-	orgName            string
-	orgTrustTier       string
-	productID          string
-	productDisplayName string
-	meterUnit          string
-	billingModel       string
-	planID             string
-	planDisplayName    string
-	unitRatesJSON      string
-	overageRatesJSON   string
-	quotasJSON         string
-	targetPrepaidUnits uint64
-	prepaidSource      string
-	promotionName      string
-	promotionPercent   int
-	expiresAfter       time.Duration
+	pgDSNFile           string
+	pgDSN               string
+	tbAddress           string
+	tbClusterID         uint64
+	orgID               uint64
+	orgName             string
+	orgTrustTier        string
+	productID           string
+	productDisplayName  string
+	meterUnit           string
+	billingModel        string
+	planID              string
+	planDisplayName     string
+	includedBucketsJSON string
+	unitRatesJSON       string
+	rateBucketsJSON     string
+	overageRatesJSON    string
+	quotasJSON          string
+	targetPrepaidUnits  uint64
+	prepaidSource       string
+	promotionName       string
+	promotionPercent    int
+	expiresAfter        time.Duration
 }
 
 type seedResult struct {
@@ -182,19 +184,21 @@ func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint
 
 func parseFlags() (config, error) {
 	cfg := config{
-		productID:          "sandbox",
-		productDisplayName: "Sandbox",
-		meterUnit:          "vcpu_second",
-		billingModel:       "metered",
-		orgTrustTier:       "new",
-		planID:             "sandbox-default",
-		planDisplayName:    "Sandbox PAYG",
-		unitRatesJSON:      `{"vcpu":325,"gib":40}`,
-		overageRatesJSON:   `{}`,
-		quotasJSON:         `{}`,
-		targetPrepaidUnits: 5_000_000,
-		prepaidSource:      "purchase",
-		expiresAfter:       365 * 24 * time.Hour,
+		productID:           "sandbox",
+		productDisplayName:  "Sandbox",
+		meterUnit:           "vcpu_second",
+		billingModel:        "metered",
+		orgTrustTier:        "new",
+		planID:              "sandbox-default",
+		planDisplayName:     "Sandbox PAYG",
+		includedBucketsJSON: `{}`,
+		unitRatesJSON:       `{"vcpu":325,"gib":40}`,
+		rateBucketsJSON:     `{}`,
+		overageRatesJSON:    `{}`,
+		quotasJSON:          `{}`,
+		targetPrepaidUnits:  5_000_000,
+		prepaidSource:       "purchase",
+		expiresAfter:        365 * 24 * time.Hour,
 	}
 
 	flag.StringVar(&cfg.pgDSNFile, "pg-dsn-file", "", "path to PostgreSQL DSN file")
@@ -210,7 +214,9 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.billingModel, "billing-model", cfg.billingModel, "product billing model")
 	flag.StringVar(&cfg.planID, "plan-id", cfg.planID, "default plan ID")
 	flag.StringVar(&cfg.planDisplayName, "plan-display-name", cfg.planDisplayName, "default plan display name")
+	flag.StringVar(&cfg.includedBucketsJSON, "included-credit-buckets-json", cfg.includedBucketsJSON, "default plan included credit buckets JSON")
 	flag.StringVar(&cfg.unitRatesJSON, "unit-rates-json", cfg.unitRatesJSON, "default plan unit rates JSON")
+	flag.StringVar(&cfg.rateBucketsJSON, "rate-buckets-json", cfg.rateBucketsJSON, "default plan rate buckets JSON")
 	flag.StringVar(&cfg.overageRatesJSON, "overage-unit-rates-json", cfg.overageRatesJSON, "default plan overage unit rates JSON")
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
@@ -248,11 +254,11 @@ func resolvePGDSN(cfg config) (string, error) {
 
 func upsertProduct(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	reservePolicy := map[string]any{
-		"shape":                  "time",
-		"target_quantity":        300,
-		"min_quantity":           30,
-		"allow_partial_reserve":  true,
-		"renew_slack_quantity":   60,
+		"shape":                   "time",
+		"target_quantity":         300,
+		"min_quantity":            30,
+		"allow_partial_reserve":   true,
+		"renew_slack_quantity":    60,
 		"operator_grace_quantity": 0,
 	}
 	reservePolicyJSON, err := json.Marshal(reservePolicy)
@@ -278,20 +284,22 @@ func upsertProduct(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 
 func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	result, err := pg.ExecContext(ctx, `
-		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credits, unit_rates, overage_unit_rates, quotas, is_default, tier, active)
-		VALUES ($1, $2, $3, 'prepaid', NULL, $4::jsonb, $5::jsonb, $6::jsonb, true, 'default', true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credit_buckets, unit_rates, rate_buckets, overage_unit_rates, quotas, is_default, tier, active)
+		VALUES ($1, $2, $3, 'prepaid', $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, true, 'default', true)
 		ON CONFLICT (plan_id) DO UPDATE
 		SET product_id = EXCLUDED.product_id,
 		    display_name = EXCLUDED.display_name,
 		    billing_mode = EXCLUDED.billing_mode,
+		    included_credit_buckets = EXCLUDED.included_credit_buckets,
 		    unit_rates = EXCLUDED.unit_rates,
+		    rate_buckets = EXCLUDED.rate_buckets,
 		    overage_unit_rates = EXCLUDED.overage_unit_rates,
 		    quotas = EXCLUDED.quotas,
 		    is_default = EXCLUDED.is_default,
 		    tier = EXCLUDED.tier,
 		    active = EXCLUDED.active,
 		    updated_at = now()
-	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.unitRatesJSON, cfg.overageRatesJSON, cfg.quotasJSON)
+	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.includedBucketsJSON, cfg.unitRatesJSON, cfg.rateBucketsJSON, cfg.overageRatesJSON, cfg.quotasJSON)
 	if err != nil {
 		return false, fmt.Errorf("upsert default plan %s: %w", cfg.planID, err)
 	}
