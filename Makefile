@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       sandbox-inner sandbox-middle sandbox-proof
+       wipe-pg-db sandbox-inner sandbox-middle sandbox-proof
 
 FM       := src/platform
 AW       := src/apiwire
@@ -113,6 +113,10 @@ billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle +
 
 verification-reset: inventory-check ## Exhaustively wipe verification state (billing, sandbox_rental, ClickHouse forge_metal + telemetry)
 	cd $(FM)/ansible && ansible-playbook playbooks/verification-reset.yml
+
+wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
+	@test -n "$(DB)" || { echo "ERROR: DB is required (sandbox|sandbox_rental|mailbox_service|identity_service|letters)"; exit 1; }
+	cd $(FM)/ansible && ansible-playbook playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
 	cd $(FM) && ./scripts/ensure-verification-repo.sh
