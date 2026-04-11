@@ -15,6 +15,7 @@ func jobConfigToProto(job JobConfig) *vmrpc.JobConfig {
 		RunWorkDir:     job.RunWorkDir,
 		Services:       cloneStringSlice(job.Services),
 		Env:            cloneStringMap(job.Env),
+		BillablePhases: cloneStringSlice(job.BillablePhases),
 	}
 }
 
@@ -30,6 +31,7 @@ func jobConfigFromProto(job *vmrpc.JobConfig) JobConfig {
 		RunWorkDir:     job.GetRunWorkDir(),
 		Services:       cloneStringSlice(job.GetServices()),
 		Env:            cloneStringMap(job.GetEnv()),
+		BillablePhases: cloneStringSlice(job.GetBillablePhases()),
 	}
 }
 

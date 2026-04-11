@@ -76,6 +76,7 @@ type JobConfig struct {
 	RunWorkDir     string            `json:"run_work_dir,omitempty"`
 	Services       []string          `json:"services,omitempty"`
 	Env            map[string]string `json:"env"`
+	BillablePhases []string          `json:"billable_phases,omitempty"`
 }
 
 type PhaseResult struct {

@@ -137,6 +137,7 @@ type JobConfig struct {
 	RunWorkDir     string                 `protobuf:"bytes,5,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
 	Services       []string               `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
 	Env            map[string]string      `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	BillablePhases []string               `protobuf:"bytes,8,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -216,6 +217,13 @@ func (x *JobConfig) GetServices() []string {
 func (x *JobConfig) GetEnv() map[string]string {
 	if x != nil {
 		return x.Env
+	}
+	return nil
+}
+
+func (x *JobConfig) GetBillablePhases() []string {
+	if x != nil {
+		return x.BillablePhases
 	}
 	return nil
 }
@@ -2084,7 +2092,7 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xd2\x02\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xfb\x02\n" +
 	"\tJobConfig\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12'\n" +
 	"\x0fprepare_command\x18\x02 \x03(\tR\x0eprepareCommand\x12(\n" +
@@ -2094,7 +2102,8 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\frun_work_dir\x18\x05 \x01(\tR\n" +
 	"runWorkDir\x12\x1a\n" +
 	"\bservices\x18\x06 \x03(\tR\bservices\x12D\n" +
-	"\x03env\x18\a \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x1a6\n" +
+	"\x03env\x18\a \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x12'\n" +
+	"\x0fbillable_phases\x18\b \x03(\tR\x0ebillablePhases\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbb\x04\n" +
