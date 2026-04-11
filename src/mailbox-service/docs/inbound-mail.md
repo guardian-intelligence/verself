@@ -49,7 +49,7 @@ Four layers:
 
 **3. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore and nftables profile.
 
-**4. Public HTTP boundary at Caddy:** The JMAP API is not directly internet-accessible; external access routes through Caddy, which applies WAF rules and access logging. `/api/*` on `mail.<domain>` is hard-denied. The only repo-owned HTTP behavior on that host today is the JMAP session rewrite handled by `mailbox-service`.
+**4. Public HTTP boundary at Caddy:** The JMAP API is not directly internet-accessible; external access routes through Caddy, which applies WAF rules and access logging. Stalwart's Management API remains loopback-only because `/api/*` on `mail.<domain>` is routed to `mailbox-service`, not to Stalwart. Repo-owned HTTP behavior on that host is the authenticated `/api/v1/mail/*` API, Electric sync shape proxying, and the JMAP session rewrite handled by `mailbox-service`.
 
 ## Storage
 
@@ -74,6 +74,14 @@ There are now two mail-adjacent PostgreSQL databases:
 
 Accounts are pre-created via Stalwart's Management REST API in `seed-system.yml --tags stalwart`. No auto-provisioning on first OIDC or JMAP login.
 
+Seeded product identity bindings:
+
+| Zitadel subject | Mailbox account | Purpose |
+|---|---|---|
+| `ceo@<domain>` human user | `ceo` | operator webmail |
+| `agent@<domain>` human user | `agents` | platform admin browser rehearsal |
+| `assume-platform-admin` machine user | `agents` | platform admin API rehearsal |
+
 ## Authentication
 
 Stalwart and the Forge Metal app tier do not share an auth system today.
@@ -89,7 +97,7 @@ Stalwart and the Forge Metal app tier do not share an auth system today.
 
 The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `make mail-passwords`.
 
-**Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account. `seed-system.yml` creates the CEO binding and refreshes it during both `--tags identity` and `--tags stalwart` runs so a rotated seeded user subject does not strand the webmail app on a stale binding.
+**Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account, and many subjects may map to the same mailbox account. `seed-system.yml` creates the CEO and platform-admin agent bindings during full seed and `--tags identity` runs so a rotated seeded user or machine-user subject does not strand the webmail app on a stale binding. `--tags stalwart` preserves existing product bindings while resetting Stalwart and the mailbox projection.
 
 Basic Auth is used for both JMAP and the Management API. Stalwart does not support `grant_type=password` on its OAuth endpoint.
 
