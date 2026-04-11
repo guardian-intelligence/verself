@@ -1,0 +1,106 @@
+---
+# Wipe one managed PostgreSQL service database and re-run the owning schema path.
+#
+# Usage:
+#   make wipe-pg-db DB=sandbox_rental
+#
+# Supported DBs:
+# - sandbox: billing ledger reset, including TigerBeetle
+# - sandbox_rental
+# - mailbox_service
+# - identity_service
+# - letters
+
+- name: Wipe one managed PostgreSQL database
+  hosts: all
+  become: true
+  force_handlers: true
+  vars:
+    wipe_pg_db_supported:
+      - sandbox
+      - sandbox_rental
+      - mailbox_service
+      - identity_service
+      - letters
+  pre_tasks:
+    - name: Assert supported PostgreSQL wipe target
+      ansible.builtin.assert:
+        that:
+          - (wipe_pg_db_name | default('')) in wipe_pg_db_supported
+        fail_msg: >-
+          wipe_pg_db_name must be one of {{ wipe_pg_db_supported | join(', ') }}.
+
+  roles:
+    - role: postgresql
+      tags: [postgresql]
+
+  tasks:
+    - name: Include TigerBeetle for sandbox PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: tigerbeetle
+      tags: [tigerbeetle]
+      when: wipe_pg_db_name == 'sandbox'
+
+    - name: Include billing-service for sandbox PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: billing_service
+      tags: [billing_service]
+      vars:
+        billing_service_force_ledger_reset: true
+      when: wipe_pg_db_name == 'sandbox'
+
+    - name: Include sandbox-rental-service after sandbox PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: sandbox_rental_service
+      tags: [sandbox_rental_service]
+      when: wipe_pg_db_name == 'sandbox'
+
+    - name: Include sandbox-rental-service for sandbox_rental PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: sandbox_rental_service
+      tags: [sandbox_rental_service]
+      vars:
+        sandbox_rental_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'sandbox_rental'
+
+    - name: Include Electric after sandbox_rental PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: electric
+      tags: [electric]
+      when: wipe_pg_db_name == 'sandbox_rental'
+
+    - name: Include mailbox-service for mailbox_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: mailbox_service
+      tags: [mailbox_service]
+      vars:
+        mailbox_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'mailbox_service'
+
+    - name: Include Electric Mail after mailbox_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: electric_mail
+      tags: [electric_mail]
+      when: wipe_pg_db_name == 'mailbox_service'
+
+    - name: Include identity-service for identity_service PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: identity_service
+      tags: [identity_service]
+      vars:
+        identity_service_force_schema_reset: true
+      when: wipe_pg_db_name == 'identity_service'
+
+    - name: Include letters for letters PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: letters
+      tags: [letters]
+      vars:
+        letters_force_schema_reset: true
+      when: wipe_pg_db_name == 'letters'
+
+    - name: Include Electric Letters after letters PostgreSQL wipe
+      ansible.builtin.include_role:
+        name: electric_letters
+      tags: [electric_letters]
+      when: wipe_pg_db_name == 'letters'
