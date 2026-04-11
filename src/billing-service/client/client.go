@@ -50,6 +50,7 @@ type Reservation struct {
 	UnitRates        map[string]int64
 	CostPerSec       int64
 	WindowStart      time.Time
+	ActivatedAt      *time.Time
 	ExpiresAt        time.Time
 	RenewBy          time.Time
 }
@@ -213,6 +214,11 @@ func parseReservation(in BillingWindowReservation) (Reservation, error) {
 	if in.RenewBy != nil {
 		renewBy = in.RenewBy.UTC()
 	}
+	var activatedAt *time.Time
+	if in.ActivatedAt != nil {
+		value := in.ActivatedAt.UTC()
+		activatedAt = &value
+	}
 	return Reservation{
 		WindowId:         in.WindowId,
 		OrgId:            orgID,
@@ -229,6 +235,7 @@ func parseReservation(in BillingWindowReservation) (Reservation, error) {
 		UnitRates:        unitRates,
 		CostPerSec:       costPerUnit,
 		WindowStart:      in.WindowStart.UTC(),
+		ActivatedAt:      activatedAt,
 		ExpiresAt:        in.ExpiresAt.UTC(),
 		RenewBy:          renewBy,
 	}, nil
@@ -357,6 +364,23 @@ func parseUint64DecimalAsInt64(value string, field string) (int64, error) {
 		return 0, fmt.Errorf("billing-client: %s %d exceeds internal int64 range", field, parsed)
 	}
 	return int64(parsed), nil
+}
+
+func (c *ServiceClient) Activate(ctx context.Context, reservation Reservation, activatedAt time.Time, reqEditors ...RequestEditorFn) (Reservation, error) {
+	resp, err := c.inner.ActivateWindowWithResponse(ctx, ActivateWindowJSONRequestBody{
+		WindowId:    reservation.WindowId,
+		ActivatedAt: activatedAt.UTC(),
+	}, reqEditors...)
+	if err != nil {
+		return Reservation{}, err
+	}
+	if resp.JSON200 != nil {
+		return parseReservation(resp.JSON200.Reservation)
+	}
+	if statusCode(resp.HTTPResponse) == http.StatusBadRequest {
+		return Reservation{}, fmt.Errorf("billing-client: activate bad request: %s", detail(resp.ApplicationproblemJSON400, resp.HTTPResponse))
+	}
+	return Reservation{}, unexpected("activate", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
 }
 
 func (c *ServiceClient) Settle(ctx context.Context, reservation Reservation, actualQuantity uint32, reqEditors ...RequestEditorFn) error {

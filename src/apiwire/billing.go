@@ -80,6 +80,15 @@ type BillingReserveWindowResult struct {
 	Reservation BillingWindowReservation `json:"reservation"`
 }
 
+type BillingActivateWindowRequest struct {
+	WindowID    string    `json:"window_id" minLength:"1" maxLength:"255"`
+	ActivatedAt time.Time `json:"activated_at"`
+}
+
+type BillingActivateWindowResult struct {
+	Reservation BillingWindowReservation `json:"reservation"`
+}
+
 type BillingWindowReservation struct {
 	WindowID            string                   `json:"window_id"`
 	OrgID               OrgID                    `json:"org_id"`
@@ -97,6 +106,7 @@ type BillingWindowReservation struct {
 	UnitRates           map[string]DecimalUint64 `json:"unit_rates"`
 	CostPerUnit         DecimalUint64            `json:"cost_per_unit"`
 	WindowStart         time.Time                `json:"window_start"`
+	ActivatedAt         *time.Time               `json:"activated_at,omitempty"`
 	ExpiresAt           time.Time                `json:"expires_at"`
 	RenewBy             *time.Time               `json:"renew_by,omitempty"`
 }

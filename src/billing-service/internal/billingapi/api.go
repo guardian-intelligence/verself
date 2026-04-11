@@ -114,6 +114,7 @@ func windowReservationResponse(reservation billing.WindowReservation) apiwire.Bi
 		UnitRates:           decimalUnitRates(reservation.UnitRates),
 		CostPerUnit:         apiwire.Uint64(reservation.CostPerUnit),
 		WindowStart:         reservation.WindowStart,
+		ActivatedAt:         reservation.ActivatedAt,
 		ExpiresAt:           reservation.ExpiresAt,
 		RenewBy:             reservation.RenewBy,
 	}
@@ -160,6 +161,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
 	huma.Post(service, "/reserve", handler.reserveWindow, operation("reserve-window", "Reserve a billing window", http.StatusPaymentRequired, http.StatusForbidden, http.StatusInternalServerError))
+	huma.Post(service, "/activate", handler.activateWindow, operation("activate-window", "Activate a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 }
@@ -340,6 +342,18 @@ func (h *Handler) settleWindow(ctx context.Context, input *body[apiwire.BillingS
 	return &body[apiwire.BillingSettleResult]{Body: settleResultResponse(result)}, nil
 }
 
+func (h *Handler) activateWindow(ctx context.Context, input *body[apiwire.BillingActivateWindowRequest]) (*body[apiwire.BillingActivateWindowResult], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	reservation, err := client.ActivateWindow(ctx, input.Body.WindowID, input.Body.ActivatedAt)
+	if err != nil {
+		return nil, h.activateWindowError(ctx, input.Body.WindowID, err)
+	}
+	return &body[apiwire.BillingActivateWindowResult]{Body: apiwire.BillingActivateWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
+}
+
 func (h *Handler) voidWindow(ctx context.Context, input *body[apiwire.BillingVoidWindowRequest]) (*body[apiwire.BillingVoidWindowResult], error) {
 	client, err := h.requireClient()
 	if err != nil {
@@ -375,9 +389,25 @@ func (h *Handler) settleWindowError(ctx context.Context, input apiwire.BillingSe
 		return huma.Error404NotFound("window not found")
 	case errors.Is(err, billing.ErrWindowAlreadyVoided):
 		return huma.Error400BadRequest("window already voided")
+	case errors.Is(err, billing.ErrWindowNotActivated):
+		return huma.Error400BadRequest("window not activated")
 	default:
 		h.logError(ctx, "settle billing window", "window_id", input.WindowID, "actual_quantity", input.ActualQuantity, "error", err)
 		return huma.Error500InternalServerError("settle", err)
+	}
+}
+
+func (h *Handler) activateWindowError(ctx context.Context, windowID string, err error) error {
+	switch {
+	case errors.Is(err, billing.ErrWindowNotFound):
+		return huma.Error404NotFound("window not found")
+	case errors.Is(err, billing.ErrWindowAlreadySettled):
+		return huma.Error400BadRequest("window already settled")
+	case errors.Is(err, billing.ErrWindowAlreadyVoided):
+		return huma.Error400BadRequest("window already voided")
+	default:
+		h.logError(ctx, "activate billing window", "window_id", windowID, "error", err)
+		return huma.Error500InternalServerError("activate", err)
 	}
 }
 

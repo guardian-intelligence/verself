@@ -104,6 +104,7 @@ type WindowReservation struct {
 	UnitRates           map[string]uint64  `json:"unit_rates"`
 	CostPerUnit         uint64             `json:"cost_per_unit"`
 	WindowStart         time.Time          `json:"window_start"`
+	ActivatedAt         *time.Time         `json:"activated_at,omitempty"`
 	ExpiresAt           time.Time          `json:"expires_at"`
 	RenewBy             *time.Time         `json:"renew_by,omitempty"`
 }

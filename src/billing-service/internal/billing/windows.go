@@ -44,6 +44,7 @@ type persistedWindow struct {
 	UsageSummary        map[string]any
 	FundingLegs         []WindowFundingLeg
 	WindowStart         time.Time
+	ActivatedAt         *time.Time
 	ExpiresAt           time.Time
 	RenewBy             *time.Time
 	SettledAt           *time.Time
@@ -164,9 +165,62 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		UnitRates:           cloneUint64Map(config.UnitRates),
 		CostPerUnit:         costPerUnit,
 		WindowStart:         windowStart,
+		ActivatedAt:         nil,
 		ExpiresAt:           expiresAt,
 		RenewBy:             renewBy,
 	}, nil
+}
+
+func (c *Client) ActivateWindow(ctx context.Context, windowID string, activatedAt time.Time) (WindowReservation, error) {
+	if err := ctx.Err(); err != nil {
+		return WindowReservation{}, err
+	}
+	if windowID == "" {
+		return WindowReservation{}, fmt.Errorf("window_id is required")
+	}
+	if activatedAt.IsZero() {
+		activatedAt = c.clock().UTC()
+	} else {
+		activatedAt = activatedAt.UTC()
+	}
+
+	window, err := c.loadPersistedWindow(ctx, windowID)
+	if err != nil {
+		return WindowReservation{}, err
+	}
+	switch window.State {
+	case "settled":
+		return WindowReservation{}, ErrWindowAlreadySettled
+	case "voided":
+		return WindowReservation{}, ErrWindowAlreadyVoided
+	case "reserved":
+	default:
+		return WindowReservation{}, ErrWindowNotReserved
+	}
+	if window.ActivatedAt != nil {
+		return window.reservation(), nil
+	}
+
+	if !window.ExpiresAt.IsZero() && activatedAt.After(window.ExpiresAt) {
+		return WindowReservation{}, ErrPendingTransferExpired
+	}
+	renewBy := activatedRenewBy(window, activatedAt)
+	_, err = c.pg.ExecContext(ctx, `
+		UPDATE billing_windows
+		SET window_start = $2,
+		    activated_at = $2,
+		    renew_by = $3
+		WHERE window_id = $1 AND state = 'reserved' AND activated_at IS NULL
+	`, windowID, activatedAt, renewBy)
+	if err != nil {
+		return WindowReservation{}, fmt.Errorf("activate billing window: %w", err)
+	}
+
+	activated, err := c.loadPersistedWindow(ctx, windowID)
+	if err != nil {
+		return WindowReservation{}, err
+	}
+	return activated.reservation(), nil
 }
 
 func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuantity uint32, usageSummary map[string]any) (SettleResult, error) {
@@ -190,6 +244,9 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 	case "reserved":
 	default:
 		return SettleResult{}, ErrWindowNotReserved
+	}
+	if window.ReservationShape == ReservationShapeTime && window.ActivatedAt == nil {
+		return SettleResult{}, ErrWindowNotActivated
 	}
 
 	billableQuantity := minUint32(actualQuantity, window.ReservedQuantity)
@@ -368,10 +425,14 @@ func (c *Client) ProjectPendingWindows(ctx context.Context, limit int) (int, err
 }
 
 func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
-	endedAt := window.WindowStart
+	startedAt := window.WindowStart
+	if window.ActivatedAt != nil {
+		startedAt = window.ActivatedAt.UTC()
+	}
+	endedAt := startedAt
 	switch window.ReservationShape {
 	case ReservationShapeTime:
-		endedAt = window.WindowStart.Add(time.Duration(window.ActualQuantity) * time.Second)
+		endedAt = startedAt.Add(time.Duration(window.ActualQuantity) * time.Second)
 	case ReservationShapeUnits:
 		if window.SettledAt != nil {
 			endedAt = *window.SettledAt
@@ -387,7 +448,7 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 		SourceRef:           window.SourceRef,
 		WindowSeq:           window.WindowSeq,
 		ReservationShape:    string(window.ReservationShape),
-		StartedAt:           window.WindowStart,
+		StartedAt:           startedAt,
 		EndedAt:             endedAt,
 		ReservedQuantity:    uint64(window.ReservedQuantity),
 		ActualQuantity:      uint64(window.ActualQuantity),
@@ -585,6 +646,7 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 		rateContextJSON      []byte
 		usageSummaryJSON     []byte
 		fundingLegsJSON      []byte
+		activatedAt          sql.NullTime
 		renewBy              sql.NullTime
 		settledAt            sql.NullTime
 		projectedAt          sql.NullTime
@@ -597,7 +659,7 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 			state, reservation_shape, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity,
 			reserved_charge_units, billed_charge_units, writeoff_charge_units, pricing_phase,
 			allocation::text, rate_context::text, usage_summary::text, funding_legs::text,
-			window_start, expires_at, renew_by, settled_at, metering_projected_at, last_projection_error
+			window_start, activated_at, expires_at, renew_by, settled_at, metering_projected_at, last_projection_error
 		FROM billing_windows
 		WHERE window_id = $1
 	`, windowID).Scan(
@@ -624,6 +686,7 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 		&usageSummaryJSON,
 		&fundingLegsJSON,
 		&row.WindowStart,
+		&activatedAt,
 		&row.ExpiresAt,
 		&renewBy,
 		&settledAt,
@@ -656,6 +719,10 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 	if err := json.Unmarshal(fundingLegsJSON, &row.FundingLegs); err != nil {
 		return persistedWindow{}, fmt.Errorf("decode funding legs: %w", err)
 	}
+	if activatedAt.Valid {
+		value := activatedAt.Time.UTC()
+		row.ActivatedAt = &value
+	}
 	if renewBy.Valid {
 		value := renewBy.Time.UTC()
 		row.RenewBy = &value
@@ -669,6 +736,30 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 		row.MeteringProjectedAt = &value
 	}
 	return row, nil
+}
+
+func (w persistedWindow) reservation() WindowReservation {
+	return WindowReservation{
+		WindowID:            w.WindowID,
+		OrgID:               w.OrgID,
+		ProductID:           w.ProductID,
+		PlanID:              w.PlanID,
+		ActorID:             w.ActorID,
+		SourceType:          w.SourceType,
+		SourceRef:           w.SourceRef,
+		WindowSeq:           w.WindowSeq,
+		ReservationShape:    w.ReservationShape,
+		ReservedQuantity:    w.ReservedQuantity,
+		ReservedChargeUnits: w.ReservedChargeUnits,
+		PricingPhase:        w.PricingPhase,
+		Allocation:          cloneFloat64Map(w.Allocation),
+		UnitRates:           cloneUint64Map(w.RateContext.UnitRates),
+		CostPerUnit:         w.RateContext.CostPerUnit,
+		WindowStart:         w.WindowStart.UTC(),
+		ActivatedAt:         cloneTimePtr(w.ActivatedAt),
+		ExpiresAt:           w.ExpiresAt.UTC(),
+		RenewBy:             cloneTimePtr(w.RenewBy),
+	}
 }
 
 func (c *Client) nextWindowSeq(ctx context.Context, productID, sourceType, sourceRef string) (uint32, error) {
@@ -715,6 +806,24 @@ func windowTiming(start time.Time, policy ReservePolicy, pendingTimeoutSecs uint
 	return expiresAt, &renewAt
 }
 
+func activatedRenewBy(window persistedWindow, activatedAt time.Time) *time.Time {
+	if window.ReservationShape != ReservationShapeTime {
+		return nil
+	}
+	windowDuration := time.Duration(window.ReservedQuantity) * time.Second
+	renewAt := activatedAt.Add(windowDuration)
+	if window.RenewBy != nil {
+		oldEnd := window.WindowStart.Add(windowDuration)
+		if slack := oldEnd.Sub(*window.RenewBy); slack > 0 {
+			renewAt = renewAt.Add(-slack)
+			if renewAt.Before(activatedAt) {
+				renewAt = activatedAt
+			}
+		}
+	}
+	return &renewAt
+}
+
 func computeCostPerUnit(allocation map[string]float64, unitRates map[string]uint64) (uint64, error) {
 	var total float64
 	for dimension, quantity := range allocation {
@@ -750,6 +859,14 @@ func minUint32(a, b uint32) uint32 {
 		return a
 	}
 	return b
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := value.UTC()
+	return &cloned
 }
 
 func safeMulUint64(a, b uint64) (uint64, error) {
