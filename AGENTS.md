@@ -12,7 +12,7 @@ Features:
 
 Bootstrapping: single command to go from their laptop -> bare metal instance -> all services + 2 deployed frontend apps reading/writing off the same DB.
 Git Hosting + Fast CI through ZFS
-Billing is figured out, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, accounts receivable, dunning, invoicing, etc. 
+Billing figured out for you, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, transactin processing, tax, accounts receivable, dunning, invoicing, etc. 
 
 ## Current status
 
