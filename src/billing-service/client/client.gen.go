@@ -156,6 +156,74 @@ type BillingSettleWindowRequest struct {
 	WindowId       string                  `json:"window_id"`
 }
 
+// BillingStatement defines model for BillingStatement.
+type BillingStatement struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string                          `json:"$schema,omitempty"`
+	BucketSummaries *[]BillingStatementBucketSummary `json:"bucket_summaries"`
+	Currency        string                           `json:"currency"`
+	GeneratedAt     time.Time                        `json:"generated_at"`
+	GrantSummaries  *[]BillingStatementGrantSummary  `json:"grant_summaries"`
+	LineItems       *[]BillingStatementLineItem      `json:"line_items"`
+	OrgId           string                           `json:"org_id"`
+	PeriodEnd       time.Time                        `json:"period_end"`
+	PeriodSource    string                           `json:"period_source"`
+	PeriodStart     time.Time                        `json:"period_start"`
+	ProductId       string                           `json:"product_id"`
+	Totals          BillingStatementTotals           `json:"totals"`
+	UnitLabel       string                           `json:"unit_label"`
+}
+
+// BillingStatementBucketSummary defines model for BillingStatementBucketSummary.
+type BillingStatementBucketSummary struct {
+	BucketId          string `json:"bucket_id"`
+	ChargeUnits       string `json:"charge_units"`
+	FreeTierUnits     string `json:"free_tier_units"`
+	ProductId         string `json:"product_id"`
+	PromoUnits        string `json:"promo_units"`
+	PurchaseUnits     string `json:"purchase_units"`
+	ReceivableUnits   string `json:"receivable_units"`
+	RefundUnits       string `json:"refund_units"`
+	ReservedUnits     string `json:"reserved_units"`
+	SubscriptionUnits string `json:"subscription_units"`
+}
+
+// BillingStatementGrantSummary defines model for BillingStatementGrantSummary.
+type BillingStatementGrantSummary struct {
+	Available      string `json:"available"`
+	Pending        string `json:"pending"`
+	ScopeBucketId  string `json:"scope_bucket_id"`
+	ScopeProductId string `json:"scope_product_id"`
+	ScopeType      string `json:"scope_type"`
+	Source         string `json:"source"`
+}
+
+// BillingStatementLineItem defines model for BillingStatementLineItem.
+type BillingStatementLineItem struct {
+	BucketId     string  `json:"bucket_id"`
+	ChargeUnits  string  `json:"charge_units"`
+	ComponentId  string  `json:"component_id"`
+	Description  string  `json:"description"`
+	PlanId       string  `json:"plan_id"`
+	PricingPhase string  `json:"pricing_phase"`
+	ProductId    string  `json:"product_id"`
+	Quantity     float64 `json:"quantity"`
+	UnitRate     string  `json:"unit_rate"`
+}
+
+// BillingStatementTotals defines model for BillingStatementTotals.
+type BillingStatementTotals struct {
+	ChargeUnits       string `json:"charge_units"`
+	FreeTierUnits     string `json:"free_tier_units"`
+	PromoUnits        string `json:"promo_units"`
+	PurchaseUnits     string `json:"purchase_units"`
+	ReceivableUnits   string `json:"receivable_units"`
+	RefundUnits       string `json:"refund_units"`
+	ReservedUnits     string `json:"reserved_units"`
+	SubscriptionUnits string `json:"subscription_units"`
+	TotalDueUnits     string `json:"total_due_units"`
+}
+
 // BillingSubscription defines model for BillingSubscription.
 type BillingSubscription struct {
 	Cadence            string     `json:"cadence"`
@@ -258,6 +326,11 @@ type ErrorModel struct {
 type ListGrantsParams struct {
 	ProductId *string `form:"product_id,omitempty" json:"product_id,omitempty"`
 	Active    *bool   `form:"active,omitempty" json:"active,omitempty"`
+}
+
+// GetStatementParams defines parameters for GetStatement.
+type GetStatementParams struct {
+	ProductId string `form:"product_id" json:"product_id"`
 }
 
 // ActivateWindowJSONRequestBody defines body for ActivateWindow for application/json ContentType.
@@ -370,6 +443,9 @@ type ClientInterface interface {
 	// ListGrants request
 	ListGrants(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetStatement request
+	GetStatement(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSubscriptions request
 	ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -461,6 +537,18 @@ func (c *Client) GetBalance(ctx context.Context, orgId string, reqEditors ...Req
 
 func (c *Client) ListGrants(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListGrantsRequest(c.Server, orgId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetStatement(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStatementRequest(c.Server, orgId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -789,6 +877,58 @@ func NewListGrantsRequest(server string, orgId string, params *ListGrantsParams)
 	return req, nil
 }
 
+// NewGetStatementRequest generates requests for GetStatement
+func NewGetStatementRequest(server string, orgId string, params *GetStatementParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/statement", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "product_id", params.ProductId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListSubscriptionsRequest generates requests for ListSubscriptions
 func NewListSubscriptionsRequest(server string, orgId string) (*http.Request, error) {
 	var err error
@@ -1082,6 +1222,9 @@ type ClientWithResponsesInterface interface {
 	// ListGrantsWithResponse request
 	ListGrantsWithResponse(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error)
 
+	// GetStatementWithResponse request
+	GetStatementWithResponse(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*GetStatementResponse, error)
+
 	// ListSubscriptionsWithResponse request
 	ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
 
@@ -1200,6 +1343,29 @@ func (r ListGrantsResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListGrantsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetStatementResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *BillingStatement
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetStatementResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetStatementResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1405,6 +1571,15 @@ func (c *ClientWithResponses) ListGrantsWithResponse(ctx context.Context, orgId 
 		return nil, err
 	}
 	return ParseListGrantsResponse(rsp)
+}
+
+// GetStatementWithResponse request returning *GetStatementResponse
+func (c *ClientWithResponses) GetStatementWithResponse(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*GetStatementResponse, error) {
+	rsp, err := c.GetStatement(ctx, orgId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetStatementResponse(rsp)
 }
 
 // ListSubscriptionsWithResponse request returning *ListSubscriptionsResponse
@@ -1637,6 +1812,39 @@ func ParseListGrantsResponse(rsp *http.Response) (*ListGrantsResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest BillingGrants
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetStatementResponse parses an HTTP response from a GetStatementWithResponse call
+func ParseGetStatementResponse(rsp *http.Response) (*GetStatementResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetStatementResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingStatement
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

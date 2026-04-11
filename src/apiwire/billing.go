@@ -30,6 +30,67 @@ type BillingGrants struct {
 	Grants []BillingGrant `json:"grants"`
 }
 
+type BillingStatement struct {
+	OrgID           OrgID                           `json:"org_id"`
+	ProductID       string                          `json:"product_id"`
+	PeriodStart     time.Time                       `json:"period_start"`
+	PeriodEnd       time.Time                       `json:"period_end"`
+	PeriodSource    string                          `json:"period_source"`
+	GeneratedAt     time.Time                       `json:"generated_at"`
+	Currency        string                          `json:"currency"`
+	UnitLabel       string                          `json:"unit_label"`
+	LineItems       []BillingStatementLineItem      `json:"line_items"`
+	BucketSummaries []BillingStatementBucketSummary `json:"bucket_summaries"`
+	GrantSummaries  []BillingStatementGrantSummary  `json:"grant_summaries"`
+	Totals          BillingStatementTotals          `json:"totals"`
+}
+
+type BillingStatementLineItem struct {
+	ProductID    string        `json:"product_id"`
+	PlanID       string        `json:"plan_id"`
+	BucketID     string        `json:"bucket_id"`
+	ComponentID  string        `json:"component_id"`
+	Description  string        `json:"description"`
+	PricingPhase string        `json:"pricing_phase"`
+	Quantity     float64       `json:"quantity"`
+	UnitRate     DecimalUint64 `json:"unit_rate"`
+	ChargeUnits  DecimalUint64 `json:"charge_units"`
+}
+
+type BillingStatementBucketSummary struct {
+	ProductID         string        `json:"product_id"`
+	BucketID          string        `json:"bucket_id"`
+	ChargeUnits       DecimalUint64 `json:"charge_units"`
+	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
+	SubscriptionUnits DecimalUint64 `json:"subscription_units"`
+	PurchaseUnits     DecimalUint64 `json:"purchase_units"`
+	PromoUnits        DecimalUint64 `json:"promo_units"`
+	RefundUnits       DecimalUint64 `json:"refund_units"`
+	ReceivableUnits   DecimalUint64 `json:"receivable_units"`
+	ReservedUnits     DecimalUint64 `json:"reserved_units"`
+}
+
+type BillingStatementGrantSummary struct {
+	ScopeType      string        `json:"scope_type"`
+	ScopeProductID string        `json:"scope_product_id"`
+	ScopeBucketID  string        `json:"scope_bucket_id"`
+	Source         string        `json:"source"`
+	Available      DecimalUint64 `json:"available"`
+	Pending        DecimalUint64 `json:"pending"`
+}
+
+type BillingStatementTotals struct {
+	ChargeUnits       DecimalUint64 `json:"charge_units"`
+	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
+	SubscriptionUnits DecimalUint64 `json:"subscription_units"`
+	PurchaseUnits     DecimalUint64 `json:"purchase_units"`
+	PromoUnits        DecimalUint64 `json:"promo_units"`
+	RefundUnits       DecimalUint64 `json:"refund_units"`
+	ReceivableUnits   DecimalUint64 `json:"receivable_units"`
+	ReservedUnits     DecimalUint64 `json:"reserved_units"`
+	TotalDueUnits     DecimalUint64 `json:"total_due_units"`
+}
+
 type BillingSubscription struct {
 	SubscriptionID     DecimalInt64 `json:"subscription_id"`
 	ProductID          string       `json:"product_id"`

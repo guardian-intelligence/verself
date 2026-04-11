@@ -63,6 +63,67 @@ type Balance struct {
 	TotalAvailable    uint64
 }
 
+type Statement struct {
+	OrgID           OrgID
+	ProductID       string
+	PeriodStart     time.Time
+	PeriodEnd       time.Time
+	PeriodSource    string
+	GeneratedAt     time.Time
+	Currency        string
+	UnitLabel       string
+	LineItems       []StatementLineItem
+	BucketSummaries []StatementBucketSummary
+	GrantSummaries  []StatementGrantSummary
+	Totals          StatementTotals
+}
+
+type StatementLineItem struct {
+	ProductID    string
+	PlanID       string
+	BucketID     string
+	ComponentID  string
+	Description  string
+	PricingPhase string
+	Quantity     float64
+	UnitRate     uint64
+	ChargeUnits  uint64
+}
+
+type StatementBucketSummary struct {
+	ProductID         string
+	BucketID          string
+	ChargeUnits       uint64
+	FreeTierUnits     uint64
+	SubscriptionUnits uint64
+	PurchaseUnits     uint64
+	PromoUnits        uint64
+	RefundUnits       uint64
+	ReceivableUnits   uint64
+	ReservedUnits     uint64
+}
+
+type StatementGrantSummary struct {
+	ScopeType      GrantScopeType
+	ScopeProductID string
+	ScopeBucketID  string
+	Source         GrantSourceType
+	Available      uint64
+	Pending        uint64
+}
+
+type StatementTotals struct {
+	ChargeUnits       uint64
+	FreeTierUnits     uint64
+	SubscriptionUnits uint64
+	PurchaseUnits     uint64
+	PromoUnits        uint64
+	RefundUnits       uint64
+	ReceivableUnits   uint64
+	ReservedUnits     uint64
+	TotalDueUnits     uint64
+}
+
 type GrantBalance struct {
 	GrantID        GrantID
 	ScopeType      GrantScopeType

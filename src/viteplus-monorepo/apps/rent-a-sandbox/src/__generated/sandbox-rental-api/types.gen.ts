@@ -37,6 +37,71 @@ export type BillingGrants = {
   grants: Array<BillingGrant> | null;
 };
 
+export type BillingStatement = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  bucket_summaries: Array<BillingStatementBucketSummary> | null;
+  currency: string;
+  generated_at: string;
+  grant_summaries: Array<BillingStatementGrantSummary> | null;
+  line_items: Array<BillingStatementLineItem> | null;
+  org_id: string;
+  period_end: string;
+  period_source: string;
+  period_start: string;
+  product_id: string;
+  totals: BillingStatementTotals;
+  unit_label: string;
+};
+
+export type BillingStatementBucketSummary = {
+  bucket_id: string;
+  charge_units: string;
+  free_tier_units: string;
+  product_id: string;
+  promo_units: string;
+  purchase_units: string;
+  receivable_units: string;
+  refund_units: string;
+  reserved_units: string;
+  subscription_units: string;
+};
+
+export type BillingStatementGrantSummary = {
+  available: string;
+  pending: string;
+  scope_bucket_id: string;
+  scope_product_id: string;
+  scope_type: string;
+  source: string;
+};
+
+export type BillingStatementLineItem = {
+  bucket_id: string;
+  charge_units: string;
+  component_id: string;
+  description: string;
+  plan_id: string;
+  pricing_phase: string;
+  product_id: string;
+  quantity: number;
+  unit_rate: string;
+};
+
+export type BillingStatementTotals = {
+  charge_units: string;
+  free_tier_units: string;
+  promo_units: string;
+  purchase_units: string;
+  receivable_units: string;
+  refund_units: string;
+  reserved_units: string;
+  subscription_units: string;
+  total_due_units: string;
+};
+
 export type BillingSubscription = {
   cadence: string;
   current_period_end?: string;
@@ -365,6 +430,21 @@ export type BillingGrantsWritable = {
   grants: Array<BillingGrant> | null;
 };
 
+export type BillingStatementWritable = {
+  bucket_summaries: Array<BillingStatementBucketSummary> | null;
+  currency: string;
+  generated_at: string;
+  grant_summaries: Array<BillingStatementGrantSummary> | null;
+  line_items: Array<BillingStatementLineItem> | null;
+  org_id: string;
+  period_end: string;
+  period_source: string;
+  period_start: string;
+  product_id: string;
+  totals: BillingStatementTotals;
+  unit_label: string;
+};
+
 export type BillingSubscriptionsWritable = {
   subscriptions: Array<BillingSubscription> | null;
 };
@@ -672,6 +752,37 @@ export type CreateBillingPortalResponses = {
 
 export type CreateBillingPortalResponse =
   CreateBillingPortalResponses[keyof CreateBillingPortalResponses];
+
+export type GetBillingStatementData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Product to preview
+     */
+    product_id: string;
+  };
+  url: "/api/v1/billing/statement";
+};
+
+export type GetBillingStatementErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetBillingStatementError = GetBillingStatementErrors[keyof GetBillingStatementErrors];
+
+export type GetBillingStatementResponses = {
+  /**
+   * OK
+   */
+  200: BillingStatement;
+};
+
+export type GetBillingStatementResponse =
+  GetBillingStatementResponses[keyof GetBillingStatementResponses];
 
 export type CreateBillingSubscriptionData = {
   body: SandboxBillingSubscriptionRequestWritable;

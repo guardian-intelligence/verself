@@ -328,7 +328,7 @@ The net Revenue contribution from a guarantee invocation is negative (subscripti
 
 **Invoice generation (daily cron — processes subscriptions where `current_period_end <= now`):**
 
-1. Aggregate projected ClickHouse metering rows for the billing period, grouped by `(product_id, pricing_phase)`. These rows are derived from settled `billing_windows`, not from raw usage events directly.
+1. Aggregate projected ClickHouse metering rows for the billing period, grouped by `(product_id, plan_id, pricing_phase)` for invoice totals and by component/bucket maps for customer-facing statement detail. These rows are derived from settled `billing_windows`, not from raw usage events directly.
 2. Create invoice + usage line items in PostgreSQL
 3. Commitment true-up: for contracts with `committed_monthly`, compare `subtotal` against the commitment. If usage < commitment, insert a `committed_minimum_trueup` line item for the difference and create a `KindCommitmentTrueUp` TigerBeetle transfer.
 4. Evaluate adjustments: load all matching adjustment rules for this org/contract/tier/period. Apply MFN precedence. For each surviving adjustment, insert an adjustment line item (negative `amount`). Sum into `adjustments_total`.
@@ -449,35 +449,49 @@ The second role is the financial read model. Invoice generation, billing dashboa
 
 ```sql
 CREATE TABLE forge_metal.metering (
-    window_id          String,
-    org_id             LowCardinality(String),
-    actor_id           String DEFAULT '',
-    product_id         LowCardinality(String),
-    source_type        LowCardinality(String),
-    source_ref         String,
-    window_seq         UInt32,
-    started_at         DateTime64(6),
-    ended_at           DateTime64(6),
-    billed_seconds     UInt32,
-    pricing_phase      LowCardinality(String),
-    dimensions         Map(LowCardinality(String), Float64),
-    charge_units       UInt64,
-    free_tier_units    UInt64,
-    subscription_units UInt64,
-    purchase_units     UInt64,
-    promo_units        UInt64,
-    refund_units       UInt64,
-    receivable_units   UInt64,
-    plan_id            LowCardinality(String) DEFAULT '',
-    cost_per_sec       UInt64 DEFAULT 0,
-    recorded_at        DateTime64(6) DEFAULT now64(6),
-    trace_id           String DEFAULT ''
+    window_id                 String,
+    org_id                    LowCardinality(String),
+    actor_id                  String DEFAULT '',
+    product_id                LowCardinality(String),
+    source_type               LowCardinality(String),
+    source_ref                String,
+    window_seq                UInt32,
+    reservation_shape         LowCardinality(String),
+    started_at                DateTime64(6),
+    ended_at                  DateTime64(6),
+    reserved_quantity         UInt64,
+    actual_quantity           UInt64,
+    billable_quantity         UInt64,
+    writeoff_quantity         UInt64,
+    pricing_phase             LowCardinality(String),
+    dimensions                Map(LowCardinality(String), Float64),
+    component_quantities      Map(LowCardinality(String), Float64),
+    component_charge_units    Map(LowCardinality(String), UInt64),
+    bucket_charge_units       Map(LowCardinality(String), UInt64),
+    charge_units              UInt64,
+    writeoff_charge_units     UInt64,
+    free_tier_units           UInt64,
+    subscription_units        UInt64,
+    purchase_units            UInt64,
+    promo_units               UInt64,
+    refund_units              UInt64,
+    receivable_units          UInt64,
+    bucket_free_tier_units    Map(LowCardinality(String), UInt64),
+    bucket_subscription_units Map(LowCardinality(String), UInt64),
+    bucket_purchase_units     Map(LowCardinality(String), UInt64),
+    bucket_promo_units        Map(LowCardinality(String), UInt64),
+    bucket_refund_units       Map(LowCardinality(String), UInt64),
+    bucket_receivable_units   Map(LowCardinality(String), UInt64),
+    plan_id                   LowCardinality(String) DEFAULT '',
+    cost_per_unit             UInt64 DEFAULT 0,
+    recorded_at               DateTime64(6) DEFAULT now64(6),
+    trace_id                  String DEFAULT ''
 )
 ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id)
 ```
 
-`window_id` is the stable identity of the projected billing window and is the basis for idempotent projection retries. `charge_units` is the billed cost in atomic units for this finalized window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both — determined by the plan's `billing_mode`. `plan_id` and `cost_per_sec` record the rate context, making invoice generation a pure ClickHouse aggregation without joining to PostgreSQL.
+`window_id` is the stable identity of the projected billing window and is the basis for idempotent projection retries. `charge_units` is the billed cost in atomic units for this finalized window. The `*_units` columns break down which funding source covered each portion: grant-source columns (`free_tier_units`, `subscription_units`, etc.) for prepaid plans, `receivable_units` for postpaid plans. Bucket-level maps (`bucket_subscription_units`, `bucket_purchase_units`, etc.) preserve entitlement drawdown by product bucket, while `component_charge_units` and `component_quantities` preserve invoice-style SKU detail. For any given row, either the grant-source columns or `receivable_units` is nonzero, never both — determined by the plan's `billing_mode`. `plan_id` and `cost_per_unit` record the scalar reserve-time rate context; per-component rates live in the billing-window `rate_context` and are projected into statement line items through the billing service.
 
 The metering row is a projection of authoritative billing-window state, not the write-time source of truth. A settled window is first made durable in PostgreSQL, then projected into ClickHouse. The first implementation can keep projection state inline on the billing window row (`metering_projected_at`, `last_projection_error`, retry counter). If multiple independent projections appear later, that inline marker can be split into a dedicated projection outbox table without changing the billing model.
 
@@ -620,7 +634,7 @@ Suspension sets `subscriptions.status = 'suspended'` for all active subscription
 
 ## Plan changes (upgrades / downgrades)
 
-Mid-period plan changes follow from design invariants 1 and 3: the customer never overpays, downgrades are not punitive but not advantageous. Projected metering rows already record `plan_id` and `cost_per_sec` at Reserve time, so historical usage is always priced correctly regardless of plan changes. The problem is narrower than in most billing systems — it is about managing prepaid credit balances across the transition, not about re-rating usage.
+Mid-period plan changes follow from design invariants 1 and 3: the customer never overpays, downgrades are not punitive but not advantageous. Projected metering rows already record `plan_id`, `cost_per_unit`, component charges, and bucket charges at Reserve time, so historical usage is always priced correctly regardless of plan changes. The problem is narrower than in most billing systems — it is about managing prepaid credit balances across the transition, not about re-rating usage.
 
 ### Upgrade (e.g. Free → Pro)
 
