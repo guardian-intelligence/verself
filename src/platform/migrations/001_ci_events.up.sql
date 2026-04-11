@@ -101,10 +101,11 @@ CREATE TABLE IF NOT EXISTS ci_events (
 
     -- Warm-path gating telemetry
     event_kind                 LowCardinality(String)          CODEC(ZSTD(3)),
-    warm_filesystem_check_ns   Int64                           CODEC(Delta(8), ZSTD(3)),
     warm_snapshot_promotion_ns Int64                           CODEC(Delta(8), ZSTD(3)),
     warm_previous_destroy_ns   Int64                           CODEC(Delta(8), ZSTD(3)),
-    warm_filesystem_check_ok   UInt8                           CODEC(ZSTD(3)),
+    warm_promotion_gate        LowCardinality(String)          CODEC(ZSTD(3)),
+    warm_host_fs_check_used    UInt8                           CODEC(ZSTD(3)),
+    warm_guest_manifest_ok     UInt8                           CODEC(ZSTD(3)),
 
     -- VM shutdown
     vm_exit_wait_ns    Int64                                   CODEC(Delta(8), ZSTD(3)),

@@ -70,10 +70,11 @@ type CIEvent struct {
 	ServiceStartNs             int64  `ch:"service_start_ns"`
 	VMExitWaitNs               int64  `ch:"vm_exit_wait_ns"`
 	VMExitForced               uint8  `ch:"vm_exit_forced"`
-	WarmFilesystemCheckNs      int64  `ch:"warm_filesystem_check_ns"`
 	WarmSnapshotPromotionNs    int64  `ch:"warm_snapshot_promotion_ns"`
 	WarmPreviousDestroyNs      int64  `ch:"warm_previous_destroy_ns"`
-	WarmFilesystemCheckOK      uint8  `ch:"warm_filesystem_check_ok"`
+	WarmPromotionGate          string `ch:"warm_promotion_gate"`
+	WarmHostFSCheckUsed        uint8  `ch:"warm_host_fs_check_used"`
+	WarmGuestManifestOK        uint8  `ch:"warm_guest_manifest_ok"`
 	StdoutBytes                uint64 `ch:"stdout_bytes"`
 	StderrBytes                uint64 `ch:"stderr_bytes"`
 	DroppedLogBytes            uint64 `ch:"dropped_log_bytes"`

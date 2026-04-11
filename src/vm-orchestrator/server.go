@@ -255,9 +255,7 @@ func (s *APIServer) WarmGolden(ctx context.Context, req *vmrpc.WarmGoldenRequest
 			TargetDataset:               result.TargetDataset,
 			PreviousDataset:             result.PreviousDataset,
 			Promoted:                    result.Promoted,
-			FilesystemCheckOk:           result.FilesystemCheckOK,
 			CloneDurationMs:             result.CloneDuration.Milliseconds(),
-			FilesystemCheckDurationMs:   result.FilesystemCheckDuration.Milliseconds(),
 			SnapshotPromotionDurationMs: result.SnapshotPromotionDuration.Milliseconds(),
 			PreviousDestroyDurationMs:   result.PreviousDestroyDuration.Milliseconds(),
 			CommitSha:                   result.CommitSHA,
@@ -271,9 +269,7 @@ func (s *APIServer) WarmGolden(ctx context.Context, req *vmrpc.WarmGoldenRequest
 		TargetDataset:               result.TargetDataset,
 		PreviousDataset:             result.PreviousDataset,
 		Promoted:                    result.Promoted,
-		FilesystemCheckOk:           result.FilesystemCheckOK,
 		CloneDurationMs:             result.CloneDuration.Milliseconds(),
-		FilesystemCheckDurationMs:   result.FilesystemCheckDuration.Milliseconds(),
 		SnapshotPromotionDurationMs: result.SnapshotPromotionDuration.Milliseconds(),
 		PreviousDestroyDurationMs:   result.PreviousDestroyDuration.Milliseconds(),
 		CommitSha:                   result.CommitSHA,
@@ -445,8 +441,16 @@ func (s *APIServer) runRepoExec(ctx context.Context, record *managedJob, cfg Con
 	observer := &jobObserver{server: s, job: record}
 	orch := New(cfg, s.logger)
 	result, err := orch.RunDatasetObserved(ctx, repoJob, jobDataset, true, observer)
-	commitSHA := record.latestGuestEventAttr(repoExecCheckoutEvent, repoCommitSHAAttr)
-	installNeeded := repoExecInstallNeededFromEvents(record)
+	manifest := result.RepoManifest
+	if err == nil {
+		err = validateRepoExecManifest(spec, manifest)
+	}
+	commitSHA := ""
+	installNeeded := true
+	if manifest != nil {
+		commitSHA = manifest.ResolvedCommitSHA
+		installNeeded = manifest.InstallNeeded
+	}
 	meta := &RepoExecMetadata{
 		Repo:           spec.GetRepo(),
 		RepoURL:        spec.GetRepoUrl(),
@@ -491,13 +495,12 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 
 	// The warm process runs entirely inside the Firecracker VM: git fetch,
 	// dependency install, and lockfile hash write all happen in the guest.
-	// The host never mounts the zvol — all filesystem writes are contained
-	// inside the Firecracker sandbox.
+	// The host only snapshots blocks after vm-init returns a typed manifest.
 	warmJob, err := buildInVMWarmJob(job, req.GetRepoUrl(), req.GetDefaultBranch(), req.GetLockfileRelPath(), cfg.HostServiceIP, cfg.HostServicePort)
 	if err != nil {
 		return WarmGoldenResult{}, err
 	}
-	s.logger.Info("warm golden: in-VM warm (no host mount)",
+	s.logger.Info("warm golden: in-VM warm (guest manifest gate)",
 		"repo", req.GetRepo(),
 		"dataset", targetDataset,
 	)
@@ -505,7 +508,11 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 	observer := &jobObserver{server: s, job: record}
 	orch := New(cfg, s.logger)
 	startedResult, runErr := orch.RunDatasetObserved(ctx, warmJob, targetDataset, false, observer)
-	commitSHA := record.latestGuestEventAttr(repoWarmCommitEvent, repoCommitSHAAttr)
+	manifest := startedResult.RepoManifest
+	commitSHA := ""
+	if manifest != nil {
+		commitSHA = manifest.ResolvedCommitSHA
+	}
 	if runErr != nil {
 		return WarmGoldenResult{
 			TargetDataset:   targetDataset,
@@ -524,19 +531,14 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 			JobResult:       startedResult,
 		}, fmt.Errorf("warm run exited with code %d", startedResult.ExitCode)
 	}
-
-	filesystemCheckStart := time.Now()
-	fsErr := checkFilesystem(ctx, targetDataset)
-	filesystemCheckDuration := time.Since(filesystemCheckStart)
-	if fsErr != nil {
+	if err := validateWarmPromotionManifest(req, startedResult); err != nil {
 		return WarmGoldenResult{
-			TargetDataset:           targetDataset,
-			PreviousDataset:         previousDataset,
-			CloneDuration:           cloneDuration,
-			FilesystemCheckDuration: filesystemCheckDuration,
-			CommitSHA:               commitSHA,
-			JobResult:               startedResult,
-		}, fmt.Errorf("warm filesystem check failed: %w", fsErr)
+			TargetDataset:   targetDataset,
+			PreviousDataset: previousDataset,
+			CloneDuration:   cloneDuration,
+			CommitSHA:       commitSHA,
+			JobResult:       startedResult,
+		}, err
 	}
 
 	snapshotPromotionStart := time.Now()
@@ -545,7 +547,6 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 			TargetDataset:             targetDataset,
 			PreviousDataset:           previousDataset,
 			CloneDuration:             cloneDuration,
-			FilesystemCheckDuration:   filesystemCheckDuration,
 			SnapshotPromotionDuration: time.Since(snapshotPromotionStart),
 			CommitSHA:                 commitSHA,
 			JobResult:                 startedResult,
@@ -571,9 +572,7 @@ func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg C
 		TargetDataset:             targetDataset,
 		PreviousDataset:           previousDataset,
 		Promoted:                  true,
-		FilesystemCheckOK:         true,
 		CloneDuration:             cloneDuration,
-		FilesystemCheckDuration:   filesystemCheckDuration,
 		SnapshotPromotionDuration: snapshotPromotionDuration,
 		PreviousDestroyDuration:   previousDestroyDuration,
 		CommitSHA:                 commitSHA,
@@ -663,19 +662,102 @@ func (j *managedJob) setRepoExec(meta *RepoExecMetadata) {
 	j.repoExec = meta
 }
 
-func (j *managedJob) latestGuestEventAttr(kind, attr string) string {
-	j.mu.RLock()
-	defer j.mu.RUnlock()
-	for i := len(j.events) - 1; i >= 0; i-- {
-		event := j.events[i]
-		if event.Kind != kind {
-			continue
+func validateWarmPromotionManifest(req *vmrpc.WarmGoldenRequest, result JobResult) error {
+	if result.ForcedShutdown {
+		return fmt.Errorf("warm promotion blocked: VM required forced shutdown")
+	}
+	manifest := result.RepoManifest
+	if manifest == nil {
+		return fmt.Errorf("warm promotion blocked: missing repo supervisor manifest")
+	}
+	if manifest.Kind != vmproto.RepoOperationWarm {
+		return fmt.Errorf("warm promotion blocked: manifest kind %q is not %q", manifest.Kind, vmproto.RepoOperationWarm)
+	}
+	if ref := strings.TrimSpace(req.GetDefaultBranch()); ref != "" && strings.TrimSpace(manifest.RequestedRef) != ref {
+		return fmt.Errorf("warm promotion blocked: manifest ref %q is not requested ref %q", manifest.RequestedRef, ref)
+	}
+	if !looksLikeGitObjectID(manifest.ResolvedCommitSHA) {
+		return fmt.Errorf("warm promotion blocked: invalid resolved commit %q", manifest.ResolvedCommitSHA)
+	}
+	if lockfileRelPath := strings.TrimSpace(req.GetLockfileRelPath()); lockfileRelPath != "" {
+		if strings.TrimSpace(manifest.LockfileRelPath) != lockfileRelPath {
+			return fmt.Errorf("warm promotion blocked: manifest lockfile %q is not requested lockfile %q", manifest.LockfileRelPath, lockfileRelPath)
 		}
-		if value := strings.TrimSpace(event.Attrs[attr]); value != "" {
-			return value
+		lockfileSHA := strings.TrimSpace(manifest.LockfileSHA256)
+		if lockfileSHA == "" {
+			return fmt.Errorf("warm promotion blocked: missing lockfile hash for %s", lockfileRelPath)
+		}
+		if !looksLikeSHA256Hex(lockfileSHA) {
+			return fmt.Errorf("warm promotion blocked: invalid lockfile hash for %s", lockfileRelPath)
 		}
 	}
-	return ""
+	return nil
+}
+
+func validateRepoExecManifest(spec *vmrpc.RepoExecSpec, manifest *RepoManifest) error {
+	if spec == nil {
+		spec = &vmrpc.RepoExecSpec{}
+	}
+	if manifest == nil {
+		return fmt.Errorf("repo exec completed without supervisor manifest")
+	}
+	if manifest.Kind != vmproto.RepoOperationExec {
+		return fmt.Errorf("repo exec supervisor manifest kind %q is not %q", manifest.Kind, vmproto.RepoOperationExec)
+	}
+	if ref := strings.TrimSpace(spec.GetRef()); ref != "" && strings.TrimSpace(manifest.RequestedRef) != ref {
+		return fmt.Errorf("repo exec supervisor manifest ref %q is not requested ref %q", manifest.RequestedRef, ref)
+	}
+	if !looksLikeGitObjectID(manifest.ResolvedCommitSHA) {
+		return fmt.Errorf("repo exec supervisor manifest invalid resolved commit %q", manifest.ResolvedCommitSHA)
+	}
+	if lockfileRelPath := strings.TrimSpace(spec.GetLockfileRelPath()); lockfileRelPath != "" {
+		if strings.TrimSpace(manifest.LockfileRelPath) != lockfileRelPath {
+			return fmt.Errorf("repo exec supervisor manifest lockfile %q is not requested lockfile %q", manifest.LockfileRelPath, lockfileRelPath)
+		}
+	}
+	if strings.TrimSpace(manifest.LockfileSHA256) != "" && !looksLikeSHA256Hex(manifest.LockfileSHA256) {
+		return fmt.Errorf("repo exec supervisor manifest invalid lockfile hash")
+	}
+	if strings.TrimSpace(manifest.PreviousLockfileSHA256) != "" && !looksLikeSHA256Hex(manifest.PreviousLockfileSHA256) {
+		return fmt.Errorf("repo exec supervisor manifest invalid previous lockfile hash")
+	}
+	return nil
+}
+
+func looksLikeGitObjectID(value string) bool {
+	value = strings.TrimSpace(value)
+	switch len(value) {
+	case 40, 64:
+	default:
+		return false
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeSHA256Hex(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (j *managedJob) cancelJob() bool {
@@ -850,19 +932,6 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-func repoExecInstallNeededFromEvents(record *managedJob) bool {
-	switch strings.ToLower(record.latestGuestEventAttr(repoExecInstallDecision, repoExecInstallNeededAttr)) {
-	case "0", "false", "no":
-		return false
-	case "1", "true", "yes":
-		return true
-	default:
-		// Absence is conservative: if checkout failed before the guest emitted
-		// a decision, callers should not treat dependencies as known-reused.
-		return true
-	}
 }
 
 func totalGuestSlots(poolCIDR string) int {

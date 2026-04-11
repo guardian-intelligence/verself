@@ -123,7 +123,7 @@ func TestBuildExecJobConfigJSONIncludesGuestArtifactMetrics(t *testing.T) {
 	}
 }
 
-func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
+func TestBuildWarmJobConfigJSONIncludesManifestGateTelemetry(t *testing.T) {
 	input := emitWarmTelemetryInput{
 		Request: WarmRequest{
 			Repo:          "forgejo-automation/next-bun-monorepo",
@@ -153,11 +153,17 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 			VMExitWaitDuration:   410 * time.Millisecond,
 			StdoutBytes:          128,
 			StderrBytes:          0,
+			RepoManifest: &vmorchestrator.RepoManifest{
+				Kind:              "warm",
+				RequestedRef:      "main",
+				ResolvedCommitSHA: "367befa8562f50dfac64b5589e842a215598b90a",
+				LockfileRelPath:   "bun.lockb",
+				LockfileSHA256:    "lockfile-sha",
+				InstallNeeded:     true,
+			},
 		},
-		FilesystemCheckDuration:   221 * time.Millisecond,
 		SnapshotPromotionDuration: 9 * time.Millisecond,
 		PreviousDestroyDuration:   4 * time.Millisecond,
-		FilesystemCheckOK:         true,
 		Promoted:                  true,
 		CommitSHA:                 "367befa8562f50dfac64b5589e842a215598b90a",
 	}
@@ -189,11 +195,14 @@ func TestBuildWarmJobConfigJSONIncludesFilesystemGateTelemetry(t *testing.T) {
 	if payload["parent_run_id"] != "fixtures-pass-20260401-072318" {
 		t.Fatalf("parent_run_id: got %v", payload["parent_run_id"])
 	}
-	if payload["filesystem_check_ok"] != true {
-		t.Fatalf("filesystem_check_ok: got %v", payload["filesystem_check_ok"])
+	if payload["promotion_gate"] != "guest_manifest" {
+		t.Fatalf("promotion_gate: got %v", payload["promotion_gate"])
 	}
-	if payload["filesystem_check_ns"] != float64((221 * time.Millisecond).Nanoseconds()) {
-		t.Fatalf("filesystem_check_ns: got %v", payload["filesystem_check_ns"])
+	if payload["host_fs_check_used"] != false {
+		t.Fatalf("host_fs_check_used: got %v", payload["host_fs_check_used"])
+	}
+	if payload["guest_manifest_ok"] != true {
+		t.Fatalf("guest_manifest_ok: got %v", payload["guest_manifest_ok"])
 	}
 	if payload["shutdown_mode"] != "guest_reboot_k" {
 		t.Fatalf("shutdown_mode: got %v", payload["shutdown_mode"])

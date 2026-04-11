@@ -111,16 +111,32 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		return session.fail(err)
 	}
 
-	prepareDuration, exitCode, err := session.runPhase(jobCtx, controlCh, "prepare", runReq.PrepareCommand, normalizeWorkDir(runReq.PrepareWorkDir), env)
-	if err != nil {
-		return session.fail(err)
-	}
-
-	var runDuration time.Duration
-	if exitCode == 0 {
-		runDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "run", runReq.RunCommand, normalizeWorkDir(runReq.RunWorkDir), env)
+	var (
+		prepareDuration time.Duration
+		runDuration     time.Duration
+		exitCode        int
+		repoManifest    *vmproto.RepoManifest
+	)
+	if runReq.RepoOperation != nil && strings.TrimSpace(runReq.RepoOperation.Kind) != "" {
+		repoResult, repoErr := session.runRepoOperation(jobCtx, controlCh, runReq.RepoOperation, env)
+		prepareDuration = repoResult.PrepareDuration
+		runDuration = repoResult.RunDuration
+		exitCode = repoResult.ExitCode
+		repoManifest = repoResult.Manifest
+		if repoErr != nil {
+			return session.fail(repoErr)
+		}
+	} else {
+		prepareDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "prepare", runReq.PrepareCommand, normalizeWorkDir(runReq.PrepareWorkDir), env)
 		if err != nil {
 			return session.fail(err)
+		}
+
+		if exitCode == 0 {
+			runDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "run", runReq.RunCommand, normalizeWorkDir(runReq.RunWorkDir), env)
+			if err != nil {
+				return session.fail(err)
+			}
 		}
 	}
 
@@ -133,6 +149,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		StdoutBytes:            session.stdoutBytes.Load(),
 		StderrBytes:            session.stderrBytes.Load(),
 		DroppedLogBytes:        session.droppedLogBytes.Load(),
+		RepoManifest:           repoManifest,
 	}
 	if err := session.sendControl(vmproto.TypeResult, result); err != nil {
 		return err
@@ -524,15 +541,20 @@ type commandSpec struct {
 }
 
 func phaseCommand(argv []string, workDir string, env []string) (commandSpec, error) {
+	return phaseCommandWithCredential(argv, workDir, env, nil)
+}
+
+func phaseCommandWithCredential(argv []string, workDir string, env []string, credential *syscall.Credential) (commandSpec, error) {
 	argv0, err := resolveCommand(argv[0])
 	if err != nil {
 		return commandSpec{}, err
 	}
 	return commandSpec{
-		Path:    argv0,
-		Args:    argv,
-		WorkDir: workDir,
-		Env:     env,
+		Path:       argv0,
+		Args:       argv,
+		WorkDir:    workDir,
+		Env:        env,
+		Credential: credential,
 	}, nil
 }
 
