@@ -30,9 +30,45 @@
         fail_msg: >-
           wipe_pg_db_name must be one of {{ wipe_pg_db_supported | join(', ') }}.
 
-  roles:
-    - role: postgresql
-      tags: [postgresql]
+    - name: Check deployed PostgreSQL client binary for wipe
+      ansible.builtin.stat:
+        path: "{{ fm_bin }}/psql"
+      register: wipe_pg_db_psql_binary
+
+    - name: Assert deployed PostgreSQL client is present for wipe
+      ansible.builtin.assert:
+        that:
+          - wipe_pg_db_psql_binary.stat.exists
+        fail_msg: >-
+          wipe-pg-db runs against an existing deployment, but {{ fm_bin }}/psql is missing.
+          Run a deploy playbook before wiping a managed PostgreSQL database.
+
+    - name: Wait for deployed PostgreSQL before wipe
+      ansible.builtin.wait_for:
+        host: "{{ services.postgresql.host }}"
+        port: "{{ services.postgresql.port }}"
+        timeout: 5
+
+    - name: Verify PostgreSQL admin connectivity before wipe
+      ansible.builtin.command:
+        argv:
+          - "{{ fm_bin }}/psql"
+          - -h
+          - "{{ services.postgresql.host }}"
+          - -p
+          - "{{ services.postgresql.port | string }}"
+          - -U
+          - postgres
+          - -d
+          - postgres
+          - -v
+          - ON_ERROR_STOP=1
+          - -tAc
+          - SELECT 1
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
 
   tasks:
     - name: Include TigerBeetle for sandbox PostgreSQL wipe
