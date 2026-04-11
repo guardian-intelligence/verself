@@ -79,6 +79,7 @@
       changed_when: false
       no_log: true
 
+    # Ansible PostgreSQL helpers can open idle connections after termination; FORCE closes that reset race.
     - name: Drop letters database before schema recreate
       ansible.builtin.command:
         cmd: >-
@@ -88,7 +89,7 @@
           -U postgres
           -d postgres
           -v ON_ERROR_STOP=1
-          -c "DROP DATABASE IF EXISTS letters;"
+          -c "DROP DATABASE IF EXISTS letters WITH (FORCE);"
       environment:
         PGPASSWORD: "{{ postgresql_admin_password }}"
       changed_when: false
