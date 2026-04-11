@@ -85,16 +85,18 @@ remote_psql_tsv() {
 }
 
 if [[ -n "${execution_id}" && ( -z "${repo_id}" || -z "${attempt_id}" ) ]]; then
-  mapfile -t execution_identity < <(remote_psql_tsv sandbox_rental "
+  mapfile -t execution_identity < <(remote_psql sandbox_rental "
+    COPY (
     SELECT
       COALESCE(e.repo_id::text, ''),
       COALESCE(a.attempt_id::text, '')
     FROM executions e
     LEFT JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
-    WHERE e.execution_id = '${execution_id}';
+    WHERE e.execution_id = '${execution_id}'
+    ) TO STDOUT WITH (FORMAT csv);
   ")
   if [[ ${#execution_identity[@]} -gt 0 ]]; then
-    IFS=$'\t' read -r derived_repo_id derived_attempt_id <<<"${execution_identity[0]}"
+    IFS=',' read -r derived_repo_id derived_attempt_id <<<"${execution_identity[0]}"
     if [[ -z "${repo_id}" && -n "${derived_repo_id}" ]]; then
       repo_id="${derived_repo_id}"
     fi

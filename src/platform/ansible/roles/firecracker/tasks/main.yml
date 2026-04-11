@@ -466,6 +466,9 @@
 - name: Prune VM job clones derived from old golden
   ansible.builtin.shell: |
     set -euo pipefail
+    if ! zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_workload_dataset }} >/dev/null 2>&1; then
+      exit 0
+    fi
     zfs list -H -o name -r {{ firecracker_zfs_pool }}/{{ firecracker_workload_dataset }} | tail -n +2 | xargs -r -n1 zfs destroy -R
   args:
     executable: /bin/bash
