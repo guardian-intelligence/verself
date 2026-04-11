@@ -14,7 +14,13 @@ import (
 	"github.com/forge-metal/vm-orchestrator/vmproto"
 )
 
-const repoLockfileHashPath = "/var/lib/forge-metal/repo/lockfile.sha256"
+const (
+	repoLockfileHashPath = "/var/lib/forge-metal/repo/lockfile.sha256"
+	runnerHomeDir        = "/home/runner"
+	workspaceCacheDir    = defaultWorkDir + "/.cache"
+	npmCacheDir          = workspaceCacheDir + "/npm"
+	bunCacheDir          = workspaceCacheDir + "/bun"
+)
 
 type repoOperationResult struct {
 	ExitCode        int
@@ -24,6 +30,10 @@ type repoOperationResult struct {
 }
 
 func (s *agentSession) runRepoOperation(ctx context.Context, controlCh <-chan vmproto.Envelope, op *vmproto.RepoOperation, env []string) (repoOperationResult, error) {
+	if err := prepareRunnerWritableDirs(); err != nil {
+		return repoOperationResult{}, fmt.Errorf("prepare runner writable dirs: %w", err)
+	}
+
 	switch strings.TrimSpace(op.Kind) {
 	case vmproto.RepoOperationWarm:
 		return s.runRepoWarm(ctx, controlCh, op, env)
@@ -222,10 +232,54 @@ func prepareWorkspace(reset bool) error {
 			return err
 		}
 	}
-	if err := os.MkdirAll(defaultWorkDir, 0o755); err != nil {
-		return err
+	for _, path := range []string{
+		defaultWorkDir,
+		workspaceCacheDir,
+		npmCacheDir,
+		bunCacheDir,
+	} {
+		if err := ensureRunnerDir(path); err != nil {
+			return err
+		}
 	}
-	return os.Chown(defaultWorkDir, runnerUID, runnerGID)
+	return nil
+}
+
+func prepareRunnerWritableDirs() error {
+	for _, path := range []string{
+		runnerHomeDir,
+		runnerHomeDir + "/.cache",
+		runnerHomeDir + "/.local",
+		runnerHomeDir + "/.npm",
+	} {
+		if err := ensureRunnerDir(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureRunnerDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return err
+		}
+		info, err = os.Lstat(path)
+		if err != nil {
+			return err
+		}
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	return os.Chown(path, runnerUID, runnerGID)
 }
 
 func persistWarmLockfileHash(ctx context.Context, lockfileRelPath string, env []string) (string, error) {
@@ -325,13 +379,26 @@ func workspaceRelPath(relPath string) (string, error) {
 }
 
 func repoUserEnv(env []string) []string {
-	out := make([]string, 0, len(env))
+	out := make([]string, 0, len(env)+5)
 	for _, entry := range env {
-		if strings.HasPrefix(entry, guestEventFIFOEnv+"=") {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case guestEventFIFOEnv, "HOME", "XDG_CACHE_HOME", "NPM_CONFIG_CACHE", "npm_config_cache", "BUN_INSTALL_CACHE_DIR":
 			continue
 		}
 		out = append(out, entry)
 	}
+	// Repo jobs run as runner; keep package-manager caches out of stale root-owned home state.
+	out = append(out,
+		"HOME="+runnerHomeDir,
+		"XDG_CACHE_HOME="+workspaceCacheDir,
+		"NPM_CONFIG_CACHE="+npmCacheDir,
+		"npm_config_cache="+npmCacheDir,
+		"BUN_INSTALL_CACHE_DIR="+bunCacheDir,
+	)
 	return out
 }
 
