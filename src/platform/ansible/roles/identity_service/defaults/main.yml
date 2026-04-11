@@ -1,0 +1,7 @@
+---
+identity_service_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
+identity_service_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
+identity_service_auth_project_name: identity-service
+identity_service_zitadel_base_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}"
+identity_service_zitadel_host: "auth.{{ forge_metal_domain }}"
+identity_service_force_schema_reset: false

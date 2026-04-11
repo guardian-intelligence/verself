@@ -1,0 +1,44 @@
+---
+- name: Ensure identity_service PostgreSQL role and database exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure identity_service PostgreSQL user exists
+      community.postgresql.postgresql_user:
+        name: identity_service
+        password: "{{ postgresql_identity_service_password }}"
+        role_attr_flags: LOGIN
+      no_log: true
+
+    - name: Ensure identity_service database exists
+      community.postgresql.postgresql_db:
+        name: identity_service
+        owner: identity_service
+        state: present
+      no_log: true
+
+    - name: Ensure identity_service owns identity_service database
+      community.postgresql.postgresql_owner:
+        obj_name: identity_service
+        obj_type: database
+        new_owner: identity_service
+      no_log: true

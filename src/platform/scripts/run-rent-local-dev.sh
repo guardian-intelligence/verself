@@ -122,6 +122,7 @@ PY
 
 local_pg_port="$(choose_local_port "${RENT_DEV_LOCAL_PG_PORT:-}" 15432 25432 35432 45432 55432)"
 local_sandbox_port="$(choose_local_port "${RENT_DEV_LOCAL_SANDBOX_PORT:-}" 14243 24243 34243 44243 54243)"
+local_identity_port="$(choose_local_port "${RENT_DEV_LOCAL_IDENTITY_PORT:-}" 14248 24248 34248 44248 54248)"
 local_electric_port="$(choose_local_port "${RENT_DEV_LOCAL_ELECTRIC_PORT:-}" 13010 23010 33010 43010 53010)"
 local_otel_http_port="$(choose_local_port "${RENT_DEV_LOCAL_OTEL_HTTP_PORT:-}" 14318 24318 34318 44318 54318)"
 local_app_port="$(choose_local_port "${RENT_DEV_LOCAL_APP_PORT:-}" 4244 5244 6244 7244 8244)"
@@ -129,6 +130,11 @@ local_app_port="$(choose_local_port "${RENT_DEV_LOCAL_APP_PORT:-}" 4244 5244 624
 auth_project_id="${AUTH_PROJECT_ID:-$(read_remote_env_value AUTH_PROJECT_ID)}"
 if [[ -z "${auth_project_id}" ]]; then
   echo "failed to resolve AUTH_PROJECT_ID from ${remote_env_path}" >&2
+  exit 1
+fi
+identity_service_auth_project_id="${IDENTITY_SERVICE_AUTH_PROJECT_ID:-$(read_remote_env_value IDENTITY_SERVICE_AUTH_PROJECT_ID)}"
+if [[ -z "${identity_service_auth_project_id}" ]]; then
+  echo "failed to resolve IDENTITY_SERVICE_AUTH_PROJECT_ID from ${remote_env_path}" >&2
   exit 1
 fi
 
@@ -154,12 +160,14 @@ if [[ "${print_env_only}" != "1" ]]; then
     -o ExitOnForwardFailure=yes \
     -L "${local_pg_port}:127.0.0.1:5432" \
     -L "${local_sandbox_port}:127.0.0.1:4243" \
+    -L "${local_identity_port}:127.0.0.1:4248" \
     -L "${local_electric_port}:127.0.0.1:3010" \
     -L "${local_otel_http_port}:127.0.0.1:4318" \
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}"
 
   wait_for_local_tcp_port "frontend_auth PostgreSQL" "${local_pg_port}"
   wait_for_local_tcp_port "sandbox-rental-service" "${local_sandbox_port}"
+  wait_for_local_tcp_port "identity-service" "${local_identity_port}"
   wait_for_local_tcp_port "Electric" "${local_electric_port}"
   wait_for_local_tcp_port "OTLP HTTP" "${local_otel_http_port}"
 fi
@@ -168,6 +176,7 @@ export FORGE_METAL_DOMAIN="${FORGE_METAL_DOMAIN:-${VERIFICATION_DOMAIN}}"
 export AUTH_SUBDOMAIN="${AUTH_SUBDOMAIN:-auth}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-${auth_client_id}}"
 export AUTH_PROJECT_ID="${AUTH_PROJECT_ID:-${auth_project_id}}"
+export IDENTITY_SERVICE_AUTH_PROJECT_ID="${IDENTITY_SERVICE_AUTH_PROJECT_ID:-${identity_service_auth_project_id}}"
 export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-postgresql://frontend_auth:${frontend_auth_password}@127.0.0.1:${local_pg_port}/frontend_auth?sslmode=disable}"
 export AUTH_SESSION_SECRET="${AUTH_SESSION_SECRET:-$(python3 - <<'PY'
 import secrets
@@ -175,6 +184,7 @@ print(secrets.token_urlsafe(48))
 PY
 )}"
 export SANDBOX_RENTAL_SERVICE_BASE_URL="${SANDBOX_RENTAL_SERVICE_BASE_URL:-http://127.0.0.1:${local_sandbox_port}}"
+export IDENTITY_SERVICE_BASE_URL="${IDENTITY_SERVICE_BASE_URL:-http://127.0.0.1:${local_identity_port}}"
 export ELECTRIC_URL="${ELECTRIC_URL:-http://127.0.0.1:${local_electric_port}}"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:${local_otel_http_port}}"
 export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-rent-a-sandbox}"
@@ -186,9 +196,11 @@ export FORGE_METAL_DOMAIN=${FORGE_METAL_DOMAIN}
 export AUTH_SUBDOMAIN=${AUTH_SUBDOMAIN}
 export AUTH_CLIENT_ID=${AUTH_CLIENT_ID}
 export AUTH_PROJECT_ID=${AUTH_PROJECT_ID}
+export IDENTITY_SERVICE_AUTH_PROJECT_ID=${IDENTITY_SERVICE_AUTH_PROJECT_ID}
 export AUTH_DATABASE_URL=${AUTH_DATABASE_URL}
 export AUTH_SESSION_SECRET=${AUTH_SESSION_SECRET}
 export SANDBOX_RENTAL_SERVICE_BASE_URL=${SANDBOX_RENTAL_SERVICE_BASE_URL}
+export IDENTITY_SERVICE_BASE_URL=${IDENTITY_SERVICE_BASE_URL}
 export ELECTRIC_URL=${ELECTRIC_URL}
 export OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
 export OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
@@ -208,6 +220,7 @@ rent-a-sandbox local dev
   auth:      https://auth.${FORGE_METAL_DOMAIN}
   pg tunnel: 127.0.0.1:${local_pg_port}
   api:       ${SANDBOX_RENTAL_SERVICE_BASE_URL}
+  identity:  ${IDENTITY_SERVICE_BASE_URL}
   electric:  ${ELECTRIC_URL}
   otlp:      ${OTEL_EXPORTER_OTLP_ENDPOINT}
   state:     ${state_file}

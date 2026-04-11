@@ -38,6 +38,34 @@
     rent_a_sandbox_project_id: "{{ rent_a_sandbox_project_search.json.result[0].id }}"
   when: rent_a_sandbox_project_search.json.result is defined and rent_a_sandbox_project_search.json.result | length > 0
 
+- name: Search for identity-service project
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/_search"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rent_a_sandbox_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      queries:
+        - nameQuery:
+            name: "{{ rent_a_sandbox_identity_project_name }}"
+            method: TEXT_QUERY_METHOD_EQUALS
+    status_code: 200
+  register: rent_a_sandbox_identity_project_search
+
+- name: Set rent-a-sandbox identity-service project ID fact
+  ansible.builtin.set_fact:
+    rent_a_sandbox_identity_project_id: "{{ rent_a_sandbox_identity_project_search.json.result[0].id }}"
+  when: >-
+    rent_a_sandbox_identity_project_search.json.result is defined
+    and rent_a_sandbox_identity_project_search.json.result | length > 0
+
+- name: Assert identity-service project exists for rent-a-sandbox
+  ansible.builtin.assert:
+    that: rent_a_sandbox_identity_project_id | default('', true) | length > 0
+    fail_msg: "Identity-service Zitadel project '{{ rent_a_sandbox_identity_project_name }}' not found. Run the identity_service role before rent_a_sandbox."
+
 - name: Ensure sandbox-rental project roles exist
   ansible.builtin.include_role:
     name: zitadel_project_roles

@@ -7,3 +7,4 @@ rent_a_sandbox_dependencies_fingerprint_path: "{{ rent_a_sandbox_install_dir }}/
 rent_a_sandbox_auth_issuer_url: "https://auth.{{ forge_metal_domain }}"
 rent_a_sandbox_auth_jwks_url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/oauth/v2/keys"
 rent_a_sandbox_auth_project_name: sandbox-rental
+rent_a_sandbox_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"

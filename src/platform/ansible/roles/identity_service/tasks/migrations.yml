@@ -1,0 +1,168 @@
+---
+- name: Compute local identity-service PostgreSQL migrations fingerprint
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
+    chdir: "{{ playbook_dir }}/../../../identity-service/migrations"
+    executable: /bin/bash
+  register: identity_service_pg_migrations_local_hash
+  changed_when: false
+
+- name: Read remote identity-service PostgreSQL migrations fingerprint
+  ansible.builtin.slurp:
+    src: /opt/forge-metal/identity-service-migrations/.applied-hash
+  register: identity_service_pg_migrations_remote_hash
+  failed_when: false
+
+- name: Probe for expected identity-service tables
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d identity_service
+      -tAc
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'identity_policy_documents';"
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  register: identity_service_pg_table_probe
+  failed_when: false
+  changed_when: false
+  no_log: true
+
+- name: Apply identity-service PostgreSQL migrations
+  when: >-
+    identity_service_force_schema_reset
+    or identity_service_pg_migrations_remote_hash is failed
+    or (identity_service_pg_migrations_remote_hash.content | default('') | b64decode | trim)
+       != (identity_service_pg_migrations_local_hash.stdout.split()[0] | trim)
+    or (identity_service_pg_table_probe.stdout | default('0') | trim) == '0'
+  block:
+    - name: Remove deployed identity-service migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/identity-service-migrations
+        state: absent
+
+    - name: Create deployed identity-service migrations directory
+      ansible.builtin.file:
+        path: /opt/forge-metal/identity-service-migrations
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Upload identity-service PostgreSQL migrations
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../identity-service/migrations/"
+        dest: /opt/forge-metal/identity-service-migrations/
+        mode: "0644"
+
+    - name: Stop identity-service before schema recreate
+      ansible.builtin.systemd:
+        name: identity-service
+        state: stopped
+      failed_when: false
+
+    - name: Terminate identity_service connections before recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'identity_service' AND pid <> pg_backend_pid();"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    # Ansible PostgreSQL helpers can open idle connections after termination; FORCE closes that reset race.
+    - name: Drop identity_service database before schema recreate
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "DROP DATABASE IF EXISTS identity_service WITH (FORCE);"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create identity_service database
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U postgres
+          -d postgres
+          -v ON_ERROR_STOP=1
+          -c "CREATE DATABASE identity_service OWNER identity_service;"
+      environment:
+        PGPASSWORD: "{{ postgresql_admin_password }}"
+      changed_when: false
+      no_log: true
+
+    - name: Apply identity-service PostgreSQL migration files
+      ansible.builtin.command:
+        cmd: >-
+          {{ fm_bin }}/psql
+          -h {{ services.postgresql.host }}
+          -p {{ services.postgresql.port }}
+          -U identity_service
+          -d identity_service
+          -v ON_ERROR_STOP=1
+          -f /opt/forge-metal/identity-service-migrations/{{ item }}
+      environment:
+        PGPASSWORD: "{{ postgresql_identity_service_password }}"
+      loop: >-
+        {{
+          query('ansible.builtin.fileglob', playbook_dir + '/../../../identity-service/migrations/[0-9][0-9][0-9]_*.up.sql')
+          | map('basename')
+          | sort
+        }}
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+      no_log: true
+
+    - name: Record identity-service PostgreSQL migrations fingerprint
+      ansible.builtin.copy:
+        content: "{{ identity_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
+        dest: /opt/forge-metal/identity-service-migrations/.applied-hash
+        mode: "0644"
+
+- name: Reconcile identity-service object ownership and privileges
+  ansible.builtin.command:
+    cmd: >-
+      {{ fm_bin }}/psql
+      -h {{ services.postgresql.host }}
+      -p {{ services.postgresql.port }}
+      -U postgres
+      -d identity_service
+      -v ON_ERROR_STOP=1
+    stdin: |
+      DO $$
+      BEGIN
+        IF to_regclass('public.identity_policy_documents') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.identity_policy_documents OWNER TO identity_service';
+        END IF;
+      END
+      $$;
+      GRANT USAGE, CREATE ON SCHEMA public TO identity_service;
+      GRANT ALL PRIVILEGES ON TABLE
+        public.identity_policy_documents
+      TO identity_service;
+  environment:
+    PGPASSWORD: "{{ postgresql_admin_password }}"
+  changed_when: false
+  no_log: true

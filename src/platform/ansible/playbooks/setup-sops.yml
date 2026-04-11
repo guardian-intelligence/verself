@@ -159,6 +159,10 @@
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
+        _rand32i: >-
+          {{ lookup('community.general.random_string',
+             length=32, upper=true, lower=true,
+             numbers=true, special=false) }}
         _hex64: >-
           {{ lookup('community.general.random_string',
              length=64, override_all='0123456789abcdef') }}
@@ -183,6 +187,7 @@
           hyperdx_session_secret: "{{ _hex64 }}"
           billing_pg_password: "{{ _rand32g }}"
           postgresql_sandbox_rental_password: "{{ _rand32h }}"
+          postgresql_identity_service_password: "{{ _rand32i }}"
           stripe_secret_key: ""
           stripe_webhook_secret: ""
           resend_api_key: ""

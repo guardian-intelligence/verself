@@ -45,6 +45,9 @@ services:
   sandbox_rental:
     host: "127.0.0.1"
     port: 4243
+  identity_service:
+    host: "127.0.0.1"
+    port: 4248
   rent_a_sandbox:
     host: "127.0.0.1"
     port: 4244
