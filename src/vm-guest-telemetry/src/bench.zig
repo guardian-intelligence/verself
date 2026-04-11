@@ -142,11 +142,7 @@ const proc_pressure_fixture =
 ;
 
 pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    const cfg = try parseArgs(allocator);
+    const cfg = try parseArgs(std.heap.page_allocator);
 
     var out_buf: [32 * 1024]u8 = undefined;
     var fw = std.fs.File.stdout().writer(&out_buf);

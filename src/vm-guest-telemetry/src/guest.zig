@@ -157,15 +157,31 @@ const ProcSampler = struct {
     psi_io: ?std.fs.File,
 
     pub fn init() !ProcSampler {
+        const stat = try std.fs.openFileAbsolute("/proc/stat", .{});
+        errdefer stat.close();
+        const loadavg = try std.fs.openFileAbsolute("/proc/loadavg", .{});
+        errdefer loadavg.close();
+        const meminfo = try std.fs.openFileAbsolute("/proc/meminfo", .{});
+        errdefer meminfo.close();
+        const diskstats = try openOptionalProcFile("/proc/diskstats");
+        errdefer if (diskstats) |file| file.close();
+        const net_dev = try openOptionalProcFile("/proc/net/dev");
+        errdefer if (net_dev) |file| file.close();
+        const psi_cpu = try openOptionalProcFile("/proc/pressure/cpu");
+        errdefer if (psi_cpu) |file| file.close();
+        const psi_mem = try openOptionalProcFile("/proc/pressure/memory");
+        errdefer if (psi_mem) |file| file.close();
+        const psi_io = try openOptionalProcFile("/proc/pressure/io");
+
         return .{
-            .stat = try std.fs.openFileAbsolute("/proc/stat", .{}),
-            .loadavg = try std.fs.openFileAbsolute("/proc/loadavg", .{}),
-            .meminfo = try std.fs.openFileAbsolute("/proc/meminfo", .{}),
-            .diskstats = try openOptionalProcFile("/proc/diskstats"),
-            .net_dev = try openOptionalProcFile("/proc/net/dev"),
-            .psi_cpu = try openOptionalProcFile("/proc/pressure/cpu"),
-            .psi_mem = try openOptionalProcFile("/proc/pressure/memory"),
-            .psi_io = try openOptionalProcFile("/proc/pressure/io"),
+            .stat = stat,
+            .loadavg = loadavg,
+            .meminfo = meminfo,
+            .diskstats = diskstats,
+            .net_dev = net_dev,
+            .psi_cpu = psi_cpu,
+            .psi_mem = psi_mem,
+            .psi_io = psi_io,
         };
     }
 
