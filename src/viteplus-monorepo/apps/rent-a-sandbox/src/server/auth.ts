@@ -8,6 +8,7 @@ export function getAuthConfig() {
     appName: "rent-a-sandbox",
     issuerURL: deriveAuthIssuerURL(),
     clientID: requireEnv("AUTH_CLIENT_ID"),
+    clientSecret: process.env.AUTH_CLIENT_SECRET?.trim() || undefined,
     sessionDatabaseURL: requireURLFromEnv("AUTH_DATABASE_URL"),
     sessionPassword: requireEnv("AUTH_SESSION_SECRET"),
     scopes: [

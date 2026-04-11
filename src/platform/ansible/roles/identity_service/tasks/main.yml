@@ -129,6 +129,9 @@
     zitadel_project_roles_admin_pat: "{{ identity_service_zitadel_admin_pat }}"
     zitadel_project_roles_project_id: "{{ identity_service_auth_audience }}"
     zitadel_project_roles_definitions:
+      - key: forge_org_owner
+        display_name: Forge Org Owner
+        group: forge
       - key: identity_org_admin
         display_name: Identity Org Admin
         group: identity

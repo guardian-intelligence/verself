@@ -136,6 +136,7 @@ func run() error {
 	protected := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
+		ProjectID: authAudience,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))

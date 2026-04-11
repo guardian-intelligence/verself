@@ -17,7 +17,6 @@ type Store interface {
 
 type Directory interface {
 	ListMembers(ctx context.Context, orgID, projectID string) ([]Member, error)
-	MemberRoles(ctx context.Context, orgID, projectID, userID string) ([]string, error)
 	InviteMember(ctx context.Context, orgID, projectID string, input InviteMemberRequest) (InviteMemberResult, error)
 	UpdateMemberRoles(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (Member, error)
 }
@@ -125,25 +124,6 @@ func (s *Service) Operations(context.Context, Principal) Operations {
 	return DefaultOperations()
 }
 
-func (s *Service) EffectiveRoleKeys(ctx context.Context, principal Principal) ([]string, error) {
-	if err := principal.validate(); err != nil {
-		return nil, err
-	}
-	roles := append([]string(nil), principal.Roles...)
-	if s == nil || s.Directory == nil {
-		return normalizeRoleKeys(roles), nil
-	}
-	if strings.TrimSpace(s.ProjectID) == "" {
-		return nil, ErrZitadelUnavailable
-	}
-	directoryRoles, err := s.Directory.MemberRoles(ctx, principal.OrgID, s.ProjectID, principal.Subject)
-	if err != nil {
-		return nil, err
-	}
-	roles = append(roles, directoryRoles...)
-	return normalizeRoleKeys(roles), nil
-}
-
 func (s *Service) policy(ctx context.Context, orgID, actor string) (PolicyDocument, error) {
 	store, err := s.store()
 	if err != nil {
@@ -186,11 +166,15 @@ func (s *Service) validateRoleKeys(ctx context.Context, orgID, actor string, rol
 	if err != nil {
 		return err
 	}
+	reserved := ReservedRoleKeys()
 	allowed := map[string]struct{}{}
 	for _, role := range policy.Roles {
 		allowed[role.RoleKey] = struct{}{}
 	}
 	for _, role := range roleKeys {
+		if _, ok := reserved[role]; ok {
+			return fmt.Errorf("%w: reserved role key %q cannot be assigned through identity-service", ErrInvalidPolicy, role)
+		}
 		if _, ok := allowed[role]; !ok {
 			return fmt.Errorf("%w: unknown role key %q", ErrInvalidPolicy, role)
 		}
@@ -217,8 +201,8 @@ func ValidatePolicy(policy PolicyDocument) error {
 	}
 	known := KnownPermissions()
 	knownRoles := KnownRoleKeys()
+	reservedRoles := ReservedRoleKeys()
 	seenRoles := map[string]struct{}{}
-	adminPermissions := map[string]struct{}{}
 	if len(policy.Roles) == 0 {
 		return fmt.Errorf("%w: at least one role is required", ErrInvalidPolicy)
 	}
@@ -226,6 +210,9 @@ func ValidatePolicy(policy PolicyDocument) error {
 		roleKey := strings.TrimSpace(role.RoleKey)
 		if roleKey == "" {
 			return fmt.Errorf("%w: role_key is required", ErrInvalidPolicy)
+		}
+		if _, ok := reservedRoles[roleKey]; ok {
+			return fmt.Errorf("%w: reserved role key %q cannot be edited in policy documents", ErrInvalidPolicy, roleKey)
 		}
 		if _, ok := knownRoles[roleKey]; !ok {
 			return fmt.Errorf("%w: unknown role key %q", ErrInvalidPolicy, roleKey)
@@ -250,14 +237,6 @@ func ValidatePolicy(policy PolicyDocument) error {
 				return fmt.Errorf("%w: duplicate permission %q", ErrInvalidPolicy, permission)
 			}
 			seenPermissions[permission] = struct{}{}
-			if roleKey == RoleOrgAdmin {
-				adminPermissions[permission] = struct{}{}
-			}
-		}
-	}
-	for _, permission := range sortedKeys(known) {
-		if _, ok := adminPermissions[permission]; !ok {
-			return fmt.Errorf("%w: %s must include permission %q", ErrInvalidPolicy, RoleOrgAdmin, permission)
 		}
 	}
 	return nil

@@ -103,6 +103,12 @@ interface StoredAuthSessionRow {
   updated_at: string | Date;
 }
 
+interface StoredResourceTokenRow {
+  access_token: string;
+  token_scope: string | null;
+  expires_at: string | Date;
+}
+
 type ResolvedAuthSnapshot = AuthSnapshot & {
   currentUser: CurrentUser | null;
 };
@@ -198,6 +204,25 @@ function getJWKS(metadata: ProviderMetadata) {
     jwksCache.set(metadata.jwks_uri, jwks);
   }
   return jwks;
+}
+
+async function verifyAccessTokenExpiresAt(
+  metadata: ProviderMetadata,
+  accessToken: string,
+  audience: string,
+  fallbackExpiresIn?: number,
+): Promise<Date> {
+  const verified = await jwtVerify(accessToken, getJWKS(metadata), {
+    issuer: metadata.issuer,
+    audience,
+  });
+  if (typeof verified.payload.exp === "number") {
+    return new Date(verified.payload.exp * 1000);
+  }
+  if (typeof fallbackExpiresIn === "number") {
+    return new Date(Date.now() + fallbackExpiresIn * 1000);
+  }
+  throw new Error("OIDC access token is missing exp");
 }
 
 async function getStartServerModule() {
@@ -616,6 +641,51 @@ async function deleteStoredSession(config: AuthConfig, sessionID: string): Promi
   `;
 }
 
+async function readStoredResourceToken(
+  config: AuthConfig,
+  sessionID: string,
+  audience: string,
+): Promise<StoredResourceTokenRow | null> {
+  const sql = await getSQL(config.sessionDatabaseURL);
+  const [row] = await sql<StoredResourceTokenRow[]>`
+    SELECT access_token, token_scope, expires_at
+    FROM auth_resource_tokens
+    WHERE session_id = ${sessionID}
+      AND audience = ${audience}
+  `;
+  return row ?? null;
+}
+
+async function writeStoredResourceToken(
+  config: AuthConfig,
+  sessionID: string,
+  audience: string,
+  tokens: TokenResponse,
+  expiresAt: Date,
+): Promise<void> {
+  const sql = await getSQL(config.sessionDatabaseURL);
+  await sql`
+    INSERT INTO auth_resource_tokens (
+      session_id,
+      audience,
+      access_token,
+      token_scope,
+      expires_at
+    ) VALUES (
+      ${sessionID},
+      ${audience},
+      ${tokens.access_token},
+      ${tokens.scope ?? null},
+      ${expiresAt.toISOString()}
+    )
+    ON CONFLICT (session_id, audience) DO UPDATE SET
+      access_token = EXCLUDED.access_token,
+      token_scope = EXCLUDED.token_scope,
+      expires_at = EXCLUDED.expires_at,
+      updated_at = now()
+  `;
+}
+
 async function refreshStoredSession(
   config: AuthConfig,
   stored: AuthSession,
@@ -825,6 +895,64 @@ export async function getAuthSession(config: AuthConfig): Promise<AuthSession | 
   }
 
   return stored;
+}
+
+export async function getAccessTokenForAudience(
+  config: AuthConfig,
+  session: AuthSession,
+  audience: string,
+): Promise<string> {
+  const trimmedAudience = audience.trim();
+  if (!trimmedAudience) {
+    throw new Error("Resource audience is required");
+  }
+
+  const refreshLeewayMs = (config.refreshLeewaySeconds ?? 60) * 1000;
+  const metadata = await getProviderMetadata(config.issuerURL);
+  const cached = await readStoredResourceToken(config, session.sessionID, trimmedAudience);
+  if (cached && toDate(cached.expires_at).getTime() - Date.now() > refreshLeewayMs) {
+    const cachedExpiresAt = await verifyAccessTokenExpiresAt(
+      metadata,
+      cached.access_token,
+      trimmedAudience,
+    ).catch(() => null);
+    if (cachedExpiresAt && cachedExpiresAt.getTime() - Date.now() > refreshLeewayMs) {
+      return cached.access_token;
+    }
+  }
+
+  const tokens = await exchangeToken(
+    metadata,
+    config,
+    new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: session.accessToken,
+      subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+      requested_token_type: "urn:ietf:params:oauth:token-type:jwt",
+      audience: trimmedAudience,
+      scope: [
+        "openid",
+        "profile",
+        "email",
+        "urn:zitadel:iam:user:resourceowner",
+        `urn:zitadel:iam:org:project:id:${trimmedAudience}:aud`,
+        "urn:zitadel:iam:org:projects:roles",
+      ].join(" "),
+    }),
+  );
+  if (!tokens.access_token || tokens.token_type.toLowerCase() !== "bearer") {
+    throw new Error("OIDC token exchange did not return a bearer access token");
+  }
+
+  const expiresAt = await verifyAccessTokenExpiresAt(
+    metadata,
+    tokens.access_token,
+    trimmedAudience,
+    tokens.expires_in,
+  );
+
+  await writeStoredResourceToken(config, session.sessionID, trimmedAudience, tokens, expiresAt);
+  return tokens.access_token;
 }
 
 function createAnonymousAuth(): AnonymousAuth {

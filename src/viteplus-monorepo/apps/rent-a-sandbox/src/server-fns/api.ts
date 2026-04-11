@@ -61,10 +61,12 @@ import type {
   SubscriptionsResponse,
 } from "~/lib/sandbox-rental-api";
 import type { AuthSession } from "@forge-metal/auth-web/server";
+import { getAccessTokenForAudience } from "@forge-metal/auth-web/server";
 import { rentASandboxAuthMiddleware } from "./auth";
 
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
+const IDENTITY_SERVICE_AUTH_PROJECT_ID = process.env.IDENTITY_SERVICE_AUTH_PROJECT_ID?.trim();
 const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
 export { IdentityApiError, isIdentityApiError };
@@ -130,8 +132,12 @@ async function sandboxRentalClientOptions(context: { auth?: AuthSession } | unde
 
 async function identityClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
+  const { getAuthConfig } = await import("../server/auth");
+  const accessToken = IDENTITY_SERVICE_AUTH_PROJECT_ID
+    ? await getAccessTokenForAudience(getAuthConfig(), auth, IDENTITY_SERVICE_AUTH_PROJECT_ID)
+    : auth.accessToken;
   return {
-    accessToken: auth.accessToken,
+    accessToken,
     baseUrl: IDENTITY_SERVICE_BASE_URL,
   };
 }

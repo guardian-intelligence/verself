@@ -30,3 +30,17 @@ WHERE client_cache_partition IS NULL;
 
 ALTER TABLE auth_sessions
   ALTER COLUMN client_cache_partition SET NOT NULL;
+
+CREATE TABLE IF NOT EXISTS auth_resource_tokens (
+  session_id TEXT NOT NULL REFERENCES auth_sessions (session_id) ON DELETE CASCADE,
+  audience TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  token_scope TEXT,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (session_id, audience)
+);
+
+CREATE INDEX IF NOT EXISTS auth_resource_tokens_expiry_idx
+  ON auth_resource_tokens (expires_at);

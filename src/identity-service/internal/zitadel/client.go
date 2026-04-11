@@ -104,32 +104,6 @@ func (c *Client) ListMembers(ctx context.Context, orgID, projectID string) ([]id
 	return members, nil
 }
 
-func (c *Client) MemberRoles(ctx context.Context, orgID, projectID, userID string) ([]string, error) {
-	orgID = strings.TrimSpace(orgID)
-	projectID = strings.TrimSpace(projectID)
-	userID = strings.TrimSpace(userID)
-	if orgID == "" || projectID == "" || userID == "" {
-		return nil, fmt.Errorf("%w: org_id, project_id, and user_id are required", identity.ErrInvalidInput)
-	}
-	assignments, err := c.listAuthorizations(
-		ctx,
-		authorizationFilterInUserIDs(userID),
-		authorizationFilterProjectID(projectID),
-		authorizationFilterOrganizationID(orgID),
-	)
-	if err != nil {
-		return nil, err
-	}
-	var roles []string
-	for _, assignment := range assignments {
-		if assignment.UserID != userID || assignment.ProjectID != projectID || assignment.OrganizationID != orgID || !assignment.Active() {
-			continue
-		}
-		roles = append(roles, assignment.RoleKeys...)
-	}
-	return compactStrings(roles), nil
-}
-
 func (c *Client) InviteMember(ctx context.Context, orgID, projectID string, input identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
 	userID, err := c.createHumanUser(ctx, orgID, input)
 	if err != nil {

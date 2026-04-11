@@ -25,8 +25,9 @@ var identityKey contextKey
 type Identity struct {
 	Subject         string           // Zitadel user or service account ID.
 	OrgID           string           // Organization/resource owner ID when present.
-	Roles           []string         // Flat project-scoped roles for current single-org callers.
-	RoleAssignments []RoleAssignment // Structured role assignments for future multi-org callers.
+	ProjectID       string           // Target service project whose role claims were accepted.
+	Roles           []string         // Roles from the target service project claim.
+	RoleAssignments []RoleAssignment // Structured target-project role assignments.
 	Email           string           // Email, if present in the token.
 	Raw             map[string]any   // All claims, for extensibility.
 }
@@ -42,6 +43,7 @@ type RoleAssignment struct {
 type Config struct {
 	IssuerURL string // Expected issuer URL from the token's iss claim.
 	Audience  string // Expected audience value from the token's aud claim.
+	ProjectID string // Zitadel project whose project-scoped roles this service accepts. Defaults to Audience.
 	JWKSURL   string // Optional: fetch keys from this URL instead of OIDC discovery.
 }
 
@@ -100,11 +102,13 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				return
 			}
 
+			roleAssignments := extractRoleAssignments(rawClaims, cache.cfg.ProjectID)
 			identity := &Identity{
 				Subject:         idToken.Subject,
 				OrgID:           extractOrgID(rawClaims),
-				Roles:           extractRoles(rawClaims),
-				RoleAssignments: extractRoleAssignments(rawClaims),
+				ProjectID:       cache.cfg.ProjectID,
+				Roles:           rolesFromAssignments(roleAssignments),
+				RoleAssignments: roleAssignments,
 				Email:           stringClaim(rawClaims, "email"),
 				Raw:             rawClaims,
 			}
@@ -117,6 +121,10 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 func normalizeConfig(cfg Config) Config {
 	cfg.IssuerURL = strings.TrimSpace(cfg.IssuerURL)
 	cfg.Audience = strings.TrimSpace(cfg.Audience)
+	cfg.ProjectID = strings.TrimSpace(cfg.ProjectID)
+	if cfg.ProjectID == "" {
+		cfg.ProjectID = cfg.Audience
+	}
 	cfg.JWKSURL = strings.TrimSpace(cfg.JWKSURL)
 	return cfg
 }
@@ -213,6 +221,8 @@ func (c Config) validate() error {
 		return errors.New("issuer URL is required")
 	case c.Audience == "":
 		return errors.New("audience is required")
+	case c.ProjectID == "":
+		return errors.New("project ID is required")
 	default:
 		return nil
 	}
@@ -267,23 +277,13 @@ func extractOrgID(claims map[string]any) string {
 	return ""
 }
 
-func extractRoles(claims map[string]any) []string {
+func rolesFromAssignments(assignments []RoleAssignment) []string {
 	roleSet := map[string]struct{}{}
-
-	for key, value := range claims {
-		if key == "roles" || key == "role" {
-			collectRoles(roleSet, value)
-			continue
-		}
-		if key == "urn:zitadel:iam:org:project:roles" {
-			collectRoles(roleSet, value)
-			continue
-		}
-		if strings.HasPrefix(key, "urn:zitadel:iam:org:project:") && strings.HasSuffix(key, ":roles") {
-			collectRoles(roleSet, value)
+	for _, assignment := range assignments {
+		if assignment.Role != "" {
+			roleSet[assignment.Role] = struct{}{}
 		}
 	}
-
 	if len(roleSet) == 0 {
 		return nil
 	}
@@ -296,18 +296,12 @@ func extractRoles(claims map[string]any) []string {
 	return roles
 }
 
-func extractRoleAssignments(claims map[string]any) []RoleAssignment {
-	var assignments []RoleAssignment
-
-	for key, value := range claims {
-		switch {
-		case key == "urn:zitadel:iam:org:project:roles":
-			assignments = append(assignments, collectRoleAssignments("", value)...)
-		case strings.HasPrefix(key, "urn:zitadel:iam:org:project:") && strings.HasSuffix(key, ":roles"):
-			projectID := strings.TrimSuffix(strings.TrimPrefix(key, "urn:zitadel:iam:org:project:"), ":roles")
-			assignments = append(assignments, collectRoleAssignments(projectID, value)...)
-		}
+func extractRoleAssignments(claims map[string]any, projectID string) []RoleAssignment {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil
 	}
+	assignments := collectRoleAssignments(projectID, claims["urn:zitadel:iam:org:project:"+projectID+":roles"])
 
 	if len(assignments) == 0 {
 		return nil
@@ -351,35 +345,4 @@ func collectRoleAssignments(projectID string, value any) []RoleAssignment {
 		}
 	}
 	return assignments
-}
-
-func collectRoles(dst map[string]struct{}, value any) {
-	switch typed := value.(type) {
-	case string:
-		if typed != "" {
-			dst[typed] = struct{}{}
-		}
-	case []string:
-		for _, role := range typed {
-			if role != "" {
-				dst[role] = struct{}{}
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			collectRoles(dst, item)
-		}
-	case map[string]any:
-		for role := range typed {
-			if role != "" {
-				dst[role] = struct{}{}
-			}
-		}
-	case map[string]string:
-		for role := range typed {
-			if role != "" {
-				dst[role] = struct{}{}
-			}
-		}
-	}
 }
