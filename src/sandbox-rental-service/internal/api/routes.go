@@ -17,7 +17,7 @@ import (
 )
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
-func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient) {
+func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
 	registerSecured(api, huma.Operation{
 		OperationID:   "import-repo",
 		Method:        http.MethodPost,
@@ -114,7 +114,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		Path:          "/api/v1/billing/checkout",
 		Summary:       "Create Stripe checkout session for credit purchase",
 		DefaultStatus: 200,
-	}, createBillingCheckout(billing))
+	}, createBillingCheckout(billing, publicConfig.BillingReturnOrigins))
 
 	registerSecured(api, huma.Operation{
 		OperationID:   "create-billing-subscription",
@@ -122,7 +122,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		Path:          "/api/v1/billing/subscribe",
 		Summary:       "Create Stripe subscription checkout",
 		DefaultStatus: 200,
-	}, createBillingSubscription(billing))
+	}, createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
 }
 
 type SubmitExecutionInput struct {
@@ -478,10 +478,16 @@ func listBillingGrants(billing *billingclient.ServiceClient) func(context.Contex
 	}
 }
 
-func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Context, *CheckoutInput) (*URLOutput, error) {
+func createBillingCheckout(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *CheckoutInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *CheckoutInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
+			return nil, err
+		}
+		if err := validateBillingReturnURLs(ctx, billingReturnOrigins,
+			billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+			billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+		); err != nil {
 			return nil, err
 		}
 		url, err := billing.CreateCheckout(ctx, orgID, input.Body.ProductID, input.Body.AmountCents, input.Body.SuccessURL, input.Body.CancelURL)
@@ -494,10 +500,16 @@ func createBillingCheckout(billing *billingclient.ServiceClient) func(context.Co
 	}
 }
 
-func createBillingSubscription(billing *billingclient.ServiceClient) func(context.Context, *SubscribeInput) (*URLOutput, error) {
+func createBillingSubscription(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *SubscribeInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *SubscribeInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
+			return nil, err
+		}
+		if err := validateBillingReturnURLs(ctx, billingReturnOrigins,
+			billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+			billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+		); err != nil {
 			return nil, err
 		}
 		url, err := billing.CreateSubscription(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)

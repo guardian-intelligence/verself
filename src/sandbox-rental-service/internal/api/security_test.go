@@ -16,7 +16,7 @@ import (
 )
 
 func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
-	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil)
+	api := NewAPI(http.NewServeMux(), "1.0.0", "127.0.0.1:0", nil, nil, PublicAPIConfig{})
 
 	var checked int
 	for path, pathItem := range api.OpenAPI().Paths {
@@ -113,6 +113,56 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 	}
 	if identityHasPermission(scopedClient, permissionExecutionSubmit) {
 		t.Fatal("direct OAuth scope should not grant unrelated permissions")
+	}
+}
+
+func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
+	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
+		Subject: "user-123",
+		OrgID:   "42",
+		RoleAssignments: []auth.RoleAssignment{{
+			OrganizationID: "42",
+			Role:           roleSandboxOrgMember,
+		}},
+	})
+
+	identity, err := enforceOperationPolicy(ctx, operationPolicy{
+		Permission: permissionBillingCheckout,
+	}, &EmptyInput{})
+	if identity == nil || identity.Subject != "user-123" {
+		t.Fatalf("expected denied operation to retain identity, got %#v", identity)
+	}
+	var statusErr huma.StatusError
+	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
+		t.Fatalf("expected forbidden missing-permission error, got %#v", err)
+	}
+}
+
+func TestBillingReturnURLValidationRequiresAllowedOrigin(t *testing.T) {
+	origins, err := ParseBillingReturnOrigins("https://rentasandbox.example.com, http://127.0.0.1:4244")
+	if err != nil {
+		t.Fatalf("parse origins: %v", err)
+	}
+
+	if err := validateBillingReturnURLs(context.Background(), origins,
+		billingReturnURLField{Name: "success_url", URL: "https://rentasandbox.example.com/billing?purchased=true"},
+		billingReturnURLField{Name: "cancel_url", URL: "http://127.0.0.1:4244/billing/credits"},
+	); err != nil {
+		t.Fatalf("valid return URLs rejected: %v", err)
+	}
+
+	err = validateBillingReturnURLs(context.Background(), origins,
+		billingReturnURLField{Name: "success_url", URL: "https://evil.example.com/billing"},
+	)
+	var statusErr huma.StatusError
+	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusBadRequest {
+		t.Fatalf("expected bad request for unregistered origin, got %#v", err)
+	}
+}
+
+func TestParseBillingReturnOriginsRejectsRedirectURL(t *testing.T) {
+	if _, err := ParseBillingReturnOrigins("https://rentasandbox.example.com/callback"); err == nil {
+		t.Fatal("expected origin parser to reject URL with path")
 	}
 }
 
