@@ -10,6 +10,8 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import { AuthProvider, useUser } from "@forge-metal/auth-web/react";
 import {
+  type Auth,
+  type AuthSnapshot,
   authCacheKey,
   parseAuthSnapshot,
   syncAuthPartitionedCache,
@@ -21,12 +23,22 @@ import {
 } from "~/server-fns/auth";
 import "~/styles/app.css";
 
+async function loadAuthSnapshot(): Promise<AuthSnapshot> {
+  if (import.meta.env.SSR) {
+    const [{ getClientAuthSnapshot: readClientAuthSnapshot }, { getAuthConfig }] =
+      await Promise.all([import("@forge-metal/auth-web/server"), import("../server/auth")]);
+    return readClientAuthSnapshot(await getAuthConfig());
+  }
+  return getClientAuthSnapshot();
+}
+
 export const Route = createRootRouteWithContext<{
+  auth: Auth;
   queryClient: QueryClient;
 }>()({
   component: RootComponent,
   beforeLoad: async ({ context }) => {
-    const authSnapshot = await getClientAuthSnapshot();
+    const authSnapshot = await loadAuthSnapshot();
     syncAuthPartitionedCache(context.queryClient, authSnapshot);
     return authSnapshot;
   },

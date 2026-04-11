@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAuth, useSignedInAuth } from "@forge-metal/auth-web/react";
+import { anonymousAuth } from "@forge-metal/auth-web/isomorphic";
 import { BalanceCard } from "~/components/balance-card";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
@@ -8,8 +9,9 @@ import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/")({
   loader: async ({ context }) => {
-    if (context.auth.isAuthenticated) {
-      await loadBalance(context.queryClient, context.auth);
+    const auth = context?.auth ?? anonymousAuth;
+    if (auth.isAuthenticated && context?.queryClient) {
+      await loadBalance(context.queryClient, auth);
     }
   },
   component: Dashboard,
