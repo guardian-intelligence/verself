@@ -100,7 +100,7 @@
         host: "{{ services.zitadel.host }}"
         port: "{{ services.zitadel.port }}"
         timeout: 60
-      tags: [identity, billing, stalwart, verify, dev-oidc]
+      tags: [identity, billing, stalwart, verify, dev-oidc, forgejo]
 
     - name: Wait for billing-service to be ready
       ansible.builtin.wait_for:
@@ -114,13 +114,13 @@
         src: /etc/zitadel/admin.pat
       register: seed_system_admin_pat_raw
       no_log: true
-      tags: [identity, billing, stalwart, verify, dev-oidc]
+      tags: [identity, billing, stalwart, verify, dev-oidc, forgejo]
 
     - name: Set Zitadel admin PAT fact
       ansible.builtin.set_fact:
         seed_system_admin_pat: "{{ seed_system_admin_pat_raw.content | b64decode | trim }}"
       no_log: true
-      tags: [identity, billing, stalwart, verify, dev-oidc]
+      tags: [identity, billing, stalwart, verify, dev-oidc, forgejo]
 
     - name: Find sandbox-rental project
       ansible.builtin.uri:
@@ -138,19 +138,19 @@
         return_content: true
       register: seed_system_sandbox_project_search
       no_log: true
-      tags: [identity, billing, verify, dev-oidc]
+      tags: [identity, billing, verify, dev-oidc, forgejo]
 
     - name: Set sandbox-rental project ID fact
       ansible.builtin.set_fact:
         seed_system_sandbox_project_id: "{{ seed_system_sandbox_project_search.json.result[0].id }}"
       when: seed_system_sandbox_project_search.json.result is defined and seed_system_sandbox_project_search.json.result | length > 0
-      tags: [identity, billing, verify, dev-oidc]
+      tags: [identity, billing, verify, dev-oidc, forgejo]
 
     - name: Assert sandbox-rental project exists
       ansible.builtin.assert:
         that: seed_system_sandbox_project_id is defined
         fail_msg: "Sandbox-rental Zitadel project '{{ seed_system_sandbox_project_name }}' not found. Run the full deploy first."
-      tags: [identity, billing, verify, dev-oidc]
+      tags: [identity, billing, verify, dev-oidc, forgejo]
 
     - name: Find letters project
       ansible.builtin.uri:
@@ -224,7 +224,7 @@
         return_content: true
       register: seed_system_org_search
       no_log: true
-      tags: [identity, billing]
+      tags: [identity, billing, forgejo]
 
     - name: Set organization search facts
       ansible.builtin.set_fact:
@@ -248,7 +248,7 @@
               | first
             ) | default({})
           }}
-      tags: [identity, billing]
+      tags: [identity, billing, forgejo]
 
     - name: Assert platform organization exists
       ansible.builtin.assert:
@@ -256,7 +256,7 @@
         fail_msg: >-
           Platform organization {{ seed_system_platform_org_name }} was not found
           in Zitadel. Re-run the full deploy or reset Zitadel bootstrap first.
-      tags: [identity, billing]
+      tags: [identity, billing, forgejo]
 
     - name: Create Acme organization
       ansible.builtin.uri:
@@ -1170,6 +1170,11 @@
         seed_forgejo_owner: "{{ seed_system_users.ceo.username }}"
         seed_forgejo_controller_ssh_pubkey_path: "~/.ssh/id_ed25519.pub"
         seed_forgejo_repo_local_path: "{{ playbook_dir }}/../../../.."
+        seed_forgejo_admin_pat: "{{ seed_system_admin_pat }}"
+        seed_forgejo_platform_org_id: "{{ seed_system_platform_org_existing.id }}"
+        seed_forgejo_sandbox_project_id: "{{ seed_system_sandbox_project_id }}"
+        seed_forgejo_zitadel_base_url: "{{ seed_system_zitadel_base_url }}"
+        seed_forgejo_zitadel_host: "{{ seed_system_zitadel_host }}"
       tags: [forgejo]
 
     - name: Print seed-system summary
