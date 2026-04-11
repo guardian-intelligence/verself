@@ -299,6 +299,7 @@ type DirectExecutionRequestBody = {
 export const executionRequestSchema = v.pipe(
   v.strictObject({
     idempotency_key: v.optional(v.string()),
+    kind: v.optional(v.literal("direct")),
     run_command: v.pipe(v.string(), v.trim(), v.minLength(1)),
   }),
   v.transform((body) => {
