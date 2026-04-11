@@ -6,7 +6,11 @@ DROP TABLE IF EXISTS execution_billing_windows;
 DROP TABLE IF EXISTS execution_attempts;
 DROP TABLE IF EXISTS executions;
 DROP TABLE IF EXISTS golden_generations CASCADE;
+DROP TABLE IF EXISTS webhook_deliveries;
+DROP TABLE IF EXISTS webhook_endpoint_secrets;
+DROP TABLE IF EXISTS webhook_endpoints;
 DROP TABLE IF EXISTS repos CASCADE;
+DROP TABLE IF EXISTS git_integrations;
 DROP TABLE IF EXISTS job_logs;
 DROP TABLE IF EXISTS jobs;
 DROP SEQUENCE IF EXISTS execution_billing_job_id_seq;
@@ -14,10 +18,32 @@ DROP SEQUENCE IF EXISTS job_billing_id_seq;
 
 CREATE SEQUENCE execution_billing_job_id_seq AS BIGINT;
 
+CREATE TABLE git_integrations (
+    integration_id UUID        PRIMARY KEY,
+    org_id         BIGINT      NOT NULL CHECK (org_id > 0),
+    provider       TEXT        NOT NULL CHECK (provider IN ('forgejo', 'github', 'gitlab')),
+    provider_host  TEXT        NOT NULL CHECK (provider_host <> ''),
+    mode           TEXT        NOT NULL CHECK (mode IN ('manual_webhook')),
+    label          TEXT        NOT NULL DEFAULT '',
+    active         BOOLEAN     NOT NULL DEFAULT true,
+    created_by     TEXT        NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_git_integrations_org_provider_host_mode_active
+    ON git_integrations (org_id, provider, provider_host, mode)
+    WHERE active;
+CREATE UNIQUE INDEX idx_git_integrations_org_label_active
+    ON git_integrations (org_id, label)
+    WHERE active AND label <> '';
+
 CREATE TABLE repos (
     repo_id                     UUID        PRIMARY KEY,
     org_id                      BIGINT      NOT NULL,
+    integration_id              UUID        REFERENCES git_integrations(integration_id) ON DELETE SET NULL,
     provider                    TEXT        NOT NULL,
+    provider_host               TEXT        NOT NULL DEFAULT '',
     provider_repo_id            TEXT        NOT NULL,
     owner                       TEXT        NOT NULL,
     name                        TEXT        NOT NULL,
@@ -49,11 +75,84 @@ CREATE TABLE repos (
 );
 
 CREATE UNIQUE INDEX idx_repos_org_provider_repo_id
-    ON repos (org_id, provider, provider_repo_id);
+    ON repos (org_id, provider, provider_host, provider_repo_id);
 CREATE UNIQUE INDEX idx_repos_org_provider_full_name
-    ON repos (org_id, provider, full_name);
+    ON repos (org_id, provider, provider_host, full_name);
 CREATE INDEX idx_repos_org_state_updated_at
     ON repos (org_id, state, updated_at DESC);
+CREATE INDEX idx_repos_integration
+    ON repos (integration_id)
+    WHERE integration_id IS NOT NULL;
+
+CREATE TABLE webhook_endpoints (
+    endpoint_id      UUID        PRIMARY KEY,
+    integration_id   UUID        NOT NULL REFERENCES git_integrations(integration_id) ON DELETE CASCADE,
+    org_id           BIGINT      NOT NULL CHECK (org_id > 0),
+    provider         TEXT        NOT NULL CHECK (provider IN ('forgejo', 'github', 'gitlab')),
+    provider_host    TEXT        NOT NULL CHECK (provider_host <> ''),
+    label            TEXT        NOT NULL DEFAULT '',
+    active           BOOLEAN     NOT NULL DEFAULT true,
+    created_by       TEXT        NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_delivery_at TIMESTAMPTZ,
+    delivery_count   BIGINT      NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX idx_webhook_endpoints_org_label_active
+    ON webhook_endpoints (org_id, label)
+    WHERE active AND label <> '';
+CREATE INDEX idx_webhook_endpoints_org
+    ON webhook_endpoints (org_id, active, created_at DESC);
+CREATE INDEX idx_webhook_endpoints_integration
+    ON webhook_endpoints (integration_id);
+
+CREATE TABLE webhook_endpoint_secrets (
+    secret_id          UUID        PRIMARY KEY,
+    endpoint_id        UUID        NOT NULL REFERENCES webhook_endpoints(endpoint_id) ON DELETE CASCADE,
+    secret_ciphertext  TEXT        NOT NULL,
+    secret_fingerprint TEXT        NOT NULL,
+    active_from        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    retiring_at        TIMESTAMPTZ,
+    revoked_at         TIMESTAMPTZ,
+    created_by         TEXT        NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_webhook_endpoint_secrets_active
+    ON webhook_endpoint_secrets (endpoint_id, active_from DESC)
+    WHERE revoked_at IS NULL;
+
+CREATE TABLE webhook_deliveries (
+    delivery_id          UUID        PRIMARY KEY,
+    endpoint_id          UUID        NOT NULL REFERENCES webhook_endpoints(endpoint_id) ON DELETE CASCADE,
+    integration_id       UUID        NOT NULL REFERENCES git_integrations(integration_id) ON DELETE CASCADE,
+    org_id               BIGINT      NOT NULL CHECK (org_id > 0),
+    provider             TEXT        NOT NULL CHECK (provider IN ('forgejo', 'github', 'gitlab')),
+    provider_host        TEXT        NOT NULL CHECK (provider_host <> ''),
+    provider_delivery_id TEXT        NOT NULL DEFAULT '',
+    event_type           TEXT        NOT NULL DEFAULT '',
+    state                TEXT        NOT NULL CHECK (state IN ('queued', 'processing', 'processed', 'ignored', 'failed')),
+    payload              JSONB       NOT NULL,
+    payload_sha256       TEXT        NOT NULL,
+    attempt_count        INTEGER     NOT NULL DEFAULT 0,
+    last_error           TEXT        NOT NULL DEFAULT '',
+    trace_id             TEXT        NOT NULL DEFAULT '',
+    received_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    claimed_at           TIMESTAMPTZ,
+    processed_at         TIMESTAMPTZ,
+    next_attempt_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_webhook_deliveries_endpoint_provider_delivery
+    ON webhook_deliveries (endpoint_id, provider_delivery_id)
+    WHERE provider_delivery_id <> '';
+CREATE INDEX idx_webhook_deliveries_claim
+    ON webhook_deliveries (state, next_attempt_at, received_at)
+    WHERE state IN ('queued', 'failed');
+CREATE INDEX idx_webhook_deliveries_org_received
+    ON webhook_deliveries (org_id, received_at DESC);
 
 CREATE TABLE executions (
     execution_id       UUID        PRIMARY KEY,

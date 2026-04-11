@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -60,6 +60,7 @@ func run() error {
 	chPassword := credentialOr("ch-password", "")
 	forgejoRunnerToken := credentialOr("forgejo-runner-token", "")
 	billingClientSecret := requireCredential("billing-client-secret")
+	webhookSecretKEK := requireCredential("webhook-secret-kek")
 
 	// Non-secret config via Environment=.
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
@@ -72,6 +73,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("SANDBOX_BILLING_RETURN_ORIGINS: %w", err)
 	}
+	publicBaseURL := requireEnv("SANDBOX_PUBLIC_BASE_URL")
+	if err := validatePublicBaseURL(publicBaseURL); err != nil {
+		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
+	}
 	authIssuerURL := requireEnv("SANDBOX_AUTH_ISSUER_URL")
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
@@ -80,14 +85,6 @@ func run() error {
 	forgejoRunnerLabel := envOr("SANDBOX_FORGEJO_RUNNER_LABEL", jobs.RunnerProfileForgeMetal)
 	forgejoRunnerBinaryURL := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_URL", "")
 	forgejoRunnerBinarySHA256 := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_SHA256", "")
-	platformOrgID, err := parseOptionalUint64Env("SANDBOX_PLATFORM_ORG_ID", envOr("SANDBOX_PLATFORM_ORG_ID", ""))
-	if err != nil {
-		return err
-	}
-	forgejoWebhookSecret := envOr("SANDBOX_FORGEJO_WEBHOOK_SECRET", "")
-	if (platformOrgID == 0) != (strings.TrimSpace(forgejoWebhookSecret) == "") {
-		return fmt.Errorf("SANDBOX_PLATFORM_ORG_ID and SANDBOX_FORGEJO_WEBHOOK_SECRET must be set together")
-	}
 
 	// --- open connections ---
 
@@ -151,6 +148,11 @@ func run() error {
 
 	// --- job service ---
 
+	webhookSecretCodec, err := jobs.NewSecretCodec(webhookSecretKEK)
+	if err != nil {
+		return fmt.Errorf("create webhook secret codec: %w", err)
+	}
+
 	jobService := &jobs.Service{
 		PG:                        pg,
 		CH:                        chConn,
@@ -164,6 +166,7 @@ func run() error {
 		ForgejoRunnerToken:        forgejoRunnerToken,
 		ForgejoRunnerBinaryURL:    forgejoRunnerBinaryURL,
 		ForgejoRunnerBinarySHA256: forgejoRunnerBinarySHA256,
+		WebhookSecretCodec:        webhookSecretCodec,
 		Logger:                    logger,
 	}
 
@@ -173,12 +176,9 @@ func run() error {
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, billingClient, sandboxapi.PublicAPIConfig{
 		BillingReturnOrigins: billingReturnOrigins,
+		PublicBaseURL:        publicBaseURL,
 	})
-	sandboxapi.RegisterPublicRoutes(rootMux, jobService, sandboxapi.ForgejoWebhookConfig{
-		PlatformOrgID: platformOrgID,
-		ActorID:       "system:forgejo-webhook",
-		Secret:        forgejoWebhookSecret,
-	})
+	sandboxapi.RegisterPublicRoutes(rootMux, jobService)
 
 	authHandler := auth.Middleware(auth.Config{
 		IssuerURL: authIssuerURL,
@@ -241,6 +241,7 @@ func run() error {
 			}
 		}
 	}()
+	sandboxapi.StartWebhookDeliveryWorker(ctx, jobService)
 
 	logger.Info("sandbox-rental: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
@@ -303,6 +304,26 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+func validatePublicBaseURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return err
+	}
+	if !parsed.IsAbs() || parsed.Hostname() == "" {
+		return fmt.Errorf("must be an absolute URL with a host")
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return fmt.Errorf("scheme %q is not supported", parsed.Scheme)
+	}
+	if strings.Trim(parsed.EscapedPath(), "/") != "" {
+		return fmt.Errorf("must not include a path")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("must not include query string or fragment")
+	}
+	return nil
+}
+
 func limitPublicAPIRequestBodies(next http.Handler, maxBytes int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicAPIRequestWithBody(r) {
@@ -326,16 +347,4 @@ func isPublicAPIRequestWithBody(r *http.Request) bool {
 	default:
 		return false
 	}
-}
-
-func parseOptionalUint64Env(key, raw string) (uint64, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return 0, nil
-	}
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be an unsigned integer: %w", key, err)
-	}
-	return value, nil
 }

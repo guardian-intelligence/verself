@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
@@ -54,8 +55,7 @@ type Config struct {
 	CHDatabase                string
 	Runner                    Runner
 	Billing                   *billingclient.ServiceClient
-	PlatformOrgID             uint64
-	ForgejoWebhookSecret      string
+	WebhookSecretKEK          string
 	BillingVCPUs              int
 	BillingMemMiB             int
 	ForgejoURL                string
@@ -64,6 +64,7 @@ type Config struct {
 	ForgejoRunnerBinaryURL    string
 	ForgejoRunnerBinarySHA256 string
 	BillingReturnOrigins      []string
+	PublicBaseURL             string
 	AuthCfg                   auth.Config
 	Logger                    *slog.Logger
 }
@@ -72,11 +73,20 @@ type Config struct {
 type Server struct {
 	*httptest.Server
 	service *jobs.Service
+	cancel  context.CancelFunc
 }
 
 // NewServer constructs a sandbox-rental-service HTTP test server with auth
 // middleware and all routes registered.
 func NewServer(cfg Config) *Server {
+	webhookSecretKEK := strings.TrimSpace(cfg.WebhookSecretKEK)
+	if webhookSecretKEK == "" {
+		webhookSecretKEK = "0000000000000000000000000000000000000000000000000000000000000000"
+	}
+	webhookSecretCodec, err := jobs.NewSecretCodec(webhookSecretKEK)
+	if err != nil {
+		panic(err)
+	}
 	svc := &jobs.Service{
 		PG:                        cfg.PG,
 		CH:                        cfg.CH,
@@ -90,6 +100,7 @@ func NewServer(cfg Config) *Server {
 		ForgejoRunnerToken:        cfg.ForgejoRunnerToken,
 		ForgejoRunnerBinaryURL:    cfg.ForgejoRunnerBinaryURL,
 		ForgejoRunnerBinarySHA256: cfg.ForgejoRunnerBinarySHA256,
+		WebhookSecretCodec:        webhookSecretCodec,
 		Logger:                    cfg.Logger,
 	}
 
@@ -97,17 +108,55 @@ func NewServer(cfg Config) *Server {
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", "127.0.0.1:0", svc, cfg.Billing, sandboxapi.PublicAPIConfig{
 		BillingReturnOrigins: cfg.BillingReturnOrigins,
+		PublicBaseURL:        cfg.PublicBaseURL,
 	})
-	sandboxapi.RegisterPublicRoutes(rootMux, svc, sandboxapi.ForgejoWebhookConfig{
-		PlatformOrgID: cfg.PlatformOrgID,
-		ActorID:       "system:forgejo-webhook",
-		Secret:        cfg.ForgejoWebhookSecret,
-	})
+	sandboxapi.RegisterPublicRoutes(rootMux, svc)
 
 	authHandler := auth.Middleware(cfg.AuthCfg)(privateMux)
 	rootMux.Handle("/", authHandler)
 	srv := httptest.NewServer(rootMux)
-	return &Server{Server: srv, service: svc}
+	workerCtx, cancel := context.WithCancel(context.Background())
+	sandboxapi.StartWebhookDeliveryWorker(workerCtx, svc)
+	return &Server{Server: srv, service: svc, cancel: cancel}
+}
+
+func (s *Server) Close() {
+	if s == nil {
+		return
+	}
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.Server != nil {
+		s.Server.Close()
+	}
+}
+
+type WebhookEndpoint struct {
+	EndpointID   string
+	ProviderHost string
+	Secret       string
+}
+
+func (s *Server) CreateWebhookEndpoint(ctx context.Context, orgID uint64, actorID, provider, providerHost, label string) (WebhookEndpoint, error) {
+	if s == nil || s.service == nil {
+		return WebhookEndpoint{}, http.ErrServerClosed
+	}
+	result, err := s.service.CreateWebhookEndpoint(ctx, jobs.CreateWebhookEndpointRequest{
+		OrgID:        orgID,
+		ActorID:      actorID,
+		Provider:     provider,
+		ProviderHost: providerHost,
+		Label:        label,
+	})
+	if err != nil {
+		return WebhookEndpoint{}, err
+	}
+	return WebhookEndpoint{
+		EndpointID:   result.Endpoint.EndpointID.String(),
+		ProviderHost: result.Endpoint.ProviderHost,
+		Secret:       result.Secret,
+	}, nil
 }
 
 func (s *Server) Reconcile(ctx context.Context) error {

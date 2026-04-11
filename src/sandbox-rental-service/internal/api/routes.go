@@ -64,6 +64,37 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}, refreshRepo(svc))
 
 	registerSecured(api, huma.Operation{
+		OperationID:   "create-webhook-endpoint",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/webhook-endpoints",
+		Summary:       "Create a git webhook endpoint",
+		DefaultStatus: 201,
+	}, createWebhookEndpoint(svc, publicConfig.PublicBaseURL))
+
+	registerSecured(api, huma.Operation{
+		OperationID: "list-webhook-endpoints",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/webhook-endpoints",
+		Summary:     "List git webhook endpoints for the current org",
+	}, listWebhookEndpoints(svc))
+
+	registerSecured(api, huma.Operation{
+		OperationID:   "rotate-webhook-endpoint-secret",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/webhook-endpoints/{endpoint_id}/rotate",
+		Summary:       "Rotate a git webhook endpoint secret",
+		DefaultStatus: 200,
+	}, rotateWebhookEndpointSecret(svc))
+
+	registerSecured(api, huma.Operation{
+		OperationID:   "delete-webhook-endpoint",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/webhook-endpoints/{endpoint_id}",
+		Summary:       "Deactivate a git webhook endpoint",
+		DefaultStatus: 204,
+	}, deleteWebhookEndpoint(svc))
+
+	registerSecured(api, huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",

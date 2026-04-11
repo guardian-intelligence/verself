@@ -26,6 +26,7 @@ type SandboxSubmitRequest struct {
 
 type SandboxImportRepoRequest struct {
 	Provider       string `json:"provider,omitempty"`
+	ProviderHost   string `json:"provider_host,omitempty"`
 	ProviderRepoID string `json:"provider_repo_id,omitempty"`
 	Owner          string `json:"owner,omitempty"`
 	Name           string `json:"name,omitempty"`
@@ -38,6 +39,7 @@ type SandboxRepoRecord struct {
 	RepoID                   uuid.UUID       `json:"repo_id"`
 	OrgID                    OrgID           `json:"org_id"`
 	Provider                 string          `json:"provider"`
+	ProviderHost             string          `json:"provider_host"`
 	ProviderRepoID           string          `json:"provider_repo_id"`
 	Owner                    string          `json:"owner"`
 	Name                     string          `json:"name"`
@@ -83,6 +85,50 @@ type SandboxRepoBootstrapRecord struct {
 	ExecutionID   uuid.UUID                      `json:"execution_id"`
 	AttemptID     uuid.UUID                      `json:"attempt_id"`
 	TriggerReason string                         `json:"trigger_reason"`
+}
+
+type SandboxCreateWebhookEndpointRequest struct {
+	Provider     string `json:"provider,omitempty" enum:"forgejo" doc:"Git provider to accept webhook events from"`
+	ProviderHost string `json:"provider_host" required:"true" maxLength:"255" doc:"Public git host, for example git.example.com or codeberg.org"`
+	Label        string `json:"label,omitempty" maxLength:"255" doc:"Operator-visible endpoint label"`
+}
+
+type SandboxWebhookEndpointRecord struct {
+	EndpointID        uuid.UUID  `json:"endpoint_id"`
+	IntegrationID     uuid.UUID  `json:"integration_id"`
+	OrgID             OrgID      `json:"org_id"`
+	Provider          string     `json:"provider"`
+	ProviderHost      string     `json:"provider_host"`
+	Label             string     `json:"label"`
+	Active            bool       `json:"active"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	LastDeliveryAt    *time.Time `json:"last_delivery_at,omitempty"`
+	DeliveryCount     int64      `json:"delivery_count" minimum:"0" maximum:"9007199254740991"`
+	SecretFingerprint string     `json:"secret_fingerprint,omitempty"`
+}
+
+type SandboxCreateWebhookEndpointResponse struct {
+	EndpointID        uuid.UUID `json:"endpoint_id"`
+	IntegrationID     uuid.UUID `json:"integration_id"`
+	WebhookURL        string    `json:"webhook_url"`
+	Secret            string    `json:"secret"`
+	Provider          string    `json:"provider"`
+	ProviderHost      string    `json:"provider_host"`
+	Label             string    `json:"label"`
+	Active            bool      `json:"active"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	DeliveryCount     int64     `json:"delivery_count" minimum:"0" maximum:"9007199254740991"`
+	SecretFingerprint string    `json:"secret_fingerprint,omitempty"`
+}
+
+type SandboxRotateWebhookEndpointSecretResponse struct {
+	EndpointID         uuid.UUID `json:"endpoint_id"`
+	Secret             string    `json:"secret"`
+	SecretFingerprint  string    `json:"secret_fingerprint"`
+	RotatedAt          time.Time `json:"rotated_at"`
+	PreviousRetiringAt time.Time `json:"previous_retiring_at"`
 }
 
 type SandboxSubmitExecutionResult struct {

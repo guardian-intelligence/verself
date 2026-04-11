@@ -57,7 +57,7 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 		t.Fatalf("marshal webhook payload: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, env.rentalServer.URL+"/webhooks/forgejo", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequest(http.MethodPost, env.webhookURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		t.Fatalf("build webhook request: %v", err)
 	}
@@ -76,25 +76,32 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 	}
 
 	var accepted struct {
-		Status      string `json:"status"`
-		ExecutionID string `json:"execution_id"`
-		AttemptID   string `json:"attempt_id"`
-		RepoID      string `json:"repo_id"`
+		Status             string `json:"status"`
+		DeliveryID         string `json:"delivery_id"`
+		ProviderDeliveryID string `json:"provider_delivery_id"`
+		Event              string `json:"event"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&accepted); err != nil {
 		t.Fatalf("decode webhook response: %v", err)
 	}
-	if accepted.Status != "accepted" {
-		t.Fatalf("expected webhook status=accepted, got %q", accepted.Status)
+	if accepted.Status != "queued" {
+		t.Fatalf("expected webhook status=queued, got %q", accepted.Status)
 	}
-	if accepted.ExecutionID == "" || accepted.AttemptID == "" {
-		t.Fatalf("expected execution+attempt ids from webhook, got execution=%q attempt=%q", accepted.ExecutionID, accepted.AttemptID)
-	}
-	if accepted.RepoID != repo.RepoID {
-		t.Fatalf("expected webhook repo_id=%s, got %s", repo.RepoID, accepted.RepoID)
+	if accepted.DeliveryID == "" || accepted.ProviderDeliveryID != "delivery-pr-42" || accepted.Event != "pull_request" {
+		t.Fatalf("unexpected webhook acceptance payload: %#v", accepted)
 	}
 
-	execution := waitForExecutionState(t, env.ctx, env.rentalServer.URL, env.token, accepted.ExecutionID, "succeeded")
+	delivery := waitForWebhookDeliveryState(t, env.ctx, env.pg.rentalDB, "delivery-pr-42", "processed")
+	if delivery.AttemptCount < 1 {
+		t.Fatalf("expected delivery attempt_count >= 1, got %d", delivery.AttemptCount)
+	}
+	assertWebhookDeliveryClickHouse(t, env.ctx, env.queryCHConn, "delivery-pr-42", "processed")
+
+	executionID, attemptID := waitForExecutionByProviderRunID(t, env.ctx, env.pg.rentalDB, "delivery-pr-42")
+	execution := waitForExecutionState(t, env.ctx, env.rentalServer.URL, env.token, executionID, "succeeded")
+	if execution.RepoID != repo.RepoID {
+		t.Fatalf("expected webhook repo_id=%s, got %s", repo.RepoID, execution.RepoID)
+	}
 	if execution.Kind != "forgejo_runner" {
 		t.Fatalf("expected kind=forgejo_runner, got %q", execution.Kind)
 	}
@@ -105,7 +112,7 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 		t.Fatalf("expected provider_job_id=pr-42, got %q", execution.ProviderJobID)
 	}
 
-	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, accepted.AttemptID)
+	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, attemptID)
 	flushBillingMetering(t, env.ctx, env.billingServer)
 
 	var eventCount uint64
@@ -113,7 +120,7 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 		SELECT count()
 		FROM forge_metal.job_events
 		WHERE org_id = $1 AND execution_id = $2 AND kind = 'forgejo_runner'
-	`, testOrgID, accepted.ExecutionID).Scan(&eventCount); err != nil {
+	`, testOrgID, executionID).Scan(&eventCount); err != nil {
 		t.Fatalf("query webhook job_events: %v", err)
 	}
 	if eventCount != 1 {
@@ -124,7 +131,7 @@ func TestForgejoWebhook_PullRequestCreatesBilledRunnerExecution(t *testing.T) {
 	orgIDStr := strconv.FormatUint(testOrgID, 10)
 	if err := env.queryCHConn.QueryRow(env.ctx,
 		"SELECT count() FROM forge_metal.metering WHERE org_id = $1 AND source_ref = $2",
-		orgIDStr, accepted.AttemptID,
+		orgIDStr, attemptID,
 	).Scan(&meteringCount); err != nil {
 		t.Fatalf("query webhook metering: %v", err)
 	}
@@ -144,6 +151,7 @@ func TestForgejoWebhook_InvalidSignatureReturnsUnauthorized(t *testing.T) {
 	respBody, status := postForgejoWebhook(
 		t,
 		env.rentalServer.URL,
+		env.webhookURL,
 		[]byte(`{"action":"opened"}`),
 		"pull_request",
 		"delivery-invalid-signature",
@@ -152,7 +160,7 @@ func TestForgejoWebhook_InvalidSignatureReturnsUnauthorized(t *testing.T) {
 	if status != http.StatusUnauthorized {
 		t.Fatalf("expected 401 from invalid signature, got %d", status)
 	}
-	if !strings.Contains(respBody, "invalid forgejo signature") {
+	if !strings.Contains(respBody, "Unauthorized") {
 		t.Fatalf("expected invalid signature error, got %q", respBody)
 	}
 }
@@ -169,6 +177,7 @@ func TestForgejoWebhook_MissingEventHeaderReturnsBadRequest(t *testing.T) {
 	respBody, status := postForgejoWebhook(
 		t,
 		env.rentalServer.URL,
+		env.webhookURL,
 		body,
 		"",
 		"delivery-missing-event",
@@ -177,7 +186,7 @@ func TestForgejoWebhook_MissingEventHeaderReturnsBadRequest(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing event header, got %d", status)
 	}
-	if !strings.Contains(respBody, "missing forgejo event headers") {
+	if !strings.Contains(respBody, "Bad Request") {
 		t.Fatalf("expected missing header error, got %q", respBody)
 	}
 }
@@ -194,6 +203,7 @@ func TestForgejoWebhook_MissingDeliveryHeaderReturnsBadRequest(t *testing.T) {
 	respBody, status := postForgejoWebhook(
 		t,
 		env.rentalServer.URL,
+		env.webhookURL,
 		body,
 		"pull_request",
 		"",
@@ -202,7 +212,7 @@ func TestForgejoWebhook_MissingDeliveryHeaderReturnsBadRequest(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing delivery header, got %d", status)
 	}
-	if !strings.Contains(respBody, "missing forgejo event headers") {
+	if !strings.Contains(respBody, "Bad Request") {
 		t.Fatalf("expected missing header error, got %q", respBody)
 	}
 }
@@ -219,33 +229,35 @@ func TestForgejoWebhook_UnsupportedEventIsIgnored(t *testing.T) {
 	respBody, status := postForgejoWebhook(
 		t,
 		env.rentalServer.URL,
+		env.webhookURL,
 		body,
 		"star",
 		"delivery-ignored",
 		signForgejoWebhook(body, env.webhookSecret),
 	)
-	if status != http.StatusOK {
-		t.Fatalf("expected 200 for unsupported event, got %d body=%q", status, respBody)
+	if status != http.StatusAccepted {
+		t.Fatalf("expected 202 for unsupported event ingest, got %d body=%q", status, respBody)
 	}
 
-	var ignored struct {
-		Status     string `json:"status"`
-		Event      string `json:"event"`
-		DeliveryID string `json:"delivery_id"`
-		Message    string `json:"message"`
+	var queued struct {
+		Status             string `json:"status"`
+		Event              string `json:"event"`
+		ProviderDeliveryID string `json:"provider_delivery_id"`
 	}
-	if err := json.Unmarshal([]byte(respBody), &ignored); err != nil {
-		t.Fatalf("decode ignored webhook response: %v", err)
+	if err := json.Unmarshal([]byte(respBody), &queued); err != nil {
+		t.Fatalf("decode queued webhook response: %v", err)
 	}
-	if ignored.Status != "ignored" {
-		t.Fatalf("expected ignored status, got %q", ignored.Status)
+	if queued.Status != "queued" {
+		t.Fatalf("expected queued status, got %q", queued.Status)
 	}
-	if ignored.Event != "star" {
-		t.Fatalf("expected event=star, got %q", ignored.Event)
+	if queued.Event != "star" {
+		t.Fatalf("expected event=star, got %q", queued.Event)
 	}
-	if ignored.DeliveryID != "delivery-ignored" {
-		t.Fatalf("expected delivery_id=delivery-ignored, got %q", ignored.DeliveryID)
+	if queued.ProviderDeliveryID != "delivery-ignored" {
+		t.Fatalf("expected provider_delivery_id=delivery-ignored, got %q", queued.ProviderDeliveryID)
 	}
+	waitForWebhookDeliveryState(t, env.ctx, env.pg.rentalDB, "delivery-ignored", "ignored")
+	assertWebhookDeliveryClickHouse(t, env.ctx, env.queryCHConn, "delivery-ignored", "ignored")
 }
 
 func TestForgejoWebhook_BodyTooLargeReturnsRequestEntityTooLarge(t *testing.T) {
@@ -260,6 +272,7 @@ func TestForgejoWebhook_BodyTooLargeReturnsRequestEntityTooLarge(t *testing.T) {
 	respBody, status := postForgejoWebhook(
 		t,
 		env.rentalServer.URL,
+		env.webhookURL,
 		body,
 		"pull_request",
 		"delivery-too-large",
@@ -276,6 +289,7 @@ func TestForgejoWebhook_BodyTooLargeReturnsRequestEntityTooLarge(t *testing.T) {
 func postForgejoWebhook(
 	t *testing.T,
 	baseURL string,
+	webhookURL string,
 	body []byte,
 	eventType string,
 	deliveryID string,
@@ -283,7 +297,10 @@ func postForgejoWebhook(
 ) (string, int) {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/webhooks/forgejo", bytes.NewReader(body))
+	if strings.TrimSpace(webhookURL) == "" {
+		webhookURL = baseURL + "/webhooks/ingest/00000000-0000-0000-0000-000000000000"
+	}
+	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("build webhook request: %v", err)
 	}

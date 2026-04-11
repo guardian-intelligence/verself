@@ -13,6 +13,7 @@ import (
 
 type PublicAPIConfig struct {
 	BillingReturnOrigins []string
+	PublicBaseURL        string
 }
 
 func NewAPI(mux *http.ServeMux, version, listenAddr string, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) huma.API {

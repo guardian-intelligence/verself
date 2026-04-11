@@ -6,24 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
+const repoScanGitCommandTimeout = 30 * time.Second
+
 type ImportRepoRequest struct {
-	Provider       string `json:"provider,omitempty"`
-	ProviderRepoID string `json:"provider_repo_id,omitempty"`
-	Owner          string `json:"owner,omitempty"`
-	Name           string `json:"name,omitempty"`
-	FullName       string `json:"full_name,omitempty"`
-	CloneURL       string `json:"clone_url"`
-	DefaultBranch  string `json:"default_branch,omitempty"`
+	IntegrationID  *uuid.UUID `json:"integration_id,omitempty"`
+	Provider       string     `json:"provider,omitempty"`
+	ProviderHost   string     `json:"provider_host,omitempty"`
+	ProviderRepoID string     `json:"provider_repo_id,omitempty"`
+	Owner          string     `json:"owner,omitempty"`
+	Name           string     `json:"name,omitempty"`
+	FullName       string     `json:"full_name,omitempty"`
+	CloneURL       string     `json:"clone_url"`
+	DefaultBranch  string     `json:"default_branch,omitempty"`
 }
 
 type WorkflowScanIssue struct {
@@ -54,7 +60,7 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 		return nil, err
 	}
 
-	if existing, ok, err := s.findRepoByExternalKey(ctx, orgID, req.Provider, req.ProviderRepoID, req.FullName); err != nil {
+	if existing, ok, err := s.findRepoByExternalKey(ctx, orgID, req.Provider, req.ProviderHost, req.ProviderRepoID, req.FullName); err != nil {
 		return nil, err
 	} else if ok {
 		if err := s.UpdateRepoImportMetadata(ctx, existing.RepoID, req); err != nil {
@@ -75,7 +81,9 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 
 	repo, err := s.CreateRepo(ctx, CreateRepoRequest{
 		OrgID:          orgID,
+		IntegrationID:  req.IntegrationID,
 		Provider:       req.Provider,
+		ProviderHost:   req.ProviderHost,
 		ProviderRepoID: req.ProviderRepoID,
 		Owner:          req.Owner,
 		Name:           req.Name,
@@ -105,7 +113,7 @@ func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID
 		return nil, err
 	}
 
-	result, err := scanRepoCompatibility(repo.CloneURL, repo.DefaultBranch)
+	result, err := scanRepoCompatibility(ctx, repo.CloneURL, repo.DefaultBranch)
 	if err != nil {
 		summary := map[string]any{
 			"issues": []WorkflowScanIssue{{
@@ -123,23 +131,26 @@ func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID
 	return s.RecordRepoCompatibility(ctx, repoID, result)
 }
 
-func (s *Service) FindRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerRepoID, fullName string) (*RepoRecord, bool, error) {
-	return s.findRepoByExternalKey(ctx, orgID, provider, providerRepoID, fullName)
+func (s *Service) FindRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerHost, providerRepoID, fullName string) (*RepoRecord, bool, error) {
+	return s.findRepoByExternalKey(ctx, orgID, provider, providerHost, providerRepoID, fullName)
 }
 
-func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerRepoID, fullName string) (*RepoRecord, bool, error) {
+func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerHost, providerRepoID, fullName string) (*RepoRecord, bool, error) {
 	var (
 		query string
 		args  []any
 	)
+	providerHost = strings.TrimSpace(providerHost)
 	switch {
 	case strings.TrimSpace(providerRepoID) != "":
 		query = `
 			SELECT
-				repo_id,
-				org_id,
-				provider,
-				provider_repo_id,
+					repo_id,
+					org_id,
+					COALESCE(integration_id::text, ''),
+					provider,
+					provider_host,
+					provider_repo_id,
 				owner,
 				name,
 				full_name,
@@ -157,16 +168,18 @@ func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provi
 				updated_at,
 				archived_at
 			FROM repos
-			WHERE org_id = $1 AND provider = $2 AND provider_repo_id = $3
-		`
-		args = []any{int64(orgID), provider, providerRepoID}
+				WHERE org_id = $1 AND provider = $2 AND provider_host = $3 AND provider_repo_id = $4
+			`
+		args = []any{int64(orgID), provider, providerHost, providerRepoID}
 	default:
 		query = `
 			SELECT
-				repo_id,
-				org_id,
-				provider,
-				provider_repo_id,
+					repo_id,
+					org_id,
+					COALESCE(integration_id::text, ''),
+					provider,
+					provider_host,
+					provider_repo_id,
 				owner,
 				name,
 				full_name,
@@ -184,9 +197,9 @@ func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provi
 				updated_at,
 				archived_at
 			FROM repos
-			WHERE org_id = $1 AND provider = $2 AND full_name = $3
-		`
-		args = []any{int64(orgID), provider, fullName}
+				WHERE org_id = $1 AND provider = $2 AND provider_host = $3 AND full_name = $4
+			`
+		args = []any{int64(orgID), provider, providerHost, fullName}
 	}
 
 	record, err := scanRepoRow(s.PG.QueryRowContext(ctx, query, args...))
@@ -201,6 +214,7 @@ func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provi
 
 func normalizeImportRepoRequest(req ImportRepoRequest) (ImportRepoRequest, error) {
 	req.Provider = strings.TrimSpace(req.Provider)
+	req.ProviderHost = strings.TrimSpace(strings.ToLower(req.ProviderHost))
 	req.ProviderRepoID = strings.TrimSpace(req.ProviderRepoID)
 	req.Owner = strings.TrimSpace(req.Owner)
 	req.Name = strings.TrimSpace(req.Name)
@@ -216,6 +230,16 @@ func normalizeImportRepoRequest(req ImportRepoRequest) (ImportRepoRequest, error
 	}
 	if err := validateGitCloneURLField("clone_url", req.CloneURL); err != nil {
 		return ImportRepoRequest{}, err
+	}
+	cloneProviderHost := providerHostFromCloneURL(req.CloneURL)
+	if req.ProviderHost == "" {
+		req.ProviderHost = cloneProviderHost
+	}
+	if req.ProviderHost == "" {
+		return ImportRepoRequest{}, fmt.Errorf("provider_host is required")
+	}
+	if cloneProviderHost != "" && req.ProviderHost != cloneProviderHost {
+		return ImportRepoRequest{}, fmt.Errorf("provider_host %q must match clone_url host %q", req.ProviderHost, cloneProviderHost)
 	}
 	if req.FullName == "" {
 		req.FullName = repoFullNameFromCloneURL(req.CloneURL)
@@ -243,16 +267,19 @@ func normalizeImportRepoRequest(req ImportRepoRequest) (ImportRepoRequest, error
 	return req, nil
 }
 
-func scanRepoCompatibility(repoURL, branch string) (RepoCompatibilityResult, error) {
+func scanRepoCompatibility(ctx context.Context, repoURL, branch string) (RepoCompatibilityResult, error) {
 	repoURL = strings.TrimSpace(repoURL)
 	branch = defaultBranch(branch)
-	root, err := cloneRepoBranch(repoURL, branch)
+	if err := validateGitCloneURLFieldWithResolver(ctx, net.DefaultResolver, "clone_url", repoURL); err != nil {
+		return RepoCompatibilityResult{}, err
+	}
+	root, err := cloneRepoBranch(ctx, repoURL, branch)
 	if err != nil {
 		return RepoCompatibilityResult{}, err
 	}
 	defer os.RemoveAll(root)
 
-	commitSHA, err := gitHeadSHA(root)
+	commitSHA, err := gitHeadSHA(ctx, root)
 	if err != nil {
 		return RepoCompatibilityResult{}, err
 	}
@@ -432,28 +459,57 @@ func workflowFiles(root string) ([]string, error) {
 	return out, nil
 }
 
-func cloneRepoBranch(repoURL, branch string) (string, error) {
+func cloneRepoBranch(ctx context.Context, repoURL, branch string) (string, error) {
 	tmp, err := os.MkdirTemp("", "forge-metal-repo-scan-*")
 	if err != nil {
 		return "", fmt.Errorf("create scan dir: %w", err)
 	}
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", branch, repoURL, tmp)
+	cmd, commandCtx, cancel := repoScanGitCommand(ctx,
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.git.allow=never",
+		"-c", "protocol.ssh.allow=never",
+		"-c", "http.followRedirects=false",
+		"clone",
+		"--depth", "1",
+		"--single-branch",
+		"--branch", branch,
+		"--", repoURL, tmp,
+	)
+	defer cancel()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		_ = os.RemoveAll(tmp)
+		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("git clone timed out after %s: %w", repoScanGitCommandTimeout, err)
+		}
 		return "", fmt.Errorf("git clone --branch %s %s: %s: %w", branch, repoURL, strings.TrimSpace(string(out)), err)
 	}
 	return tmp, nil
 }
 
-func gitHeadSHA(repoRoot string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
+func gitHeadSHA(ctx context.Context, repoRoot string) (string, error) {
+	cmd, commandCtx, cancel := repoScanGitCommand(ctx, "rev-parse", "HEAD")
+	defer cancel()
 	cmd.Dir = repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("git rev-parse HEAD timed out after %s: %w", repoScanGitCommandTimeout, err)
+		}
 		return "", fmt.Errorf("git rev-parse HEAD: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func repoScanGitCommand(ctx context.Context, args ...string) (*exec.Cmd, context.Context, context.CancelFunc) {
+	commandCtx, cancel := context.WithTimeout(ctx, repoScanGitCommandTimeout)
+	cmd := exec.CommandContext(commandCtx, "git", args...)
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+		"GIT_TERMINAL_PROMPT=0",
+	)
+	return cmd, commandCtx, cancel
 }
 
 func repoFullNameFromCloneURL(cloneURL string) string {

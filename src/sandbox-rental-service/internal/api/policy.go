@@ -23,6 +23,8 @@ type permission string
 const (
 	permissionRepoRead        permission = "sandbox:repo:read"
 	permissionRepoWrite       permission = "sandbox:repo:write"
+	permissionWebhookRead     permission = "sandbox:webhook_endpoint:read"
+	permissionWebhookWrite    permission = "sandbox:webhook_endpoint:write"
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
 	permissionLogsRead        permission = "sandbox:logs:read"
@@ -101,6 +103,41 @@ var publicAPIOperationPolicies = map[string]operationPolicy{
 		Idempotency:    idempotencyHeaderKey,
 		AuditEvent:     "sandbox.repo.refresh",
 	},
+	"create-webhook-endpoint": {
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.create",
+	},
+	"list-webhook-endpoints": {
+		Permission:     permissionWebhookRead,
+		Resource:       "webhook_endpoint",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.webhook_endpoint.list",
+	},
+	"rotate-webhook-endpoint-secret": {
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint_secret",
+		Action:         "rotate",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.secret.rotate",
+	},
+	"delete-webhook-endpoint": {
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint",
+		Action:         "delete",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.delete",
+	},
 	"submit-execution": {
 		Permission:     permissionExecutionSubmit,
 		Resource:       "execution",
@@ -174,6 +211,8 @@ var rolePermissionBundles = map[string][]permission{
 	roleSandboxOrgAdmin: {
 		permissionRepoRead,
 		permissionRepoWrite,
+		permissionWebhookRead,
+		permissionWebhookWrite,
 		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionLogsRead,
@@ -425,11 +464,12 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":             {Limit: 600, Window: time.Minute},
-	"logs_read":        {Limit: 120, Window: time.Minute},
-	"repo_mutation":    {Limit: 120, Window: time.Minute},
-	"execution_submit": {Limit: 120, Window: time.Minute},
-	"billing_mutation": {Limit: 60, Window: time.Minute},
+	"read":                      {Limit: 600, Window: time.Minute},
+	"logs_read":                 {Limit: 120, Window: time.Minute},
+	"repo_mutation":             {Limit: 120, Window: time.Minute},
+	"execution_submit":          {Limit: 120, Window: time.Minute},
+	"billing_mutation":          {Limit: 60, Window: time.Minute},
+	"webhook_endpoint_mutation": {Limit: 30, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

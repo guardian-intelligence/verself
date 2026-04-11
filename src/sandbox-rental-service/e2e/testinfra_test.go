@@ -378,6 +378,7 @@ func clickHouseSchemaPaths(t *testing.T) []string {
 	schemas := []string{
 		filepath.Join(migrationsDir, "004_billing_metering.up.sql"),
 		filepath.Join(migrationsDir, "007_sandbox_job_logs.up.sql"),
+		filepath.Join(migrationsDir, "012_webhook_delivery_events.up.sql"),
 	}
 	for _, s := range schemas {
 		if _, err := os.Stat(s); err != nil {

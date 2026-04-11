@@ -17,10 +17,11 @@ func TestNormalizeImportRepoRequestRejectsUnsafeCloneURLs(t *testing.T) {
 		{name: "scp style ssh", cloneURL: "git@github.com:forge-metal/repo.git"},
 		{name: "file scheme", cloneURL: "file:///tmp/repo.git"},
 		{name: "git protocol", cloneURL: "git://github.com/forge-metal/repo.git"},
+		{name: "http scheme", cloneURL: "http://github.com/forge-metal/repo.git"},
 		{name: "loopback ipv4", cloneURL: "https://127.0.0.1/forge-metal/repo.git"},
 		{name: "loopback ipv6", cloneURL: "https://[::1]/forge-metal/repo.git"},
 		{name: "private ipv4", cloneURL: "https://10.0.0.1/forge-metal/repo.git"},
-		{name: "link local metadata", cloneURL: "http://169.254.169.254/latest/meta-data"},
+		{name: "link local metadata", cloneURL: "https://169.254.169.254/latest/meta-data"},
 		{name: "localhost name", cloneURL: "https://localhost/forge-metal/repo.git"},
 		{name: "userinfo", cloneURL: "https://token:secret@github.com/forge-metal/repo.git"},
 		{name: "query", cloneURL: "https://93.184.216.34/forge-metal/repo.git?token=secret"},
@@ -40,7 +41,7 @@ func TestNormalizeImportRepoRequestRejectsUnsafeCloneURLs(t *testing.T) {
 	}
 }
 
-func TestNormalizeImportRepoRequestAcceptsPublicHTTPCloneURL(t *testing.T) {
+func TestNormalizeImportRepoRequestAcceptsPublicHTTPSCloneURL(t *testing.T) {
 	req, err := normalizeImportRepoRequest(ImportRepoRequest{
 		CloneURL: " https://93.184.216.34/forge-metal/repo.git ",
 	})
@@ -52,6 +53,16 @@ func TestNormalizeImportRepoRequestAcceptsPublicHTTPCloneURL(t *testing.T) {
 	}
 	if req.FullName != "forge-metal/repo" {
 		t.Fatalf("full_name: got %q", req.FullName)
+	}
+}
+
+func TestNormalizeImportRepoRequestRejectsProviderHostMismatch(t *testing.T) {
+	_, err := normalizeImportRepoRequest(ImportRepoRequest{
+		ProviderHost: "github.com",
+		CloneURL:     "https://93.184.216.34/forge-metal/repo.git",
+	})
+	if err == nil || !strings.Contains(err.Error(), "provider_host") {
+		t.Fatalf("normalizeImportRepoRequest error = %v, want provider_host mismatch", err)
 	}
 }
 

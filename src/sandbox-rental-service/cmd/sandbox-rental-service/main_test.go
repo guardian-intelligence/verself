@@ -52,11 +52,34 @@ func TestLimitPublicAPIRequestBodiesLeavesNonAPIRequestsAlone(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}), 8)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/forgejo", strings.NewReader("123456789"))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/ingest/00000000-0000-0000-0000-000000000000", strings.NewReader("123456789"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestValidatePublicBaseURL(t *testing.T) {
+	for _, value := range []string{
+		"https://sandbox.example.com",
+		"http://127.0.0.1:4243",
+	} {
+		if err := validatePublicBaseURL(value); err != nil {
+			t.Fatalf("validatePublicBaseURL(%q): %v", value, err)
+		}
+	}
+	for _, value := range []string{
+		"",
+		"/relative",
+		"ftp://sandbox.example.com",
+		"https://sandbox.example.com/webhooks",
+		"https://sandbox.example.com?x=1",
+		"https://sandbox.example.com/#fragment",
+	} {
+		if err := validatePublicBaseURL(value); err == nil {
+			t.Fatalf("validatePublicBaseURL(%q) succeeded, want error", value)
+		}
 	}
 }
