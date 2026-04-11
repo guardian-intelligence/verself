@@ -1,5 +1,5 @@
 .PHONY: build clean test test-integration lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
-       hooks-install doctor setup-domain inventory-check seed-system billing-reset verification-reset \
+       hooks-install doctor setup-domain inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        sandbox-inner sandbox-middle sandbox-proof
@@ -18,6 +18,9 @@ WL       := src/workload
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 GO_DIRS  := $(FM) $(AW) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT) $(WL)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
+ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
+ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
+ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
 
 build: ## Build the forge-metal Go binary
 	go build $(LDFLAGS) -o $(FM)/forge-metal ./$(FM)/cmd/forge-metal
@@ -103,6 +106,19 @@ inventory-check: ## Validate that the generated Ansible inventory exists
 
 seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
 	cd $(FM)/ansible && ansible-playbook playbooks/seed-system.yml
+
+assume-persona: inventory-check ## Write persona env file: make assume-persona PERSONA=platform-admin [OUTPUT=path] [PRINT=1]
+	@test -n "$(PERSONA)" || { echo "ERROR: PERSONA is required (platform-admin, acme-admin, acme-member)"; exit 1; }
+	cd $(FM) && ./scripts/assume-persona.sh "$(PERSONA)" $(ASSUME_PERSONA_FLAGS)
+
+assume-platform-admin: inventory-check ## Write env for platform admin agent persona
+	cd $(FM) && ./scripts/assume-persona.sh platform-admin $(ASSUME_PERSONA_FLAGS)
+
+assume-acme-admin: inventory-check ## Write env for Acme org admin persona
+	cd $(FM) && ./scripts/assume-persona.sh acme-admin $(ASSUME_PERSONA_FLAGS)
+
+assume-acme-member: inventory-check ## Write env for Acme org member persona
+	cd $(FM) && ./scripts/assume-persona.sh acme-member $(ASSUME_PERSONA_FLAGS)
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
