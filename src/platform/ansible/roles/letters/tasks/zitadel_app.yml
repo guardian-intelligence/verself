@@ -53,6 +53,8 @@
     body_format: json
     body:
       name: "{{ letters_auth_project_name }}"
+      projectRoleAssertion: true
+      projectRoleCheck: true
     return_content: true
   register: letters_auth_project_created
   when: letters_auth_project == {}
@@ -70,6 +72,22 @@
   ansible.builtin.assert:
     that: letters_project_id | default('', true) | length > 0
     fail_msg: letters_project_id could not be resolved from Zitadel.
+
+- name: Ensure letters project has role assertion enabled
+  ansible.builtin.uri:
+    url: "http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{ letters_project_id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ letters_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      name: "{{ letters_auth_project_name }}"
+      projectRoleAssertion: true
+      projectRoleCheck: true
+    status_code: 200
+  when: letters_auth_project != {}
+  no_log: true
 
 - name: Ensure letters project roles exist
   ansible.builtin.include_role:
@@ -219,6 +237,42 @@
   ansible.builtin.set_fact:
     letters_app_id: "{{ (letters_final_app_search.json.result | default([]) | first | default({})).id | default('') }}"
     letters_client_id: "{{ (letters_final_app_search.json.result | default([]) | first | default({})).oidcConfig.clientId | default('') }}"
+
+- name: Ensure letters OIDC app includes roles in access tokens
+  ansible.builtin.uri:
+    url: >-
+      http://{{ services.zitadel.host }}:{{ services.zitadel.port }}/management/v1/projects/{{
+      letters_project_id }}/apps/{{ letters_app_id }}/oidc_config
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ letters_zitadel_pat }}"
+      Host: "auth.{{ forge_metal_domain }}"
+    body_format: json
+    body:
+      redirectUris:
+        - "https://{{ letters_domain }}/callback"
+      responseTypes:
+        - "OIDC_RESPONSE_TYPE_CODE"
+      grantTypes:
+        - "OIDC_GRANT_TYPE_AUTHORIZATION_CODE"
+        - "OIDC_GRANT_TYPE_REFRESH_TOKEN"
+      appType: "OIDC_APP_TYPE_WEB"
+      authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE"
+      postLogoutRedirectUris:
+        - "https://{{ letters_domain }}"
+      devMode: false
+      accessTokenType: "OIDC_TOKEN_TYPE_JWT"
+      accessTokenRoleAssertion: true
+      idTokenRoleAssertion: true
+      idTokenUserinfoAssertion: true
+    status_code: [200, 400]
+  register: letters_oidc_config_converged
+  failed_when: >-
+    letters_oidc_config_converged.status == 400
+    and 'No changes' not in (letters_oidc_config_converged.json.message | default(''))
+  changed_when: letters_oidc_config_converged.status == 200
+  when: letters_app_id | default('', true) | length > 0
+  no_log: true
 
 - name: Persist letters OIDC Web cutover marker
   ansible.builtin.copy:
