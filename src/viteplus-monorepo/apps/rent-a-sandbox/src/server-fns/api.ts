@@ -39,6 +39,7 @@ import type {
   SubscriptionsResponse,
   GoldenGeneration,
 } from "~/lib/sandbox-rental-api";
+import type { AuthSession } from "@forge-metal/auth-web/server";
 import { rentASandboxAuthMiddleware } from "./auth";
 
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
@@ -67,9 +68,28 @@ async function getServerVerificationRunID(): Promise<string | undefined> {
   return getRequestHeader(verificationRunHeader)?.trim() || undefined;
 }
 
-async function sandboxRentalClientOptions(context: { auth: { accessToken: string } }) {
+async function resolveAuthContext(
+  context: { auth?: AuthSession } | undefined,
+): Promise<AuthSession> {
+  if (context?.auth) {
+    return context.auth;
+  }
+  // Start server functions invoked during SSR can miss middleware context; re-read the server-owned session before crossing the service boundary.
+  const [{ getAuthSession }, { getAuthConfig }] = await Promise.all([
+    import("@forge-metal/auth-web/server"),
+    import("../server/auth"),
+  ]);
+  const auth = await getAuthSession(await getAuthConfig());
+  if (!auth) {
+    throw new Error("Authentication required");
+  }
+  return auth;
+}
+
+async function sandboxRentalClientOptions(context: { auth?: AuthSession } | undefined) {
+  const auth = await resolveAuthContext(context);
   const options = {
-    accessToken: context.auth.accessToken,
+    accessToken: auth.accessToken,
     baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
   };
   const verificationRunID = await getServerVerificationRunID();
