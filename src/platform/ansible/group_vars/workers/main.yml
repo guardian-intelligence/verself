@@ -3,8 +3,6 @@
 
 # ZFS
 zfs_pool: forgepool
-zfs_golden_dataset: golden
-zfs_ci_dataset: ci
 
 # Verdaccio
 verdaccio_version: "6.3.2"

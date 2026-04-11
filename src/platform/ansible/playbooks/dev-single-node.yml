@@ -46,13 +46,13 @@
       ansible.builtin.assert:
         that: forge_metal_domain | default('', true) | length > 0
         fail_msg: >-
-          forge_metal_domain is required. Run: make setup-domain DOMAIN=example.com
+          forge_metal_domain is required. Set it in the encrypted Ansible group vars before deploying.
 
     - name: Require cloudflare_api_token
       ansible.builtin.assert:
         that: cloudflare_api_token | default('', true) | length > 0
         fail_msg: >-
-          cloudflare_api_token is empty. Run: make setup-domain DOMAIN=example.com
+          cloudflare_api_token is empty. Set it in the encrypted Ansible group vars before deploying.
 
     - name: Check ZFS pool exists
       ansible.builtin.command: "zpool status forgepool"

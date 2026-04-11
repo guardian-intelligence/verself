@@ -10,9 +10,6 @@ ALTER TABLE forge_metal.job_events
     ADD COLUMN IF NOT EXISTS repo_id String DEFAULT '' CODEC(ZSTD(3));
 
 ALTER TABLE forge_metal.job_events
-    ADD COLUMN IF NOT EXISTS golden_generation_id String DEFAULT '' CODEC(ZSTD(3));
-
-ALTER TABLE forge_metal.job_events
     ADD COLUMN IF NOT EXISTS workflow_path String DEFAULT '' CODEC(ZSTD(3));
 
 ALTER TABLE forge_metal.job_events

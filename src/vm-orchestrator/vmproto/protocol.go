@@ -68,7 +68,6 @@ type RunRequest struct {
 	Services            []string          `json:"services,omitempty"`
 	Env                 map[string]string `json:"env,omitempty"`
 	Network             NetworkConfig     `json:"network"`
-	RepoOperation       *RepoOperation    `json:"repo_operation,omitempty"`
 	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
 	// TemplateGeneration is reserved for the next snapshot/template phase.
 	// The cold-boot runtime leaves it empty.
@@ -98,43 +97,15 @@ type GuestEvent struct {
 
 type Heartbeat struct{}
 
-const (
-	RepoOperationWarm = "warm"
-	RepoOperationExec = "exec"
-)
-
-type RepoOperation struct {
-	Kind               string   `json:"kind"`
-	RepoURL            string   `json:"repo_url"`
-	OriginURL          string   `json:"origin_url"`
-	Ref                string   `json:"ref"`
-	LockfileRelPath    string   `json:"lockfile_rel_path,omitempty"`
-	UserPrepareCommand []string `json:"user_prepare_command,omitempty"`
-	UserPrepareWorkDir string   `json:"user_prepare_work_dir,omitempty"`
-	UserRunCommand     []string `json:"user_run_command,omitempty"`
-	UserRunWorkDir     string   `json:"user_run_work_dir,omitempty"`
-}
-
-type RepoManifest struct {
-	Kind                   string `json:"kind"`
-	RequestedRef           string `json:"requested_ref"`
-	ResolvedCommitSHA      string `json:"resolved_commit_sha"`
-	LockfileRelPath        string `json:"lockfile_rel_path,omitempty"`
-	LockfileSHA256         string `json:"lockfile_sha256,omitempty"`
-	PreviousLockfileSHA256 string `json:"previous_lockfile_sha256,omitempty"`
-	InstallNeeded          bool   `json:"install_needed,omitempty"`
-}
-
 type Result struct {
-	ExitCode               int           `json:"exit_code"`
-	PrepareDurationMS      int64         `json:"prepare_duration_ms"`
-	RunDurationMS          int64         `json:"run_duration_ms"`
-	ServiceStartDurationMS int64         `json:"service_start_duration_ms"`
-	BootToReadyMS          int64         `json:"boot_to_ready_ms"`
-	StdoutBytes            uint64        `json:"stdout_bytes"`
-	StderrBytes            uint64        `json:"stderr_bytes"`
-	DroppedLogBytes        uint64        `json:"dropped_log_bytes"`
-	RepoManifest           *RepoManifest `json:"repo_manifest,omitempty"`
+	ExitCode               int    `json:"exit_code"`
+	PrepareDurationMS      int64  `json:"prepare_duration_ms"`
+	RunDurationMS          int64  `json:"run_duration_ms"`
+	ServiceStartDurationMS int64  `json:"service_start_duration_ms"`
+	BootToReadyMS          int64  `json:"boot_to_ready_ms"`
+	StdoutBytes            uint64 `json:"stdout_bytes"`
+	StderrBytes            uint64 `json:"stderr_bytes"`
+	DroppedLogBytes        uint64 `json:"dropped_log_bytes"`
 }
 
 type Fatal struct {

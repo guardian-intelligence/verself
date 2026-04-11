@@ -3,7 +3,7 @@
 firecracker_zfs_pool: forgepool
 firecracker_golden_zvol: golden-zvol
 firecracker_golden_zvol_size: 4G
-firecracker_ci_dataset: ci
+firecracker_workload_dataset: workloads
 firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000
 firecracker_jailer_gid: 10000
@@ -22,4 +22,3 @@ firecracker_host_service_ip: "{{ services.firecracker_host_service.host }}"
 firecracker_vm_orchestrator_binary_path: /usr/local/bin/vm-orchestrator
 firecracker_vm_orchestrator_api_socket: /run/vm-orchestrator/api.sock
 firecracker_vm_orchestrator_socket_group: vm-clients
-firecracker_repo_golden_state_dir: /var/lib/ci/repo-goldens

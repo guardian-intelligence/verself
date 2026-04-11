@@ -18,44 +18,26 @@ import (
 	rentaltestharness "github.com/forge-metal/sandbox-rental-service/testharness"
 )
 
-func TestImportRepoAPI_UnsupportedWorkflowLabel(t *testing.T) {
-	repoPath := createWorkflowRepo(t, map[string]string{
-		".github/workflows/ci.yml": `
-name: ci
-on:
-  push:
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo nope
-`,
+func TestImportRepoAPI_MetadataOnlyScanMarksReady(t *testing.T) {
+	repoPath := createMetadataRepo(t, map[string]string{
+		"src/app.txt": "hello",
 	})
 
 	repo := importRepoViaAPI(t, repoPath)
-	if repo.State != "action_required" {
+	if repo.State != "ready" {
 		t.Fatalf("repo state: got %q", repo.State)
 	}
-	if repo.CompatibilityStatus != "action_required" {
+	if repo.CompatibilityStatus != "compatible" {
 		t.Fatalf("compatibility_status: got %q", repo.CompatibilityStatus)
 	}
-	if !strings.Contains(string(repo.CompatibilitySummary), "ubuntu-latest") {
+	if !strings.Contains(string(repo.CompatibilitySummary), "metadata_only") {
 		t.Fatalf("compatibility_summary: got %s", repo.CompatibilitySummary)
 	}
 }
 
 func TestImportRepoAPI_AllowsSameProviderRepoAcrossOrgs(t *testing.T) {
-	repoPath := createWorkflowRepo(t, map[string]string{
-		".github/workflows/ci.yml": `
-name: ci
-on:
-  push:
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo nope
-`,
+	repoPath := createMetadataRepo(t, map[string]string{
+		"src/app.txt": "hello",
 	})
 
 	ctx := context.Background()
@@ -146,6 +128,7 @@ func importRepoViaAPIWithToken(t *testing.T, ctx context.Context, baseURL, token
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/repos", strings.NewReader(string(data)))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "e2e-import-repo")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -166,17 +149,17 @@ func importRepoViaAPIWithToken(t *testing.T, ctx context.Context, baseURL, token
 	return repo
 }
 
-type workflowRepoFixture struct {
+type metadataRepoFixture struct {
 	CloneURL string
 	Head     string
 }
 
-func createWorkflowRepo(t *testing.T, files map[string]string) string {
+func createMetadataRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
-	return createWorkflowRepoFixture(t, files).CloneURL
+	return createMetadataRepoFixture(t, files).CloneURL
 }
 
-func createWorkflowRepoFixture(t *testing.T, files map[string]string) workflowRepoFixture {
+func createMetadataRepoFixture(t *testing.T, files map[string]string) metadataRepoFixture {
 	t.Helper()
 
 	root := t.TempDir()
@@ -205,7 +188,7 @@ func createWorkflowRepoFixture(t *testing.T, files map[string]string) workflowRe
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %s", strings.TrimSpace(string(out)))
 	}
-	return workflowRepoFixture{
+	return metadataRepoFixture{
 		CloneURL: publicGitCloneURLForTestRepo(t, root, "acme/example.git"),
 		Head:     strings.TrimSpace(string(out)),
 	}

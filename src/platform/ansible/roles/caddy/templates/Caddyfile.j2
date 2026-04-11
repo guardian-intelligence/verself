@@ -56,6 +56,15 @@
 	}
 }
 
+(sandbox_rental_api_proxy) {
+	import waf_blocking
+	import sandbox_api_cors_headers
+	import api_security_headers
+	reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
 {{ hyperdx_domain }} {
 	import access_log
 	import waf_detection
@@ -148,22 +157,61 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		import api_security_headers
 		header {
 			Access-Control-Allow-Headers "Authorization, Content-Type, Idempotency-Key, X-Forge-Metal-Correlation-Id, X-Forge-Metal-Verification-Run"
-			Access-Control-Allow-Methods "GET, POST, OPTIONS"
+			Access-Control-Allow-Methods "GET, POST, DELETE, OPTIONS"
 			Access-Control-Max-Age 600
 		}
 		respond 204
 	}
 
+	@sandbox_api_small_json_mutation {
+		method POST
+		path /api/v1/billing/checkout /api/v1/billing/subscribe /api/v1/webhook-endpoints
+	}
+	handle @sandbox_api_small_json_mutation {
+		request_body {
+			max_size 8192
+		}
+		import sandbox_rental_api_proxy
+	}
+
+	@sandbox_api_repo_import {
+		method POST
+		path /api/v1/repos
+	}
+	handle @sandbox_api_repo_import {
+		request_body {
+			max_size 32768
+		}
+		import sandbox_rental_api_proxy
+	}
+
+	@sandbox_api_execution_submit {
+		method POST
+		path /api/v1/executions
+	}
+	handle @sandbox_api_execution_submit {
+		request_body {
+			max_size 65536
+		}
+		import sandbox_rental_api_proxy
+	}
+
+	@sandbox_api_control_mutation {
+		method POST DELETE
+		path_regexp ^/api/v1/(repos/[^/]+/(rescan|refresh)|webhook-endpoints/[^/]+(/rotate)?)$
+	}
+	handle @sandbox_api_control_mutation {
+		request_body {
+			max_size 1024
+		}
+		import sandbox_rental_api_proxy
+	}
+
 	handle /api/* {
-		import waf_blocking
 		request_body {
 			max_size 1048576
 		}
-		import sandbox_api_cors_headers
-		import api_security_headers
-		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
-			header_up X-Real-IP {remote_host}
-		}
+		import sandbox_rental_api_proxy
 	}
 
 	handle /v1/shape {
@@ -195,6 +243,19 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 	handle /jmap/session {
 		reverse_proxy {{ services.mailbox_service.host }}:{{ services.mailbox_service.port }}
+	}
+
+	# JMAP discovery + protocol endpoints served by Stalwart directly.
+	# /.well-known/jmap is RFC 8620 service discovery; /jmap is the
+	# protocol endpoint used by JMAP clients after discovery.
+	handle /.well-known/jmap {
+		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+	}
+	handle /jmap/* {
+		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
+	}
+	handle /auth/* {
+		reverse_proxy {{ services.stalwart.host }}:{{ services.stalwart.http_port }}
 	}
 
 	handle {

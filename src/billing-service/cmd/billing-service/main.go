@@ -270,7 +270,7 @@ func isUnauthenticatedBillingPath(path string) bool {
 		return true
 	}
 	switch path {
-	case "/internal/billing/v1/checkout", "/internal/billing/v1/subscribe":
+	case "/internal/billing/v1/checkout", "/internal/billing/v1/subscribe", "/internal/billing/v1/portal":
 		return true
 	default:
 		return false

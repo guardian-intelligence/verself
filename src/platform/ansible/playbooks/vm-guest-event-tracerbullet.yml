@@ -201,7 +201,6 @@
               -listen-unix {{ vm_guest_event_tracer_socket | quote }} \
               -socket-group {{ firecracker_vm_orchestrator_socket_group | quote }} \
               -golden-zvol {{ vm_guest_event_tracer_zvol_name | quote }} \
-              -repo-golden-state-dir {{ firecracker_repo_golden_state_dir | quote }} \
               > {{ vm_guest_event_tracer_log | quote }} 2>&1 &
             echo $! > {{ vm_guest_event_tracer_pidfile | quote }}
           args:

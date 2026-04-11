@@ -62,10 +62,6 @@
       ansible.builtin.command: "zfs list -H {{ firecracker_zfs_pool }}/{{ firecracker_golden_zvol }}@ready"
       changed_when: false
 
-    - name: Verify forge-metal is available
-      ansible.builtin.command: "{{ fm_bin }}/forge-metal --version"
-      changed_when: false
-
     # ── Hot-swap binary into dev golden ───────────────────────────────────
 
     - name: Destroy old dev zvol if present

@@ -1,14 +1,9 @@
 package vmorchestrator
 
-import (
-	"time"
-
-	"github.com/forge-metal/vm-orchestrator/vmproto"
-)
+import "time"
 
 const (
-	DefaultSocketPath         = "/run/vm-orchestrator/api.sock"
-	DefaultRepoGoldenStateDir = "/var/lib/ci/repo-goldens"
+	DefaultSocketPath = "/run/vm-orchestrator/api.sock"
 )
 
 type JobState int
@@ -31,34 +26,12 @@ func (s JobState) Terminal() bool {
 	}
 }
 
-type RepoExecRequest struct {
-	Config          Config
-	Repo            string
-	RepoURL         string
-	Ref             string
-	JobTemplate     JobConfig
-	LockfileRelPath string
-}
-
-type RepoExecMetadata struct {
-	Repo           string
-	RepoURL        string
-	Ref            string
-	GoldenSnapshot string
-	CloneDuration  time.Duration
-	InstallNeeded  bool
-	CommitSHA      string
-}
-
-type RepoManifest = vmproto.RepoManifest
-
 type JobStatus struct {
 	JobID        string
 	State        JobState
 	Terminal     bool
 	ErrorMessage string
 	Result       *JobResult
-	RepoExec     *RepoExecMetadata
 }
 
 type JobGuestEvent struct {
@@ -67,27 +40,6 @@ type JobGuestEvent struct {
 	Kind     string
 	Attrs    map[string]string
 	Terminal bool
-}
-
-type WarmGoldenRequest struct {
-	Config          Config
-	Repo            string
-	RepoURL         string
-	DefaultBranch   string
-	Job             JobConfig
-	LockfileRelPath string
-}
-
-type WarmGoldenResult struct {
-	TargetDataset             string
-	PreviousDataset           string
-	Promoted                  bool
-	CloneDuration             time.Duration
-	SnapshotPromotionDuration time.Duration
-	PreviousDestroyDuration   time.Duration
-	CommitSHA                 string
-	JobResult                 JobResult
-	ErrorMessage              string
 }
 
 type TelemetryHello struct {

@@ -218,8 +218,6 @@ components:
           type: integer
         failure_reason:
           type: string
-        golden_snapshot:
-          type: string
         orchestrator_job_id:
           type: string
         runner_name:
@@ -487,8 +485,6 @@ components:
           type: string
         execution_id:
           type: string
-        golden_generation_id:
-          type: string
         idempotency_key:
           type: string
         kind:
@@ -536,58 +532,6 @@ components:
         - created_at
         - updated_at
       type: object
-    SandboxGoldenGenerationRecord:
-      additionalProperties: false
-      properties:
-        activated_at:
-          format: date-time
-          type: string
-        attempt_id:
-          type: string
-        created_at:
-          format: date-time
-          type: string
-        execution_id:
-          type: string
-        failure_detail:
-          type: string
-        failure_reason:
-          type: string
-        golden_generation_id:
-          type: string
-        orchestrator_job_id:
-          type: string
-        repo_id:
-          type: string
-        runner_profile_slug:
-          type: string
-        snapshot_ref:
-          type: string
-        source_ref:
-          type: string
-        source_sha:
-          type: string
-        state:
-          type: string
-        superseded_at:
-          format: date-time
-          type: string
-        trigger_reason:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-      required:
-        - golden_generation_id
-        - repo_id
-        - runner_profile_slug
-        - source_ref
-        - source_sha
-        - state
-        - trigger_reason
-        - created_at
-        - updated_at
-      type: object
     SandboxImportRepoRequest:
       additionalProperties: false
       properties:
@@ -616,32 +560,6 @@ components:
       required:
         - clone_url
       type: object
-    SandboxRepoBootstrapRecord:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4243/schemas/SandboxRepoBootstrapRecord.json
-          format: uri
-          readOnly: true
-          type: string
-        attempt_id:
-          type: string
-        execution_id:
-          type: string
-        generation:
-          $ref: "#/components/schemas/SandboxGoldenGenerationRecord"
-        repo:
-          $ref: "#/components/schemas/SandboxRepoRecord"
-        trigger_reason:
-          type: string
-      required:
-        - repo
-        - generation
-        - execution_id
-        - attempt_id
-        - trigger_reason
-      type: object
     SandboxRepoRecord:
       additionalProperties: false
       properties:
@@ -650,8 +568,6 @@ components:
           example: http://127.0.0.1:4243/schemas/SandboxRepoRecord.json
           format: uri
           readOnly: true
-          type: string
-        active_golden_generation_id:
           type: string
         archived_at:
           format: date-time
@@ -670,8 +586,6 @@ components:
           type: string
         last_error:
           type: string
-        last_ready_sha:
-          type: string
         last_scanned_sha:
           type: string
         name:
@@ -689,8 +603,6 @@ components:
           type: string
         repo_id:
           type: string
-        runner_profile_slug:
-          type: string
         state:
           type: string
         updated_at:
@@ -707,7 +619,6 @@ components:
         - full_name
         - clone_url
         - default_branch
-        - runner_profile_slug
         - state
         - compatibility_status
         - created_at
@@ -773,6 +684,7 @@ components:
         default_branch:
           type: string
         idempotency_key:
+          maxLength: 128
           type: string
         kind:
           type: string
@@ -800,6 +712,7 @@ components:
           type: string
       required:
         - kind
+        - idempotency_key
       type: object
     SandboxWebhookEndpointRecord:
       additionalProperties: false
@@ -887,6 +800,15 @@ paths:
   /api/v1/billing/checkout:
     post:
       operationId: create-billing-checkout
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
       requestBody:
         content:
           application/json:
@@ -916,6 +838,7 @@ paths:
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
+        request_body_max_bytes: 8192
         resource: billing_checkout
   /api/v1/billing/grants:
     get:
@@ -961,6 +884,15 @@ paths:
   /api/v1/billing/subscribe:
     post:
       operationId: create-billing-subscription
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
       requestBody:
         content:
           application/json:
@@ -990,6 +922,7 @@ paths:
         org_scope: token_org_id
         permission: billing:checkout
         rate_limit_class: billing_mutation
+        request_body_max_bytes: 8192
         resource: billing_subscription_checkout
   /api/v1/billing/subscriptions:
     get:
@@ -1049,6 +982,7 @@ paths:
         org_scope: token_org_id
         permission: sandbox:execution:submit
         rate_limit_class: execution_submit
+        request_body_max_bytes: 65536
         resource: execution
   /api/v1/executions/{execution_id}:
     get:
@@ -1149,6 +1083,15 @@ paths:
         resource: repo
     post:
       operationId: import-repo
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
       requestBody:
         content:
           application/json:
@@ -1170,14 +1113,15 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Import or rescan a repo for forge-metal CI
+      summary: Import or rescan repo metadata
       x-forge-metal-iam:
         action: import
         audit_event: sandbox.repo.import
-        idempotency: provider_repo_id
+        idempotency: idempotency_key_header
         org_scope: token_org_id
         permission: sandbox:repo:write
         rate_limit_class: repo_mutation
+        request_body_max_bytes: 32768
         resource: repo
   /api/v1/repos/{repo_id}:
     get:
@@ -1213,82 +1157,18 @@ paths:
         permission: sandbox:repo:read
         rate_limit_class: read
         resource: repo
-  /api/v1/repos/{repo_id}/generations:
-    get:
-      operationId: list-repo-generations
-      parameters:
-        - description: Repo UUID
-          in: path
-          name: repo_id
-          required: true
-          schema:
-            description: Repo UUID
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/SandboxGoldenGenerationRecord"
-                nullable: true
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: List golden generations for a repo
-      x-forge-metal-iam:
-        action: list
-        audit_event: sandbox.repo_generation.list
-        org_scope: token_org_id
-        permission: sandbox:repo:read
-        rate_limit_class: read
-        resource: repo_generation
-  /api/v1/repos/{repo_id}/refresh:
-    post:
-      operationId: refresh-repo
-      parameters:
-        - description: Repo UUID
-          in: path
-          name: repo_id
-          required: true
-          schema:
-            description: Repo UUID
-            type: string
-      responses:
-        "202":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SandboxRepoBootstrapRecord"
-          description: Accepted
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Queue a new golden generation for the repo
-      x-forge-metal-iam:
-        action: refresh
-        audit_event: sandbox.repo.refresh
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: sandbox:repo:write
-        rate_limit_class: repo_mutation
-        resource: repo
   /api/v1/repos/{repo_id}/rescan:
     post:
       operationId: rescan-repo
       parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
         - description: Repo UUID
           in: path
           name: repo_id
@@ -1311,7 +1191,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Rescan repo workflows for forge-metal compatibility
+      summary: Rescan repo metadata
       x-forge-metal-iam:
         action: rescan
         audit_event: sandbox.repo.rescan
@@ -1319,6 +1199,7 @@ paths:
         org_scope: token_org_id
         permission: sandbox:repo:write
         rate_limit_class: repo_mutation
+        request_body_max_bytes: 1024
         resource: repo
   /api/v1/webhook-endpoints:
     get:
@@ -1351,6 +1232,15 @@ paths:
         resource: webhook_endpoint
     post:
       operationId: create-webhook-endpoint
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
       requestBody:
         content:
           application/json:
@@ -1380,11 +1270,20 @@ paths:
         org_scope: token_org_id
         permission: sandbox:webhook_endpoint:write
         rate_limit_class: webhook_endpoint_mutation
+        request_body_max_bytes: 8192
         resource: webhook_endpoint
   /api/v1/webhook-endpoints/{endpoint_id}:
     delete:
       operationId: delete-webhook-endpoint
       parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
         - description: Webhook endpoint UUID
           in: path
           name: endpoint_id
@@ -1411,11 +1310,20 @@ paths:
         org_scope: token_org_id
         permission: sandbox:webhook_endpoint:write
         rate_limit_class: webhook_endpoint_mutation
+        request_body_max_bytes: 1024
         resource: webhook_endpoint
   /api/v1/webhook-endpoints/{endpoint_id}/rotate:
     post:
       operationId: rotate-webhook-endpoint-secret
       parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
         - description: Webhook endpoint UUID
           in: path
           name: endpoint_id
@@ -1446,6 +1354,7 @@ paths:
         org_scope: token_org_id
         permission: sandbox:webhook_endpoint:write
         rate_limit_class: webhook_endpoint_mutation
+        request_body_max_bytes: 1024
         resource: webhook_endpoint_secret
 servers:
   - url: http://127.0.0.1:4243

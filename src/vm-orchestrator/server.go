@@ -3,7 +3,6 @@ package vmorchestrator
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -21,9 +20,8 @@ import (
 type APIServer struct {
 	vmrpc.UnimplementedVMServiceServer
 
-	cfg                Config
-	repoGoldenStateDir string
-	logger             *slog.Logger
+	cfg    Config
+	logger *slog.Logger
 
 	mu            sync.RWMutex
 	jobs          map[string]*managedJob
@@ -46,7 +44,6 @@ type managedJob struct {
 	hello      *TelemetryHello
 	sample     *TelemetrySample
 	lastUpdate time.Time
-	repoExec   *RepoExecMetadata
 }
 
 type jobLogChunk struct {
@@ -65,23 +62,19 @@ type jobObserver struct {
 	job    *managedJob
 }
 
-func NewAPIServer(cfg Config, repoGoldenStateDir string, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg Config, logger *slog.Logger) *APIServer {
 	base := DefaultConfig()
 	if cfg.Pool != "" {
 		base = cfg
-	}
-	if repoGoldenStateDir == "" {
-		repoGoldenStateDir = DefaultRepoGoldenStateDir
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &APIServer{
-		cfg:                base,
-		repoGoldenStateDir: repoGoldenStateDir,
-		logger:             logger,
-		jobs:               make(map[string]*managedJob),
-		telemetrySubs:      make(map[uint64]chan TelemetryEvent),
+		cfg:           base,
+		logger:        logger,
+		jobs:          make(map[string]*managedJob),
+		telemetrySubs: make(map[uint64]chan TelemetryEvent),
 	}
 }
 
@@ -103,20 +96,6 @@ func (s *APIServer) CreateJob(ctx context.Context, req *vmrpc.CreateJobRequest) 
 			orch := New(cfg, s.logger)
 			return orch.RunObserved(runCtx, job, observer)
 		})
-		return &vmrpc.CreateJobResponse{
-			JobId: job.JobID,
-			State: vmrpc.JobState_JOB_STATE_PENDING,
-		}, nil
-	case *vmrpc.CreateJobRequest_RepoExec:
-		cfg := configFromProto(s.cfg, spec.RepoExec.GetRuntimeConfig())
-		job := jobConfigFromProto(spec.RepoExec.GetJobTemplate())
-		job.JobID = ensureJobID(job.JobID)
-		record, err := s.createJobRecord(job.JobID)
-		if err != nil {
-			return nil, err
-		}
-		span.SetAttributes(attribute.String("job.id", job.JobID), attribute.String("job.kind", "repo_exec"), attribute.String("repo", spec.RepoExec.GetRepo()))
-		go s.runManagedRepoExec(record, cfg, spec.RepoExec)
 		return &vmrpc.CreateJobResponse{
 			JobId: job.JobID,
 			State: vmrpc.JobState_JOB_STATE_PENDING,
@@ -231,51 +210,6 @@ func (s *APIServer) StreamGuestEvents(req *vmrpc.StreamGuestEventsRequest, strea
 		case <-ticker.C:
 		}
 	}
-}
-
-func (s *APIServer) WarmGolden(ctx context.Context, req *vmrpc.WarmGoldenRequest) (*vmrpc.WarmGoldenResponse, error) {
-	ctx, span := tracer.Start(ctx, "rpc.WarmGolden")
-	defer span.End()
-
-	cfg := configFromProto(s.cfg, req.GetRuntimeConfig())
-	job := jobConfigFromProto(req.GetJob())
-	job.JobID = ensureJobID(job.JobID)
-	record, err := s.createJobRecord(job.JobID)
-	if err != nil {
-		return nil, err
-	}
-
-	span.SetAttributes(attribute.String("job.id", job.JobID), attribute.String("repo", req.GetRepo()))
-
-	record.setRunning(func() {})
-	result, runErr := s.runWarmGolden(ctx, record, cfg, req)
-	if runErr != nil {
-		record.finish(finalJobState(runErr, result.JobResult.ExitCode), &result.JobResult, runErr)
-		return &vmrpc.WarmGoldenResponse{
-			TargetDataset:               result.TargetDataset,
-			PreviousDataset:             result.PreviousDataset,
-			Promoted:                    result.Promoted,
-			CloneDurationMs:             result.CloneDuration.Milliseconds(),
-			SnapshotPromotionDurationMs: result.SnapshotPromotionDuration.Milliseconds(),
-			PreviousDestroyDurationMs:   result.PreviousDestroyDuration.Milliseconds(),
-			CommitSha:                   result.CommitSHA,
-			JobResult:                   jobResultToProto(result.JobResult, true),
-			ErrorMessage:                runErr.Error(),
-		}, nil
-	}
-	record.finish(finalJobState(nil, result.JobResult.ExitCode), &result.JobResult, nil)
-
-	return &vmrpc.WarmGoldenResponse{
-		TargetDataset:               result.TargetDataset,
-		PreviousDataset:             result.PreviousDataset,
-		Promoted:                    result.Promoted,
-		CloneDurationMs:             result.CloneDuration.Milliseconds(),
-		SnapshotPromotionDurationMs: result.SnapshotPromotionDuration.Milliseconds(),
-		PreviousDestroyDurationMs:   result.PreviousDestroyDuration.Milliseconds(),
-		CommitSha:                   result.CommitSHA,
-		JobResult:                   jobResultToProto(result.JobResult, true),
-		ErrorMessage:                "",
-	}, nil
 }
 
 func (s *APIServer) StreamTelemetry(req *vmrpc.StreamTelemetryRequest, stream vmrpc.VMService_StreamTelemetryServer) error {
@@ -396,190 +330,6 @@ func (s *APIServer) runManagedJob(record *managedJob, cfg Config, runner func(co
 	record.finish(finalJobState(err, result.ExitCode), &result, err)
 }
 
-func (s *APIServer) runManagedRepoExec(record *managedJob, cfg Config, spec *vmrpc.RepoExecSpec) {
-	ctx, cancel := context.WithCancel(context.Background())
-	record.setRunning(cancel)
-
-	result, meta, err := s.runRepoExec(ctx, record, cfg, spec)
-	record.setRepoExec(meta)
-	record.finish(finalJobState(err, result.ExitCode), &result, err)
-}
-
-func (s *APIServer) runRepoExec(ctx context.Context, record *managedJob, cfg Config, spec *vmrpc.RepoExecSpec) (JobResult, *RepoExecMetadata, error) {
-	repoKey := sanitizeRepoKey(spec.GetRepo())
-	repoDataset, err := activeRepoGoldenDataset(s.repoGoldenStateDir, repoKey)
-	if err != nil {
-		return JobResult{}, nil, err
-	}
-	if repoDataset == "" {
-		return JobResult{}, nil, fmt.Errorf("repo golden for %s does not exist; run warm first", spec.GetRepo())
-	}
-
-	snapshot := repoDataset + "@ready"
-	exists, err := zfsSnapshotExists(ctx, snapshot)
-	if err != nil {
-		return JobResult{}, nil, err
-	}
-	if !exists {
-		return JobResult{}, nil, fmt.Errorf("repo golden %s does not exist; run warm first", snapshot)
-	}
-
-	job := jobConfigFromProto(spec.GetJobTemplate())
-	job.JobID = ensureJobID(job.JobID)
-	repoJob, err := buildInVMRepoExecJob(job, spec.GetRepoUrl(), spec.GetRef(), spec.GetLockfileRelPath(), cfg.HostServiceIP, cfg.HostServicePort)
-	if err != nil {
-		return JobResult{}, nil, err
-	}
-
-	jobDataset := fmt.Sprintf("%s/%s/%s", cfg.Pool, cfg.CIDataset, job.JobID)
-	cloneStart := time.Now()
-	if err := (DirectPrivOps{}).ZFSClone(ctx, snapshot, jobDataset, job.JobID); err != nil {
-		return JobResult{}, nil, err
-	}
-	cloneDuration := time.Since(cloneStart)
-
-	observer := &jobObserver{server: s, job: record}
-	orch := New(cfg, s.logger)
-	result, err := orch.RunDatasetObserved(ctx, repoJob, jobDataset, true, observer)
-	manifest := result.RepoManifest
-	if err == nil {
-		err = validateRepoExecManifest(spec, manifest)
-	}
-	commitSHA := ""
-	installNeeded := true
-	if manifest != nil {
-		commitSHA = manifest.ResolvedCommitSHA
-		installNeeded = manifest.InstallNeeded
-	}
-	meta := &RepoExecMetadata{
-		Repo:           spec.GetRepo(),
-		RepoURL:        spec.GetRepoUrl(),
-		Ref:            spec.GetRef(),
-		GoldenSnapshot: snapshot,
-		CloneDuration:  cloneDuration,
-		InstallNeeded:  installNeeded,
-		CommitSHA:      commitSHA,
-	}
-	return result, meta, err
-}
-
-func (s *APIServer) runWarmGolden(ctx context.Context, record *managedJob, cfg Config, req *vmrpc.WarmGoldenRequest) (WarmGoldenResult, error) {
-	repoKey := sanitizeRepoKey(req.GetRepo())
-	targetDataset := nextRepoGoldenDataset(cfg, repoKey, time.Now())
-	previousDataset, err := activeRepoGoldenDataset(s.repoGoldenStateDir, repoKey)
-	if err != nil {
-		return WarmGoldenResult{}, err
-	}
-	if err := ensureDataset(ctx, repoGoldensRootDataset(cfg)); err != nil {
-		return WarmGoldenResult{}, err
-	}
-
-	job := jobConfigFromProto(req.GetJob())
-	job.JobID = ensureJobID(job.JobID)
-
-	cloneStart := time.Now()
-	if err := (DirectPrivOps{}).ZFSClone(ctx, baseGoldenSnapshot(cfg), targetDataset, job.JobID); err != nil {
-		return WarmGoldenResult{}, err
-	}
-	cloneDuration := time.Since(cloneStart)
-
-	cleanupTargetDataset := true
-	defer func() {
-		if !cleanupTargetDataset {
-			return
-		}
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
-		defer cancel()
-		_ = destroyDatasetRecursive(cleanupCtx, targetDataset)
-	}()
-
-	// The warm process runs entirely inside the Firecracker VM: git fetch,
-	// dependency install, and lockfile hash write all happen in the guest.
-	// The host only snapshots blocks after vm-init returns a typed manifest.
-	warmJob, err := buildInVMWarmJob(job, req.GetRepoUrl(), req.GetDefaultBranch(), req.GetLockfileRelPath(), cfg.HostServiceIP, cfg.HostServicePort)
-	if err != nil {
-		return WarmGoldenResult{}, err
-	}
-	s.logger.Info("warm golden: in-VM warm (guest manifest gate)",
-		"repo", req.GetRepo(),
-		"dataset", targetDataset,
-	)
-
-	observer := &jobObserver{server: s, job: record}
-	orch := New(cfg, s.logger)
-	startedResult, runErr := orch.RunDatasetObserved(ctx, warmJob, targetDataset, false, observer)
-	manifest := startedResult.RepoManifest
-	commitSHA := ""
-	if manifest != nil {
-		commitSHA = manifest.ResolvedCommitSHA
-	}
-	if runErr != nil {
-		return WarmGoldenResult{
-			TargetDataset:   targetDataset,
-			PreviousDataset: previousDataset,
-			CloneDuration:   cloneDuration,
-			CommitSHA:       commitSHA,
-			JobResult:       startedResult,
-		}, runErr
-	}
-	if startedResult.ExitCode != 0 {
-		return WarmGoldenResult{
-			TargetDataset:   targetDataset,
-			PreviousDataset: previousDataset,
-			CloneDuration:   cloneDuration,
-			CommitSHA:       commitSHA,
-			JobResult:       startedResult,
-		}, fmt.Errorf("warm run exited with code %d", startedResult.ExitCode)
-	}
-	if err := validateWarmPromotionManifest(req, startedResult); err != nil {
-		return WarmGoldenResult{
-			TargetDataset:   targetDataset,
-			PreviousDataset: previousDataset,
-			CloneDuration:   cloneDuration,
-			CommitSHA:       commitSHA,
-			JobResult:       startedResult,
-		}, err
-	}
-
-	snapshotPromotionStart := time.Now()
-	if err := replaceReadySnapshot(ctx, targetDataset); err != nil {
-		return WarmGoldenResult{
-			TargetDataset:             targetDataset,
-			PreviousDataset:           previousDataset,
-			CloneDuration:             cloneDuration,
-			SnapshotPromotionDuration: time.Since(snapshotPromotionStart),
-			CommitSHA:                 commitSHA,
-			JobResult:                 startedResult,
-		}, err
-	}
-	snapshotPromotionDuration := time.Since(snapshotPromotionStart)
-	if err := writeActiveRepoGoldenDataset(s.repoGoldenStateDir, repoKey, targetDataset); err != nil {
-		return WarmGoldenResult{}, err
-	}
-	cleanupTargetDataset = false
-
-	var previousDestroyDuration time.Duration
-	if previousDataset != "" && previousDataset != targetDataset {
-		start := time.Now()
-		if err := destroyDatasetRecursive(ctx, previousDataset); err == nil {
-			previousDestroyDuration = time.Since(start)
-		} else {
-			s.logger.Warn("destroy previous repo golden failed", "repo", req.GetRepo(), "dataset", previousDataset, "err", err)
-		}
-	}
-
-	return WarmGoldenResult{
-		TargetDataset:             targetDataset,
-		PreviousDataset:           previousDataset,
-		Promoted:                  true,
-		CloneDuration:             cloneDuration,
-		SnapshotPromotionDuration: snapshotPromotionDuration,
-		PreviousDestroyDuration:   previousDestroyDuration,
-		CommitSHA:                 commitSHA,
-		JobResult:                 startedResult,
-	}, nil
-}
-
 func (s *APIServer) addTelemetrySubscriber() (uint64, chan TelemetryEvent) {
 	id := atomic.AddUint64(&s.nextSubID, 1)
 	ch := make(chan TelemetryEvent, 256)
@@ -656,110 +406,6 @@ func (j *managedJob) finish(state JobState, result *JobResult, err error) {
 	j.cancel = nil
 }
 
-func (j *managedJob) setRepoExec(meta *RepoExecMetadata) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.repoExec = meta
-}
-
-func validateWarmPromotionManifest(req *vmrpc.WarmGoldenRequest, result JobResult) error {
-	if result.ForcedShutdown {
-		return fmt.Errorf("warm promotion blocked: VM required forced shutdown")
-	}
-	manifest := result.RepoManifest
-	if manifest == nil {
-		return fmt.Errorf("warm promotion blocked: missing repo supervisor manifest")
-	}
-	if manifest.Kind != vmproto.RepoOperationWarm {
-		return fmt.Errorf("warm promotion blocked: manifest kind %q is not %q", manifest.Kind, vmproto.RepoOperationWarm)
-	}
-	if ref := strings.TrimSpace(req.GetDefaultBranch()); ref != "" && strings.TrimSpace(manifest.RequestedRef) != ref {
-		return fmt.Errorf("warm promotion blocked: manifest ref %q is not requested ref %q", manifest.RequestedRef, ref)
-	}
-	if !looksLikeGitObjectID(manifest.ResolvedCommitSHA) {
-		return fmt.Errorf("warm promotion blocked: invalid resolved commit %q", manifest.ResolvedCommitSHA)
-	}
-	if lockfileRelPath := strings.TrimSpace(req.GetLockfileRelPath()); lockfileRelPath != "" {
-		if strings.TrimSpace(manifest.LockfileRelPath) != lockfileRelPath {
-			return fmt.Errorf("warm promotion blocked: manifest lockfile %q is not requested lockfile %q", manifest.LockfileRelPath, lockfileRelPath)
-		}
-		lockfileSHA := strings.TrimSpace(manifest.LockfileSHA256)
-		if lockfileSHA == "" {
-			return fmt.Errorf("warm promotion blocked: missing lockfile hash for %s", lockfileRelPath)
-		}
-		if !looksLikeSHA256Hex(lockfileSHA) {
-			return fmt.Errorf("warm promotion blocked: invalid lockfile hash for %s", lockfileRelPath)
-		}
-	}
-	return nil
-}
-
-func validateRepoExecManifest(spec *vmrpc.RepoExecSpec, manifest *RepoManifest) error {
-	if spec == nil {
-		spec = &vmrpc.RepoExecSpec{}
-	}
-	if manifest == nil {
-		return fmt.Errorf("repo exec completed without supervisor manifest")
-	}
-	if manifest.Kind != vmproto.RepoOperationExec {
-		return fmt.Errorf("repo exec supervisor manifest kind %q is not %q", manifest.Kind, vmproto.RepoOperationExec)
-	}
-	if ref := strings.TrimSpace(spec.GetRef()); ref != "" && strings.TrimSpace(manifest.RequestedRef) != ref {
-		return fmt.Errorf("repo exec supervisor manifest ref %q is not requested ref %q", manifest.RequestedRef, ref)
-	}
-	if !looksLikeGitObjectID(manifest.ResolvedCommitSHA) {
-		return fmt.Errorf("repo exec supervisor manifest invalid resolved commit %q", manifest.ResolvedCommitSHA)
-	}
-	if lockfileRelPath := strings.TrimSpace(spec.GetLockfileRelPath()); lockfileRelPath != "" {
-		if strings.TrimSpace(manifest.LockfileRelPath) != lockfileRelPath {
-			return fmt.Errorf("repo exec supervisor manifest lockfile %q is not requested lockfile %q", manifest.LockfileRelPath, lockfileRelPath)
-		}
-	}
-	if strings.TrimSpace(manifest.LockfileSHA256) != "" && !looksLikeSHA256Hex(manifest.LockfileSHA256) {
-		return fmt.Errorf("repo exec supervisor manifest invalid lockfile hash")
-	}
-	if strings.TrimSpace(manifest.PreviousLockfileSHA256) != "" && !looksLikeSHA256Hex(manifest.PreviousLockfileSHA256) {
-		return fmt.Errorf("repo exec supervisor manifest invalid previous lockfile hash")
-	}
-	return nil
-}
-
-func looksLikeGitObjectID(value string) bool {
-	value = strings.TrimSpace(value)
-	switch len(value) {
-	case 40, 64:
-	default:
-		return false
-	}
-	for _, ch := range value {
-		switch {
-		case ch >= '0' && ch <= '9':
-		case ch >= 'a' && ch <= 'f':
-		case ch >= 'A' && ch <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func looksLikeSHA256Hex(value string) bool {
-	value = strings.TrimSpace(value)
-	if len(value) != 64 {
-		return false
-	}
-	for _, ch := range value {
-		switch {
-		case ch >= '0' && ch <= '9':
-		case ch >= 'a' && ch <= 'f':
-		case ch >= 'A' && ch <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
 func (j *managedJob) cancelJob() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -829,17 +475,6 @@ func (j *managedJob) protoStatus(includeOutput bool) *vmrpc.GetJobStatusResponse
 	}
 	if j.result != nil {
 		resp.Result = jobResultToProto(*j.result, includeOutput)
-	}
-	if j.repoExec != nil {
-		resp.RepoExec = &vmrpc.RepoExecMetadata{
-			Repo:            j.repoExec.Repo,
-			RepoUrl:         j.repoExec.RepoURL,
-			Ref:             j.repoExec.Ref,
-			GoldenSnapshot:  j.repoExec.GoldenSnapshot,
-			CloneDurationMs: j.repoExec.CloneDuration.Milliseconds(),
-			InstallNeeded:   j.repoExec.InstallNeeded,
-			CommitSha:       j.repoExec.CommitSHA,
-		}
 	}
 	return resp
 }

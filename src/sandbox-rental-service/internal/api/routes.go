@@ -18,142 +18,255 @@ import (
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.ServiceClient, publicConfig PublicAPIConfig) {
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "import-repo",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos",
-		Summary:       "Import or rescan a repo for forge-metal CI",
+		Summary:       "Import or rescan repo metadata",
 		DefaultStatus: 201,
-	}, importRepo(svc))
+	}, operationPolicy{
+		Permission:     permissionRepoWrite,
+		Resource:       "repo",
+		Action:         "import",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "repo_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.repo.import",
+		BodyLimitBytes: bodyLimitRepoImport,
+	}), importRepo(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-repos",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos",
 		Summary:     "List imported repos for the current org",
-	}, listRepos(svc))
+	}, operationPolicy{
+		Permission:     permissionRepoRead,
+		Resource:       "repo",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.repo.list",
+	}), listRepos(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-repo",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/repos/{repo_id}",
 		Summary:     "Get repo state and compatibility details",
-	}, getRepo(svc))
+	}, operationPolicy{
+		Permission:     permissionRepoRead,
+		Resource:       "repo",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.repo.read",
+	}), getRepo(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "rescan-repo",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/repos/{repo_id}/rescan",
-		Summary:       "Rescan repo workflows for forge-metal compatibility",
+		Summary:       "Rescan repo metadata",
 		DefaultStatus: 200,
-	}, rescanRepo(svc))
+	}, operationPolicy{
+		Permission:     permissionRepoWrite,
+		Resource:       "repo",
+		Action:         "rescan",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "repo_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.repo.rescan",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), rescanRepo(svc))
 
-	registerSecured(api, huma.Operation{
-		OperationID: "list-repo-generations",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/repos/{repo_id}/generations",
-		Summary:     "List golden generations for a repo",
-	}, listRepoGenerations(svc))
-
-	registerSecured(api, huma.Operation{
-		OperationID:   "refresh-repo",
-		Method:        http.MethodPost,
-		Path:          "/api/v1/repos/{repo_id}/refresh",
-		Summary:       "Queue a new golden generation for the repo",
-		DefaultStatus: 202,
-	}, refreshRepo(svc))
-
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-webhook-endpoint",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/webhook-endpoints",
 		Summary:       "Create a git webhook endpoint",
 		DefaultStatus: 201,
-	}, createWebhookEndpoint(svc, publicConfig.PublicBaseURL))
+	}, operationPolicy{
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createWebhookEndpoint(svc, publicConfig.PublicBaseURL))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-webhook-endpoints",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/webhook-endpoints",
 		Summary:     "List git webhook endpoints for the current org",
-	}, listWebhookEndpoints(svc))
+	}, operationPolicy{
+		Permission:     permissionWebhookRead,
+		Resource:       "webhook_endpoint",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.webhook_endpoint.list",
+	}), listWebhookEndpoints(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "rotate-webhook-endpoint-secret",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/webhook-endpoints/{endpoint_id}/rotate",
 		Summary:       "Rotate a git webhook endpoint secret",
 		DefaultStatus: 200,
-	}, rotateWebhookEndpointSecret(svc))
+	}, operationPolicy{
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint_secret",
+		Action:         "rotate",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.secret.rotate",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), rotateWebhookEndpointSecret(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "delete-webhook-endpoint",
 		Method:        http.MethodDelete,
 		Path:          "/api/v1/webhook-endpoints/{endpoint_id}",
 		Summary:       "Deactivate a git webhook endpoint",
 		DefaultStatus: 204,
-	}, deleteWebhookEndpoint(svc))
+	}, operationPolicy{
+		Permission:     permissionWebhookWrite,
+		Resource:       "webhook_endpoint",
+		Action:         "delete",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "webhook_endpoint_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.webhook_endpoint.delete",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), deleteWebhookEndpoint(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",
 		Summary:       "Submit a new execution",
 		DefaultStatus: 201,
-	}, submitExecution(svc))
+	}, operationPolicy{
+		Permission:     permissionExecutionSubmit,
+		Resource:       "execution",
+		Action:         "submit",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "execution_submit",
+		Idempotency:    idempotencyRequestBodyKey,
+		AuditEvent:     "sandbox.execution.submit",
+		BodyLimitBytes: bodyLimitExecutionPost,
+	}), submitExecution(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-execution",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}",
 		Summary:     "Get execution status and latest attempt",
-	}, getExecution(svc))
+	}, operationPolicy{
+		Permission:     permissionExecutionRead,
+		Resource:       "execution",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.execution.read",
+	}), getExecution(svc))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-execution-logs",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/executions/{execution_id}/logs",
 		Summary:     "Get latest execution attempt log output",
-	}, getExecutionLogs(svc))
+	}, operationPolicy{
+		Permission:     permissionLogsRead,
+		Resource:       "execution_logs",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "logs_read",
+		AuditEvent:     "sandbox.execution.logs.read",
+	}), getExecutionLogs(svc))
 
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-billing-balance",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/balance",
 		Summary:     "Get org credit balance",
-	}, getBillingBalance(billing))
+	}, operationPolicy{
+		Permission:     permissionBillingRead,
+		Resource:       "billing_balance",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "billing.balance.read",
+	}), getBillingBalance(billing))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-billing-subscriptions",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/subscriptions",
 		Summary:     "List org subscriptions",
-	}, listBillingSubscriptions(billing))
+	}, operationPolicy{
+		Permission:     permissionBillingRead,
+		Resource:       "billing_subscription",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "billing.subscription.list",
+	}), listBillingSubscriptions(billing))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-billing-grants",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/grants",
 		Summary:     "List org credit grants",
-	}, listBillingGrants(billing))
+	}, operationPolicy{
+		Permission:     permissionBillingRead,
+		Resource:       "billing_grant",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "billing.grant.list",
+	}), listBillingGrants(billing))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-billing-checkout",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/checkout",
 		Summary:       "Create Stripe checkout session for credit purchase",
 		DefaultStatus: 200,
-	}, createBillingCheckout(billing, publicConfig.BillingReturnOrigins))
+	}, operationPolicy{
+		Permission:     permissionBillingCheckout,
+		Resource:       "billing_checkout",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "billing.checkout.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createBillingCheckout(billing, publicConfig.BillingReturnOrigins))
 
-	registerSecured(api, huma.Operation{
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-billing-subscription",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/subscribe",
 		Summary:       "Create Stripe subscription checkout",
 		DefaultStatus: 200,
-	}, createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
+	}, operationPolicy{
+		Permission:     permissionBillingCheckout,
+		Resource:       "billing_subscription_checkout",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "billing.subscription_checkout.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
 }
 
 type SubmitExecutionInput struct {
@@ -174,14 +287,6 @@ type RepoOutput struct {
 
 type ListReposOutput struct {
 	Body []apiwire.SandboxRepoRecord
-}
-
-type ListRepoGenerationsOutput struct {
-	Body []apiwire.SandboxGoldenGenerationRecord
-}
-
-type RefreshRepoOutput struct {
-	Body apiwire.SandboxRepoBootstrapRecord
 }
 
 type SubmitExecutionOutput struct {
@@ -261,6 +366,9 @@ func importRepo(svc *jobs.Service) func(context.Context, *ImportRepoInput) (*Rep
 		}
 		repo, err := svc.ImportRepo(ctx, orgID, importRepoRequest(input.Body))
 		if err != nil {
+			if errors.Is(err, jobs.ErrRepoScanCapacity) {
+				return nil, tooManyRequests(ctx, "repo-scan-capacity-exceeded", "repo scan capacity exceeded")
+			}
 			return nil, internalFailure(ctx, "import-repo-failed", "import repo failed", err)
 		}
 		return &RepoOutput{Body: repoRecord(*repo)}, nil
@@ -317,63 +425,12 @@ func rescanRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RepoOutp
 			if errors.Is(err, jobs.ErrRepoMissing) {
 				return nil, notFound(ctx, "repo-not-found", "repo not found")
 			}
+			if errors.Is(err, jobs.ErrRepoScanCapacity) {
+				return nil, tooManyRequests(ctx, "repo-scan-capacity-exceeded", "repo scan capacity exceeded")
+			}
 			return nil, internalFailure(ctx, "rescan-repo-failed", "rescan repo failed", err)
 		}
 		return &RepoOutput{Body: repoRecord(*repo)}, nil
-	}
-}
-
-func listRepoGenerations(svc *jobs.Service) func(context.Context, *RepoIDPath) (*ListRepoGenerationsOutput, error) {
-	return func(ctx context.Context, input *RepoIDPath) (*ListRepoGenerationsOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repoID, err := uuid.Parse(input.RepoID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
-		}
-		repo, err := svc.GetRepo(ctx, orgID, repoID)
-		if err != nil {
-			if errors.Is(err, jobs.ErrRepoMissing) {
-				return nil, notFound(ctx, "repo-not-found", "repo not found")
-			}
-			return nil, internalFailure(ctx, "get-repo-failed", "get repo failed", err)
-		}
-		generations, err := svc.ListGoldenGenerations(ctx, repo.RepoID)
-		if err != nil {
-			return nil, internalFailure(ctx, "list-repo-generations-failed", "list repo generations failed", err)
-		}
-		return &ListRepoGenerationsOutput{Body: goldenGenerationRecords(generations)}, nil
-	}
-}
-
-func refreshRepo(svc *jobs.Service) func(context.Context, *RepoIDPath) (*RefreshRepoOutput, error) {
-	return func(ctx context.Context, input *RepoIDPath) (*RefreshRepoOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		repoID, err := uuid.Parse(input.RepoID)
-		if err != nil {
-			return nil, badRequest(ctx, "invalid-repo-id", "repo_id must be a UUID", err)
-		}
-		record, err := svc.QueueRepoBootstrap(ctx, orgID, identity.Subject, repoID, jobs.GenerationTriggerManualRefresh)
-		if err != nil {
-			switch {
-			case errors.Is(err, jobs.ErrRepoMissing):
-				return nil, notFound(ctx, "repo-not-found", "repo not found")
-			case errors.Is(err, jobs.ErrRepoNotReady):
-				return nil, conflict(ctx, "repo-not-ready", "repo is not ready")
-			default:
-				return nil, internalFailure(ctx, "refresh-repo-failed", "refresh repo failed", err)
-			}
-		}
-		return &RefreshRepoOutput{Body: repoBootstrapRecord(*record)}, nil
 	}
 }
 

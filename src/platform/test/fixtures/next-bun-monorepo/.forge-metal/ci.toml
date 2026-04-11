@@ -1,3 +1,0 @@
-version = 1
-workdir = "apps/web"
-run = ["bun", "run", "ci"]

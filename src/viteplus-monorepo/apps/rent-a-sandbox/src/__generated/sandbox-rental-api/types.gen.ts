@@ -115,7 +115,6 @@ export type SandboxAttemptRecord = {
   duration_ms?: number;
   exit_code?: number;
   failure_reason?: string;
-  golden_snapshot?: string;
   orchestrator_job_id?: string;
   runner_name?: string;
   started_at?: string;
@@ -175,6 +174,44 @@ export type SandboxBillingWindow = {
   window_start: string;
 };
 
+export type SandboxCreateWebhookEndpointRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  /**
+   * Operator-visible endpoint label
+   */
+  label?: string;
+  /**
+   * Git provider to accept webhook events from
+   */
+  provider?: "forgejo";
+  /**
+   * Public git host, for example git.example.com or codeberg.org
+   */
+  provider_host: string;
+};
+
+export type SandboxCreateWebhookEndpointResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  active: boolean;
+  created_at: string;
+  delivery_count: number;
+  endpoint_id: string;
+  integration_id: string;
+  label: string;
+  provider: string;
+  provider_host: string;
+  secret: string;
+  secret_fingerprint?: string;
+  updated_at: string;
+  webhook_url: string;
+};
+
 export type SandboxExecutionLogs = {
   /**
    * A URL to the JSON Schema for this object.
@@ -197,7 +234,6 @@ export type SandboxExecutionRecord = {
   created_at: string;
   default_branch?: string;
   execution_id: string;
-  golden_generation_id?: string;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -217,26 +253,6 @@ export type SandboxExecutionRecord = {
   workflow_path?: string;
 };
 
-export type SandboxGoldenGenerationRecord = {
-  activated_at?: string;
-  attempt_id?: string;
-  created_at: string;
-  execution_id?: string;
-  failure_detail?: string;
-  failure_reason?: string;
-  golden_generation_id: string;
-  orchestrator_job_id?: string;
-  repo_id: string;
-  runner_profile_slug: string;
-  snapshot_ref?: string;
-  source_ref: string;
-  source_sha: string;
-  state: string;
-  superseded_at?: string;
-  trigger_reason: string;
-  updated_at: string;
-};
-
 export type SandboxImportRepoRequest = {
   /**
    * A URL to the JSON Schema for this object.
@@ -248,19 +264,8 @@ export type SandboxImportRepoRequest = {
   name?: string;
   owner?: string;
   provider?: string;
+  provider_host?: string;
   provider_repo_id?: string;
-};
-
-export type SandboxRepoBootstrapRecord = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  attempt_id: string;
-  execution_id: string;
-  generation: SandboxGoldenGenerationRecord;
-  repo: SandboxRepoRecord;
-  trigger_reason: string;
 };
 
 export type SandboxRepoRecord = {
@@ -268,7 +273,6 @@ export type SandboxRepoRecord = {
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  active_golden_generation_id?: string;
   archived_at?: string;
   clone_url: string;
   compatibility_status: string;
@@ -277,17 +281,28 @@ export type SandboxRepoRecord = {
   default_branch: string;
   full_name: string;
   last_error?: string;
-  last_ready_sha?: string;
   last_scanned_sha?: string;
   name: string;
   org_id: string;
   owner: string;
   provider: string;
+  provider_host: string;
   provider_repo_id: string;
   repo_id: string;
-  runner_profile_slug: string;
   state: string;
   updated_at: string;
+};
+
+export type SandboxRotateWebhookEndpointSecretResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  endpoint_id: string;
+  previous_retiring_at: string;
+  rotated_at: string;
+  secret: string;
+  secret_fingerprint: string;
 };
 
 export type SandboxSubmitExecutionResult = {
@@ -306,7 +321,7 @@ export type SandboxSubmitRequest = {
    */
   readonly $schema?: string;
   default_branch?: string;
-  idempotency_key?: string;
+  idempotency_key: string;
   kind: string;
   product_id?: string;
   provider?: string;
@@ -319,6 +334,21 @@ export type SandboxSubmitRequest = {
   run_command?: string;
   workflow_job_name?: string;
   workflow_path?: string;
+};
+
+export type SandboxWebhookEndpointRecord = {
+  active: boolean;
+  created_at: string;
+  delivery_count: number;
+  endpoint_id: string;
+  integration_id: string;
+  label: string;
+  last_delivery_at?: string;
+  org_id: string;
+  provider: string;
+  provider_host: string;
+  secret_fingerprint?: string;
+  updated_at: string;
 };
 
 export type BillingBalanceWritable = {
@@ -395,6 +425,36 @@ export type SandboxBillingSubscriptionRequestWritable = {
   success_url: string;
 };
 
+export type SandboxCreateWebhookEndpointRequestWritable = {
+  /**
+   * Operator-visible endpoint label
+   */
+  label?: string;
+  /**
+   * Git provider to accept webhook events from
+   */
+  provider?: "forgejo";
+  /**
+   * Public git host, for example git.example.com or codeberg.org
+   */
+  provider_host: string;
+};
+
+export type SandboxCreateWebhookEndpointResponseWritable = {
+  active: boolean;
+  created_at: string;
+  delivery_count: number;
+  endpoint_id: string;
+  integration_id: string;
+  label: string;
+  provider: string;
+  provider_host: string;
+  secret: string;
+  secret_fingerprint?: string;
+  updated_at: string;
+  webhook_url: string;
+};
+
 export type SandboxExecutionLogsWritable = {
   attempt_id: string;
   execution_id: string;
@@ -409,7 +469,6 @@ export type SandboxExecutionRecordWritable = {
   created_at: string;
   default_branch?: string;
   execution_id: string;
-  golden_generation_id?: string;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -436,19 +495,11 @@ export type SandboxImportRepoRequestWritable = {
   name?: string;
   owner?: string;
   provider?: string;
+  provider_host?: string;
   provider_repo_id?: string;
 };
 
-export type SandboxRepoBootstrapRecordWritable = {
-  attempt_id: string;
-  execution_id: string;
-  generation: SandboxGoldenGenerationRecord;
-  repo: SandboxRepoRecordWritable;
-  trigger_reason: string;
-};
-
 export type SandboxRepoRecordWritable = {
-  active_golden_generation_id?: string;
   archived_at?: string;
   clone_url: string;
   compatibility_status: string;
@@ -457,17 +508,24 @@ export type SandboxRepoRecordWritable = {
   default_branch: string;
   full_name: string;
   last_error?: string;
-  last_ready_sha?: string;
   last_scanned_sha?: string;
   name: string;
   org_id: string;
   owner: string;
   provider: string;
+  provider_host: string;
   provider_repo_id: string;
   repo_id: string;
-  runner_profile_slug: string;
   state: string;
   updated_at: string;
+};
+
+export type SandboxRotateWebhookEndpointSecretResponseWritable = {
+  endpoint_id: string;
+  previous_retiring_at: string;
+  rotated_at: string;
+  secret: string;
+  secret_fingerprint: string;
 };
 
 export type SandboxSubmitExecutionResultWritable = {
@@ -478,7 +536,7 @@ export type SandboxSubmitExecutionResultWritable = {
 
 export type SandboxSubmitRequestWritable = {
   default_branch?: string;
-  idempotency_key?: string;
+  idempotency_key: string;
   kind: string;
   product_id?: string;
   provider?: string;
@@ -521,6 +579,12 @@ export type GetBillingBalanceResponse =
 
 export type CreateBillingCheckoutData = {
   body: SandboxBillingCheckoutRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
   path?: never;
   query?: never;
   url: "/api/v1/billing/checkout";
@@ -583,6 +647,12 @@ export type ListBillingGrantsResponse =
 
 export type CreateBillingSubscriptionData = {
   body: SandboxBillingSubscriptionRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
   path?: never;
   query?: never;
   url: "/api/v1/billing/subscribe";
@@ -747,6 +817,12 @@ export type ListReposResponse = ListReposResponses[keyof ListReposResponses];
 
 export type ImportRepoData = {
   body: SandboxImportRepoRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
   path?: never;
   query?: never;
   url: "/api/v1/repos";
@@ -800,69 +876,14 @@ export type GetRepoResponses = {
 
 export type GetRepoResponse = GetRepoResponses[keyof GetRepoResponses];
 
-export type ListRepoGenerationsData = {
-  body?: never;
-  path: {
-    /**
-     * Repo UUID
-     */
-    repo_id: string;
-  };
-  query?: never;
-  url: "/api/v1/repos/{repo_id}/generations";
-};
-
-export type ListRepoGenerationsErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListRepoGenerationsError = ListRepoGenerationsErrors[keyof ListRepoGenerationsErrors];
-
-export type ListRepoGenerationsResponses = {
-  /**
-   * OK
-   */
-  200: Array<SandboxGoldenGenerationRecord> | null;
-};
-
-export type ListRepoGenerationsResponse =
-  ListRepoGenerationsResponses[keyof ListRepoGenerationsResponses];
-
-export type RefreshRepoData = {
-  body?: never;
-  path: {
-    /**
-     * Repo UUID
-     */
-    repo_id: string;
-  };
-  query?: never;
-  url: "/api/v1/repos/{repo_id}/refresh";
-};
-
-export type RefreshRepoErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type RefreshRepoError = RefreshRepoErrors[keyof RefreshRepoErrors];
-
-export type RefreshRepoResponses = {
-  /**
-   * Accepted
-   */
-  202: SandboxRepoBootstrapRecord;
-};
-
-export type RefreshRepoResponse = RefreshRepoResponses[keyof RefreshRepoResponses];
-
 export type RescanRepoData = {
   body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
   path: {
     /**
      * Repo UUID
@@ -890,3 +911,139 @@ export type RescanRepoResponses = {
 };
 
 export type RescanRepoResponse = RescanRepoResponses[keyof RescanRepoResponses];
+
+export type ListWebhookEndpointsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/webhook-endpoints";
+};
+
+export type ListWebhookEndpointsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListWebhookEndpointsError =
+  ListWebhookEndpointsErrors[keyof ListWebhookEndpointsErrors];
+
+export type ListWebhookEndpointsResponses = {
+  /**
+   * OK
+   */
+  200: Array<SandboxWebhookEndpointRecord> | null;
+};
+
+export type ListWebhookEndpointsResponse =
+  ListWebhookEndpointsResponses[keyof ListWebhookEndpointsResponses];
+
+export type CreateWebhookEndpointData = {
+  body: SandboxCreateWebhookEndpointRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/webhook-endpoints";
+};
+
+export type CreateWebhookEndpointErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateWebhookEndpointError =
+  CreateWebhookEndpointErrors[keyof CreateWebhookEndpointErrors];
+
+export type CreateWebhookEndpointResponses = {
+  /**
+   * Created
+   */
+  201: SandboxCreateWebhookEndpointResponse;
+};
+
+export type CreateWebhookEndpointResponse =
+  CreateWebhookEndpointResponses[keyof CreateWebhookEndpointResponses];
+
+export type DeleteWebhookEndpointData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Webhook endpoint UUID
+     */
+    endpoint_id: string;
+  };
+  query?: never;
+  url: "/api/v1/webhook-endpoints/{endpoint_id}";
+};
+
+export type DeleteWebhookEndpointErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type DeleteWebhookEndpointError =
+  DeleteWebhookEndpointErrors[keyof DeleteWebhookEndpointErrors];
+
+export type DeleteWebhookEndpointResponses = {
+  /**
+   * No Content
+   */
+  204: void;
+};
+
+export type DeleteWebhookEndpointResponse =
+  DeleteWebhookEndpointResponses[keyof DeleteWebhookEndpointResponses];
+
+export type RotateWebhookEndpointSecretData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Webhook endpoint UUID
+     */
+    endpoint_id: string;
+  };
+  query?: never;
+  url: "/api/v1/webhook-endpoints/{endpoint_id}/rotate";
+};
+
+export type RotateWebhookEndpointSecretErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type RotateWebhookEndpointSecretError =
+  RotateWebhookEndpointSecretErrors[keyof RotateWebhookEndpointSecretErrors];
+
+export type RotateWebhookEndpointSecretResponses = {
+  /**
+   * OK
+   */
+  200: SandboxRotateWebhookEndpointSecretResponse;
+};
+
+export type RotateWebhookEndpointSecretResponse =
+  RotateWebhookEndpointSecretResponses[keyof RotateWebhookEndpointSecretResponses];

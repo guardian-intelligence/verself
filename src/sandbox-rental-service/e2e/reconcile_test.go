@@ -17,7 +17,7 @@ func TestReconcile_ReservedAttemptVoidsWindow(t *testing.T) {
 		t.Skip("e2e tests require real databases")
 	}
 
-	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	env := startSandboxE2EEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
 	defer env.close()
 
 	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
@@ -105,7 +105,7 @@ func TestReconcile_FinalizingAttemptSettlesWindow(t *testing.T) {
 		t.Skip("e2e tests require real databases")
 	}
 
-	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	env := startSandboxE2EEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
 	defer env.close()
 
 	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
@@ -133,7 +133,7 @@ func TestReconcile_FinalizingAttemptSettlesWindow(t *testing.T) {
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
 	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
-		Kind:           "repo_exec",
+		Kind:           "direct",
 		ExecutionState: "finalizing",
 		AttemptState:   "finalizing",
 		Reservation:    reservation,
@@ -151,7 +151,7 @@ func TestReconcile_FinalizingAttemptSettlesWindow(t *testing.T) {
 		t.Fatalf("reconcile finalizing attempt: %v", err)
 	}
 
-	assertWarmGoldenBillingWindow(t, env.ctx, env.pg.rentalDB, attemptID.String())
+	assertBillingWindow(t, env.ctx, env.pg.rentalDB, attemptID.String())
 
 	var executionState string
 	if err := env.pg.rentalDB.QueryRowContext(env.ctx, `
@@ -182,7 +182,7 @@ func TestReconcile_FinalizingAttemptSettleFailureVoidsWindow(t *testing.T) {
 		t.Skip("e2e tests require real databases")
 	}
 
-	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	env := startSandboxE2EEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
 	defer env.close()
 
 	executionID := uuid.New()
@@ -213,7 +213,7 @@ func TestReconcile_FinalizingAttemptSettleFailureVoidsWindow(t *testing.T) {
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
 	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
-		Kind:           "repo_exec",
+		Kind:           "direct",
 		ExecutionState: "finalizing",
 		AttemptState:   "finalizing",
 		Reservation:    reservation,
@@ -275,7 +275,7 @@ func TestReconcile_FinalizingSettledAttemptMarksTerminal(t *testing.T) {
 		t.Skip("e2e tests require real databases")
 	}
 
-	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	env := startSandboxE2EEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
 	defer env.close()
 
 	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
@@ -303,7 +303,7 @@ func TestReconcile_FinalizingSettledAttemptMarksTerminal(t *testing.T) {
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
 	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
-		Kind:           "repo_exec",
+		Kind:           "direct",
 		ExecutionState: "finalizing",
 		AttemptState:   "finalizing",
 		Reservation:    reservation,
@@ -341,7 +341,7 @@ func TestReconcile_FinalizingVoidedAttemptMarksFailed(t *testing.T) {
 		t.Skip("e2e tests require real databases")
 	}
 
-	env := startRepoBootstrapEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
+	env := startSandboxE2EEnv(t, &fakeRunner{delay: 200 * time.Millisecond})
 	defer env.close()
 
 	billingHTTPClient, err := billingclient.New(env.billingServer.URL)
@@ -369,7 +369,7 @@ func TestReconcile_FinalizingVoidedAttemptMarksFailed(t *testing.T) {
 	startedAt := time.Now().UTC().Add(-time.Second)
 	completedAt := time.Now().UTC()
 	if err := insertReconcileAttemptRows(env.ctx, env.pg.rentalDB, executionID, attemptID, reconcileInsertSpec{
-		Kind:           "repo_exec",
+		Kind:           "direct",
 		ExecutionState: "finalizing",
 		AttemptState:   "finalizing",
 		Reservation:    reservation,

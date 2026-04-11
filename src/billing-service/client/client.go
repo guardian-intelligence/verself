@@ -134,7 +134,22 @@ func (c *ServiceClient) CreateSubscription(ctx context.Context, orgID uint64, pl
 	if resp.JSON200 != nil {
 		return resp.JSON200.Url, nil
 	}
-	return "", unexpected("create subscription", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON501, resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
+	return "", unexpected("create subscription", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
+}
+
+func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, returnURL string, reqEditors ...RequestEditorFn) (string, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	resp, err := c.inner.CreatePortalWithResponse(ctx, CreatePortalJSONRequestBody{
+		OrgId:     orgIDWire,
+		ReturnUrl: returnURL,
+	}, reqEditors...)
+	if err != nil {
+		return "", err
+	}
+	if resp.JSON200 != nil {
+		return resp.JSON200.Url, nil
+	}
+	return "", unexpected("create portal session", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 }
 
 func (c *ServiceClient) Reserve(

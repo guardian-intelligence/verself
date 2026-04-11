@@ -1,11 +1,9 @@
-.PHONY: build clean test test-integration lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
-       hooks-install doctor setup-domain inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
+.PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
+       hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        sandbox-inner sandbox-middle sandbox-proof
 
-VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS  := -ldflags "-X main.version=$(VERSION)"
 FM       := src/platform
 AW       := src/apiwire
 VMO      := src/vm-orchestrator
@@ -14,31 +12,18 @@ AM       := src/auth-middleware
 SR       := src/sandbox-rental-service
 MS       := src/mailbox-service
 OT       := src/otel
-WL       := src/workload
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
-GO_DIRS  := $(FM) $(AW) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT) $(WL)
+GO_DIRS  := $(AW) $(VMO) $(BS) $(AM) $(SR) $(MS) $(OT)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
 ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
 
-build: ## Build the forge-metal Go binary
-	go build $(LDFLAGS) -o $(FM)/forge-metal ./$(FM)/cmd/forge-metal
-
 vm-guest-telemetry-build: ## Build the vm-guest-telemetry Zig binary
 	cd src/vm-guest-telemetry && zig build -Doptimize=ReleaseSafe
 
-clean:
-	rm -f $(FM)/forge-metal
-
 test: ## Run unit tests
 	go test -race $(GO_PKGS)
-
-test-integration: ## Run all tests including ZFS integration (requires sudo + zfs)
-	@echo "Integration tests require root for ZFS pool operations."
-	@echo "You may be prompted for your password."
-	@echo ""
-	sudo env PATH="$$PATH" go test -tags integration -race -count=1 ./$(FM)/...
 
 lint: lint-conversions
 	golangci-lint run $(GO_PKGS)
@@ -63,7 +48,6 @@ vet:
 	go vet $(GO_PKGS)
 
 tidy:
-	cd $(FM) && go mod tidy
 	cd $(AW) && go mod tidy
 	cd $(VMO) && go mod tidy
 	cd $(BS) && go mod tidy
@@ -71,7 +55,6 @@ tidy:
 	cd $(SR) && go mod tidy
 	cd $(MS) && go mod tidy
 	cd $(OT) && go mod tidy
-	cd $(WL) && go mod tidy
 	cd src/viteplus-monorepo && vp fmt . --write
 
 openapi: ## Regenerate committed OpenAPI 3.0 and 3.1 specs for Go services
@@ -97,9 +80,6 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 		$(BS)/openapi/openapi-3.1.yaml \
 		$(MS)/openapi/openapi-3.1.yaml \
 		$(SR)/openapi/openapi-3.1.yaml
-
-setup-domain: build ## Configure Cloudflare domain (interactive wizard)
-	cd $(FM) && ./forge-metal setup-domain $(DOMAIN)
 
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }

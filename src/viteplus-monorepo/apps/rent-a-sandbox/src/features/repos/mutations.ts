@@ -2,8 +2,8 @@ import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-q
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { balanceQuery } from "~/features/billing/queries";
-import { importRepo, refreshRepo, rescanRepo, submitRepoExecution } from "~/server-fns/api";
-import { repoGenerationsQuery, repoQuery, reposQuery } from "./queries";
+import { importRepo, rescanRepo } from "~/server-fns/api";
+import { repoQuery, reposQuery } from "./queries";
 
 export async function invalidateRepoQueries(
   queryClient: QueryClient,
@@ -16,13 +16,6 @@ export async function invalidateRepoQueries(
     queryClient.invalidateQueries({ queryKey: balanceQuery(auth).queryKey }),
     ...(repoId
       ? [queryClient.invalidateQueries({ queryKey: repoQuery(auth, repoId).queryKey })]
-      : []),
-    ...(repoId
-      ? [
-          queryClient.invalidateQueries({
-            queryKey: repoGenerationsQuery(auth, repoId).queryKey,
-          }),
-        ]
       : []),
   ]);
 }
@@ -48,34 +41,6 @@ export function useRescanRepoMutation(repoId: string) {
     mutationFn: () => rescanRepo({ data: { repoId } }),
     onSuccess: async () => {
       await invalidateRepoQueries(queryClient, auth, repoId);
-    },
-  });
-}
-
-export function useRefreshRepoMutation(repoId: string) {
-  const auth = useSignedInAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => refreshRepo({ data: { repoId } }),
-    onSuccess: async () => {
-      await invalidateRepoQueries(queryClient, auth, repoId);
-    },
-  });
-}
-
-export function useRunRepoExecutionMutation(
-  repoId: string,
-  onSuccess: (executionId: string) => void,
-) {
-  const auth = useSignedInAuth();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: () => submitRepoExecution({ data: { repo_id: repoId } }),
-    onSuccess: async (result) => {
-      await invalidateRepoQueries(queryClient, auth, repoId);
-      onSuccess(result.execution_id);
     },
   });
 }

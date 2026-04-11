@@ -98,40 +98,6 @@ func (c *Client) StartDirectJobWithConfig(ctx context.Context, cfg Config, job J
 	return resp.GetJobId(), nil
 }
 
-func (c *Client) StartRepoExec(ctx context.Context, req RepoExecRequest) (string, error) {
-	resp, err := c.client.CreateJob(ctx, &vmrpc.CreateJobRequest{
-		Spec: &vmrpc.CreateJobRequest_RepoExec{
-			RepoExec: &vmrpc.RepoExecSpec{
-				RuntimeConfig:   configToProto(req.Config),
-				Repo:            req.Repo,
-				RepoUrl:         req.RepoURL,
-				Ref:             req.Ref,
-				JobTemplate:     jobConfigToProto(req.JobTemplate),
-				LockfileRelPath: req.LockfileRelPath,
-			},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("create repo exec job: %w", err)
-	}
-	return resp.GetJobId(), nil
-}
-
-func (c *Client) ExecRepo(ctx context.Context, req RepoExecRequest) (JobStatus, error) {
-	return c.runAndWait(ctx, &vmrpc.CreateJobRequest{
-		Spec: &vmrpc.CreateJobRequest_RepoExec{
-			RepoExec: &vmrpc.RepoExecSpec{
-				RuntimeConfig:   configToProto(req.Config),
-				Repo:            req.Repo,
-				RepoUrl:         req.RepoURL,
-				Ref:             req.Ref,
-				JobTemplate:     jobConfigToProto(req.JobTemplate),
-				LockfileRelPath: req.LockfileRelPath,
-			},
-		},
-	})
-}
-
 func (c *Client) WaitJob(ctx context.Context, jobID string, includeOutput bool) (JobStatus, error) {
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
@@ -201,21 +167,6 @@ func (c *Client) CancelJob(ctx context.Context, jobID string) (bool, error) {
 		return false, fmt.Errorf("cancel job %s: %w", jobID, err)
 	}
 	return resp.GetCanceled(), nil
-}
-
-func (c *Client) WarmGolden(ctx context.Context, req WarmGoldenRequest) (WarmGoldenResult, error) {
-	resp, err := c.client.WarmGolden(ctx, &vmrpc.WarmGoldenRequest{
-		RuntimeConfig:   configToProto(req.Config),
-		Repo:            req.Repo,
-		RepoUrl:         req.RepoURL,
-		DefaultBranch:   req.DefaultBranch,
-		Job:             jobConfigToProto(req.Job),
-		LockfileRelPath: req.LockfileRelPath,
-	})
-	if err != nil {
-		return WarmGoldenResult{}, fmt.Errorf("warm golden for %s: %w", req.Repo, err)
-	}
-	return warmGoldenResultFromProto(resp), nil
 }
 
 func (c *Client) GetFleetSnapshot(ctx context.Context) ([]FleetVM, error) {

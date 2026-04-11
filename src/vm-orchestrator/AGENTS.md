@@ -12,19 +12,11 @@ Firecracker guests live on a TAP network (`172.16.0.0/16`, one `/30` per VM). Th
 
 3. **nftables INPUT chain** (`forge_metal_host`): default-deny on the host. Guest traffic is accepted only from `fc-tap-*`, only from `nftables_firecracker_guest_cidr`, only to `nftables_firecracker_host_service_ip`, and only on `nftables_firecracker_guest_tcp_ports`.
 
-Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for guest access. Guest scripts receive `FORGE_METAL_HOST_SERVICE_IP` and `FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN`; use those rather than the TAP gateway or loopback addresses. Warm/exec repo URLs on this path are HTTP(S), not SSH clone URLs.
+Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for guest access. Guest scripts receive `FORGE_METAL_HOST_SERVICE_IP` and `FORGE_METAL_HOST_SERVICE_HTTP_ORIGIN`; use those rather than the TAP gateway or loopback addresses.
 
-## Golden Image Warm Process
+## Workload Boundary
 
-The warm process runs entirely inside a Firecracker VM. The host never mounts the zvol's ext4 filesystem. Flow:
-
-1. Host: `zfs clone` base golden to new repo-golden dataset
-2. Host: boot VM from the cloned dataset
-3. Guest supervisor: fetch from Forgejo through the host-service plane, install deps as the runner user, write lockfile hashes, and return a typed manifest over vsock
-4. Host: validate clean VM exit and typed supervisor manifest
-5. Host: `zfs snapshot` to promote the golden without mounting or fscking the guest filesystem
-
-This design ensures the host never interprets guest-written filesystem metadata via `mount` or `fsck`. Generic guest events are observability data, not promotion authority.
+vm-orchestrator accepts direct VM job commands only. Repo import, repo scanning, CI policy, queueing, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle and telemetry aggregation.
 
 ## Shell Scripting Inside Guests
 

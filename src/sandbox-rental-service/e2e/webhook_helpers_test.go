@@ -93,33 +93,6 @@ func waitForWebhookDeliveryState(t *testing.T, ctx context.Context, db *sql.DB, 
 	return webhookDeliveryView{}
 }
 
-func waitForExecutionByProviderRunID(t *testing.T, ctx context.Context, db *sql.DB, providerRunID string) (string, string) {
-	t.Helper()
-
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		var executionID, attemptID string
-		err := db.QueryRowContext(ctx, `
-			SELECT execution_id::text, latest_attempt_id::text
-			FROM executions
-			WHERE org_id = $1
-			  AND kind = 'forgejo_runner'
-			  AND provider_run_id = $2
-			ORDER BY created_at DESC
-			LIMIT 1
-		`, testOrgID, providerRunID).Scan(&executionID, &attemptID)
-		if err == nil {
-			return executionID, attemptID
-		}
-		if err != sql.ErrNoRows {
-			t.Fatalf("query execution by provider_run_id: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("execution for provider_run_id %s did not appear before timeout", providerRunID)
-	return "", ""
-}
-
 func assertWebhookDeliveryClickHouse(t *testing.T, ctx context.Context, queryCHConn anyQueryRower, providerDeliveryID, state string) {
 	t.Helper()
 

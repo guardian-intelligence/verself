@@ -58,7 +58,6 @@ func run() error {
 	// Secrets via systemd LoadCredential=.
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
-	forgejoRunnerToken := credentialOr("forgejo-runner-token", "")
 	billingClientSecret := requireCredential("billing-client-secret")
 	webhookSecretKEK := requireCredential("webhook-secret-kek")
 
@@ -81,10 +80,6 @@ func run() error {
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
-	forgejoURL := envOr("SANDBOX_FORGEJO_URL", "")
-	forgejoRunnerLabel := envOr("SANDBOX_FORGEJO_RUNNER_LABEL", jobs.RunnerProfileForgeMetal)
-	forgejoRunnerBinaryURL := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_URL", "")
-	forgejoRunnerBinarySHA256 := envOr("SANDBOX_FORGEJO_RUNNER_BINARY_SHA256", "")
 
 	// --- open connections ---
 
@@ -154,20 +149,15 @@ func run() error {
 	}
 
 	jobService := &jobs.Service{
-		PG:                        pg,
-		CH:                        chConn,
-		CHDatabase:                "forge_metal",
-		Orchestrator:              orchestrator,
-		Billing:                   billingClient,
-		BillingVCPUs:              int(capacity.VCPUsPerVM),
-		BillingMemMiB:             int(capacity.MemoryMiBPerVM),
-		ForgejoURL:                forgejoURL,
-		ForgejoRunnerLabel:        forgejoRunnerLabel,
-		ForgejoRunnerToken:        forgejoRunnerToken,
-		ForgejoRunnerBinaryURL:    forgejoRunnerBinaryURL,
-		ForgejoRunnerBinarySHA256: forgejoRunnerBinarySHA256,
-		WebhookSecretCodec:        webhookSecretCodec,
-		Logger:                    logger,
+		PG:                 pg,
+		CH:                 chConn,
+		CHDatabase:         "forge_metal",
+		Orchestrator:       orchestrator,
+		Billing:            billingClient,
+		BillingVCPUs:       int(capacity.VCPUsPerVM),
+		BillingMemMiB:      int(capacity.MemoryMiBPerVM),
+		WebhookSecretCodec: webhookSecretCodec,
+		Logger:             logger,
 	}
 
 	// --- Huma API ---

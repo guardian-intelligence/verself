@@ -19,7 +19,7 @@ function ReposPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Repos</h1>
           <p className="text-sm text-muted-foreground">
-            Import a repository, validate its workflow labels, and prepare its active golden.
+            Import repositories and verify clone access before running sandbox work.
           </p>
         </div>
         <Link

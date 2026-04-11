@@ -22,7 +22,6 @@ forge-metal/                            # Monorepo root
 │   ├── orchestrator.go                 # VM lifecycle: create, start, stop, destroy
 │   ├── zvol.go                         # ZFS clone/destroy/snapshot/written
 │   ├── network.go                      # TAP + CIDR lease allocator
-│   ├── repo_goldens.go                 # Golden image warming
 │   ├── telemetry_stream.go             # Guest telemetry aggregation
 │   ├── proto/                          # gRPC protobuf definitions
 │   ├── vmproto/                        # Host-guest vsock wire protocol
@@ -85,22 +84,8 @@ forge-metal/                            # Monorepo root
 │   ── Platform ──────────────────────────────────────────────────────────
 │
 └── src/platform/                       # Infrastructure + deployment
-    ├── go.mod                          # imports: vm-orchestrator (CI manager uses it)
-    ├── cmd/
-    │   ├── forge-metal/                # CLI: doctor, setup-domain, CI warm/exec, fixtures (DEPRECATED, will be deleted after remaining functionality is extracted)
-    ├── internal/
-    │   ├── ci/                         # CI domain: Warm/Exec, golden images, toolchain detection
-    │   ├── clickhouse/                 # ClickHouse query helpers
-    │   ├── cloudflare/                 # DNS record management
-    │   ├── config/                     # Platform configuration
-    │   ├── doctor/                     # System health checks
-    │   ├── domain/                     # Domain setup logic
-    │   ├── latitude/                   # Latitude.sh API client
-    │   ├── prompt/                     # Interactive prompts
-    │   ├── provision/                  # Server provisioning
-    │   └── supplychain/                # NPM supply chain scanning
     ├── ansible/
-    │   ├── playbooks/                  # All orchestration (deploy, provision, CI, vm-guest-telemetry-dev)
+    │   ├── playbooks/                  # All orchestration (deploy, provision, vm-guest-telemetry-dev)
     │   └── roles/                      # Flat directory — deployment is a platform concern
     │       ├── deploy_profile/         # Build + download + install all server binaries
     │       ├── base/                   # OS hardening, users, credstore, SSH

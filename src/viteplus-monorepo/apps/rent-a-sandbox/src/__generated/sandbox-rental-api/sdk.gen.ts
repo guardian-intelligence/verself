@@ -10,6 +10,12 @@ import type {
   CreateBillingSubscriptionData,
   CreateBillingSubscriptionErrors,
   CreateBillingSubscriptionResponses,
+  CreateWebhookEndpointData,
+  CreateWebhookEndpointErrors,
+  CreateWebhookEndpointResponses,
+  DeleteWebhookEndpointData,
+  DeleteWebhookEndpointErrors,
+  DeleteWebhookEndpointResponses,
   GetBillingBalanceData,
   GetBillingBalanceErrors,
   GetBillingBalanceResponses,
@@ -31,18 +37,18 @@ import type {
   ListBillingSubscriptionsData,
   ListBillingSubscriptionsErrors,
   ListBillingSubscriptionsResponses,
-  ListRepoGenerationsData,
-  ListRepoGenerationsErrors,
-  ListRepoGenerationsResponses,
   ListReposData,
   ListReposErrors,
   ListReposResponses,
-  RefreshRepoData,
-  RefreshRepoErrors,
-  RefreshRepoResponses,
+  ListWebhookEndpointsData,
+  ListWebhookEndpointsErrors,
+  ListWebhookEndpointsResponses,
   RescanRepoData,
   RescanRepoErrors,
   RescanRepoResponses,
+  RotateWebhookEndpointSecretData,
+  RotateWebhookEndpointSecretErrors,
+  RotateWebhookEndpointSecretResponses,
   SubmitExecutionData,
   SubmitExecutionErrors,
   SubmitExecutionResponses,
@@ -76,7 +82,11 @@ export const getBillingBalance = <ThrowOnError extends boolean = false>(
     GetBillingBalanceResponses,
     GetBillingBalanceErrors,
     ThrowOnError
-  >({ url: "/api/v1/billing/balance", ...options });
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/balance",
+    ...options,
+  });
 
 /**
  * Create Stripe checkout session for credit purchase
@@ -89,6 +99,7 @@ export const createBillingCheckout = <ThrowOnError extends boolean = false>(
     CreateBillingCheckoutErrors,
     ThrowOnError
   >({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/checkout",
     ...options,
     headers: {
@@ -107,7 +118,11 @@ export const listBillingGrants = <ThrowOnError extends boolean = false>(
     ListBillingGrantsResponses,
     ListBillingGrantsErrors,
     ThrowOnError
-  >({ url: "/api/v1/billing/grants", ...options });
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/grants",
+    ...options,
+  });
 
 /**
  * Create Stripe subscription checkout
@@ -120,6 +135,7 @@ export const createBillingSubscription = <ThrowOnError extends boolean = false>(
     CreateBillingSubscriptionErrors,
     ThrowOnError
   >({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/subscribe",
     ...options,
     headers: {
@@ -138,7 +154,11 @@ export const listBillingSubscriptions = <ThrowOnError extends boolean = false>(
     ListBillingSubscriptionsResponses,
     ListBillingSubscriptionsErrors,
     ThrowOnError
-  >({ url: "/api/v1/billing/subscriptions", ...options });
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/subscriptions",
+    ...options,
+  });
 
 /**
  * Submit a new execution
@@ -147,6 +167,7 @@ export const submitExecution = <ThrowOnError extends boolean = false>(
   options: Options<SubmitExecutionData, ThrowOnError>,
 ) =>
   (options.client ?? client).post<SubmitExecutionResponses, SubmitExecutionErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/executions",
     ...options,
     headers: {
@@ -162,6 +183,7 @@ export const getExecution = <ThrowOnError extends boolean = false>(
   options: Options<GetExecutionData, ThrowOnError>,
 ) =>
   (options.client ?? client).get<GetExecutionResponses, GetExecutionErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/executions/{execution_id}",
     ...options,
   });
@@ -173,6 +195,7 @@ export const getExecutionLogs = <ThrowOnError extends boolean = false>(
   options: Options<GetExecutionLogsData, ThrowOnError>,
 ) =>
   (options.client ?? client).get<GetExecutionLogsResponses, GetExecutionLogsErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/executions/{execution_id}/logs",
     ...options,
   });
@@ -184,17 +207,19 @@ export const listRepos = <ThrowOnError extends boolean = false>(
   options?: Options<ListReposData, ThrowOnError>,
 ) =>
   (options?.client ?? client).get<ListReposResponses, ListReposErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/repos",
     ...options,
   });
 
 /**
- * Import or rescan a repo for forge-metal CI
+ * Import or rescan repo metadata
  */
 export const importRepo = <ThrowOnError extends boolean = false>(
   options: Options<ImportRepoData, ThrowOnError>,
 ) =>
   (options.client ?? client).post<ImportRepoResponses, ImportRepoErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/repos",
     ...options,
     headers: {
@@ -210,40 +235,87 @@ export const getRepo = <ThrowOnError extends boolean = false>(
   options: Options<GetRepoData, ThrowOnError>,
 ) =>
   (options.client ?? client).get<GetRepoResponses, GetRepoErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/repos/{repo_id}",
     ...options,
   });
 
 /**
- * List golden generations for a repo
- */
-export const listRepoGenerations = <ThrowOnError extends boolean = false>(
-  options: Options<ListRepoGenerationsData, ThrowOnError>,
-) =>
-  (options.client ?? client).get<
-    ListRepoGenerationsResponses,
-    ListRepoGenerationsErrors,
-    ThrowOnError
-  >({ url: "/api/v1/repos/{repo_id}/generations", ...options });
-
-/**
- * Queue a new golden generation for the repo
- */
-export const refreshRepo = <ThrowOnError extends boolean = false>(
-  options: Options<RefreshRepoData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<RefreshRepoResponses, RefreshRepoErrors, ThrowOnError>({
-    url: "/api/v1/repos/{repo_id}/refresh",
-    ...options,
-  });
-
-/**
- * Rescan repo workflows for forge-metal compatibility
+ * Rescan repo metadata
  */
 export const rescanRepo = <ThrowOnError extends boolean = false>(
   options: Options<RescanRepoData, ThrowOnError>,
 ) =>
   (options.client ?? client).post<RescanRepoResponses, RescanRepoErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/repos/{repo_id}/rescan",
+    ...options,
+  });
+
+/**
+ * List git webhook endpoints for the current org
+ */
+export const listWebhookEndpoints = <ThrowOnError extends boolean = false>(
+  options?: Options<ListWebhookEndpointsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListWebhookEndpointsResponses,
+    ListWebhookEndpointsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/webhook-endpoints",
+    ...options,
+  });
+
+/**
+ * Create a git webhook endpoint
+ */
+export const createWebhookEndpoint = <ThrowOnError extends boolean = false>(
+  options: Options<CreateWebhookEndpointData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateWebhookEndpointResponses,
+    CreateWebhookEndpointErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/webhook-endpoints",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Deactivate a git webhook endpoint
+ */
+export const deleteWebhookEndpoint = <ThrowOnError extends boolean = false>(
+  options: Options<DeleteWebhookEndpointData, ThrowOnError>,
+) =>
+  (options.client ?? client).delete<
+    DeleteWebhookEndpointResponses,
+    DeleteWebhookEndpointErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/webhook-endpoints/{endpoint_id}",
+    ...options,
+  });
+
+/**
+ * Rotate a git webhook endpoint secret
+ */
+export const rotateWebhookEndpointSecret = <ThrowOnError extends boolean = false>(
+  options: Options<RotateWebhookEndpointSecretData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    RotateWebhookEndpointSecretResponses,
+    RotateWebhookEndpointSecretErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/webhook-endpoints/{endpoint_id}/rotate",
     ...options,
   });

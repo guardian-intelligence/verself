@@ -6,7 +6,7 @@ func configToProto(cfg Config) *vmrpc.RuntimeConfig {
 	return &vmrpc.RuntimeConfig{
 		Pool:            cfg.Pool,
 		GoldenZvol:      cfg.GoldenZvol,
-		CiDataset:       cfg.CIDataset,
+		WorkloadDataset: cfg.WorkloadDataset,
 		KernelPath:      cfg.KernelPath,
 		FirecrackerBin:  cfg.FirecrackerBin,
 		JailerBin:       cfg.JailerBin,
@@ -34,8 +34,8 @@ func configFromProto(base Config, in *vmrpc.RuntimeConfig) Config {
 	if in.GetGoldenZvol() != "" {
 		cfg.GoldenZvol = in.GetGoldenZvol()
 	}
-	if in.GetCiDataset() != "" {
-		cfg.CIDataset = in.GetCiDataset()
+	if in.GetWorkloadDataset() != "" {
+		cfg.WorkloadDataset = in.GetWorkloadDataset()
 	}
 	if in.GetKernelPath() != "" {
 		cfg.KernelPath = in.GetKernelPath()

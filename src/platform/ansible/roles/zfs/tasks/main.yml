@@ -38,16 +38,6 @@
     - zfs_disk.stdout | length > 0
   changed_when: true
 
-- name: Create golden dataset
-  community.general.zfs:
-    name: "{{ zfs_pool }}/{{ zfs_golden_dataset }}"
-    state: present
-
-- name: Create CI dataset
-  community.general.zfs:
-    name: "{{ zfs_pool }}/{{ zfs_ci_dataset }}"
-    state: present
-
 - name: Create Verdaccio storage dataset
   community.general.zfs:
     name: "{{ zfs_pool }}/{{ zfs_verdaccio_dataset }}"

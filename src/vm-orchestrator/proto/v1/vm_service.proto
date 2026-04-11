@@ -10,7 +10,6 @@ service VMService {
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
   rpc StreamJobLogs(StreamJobLogsRequest) returns (stream JobLogChunk);
   rpc StreamGuestEvents(StreamGuestEventsRequest) returns (stream JobGuestEvent);
-  rpc WarmGolden(WarmGoldenRequest) returns (WarmGoldenResponse);
   rpc StreamTelemetry(StreamTelemetryRequest) returns (stream TelemetryEvent);
   rpc GetFleetSnapshot(GetFleetSnapshotRequest) returns (GetFleetSnapshotResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
@@ -38,7 +37,7 @@ message JobConfig {
 message RuntimeConfig {
   string pool = 1;
   string golden_zvol = 2;
-  string ci_dataset = 3;
+  string workload_dataset = 3;
   string kernel_path = 4;
   string firecracker_bin = 5;
   string jailer_bin = 6;
@@ -71,16 +70,6 @@ message VMMetrics {
   uint64 vcpu_exit_count = 8;
 }
 
-message RepoManifest {
-  string kind = 1;
-  string requested_ref = 2;
-  string resolved_commit_sha = 3;
-  string lockfile_rel_path = 4;
-  string lockfile_sha256 = 5;
-  string previous_lockfile_sha256 = 6;
-  bool install_needed = 7;
-}
-
 message JobResult {
   int32 exit_code = 1;
   string logs = 2;
@@ -103,7 +92,6 @@ message JobResult {
   repeated PhaseResult phase_results = 19;
   string failure_phase = 20;
   VMMetrics metrics = 21;
-  RepoManifest repo_manifest = 22;
 }
 
 message DirectJobSpec {
@@ -111,19 +99,9 @@ message DirectJobSpec {
   JobConfig job = 2;
 }
 
-message RepoExecSpec {
-  RuntimeConfig runtime_config = 1;
-  string repo = 2;
-  string repo_url = 3;
-  string ref = 4;
-  JobConfig job_template = 5;
-  string lockfile_rel_path = 6;
-}
-
 message CreateJobRequest {
   oneof spec {
     DirectJobSpec direct_job = 1;
-    RepoExecSpec repo_exec = 2;
   }
 }
 
@@ -137,23 +115,12 @@ message GetJobStatusRequest {
   bool include_output = 2;
 }
 
-message RepoExecMetadata {
-  string repo = 1;
-  string repo_url = 2;
-  string ref = 3;
-  string golden_snapshot = 4;
-  int64 clone_duration_ms = 5;
-  bool install_needed = 6;
-  string commit_sha = 7;
-}
-
 message GetJobStatusResponse {
   string job_id = 1;
   JobState state = 2;
   bool terminal = 3;
   string error_message = 4;
   JobResult result = 5;
-  RepoExecMetadata repo_exec = 6;
 }
 
 message CancelJobRequest {
@@ -186,27 +153,6 @@ message JobGuestEvent {
   string kind = 3;
   map<string, string> attrs = 4;
   bool terminal = 5;
-}
-
-message WarmGoldenRequest {
-  RuntimeConfig runtime_config = 1;
-  string repo = 2;
-  string repo_url = 3;
-  string default_branch = 4;
-  JobConfig job = 5;
-  string lockfile_rel_path = 6;
-}
-
-message WarmGoldenResponse {
-  string target_dataset = 1;
-  string previous_dataset = 2;
-  bool promoted = 3;
-  int64 clone_duration_ms = 5;
-  int64 snapshot_promotion_duration_ms = 7;
-  int64 previous_destroy_duration_ms = 8;
-  string commit_sha = 9;
-  JobResult job_result = 10;
-  string error_message = 11;
 }
 
 enum TelemetryFrameKind {

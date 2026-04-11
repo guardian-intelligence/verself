@@ -11,7 +11,7 @@ type SandboxSubmitRequest struct {
 	Kind            string `json:"kind"`
 	ProductID       string `json:"product_id,omitempty"`
 	Provider        string `json:"provider,omitempty"`
-	IdempotencyKey  string `json:"idempotency_key,omitempty"`
+	IdempotencyKey  string `json:"idempotency_key" required:"true" maxLength:"128"`
 	RepoID          string `json:"repo_id,omitempty"`
 	Repo            string `json:"repo,omitempty"`
 	RepoURL         string `json:"repo_url,omitempty"`
@@ -36,55 +36,24 @@ type SandboxImportRepoRequest struct {
 }
 
 type SandboxRepoRecord struct {
-	RepoID                   uuid.UUID       `json:"repo_id"`
-	OrgID                    OrgID           `json:"org_id"`
-	Provider                 string          `json:"provider"`
-	ProviderHost             string          `json:"provider_host"`
-	ProviderRepoID           string          `json:"provider_repo_id"`
-	Owner                    string          `json:"owner"`
-	Name                     string          `json:"name"`
-	FullName                 string          `json:"full_name"`
-	CloneURL                 string          `json:"clone_url"`
-	DefaultBranch            string          `json:"default_branch"`
-	RunnerProfileSlug        string          `json:"runner_profile_slug"`
-	State                    string          `json:"state"`
-	CompatibilityStatus      string          `json:"compatibility_status"`
-	CompatibilitySummary     json.RawMessage `json:"compatibility_summary,omitempty"`
-	LastScannedSHA           string          `json:"last_scanned_sha,omitempty"`
-	ActiveGoldenGenerationID *uuid.UUID      `json:"active_golden_generation_id,omitempty"`
-	LastReadySHA             string          `json:"last_ready_sha,omitempty"`
-	LastError                string          `json:"last_error,omitempty"`
-	CreatedAt                time.Time       `json:"created_at"`
-	UpdatedAt                time.Time       `json:"updated_at"`
-	ArchivedAt               *time.Time      `json:"archived_at,omitempty"`
-}
-
-type SandboxGoldenGenerationRecord struct {
-	GoldenGenerationID uuid.UUID  `json:"golden_generation_id"`
-	RepoID             uuid.UUID  `json:"repo_id"`
-	RunnerProfileSlug  string     `json:"runner_profile_slug"`
-	SourceRef          string     `json:"source_ref"`
-	SourceSHA          string     `json:"source_sha"`
-	State              string     `json:"state"`
-	TriggerReason      string     `json:"trigger_reason"`
-	ExecutionID        *uuid.UUID `json:"execution_id,omitempty"`
-	AttemptID          *uuid.UUID `json:"attempt_id,omitempty"`
-	OrchestratorJobID  string     `json:"orchestrator_job_id,omitempty"`
-	SnapshotRef        string     `json:"snapshot_ref,omitempty"`
-	ActivatedAt        *time.Time `json:"activated_at,omitempty"`
-	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
-	FailureReason      string     `json:"failure_reason,omitempty"`
-	FailureDetail      string     `json:"failure_detail,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-}
-
-type SandboxRepoBootstrapRecord struct {
-	Repo          *SandboxRepoRecord             `json:"repo"`
-	Generation    *SandboxGoldenGenerationRecord `json:"generation"`
-	ExecutionID   uuid.UUID                      `json:"execution_id"`
-	AttemptID     uuid.UUID                      `json:"attempt_id"`
-	TriggerReason string                         `json:"trigger_reason"`
+	RepoID               uuid.UUID       `json:"repo_id"`
+	OrgID                OrgID           `json:"org_id"`
+	Provider             string          `json:"provider"`
+	ProviderHost         string          `json:"provider_host"`
+	ProviderRepoID       string          `json:"provider_repo_id"`
+	Owner                string          `json:"owner"`
+	Name                 string          `json:"name"`
+	FullName             string          `json:"full_name"`
+	CloneURL             string          `json:"clone_url"`
+	DefaultBranch        string          `json:"default_branch"`
+	State                string          `json:"state"`
+	CompatibilityStatus  string          `json:"compatibility_status"`
+	CompatibilitySummary json.RawMessage `json:"compatibility_summary,omitempty"`
+	LastScannedSHA       string          `json:"last_scanned_sha,omitempty"`
+	LastError            string          `json:"last_error,omitempty"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	ArchivedAt           *time.Time      `json:"archived_at,omitempty"`
 }
 
 type SandboxCreateWebhookEndpointRequest struct {
@@ -138,31 +107,30 @@ type SandboxSubmitExecutionResult struct {
 }
 
 type SandboxExecutionRecord struct {
-	ExecutionID        uuid.UUID              `json:"execution_id"`
-	OrgID              OrgID                  `json:"org_id"`
-	ActorID            string                 `json:"actor_id"`
-	Kind               string                 `json:"kind"`
-	Provider           string                 `json:"provider,omitempty"`
-	ProductID          string                 `json:"product_id"`
-	Status             string                 `json:"status"`
-	CorrelationID      string                 `json:"correlation_id,omitempty"`
-	IdempotencyKey     string                 `json:"idempotency_key,omitempty"`
-	RepoID             string                 `json:"repo_id,omitempty"`
-	GoldenGenerationID string                 `json:"golden_generation_id,omitempty"`
-	Repo               string                 `json:"repo,omitempty"`
-	RepoURL            string                 `json:"repo_url,omitempty"`
-	Ref                string                 `json:"ref,omitempty"`
-	DefaultBranch      string                 `json:"default_branch,omitempty"`
-	RunCommand         string                 `json:"run_command,omitempty"`
-	CommitSHA          string                 `json:"commit_sha,omitempty"`
-	WorkflowPath       string                 `json:"workflow_path,omitempty"`
-	WorkflowJobName    string                 `json:"workflow_job_name,omitempty"`
-	ProviderRunID      string                 `json:"provider_run_id,omitempty"`
-	ProviderJobID      string                 `json:"provider_job_id,omitempty"`
-	LatestAttempt      SandboxAttemptRecord   `json:"latest_attempt"`
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
-	BillingWindows     []SandboxBillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID     uuid.UUID              `json:"execution_id"`
+	OrgID           OrgID                  `json:"org_id"`
+	ActorID         string                 `json:"actor_id"`
+	Kind            string                 `json:"kind"`
+	Provider        string                 `json:"provider,omitempty"`
+	ProductID       string                 `json:"product_id"`
+	Status          string                 `json:"status"`
+	CorrelationID   string                 `json:"correlation_id,omitempty"`
+	IdempotencyKey  string                 `json:"idempotency_key,omitempty"`
+	RepoID          string                 `json:"repo_id,omitempty"`
+	Repo            string                 `json:"repo,omitempty"`
+	RepoURL         string                 `json:"repo_url,omitempty"`
+	Ref             string                 `json:"ref,omitempty"`
+	DefaultBranch   string                 `json:"default_branch,omitempty"`
+	RunCommand      string                 `json:"run_command,omitempty"`
+	CommitSHA       string                 `json:"commit_sha,omitempty"`
+	WorkflowPath    string                 `json:"workflow_path,omitempty"`
+	WorkflowJobName string                 `json:"workflow_job_name,omitempty"`
+	ProviderRunID   string                 `json:"provider_run_id,omitempty"`
+	ProviderJobID   string                 `json:"provider_job_id,omitempty"`
+	LatestAttempt   SandboxAttemptRecord   `json:"latest_attempt"`
+	CreatedAt       time.Time              `json:"created_at"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+	BillingWindows  []SandboxBillingWindow `json:"billing_windows,omitempty"`
 }
 
 type SandboxExecutionLogs struct {
@@ -192,7 +160,6 @@ type SandboxAttemptRecord struct {
 	OrchestratorJobID string     `json:"orchestrator_job_id,omitempty"`
 	BillingJobID      int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
 	RunnerName        string     `json:"runner_name,omitempty"`
-	GoldenSnapshot    string     `json:"golden_snapshot,omitempty"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ExitCode          int        `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
 	DurationMs        int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`

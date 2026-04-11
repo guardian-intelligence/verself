@@ -57,6 +57,11 @@ type BillingCreateSubscriptionRequest struct {
 	CancelURL  string `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
+type BillingCreatePortalSessionRequest struct {
+	OrgID     OrgID  `json:"org_id"`
+	ReturnURL string `json:"return_url" minLength:"1" maxLength:"2048"`
+}
+
 type BillingURLResponse struct {
 	URL string `json:"url"`
 }

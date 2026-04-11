@@ -9,16 +9,17 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"gopkg.in/yaml.v3"
 )
 
-const repoScanGitCommandTimeout = 30 * time.Second
+const (
+	repoScanGitCommandTimeout       = 30 * time.Second
+	defaultRepoScanConcurrency      = 2
+	repoScanAllowFileProtocolForE2E = "FORGE_METAL_REPO_SCAN_E2E_ALLOW_FILE_PROTOCOL"
+)
 
 type ImportRepoRequest struct {
 	IntegrationID  *uuid.UUID `json:"integration_id,omitempty"`
@@ -32,26 +33,12 @@ type ImportRepoRequest struct {
 	DefaultBranch  string     `json:"default_branch,omitempty"`
 }
 
-type WorkflowScanIssue struct {
+type RepoScanIssue struct {
 	Path    string   `json:"path"`
 	JobID   string   `json:"job_id,omitempty"`
 	Reason  string   `json:"reason"`
 	Labels  []string `json:"labels,omitempty"`
 	Details string   `json:"details,omitempty"`
-}
-
-type workflowCompatibilitySummary struct {
-	WorkflowPaths     []string            `json:"workflow_paths,omitempty"`
-	UnsupportedLabels []string            `json:"unsupported_labels,omitempty"`
-	Issues            []WorkflowScanIssue `json:"issues,omitempty"`
-}
-
-type workflowFile struct {
-	Jobs map[string]workflowJob `yaml:"jobs"`
-}
-
-type workflowJob struct {
-	RunsOn yaml.Node `yaml:"runs-on"`
 }
 
 func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRequest) (*RepoRecord, error) {
@@ -69,12 +56,6 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 		repo, err := s.RescanRepo(ctx, orgID, existing.RepoID)
 		if err != nil {
 			return nil, err
-		}
-		if repo.State == RepoStateWaitingForBootstrap {
-			if _, err := s.QueueRepoBootstrap(ctx, orgID, "system:repo-import", repo.RepoID, GenerationTriggerBootstrap); err != nil {
-				return nil, err
-			}
-			return s.GetRepo(ctx, orgID, repo.RepoID)
 		}
 		return repo, nil
 	}
@@ -98,12 +79,6 @@ func (s *Service) ImportRepo(ctx context.Context, orgID uint64, req ImportRepoRe
 	if err != nil {
 		return nil, err
 	}
-	if repo.State == RepoStateWaitingForBootstrap {
-		if _, err := s.QueueRepoBootstrap(ctx, orgID, "system:repo-import", repo.RepoID, GenerationTriggerBootstrap); err != nil {
-			return nil, err
-		}
-		return s.GetRepo(ctx, orgID, repo.RepoID)
-	}
 	return repo, nil
 }
 
@@ -113,10 +88,16 @@ func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID
 		return nil, err
 	}
 
+	releaseScanSlot, err := s.acquireRepoScanSlot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseScanSlot()
+
 	result, err := scanRepoCompatibility(ctx, repo.CloneURL, repo.DefaultBranch)
 	if err != nil {
 		summary := map[string]any{
-			"issues": []WorkflowScanIssue{{
+			"issues": []RepoScanIssue{{
 				Reason:  "scan_failed",
 				Details: err.Error(),
 			}},
@@ -129,6 +110,39 @@ func (s *Service) RescanRepo(ctx context.Context, orgID uint64, repoID uuid.UUID
 		})
 	}
 	return s.RecordRepoCompatibility(ctx, repoID, result)
+}
+
+func (s *Service) acquireRepoScanSlot(ctx context.Context) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	sem := s.repoScanSemaphore()
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	default:
+		return nil, ErrRepoScanCapacity
+	}
+}
+
+func (s *Service) repoScanSemaphore() chan struct{} {
+	s.repoScanMu.Lock()
+	defer s.repoScanMu.Unlock()
+	if s.repoScanSem != nil {
+		return s.repoScanSem
+	}
+	concurrency := s.RepoScanConcurrency
+	if concurrency <= 0 {
+		concurrency = defaultRepoScanConcurrency
+	}
+	s.repoScanSem = make(chan struct{}, concurrency)
+	return s.repoScanSem
 }
 
 func (s *Service) FindRepoByExternalKey(ctx context.Context, orgID uint64, provider, providerHost, providerRepoID, fullName string) (*RepoRecord, bool, error) {
@@ -152,19 +166,16 @@ func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provi
 					provider_host,
 					provider_repo_id,
 				owner,
-				name,
-				full_name,
-				clone_url,
-				default_branch,
-				runner_profile_slug,
-				state,
-				compatibility_status,
-				compatibility_summary,
-				last_scanned_sha,
-				COALESCE(active_golden_generation_id::text, ''),
-				last_ready_sha,
-				last_error,
-				created_at,
+					name,
+					full_name,
+					clone_url,
+					default_branch,
+					state,
+					compatibility_status,
+					compatibility_summary,
+					last_scanned_sha,
+					last_error,
+					created_at,
 				updated_at,
 				archived_at
 			FROM repos
@@ -181,19 +192,16 @@ func (s *Service) findRepoByExternalKey(ctx context.Context, orgID uint64, provi
 					provider_host,
 					provider_repo_id,
 				owner,
-				name,
-				full_name,
-				clone_url,
-				default_branch,
-				runner_profile_slug,
-				state,
-				compatibility_status,
-				compatibility_summary,
-				last_scanned_sha,
-				COALESCE(active_golden_generation_id::text, ''),
-				last_ready_sha,
-				last_error,
-				created_at,
+					name,
+					full_name,
+					clone_url,
+					default_branch,
+					state,
+					compatibility_status,
+					compatibility_summary,
+					last_scanned_sha,
+					last_error,
+					created_at,
 				updated_at,
 				archived_at
 			FROM repos
@@ -269,7 +277,10 @@ func normalizeImportRepoRequest(req ImportRepoRequest) (ImportRepoRequest, error
 
 func scanRepoCompatibility(ctx context.Context, repoURL, branch string) (RepoCompatibilityResult, error) {
 	repoURL = strings.TrimSpace(repoURL)
-	branch = defaultBranch(branch)
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		branch = defaultBranchName
+	}
 	if err := validateGitCloneURLFieldWithResolver(ctx, net.DefaultResolver, "clone_url", repoURL); err != nil {
 		return RepoCompatibilityResult{}, err
 	}
@@ -284,45 +295,7 @@ func scanRepoCompatibility(ctx context.Context, repoURL, branch string) (RepoCom
 		return RepoCompatibilityResult{}, err
 	}
 
-	workflowPaths, err := workflowFiles(root)
-	if err != nil {
-		return RepoCompatibilityResult{}, err
-	}
-	if len(workflowPaths) == 0 {
-		return compatibilityFailure(commitSHA, workflowCompatibilitySummary{
-			Issues: []WorkflowScanIssue{{
-				Reason:  "no_workflows",
-				Details: "no workflow files found under .github/workflows or .forgejo/workflows",
-			}},
-		}), nil
-	}
-
-	summary := workflowCompatibilitySummary{
-		WorkflowPaths: workflowPaths,
-	}
-	unsupported := make(map[string]struct{})
-	for _, relPath := range workflowPaths {
-		issues, labels, err := scanWorkflowFile(filepath.Join(root, relPath), relPath)
-		if err != nil {
-			summary.Issues = append(summary.Issues, WorkflowScanIssue{
-				Path:    relPath,
-				Reason:  "parse_failed",
-				Details: err.Error(),
-			})
-			continue
-		}
-		summary.Issues = append(summary.Issues, issues...)
-		for _, label := range labels {
-			unsupported[label] = struct{}{}
-		}
-	}
-
-	if len(summary.Issues) > 0 {
-		summary.UnsupportedLabels = sortedKeys(unsupported)
-		return compatibilityFailure(commitSHA, summary), nil
-	}
-
-	data, err := json.Marshal(summary)
+	data, err := json.Marshal(map[string]string{"mode": "metadata_only"})
 	if err != nil {
 		return RepoCompatibilityResult{}, err
 	}
@@ -334,131 +307,6 @@ func scanRepoCompatibility(ctx context.Context, repoURL, branch string) (RepoCom
 	}, nil
 }
 
-func compatibilityFailure(commitSHA string, summary workflowCompatibilitySummary) RepoCompatibilityResult {
-	data, _ := json.Marshal(summary)
-	return RepoCompatibilityResult{
-		Compatible:           false,
-		CompatibilityStatus:  CompatibilityStatusActionRequired,
-		CompatibilitySummary: data,
-		LastScannedSHA:       commitSHA,
-	}
-}
-
-func scanWorkflowFile(path, relPath string) ([]WorkflowScanIssue, []string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read workflow: %w", err)
-	}
-
-	var wf workflowFile
-	if err := yaml.Unmarshal(data, &wf); err != nil {
-		return nil, nil, fmt.Errorf("parse workflow yaml: %w", err)
-	}
-	if len(wf.Jobs) == 0 {
-		return []WorkflowScanIssue{{
-			Path:    relPath,
-			Reason:  "no_jobs",
-			Details: "workflow has no jobs",
-		}}, nil, nil
-	}
-
-	var (
-		issues    []WorkflowScanIssue
-		labelsOut []string
-	)
-	for jobID, job := range wf.Jobs {
-		labels, issue := extractRunsOnLabels(job.RunsOn)
-		if issue != "" {
-			issues = append(issues, WorkflowScanIssue{
-				Path:    relPath,
-				JobID:   jobID,
-				Reason:  issue,
-				Details: "runs-on must resolve to forge-metal",
-			})
-			continue
-		}
-		if !supportedRunsOn(labels) {
-			issues = append(issues, WorkflowScanIssue{
-				Path:   relPath,
-				JobID:  jobID,
-				Reason: "unsupported_runs_on",
-				Labels: labels,
-			})
-			labelsOut = append(labelsOut, labels...)
-		}
-	}
-	return issues, labelsOut, nil
-}
-
-func extractRunsOnLabels(node yaml.Node) ([]string, string) {
-	switch node.Kind {
-	case 0:
-		return nil, "missing_runs_on"
-	case yaml.ScalarNode:
-		value := strings.TrimSpace(node.Value)
-		if value == "" {
-			return nil, "missing_runs_on"
-		}
-		if strings.Contains(value, "${{") {
-			return nil, "dynamic_runs_on"
-		}
-		return []string{value}, ""
-	case yaml.SequenceNode:
-		labels := make([]string, 0, len(node.Content))
-		for _, item := range node.Content {
-			if item.Kind != yaml.ScalarNode {
-				return nil, "dynamic_runs_on"
-			}
-			value := strings.TrimSpace(item.Value)
-			if value == "" || strings.Contains(value, "${{") {
-				return nil, "dynamic_runs_on"
-			}
-			labels = append(labels, value)
-		}
-		if len(labels) == 0 {
-			return nil, "missing_runs_on"
-		}
-		return labels, ""
-	default:
-		return nil, "dynamic_runs_on"
-	}
-}
-
-func supportedRunsOn(labels []string) bool {
-	if len(labels) != 1 {
-		return false
-	}
-	return strings.TrimSpace(labels[0]) == RunnerProfileForgeMetal
-}
-
-func workflowFiles(root string) ([]string, error) {
-	var out []string
-	for _, dir := range []string{
-		filepath.Join(root, ".github", "workflows"),
-		filepath.Join(root, ".forgejo", "workflows"),
-	} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read workflow dir %s: %w", dir, err)
-		}
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
-				continue
-			}
-			out = append(out, filepath.ToSlash(strings.TrimPrefix(filepath.Join(dir, name), root+string(filepath.Separator))))
-		}
-	}
-	slices.Sort(out)
-	return out, nil
-}
-
 func cloneRepoBranch(ctx context.Context, repoURL, branch string) (string, error) {
 	tmp, err := os.MkdirTemp("", "forge-metal-repo-scan-*")
 	if err != nil {
@@ -466,7 +314,10 @@ func cloneRepoBranch(ctx context.Context, repoURL, branch string) (string, error
 	}
 	cmd, commandCtx, cancel := repoScanGitCommand(ctx,
 		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.file.allow=never",
 		"-c", "protocol.git.allow=never",
+		"-c", "protocol.http.allow=never",
+		"-c", "protocol.https.allow=always",
 		"-c", "protocol.ssh.allow=never",
 		"-c", "http.followRedirects=false",
 		"clone",
@@ -508,8 +359,17 @@ func repoScanGitCommand(ctx context.Context, args ...string) (*exec.Cmd, context
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_TERMINAL_PROMPT=0",
+		"GIT_PROTOCOL_FROM_USER=0",
+		"GIT_ALLOW_PROTOCOL="+repoScanAllowedProtocols(),
 	)
 	return cmd, commandCtx, cancel
+}
+
+func repoScanAllowedProtocols() string {
+	if strings.TrimSpace(os.Getenv(repoScanAllowFileProtocolForE2E)) == "1" {
+		return "https:file"
+	}
+	return "https"
 }
 
 func repoFullNameFromCloneURL(cloneURL string) string {
@@ -540,16 +400,4 @@ func splitRepoFullName(fullName string) (string, string) {
 		return "", fullName
 	}
 	return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1]
-}
-
-func sortedKeys(values map[string]struct{}) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	for key := range values {
-		out = append(out, key)
-	}
-	slices.Sort(out)
-	return out
 }

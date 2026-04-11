@@ -21,7 +21,6 @@ const electricExecutionSchema = v.object({
   correlation_id: v.string(),
   idempotency_key: v.nullable(v.string()),
   repo_id: v.nullable(v.string()),
-  golden_generation_id: v.nullable(v.string()),
   repo: v.string(),
   repo_url: v.string(),
   ref: v.string(),

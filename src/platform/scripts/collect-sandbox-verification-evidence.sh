@@ -231,8 +231,6 @@ if [[ -n "${repo_id}" ]]; then
       state,
       compatibility_status,
       last_scanned_sha,
-      active_golden_generation_id,
-      last_ready_sha,
       last_error,
       created_at,
       updated_at
@@ -241,34 +239,8 @@ if [[ -n "${repo_id}" ]]; then
   ) TO STDOUT WITH (FORMAT csv, HEADER true);
   " >"${output_dir}/postgres/repo.csv"
 
-  remote_psql sandbox_rental "
-  COPY (
-    SELECT
-      golden_generation_id,
-      repo_id,
-      runner_profile_slug,
-      source_ref,
-      source_sha,
-      state,
-      trigger_reason,
-      execution_id,
-      attempt_id,
-      orchestrator_job_id,
-      snapshot_ref,
-      activated_at,
-      superseded_at,
-      failure_reason,
-      failure_detail,
-      created_at,
-      updated_at
-    FROM golden_generations
-    WHERE repo_id = '${repo_id}'
-    ORDER BY created_at
-  ) TO STDOUT WITH (FORMAT csv, HEADER true);
-  " >"${output_dir}/postgres/golden_generations.csv"
 else
   printf 'repo_id,missing\n,true\n' >"${output_dir}/postgres/repo.csv"
-  printf 'repo_id,missing\n,true\n' >"${output_dir}/postgres/golden_generations.csv"
 fi
 
 if [[ -n "${attempt_id}" ]]; then

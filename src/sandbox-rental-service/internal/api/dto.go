@@ -41,36 +41,25 @@ func submitRequest(request apiwire.SandboxSubmitRequest) jobs.SubmitRequest {
 
 func repoRecord(record jobs.RepoRecord) apiwire.SandboxRepoRecord {
 	return apiwire.SandboxRepoRecord{
-		RepoID:                   record.RepoID,
-		OrgID:                    apiwire.Uint64(record.OrgID),
-		Provider:                 record.Provider,
-		ProviderHost:             record.ProviderHost,
-		ProviderRepoID:           record.ProviderRepoID,
-		Owner:                    record.Owner,
-		Name:                     record.Name,
-		FullName:                 record.FullName,
-		CloneURL:                 record.CloneURL,
-		DefaultBranch:            record.DefaultBranch,
-		RunnerProfileSlug:        record.RunnerProfileSlug,
-		State:                    record.State,
-		CompatibilityStatus:      record.CompatibilityStatus,
-		CompatibilitySummary:     append(json.RawMessage(nil), record.CompatibilitySummary...),
-		LastScannedSHA:           record.LastScannedSHA,
-		ActiveGoldenGenerationID: record.ActiveGoldenGenerationID,
-		LastReadySHA:             record.LastReadySHA,
-		LastError:                record.LastError,
-		CreatedAt:                record.CreatedAt,
-		UpdatedAt:                record.UpdatedAt,
-		ArchivedAt:               record.ArchivedAt,
+		RepoID:               record.RepoID,
+		OrgID:                apiwire.Uint64(record.OrgID),
+		Provider:             record.Provider,
+		ProviderHost:         record.ProviderHost,
+		ProviderRepoID:       record.ProviderRepoID,
+		Owner:                record.Owner,
+		Name:                 record.Name,
+		FullName:             record.FullName,
+		CloneURL:             record.CloneURL,
+		DefaultBranch:        record.DefaultBranch,
+		State:                record.State,
+		CompatibilityStatus:  record.CompatibilityStatus,
+		CompatibilitySummary: append(json.RawMessage(nil), record.CompatibilitySummary...),
+		LastScannedSHA:       record.LastScannedSHA,
+		LastError:            record.LastError,
+		CreatedAt:            record.CreatedAt,
+		UpdatedAt:            record.UpdatedAt,
+		ArchivedAt:           record.ArchivedAt,
 	}
-}
-
-func repoRecordPointer(record *jobs.RepoRecord) *apiwire.SandboxRepoRecord {
-	if record == nil {
-		return nil
-	}
-	dto := repoRecord(*record)
-	return &dto
 }
 
 func repoRecords(records []jobs.RepoRecord) []apiwire.SandboxRepoRecord {
@@ -81,81 +70,32 @@ func repoRecords(records []jobs.RepoRecord) []apiwire.SandboxRepoRecord {
 	return out
 }
 
-func repoBootstrapRecord(record jobs.RepoBootstrapRecord) apiwire.SandboxRepoBootstrapRecord {
-	return apiwire.SandboxRepoBootstrapRecord{
-		Repo:          repoRecordPointer(record.Repo),
-		Generation:    goldenGenerationRecordPointer(record.Generation),
-		ExecutionID:   record.ExecutionID,
-		AttemptID:     record.AttemptID,
-		TriggerReason: record.TriggerReason,
-	}
-}
-
-func goldenGenerationRecord(record jobs.GoldenGenerationRecord) apiwire.SandboxGoldenGenerationRecord {
-	return apiwire.SandboxGoldenGenerationRecord{
-		GoldenGenerationID: record.GoldenGenerationID,
-		RepoID:             record.RepoID,
-		RunnerProfileSlug:  record.RunnerProfileSlug,
-		SourceRef:          record.SourceRef,
-		SourceSHA:          record.SourceSHA,
-		State:              record.State,
-		TriggerReason:      record.TriggerReason,
-		ExecutionID:        record.ExecutionID,
-		AttemptID:          record.AttemptID,
-		OrchestratorJobID:  record.OrchestratorJobID,
-		SnapshotRef:        record.SnapshotRef,
-		ActivatedAt:        record.ActivatedAt,
-		SupersededAt:       record.SupersededAt,
-		FailureReason:      record.FailureReason,
-		FailureDetail:      record.FailureDetail,
-		CreatedAt:          record.CreatedAt,
-		UpdatedAt:          record.UpdatedAt,
-	}
-}
-
-func goldenGenerationRecordPointer(record *jobs.GoldenGenerationRecord) *apiwire.SandboxGoldenGenerationRecord {
-	if record == nil {
-		return nil
-	}
-	dto := goldenGenerationRecord(*record)
-	return &dto
-}
-
-func goldenGenerationRecords(records []jobs.GoldenGenerationRecord) []apiwire.SandboxGoldenGenerationRecord {
-	out := make([]apiwire.SandboxGoldenGenerationRecord, 0, len(records))
-	for _, record := range records {
-		out = append(out, goldenGenerationRecord(record))
-	}
-	return out
-}
-
 func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord {
 	return apiwire.SandboxExecutionRecord{
-		ExecutionID:        record.ExecutionID,
-		OrgID:              apiwire.Uint64(record.OrgID),
-		ActorID:            record.ActorID,
-		Kind:               record.Kind,
-		Provider:           record.Provider,
-		ProductID:          record.ProductID,
-		Status:             record.Status,
-		CorrelationID:      record.CorrelationID,
-		IdempotencyKey:     record.IdempotencyKey,
-		RepoID:             record.RepoID,
-		GoldenGenerationID: record.GoldenGenerationID,
-		Repo:               record.Repo,
-		RepoURL:            record.RepoURL,
-		Ref:                record.Ref,
-		DefaultBranch:      record.DefaultBranch,
-		RunCommand:         record.RunCommand,
-		CommitSHA:          record.CommitSHA,
-		WorkflowPath:       record.WorkflowPath,
-		WorkflowJobName:    record.WorkflowJobName,
-		ProviderRunID:      record.ProviderRunID,
-		ProviderJobID:      record.ProviderJobID,
-		LatestAttempt:      attemptRecord(record.LatestAttempt),
-		CreatedAt:          record.CreatedAt,
-		UpdatedAt:          record.UpdatedAt,
-		BillingWindows:     billingWindows(record.BillingWindows),
+		ExecutionID:     record.ExecutionID,
+		OrgID:           apiwire.Uint64(record.OrgID),
+		ActorID:         record.ActorID,
+		Kind:            record.Kind,
+		Provider:        record.Provider,
+		ProductID:       record.ProductID,
+		Status:          record.Status,
+		CorrelationID:   record.CorrelationID,
+		IdempotencyKey:  record.IdempotencyKey,
+		RepoID:          record.RepoID,
+		Repo:            record.Repo,
+		RepoURL:         record.RepoURL,
+		Ref:             record.Ref,
+		DefaultBranch:   record.DefaultBranch,
+		RunCommand:      record.RunCommand,
+		CommitSHA:       record.CommitSHA,
+		WorkflowPath:    record.WorkflowPath,
+		WorkflowJobName: record.WorkflowJobName,
+		ProviderRunID:   record.ProviderRunID,
+		ProviderJobID:   record.ProviderJobID,
+		LatestAttempt:   attemptRecord(record.LatestAttempt),
+		CreatedAt:       record.CreatedAt,
+		UpdatedAt:       record.UpdatedAt,
+		BillingWindows:  billingWindows(record.BillingWindows),
 	}
 }
 
@@ -167,7 +107,6 @@ func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
 		OrchestratorJobID: record.OrchestratorJobID,
 		BillingJobID:      record.BillingJobID,
 		RunnerName:        record.RunnerName,
-		GoldenSnapshot:    record.GoldenSnapshot,
 		FailureReason:     record.FailureReason,
 		ExitCode:          record.ExitCode,
 		DurationMs:        record.DurationMs,

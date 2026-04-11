@@ -69,9 +69,6 @@ func jobResultToProto(result JobResult, includeOutput bool) *vmrpc.JobResult {
 			VcpuExitCount:   result.Metrics.VCPUExitCount,
 		}
 	}
-	if result.RepoManifest != nil {
-		out.RepoManifest = repoManifestToProto(result.RepoManifest)
-	}
 	if len(result.PhaseResults) > 0 {
 		out.PhaseResults = make([]*vmrpc.PhaseResult, 0, len(result.PhaseResults))
 		for _, phase := range result.PhaseResults {
@@ -121,9 +118,6 @@ func jobResultFromProto(result *vmrpc.JobResult) *JobResult {
 			NetTxBytes:      metrics.GetNetTxBytes(),
 			VCPUExitCount:   metrics.GetVcpuExitCount(),
 		}
-	}
-	if manifest := result.GetRepoManifest(); manifest != nil {
-		out.RepoManifest = repoManifestFromProto(manifest)
 	}
 	if phases := result.GetPhaseResults(); len(phases) > 0 {
 		out.PhaseResults = make([]PhaseResult, 0, len(phases))
@@ -180,36 +174,7 @@ func jobStatusFromProto(resp *vmrpc.GetJobStatusResponse) JobStatus {
 		ErrorMessage: resp.GetErrorMessage(),
 		Result:       jobResultFromProto(resp.GetResult()),
 	}
-	if repo := resp.GetRepoExec(); repo != nil {
-		status.RepoExec = &RepoExecMetadata{
-			Repo:           repo.GetRepo(),
-			RepoURL:        repo.GetRepoUrl(),
-			Ref:            repo.GetRef(),
-			GoldenSnapshot: repo.GetGoldenSnapshot(),
-			CloneDuration:  time.Duration(repo.GetCloneDurationMs()) * time.Millisecond,
-			InstallNeeded:  repo.GetInstallNeeded(),
-			CommitSHA:      repo.GetCommitSha(),
-		}
-	}
 	return status
-}
-
-func warmGoldenResultFromProto(resp *vmrpc.WarmGoldenResponse) WarmGoldenResult {
-	var result JobResult
-	if decoded := jobResultFromProto(resp.GetJobResult()); decoded != nil {
-		result = *decoded
-	}
-	return WarmGoldenResult{
-		TargetDataset:             resp.GetTargetDataset(),
-		PreviousDataset:           resp.GetPreviousDataset(),
-		Promoted:                  resp.GetPromoted(),
-		CloneDuration:             time.Duration(resp.GetCloneDurationMs()) * time.Millisecond,
-		SnapshotPromotionDuration: time.Duration(resp.GetSnapshotPromotionDurationMs()) * time.Millisecond,
-		PreviousDestroyDuration:   time.Duration(resp.GetPreviousDestroyDurationMs()) * time.Millisecond,
-		CommitSHA:                 resp.GetCommitSha(),
-		JobResult:                 result,
-		ErrorMessage:              resp.GetErrorMessage(),
-	}
 }
 
 func telemetryHelloToProto(frame TelemetryHello) *vmrpc.TelemetryHello {
@@ -245,36 +210,6 @@ func telemetrySampleToProto(frame TelemetrySample) *vmrpc.TelemetrySample {
 		PsiCpuPct100:   uint32(frame.PSICPUPct100),
 		PsiMemPct100:   uint32(frame.PSIMemPct100),
 		PsiIoPct100:    uint32(frame.PSIIOPct100),
-	}
-}
-
-func repoManifestToProto(manifest *RepoManifest) *vmrpc.RepoManifest {
-	if manifest == nil {
-		return nil
-	}
-	return &vmrpc.RepoManifest{
-		Kind:                   manifest.Kind,
-		RequestedRef:           manifest.RequestedRef,
-		ResolvedCommitSha:      manifest.ResolvedCommitSHA,
-		LockfileRelPath:        manifest.LockfileRelPath,
-		LockfileSha256:         manifest.LockfileSHA256,
-		PreviousLockfileSha256: manifest.PreviousLockfileSHA256,
-		InstallNeeded:          manifest.InstallNeeded,
-	}
-}
-
-func repoManifestFromProto(manifest *vmrpc.RepoManifest) *RepoManifest {
-	if manifest == nil {
-		return nil
-	}
-	return &RepoManifest{
-		Kind:                   manifest.GetKind(),
-		RequestedRef:           manifest.GetRequestedRef(),
-		ResolvedCommitSHA:      manifest.GetResolvedCommitSha(),
-		LockfileRelPath:        manifest.GetLockfileRelPath(),
-		LockfileSHA256:         manifest.GetLockfileSha256(),
-		PreviousLockfileSHA256: manifest.GetPreviousLockfileSha256(),
-		InstallNeeded:          manifest.GetInstallNeeded(),
 	}
 }
 
