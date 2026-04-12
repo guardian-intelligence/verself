@@ -288,11 +288,15 @@ func coverageLabelForPool(pool EntitlementPool) string {
 	return ""
 }
 
+// poolLess orders the pools inside a single bucket section. By construction
+// only GrantScopeBucket ("Any X SKU") and GrantScopeSKU pools land here, so
+// the ordering question is just "header row first, then per-SKU rows." This
+// is intentionally distinct from GrantScopeFundingOrder (which puts SKU first
+// because the funder consumes most-specific first); display order and
+// consumption order serve different purposes and must not be conflated.
 func poolLess(a, b EntitlementPool, sourceRank map[GrantSourceType]int) bool {
-	// Bucket-scope rows render above SKU-scope rows. Within each scope, sort
-	// by SKU display (empty for bucket-scope) then by funding source order.
 	if a.ScopeType != b.ScopeType {
-		return scopeRank(a.ScopeType) < scopeRank(b.ScopeType)
+		return a.ScopeType == GrantScopeBucket
 	}
 	if a.SKUDisplay != b.SKUDisplay {
 		return a.SKUDisplay < b.SKUDisplay
@@ -301,15 +305,6 @@ func poolLess(a, b EntitlementPool, sourceRank map[GrantSourceType]int) bool {
 		return a.SKUID < b.SKUID
 	}
 	return sourceRank[a.Source] < sourceRank[b.Source]
-}
-
-func scopeRank(scope GrantScopeType) int {
-	for i, s := range []GrantScopeType{GrantScopeBucket, GrantScopeSKU, GrantScopeProduct, GrantScopeAccount} {
-		if s == scope {
-			return i
-		}
-	}
-	return len([]GrantScopeType{GrantScopeBucket, GrantScopeSKU, GrantScopeProduct, GrantScopeAccount})
 }
 
 func grantSourceRank() map[GrantSourceType]int {
