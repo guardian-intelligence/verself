@@ -181,6 +181,30 @@ func TestWaitForRunRequestRejectsUnexpectedControlFrame(t *testing.T) {
 	}
 }
 
+func TestWaitForRunRequestRejectsZeroSequence(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		errCh:     make(chan error, 1),
+		jobCancel: func() {},
+	}
+	controlCh := make(chan vmproto.Envelope, 1)
+	controlCh <- mustEnvelope(t, vmproto.TypeRunRequest, 0, vmproto.RunRequest{
+		ProtocolVersion: vmproto.ProtocolVersion,
+	})
+
+	_, err := session.waitForRunRequest(controlCh)
+	if err == nil {
+		t.Fatal("expected protocol violation for zero sequence")
+	}
+	if !strings.Contains(err.Error(), "await_run_request") {
+		t.Fatalf("expected deterministic state in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "seq") {
+		t.Fatalf("expected seq detail, got %v", err)
+	}
+}
+
 func TestWaitForResultAckRejectsMismatchedForType(t *testing.T) {
 	t.Parallel()
 
@@ -253,6 +277,31 @@ func TestWaitForResultAckRejectsUnexpectedControlFrame(t *testing.T) {
 	}
 }
 
+func TestWaitForResultAckRejectsZeroSequence(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		errCh:     make(chan error, 1),
+		jobCancel: func() {},
+	}
+	controlCh := make(chan vmproto.Envelope, 1)
+	controlCh <- mustEnvelope(t, vmproto.TypeAck, 0, vmproto.Ack{
+		ForType: vmproto.TypeResult,
+		ForSeq:  9,
+	})
+
+	err := session.waitForResultAck(controlCh, 9)
+	if err == nil {
+		t.Fatal("expected protocol violation for zero sequence")
+	}
+	if !strings.Contains(err.Error(), "await_result_ack") {
+		t.Fatalf("expected deterministic state in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "seq") {
+		t.Fatalf("expected seq detail, got %v", err)
+	}
+}
+
 func TestWaitForResultAckAcceptsMatchingAck(t *testing.T) {
 	t.Parallel()
 
@@ -308,6 +357,28 @@ func TestWaitForShutdownAcceptsShutdown(t *testing.T) {
 	}
 }
 
+func TestWaitForShutdownRejectsZeroSequence(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		errCh:     make(chan error, 1),
+		jobCancel: func() {},
+	}
+	controlCh := make(chan vmproto.Envelope, 1)
+	controlCh <- mustEnvelope(t, vmproto.TypeShutdown, 0, vmproto.Shutdown{})
+
+	err := session.waitForShutdown(controlCh)
+	if err == nil {
+		t.Fatal("expected protocol violation for zero sequence")
+	}
+	if !strings.Contains(err.Error(), "await_shutdown") {
+		t.Fatalf("expected deterministic state in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "seq") {
+		t.Fatalf("expected seq detail, got %v", err)
+	}
+}
+
 func TestHandleRunPhaseControlAcceptsCancel(t *testing.T) {
 	t.Parallel()
 
@@ -324,6 +395,32 @@ func TestHandleRunPhaseControlAcceptsCancel(t *testing.T) {
 	}
 	if !canceled {
 		t.Fatal("expected cancel callback to be invoked")
+	}
+}
+
+func TestHandleRunPhaseControlRejectsZeroSequenceCancel(t *testing.T) {
+	t.Parallel()
+
+	canceled := false
+	session := &agentSession{
+		errCh: make(chan error, 1),
+		jobCancel: func() {
+			canceled = true
+		},
+	}
+
+	err := session.handleRunPhaseControl(mustEnvelope(t, vmproto.TypeCancel, 0, vmproto.Cancel{}))
+	if err == nil {
+		t.Fatal("expected protocol violation for zero sequence")
+	}
+	if canceled {
+		t.Fatal("cancel callback should not run for invalid control sequence")
+	}
+	if !strings.Contains(err.Error(), "run_phase") {
+		t.Fatalf("expected deterministic state in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "seq") {
+		t.Fatalf("expected seq detail, got %v", err)
 	}
 }
 
