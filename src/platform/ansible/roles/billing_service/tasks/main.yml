@@ -188,6 +188,12 @@
   notify:
     - restart billing-service
 
+- name: Trigger billing-service restart after binary and schema are in sync
+  ansible.builtin.command: /bin/true
+  changed_when: deploy_profile_billing_service_binary_copy.changed | default(false)
+  notify:
+    - restart billing-service
+
 - name: Apply billing-service unit changes before proceeding
   ansible.builtin.meta: flush_handlers
 

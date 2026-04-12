@@ -122,11 +122,6 @@
         ) | default({})
       }}
 
-- name: Trigger billing-service restart when binary changed
-  ansible.builtin.command: /bin/true
-  changed_when: deploy_profile_billing_service_binary_copy.changed | default(false)
-  notify: restart billing-service
-
 - name: Set sandbox-rental-service binary copy fact
   ansible.builtin.set_fact:
     deploy_profile_sandbox_rental_service_binary_copy: >-
