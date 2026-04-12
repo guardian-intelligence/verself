@@ -17,7 +17,7 @@ import time
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from ansible.errors import AnsibleActionFail
 from ansible.module_utils.parsing.convert_bool import boolean
@@ -142,6 +142,20 @@ def _context() -> dict[str, str]:
     return _CONTEXT_CACHE
 
 
+def _header_get(headers: dict, name: str) -> str:
+    for key, value in headers.items():
+        if str(key).lower() == name.lower():
+            return _first_nonempty(value)
+    return ""
+
+
+def _header_has(headers: dict, name: str) -> bool:
+    for key in headers.keys():
+        if str(key).lower() == name.lower():
+            return True
+    return False
+
+
 def _task_template_id(task, task_vars) -> str:
     task_path = _first_nonempty(
         getattr(task, "get_path", lambda: "")(),
@@ -192,6 +206,45 @@ def _probe_id(
     )
 
 
+def _trace_id(context: dict[str, str]) -> str:
+    deploy_id = _first_nonempty(context.get("deploy_id"))
+    try:
+        return uuid.UUID(deploy_id).hex
+    except Exception:
+        return _stable_hex(deploy_id, length=32)
+
+
+def _span_id(seed: str) -> str:
+    span_id = _stable_hex(seed, length=16)
+    if span_id == "0" * 16:
+        return "0000000000000001"
+    return span_id
+
+
+def _traceparent(context: dict[str, str], task_instance_id: str) -> str:
+    return f"00-{_trace_id(context)}-{_span_id(task_instance_id)}-01"
+
+
+def _baggage(headers: dict[str, str]) -> str:
+    items: list[tuple[str, str]] = []
+
+    def add(key: str, header_name: str):
+        value = _header_get(headers, header_name)
+        if value:
+            items.append((key, value))
+
+    add("forge_metal.deploy_id", "X-Forge-Metal-Deploy-Id")
+    add("forge_metal.deploy_run_key", "X-Forge-Metal-Deploy-Run-Key")
+    add("forge_metal.task_template_id", "X-Forge-Metal-Task-Template-Id")
+    add("forge_metal.task_instance_id", "X-Forge-Metal-Task-Instance-Id")
+    add("forge_metal.probe_id", "X-Forge-Metal-Probe-Id")
+    add("forge_metal.verification_run", "X-Forge-Metal-Verification-Run")
+    add("forge_metal.correlation_id", "X-Forge-Metal-Correlation-Id")
+
+    encoded = [f"{k}={quote(v, safe='-._~@:/')}" for k, v in items]
+    return ",".join(encoded)
+
+
 class ActionModule(ActionBase):
     TRANSFERS_FILES = True
 
@@ -239,6 +292,14 @@ class ActionModule(ActionBase):
 
             if value:
                 headers[header_name] = value
+
+        if url and not _header_has(headers, "traceparent"):
+            headers["traceparent"] = _traceparent(context, task_instance_id)
+
+        if not _header_has(headers, "baggage"):
+            baggage_value = _baggage(headers)
+            if baggage_value:
+                headers["baggage"] = baggage_value
 
         try:
             if remote_src:
