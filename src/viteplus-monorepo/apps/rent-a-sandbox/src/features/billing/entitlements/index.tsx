@@ -99,7 +99,7 @@ function UniversalStrip({ pools }: { pools: EntitlementPool[] }) {
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {pools.map((pool) => (
-            <PoolCell key={poolKey(pool)} pool={pool} variant="universal" />
+            <PoolCell key={poolKey(pool)} pool={pool} />
           ))}
         </div>
         <Separator />
@@ -113,62 +113,75 @@ function UniversalStrip({ pools }: { pools: EntitlementPool[] }) {
 
 function ProductSection({ section }: { section: EntitlementProductSection }) {
   const productPools = section.product_pools ?? [];
-  const buckets = section.buckets ?? [];
+  const buckets = (section.buckets ?? []).filter((b) => (b.pools ?? []).length > 0);
+  if (productPools.length === 0 && buckets.length === 0) return null;
   return (
     <Card data-testid={`entitlements-product-${section.product_id}`}>
       <CardHeader>
         <CardTitle>{section.display_name}</CardTitle>
         <CardDescription>
-          Credits scoped to {section.display_name}. Cells are independent — read each row by what it
-          says it covers.
+          Credits scoped to {section.display_name}. Each row is independent — read it by what it
+          says it covers, never by adding it to another row.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {productPools.length > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {productPools.map((pool) => (
-              <PoolCell key={poolKey(pool)} pool={pool} variant="product" />
-            ))}
-          </div>
-        ) : null}
-
-        {buckets.map((bucket) => (
-          <BucketTable key={bucket.bucket_id} bucket={bucket} />
-        ))}
+      <CardContent className="p-0">
+        <div className="border-t border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Covers</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead className="text-right">Available</TableHead>
+                <TableHead className="text-right">Pending</TableHead>
+                <TableHead className="text-right">Next expiry</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {productPools.length > 0 ? (
+                <>
+                  <SectionHeaderRow label={`Anywhere in ${section.display_name}`} />
+                  {productPools.map((pool) => (
+                    <PoolRow key={poolKey(pool)} pool={pool} />
+                  ))}
+                </>
+              ) : null}
+              {buckets.map((bucket) => (
+                <BucketRows key={bucket.bucket_id} bucket={bucket} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function BucketTable({ bucket }: { bucket: EntitlementBucketSection }) {
+function BucketRows({ bucket }: { bucket: EntitlementBucketSection }) {
   const pools = bucket.pools ?? [];
   if (pools.length === 0) return null;
-
   return (
-    <div className="space-y-2" data-testid={`entitlements-bucket-${bucket.bucket_id}`}>
-      <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold">{bucket.display_name}</h3>
-        <span className="text-xs text-muted-foreground">Each row is independent</span>
-      </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Covers</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-right">Available</TableHead>
-              <TableHead className="text-right">Pending</TableHead>
-              <TableHead className="text-right">Next expiry</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pools.map((pool) => (
-              <PoolRow key={poolKey(pool)} pool={pool} />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+    <>
+      <SectionHeaderRow
+        label={bucket.display_name}
+        testid={`entitlements-bucket-${bucket.bucket_id}`}
+      />
+      {pools.map((pool) => (
+        <PoolRow key={poolKey(pool)} pool={pool} />
+      ))}
+    </>
+  );
+}
+
+function SectionHeaderRow({ label, testid }: { label: string; testid?: string }) {
+  return (
+    <TableRow data-testid={testid} className="bg-muted/40 hover:bg-muted/40">
+      <TableCell
+        colSpan={5}
+        className="py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      >
+        {label}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -199,14 +212,13 @@ function PoolRow({ pool }: { pool: EntitlementPool }) {
   );
 }
 
-function PoolCell({ pool, variant }: { pool: EntitlementPool; variant: "universal" | "product" }) {
+function PoolCell({ pool }: { pool: EntitlementPool }) {
   const totals = poolTotals(pool);
   const next = pool.entries[0];
   return (
     <div
       className="rounded-lg border border-border p-4 space-y-2"
       data-testid={`entitlements-pool-${poolKey(pool)}`}
-      data-variant={variant}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-muted-foreground">{pool.coverage_label}</span>
