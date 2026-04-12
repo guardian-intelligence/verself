@@ -27,7 +27,7 @@ A product is something billable. A plan chooses which SKUs are active for that p
 - `Memory` bucket, SKU `Standard Memory`, quantity unit `GiB-second`
 - `Block Storage` bucket, SKU `Premium NVMe`, quantity unit `GiB-second`
 
-The price is attached to the plan/SKU pair, not to ad hoc JSON on the plan row. That is the cutover from the legacy plan-local JSON pricing model.
+Metered usage prices are attached to the plan/SKU pair, not to ad hoc JSON on the plan row. Stripe subscription price IDs stay on the plan row for checkout because they identify the provider's recurring invoice item, not the internal SKU rate card. That is the cutover from the legacy plan-local JSON pricing model.
 
 The supported entitlement layers map to `account` bucket -> `product` bucket -> SKU bucket. Entitlements are non-overlapping within a layer:
 
@@ -93,8 +93,10 @@ Key fields:
 - `quotas`
 - `is_default`
 - `tier`
+- `stripe_price_id_monthly`
+- `stripe_price_id_annual`
 
-A plan no longer carries pricing or included-credit JSON. It is a tier shell plus rate-card rows and linked entitlement policies. Free-tier entitlements live outside the plan model so paid subscribers keep their free-tier allowances.
+A plan no longer carries metered pricing or included-credit JSON. It is a tier shell, Stripe subscription checkout reference, rate-card rows, and linked entitlement policies. Free-tier entitlements live outside the plan model so paid subscribers keep their free-tier allowances.
 
 ### `plan_sku_rates`
 
