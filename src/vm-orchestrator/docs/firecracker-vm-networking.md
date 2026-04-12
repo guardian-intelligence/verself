@@ -48,9 +48,10 @@ Bare-Metal Host
 
 ## Operational Notes
 
-- The allocator is the source of truth for IP uniqueness. Lease state is persisted on disk so multiple `forge-metal` processes can coordinate safely.
+- The allocator is the source of truth for slot/IP uniqueness. Lease state is persisted on disk so concurrent allocator calls coordinate through a host lock file and daemon restarts can recover state.
 - Per-job runtime only creates and deletes TAP devices. It does not mutate host-wide firewall state.
 - Recovery is best-effort. On startup, stale lease files are reconciled against live TAP devices and recorded PIDs.
+- Guest networking requests are never host authority signals; the host allocator and host firewall policy define the effective network state.
 - Guests still use static kernel boot args, so the guest image stays simple and unaware of host network orchestration.
 - Guests do not reach host loopback through DNAT. Host-local platform services are exposed through `fm-host0`, and host firewall rules match `fc-tap-*` plus destination `10.255.0.1`.
 
