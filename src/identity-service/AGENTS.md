@@ -10,15 +10,17 @@ Zitadel owns authentication, organizations, users, service accounts, OIDC/OAuth
 applications, project roles, role assignments, project grants, JWKS, MFA,
 passkeys, and social identity providers.
 
-Forge Metal owns product IAM policy documents, organization-management UX, and
-the catalog projection of service-declared operations. This service is the API
-surface for those Forge Metal-owned concerns.
+Forge Metal owns the fixed three-role product IAM (`owner`, `admin`, `member`),
+the static code-owned capability catalog that gates the `member` role, and the
+organization-management UX. This service is the API surface for those Forge
+Metal-owned concerns.
 
 Go product services remain authorization enforcement points. Each service owns
 and enforces its own operation catalog through Huma/OpenAPI metadata such as
-`x-forge-metal-iam`. `identity-service` may aggregate and expose those catalogs
-for policy editing, but it must not become the runtime authorizer for other
-services.
+`x-forge-metal-iam`. `identity-service` does not aggregate other services'
+catalogs at runtime and is not the runtime authorizer for other services — its
+catalog is consulted only for the member-capability resolution path inside its
+own boundary.
 
 ## Product Surface
 
@@ -48,27 +50,37 @@ resource ownership against Zitadel or Forge Metal-owned storage after the
 operation permission check passes.
 
 Use `apiwire` for request/response DTOs shared across services, generated
-clients, or frontend wrappers, including the public operation-catalog response
-shape returned by this service. Huma route metadata such as `x-forge-metal-iam`
-remains service-local because it describes enforcement behavior rather than a
-wire payload.
+clients, or frontend wrappers, including the member-capability document and
+catalog payloads returned by this service. Huma route metadata such as
+`x-forge-metal-iam` remains service-local because it describes enforcement
+behavior rather than a wire payload.
 
-## Policy Model
+## Product IAM Model
 
-Built-in defaults must make a fresh self-hosted install usable without customers
-hand-authoring raw IAM documents. Customer-editable policy documents should be a
-constrained Forge Metal resource that maps role keys to service-declared
-permissions.
+The product IAM is a fixed three-role model: `owner`, `admin`, `member`. Owner
+is the org singleton (one per org, transferred via a separate flow); owner and
+admin are otherwise identical and resolve to the full known permission set.
+Member is gated by a small, static, code-owned catalog of named **capability**
+bundles in `internal/identity/capabilities.go`. There is no customer-editable
+policy document and no per-member override surface.
 
-Zitadel role assignments prove who the caller is and which organization/project
-roles they hold. Forge Metal policy documents decide how those role keys map to
-product permissions. Full policy documents should not be embedded into Zitadel
-tokens.
+Each operation in `internal/identity/catalog.go` carries a `MemberEligible bool`
+flag. The `init()` check in `capabilities.go` panics at process start if any
+capability bundles a permission whose operation is not tagged member-eligible,
+or if any member-eligible permission is not covered by the baseline ∪ capability
+union. Drift between the catalog and the capability list is therefore a
+boot-time bug, not a runtime authorization gap.
 
-Operation catalogs should be treated as code-defined service contracts. A
-service operation such as `sandbox:execution:submit` is declared and enforced by
-the owning service, documented through OpenAPI, and consumed by this service only
-as policy-editing input.
+Zitadel role assignments prove who the caller is and which org/project role
+they hold. The Forge Metal capability state is org-scoped and stored in
+`identity_member_capabilities` (PostgreSQL); it is resolved per request at the
+service boundary and is not embedded into Zitadel tokens.
+
+Operation catalogs are code-defined service contracts. A service operation such
+as `sandbox:execution:submit` is declared and enforced by the owning service and
+documented through OpenAPI. Adding a capability or moving an operation between
+member-eligible and admin-only is a code change in `identity-service`, gated by
+the `init()` invariant check.
 
 ## Zitadel Integration
 
@@ -106,10 +118,10 @@ telemetry. Never persist or return plaintext customer credential secrets.
 
 Use a Zitadel pre-access-token Action to append `forge_metal:credential_id`,
 `org_id`, and the exact Forge Metal operation permissions granted to the active
-credential.
-Do not embed full Forge Metal policy documents into Zitadel tokens. Issuance and
-roll must reject any requested permission that is not in a service-declared
-operation catalog or is not held by the creating principal.
+credential. Member capability state stays in `identity_member_capabilities`
+PostgreSQL; it is not embedded into Zitadel tokens. Issuance and roll must
+reject any requested permission that is not in a service-declared operation
+catalog or is not held by the creating principal at the moment of issuance.
 
 ## Observability And Security
 

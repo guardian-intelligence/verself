@@ -111,7 +111,7 @@ See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire`
 
 ## Identity And IAM
 
-See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments, Forge Metal owns product policy documents and organization management UX, and each Go service owns the operation catalog it enforces.
+See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments. Forge Metal pins three role keys per project (`owner`, `admin`, `member`), exposes a fixed switchboard of code-owned member-capability bundles in the org console, and each Go service owns the operation catalog it enforces. Members can never receive a permission whose operation is not tagged `member_eligible: true`; the boundary is enforced at catalog `init()` and at credential issuance.
 
 ## Secrets Plane
 

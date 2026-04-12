@@ -51,9 +51,9 @@ same component and service API rather than an iframe, a Zitadel Console
 extension, or a separate hand-built shell.
 
 Zitadel custom login UI support is relevant to replacing or branding the login
-flow, not to product policy editing. Zitadel Actions are useful for workflow
-hooks and token/role automation, but product policy documents remain Forge
-Metal-owned resources.
+flow, not to product authorization. Zitadel Actions are useful for workflow
+hooks and token/role automation; the member-capability state and the static
+capability catalog stay in `identity-service` PostgreSQL and Go code.
 
 ## Policy Split
 
