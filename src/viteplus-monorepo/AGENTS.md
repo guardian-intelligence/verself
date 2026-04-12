@@ -149,7 +149,7 @@ Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Que
 ## UI Components
 
 - `cn()` and `Skeleton` are in the shared `@forge-metal/ui` package (`packages/ui/`). Import as `import { cn, Skeleton } from "@forge-metal/ui"`.
-- App-specific components live in `src/components/` (e.g. `balance-card.tsx`).
+- App-specific components live in `src/components/` (e.g. `error-callout.tsx`). Cross-feature panels live under `src/features/<feature>/` (e.g. `features/billing/entitlements/`).
 - shadcn-compatible theme tokens (OKLCH) are in `src/styles/app.css` via Tailwind v4's `@theme` directive.
 
 ## Routing
