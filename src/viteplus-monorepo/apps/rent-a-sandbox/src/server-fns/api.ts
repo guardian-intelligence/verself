@@ -4,7 +4,6 @@ import {
   IdentityApiError,
   getMembers as getMembersRequest,
   getMemberCapabilities as getMemberCapabilitiesRequest,
-  getOperations as getOperationsRequest,
   getOrganization as getOrganizationRequest,
   inviteMember as inviteMemberRequest,
   inviteMemberRequestSchema,
@@ -21,7 +20,6 @@ import type {
   MemberCapabilities,
   MemberCapabilitiesDocument,
   MemberCapability,
-  Operations,
   Organization,
   PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
@@ -101,7 +99,6 @@ export type {
   MemberCapabilities,
   MemberCapabilitiesDocument,
   MemberCapability,
-  Operations,
   Organization,
   PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
@@ -184,12 +181,6 @@ export const updateMemberRoles = createServerFn({ method: "POST" })
       ...(await identityClientOptions(context)),
       body: data,
     });
-  });
-
-export const getOperations = createServerFn({ method: "GET" })
-  .middleware([rentASandboxAuthMiddleware])
-  .handler(async ({ context }) => {
-    return getOperationsRequest(await identityClientOptions(context));
   });
 
 export const getMemberCapabilities = createServerFn({ method: "GET" })

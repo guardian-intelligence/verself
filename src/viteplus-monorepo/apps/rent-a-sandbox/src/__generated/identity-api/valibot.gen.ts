@@ -132,15 +132,6 @@ export const vIdentityMembers = v.strictObject({
   members: v.nullable(v.array(vIdentityMember)),
 });
 
-export const vIdentityOperation = v.strictObject({
-  action: v.string(),
-  member_eligible: v.boolean(),
-  operation_id: v.string(),
-  org_scope: v.string(),
-  permission: v.string(),
-  resource: v.string(),
-});
-
 export const vIdentityOrganization = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   caller: vIdentityMember,
@@ -165,16 +156,6 @@ export const vIdentityRollApiCredentialResponse = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   credential: vIdentityApiCredential,
   issued_material: vIdentityApiCredentialIssuedMaterial,
-});
-
-export const vIdentityServiceOperations = v.strictObject({
-  operations: v.nullable(v.array(vIdentityOperation)),
-  service: v.string(),
-});
-
-export const vIdentityOperations = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  services: v.nullable(v.array(vIdentityServiceOperations)),
 });
 
 export const vIdentityUpdateMemberRolesRequest = v.strictObject({
@@ -267,10 +248,6 @@ export const vIdentityMemberCapabilitiesWritable = v.strictObject({
 
 export const vIdentityMembersWritable = v.strictObject({
   members: v.nullable(v.array(vIdentityMemberWritable)),
-});
-
-export const vIdentityOperationsWritable = v.strictObject({
-  services: v.nullable(v.array(vIdentityServiceOperations)),
 });
 
 export const vIdentityOrganizationWritable = v.strictObject({
@@ -403,8 +380,3 @@ export const vUpdateOrganizationMemberRolesPath = v.object({
  * OK
  */
 export const vUpdateOrganizationMemberRolesResponse = vIdentityMember;
-
-/**
- * OK
- */
-export const vListOrganizationOperationsResponse = vIdentityOperations;

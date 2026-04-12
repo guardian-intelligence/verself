@@ -23,24 +23,6 @@ export interface MemberCapabilities {
   readonly catalog: ReadonlyArray<MemberCapability>;
 }
 
-export interface Operation {
-  readonly operation_id: string;
-  readonly permission: string;
-  readonly resource: string;
-  readonly action: string;
-  readonly org_scope: string;
-  readonly member_eligible: boolean;
-}
-
-export interface ServiceOperations {
-  readonly service: string;
-  readonly operations: ReadonlyArray<Operation>;
-}
-
-export interface Operations {
-  readonly services: ReadonlyArray<ServiceOperations>;
-}
-
 export interface Member {
   readonly user_id: string;
   readonly email: string;

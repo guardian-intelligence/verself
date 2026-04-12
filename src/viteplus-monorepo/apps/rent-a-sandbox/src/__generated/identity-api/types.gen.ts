@@ -181,23 +181,6 @@ export type IdentityMembers = {
   members: Array<IdentityMember> | null;
 };
 
-export type IdentityOperation = {
-  action: string;
-  member_eligible: boolean;
-  operation_id: string;
-  org_scope: string;
-  permission: string;
-  resource: string;
-};
-
-export type IdentityOperations = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  services: Array<IdentityServiceOperations> | null;
-};
-
 export type IdentityOrganization = {
   /**
    * A URL to the JSON Schema for this object.
@@ -234,11 +217,6 @@ export type IdentityRollApiCredentialResponse = {
   readonly $schema?: string;
   credential: IdentityApiCredential;
   issued_material: IdentityApiCredentialIssuedMaterial;
-};
-
-export type IdentityServiceOperations = {
-  operations: Array<IdentityOperation> | null;
-  service: string;
 };
 
 export type IdentityUpdateMemberRolesRequest = {
@@ -342,10 +320,6 @@ export type IdentityMemberCapabilitiesWritable = {
 
 export type IdentityMembersWritable = {
   members: Array<IdentityMemberWritable> | null;
-};
-
-export type IdentityOperationsWritable = {
-  services: Array<IdentityServiceOperations> | null;
 };
 
 export type IdentityOrganizationWritable = {
@@ -718,30 +692,3 @@ export type UpdateOrganizationMemberRolesResponses = {
 
 export type UpdateOrganizationMemberRolesResponse =
   UpdateOrganizationMemberRolesResponses[keyof UpdateOrganizationMemberRolesResponses];
-
-export type ListOrganizationOperationsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/api/v1/organization/operations";
-};
-
-export type ListOrganizationOperationsErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListOrganizationOperationsError =
-  ListOrganizationOperationsErrors[keyof ListOrganizationOperationsErrors];
-
-export type ListOrganizationOperationsResponses = {
-  /**
-   * OK
-   */
-  200: IdentityOperations;
-};
-
-export type ListOrganizationOperationsResponse =
-  ListOrganizationOperationsResponses[keyof ListOrganizationOperationsResponses];

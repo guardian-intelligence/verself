@@ -4,7 +4,6 @@ import type {
   InviteMemberResponse,
   Member,
   MemberCapabilities,
-  Operations,
   Organization,
   PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
@@ -18,7 +17,6 @@ import type {
 export interface IdentityApiClient {
   getOrganization: () => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
-  listOperations: () => Promise<Operations>;
   getMemberCapabilities: () => Promise<MemberCapabilities>;
   putMemberCapabilities: (input: PutMemberCapabilitiesRequest) => Promise<MemberCapabilities>;
   inviteMember: (input: InviteMemberRequest) => Promise<InviteMemberResponse>;
