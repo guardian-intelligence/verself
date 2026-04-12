@@ -48,6 +48,13 @@ type config struct {
 	targetPrepaidUnits   uint64
 	prepaidSource        string
 	expiresAfter         time.Duration
+	skuScopedGrantsJSON  string
+}
+
+type skuScopedGrantSpec struct {
+	SKUID  string `json:"sku_id"`
+	Units  uint64 `json:"units"`
+	Source string `json:"source"`
 }
 
 type seedResult struct {
@@ -64,6 +71,7 @@ type seedResult struct {
 	CatalogUpserted      bool   `json:"catalog_upserted"`
 	DefaultPlanUpserted  bool   `json:"default_plan_upserted"`
 	EntitlementsUpserted bool   `json:"entitlements_upserted"`
+	SKUGrantsDeposited   int    `json:"sku_grants_deposited"`
 }
 
 type bucketSeed struct {
@@ -174,6 +182,11 @@ func run() error {
 		}
 	}
 
+	skuGrantsDeposited, err := depositSKUScopedGrants(ctx, client, pg, cfg)
+	if err != nil {
+		return err
+	}
+
 	after, err := currentPrepaidUnits(ctx, client, cfg.orgID, cfg.productID)
 	if err != nil {
 		return err
@@ -193,12 +206,67 @@ func run() error {
 		CatalogUpserted:      catalogUpserted,
 		DefaultPlanUpserted:  defaultPlanUpserted,
 		EntitlementsUpserted: entitlementsUpserted,
+		SKUGrantsDeposited:   skuGrantsDeposited,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal seed result: %w", err)
 	}
 	fmt.Println(string(encoded))
 	return nil
+}
+
+func depositSKUScopedGrants(ctx context.Context, client *billing.Client, pg *sql.DB, cfg config) (int, error) {
+	if strings.TrimSpace(cfg.skuScopedGrantsJSON) == "" {
+		return 0, nil
+	}
+	var specs []skuScopedGrantSpec
+	if err := json.Unmarshal([]byte(cfg.skuScopedGrantsJSON), &specs); err != nil {
+		return 0, fmt.Errorf("parse sku-scoped grants json: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
+	deposited := 0
+	for _, spec := range specs {
+		if spec.SKUID == "" {
+			return deposited, fmt.Errorf("sku-scoped grant: sku_id is required")
+		}
+		if spec.Units == 0 {
+			return deposited, fmt.Errorf("sku-scoped grant %s: units must be greater than zero", spec.SKUID)
+		}
+		if spec.Source == "" {
+			return deposited, fmt.Errorf("sku-scoped grant %s: source is required", spec.SKUID)
+		}
+		productID, bucketID, err := lookupSKUScope(ctx, pg, spec.SKUID)
+		if err != nil {
+			return deposited, err
+		}
+		if productID != cfg.productID {
+			return deposited, fmt.Errorf("sku-scoped grant %s: sku belongs to product %s, not %s", spec.SKUID, productID, cfg.productID)
+		}
+		if _, err := client.DepositCredits(ctx, billing.CreditGrant{
+			OrgID:             billing.OrgID(cfg.orgID),
+			ScopeType:         billing.GrantScopeSKU,
+			ScopeProductID:    productID,
+			ScopeBucketID:     bucketID,
+			ScopeSKUID:        spec.SKUID,
+			Amount:            spec.Units,
+			Source:            spec.Source,
+			SourceReferenceID: fmt.Sprintf("seed-sku:%d:%s:%s", cfg.orgID, spec.SKUID, spec.Source),
+			ExpiresAt:         &expiresAt,
+		}); err != nil {
+			return deposited, fmt.Errorf("deposit sku-scoped grant %s: %w", spec.SKUID, err)
+		}
+		deposited++
+	}
+	return deposited, nil
+}
+
+func lookupSKUScope(ctx context.Context, pg *sql.DB, skuID string) (string, string, error) {
+	var productID, bucketID string
+	err := pg.QueryRowContext(ctx, `SELECT product_id, bucket_id FROM skus WHERE sku_id = $1`, skuID).Scan(&productID, &bucketID)
+	if err != nil {
+		return "", "", fmt.Errorf("lookup sku %s: %w", skuID, err)
+	}
+	return productID, bucketID, nil
 }
 
 func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint64, productID string) (uint64, error) {
@@ -252,6 +320,7 @@ func parseFlags() (config, error) {
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
 	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
 	flag.DurationVar(&cfg.expiresAfter, "expires-after", cfg.expiresAfter, "duration until seeded credits expire")
+	flag.StringVar(&cfg.skuScopedGrantsJSON, "sku-scoped-grants-json", "", "SKU-scoped grants to deposit as JSON: [{\"sku_id\":..,\"units\":..,\"source\":..}]")
 	flag.Parse()
 
 	switch {
