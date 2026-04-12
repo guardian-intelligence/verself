@@ -28,6 +28,14 @@ const (
 	runnerGID            = 1000
 	vmGuestTelemetryBin  = "/usr/local/bin/vm-guest-telemetry"
 	vmGuestTelemetryPort = 10790
+	bridgeFaultEnvVar    = "FORGE_METAL_VM_BRIDGE_FAULT"
+)
+
+type bridgeFaultMode string
+
+const (
+	bridgeFaultNone          bridgeFaultMode = ""
+	bridgeFaultResultSeqZero bridgeFaultMode = "result_seq_zero"
 )
 
 func main() {
@@ -46,6 +54,10 @@ func main() {
 
 func runInit() error {
 	bootStart := time.Now()
+	bridgeFault, err := parseBridgeFaultMode(os.Getenv(bridgeFaultEnvVar))
+	if err != nil {
+		return err
+	}
 
 	mountVirtualFilesystems()
 	if err := configureLoopback(); err != nil {
@@ -74,7 +86,17 @@ func runInit() error {
 	}
 	defer conn.Close()
 
-	return runAgent(conn, bootStart, readyAt, sigCh)
+	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault)
+}
+
+func parseBridgeFaultMode(raw string) (bridgeFaultMode, error) {
+	mode := bridgeFaultMode(strings.TrimSpace(raw))
+	switch mode {
+	case bridgeFaultNone, bridgeFaultResultSeqZero:
+		return mode, nil
+	default:
+		return bridgeFaultNone, fmt.Errorf("unsupported vm-bridge fault mode: %q", raw)
+	}
 }
 
 func mountVirtualFilesystems() {

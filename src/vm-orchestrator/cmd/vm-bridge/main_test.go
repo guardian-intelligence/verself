@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
 )
@@ -135,6 +136,81 @@ func TestRunCLIRejectsInvalidSnapshotRefBeforeDial(t *testing.T) {
 	}
 }
 
+func TestParseBridgeFaultMode(t *testing.T) {
+	t.Parallel()
+
+	mode, err := parseBridgeFaultMode("")
+	if err != nil {
+		t.Fatalf("parseBridgeFaultMode empty: %v", err)
+	}
+	if mode != bridgeFaultNone {
+		t.Fatalf("empty mode = %q, want %q", mode, bridgeFaultNone)
+	}
+
+	mode, err = parseBridgeFaultMode("result_seq_zero")
+	if err != nil {
+		t.Fatalf("parseBridgeFaultMode result_seq_zero: %v", err)
+	}
+	if mode != bridgeFaultResultSeqZero {
+		t.Fatalf("result_seq_zero mode = %q, want %q", mode, bridgeFaultResultSeqZero)
+	}
+
+	_, err = parseBridgeFaultMode("unknown")
+	if err == nil {
+		t.Fatal("expected parseBridgeFaultMode to reject unknown mode")
+	}
+	if !strings.Contains(err.Error(), "unsupported vm-bridge fault mode") {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+}
+
+func TestSendResultEnvelopeInjectsZeroSequenceFault(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		bootStart:   time.Now().Add(-1 * time.Second),
+		controlQ:    make(chan outboundFrame, 1),
+		errCh:       make(chan error, 1),
+		bridgeFault: bridgeFaultResultSeqZero,
+	}
+
+	env, err := session.sendResultEnvelope(vmproto.Result{ExitCode: 0})
+	if err != nil {
+		t.Fatalf("sendResultEnvelope: %v", err)
+	}
+	if env.Seq != 0 {
+		t.Fatalf("result envelope seq = %d, want 0", env.Seq)
+	}
+
+	frame := <-session.controlQ
+	if frame.envelope.Seq != 0 {
+		t.Fatalf("queued result envelope seq = %d, want 0", frame.envelope.Seq)
+	}
+}
+
+func TestSendResultEnvelopeUsesMonotonicSequenceByDefault(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		bootStart: time.Now().Add(-1 * time.Second),
+		controlQ:  make(chan outboundFrame, 1),
+		errCh:     make(chan error, 1),
+	}
+
+	env, err := session.sendResultEnvelope(vmproto.Result{ExitCode: 0})
+	if err != nil {
+		t.Fatalf("sendResultEnvelope: %v", err)
+	}
+	if env.Seq != 1 {
+		t.Fatalf("result envelope seq = %d, want 1", env.Seq)
+	}
+
+	frame := <-session.controlQ
+	if frame.envelope.Seq != 1 {
+		t.Fatalf("queued result envelope seq = %d, want 1", frame.envelope.Seq)
+	}
+}
+
 func TestWaitForRunRequestRejectsProtocolVersionMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -202,6 +278,58 @@ func TestWaitForRunRequestRejectsZeroSequence(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "seq") {
 		t.Fatalf("expected seq detail, got %v", err)
+	}
+}
+
+func TestWaitForRunRequestAppliesBridgeFaultOverride(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		errCh:       make(chan error, 1),
+		jobCancel:   func() {},
+		bridgeFault: bridgeFaultNone,
+	}
+	controlCh := make(chan vmproto.Envelope, 1)
+	controlCh <- mustEnvelope(t, vmproto.TypeRunRequest, 1, vmproto.RunRequest{
+		ProtocolVersion: vmproto.ProtocolVersion,
+		Env: map[string]string{
+			bridgeFaultEnvVar: string(bridgeFaultResultSeqZero),
+		},
+	})
+
+	_, err := session.waitForRunRequest(controlCh)
+	if err != nil {
+		t.Fatalf("waitForRunRequest: %v", err)
+	}
+	if session.bridgeFault != bridgeFaultResultSeqZero {
+		t.Fatalf("bridgeFault = %q, want %q", session.bridgeFault, bridgeFaultResultSeqZero)
+	}
+}
+
+func TestWaitForRunRequestRejectsInvalidBridgeFaultOverride(t *testing.T) {
+	t.Parallel()
+
+	session := &agentSession{
+		errCh:     make(chan error, 1),
+		jobCancel: func() {},
+	}
+	controlCh := make(chan vmproto.Envelope, 1)
+	controlCh <- mustEnvelope(t, vmproto.TypeRunRequest, 1, vmproto.RunRequest{
+		ProtocolVersion: vmproto.ProtocolVersion,
+		Env: map[string]string{
+			bridgeFaultEnvVar: "not-a-mode",
+		},
+	})
+
+	_, err := session.waitForRunRequest(controlCh)
+	if err == nil {
+		t.Fatal("expected invalid bridge fault mode violation")
+	}
+	if !strings.Contains(err.Error(), "await_run_request") {
+		t.Fatalf("expected deterministic state in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "unsupported vm-bridge fault mode") {
+		t.Fatalf("expected unsupported mode detail, got %v", err)
 	}
 }
 
