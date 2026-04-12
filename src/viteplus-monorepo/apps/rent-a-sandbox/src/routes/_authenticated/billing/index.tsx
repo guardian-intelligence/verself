@@ -16,7 +16,13 @@ import {
   subscriptionsQuery,
 } from "~/features/billing/queries";
 import { parseBillingFlashSearch } from "~/features/billing/search";
-import { formatDateUTC, formatInteger, formatLedgerAmount, formatLedgerRate } from "~/lib/format";
+import {
+  formatDateUTC,
+  formatInteger,
+  formatLedgerAmount,
+  formatLedgerAmountPrecise,
+  formatLedgerRate,
+} from "~/lib/format";
 import type { Statement } from "~/server-fns/api";
 
 const sandboxProductID = "sandbox";
@@ -53,7 +59,7 @@ function BillingPage() {
             onClick={() => setShowStatement((visible) => !visible)}
             className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
           >
-            {showStatement ? "Hide Statement" : "Usage Statement"}
+            {showStatement ? "Hide Invoice Preview" : "Preview Invoice"}
           </button>
           {subscriptionRows.length > 0 ? (
             <button
@@ -168,7 +174,7 @@ function BillingPage() {
                 <TableEmptyRow
                   colSpan={5}
                   title="No active credit grants"
-                  description="Purchased or promotional grants will appear here."
+                  description="Purchased and adjustment grants will appear here."
                 />
               )}
             </tbody>
@@ -187,7 +193,7 @@ function StatementPreview({ statement }: { statement: Statement }) {
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Usage Statement</h2>
+        <h2 className="text-lg font-semibold">Invoice Preview</h2>
         <p className="text-sm text-muted-foreground">
           {formatDateUTC(statement.period_start)} through {formatDateUTC(statement.period_end)}
         </p>
@@ -201,7 +207,8 @@ function StatementPreview({ statement }: { statement: Statement }) {
       </div>
 
       <div className="text-sm text-muted-foreground">
-        Reserved for ongoing executions: {formatLedgerAmount(statement.totals.reserved_units)}
+        Reserved for ongoing executions:{" "}
+        {formatLedgerAmountPrecise(statement.totals.reserved_units)}
       </div>
 
       <div className="border border-border rounded-lg overflow-hidden">
@@ -219,13 +226,19 @@ function StatementPreview({ statement }: { statement: Statement }) {
             {lineItems.length > 0 ? (
               lineItems.map((line) => (
                 <tr
-                  key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.component_id}:${line.pricing_phase}:${line.unit_rate}`}
+                  key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
                 >
-                  <td className="px-4 py-2">{line.description}</td>
-                  <td className="px-4 py-2">{line.bucket_id}</td>
-                  <td className="px-4 py-2 font-mono">{formatQuantity(line.quantity)}</td>
-                  <td className="px-4 py-2 font-mono">{formatLedgerRate(line.unit_rate)}</td>
-                  <td className="px-4 py-2 font-mono">{formatLedgerAmount(line.charge_units)}</td>
+                  <td className="px-4 py-2">{line.sku_display_name}</td>
+                  <td className="px-4 py-2">{line.bucket_display_name}</td>
+                  <td className="px-4 py-2 font-mono">
+                    {formatQuantity(line.quantity, line.quantity_unit)}
+                  </td>
+                  <td className="px-4 py-2 font-mono">
+                    {formatLedgerRate(line.unit_rate, line.quantity_unit)}
+                  </td>
+                  <td className="px-4 py-2 font-mono">
+                    {formatLedgerAmountPrecise(line.charge_units)}
+                  </td>
                 </tr>
               ))
             ) : (
@@ -255,17 +268,21 @@ function StatementPreview({ statement }: { statement: Statement }) {
             {bucketRows.length > 0 ? (
               bucketRows.map((bucket) => (
                 <tr key={`${bucket.product_id}:${bucket.bucket_id}`}>
-                  <td className="px-4 py-2">{bucket.bucket_id}</td>
-                  <td className="px-4 py-2 font-mono">{formatLedgerAmount(bucket.charge_units)}</td>
+                  <td className="px-4 py-2">{bucket.bucket_display_name}</td>
                   <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmount(bucket.subscription_units)}
+                    {formatLedgerAmountPrecise(bucket.charge_units)}
                   </td>
                   <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmount(bucket.purchase_units)}
+                    {formatLedgerAmountPrecise(bucket.subscription_units)}
                   </td>
-                  <td className="px-4 py-2 font-mono">{formatLedgerAmount(bucket.promo_units)}</td>
                   <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmount(bucket.reserved_units)}
+                    {formatLedgerAmountPrecise(bucket.purchase_units)}
+                  </td>
+                  <td className="px-4 py-2 font-mono">
+                    {formatLedgerAmountPrecise(bucket.promo_units)}
+                  </td>
+                  <td className="px-4 py-2 font-mono">
+                    {formatLedgerAmountPrecise(bucket.reserved_units)}
                   </td>
                 </tr>
               ))
@@ -338,15 +355,28 @@ function StatementMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="border border-border rounded-md px-4 py-3">
       <div className="text-xs uppercase text-muted-foreground">{label}</div>
-      <div className="font-mono text-lg">{formatLedgerAmount(value)}</div>
+      <div className="font-mono text-lg">{formatLedgerAmountPrecise(value)}</div>
     </div>
   );
 }
 
-function formatQuantity(value: number) {
-  return Number.isInteger(value)
+function formatQuantity(value: number, quantityUnit: string) {
+  const amount = Number.isInteger(value)
     ? formatInteger(value)
     : value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return `${amount} ${formatQuantityUnit(quantityUnit, value)}`;
+}
+
+function formatQuantityUnit(quantityUnit: string, quantity: number) {
+  if (quantity === 1) return quantityUnit;
+  switch (quantityUnit) {
+    case "GiB-second":
+      return "GiB-seconds";
+    case "vCPU-second":
+      return "vCPU-seconds";
+    default:
+      return quantityUnit;
+  }
 }
 
 function formatGrantScope(grant: {

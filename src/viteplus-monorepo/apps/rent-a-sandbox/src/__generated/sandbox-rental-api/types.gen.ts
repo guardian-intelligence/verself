@@ -57,6 +57,7 @@ export type BillingStatement = {
 };
 
 export type BillingStatementBucketSummary = {
+  bucket_display_name: string;
   bucket_id: string;
   charge_units: string;
   free_tier_units: string;
@@ -79,14 +80,16 @@ export type BillingStatementGrantSummary = {
 };
 
 export type BillingStatementLineItem = {
+  bucket_display_name: string;
   bucket_id: string;
   charge_units: string;
-  component_id: string;
-  description: string;
   plan_id: string;
   pricing_phase: string;
   product_id: string;
   quantity: number;
+  quantity_unit: string;
+  sku_display_name: string;
+  sku_id: string;
   unit_rate: string;
 };
 

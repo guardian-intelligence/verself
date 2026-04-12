@@ -10,19 +10,19 @@ const PLANS = [
   {
     id: "sandbox-starter",
     name: "Starter",
-    description: "10,000 credits/month",
+    description: "Monthly sandbox usage allowance",
     price: "$29/mo",
   },
   {
     id: "sandbox-pro",
     name: "Pro",
-    description: "50,000 credits/month",
+    description: "Larger monthly sandbox allowance",
     price: "$99/mo",
   },
   {
     id: "sandbox-team",
     name: "Team",
-    description: "200,000 credits/month",
+    description: "Team sandbox usage allowance",
     price: "$299/mo",
   },
 ];
@@ -34,7 +34,7 @@ function SubscribePage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Choose a Plan</h1>
       <p className="text-muted-foreground">
-        Subscribe to get monthly credit allowances for sandbox usage.
+        Subscribe to get monthly bucketed allowances for sandbox usage.
       </p>
 
       <div className="grid md:grid-cols-3 gap-4">
