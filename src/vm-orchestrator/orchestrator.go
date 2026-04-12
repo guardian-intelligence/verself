@@ -438,11 +438,18 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 
 	telemetryCtx, telemetryCancel := context.WithCancel(context.Background())
 	defer telemetryCancel()
+	telemetryFaultProfile, telemetryFaultErr := parseTelemetryFaultProfile(strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
+	if telemetryFaultErr != nil {
+		return result, fmt.Errorf("parse telemetry fault profile: %w", telemetryFaultErr)
+	}
+	if telemetryFaultProfile != nil {
+		logger.Warn("telemetry fault injection enabled", "profile", strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
+	}
 	var telemetryWg sync.WaitGroup
 	telemetryWg.Add(1)
 	go func() {
 		defer telemetryWg.Done()
-		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, run.RunID, observer, logger); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
+		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, run.RunID, observer, logger, telemetryFaultProfile); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
 			logger.Warn("guest telemetry stream ended", "run_id", run.RunID, "err", telemetryErr)
 		}
 	}()

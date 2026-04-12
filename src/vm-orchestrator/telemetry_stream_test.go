@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -16,7 +17,7 @@ func TestConsumeGuestTelemetryStreamHelloFirstRequired(t *testing.T) {
 		telemetrySampleFrame(7),
 	)
 
-	err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil)
+	err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, nil)
 	if !errors.Is(err, ErrTelemetryHelloFirst) {
 		t.Fatalf("error = %v, want %v", err, ErrTelemetryHelloFirst)
 	}
@@ -35,7 +36,7 @@ func TestConsumeGuestTelemetryStreamMonotonicSequence(t *testing.T) {
 		telemetrySampleFrame(12),
 	)
 
-	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil); err != nil {
+	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, nil); err != nil {
 		t.Fatalf("consume stream: %v", err)
 	}
 
@@ -68,7 +69,7 @@ func TestConsumeGuestTelemetryStreamGapDiagnostic(t *testing.T) {
 		telemetrySampleFrame(13),
 	)
 
-	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil); err != nil {
+	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, nil); err != nil {
 		t.Fatalf("consume stream: %v", err)
 	}
 
@@ -97,7 +98,7 @@ func TestConsumeGuestTelemetryStreamRegressionDiagnostic(t *testing.T) {
 		telemetrySampleFrame(11),
 	)
 
-	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil); err != nil {
+	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, nil); err != nil {
 		t.Fatalf("consume stream: %v", err)
 	}
 
@@ -129,7 +130,7 @@ func TestConsumeGuestTelemetryStreamTruncatedFrameReturnsNil(t *testing.T) {
 	payload.Write(hello[:])
 	payload.Write(sample[:17])
 
-	if err := consumeGuestTelemetryStream(context.Background(), &payload, "job-1", observer, nil); err != nil {
+	if err := consumeGuestTelemetryStream(context.Background(), &payload, "job-1", observer, nil, nil); err != nil {
 		t.Fatalf("consume stream: %v", err)
 	}
 	if got := len(observer.events); got != 1 {
@@ -137,6 +138,76 @@ func TestConsumeGuestTelemetryStreamTruncatedFrameReturnsNil(t *testing.T) {
 	}
 	if observer.events[0].Hello == nil || observer.events[0].Hello.Seq != 10 {
 		t.Fatalf("event[0] hello seq mismatch: %#v", observer.events[0].Hello)
+	}
+}
+
+func TestConsumeGuestTelemetryStreamInjectsGapFault(t *testing.T) {
+	t.Parallel()
+
+	profile, err := parseTelemetryFaultProfile("gap_once@12")
+	if err != nil {
+		t.Fatalf("parseTelemetryFaultProfile: %v", err)
+	}
+
+	observer := &captureTelemetryObserver{}
+	stream := telemetryTestStream(
+		telemetryHelloFrame(10),
+		telemetrySampleFrame(11),
+		telemetrySampleFrame(12),
+		telemetrySampleFrame(13),
+		telemetrySampleFrame(14),
+	)
+
+	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, profile); err != nil {
+		t.Fatalf("consume stream: %v", err)
+	}
+
+	if got := diagnosticCount(observer.events, TelemetryDiagnosticKindGap); got != 1 {
+		t.Fatalf("gap diagnostics = %d, want 1", got)
+	}
+	if got := diagnosticCount(observer.events, TelemetryDiagnosticKindRegression); got != 0 {
+		t.Fatalf("regression diagnostics = %d, want 0", got)
+	}
+}
+
+func TestConsumeGuestTelemetryStreamInjectsRegressionFault(t *testing.T) {
+	t.Parallel()
+
+	profile, err := parseTelemetryFaultProfile("regression_once@12")
+	if err != nil {
+		t.Fatalf("parseTelemetryFaultProfile: %v", err)
+	}
+
+	observer := &captureTelemetryObserver{}
+	stream := telemetryTestStream(
+		telemetryHelloFrame(10),
+		telemetrySampleFrame(11),
+		telemetrySampleFrame(12),
+		telemetrySampleFrame(13),
+		telemetrySampleFrame(14),
+	)
+
+	if err := consumeGuestTelemetryStream(context.Background(), stream, "job-1", observer, nil, profile); err != nil {
+		t.Fatalf("consume stream: %v", err)
+	}
+
+	if got := diagnosticCount(observer.events, TelemetryDiagnosticKindRegression); got != 1 {
+		t.Fatalf("regression diagnostics = %d, want 1", got)
+	}
+	if got := diagnosticCount(observer.events, TelemetryDiagnosticKindGap); got != 0 {
+		t.Fatalf("gap diagnostics = %d, want 0", got)
+	}
+}
+
+func TestParseTelemetryFaultProfileRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseTelemetryFaultProfile("totally_bad")
+	if err == nil {
+		t.Fatal("expected invalid fault profile error")
+	}
+	if !strings.Contains(err.Error(), "unsupported telemetry fault profile") {
+		t.Fatalf("unexpected parse error: %v", err)
 	}
 }
 
@@ -181,6 +252,19 @@ func countTelemetrySamples(events []TelemetryEvent) int {
 	count := 0
 	for _, event := range events {
 		if event.Sample != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func diagnosticCount(events []TelemetryEvent, kind TelemetryDiagnosticKind) int {
+	count := 0
+	for _, event := range events {
+		if event.Diagnostic == nil {
+			continue
+		}
+		if event.Diagnostic.Kind == kind {
 			count++
 		}
 	}

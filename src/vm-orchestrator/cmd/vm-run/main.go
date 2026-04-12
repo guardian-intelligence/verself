@@ -5,6 +5,12 @@
 // Usage:
 //
 //	vm-run [flags] -- <command> [args...]
+//
+// Fault rehearsal examples:
+//
+//	vm-run -telemetry-fault gap_once@12 -- sleep 8
+//	vm-run -telemetry-fault regression_once@12 -- sleep 8
+//	vm-run -bridge-fault result_seq_zero -- sleep 8
 package main
 
 import (
@@ -39,6 +45,8 @@ func run() error {
 		timeout          string
 		traceGuestEvents bool
 		checkpointRefs   repeatedFlag
+		bridgeFault      string
+		telemetryFault   string
 	)
 
 	flag.StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
@@ -47,6 +55,8 @@ func run() error {
 	flag.StringVar(&timeout, "timeout", "2m", "Run timeout")
 	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream host-derived run phase events")
 	flag.Var(&checkpointRefs, "checkpoint-save-ref", "Checkpoint ref the guest may save; repeatable")
+	flag.StringVar(&bridgeFault, "bridge-fault", "", "vm-bridge deterministic fault mode (e.g. result_seq_zero)")
+	flag.StringVar(&telemetryFault, "telemetry-fault", "", "Telemetry deterministic fault profile (e.g. gap_once@12, regression_once@12)")
 	flag.Parse()
 
 	args := flag.Args()
@@ -92,6 +102,12 @@ func run() error {
 	}
 	if commitSHA != "" {
 		spec.Env["COMMIT_SHA"] = commitSHA
+	}
+	if bridgeFault != "" {
+		spec.Env["FORGE_METAL_VM_BRIDGE_FAULT"] = bridgeFault
+	}
+	if telemetryFault != "" {
+		spec.Env["FORGE_METAL_TELEMETRY_FAULT_PROFILE"] = telemetryFault
 	}
 
 	logger.Info("starting VM run", "run_id", runID, "command", args)
