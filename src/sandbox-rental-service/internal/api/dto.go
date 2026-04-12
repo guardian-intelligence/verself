@@ -95,7 +95,7 @@ func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
 		AttemptID:         record.AttemptID,
 		AttemptSeq:        record.AttemptSeq,
 		State:             record.State,
-		OrchestratorJobID: record.OrchestratorJobID,
+		OrchestratorRunID: record.OrchestratorRunID,
 		BillingJobID:      record.BillingJobID,
 		FailureReason:     record.FailureReason,
 		ExitCode:          record.ExitCode,

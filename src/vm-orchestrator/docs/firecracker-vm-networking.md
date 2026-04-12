@@ -50,7 +50,7 @@ Bare-Metal Host
 ## Operational Notes
 
 - The allocator is the source of truth for slot/IP uniqueness. Slot state is persisted in SQLite WAL so concurrent allocator calls and daemon restarts recover deterministically.
-- Per-job runtime only creates and deletes TAP devices. It does not mutate host-wide firewall state.
+- Per-run runtime only creates and deletes TAP devices. It does not mutate host-wide firewall state.
 - Recovery is ledger-first and host-probe-second. On startup, allocated slots are reconciled against live TAP devices plus `(pid,start_ticks)` metadata to avoid PID reuse ambiguity.
 - Guest networking requests are never host authority signals; the host allocator and host firewall policy define the effective network state.
 - Guests still use static kernel boot args, so the guest image stays simple and unaware of host network orchestration.

@@ -36,17 +36,17 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 	jobIDs := []string{uuid.NewString(), uuid.NewString()}
 	results := make(chan runOutcome, len(jobIDs))
 
-	for _, jobID := range jobIDs {
-		job := JobConfig{
-			JobID:      jobID,
+	for _, runID := range jobIDs {
+		run := RunSpec{
+			RunID:      runID,
 			RunCommand: []string{"sh", "-lc", "echo parallel-start && sleep 3 && echo parallel-done"},
 			RunWorkDir: "/workspace",
 		}
 
-		go func(job JobConfig) {
-			result, err := orch.Run(ctx, job)
-			results <- runOutcome{jobID: job.JobID, result: result, err: err}
-		}(job)
+		go func(run RunSpec) {
+			result, err := orch.Run(ctx, run)
+			results <- runOutcome{runID: run.RunID, result: result, err: err}
+		}(run)
 	}
 
 	leases, err := waitForRunningJobLeases(ctx, cfg.StateDBPath, jobIDs, len(jobIDs))
@@ -62,20 +62,20 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 		}
 		seenSlots[lease.SlotIndex] = struct{}{}
 		if lease.FirecrackerPID <= 0 || !processMatchesStartTicks(lease.FirecrackerPID, lease.FirecrackerStartTicks) {
-			t.Fatalf("expected live firecracker PID metadata for job %s, got pid=%d start_ticks=%d", lease.JobID, lease.FirecrackerPID, lease.FirecrackerStartTicks)
+			t.Fatalf("expected live firecracker PID metadata for job %s, got pid=%d start_ticks=%d", lease.RunID, lease.FirecrackerPID, lease.FirecrackerStartTicks)
 		}
 		if !tapExists(lease.TapName) {
-			t.Fatalf("expected TAP %s for job %s to exist while VM is running", lease.TapName, lease.JobID)
+			t.Fatalf("expected TAP %s for job %s to exist while VM is running", lease.TapName, lease.RunID)
 		}
 	}
 
 	for range jobIDs {
 		outcome := <-results
 		if outcome.err != nil {
-			t.Fatalf("job %s failed: %v", outcome.jobID, outcome.err)
+			t.Fatalf("job %s failed: %v", outcome.runID, outcome.err)
 		}
 		if outcome.result.ExitCode != 0 {
-			t.Fatalf("job %s exited with %d\nlogs:\n%s", outcome.jobID, outcome.result.ExitCode, outcome.result.Logs)
+			t.Fatalf("job %s exited with %d\nlogs:\n%s", outcome.runID, outcome.result.ExitCode, outcome.result.Logs)
 		}
 	}
 
@@ -91,8 +91,8 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 }
 
 type runOutcome struct {
-	jobID  string
-	result JobResult
+	runID  string
+	result RunResult
 	err    error
 }
 
@@ -120,8 +120,8 @@ func requireFirecrackerIntegrationPrereqs(t *testing.T, cfg Config) {
 
 func waitForRunningJobLeases(ctx context.Context, stateDBPath string, jobIDs []string, want int) ([]NetworkLease, error) {
 	jobSet := make(map[string]struct{}, len(jobIDs))
-	for _, jobID := range jobIDs {
-		jobSet[jobID] = struct{}{}
+	for _, runID := range jobIDs {
+		jobSet[runID] = struct{}{}
 	}
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -161,8 +161,8 @@ func runningLeases(leases []NetworkLease) []NetworkLease {
 
 func waitForLeaseCleanup(ctx context.Context, stateDBPath string, jobIDs []string) error {
 	jobSet := make(map[string]struct{}, len(jobIDs))
-	for _, jobID := range jobIDs {
-		jobSet[jobID] = struct{}{}
+	for _, runID := range jobIDs {
+		jobSet[runID] = struct{}{}
 	}
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -215,7 +215,7 @@ func currentJobLeases(stateDBPath string, jobSet map[string]struct{}) ([]Network
 			createdUnixNs int64
 		)
 		if err := rows.Scan(
-			&lease.JobID,
+			&lease.RunID,
 			&lease.SlotIndex,
 			&lease.Generation,
 			&lease.SubnetCIDR,
@@ -233,7 +233,7 @@ func currentJobLeases(stateDBPath string, jobSet map[string]struct{}) ([]Network
 		if createdUnixNs > 0 {
 			lease.CreatedAtUTC = time.Unix(0, createdUnixNs).UTC()
 		}
-		if _, ok := jobSet[lease.JobID]; ok {
+		if _, ok := jobSet[lease.RunID]; ok {
 			leases = append(leases, lease)
 		}
 	}

@@ -268,6 +268,21 @@ make traces ERRORS=1                     # Errors only (4xx/5xx + ERROR/WARN log
 make traces SERVICE=sandbox-rental ERRORS=1  # Combine filters
 ```
 
+Deploy playbook telemetry is queryable separately:
+
+```bash
+make deploy-trace QUERY="SpanName = 'ansible.task'"
+make telemetry-proof           # success path: ansible + service correlation
+make telemetry-proof-fail      # sad path: assert Error spans are emitted
+```
+
+Deterministic deploy correlation model:
+
+- `deploy_run_key`: `YYYY-MM-DD.<counter>@<controller-host>`
+- `deploy_id`: UUIDv5 over `forge-metal:${deploy_run_key}`
+- `deploy_events` row stores both `trace_id` and `deploy_run_key`
+- Ansible task probes via `fm_uri` propagate `traceparent`, `baggage`, and `X-Forge-Metal-*` headers so service spans can be joined to deploy traces in ClickHouse
+
 ### TLS with a real domain (Cloudflare)
 
 ```bash
@@ -311,6 +326,7 @@ Read the Makefile for other common task automation.
 | `playbooks/dev-single-node.yml` | Deploy to single node (idempotent) |
 | `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra) |
 | `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts |
+| `playbooks/observability-smoke.yml` | Minimal smoke probe used by telemetry-proof (`debug/assert + fm_uri`) |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL state and restart billing callers |
@@ -331,6 +347,7 @@ Architecture documents live with the service they describe:
 * Wire contracts (apiwire DTO patterns, numeric safety, generated contract gate): `src/apiwire/docs/wire-contracts.md`
 * VM execution control plane (sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows): `src/sandbox-rental-service/docs/vm-execution-control-plane.md`
 * Identity and IAM direction (Zitadel ↔ Forge Metal policy split, org console, invariants): `src/platform/docs/identity-and-iam.md`
+* Secrets plane direction (Forge Metal control plane + OpenBao backend contract): `src/platform/docs/secrets-plane-openbao.md`
 
 ## Assistant Contract
 

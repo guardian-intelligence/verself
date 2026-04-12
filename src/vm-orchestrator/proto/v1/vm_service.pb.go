@@ -21,139 +21,92 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type JobState int32
+type RunState int32
 
 const (
-	JobState_JOB_STATE_UNSPECIFIED JobState = 0
-	JobState_JOB_STATE_PENDING     JobState = 1
-	JobState_JOB_STATE_RUNNING     JobState = 2
-	JobState_JOB_STATE_SUCCEEDED   JobState = 3
-	JobState_JOB_STATE_FAILED      JobState = 4
-	JobState_JOB_STATE_CANCELED    JobState = 5
+	RunState_RUN_STATE_UNSPECIFIED RunState = 0
+	RunState_RUN_STATE_PENDING     RunState = 1
+	RunState_RUN_STATE_RUNNING     RunState = 2
+	RunState_RUN_STATE_SUCCEEDED   RunState = 3
+	RunState_RUN_STATE_FAILED      RunState = 4
+	RunState_RUN_STATE_CANCELED    RunState = 5
 )
 
-// Enum value maps for JobState.
+// Enum value maps for RunState.
 var (
-	JobState_name = map[int32]string{
-		0: "JOB_STATE_UNSPECIFIED",
-		1: "JOB_STATE_PENDING",
-		2: "JOB_STATE_RUNNING",
-		3: "JOB_STATE_SUCCEEDED",
-		4: "JOB_STATE_FAILED",
-		5: "JOB_STATE_CANCELED",
+	RunState_name = map[int32]string{
+		0: "RUN_STATE_UNSPECIFIED",
+		1: "RUN_STATE_PENDING",
+		2: "RUN_STATE_RUNNING",
+		3: "RUN_STATE_SUCCEEDED",
+		4: "RUN_STATE_FAILED",
+		5: "RUN_STATE_CANCELED",
 	}
-	JobState_value = map[string]int32{
-		"JOB_STATE_UNSPECIFIED": 0,
-		"JOB_STATE_PENDING":     1,
-		"JOB_STATE_RUNNING":     2,
-		"JOB_STATE_SUCCEEDED":   3,
-		"JOB_STATE_FAILED":      4,
-		"JOB_STATE_CANCELED":    5,
+	RunState_value = map[string]int32{
+		"RUN_STATE_UNSPECIFIED": 0,
+		"RUN_STATE_PENDING":     1,
+		"RUN_STATE_RUNNING":     2,
+		"RUN_STATE_SUCCEEDED":   3,
+		"RUN_STATE_FAILED":      4,
+		"RUN_STATE_CANCELED":    5,
 	}
 )
 
-func (x JobState) Enum() *JobState {
-	p := new(JobState)
+func (x RunState) Enum() *RunState {
+	p := new(RunState)
 	*p = x
 	return p
 }
 
-func (x JobState) String() string {
+func (x RunState) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (JobState) Descriptor() protoreflect.EnumDescriptor {
+func (RunState) Descriptor() protoreflect.EnumDescriptor {
 	return file_proto_v1_vm_service_proto_enumTypes[0].Descriptor()
 }
 
-func (JobState) Type() protoreflect.EnumType {
+func (RunState) Type() protoreflect.EnumType {
 	return &file_proto_v1_vm_service_proto_enumTypes[0]
 }
 
-func (x JobState) Number() protoreflect.EnumNumber {
+func (x RunState) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use JobState.Descriptor instead.
-func (JobState) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use RunState.Descriptor instead.
+func (RunState) EnumDescriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{0}
 }
 
-type TelemetryFrameKind int32
-
-const (
-	TelemetryFrameKind_TELEMETRY_FRAME_KIND_UNSPECIFIED TelemetryFrameKind = 0
-	TelemetryFrameKind_TELEMETRY_FRAME_KIND_HELLO       TelemetryFrameKind = 1
-	TelemetryFrameKind_TELEMETRY_FRAME_KIND_SAMPLE      TelemetryFrameKind = 2
-)
-
-// Enum value maps for TelemetryFrameKind.
-var (
-	TelemetryFrameKind_name = map[int32]string{
-		0: "TELEMETRY_FRAME_KIND_UNSPECIFIED",
-		1: "TELEMETRY_FRAME_KIND_HELLO",
-		2: "TELEMETRY_FRAME_KIND_SAMPLE",
-	}
-	TelemetryFrameKind_value = map[string]int32{
-		"TELEMETRY_FRAME_KIND_UNSPECIFIED": 0,
-		"TELEMETRY_FRAME_KIND_HELLO":       1,
-		"TELEMETRY_FRAME_KIND_SAMPLE":      2,
-	}
-)
-
-func (x TelemetryFrameKind) Enum() *TelemetryFrameKind {
-	p := new(TelemetryFrameKind)
-	*p = x
-	return p
-}
-
-func (x TelemetryFrameKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TelemetryFrameKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_vm_service_proto_enumTypes[1].Descriptor()
-}
-
-func (TelemetryFrameKind) Type() protoreflect.EnumType {
-	return &file_proto_v1_vm_service_proto_enumTypes[1]
-}
-
-func (x TelemetryFrameKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TelemetryFrameKind.Descriptor instead.
-func (TelemetryFrameKind) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{1}
-}
-
-type JobConfig struct {
+type HostRunSpec struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	JobId              string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RunId              string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	RunCommand         []string               `protobuf:"bytes,2,rep,name=run_command,json=runCommand,proto3" json:"run_command,omitempty"`
 	RunWorkDir         string                 `protobuf:"bytes,3,opt,name=run_work_dir,json=runWorkDir,proto3" json:"run_work_dir,omitempty"`
 	Env                map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	BillablePhases     []string               `protobuf:"bytes,5,rep,name=billable_phases,json=billablePhases,proto3" json:"billable_phases,omitempty"`
 	CheckpointSaveRefs []string               `protobuf:"bytes,6,rep,name=checkpoint_save_refs,json=checkpointSaveRefs,proto3" json:"checkpoint_save_refs,omitempty"`
+	AttemptId          string                 `protobuf:"bytes,7,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	SegmentId          string                 `protobuf:"bytes,8,opt,name=segment_id,json=segmentId,proto3" json:"segment_id,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
-func (x *JobConfig) Reset() {
-	*x = JobConfig{}
+func (x *HostRunSpec) Reset() {
+	*x = HostRunSpec{}
 	mi := &file_proto_v1_vm_service_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *JobConfig) String() string {
+func (x *HostRunSpec) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*JobConfig) ProtoMessage() {}
+func (*HostRunSpec) ProtoMessage() {}
 
-func (x *JobConfig) ProtoReflect() protoreflect.Message {
+func (x *HostRunSpec) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_v1_vm_service_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -165,51 +118,65 @@ func (x *JobConfig) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use JobConfig.ProtoReflect.Descriptor instead.
-func (*JobConfig) Descriptor() ([]byte, []int) {
+// Deprecated: Use HostRunSpec.ProtoReflect.Descriptor instead.
+func (*HostRunSpec) Descriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *JobConfig) GetJobId() string {
+func (x *HostRunSpec) GetRunId() string {
 	if x != nil {
-		return x.JobId
+		return x.RunId
 	}
 	return ""
 }
 
-func (x *JobConfig) GetRunCommand() []string {
+func (x *HostRunSpec) GetRunCommand() []string {
 	if x != nil {
 		return x.RunCommand
 	}
 	return nil
 }
 
-func (x *JobConfig) GetRunWorkDir() string {
+func (x *HostRunSpec) GetRunWorkDir() string {
 	if x != nil {
 		return x.RunWorkDir
 	}
 	return ""
 }
 
-func (x *JobConfig) GetEnv() map[string]string {
+func (x *HostRunSpec) GetEnv() map[string]string {
 	if x != nil {
 		return x.Env
 	}
 	return nil
 }
 
-func (x *JobConfig) GetBillablePhases() []string {
+func (x *HostRunSpec) GetBillablePhases() []string {
 	if x != nil {
 		return x.BillablePhases
 	}
 	return nil
 }
 
-func (x *JobConfig) GetCheckpointSaveRefs() []string {
+func (x *HostRunSpec) GetCheckpointSaveRefs() []string {
 	if x != nil {
 		return x.CheckpointSaveRefs
 	}
 	return nil
+}
+
+func (x *HostRunSpec) GetAttemptId() string {
+	if x != nil {
+		return x.AttemptId
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetSegmentId() string {
+	if x != nil {
+		return x.SegmentId
+	}
+	return ""
 }
 
 type PhaseResult struct {
@@ -372,7 +339,7 @@ func (x *VMMetrics) GetVcpuExitCount() uint64 {
 	return 0
 }
 
-type JobResult struct {
+type HostRunResult struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	ExitCode               int32                  `protobuf:"varint,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	Logs                   string                 `protobuf:"bytes,2,opt,name=logs,proto3" json:"logs,omitempty"`
@@ -398,20 +365,20 @@ type JobResult struct {
 	sizeCache              protoimpl.SizeCache
 }
 
-func (x *JobResult) Reset() {
-	*x = JobResult{}
+func (x *HostRunResult) Reset() {
+	*x = HostRunResult{}
 	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *JobResult) String() string {
+func (x *HostRunResult) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*JobResult) ProtoMessage() {}
+func (*HostRunResult) ProtoMessage() {}
 
-func (x *JobResult) ProtoReflect() protoreflect.Message {
+func (x *HostRunResult) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_v1_vm_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -423,172 +390,172 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
-func (*JobResult) Descriptor() ([]byte, []int) {
+// Deprecated: Use HostRunResult.ProtoReflect.Descriptor instead.
+func (*HostRunResult) Descriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *JobResult) GetExitCode() int32 {
+func (x *HostRunResult) GetExitCode() int32 {
 	if x != nil {
 		return x.ExitCode
 	}
 	return 0
 }
 
-func (x *JobResult) GetLogs() string {
+func (x *HostRunResult) GetLogs() string {
 	if x != nil {
 		return x.Logs
 	}
 	return ""
 }
 
-func (x *JobResult) GetSerialLogs() string {
+func (x *HostRunResult) GetSerialLogs() string {
 	if x != nil {
 		return x.SerialLogs
 	}
 	return ""
 }
 
-func (x *JobResult) GetDurationMs() int64 {
+func (x *HostRunResult) GetDurationMs() int64 {
 	if x != nil {
 		return x.DurationMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetCloneTimeMs() int64 {
+func (x *HostRunResult) GetCloneTimeMs() int64 {
 	if x != nil {
 		return x.CloneTimeMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetJailSetupTimeMs() int64 {
+func (x *HostRunResult) GetJailSetupTimeMs() int64 {
 	if x != nil {
 		return x.JailSetupTimeMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetVmBootTimeMs() int64 {
+func (x *HostRunResult) GetVmBootTimeMs() int64 {
 	if x != nil {
 		return x.VmBootTimeMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetBootToReadyDurationMs() int64 {
+func (x *HostRunResult) GetBootToReadyDurationMs() int64 {
 	if x != nil {
 		return x.BootToReadyDurationMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetRunDurationMs() int64 {
+func (x *HostRunResult) GetRunDurationMs() int64 {
 	if x != nil {
 		return x.RunDurationMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetVmExitWaitDurationMs() int64 {
+func (x *HostRunResult) GetVmExitWaitDurationMs() int64 {
 	if x != nil {
 		return x.VmExitWaitDurationMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetCleanupTimeMs() int64 {
+func (x *HostRunResult) GetCleanupTimeMs() int64 {
 	if x != nil {
 		return x.CleanupTimeMs
 	}
 	return 0
 }
 
-func (x *JobResult) GetZfsWritten() uint64 {
+func (x *HostRunResult) GetZfsWritten() uint64 {
 	if x != nil {
 		return x.ZfsWritten
 	}
 	return 0
 }
 
-func (x *JobResult) GetRootfsProvisionedBytes() uint64 {
+func (x *HostRunResult) GetRootfsProvisionedBytes() uint64 {
 	if x != nil {
 		return x.RootfsProvisionedBytes
 	}
 	return 0
 }
 
-func (x *JobResult) GetStdoutBytes() uint64 {
+func (x *HostRunResult) GetStdoutBytes() uint64 {
 	if x != nil {
 		return x.StdoutBytes
 	}
 	return 0
 }
 
-func (x *JobResult) GetStderrBytes() uint64 {
+func (x *HostRunResult) GetStderrBytes() uint64 {
 	if x != nil {
 		return x.StderrBytes
 	}
 	return 0
 }
 
-func (x *JobResult) GetDroppedLogBytes() uint64 {
+func (x *HostRunResult) GetDroppedLogBytes() uint64 {
 	if x != nil {
 		return x.DroppedLogBytes
 	}
 	return 0
 }
 
-func (x *JobResult) GetForcedShutdown() bool {
+func (x *HostRunResult) GetForcedShutdown() bool {
 	if x != nil {
 		return x.ForcedShutdown
 	}
 	return false
 }
 
-func (x *JobResult) GetPhaseResults() []*PhaseResult {
+func (x *HostRunResult) GetPhaseResults() []*PhaseResult {
 	if x != nil {
 		return x.PhaseResults
 	}
 	return nil
 }
 
-func (x *JobResult) GetFailurePhase() string {
+func (x *HostRunResult) GetFailurePhase() string {
 	if x != nil {
 		return x.FailurePhase
 	}
 	return ""
 }
 
-func (x *JobResult) GetMetrics() *VMMetrics {
+func (x *HostRunResult) GetMetrics() *VMMetrics {
 	if x != nil {
 		return x.Metrics
 	}
 	return nil
 }
 
-type DirectJobSpec struct {
+type EnsureRunRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Job           *JobConfig             `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	Spec          *HostRunSpec           `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DirectJobSpec) Reset() {
-	*x = DirectJobSpec{}
+func (x *EnsureRunRequest) Reset() {
+	*x = EnsureRunRequest{}
 	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DirectJobSpec) String() string {
+func (x *EnsureRunRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DirectJobSpec) ProtoMessage() {}
+func (*EnsureRunRequest) ProtoMessage() {}
 
-func (x *DirectJobSpec) ProtoReflect() protoreflect.Message {
+func (x *EnsureRunRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_v1_vm_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -600,107 +567,42 @@ func (x *DirectJobSpec) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DirectJobSpec.ProtoReflect.Descriptor instead.
-func (*DirectJobSpec) Descriptor() ([]byte, []int) {
+// Deprecated: Use EnsureRunRequest.ProtoReflect.Descriptor instead.
+func (*EnsureRunRequest) Descriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *DirectJobSpec) GetJob() *JobConfig {
-	if x != nil {
-		return x.Job
-	}
-	return nil
-}
-
-type CreateJobRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Spec:
-	//
-	//	*CreateJobRequest_DirectJob
-	Spec          isCreateJobRequest_Spec `protobuf_oneof:"spec"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateJobRequest) Reset() {
-	*x = CreateJobRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateJobRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateJobRequest) ProtoMessage() {}
-
-func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateJobRequest.ProtoReflect.Descriptor instead.
-func (*CreateJobRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *CreateJobRequest) GetSpec() isCreateJobRequest_Spec {
+func (x *EnsureRunRequest) GetSpec() *HostRunSpec {
 	if x != nil {
 		return x.Spec
 	}
 	return nil
 }
 
-func (x *CreateJobRequest) GetDirectJob() *DirectJobSpec {
-	if x != nil {
-		if x, ok := x.Spec.(*CreateJobRequest_DirectJob); ok {
-			return x.DirectJob
-		}
-	}
-	return nil
-}
-
-type isCreateJobRequest_Spec interface {
-	isCreateJobRequest_Spec()
-}
-
-type CreateJobRequest_DirectJob struct {
-	DirectJob *DirectJobSpec `protobuf:"bytes,1,opt,name=direct_job,json=directJob,proto3,oneof"`
-}
-
-func (*CreateJobRequest_DirectJob) isCreateJobRequest_Spec() {}
-
-type CreateJobResponse struct {
+type EnsureRunResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	State         JobState               `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.JobState" json:"state,omitempty"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	State         RunState               `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.RunState" json:"state,omitempty"`
+	Created       bool                   `protobuf:"varint,3,opt,name=created,proto3" json:"created,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateJobResponse) Reset() {
-	*x = CreateJobResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+func (x *EnsureRunResponse) Reset() {
+	*x = EnsureRunResponse{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateJobResponse) String() string {
+func (x *EnsureRunResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateJobResponse) ProtoMessage() {}
+func (*EnsureRunResponse) ProtoMessage() {}
 
-func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
+func (x *EnsureRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -711,48 +613,55 @@ func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateJobResponse.ProtoReflect.Descriptor instead.
-func (*CreateJobResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
+// Deprecated: Use EnsureRunResponse.ProtoReflect.Descriptor instead.
+func (*EnsureRunResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *CreateJobResponse) GetJobId() string {
+func (x *EnsureRunResponse) GetRunId() string {
 	if x != nil {
-		return x.JobId
+		return x.RunId
 	}
 	return ""
 }
 
-func (x *CreateJobResponse) GetState() JobState {
+func (x *EnsureRunResponse) GetState() RunState {
 	if x != nil {
 		return x.State
 	}
-	return JobState_JOB_STATE_UNSPECIFIED
+	return RunState_RUN_STATE_UNSPECIFIED
 }
 
-type GetJobStatusRequest struct {
+func (x *EnsureRunResponse) GetCreated() bool {
+	if x != nil {
+		return x.Created
+	}
+	return false
+}
+
+type GetRunRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	IncludeOutput bool                   `protobuf:"varint,2,opt,name=include_output,json=includeOutput,proto3" json:"include_output,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetJobStatusRequest) Reset() {
-	*x = GetJobStatusRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
+func (x *GetRunRequest) Reset() {
+	*x = GetRunRequest{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetJobStatusRequest) String() string {
+func (x *GetRunRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetJobStatusRequest) ProtoMessage() {}
+func (*GetRunRequest) ProtoMessage() {}
 
-func (x *GetJobStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
+func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,51 +672,52 @@ func (x *GetJobStatusRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetJobStatusRequest.ProtoReflect.Descriptor instead.
-func (*GetJobStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use GetRunRequest.ProtoReflect.Descriptor instead.
+func (*GetRunRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *GetJobStatusRequest) GetJobId() string {
+func (x *GetRunRequest) GetRunId() string {
 	if x != nil {
-		return x.JobId
+		return x.RunId
 	}
 	return ""
 }
 
-func (x *GetJobStatusRequest) GetIncludeOutput() bool {
+func (x *GetRunRequest) GetIncludeOutput() bool {
 	if x != nil {
 		return x.IncludeOutput
 	}
 	return false
 }
 
-type GetJobStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	State         JobState               `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.JobState" json:"state,omitempty"`
-	Terminal      bool                   `protobuf:"varint,3,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	Result        *JobResult             `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type GetRunResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RunId             string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	State             RunState               `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.RunState" json:"state,omitempty"`
+	Terminal          bool                   `protobuf:"varint,3,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	TerminalReason    string                 `protobuf:"bytes,4,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
+	Result            *HostRunResult         `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
+	UpdatedAtUnixNano uint64                 `protobuf:"varint,6,opt,name=updated_at_unix_nano,json=updatedAtUnixNano,proto3" json:"updated_at_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
-func (x *GetJobStatusResponse) Reset() {
-	*x = GetJobStatusResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+func (x *GetRunResponse) Reset() {
+	*x = GetRunResponse{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetJobStatusResponse) String() string {
+func (x *GetRunResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetJobStatusResponse) ProtoMessage() {}
+func (*GetRunResponse) ProtoMessage() {}
 
-func (x *GetJobStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+func (x *GetRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -818,67 +728,146 @@ func (x *GetJobStatusResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetJobStatusResponse.ProtoReflect.Descriptor instead.
-func (*GetJobStatusResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
+// Deprecated: Use GetRunResponse.ProtoReflect.Descriptor instead.
+func (*GetRunResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *GetJobStatusResponse) GetJobId() string {
+func (x *GetRunResponse) GetRunId() string {
 	if x != nil {
-		return x.JobId
+		return x.RunId
 	}
 	return ""
 }
 
-func (x *GetJobStatusResponse) GetState() JobState {
+func (x *GetRunResponse) GetState() RunState {
 	if x != nil {
 		return x.State
 	}
-	return JobState_JOB_STATE_UNSPECIFIED
+	return RunState_RUN_STATE_UNSPECIFIED
 }
 
-func (x *GetJobStatusResponse) GetTerminal() bool {
+func (x *GetRunResponse) GetTerminal() bool {
 	if x != nil {
 		return x.Terminal
 	}
 	return false
 }
 
-func (x *GetJobStatusResponse) GetErrorMessage() string {
+func (x *GetRunResponse) GetTerminalReason() string {
 	if x != nil {
-		return x.ErrorMessage
+		return x.TerminalReason
 	}
 	return ""
 }
 
-func (x *GetJobStatusResponse) GetResult() *JobResult {
+func (x *GetRunResponse) GetResult() *HostRunResult {
 	if x != nil {
 		return x.Result
 	}
 	return nil
 }
 
-type CancelJobRequest struct {
+func (x *GetRunResponse) GetUpdatedAtUnixNano() uint64 {
+	if x != nil {
+		return x.UpdatedAtUnixNano
+	}
+	return 0
+}
+
+type StreamRunEventsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	FromSeq       uint64                 `protobuf:"varint,2,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`
+	Follow        bool                   `protobuf:"varint,3,opt,name=follow,proto3" json:"follow,omitempty"`
+	BatchSize     uint32                 `protobuf:"varint,4,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CancelJobRequest) Reset() {
-	*x = CancelJobRequest{}
+func (x *StreamRunEventsRequest) Reset() {
+	*x = StreamRunEventsRequest{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamRunEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamRunEventsRequest) ProtoMessage() {}
+
+func (x *StreamRunEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamRunEventsRequest.ProtoReflect.Descriptor instead.
+func (*StreamRunEventsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StreamRunEventsRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *StreamRunEventsRequest) GetFromSeq() uint64 {
+	if x != nil {
+		return x.FromSeq
+	}
+	return 0
+}
+
+func (x *StreamRunEventsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+func (x *StreamRunEventsRequest) GetBatchSize() uint32 {
+	if x != nil {
+		return x.BatchSize
+	}
+	return 0
+}
+
+type HostRunEvent struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RunId             string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	EventSeq          uint64                 `protobuf:"varint,2,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	EventType         string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Attrs             map[string]string      `protobuf:"bytes,4,rep,name=attrs,proto3" json:"attrs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	CreatedAtUnixNano uint64                 `protobuf:"varint,5,opt,name=created_at_unix_nano,json=createdAtUnixNano,proto3" json:"created_at_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *HostRunEvent) Reset() {
+	*x = HostRunEvent{}
 	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CancelJobRequest) String() string {
+func (x *HostRunEvent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CancelJobRequest) ProtoMessage() {}
+func (*HostRunEvent) ProtoMessage() {}
 
-func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
+func (x *HostRunEvent) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_v1_vm_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -890,886 +879,140 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
-func (*CancelJobRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use HostRunEvent.ProtoReflect.Descriptor instead.
+func (*HostRunEvent) Descriptor() ([]byte, []int) {
 	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *CancelJobRequest) GetJobId() string {
+func (x *HostRunEvent) GetRunId() string {
 	if x != nil {
-		return x.JobId
+		return x.RunId
 	}
 	return ""
 }
 
-type CancelJobResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Canceled      bool                   `protobuf:"varint,1,opt,name=canceled,proto3" json:"canceled,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CancelJobResponse) Reset() {
-	*x = CancelJobResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CancelJobResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CancelJobResponse) ProtoMessage() {}
-
-func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+func (x *HostRunEvent) GetEventSeq() uint64 {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
-func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *CancelJobResponse) GetCanceled() bool {
-	if x != nil {
-		return x.Canceled
-	}
-	return false
-}
-
-type StreamJobLogsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StreamJobLogsRequest) Reset() {
-	*x = StreamJobLogsRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StreamJobLogsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StreamJobLogsRequest) ProtoMessage() {}
-
-func (x *StreamJobLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StreamJobLogsRequest.ProtoReflect.Descriptor instead.
-func (*StreamJobLogsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *StreamJobLogsRequest) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *StreamJobLogsRequest) GetFollow() bool {
-	if x != nil {
-		return x.Follow
-	}
-	return false
-}
-
-type JobLogChunk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	Chunk         string                 `protobuf:"bytes,2,opt,name=chunk,proto3" json:"chunk,omitempty"`
-	Terminal      bool                   `protobuf:"varint,3,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobLogChunk) Reset() {
-	*x = JobLogChunk{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobLogChunk) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobLogChunk) ProtoMessage() {}
-
-func (x *JobLogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobLogChunk.ProtoReflect.Descriptor instead.
-func (*JobLogChunk) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *JobLogChunk) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
+		return x.EventSeq
 	}
 	return 0
 }
 
-func (x *JobLogChunk) GetChunk() string {
+func (x *HostRunEvent) GetEventType() string {
 	if x != nil {
-		return x.Chunk
+		return x.EventType
 	}
 	return ""
 }
 
-func (x *JobLogChunk) GetTerminal() bool {
-	if x != nil {
-		return x.Terminal
-	}
-	return false
-}
-
-type StreamGuestEventsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Follow        bool                   `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StreamGuestEventsRequest) Reset() {
-	*x = StreamGuestEventsRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StreamGuestEventsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StreamGuestEventsRequest) ProtoMessage() {}
-
-func (x *StreamGuestEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StreamGuestEventsRequest.ProtoReflect.Descriptor instead.
-func (*StreamGuestEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *StreamGuestEventsRequest) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *StreamGuestEventsRequest) GetFollow() bool {
-	if x != nil {
-		return x.Follow
-	}
-	return false
-}
-
-type JobGuestEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Attrs         map[string]string      `protobuf:"bytes,4,rep,name=attrs,proto3" json:"attrs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Terminal      bool                   `protobuf:"varint,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *JobGuestEvent) Reset() {
-	*x = JobGuestEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *JobGuestEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*JobGuestEvent) ProtoMessage() {}
-
-func (x *JobGuestEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use JobGuestEvent.ProtoReflect.Descriptor instead.
-func (*JobGuestEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *JobGuestEvent) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *JobGuestEvent) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *JobGuestEvent) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *JobGuestEvent) GetAttrs() map[string]string {
+func (x *HostRunEvent) GetAttrs() map[string]string {
 	if x != nil {
 		return x.Attrs
 	}
 	return nil
 }
 
-func (x *JobGuestEvent) GetTerminal() bool {
+func (x *HostRunEvent) GetCreatedAtUnixNano() uint64 {
 	if x != nil {
-		return x.Terminal
+		return x.CreatedAtUnixNano
+	}
+	return 0
+}
+
+type CancelRunRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRunRequest) Reset() {
+	*x = CancelRunRequest{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRunRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRunRequest) ProtoMessage() {}
+
+func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRunRequest.ProtoReflect.Descriptor instead.
+func (*CancelRunRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CancelRunRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *CancelRunRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CancelRunResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelRunResponse) Reset() {
+	*x = CancelRunResponse{}
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelRunResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelRunResponse) ProtoMessage() {}
+
+func (x *CancelRunResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_vm_service_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelRunResponse.ProtoReflect.Descriptor instead.
+func (*CancelRunResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CancelRunResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
 	}
 	return false
-}
-
-type TelemetryHello struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint32                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	Flags         uint32                 `protobuf:"varint,2,opt,name=flags,proto3" json:"flags,omitempty"`
-	MonoNs        uint64                 `protobuf:"varint,3,opt,name=mono_ns,json=monoNs,proto3" json:"mono_ns,omitempty"`
-	WallNs        uint64                 `protobuf:"varint,4,opt,name=wall_ns,json=wallNs,proto3" json:"wall_ns,omitempty"`
-	BootId        string                 `protobuf:"bytes,5,opt,name=boot_id,json=bootId,proto3" json:"boot_id,omitempty"`
-	MemTotalKb    uint64                 `protobuf:"varint,6,opt,name=mem_total_kb,json=memTotalKb,proto3" json:"mem_total_kb,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TelemetryHello) Reset() {
-	*x = TelemetryHello{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TelemetryHello) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TelemetryHello) ProtoMessage() {}
-
-func (x *TelemetryHello) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TelemetryHello.ProtoReflect.Descriptor instead.
-func (*TelemetryHello) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *TelemetryHello) GetSeq() uint32 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *TelemetryHello) GetFlags() uint32 {
-	if x != nil {
-		return x.Flags
-	}
-	return 0
-}
-
-func (x *TelemetryHello) GetMonoNs() uint64 {
-	if x != nil {
-		return x.MonoNs
-	}
-	return 0
-}
-
-func (x *TelemetryHello) GetWallNs() uint64 {
-	if x != nil {
-		return x.WallNs
-	}
-	return 0
-}
-
-func (x *TelemetryHello) GetBootId() string {
-	if x != nil {
-		return x.BootId
-	}
-	return ""
-}
-
-func (x *TelemetryHello) GetMemTotalKb() uint64 {
-	if x != nil {
-		return x.MemTotalKb
-	}
-	return 0
-}
-
-type TelemetrySample struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Seq            uint32                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	Flags          uint32                 `protobuf:"varint,2,opt,name=flags,proto3" json:"flags,omitempty"`
-	MonoNs         uint64                 `protobuf:"varint,3,opt,name=mono_ns,json=monoNs,proto3" json:"mono_ns,omitempty"`
-	WallNs         uint64                 `protobuf:"varint,4,opt,name=wall_ns,json=wallNs,proto3" json:"wall_ns,omitempty"`
-	CpuUserTicks   uint64                 `protobuf:"varint,5,opt,name=cpu_user_ticks,json=cpuUserTicks,proto3" json:"cpu_user_ticks,omitempty"`
-	CpuSystemTicks uint64                 `protobuf:"varint,6,opt,name=cpu_system_ticks,json=cpuSystemTicks,proto3" json:"cpu_system_ticks,omitempty"`
-	CpuIdleTicks   uint64                 `protobuf:"varint,7,opt,name=cpu_idle_ticks,json=cpuIdleTicks,proto3" json:"cpu_idle_ticks,omitempty"`
-	Load1Centis    uint32                 `protobuf:"varint,8,opt,name=load1_centis,json=load1Centis,proto3" json:"load1_centis,omitempty"`
-	Load5Centis    uint32                 `protobuf:"varint,9,opt,name=load5_centis,json=load5Centis,proto3" json:"load5_centis,omitempty"`
-	Load15Centis   uint32                 `protobuf:"varint,10,opt,name=load15_centis,json=load15Centis,proto3" json:"load15_centis,omitempty"`
-	ProcsRunning   uint32                 `protobuf:"varint,11,opt,name=procs_running,json=procsRunning,proto3" json:"procs_running,omitempty"`
-	ProcsBlocked   uint32                 `protobuf:"varint,12,opt,name=procs_blocked,json=procsBlocked,proto3" json:"procs_blocked,omitempty"`
-	MemAvailableKb uint64                 `protobuf:"varint,13,opt,name=mem_available_kb,json=memAvailableKb,proto3" json:"mem_available_kb,omitempty"`
-	IoReadBytes    uint64                 `protobuf:"varint,14,opt,name=io_read_bytes,json=ioReadBytes,proto3" json:"io_read_bytes,omitempty"`
-	IoWriteBytes   uint64                 `protobuf:"varint,15,opt,name=io_write_bytes,json=ioWriteBytes,proto3" json:"io_write_bytes,omitempty"`
-	NetRxBytes     uint64                 `protobuf:"varint,16,opt,name=net_rx_bytes,json=netRxBytes,proto3" json:"net_rx_bytes,omitempty"`
-	NetTxBytes     uint64                 `protobuf:"varint,17,opt,name=net_tx_bytes,json=netTxBytes,proto3" json:"net_tx_bytes,omitempty"`
-	PsiCpuPct100   uint32                 `protobuf:"varint,18,opt,name=psi_cpu_pct100,json=psiCpuPct100,proto3" json:"psi_cpu_pct100,omitempty"`
-	PsiMemPct100   uint32                 `protobuf:"varint,19,opt,name=psi_mem_pct100,json=psiMemPct100,proto3" json:"psi_mem_pct100,omitempty"`
-	PsiIoPct100    uint32                 `protobuf:"varint,20,opt,name=psi_io_pct100,json=psiIoPct100,proto3" json:"psi_io_pct100,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *TelemetrySample) Reset() {
-	*x = TelemetrySample{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TelemetrySample) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TelemetrySample) ProtoMessage() {}
-
-func (x *TelemetrySample) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TelemetrySample.ProtoReflect.Descriptor instead.
-func (*TelemetrySample) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *TelemetrySample) GetSeq() uint32 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetFlags() uint32 {
-	if x != nil {
-		return x.Flags
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetMonoNs() uint64 {
-	if x != nil {
-		return x.MonoNs
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetWallNs() uint64 {
-	if x != nil {
-		return x.WallNs
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetCpuUserTicks() uint64 {
-	if x != nil {
-		return x.CpuUserTicks
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetCpuSystemTicks() uint64 {
-	if x != nil {
-		return x.CpuSystemTicks
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetCpuIdleTicks() uint64 {
-	if x != nil {
-		return x.CpuIdleTicks
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetLoad1Centis() uint32 {
-	if x != nil {
-		return x.Load1Centis
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetLoad5Centis() uint32 {
-	if x != nil {
-		return x.Load5Centis
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetLoad15Centis() uint32 {
-	if x != nil {
-		return x.Load15Centis
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetProcsRunning() uint32 {
-	if x != nil {
-		return x.ProcsRunning
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetProcsBlocked() uint32 {
-	if x != nil {
-		return x.ProcsBlocked
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetMemAvailableKb() uint64 {
-	if x != nil {
-		return x.MemAvailableKb
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetIoReadBytes() uint64 {
-	if x != nil {
-		return x.IoReadBytes
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetIoWriteBytes() uint64 {
-	if x != nil {
-		return x.IoWriteBytes
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetNetRxBytes() uint64 {
-	if x != nil {
-		return x.NetRxBytes
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetNetTxBytes() uint64 {
-	if x != nil {
-		return x.NetTxBytes
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetPsiCpuPct100() uint32 {
-	if x != nil {
-		return x.PsiCpuPct100
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetPsiMemPct100() uint32 {
-	if x != nil {
-		return x.PsiMemPct100
-	}
-	return 0
-}
-
-func (x *TelemetrySample) GetPsiIoPct100() uint32 {
-	if x != nil {
-		return x.PsiIoPct100
-	}
-	return 0
-}
-
-type StreamTelemetryRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *StreamTelemetryRequest) Reset() {
-	*x = StreamTelemetryRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *StreamTelemetryRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*StreamTelemetryRequest) ProtoMessage() {}
-
-func (x *StreamTelemetryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use StreamTelemetryRequest.ProtoReflect.Descriptor instead.
-func (*StreamTelemetryRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *StreamTelemetryRequest) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-type TelemetryEvent struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	JobId              string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	ReceivedAtUnixNano uint64                 `protobuf:"varint,2,opt,name=received_at_unix_nano,json=receivedAtUnixNano,proto3" json:"received_at_unix_nano,omitempty"`
-	Kind               TelemetryFrameKind     `protobuf:"varint,3,opt,name=kind,proto3,enum=forge_metal.vm_orchestrator.v1.TelemetryFrameKind" json:"kind,omitempty"`
-	// Types that are valid to be assigned to Frame:
-	//
-	//	*TelemetryEvent_Hello
-	//	*TelemetryEvent_Sample
-	Frame         isTelemetryEvent_Frame `protobuf_oneof:"frame"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TelemetryEvent) Reset() {
-	*x = TelemetryEvent{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TelemetryEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TelemetryEvent) ProtoMessage() {}
-
-func (x *TelemetryEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TelemetryEvent.ProtoReflect.Descriptor instead.
-func (*TelemetryEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *TelemetryEvent) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *TelemetryEvent) GetReceivedAtUnixNano() uint64 {
-	if x != nil {
-		return x.ReceivedAtUnixNano
-	}
-	return 0
-}
-
-func (x *TelemetryEvent) GetKind() TelemetryFrameKind {
-	if x != nil {
-		return x.Kind
-	}
-	return TelemetryFrameKind_TELEMETRY_FRAME_KIND_UNSPECIFIED
-}
-
-func (x *TelemetryEvent) GetFrame() isTelemetryEvent_Frame {
-	if x != nil {
-		return x.Frame
-	}
-	return nil
-}
-
-func (x *TelemetryEvent) GetHello() *TelemetryHello {
-	if x != nil {
-		if x, ok := x.Frame.(*TelemetryEvent_Hello); ok {
-			return x.Hello
-		}
-	}
-	return nil
-}
-
-func (x *TelemetryEvent) GetSample() *TelemetrySample {
-	if x != nil {
-		if x, ok := x.Frame.(*TelemetryEvent_Sample); ok {
-			return x.Sample
-		}
-	}
-	return nil
-}
-
-type isTelemetryEvent_Frame interface {
-	isTelemetryEvent_Frame()
-}
-
-type TelemetryEvent_Hello struct {
-	Hello *TelemetryHello `protobuf:"bytes,4,opt,name=hello,proto3,oneof"`
-}
-
-type TelemetryEvent_Sample struct {
-	Sample *TelemetrySample `protobuf:"bytes,5,opt,name=sample,proto3,oneof"`
-}
-
-func (*TelemetryEvent_Hello) isTelemetryEvent_Frame() {}
-
-func (*TelemetryEvent_Sample) isTelemetryEvent_Frame() {}
-
-type FleetVM struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	JobId              string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	State              JobState               `protobuf:"varint,2,opt,name=state,proto3,enum=forge_metal.vm_orchestrator.v1.JobState" json:"state,omitempty"`
-	LastUpdateUnixNano uint64                 `protobuf:"varint,3,opt,name=last_update_unix_nano,json=lastUpdateUnixNano,proto3" json:"last_update_unix_nano,omitempty"`
-	Hello              *TelemetryHello        `protobuf:"bytes,4,opt,name=hello,proto3" json:"hello,omitempty"`
-	LatestSample       *TelemetrySample       `protobuf:"bytes,5,opt,name=latest_sample,json=latestSample,proto3" json:"latest_sample,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *FleetVM) Reset() {
-	*x = FleetVM{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FleetVM) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FleetVM) ProtoMessage() {}
-
-func (x *FleetVM) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FleetVM.ProtoReflect.Descriptor instead.
-func (*FleetVM) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *FleetVM) GetJobId() string {
-	if x != nil {
-		return x.JobId
-	}
-	return ""
-}
-
-func (x *FleetVM) GetState() JobState {
-	if x != nil {
-		return x.State
-	}
-	return JobState_JOB_STATE_UNSPECIFIED
-}
-
-func (x *FleetVM) GetLastUpdateUnixNano() uint64 {
-	if x != nil {
-		return x.LastUpdateUnixNano
-	}
-	return 0
-}
-
-func (x *FleetVM) GetHello() *TelemetryHello {
-	if x != nil {
-		return x.Hello
-	}
-	return nil
-}
-
-func (x *FleetVM) GetLatestSample() *TelemetrySample {
-	if x != nil {
-		return x.LatestSample
-	}
-	return nil
-}
-
-type GetFleetSnapshotRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetFleetSnapshotRequest) Reset() {
-	*x = GetFleetSnapshotRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetFleetSnapshotRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetFleetSnapshotRequest) ProtoMessage() {}
-
-func (x *GetFleetSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetFleetSnapshotRequest.ProtoReflect.Descriptor instead.
-func (*GetFleetSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
-}
-
-type GetFleetSnapshotResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Vms           []*FleetVM             `protobuf:"bytes,1,rep,name=vms,proto3" json:"vms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetFleetSnapshotResponse) Reset() {
-	*x = GetFleetSnapshotResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetFleetSnapshotResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetFleetSnapshotResponse) ProtoMessage() {}
-
-func (x *GetFleetSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetFleetSnapshotResponse.ProtoReflect.Descriptor instead.
-func (*GetFleetSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *GetFleetSnapshotResponse) GetVms() []*FleetVM {
-	if x != nil {
-		return x.Vms
-	}
-	return nil
 }
 
 type GetCapacityRequest struct {
@@ -1780,7 +1023,7 @@ type GetCapacityRequest struct {
 
 func (x *GetCapacityRequest) Reset() {
 	*x = GetCapacityRequest{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1792,7 +1035,7 @@ func (x *GetCapacityRequest) String() string {
 func (*GetCapacityRequest) ProtoMessage() {}
 
 func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1805,14 +1048,14 @@ func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityRequest.ProtoReflect.Descriptor instead.
 func (*GetCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
 }
 
 type GetCapacityResponse struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	GuestPoolCidr          string                 `protobuf:"bytes,1,opt,name=guest_pool_cidr,json=guestPoolCidr,proto3" json:"guest_pool_cidr,omitempty"`
 	TotalSlots             uint32                 `protobuf:"varint,2,opt,name=total_slots,json=totalSlots,proto3" json:"total_slots,omitempty"`
-	ActiveJobs             uint32                 `protobuf:"varint,3,opt,name=active_jobs,json=activeJobs,proto3" json:"active_jobs,omitempty"`
+	ActiveRuns             uint32                 `protobuf:"varint,3,opt,name=active_runs,json=activeRuns,proto3" json:"active_runs,omitempty"`
 	AvailableSlots         uint32                 `protobuf:"varint,4,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"`
 	VcpusPerVm             uint32                 `protobuf:"varint,5,opt,name=vcpus_per_vm,json=vcpusPerVm,proto3" json:"vcpus_per_vm,omitempty"`
 	MemoryMibPerVm         uint32                 `protobuf:"varint,6,opt,name=memory_mib_per_vm,json=memoryMibPerVm,proto3" json:"memory_mib_per_vm,omitempty"`
@@ -1823,7 +1066,7 @@ type GetCapacityResponse struct {
 
 func (x *GetCapacityResponse) Reset() {
 	*x = GetCapacityResponse{}
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1835,7 +1078,7 @@ func (x *GetCapacityResponse) String() string {
 func (*GetCapacityResponse) ProtoMessage() {}
 
 func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_proto_v1_vm_service_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1848,7 +1091,7 @@ func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityResponse.ProtoReflect.Descriptor instead.
 func (*GetCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
+	return file_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetCapacityResponse) GetGuestPoolCidr() string {
@@ -1865,9 +1108,9 @@ func (x *GetCapacityResponse) GetTotalSlots() uint32 {
 	return 0
 }
 
-func (x *GetCapacityResponse) GetActiveJobs() uint32 {
+func (x *GetCapacityResponse) GetActiveRuns() uint32 {
 	if x != nil {
-		return x.ActiveJobs
+		return x.ActiveRuns
 	}
 	return 0
 }
@@ -1904,16 +1147,20 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xbe\x02\n" +
-	"\tJobConfig\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\x80\x03\n" +
+	"\vHostRunSpec\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
 	"\vrun_command\x18\x02 \x03(\tR\n" +
 	"runCommand\x12 \n" +
 	"\frun_work_dir\x18\x03 \x01(\tR\n" +
-	"runWorkDir\x12D\n" +
-	"\x03env\x18\x04 \x03(\v22.forge_metal.vm_orchestrator.v1.JobConfig.EnvEntryR\x03env\x12'\n" +
+	"runWorkDir\x12F\n" +
+	"\x03env\x18\x04 \x03(\v24.forge_metal.vm_orchestrator.v1.HostRunSpec.EnvEntryR\x03env\x12'\n" +
 	"\x0fbillable_phases\x18\x05 \x03(\tR\x0ebillablePhases\x120\n" +
-	"\x14checkpoint_save_refs\x18\x06 \x03(\tR\x12checkpointSaveRefs\x1a6\n" +
+	"\x14checkpoint_save_refs\x18\x06 \x03(\tR\x12checkpointSaveRefs\x12\x1d\n" +
+	"\n" +
+	"attempt_id\x18\a \x01(\tR\tattemptId\x12\x1d\n" +
+	"\n" +
+	"segment_id\x18\b \x01(\tR\tsegmentId\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"_\n" +
@@ -1933,8 +1180,8 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"netRxBytes\x12 \n" +
 	"\fnet_tx_bytes\x18\a \x01(\x04R\n" +
 	"netTxBytes\x12&\n" +
-	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xea\x06\n" +
-	"\tJobResult\x12\x1b\n" +
+	"\x0fvcpu_exit_count\x18\b \x01(\x04R\rvcpuExitCount\"\xee\x06\n" +
+	"\rHostRunResult\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x12\n" +
 	"\x04logs\x18\x02 \x01(\tR\x04logs\x12\x1f\n" +
 	"\vserial_logs\x18\x03 \x01(\tR\n" +
@@ -1958,130 +1205,69 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\x0fforced_shutdown\x18\x11 \x01(\bR\x0eforcedShutdown\x12P\n" +
 	"\rphase_results\x18\x12 \x03(\v2+.forge_metal.vm_orchestrator.v1.PhaseResultR\fphaseResults\x12#\n" +
 	"\rfailure_phase\x18\x13 \x01(\tR\ffailurePhase\x12C\n" +
-	"\ametrics\x18\x14 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\"L\n" +
-	"\rDirectJobSpec\x12;\n" +
-	"\x03job\x18\x01 \x01(\v2).forge_metal.vm_orchestrator.v1.JobConfigR\x03job\"j\n" +
-	"\x10CreateJobRequest\x12N\n" +
+	"\ametrics\x18\x14 \x01(\v2).forge_metal.vm_orchestrator.v1.VMMetricsR\ametrics\"S\n" +
+	"\x10EnsureRunRequest\x12?\n" +
+	"\x04spec\x18\x01 \x01(\v2+.forge_metal.vm_orchestrator.v1.HostRunSpecR\x04spec\"\x84\x01\n" +
+	"\x11EnsureRunResponse\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12>\n" +
+	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.RunStateR\x05state\x12\x18\n" +
+	"\acreated\x18\x03 \x01(\bR\acreated\"M\n" +
+	"\rGetRunRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12%\n" +
+	"\x0einclude_output\x18\x02 \x01(\bR\rincludeOutput\"\xa4\x02\n" +
+	"\x0eGetRunResponse\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12>\n" +
+	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.RunStateR\x05state\x12\x1a\n" +
+	"\bterminal\x18\x03 \x01(\bR\bterminal\x12'\n" +
+	"\x0fterminal_reason\x18\x04 \x01(\tR\x0eterminalReason\x12E\n" +
+	"\x06result\x18\x05 \x01(\v2-.forge_metal.vm_orchestrator.v1.HostRunResultR\x06result\x12/\n" +
+	"\x14updated_at_unix_nano\x18\x06 \x01(\x04R\x11updatedAtUnixNano\"\x81\x01\n" +
+	"\x16StreamRunEventsRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x19\n" +
+	"\bfrom_seq\x18\x02 \x01(\x04R\afromSeq\x12\x16\n" +
+	"\x06follow\x18\x03 \x01(\bR\x06follow\x12\x1d\n" +
 	"\n" +
-	"direct_job\x18\x01 \x01(\v2-.forge_metal.vm_orchestrator.v1.DirectJobSpecH\x00R\tdirectJobB\x06\n" +
-	"\x04spec\"j\n" +
-	"\x11CreateJobResponse\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12>\n" +
-	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.JobStateR\x05state\"S\n" +
-	"\x13GetJobStatusRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12%\n" +
-	"\x0einclude_output\x18\x02 \x01(\bR\rincludeOutput\"\xf1\x01\n" +
-	"\x14GetJobStatusResponse\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12>\n" +
-	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.JobStateR\x05state\x12\x1a\n" +
-	"\bterminal\x18\x03 \x01(\bR\bterminal\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12A\n" +
-	"\x06result\x18\x05 \x01(\v2).forge_metal.vm_orchestrator.v1.JobResultR\x06result\")\n" +
-	"\x10CancelJobRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"/\n" +
-	"\x11CancelJobResponse\x12\x1a\n" +
-	"\bcanceled\x18\x01 \x01(\bR\bcanceled\"E\n" +
-	"\x14StreamJobLogsRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06follow\x18\x02 \x01(\bR\x06follow\"Q\n" +
-	"\vJobLogChunk\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x14\n" +
-	"\x05chunk\x18\x02 \x01(\tR\x05chunk\x12\x1a\n" +
-	"\bterminal\x18\x03 \x01(\bR\bterminal\"I\n" +
-	"\x18StreamGuestEventsRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06follow\x18\x02 \x01(\bR\x06follow\"\xf2\x01\n" +
-	"\rJobGuestEvent\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kind\x12N\n" +
-	"\x05attrs\x18\x04 \x03(\v28.forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntryR\x05attrs\x12\x1a\n" +
-	"\bterminal\x18\x05 \x01(\bR\bterminal\x1a8\n" +
+	"batch_size\x18\x04 \x01(\rR\tbatchSize\"\x9b\x02\n" +
+	"\fHostRunEvent\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
+	"\tevent_seq\x18\x02 \x01(\x04R\beventSeq\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\tR\teventType\x12M\n" +
+	"\x05attrs\x18\x04 \x03(\v27.forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntryR\x05attrs\x12/\n" +
+	"\x14created_at_unix_nano\x18\x05 \x01(\x04R\x11createdAtUnixNano\x1a8\n" +
 	"\n" +
 	"AttrsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x01\n" +
-	"\x0eTelemetryHello\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\rR\x03seq\x12\x14\n" +
-	"\x05flags\x18\x02 \x01(\rR\x05flags\x12\x17\n" +
-	"\amono_ns\x18\x03 \x01(\x04R\x06monoNs\x12\x17\n" +
-	"\awall_ns\x18\x04 \x01(\x04R\x06wallNs\x12\x17\n" +
-	"\aboot_id\x18\x05 \x01(\tR\x06bootId\x12 \n" +
-	"\fmem_total_kb\x18\x06 \x01(\x04R\n" +
-	"memTotalKb\"\xbe\x05\n" +
-	"\x0fTelemetrySample\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\rR\x03seq\x12\x14\n" +
-	"\x05flags\x18\x02 \x01(\rR\x05flags\x12\x17\n" +
-	"\amono_ns\x18\x03 \x01(\x04R\x06monoNs\x12\x17\n" +
-	"\awall_ns\x18\x04 \x01(\x04R\x06wallNs\x12$\n" +
-	"\x0ecpu_user_ticks\x18\x05 \x01(\x04R\fcpuUserTicks\x12(\n" +
-	"\x10cpu_system_ticks\x18\x06 \x01(\x04R\x0ecpuSystemTicks\x12$\n" +
-	"\x0ecpu_idle_ticks\x18\a \x01(\x04R\fcpuIdleTicks\x12!\n" +
-	"\fload1_centis\x18\b \x01(\rR\vload1Centis\x12!\n" +
-	"\fload5_centis\x18\t \x01(\rR\vload5Centis\x12#\n" +
-	"\rload15_centis\x18\n" +
-	" \x01(\rR\fload15Centis\x12#\n" +
-	"\rprocs_running\x18\v \x01(\rR\fprocsRunning\x12#\n" +
-	"\rprocs_blocked\x18\f \x01(\rR\fprocsBlocked\x12(\n" +
-	"\x10mem_available_kb\x18\r \x01(\x04R\x0ememAvailableKb\x12\"\n" +
-	"\rio_read_bytes\x18\x0e \x01(\x04R\vioReadBytes\x12$\n" +
-	"\x0eio_write_bytes\x18\x0f \x01(\x04R\fioWriteBytes\x12 \n" +
-	"\fnet_rx_bytes\x18\x10 \x01(\x04R\n" +
-	"netRxBytes\x12 \n" +
-	"\fnet_tx_bytes\x18\x11 \x01(\x04R\n" +
-	"netTxBytes\x12$\n" +
-	"\x0epsi_cpu_pct100\x18\x12 \x01(\rR\fpsiCpuPct100\x12$\n" +
-	"\x0epsi_mem_pct100\x18\x13 \x01(\rR\fpsiMemPct100\x12\"\n" +
-	"\rpsi_io_pct100\x18\x14 \x01(\rR\vpsiIoPct100\"/\n" +
-	"\x16StreamTelemetryRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\xbe\x02\n" +
-	"\x0eTelemetryEvent\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x121\n" +
-	"\x15received_at_unix_nano\x18\x02 \x01(\x04R\x12receivedAtUnixNano\x12F\n" +
-	"\x04kind\x18\x03 \x01(\x0e22.forge_metal.vm_orchestrator.v1.TelemetryFrameKindR\x04kind\x12F\n" +
-	"\x05hello\x18\x04 \x01(\v2..forge_metal.vm_orchestrator.v1.TelemetryHelloH\x00R\x05hello\x12I\n" +
-	"\x06sample\x18\x05 \x01(\v2/.forge_metal.vm_orchestrator.v1.TelemetrySampleH\x00R\x06sampleB\a\n" +
-	"\x05frame\"\xaf\x02\n" +
-	"\aFleetVM\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12>\n" +
-	"\x05state\x18\x02 \x01(\x0e2(.forge_metal.vm_orchestrator.v1.JobStateR\x05state\x121\n" +
-	"\x15last_update_unix_nano\x18\x03 \x01(\x04R\x12lastUpdateUnixNano\x12D\n" +
-	"\x05hello\x18\x04 \x01(\v2..forge_metal.vm_orchestrator.v1.TelemetryHelloR\x05hello\x12T\n" +
-	"\rlatest_sample\x18\x05 \x01(\v2/.forge_metal.vm_orchestrator.v1.TelemetrySampleR\flatestSample\"\x19\n" +
-	"\x17GetFleetSnapshotRequest\"U\n" +
-	"\x18GetFleetSnapshotResponse\x129\n" +
-	"\x03vms\x18\x01 \x03(\v2'.forge_metal.vm_orchestrator.v1.FleetVMR\x03vms\"\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"A\n" +
+	"\x10CancelRunRequest\x12\x15\n" +
+	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"/\n" +
+	"\x11CancelRunResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"\x14\n" +
 	"\x12GetCapacityRequest\"\xaf\x02\n" +
 	"\x13GetCapacityResponse\x12&\n" +
 	"\x0fguest_pool_cidr\x18\x01 \x01(\tR\rguestPoolCidr\x12\x1f\n" +
 	"\vtotal_slots\x18\x02 \x01(\rR\n" +
 	"totalSlots\x12\x1f\n" +
-	"\vactive_jobs\x18\x03 \x01(\rR\n" +
-	"activeJobs\x12'\n" +
+	"\vactive_runs\x18\x03 \x01(\rR\n" +
+	"activeRuns\x12'\n" +
 	"\x0favailable_slots\x18\x04 \x01(\rR\x0eavailableSlots\x12 \n" +
 	"\fvcpus_per_vm\x18\x05 \x01(\rR\n" +
 	"vcpusPerVm\x12)\n" +
 	"\x11memory_mib_per_vm\x18\x06 \x01(\rR\x0ememoryMibPerVm\x128\n" +
 	"\x18rootfs_provisioned_bytes\x18\a \x01(\x04R\x16rootfsProvisionedBytes*\x9a\x01\n" +
-	"\bJobState\x12\x19\n" +
-	"\x15JOB_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
-	"\x11JOB_STATE_PENDING\x10\x01\x12\x15\n" +
-	"\x11JOB_STATE_RUNNING\x10\x02\x12\x17\n" +
-	"\x13JOB_STATE_SUCCEEDED\x10\x03\x12\x14\n" +
-	"\x10JOB_STATE_FAILED\x10\x04\x12\x16\n" +
-	"\x12JOB_STATE_CANCELED\x10\x05*{\n" +
-	"\x12TelemetryFrameKind\x12$\n" +
-	" TELEMETRY_FRAME_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aTELEMETRY_FRAME_KIND_HELLO\x10\x01\x12\x1f\n" +
-	"\x1bTELEMETRY_FRAME_KIND_SAMPLE\x10\x022\xdd\a\n" +
+	"\bRunState\x12\x19\n" +
+	"\x15RUN_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11RUN_STATE_PENDING\x10\x01\x12\x15\n" +
+	"\x11RUN_STATE_RUNNING\x10\x02\x12\x17\n" +
+	"\x13RUN_STATE_SUCCEEDED\x10\x03\x12\x14\n" +
+	"\x10RUN_STATE_FAILED\x10\x04\x12\x16\n" +
+	"\x12RUN_STATE_CANCELED\x10\x052\xcb\x04\n" +
 	"\tVMService\x12p\n" +
-	"\tCreateJob\x120.forge_metal.vm_orchestrator.v1.CreateJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CreateJobResponse\x12y\n" +
-	"\fGetJobStatus\x123.forge_metal.vm_orchestrator.v1.GetJobStatusRequest\x1a4.forge_metal.vm_orchestrator.v1.GetJobStatusResponse\x12p\n" +
-	"\tCancelJob\x120.forge_metal.vm_orchestrator.v1.CancelJobRequest\x1a1.forge_metal.vm_orchestrator.v1.CancelJobResponse\x12t\n" +
-	"\rStreamJobLogs\x124.forge_metal.vm_orchestrator.v1.StreamJobLogsRequest\x1a+.forge_metal.vm_orchestrator.v1.JobLogChunk0\x01\x12~\n" +
-	"\x11StreamGuestEvents\x128.forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest\x1a-.forge_metal.vm_orchestrator.v1.JobGuestEvent0\x01\x12{\n" +
-	"\x0fStreamTelemetry\x126.forge_metal.vm_orchestrator.v1.StreamTelemetryRequest\x1a..forge_metal.vm_orchestrator.v1.TelemetryEvent0\x01\x12\x85\x01\n" +
-	"\x10GetFleetSnapshot\x127.forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest\x1a8.forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse\x12v\n" +
+	"\tEnsureRun\x120.forge_metal.vm_orchestrator.v1.EnsureRunRequest\x1a1.forge_metal.vm_orchestrator.v1.EnsureRunResponse\x12g\n" +
+	"\x06GetRun\x12-.forge_metal.vm_orchestrator.v1.GetRunRequest\x1a..forge_metal.vm_orchestrator.v1.GetRunResponse\x12y\n" +
+	"\x0fStreamRunEvents\x126.forge_metal.vm_orchestrator.v1.StreamRunEventsRequest\x1a,.forge_metal.vm_orchestrator.v1.HostRunEvent0\x01\x12p\n" +
+	"\tCancelRun\x120.forge_metal.vm_orchestrator.v1.CancelRunRequest\x1a1.forge_metal.vm_orchestrator.v1.CancelRunResponse\x12v\n" +
 	"\vGetCapacity\x122.forge_metal.vm_orchestrator.v1.GetCapacityRequest\x1a3.forge_metal.vm_orchestrator.v1.GetCapacityResponseB7Z5github.com/forge-metal/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
 
 var (
@@ -2096,76 +1282,51 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 	return file_proto_v1_vm_service_proto_rawDescData
 }
 
-var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_proto_v1_vm_service_proto_goTypes = []any{
-	(JobState)(0),                    // 0: forge_metal.vm_orchestrator.v1.JobState
-	(TelemetryFrameKind)(0),          // 1: forge_metal.vm_orchestrator.v1.TelemetryFrameKind
-	(*JobConfig)(nil),                // 2: forge_metal.vm_orchestrator.v1.JobConfig
-	(*PhaseResult)(nil),              // 3: forge_metal.vm_orchestrator.v1.PhaseResult
-	(*VMMetrics)(nil),                // 4: forge_metal.vm_orchestrator.v1.VMMetrics
-	(*JobResult)(nil),                // 5: forge_metal.vm_orchestrator.v1.JobResult
-	(*DirectJobSpec)(nil),            // 6: forge_metal.vm_orchestrator.v1.DirectJobSpec
-	(*CreateJobRequest)(nil),         // 7: forge_metal.vm_orchestrator.v1.CreateJobRequest
-	(*CreateJobResponse)(nil),        // 8: forge_metal.vm_orchestrator.v1.CreateJobResponse
-	(*GetJobStatusRequest)(nil),      // 9: forge_metal.vm_orchestrator.v1.GetJobStatusRequest
-	(*GetJobStatusResponse)(nil),     // 10: forge_metal.vm_orchestrator.v1.GetJobStatusResponse
-	(*CancelJobRequest)(nil),         // 11: forge_metal.vm_orchestrator.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),        // 12: forge_metal.vm_orchestrator.v1.CancelJobResponse
-	(*StreamJobLogsRequest)(nil),     // 13: forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
-	(*JobLogChunk)(nil),              // 14: forge_metal.vm_orchestrator.v1.JobLogChunk
-	(*StreamGuestEventsRequest)(nil), // 15: forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
-	(*JobGuestEvent)(nil),            // 16: forge_metal.vm_orchestrator.v1.JobGuestEvent
-	(*TelemetryHello)(nil),           // 17: forge_metal.vm_orchestrator.v1.TelemetryHello
-	(*TelemetrySample)(nil),          // 18: forge_metal.vm_orchestrator.v1.TelemetrySample
-	(*StreamTelemetryRequest)(nil),   // 19: forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	(*TelemetryEvent)(nil),           // 20: forge_metal.vm_orchestrator.v1.TelemetryEvent
-	(*FleetVM)(nil),                  // 21: forge_metal.vm_orchestrator.v1.FleetVM
-	(*GetFleetSnapshotRequest)(nil),  // 22: forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	(*GetFleetSnapshotResponse)(nil), // 23: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	(*GetCapacityRequest)(nil),       // 24: forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),      // 25: forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	nil,                              // 26: forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
-	nil,                              // 27: forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
+	(RunState)(0),                  // 0: forge_metal.vm_orchestrator.v1.RunState
+	(*HostRunSpec)(nil),            // 1: forge_metal.vm_orchestrator.v1.HostRunSpec
+	(*PhaseResult)(nil),            // 2: forge_metal.vm_orchestrator.v1.PhaseResult
+	(*VMMetrics)(nil),              // 3: forge_metal.vm_orchestrator.v1.VMMetrics
+	(*HostRunResult)(nil),          // 4: forge_metal.vm_orchestrator.v1.HostRunResult
+	(*EnsureRunRequest)(nil),       // 5: forge_metal.vm_orchestrator.v1.EnsureRunRequest
+	(*EnsureRunResponse)(nil),      // 6: forge_metal.vm_orchestrator.v1.EnsureRunResponse
+	(*GetRunRequest)(nil),          // 7: forge_metal.vm_orchestrator.v1.GetRunRequest
+	(*GetRunResponse)(nil),         // 8: forge_metal.vm_orchestrator.v1.GetRunResponse
+	(*StreamRunEventsRequest)(nil), // 9: forge_metal.vm_orchestrator.v1.StreamRunEventsRequest
+	(*HostRunEvent)(nil),           // 10: forge_metal.vm_orchestrator.v1.HostRunEvent
+	(*CancelRunRequest)(nil),       // 11: forge_metal.vm_orchestrator.v1.CancelRunRequest
+	(*CancelRunResponse)(nil),      // 12: forge_metal.vm_orchestrator.v1.CancelRunResponse
+	(*GetCapacityRequest)(nil),     // 13: forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),    // 14: forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	nil,                            // 15: forge_metal.vm_orchestrator.v1.HostRunSpec.EnvEntry
+	nil,                            // 16: forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
-	26, // 0: forge_metal.vm_orchestrator.v1.JobConfig.env:type_name -> forge_metal.vm_orchestrator.v1.JobConfig.EnvEntry
-	3,  // 1: forge_metal.vm_orchestrator.v1.JobResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
-	4,  // 2: forge_metal.vm_orchestrator.v1.JobResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
-	2,  // 3: forge_metal.vm_orchestrator.v1.DirectJobSpec.job:type_name -> forge_metal.vm_orchestrator.v1.JobConfig
-	6,  // 4: forge_metal.vm_orchestrator.v1.CreateJobRequest.direct_job:type_name -> forge_metal.vm_orchestrator.v1.DirectJobSpec
-	0,  // 5: forge_metal.vm_orchestrator.v1.CreateJobResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	0,  // 6: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	5,  // 7: forge_metal.vm_orchestrator.v1.GetJobStatusResponse.result:type_name -> forge_metal.vm_orchestrator.v1.JobResult
-	27, // 8: forge_metal.vm_orchestrator.v1.JobGuestEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.JobGuestEvent.AttrsEntry
-	1,  // 9: forge_metal.vm_orchestrator.v1.TelemetryEvent.kind:type_name -> forge_metal.vm_orchestrator.v1.TelemetryFrameKind
-	17, // 10: forge_metal.vm_orchestrator.v1.TelemetryEvent.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	18, // 11: forge_metal.vm_orchestrator.v1.TelemetryEvent.sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	0,  // 12: forge_metal.vm_orchestrator.v1.FleetVM.state:type_name -> forge_metal.vm_orchestrator.v1.JobState
-	17, // 13: forge_metal.vm_orchestrator.v1.FleetVM.hello:type_name -> forge_metal.vm_orchestrator.v1.TelemetryHello
-	18, // 14: forge_metal.vm_orchestrator.v1.FleetVM.latest_sample:type_name -> forge_metal.vm_orchestrator.v1.TelemetrySample
-	21, // 15: forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse.vms:type_name -> forge_metal.vm_orchestrator.v1.FleetVM
-	7,  // 16: forge_metal.vm_orchestrator.v1.VMService.CreateJob:input_type -> forge_metal.vm_orchestrator.v1.CreateJobRequest
-	9,  // 17: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:input_type -> forge_metal.vm_orchestrator.v1.GetJobStatusRequest
-	11, // 18: forge_metal.vm_orchestrator.v1.VMService.CancelJob:input_type -> forge_metal.vm_orchestrator.v1.CancelJobRequest
-	13, // 19: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:input_type -> forge_metal.vm_orchestrator.v1.StreamJobLogsRequest
-	15, // 20: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamGuestEventsRequest
-	19, // 21: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:input_type -> forge_metal.vm_orchestrator.v1.StreamTelemetryRequest
-	22, // 22: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:input_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotRequest
-	24, // 23: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	8,  // 24: forge_metal.vm_orchestrator.v1.VMService.CreateJob:output_type -> forge_metal.vm_orchestrator.v1.CreateJobResponse
-	10, // 25: forge_metal.vm_orchestrator.v1.VMService.GetJobStatus:output_type -> forge_metal.vm_orchestrator.v1.GetJobStatusResponse
-	12, // 26: forge_metal.vm_orchestrator.v1.VMService.CancelJob:output_type -> forge_metal.vm_orchestrator.v1.CancelJobResponse
-	14, // 27: forge_metal.vm_orchestrator.v1.VMService.StreamJobLogs:output_type -> forge_metal.vm_orchestrator.v1.JobLogChunk
-	16, // 28: forge_metal.vm_orchestrator.v1.VMService.StreamGuestEvents:output_type -> forge_metal.vm_orchestrator.v1.JobGuestEvent
-	20, // 29: forge_metal.vm_orchestrator.v1.VMService.StreamTelemetry:output_type -> forge_metal.vm_orchestrator.v1.TelemetryEvent
-	23, // 30: forge_metal.vm_orchestrator.v1.VMService.GetFleetSnapshot:output_type -> forge_metal.vm_orchestrator.v1.GetFleetSnapshotResponse
-	25, // 31: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	24, // [24:32] is the sub-list for method output_type
-	16, // [16:24] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	15, // 0: forge_metal.vm_orchestrator.v1.HostRunSpec.env:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec.EnvEntry
+	2,  // 1: forge_metal.vm_orchestrator.v1.HostRunResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
+	3,  // 2: forge_metal.vm_orchestrator.v1.HostRunResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
+	1,  // 3: forge_metal.vm_orchestrator.v1.EnsureRunRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec
+	0,  // 4: forge_metal.vm_orchestrator.v1.EnsureRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
+	0,  // 5: forge_metal.vm_orchestrator.v1.GetRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
+	4,  // 6: forge_metal.vm_orchestrator.v1.GetRunResponse.result:type_name -> forge_metal.vm_orchestrator.v1.HostRunResult
+	16, // 7: forge_metal.vm_orchestrator.v1.HostRunEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
+	5,  // 8: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:input_type -> forge_metal.vm_orchestrator.v1.EnsureRunRequest
+	7,  // 9: forge_metal.vm_orchestrator.v1.VMService.GetRun:input_type -> forge_metal.vm_orchestrator.v1.GetRunRequest
+	9,  // 10: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamRunEventsRequest
+	11, // 11: forge_metal.vm_orchestrator.v1.VMService.CancelRun:input_type -> forge_metal.vm_orchestrator.v1.CancelRunRequest
+	13, // 12: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	6,  // 13: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:output_type -> forge_metal.vm_orchestrator.v1.EnsureRunResponse
+	8,  // 14: forge_metal.vm_orchestrator.v1.VMService.GetRun:output_type -> forge_metal.vm_orchestrator.v1.GetRunResponse
+	10, // 15: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:output_type -> forge_metal.vm_orchestrator.v1.HostRunEvent
+	12, // 16: forge_metal.vm_orchestrator.v1.VMService.CancelRun:output_type -> forge_metal.vm_orchestrator.v1.CancelRunResponse
+	14, // 17: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	13, // [13:18] is the sub-list for method output_type
+	8,  // [8:13] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -2173,20 +1334,13 @@ func file_proto_v1_vm_service_proto_init() {
 	if File_proto_v1_vm_service_proto != nil {
 		return
 	}
-	file_proto_v1_vm_service_proto_msgTypes[5].OneofWrappers = []any{
-		(*CreateJobRequest_DirectJob)(nil),
-	}
-	file_proto_v1_vm_service_proto_msgTypes[18].OneofWrappers = []any{
-		(*TelemetryEvent_Hello)(nil),
-		(*TelemetryEvent_Sample)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   26,
+			NumEnums:      1,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

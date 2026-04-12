@@ -36,7 +36,7 @@ type NetworkPoolConfig struct {
 
 // NetworkLease is the persisted lease record for one Firecracker VM.
 type NetworkLease struct {
-	JobID                 string    `json:"job_id"`
+	RunID                 string    `json:"run_id"`
 	SlotIndex             int       `json:"slot_index"`
 	Generation            uint64    `json:"generation"`
 	SubnetCIDR            string    `json:"subnet_cidr"`
@@ -64,13 +64,13 @@ func NewAllocator(cfg NetworkPoolConfig) *Allocator {
 	return &Allocator{cfg: normalizeNetworkPoolConfig(cfg)}
 }
 
-func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
+func setupNetwork(ctx context.Context, runID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
 	allocator := NewAllocator(cfg)
 	if err := allocator.Recover(ctx, ops); err != nil {
 		return nil, nil, fmt.Errorf("recover stale leases: %w", err)
 	}
 
-	lease, err := allocator.Acquire(ctx, jobID)
+	lease, err := allocator.Acquire(ctx, runID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -78,21 +78,21 @@ func setupNetwork(ctx context.Context, jobID string, cfg NetworkPoolConfig, ops 
 	completedSteps := 0
 
 	if err := ops.TapCreate(ctx, lease.TapName, lease.HostCIDR); err != nil {
-		_ = allocator.Release(context.Background(), jobID)
+		_ = allocator.Release(context.Background(), runID)
 		return nil, nil, fmt.Errorf("network setup create tap: %w", err)
 	}
 	completedSteps = 2 // TapCreate covers both tuntap add + addr add
 
 	if err := ops.TapUp(ctx, lease.TapName); err != nil {
 		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
-		_ = allocator.Release(context.Background(), jobID)
+		_ = allocator.Release(context.Background(), runID)
 		return nil, nil, fmt.Errorf("network setup link up: %w", err)
 	}
 	completedSteps = 3
 
 	cleanup := func() {
 		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
-		_ = allocator.Release(context.Background(), jobID)
+		_ = allocator.Release(context.Background(), runID)
 	}
 
 	return &networkSetup{
@@ -116,10 +116,10 @@ func (l NetworkLease) GuestNetworkConfig(hostServiceIP string, hostServicePort i
 	}
 }
 
-// Acquire reserves a unique /30 slot for a Firecracker job.
-func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, error) {
-	if jobID == "" {
-		return NetworkLease{}, errors.New("job ID is required")
+// Acquire reserves a unique /30 slot for a Firecracker run.
+func (a *Allocator) Acquire(ctx context.Context, runID string) (NetworkLease, error) {
+	if runID == "" {
+		return NetworkLease{}, errors.New("run ID is required")
 	}
 
 	pool, slotCount, err := a.pool()
@@ -143,7 +143,7 @@ func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, er
 		return NetworkLease{}, err
 	}
 
-	existing, err := selectAllocatedLeaseByRunTx(ctx, tx, jobID)
+	existing, err := selectAllocatedLeaseByRunTx(ctx, tx, runID)
 	if err != nil {
 		return NetworkLease{}, err
 	}
@@ -162,7 +162,7 @@ func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, er
 		return NetworkLease{}, fmt.Errorf("%w in %s", ErrNoNetworkSlots, a.cfg.PoolCIDR)
 	}
 
-	lease, err := deriveLease(pool, jobID, slot)
+	lease, err := deriveLease(pool, runID, slot)
 	if err != nil {
 		return NetworkLease{}, err
 	}
@@ -187,7 +187,7 @@ func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, er
 		     created_at_unix_nano = ?,
 		     updated_at_unix_nano = ?
 		 WHERE slot_index = ? AND state = 'free'`,
-		jobID,
+		runID,
 		lease.TapName,
 		lease.SubnetCIDR,
 		lease.HostCIDR,
@@ -199,14 +199,14 @@ func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, er
 		slot,
 	)
 	if err != nil {
-		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: %w", slot, jobID, err)
+		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: %w", slot, runID, err)
 	}
 	rows, err := updateRes.RowsAffected()
 	if err != nil {
 		return NetworkLease{}, fmt.Errorf("rows affected allocating slot %d: %w", slot, err)
 	}
 	if rows != 1 {
-		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: expected 1 row, got %d", slot, jobID, rows)
+		return NetworkLease{}, fmt.Errorf("allocate network slot %d for run %s: expected 1 row, got %d", slot, runID, rows)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -215,8 +215,8 @@ func (a *Allocator) Acquire(ctx context.Context, jobID string) (NetworkLease, er
 	return lease, nil
 }
 
-// Release deletes the lease record for a Firecracker job. It is idempotent.
-func (a *Allocator) Release(ctx context.Context, jobID string) error {
+// Release deletes the lease record for a Firecracker run. It is idempotent.
+func (a *Allocator) Release(ctx context.Context, runID string) error {
 	state, err := openHostStateStore(a.cfg.StateDBPath, nil)
 	if err != nil {
 		return err
@@ -241,9 +241,9 @@ func (a *Allocator) Release(ctx context.Context, jobID string) error {
 		     updated_at_unix_nano = ?
 		 WHERE run_id = ? AND state = 'allocated'`,
 		nowUnixNano,
-		jobID,
+		runID,
 	); err != nil {
-		return fmt.Errorf("release lease for run %s: %w", jobID, err)
+		return fmt.Errorf("release lease for run %s: %w", runID, err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -333,7 +333,7 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 }
 
 // AttachPID records the Firecracker process PID metadata for stale lease recovery.
-func (a *Allocator) AttachPID(ctx context.Context, jobID string, pid int) error {
+func (a *Allocator) AttachPID(ctx context.Context, runID string, pid int) error {
 	startTicks, err := processStartTicks(pid)
 	if err != nil {
 		return fmt.Errorf("read process start ticks for pid %d: %w", pid, err)
@@ -362,21 +362,21 @@ func (a *Allocator) AttachPID(ctx context.Context, jobID string, pid int) error 
 		pid,
 		startTicks,
 		nowUnixNano,
-		jobID,
+		runID,
 	)
 	if err != nil {
-		return fmt.Errorf("attach pid for run %s: %w", jobID, err)
+		return fmt.Errorf("attach pid for run %s: %w", runID, err)
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("rows affected attaching pid for run %s: %w", jobID, err)
+		return fmt.Errorf("rows affected attaching pid for run %s: %w", runID, err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("lease for job %s not found", jobID)
+		return fmt.Errorf("lease for run %s not found", runID)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit attach pid for run %s: %w", jobID, err)
+		return fmt.Errorf("commit attach pid for run %s: %w", runID, err)
 	}
 	return nil
 }
@@ -473,7 +473,7 @@ func selectAllocatedLeaseByRunTx(ctx context.Context, tx *sql.Tx, runID string) 
 		}
 		return nil, fmt.Errorf("query existing lease for run %s: %w", runID, err)
 	}
-	lease.JobID = runID
+	lease.RunID = runID
 	if createdUnixNs > 0 {
 		lease.CreatedAtUTC = time.Unix(0, createdUnixNs).UTC()
 	}
@@ -532,7 +532,7 @@ func listAllocatedNetworkLeasesTx(ctx context.Context, tx *sql.Tx) ([]NetworkLea
 			createdUnixNs int64
 		)
 		if err := rows.Scan(
-			&lease.JobID,
+			&lease.RunID,
 			&lease.SlotIndex,
 			&lease.Generation,
 			&lease.SubnetCIDR,
@@ -568,14 +568,14 @@ func normalizeNetworkPoolConfig(cfg NetworkPoolConfig) NetworkPoolConfig {
 	return cfg
 }
 
-func deriveLease(pool netip.Prefix, jobID string, slot int) (NetworkLease, error) {
+func deriveLease(pool netip.Prefix, runID string, slot int) (NetworkLease, error) {
 	subnetPrefix, hostCIDR, guestIP, gatewayIP, err := slotAddrs(pool, slot)
 	if err != nil {
 		return NetworkLease{}, err
 	}
 
 	return NetworkLease{
-		JobID:      jobID,
+		RunID:      runID,
 		SlotIndex:  slot,
 		SubnetCIDR: subnetPrefix.String(),
 		TapName:    tapDeviceName(slot),

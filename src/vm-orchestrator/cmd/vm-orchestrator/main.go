@@ -42,7 +42,7 @@ func run() error {
 	flag.StringVar(&socketGroup, "socket-group", "vm-clients", "Group that should own the Unix API socket")
 	flag.StringVar(&cfg.Pool, "pool", cfg.Pool, "ZFS pool used for VM datasets")
 	flag.StringVar(&cfg.GoldenZvol, "golden-zvol", cfg.GoldenZvol, "Base guest golden zvol name")
-	flag.StringVar(&cfg.WorkloadDataset, "workload-dataset", cfg.WorkloadDataset, "ZFS dataset for ephemeral VM jobs")
+	flag.StringVar(&cfg.WorkloadDataset, "workload-dataset", cfg.WorkloadDataset, "ZFS dataset for ephemeral VM runs")
 	flag.StringVar(&cfg.KernelPath, "kernel-path", cfg.KernelPath, "Path to vmlinux on the host")
 	flag.StringVar(&cfg.FirecrackerBin, "firecracker-bin", cfg.FirecrackerBin, "Path to firecracker binary")
 	flag.StringVar(&cfg.JailerBin, "jailer-bin", cfg.JailerBin, "Path to jailer binary")

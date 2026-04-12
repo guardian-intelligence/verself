@@ -14,8 +14,8 @@ import (
 
 const reconcileStaleAfter = 10 * time.Second
 
-type reconcilerJobReader interface {
-	GetJobStatus(ctx context.Context, jobID string, includeOutput bool) (vmorchestrator.JobStatus, error)
+type reconcilerRunReader interface {
+	GetRun(ctx context.Context, runID string, includeOutput bool) (vmorchestrator.HostRunSnapshot, error)
 }
 
 type reconcileCandidate struct {
@@ -36,7 +36,7 @@ type reconcileCandidate struct {
 	WindowStart       time.Time
 	ActivatedAt       sql.NullTime
 	Reservation       billingclient.Reservation
-	OrchestratorJobID string
+	OrchestratorRunID string
 }
 
 func (s *Service) Reconcile(ctx context.Context) error {
@@ -69,7 +69,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 		JOIN execution_billing_windows w ON w.attempt_id = a.attempt_id AND w.window_seq = 0
 		WHERE a.state = 'reserved'
 		  AND w.state = 'reserved'
-		  AND a.orchestrator_job_id = ''
+		  AND a.orchestrator_run_id = ''
 		  AND a.updated_at < (now() - ($1 * interval '1 second'))
 	`, int(reconcileStaleAfter.Seconds()))
 	if err != nil {
@@ -177,7 +177,7 @@ func (s *Service) reconcileFinalizingAttempts(ctx context.Context) error {
 }
 
 func (s *Service) reconcileActiveAttempts(ctx context.Context) error {
-	reader, ok := s.Orchestrator.(reconcilerJobReader)
+	reader, ok := s.Orchestrator.(reconcilerRunReader)
 	if !ok {
 		return nil
 	}
@@ -187,11 +187,11 @@ func (s *Service) reconcileActiveAttempts(ctx context.Context) error {
 			e.execution_id,
 			a.attempt_id,
 			a.state,
-			a.orchestrator_job_id
+			a.orchestrator_run_id
 		FROM executions e
 		JOIN execution_attempts a ON a.execution_id = e.execution_id
 		WHERE a.state IN ('launching', 'running')
-		  AND a.orchestrator_job_id <> ''
+		  AND a.orchestrator_run_id <> ''
 		  AND a.updated_at < (now() - ($1 * interval '1 second'))
 	`, int(reconcileStaleAfter.Seconds()))
 	if err != nil {
@@ -204,19 +204,19 @@ func (s *Service) reconcileActiveAttempts(ctx context.Context) error {
 			executionID       uuid.UUID
 			attemptID         uuid.UUID
 			state             string
-			orchestratorJobID string
+			orchestratorRunID string
 		)
-		if err := rows.Scan(&executionID, &attemptID, &state, &orchestratorJobID); err != nil {
+		if err := rows.Scan(&executionID, &attemptID, &state, &orchestratorRunID); err != nil {
 			return fmt.Errorf("scan active reconciliation candidate: %w", err)
 		}
-		status, err := reader.GetJobStatus(ctx, orchestratorJobID, true)
+		snapshot, err := reader.GetRun(ctx, orchestratorRunID, true)
 		if err != nil {
 			if err := s.markLost(ctx, executionID, attemptID, "reconcile_status_lookup_failed"); err != nil {
 				return err
 			}
 			continue
 		}
-		if !status.Terminal {
+		if !snapshot.Terminal {
 			continue
 		}
 		candidate, err := s.loadFinalizingCandidate(ctx, executionID, attemptID)
@@ -224,8 +224,8 @@ func (s *Service) reconcileActiveAttempts(ctx context.Context) error {
 			return err
 		}
 		candidate.State = state
-		candidate.OrchestratorJobID = orchestratorJobID
-		candidate = applyJobStatusToCandidate(candidate, status)
+		candidate.OrchestratorRunID = orchestratorRunID
+		candidate = applyRunSnapshotToCandidate(candidate, snapshot)
 		if err := s.markFinalizing(ctx, executionID, attemptID, outcomeFromCandidate(candidate)); err != nil {
 			return fmt.Errorf("mark reconciled active attempt finalizing %s: %w", attemptID, err)
 		}
@@ -453,17 +453,17 @@ func (candidate reconcileCandidate) reservation() billingclient.Reservation {
 	}
 }
 
-func applyJobStatusToCandidate(candidate reconcileCandidate, status vmorchestrator.JobStatus) reconcileCandidate {
+func applyRunSnapshotToCandidate(candidate reconcileCandidate, snapshot vmorchestrator.HostRunSnapshot) reconcileCandidate {
 	candidate.CompletedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
-	if status.Result != nil {
-		candidate.ExitCode = status.Result.ExitCode
-		candidate.DurationMs = status.Result.Duration.Milliseconds()
-		if status.Result.Duration <= 0 && candidate.StartedAt.Valid {
+	if snapshot.Result != nil {
+		candidate.ExitCode = snapshot.Result.ExitCode
+		candidate.DurationMs = snapshot.Result.Duration.Milliseconds()
+		if snapshot.Result.Duration <= 0 && candidate.StartedAt.Valid {
 			candidate.DurationMs = candidate.CompletedAt.Time.Sub(candidate.StartedAt.Time).Milliseconds()
 		}
 	}
-	if status.ErrorMessage != "" {
-		candidate.FailureReason = status.ErrorMessage
+	if snapshot.TerminalReason != "" {
+		candidate.FailureReason = snapshot.TerminalReason
 	}
 	return candidate
 }

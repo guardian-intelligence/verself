@@ -11,14 +11,14 @@ import (
 // long-lived privileged process on the host, so it performs these operations
 // directly instead of delegating them through a second socket layer.
 type PrivOps interface {
-	ZFSClone(ctx context.Context, snapshot, target, jobID string) error
+	ZFSClone(ctx context.Context, snapshot, target, runID string) error
 	ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error
 	ZFSDestroy(ctx context.Context, dataset string) error
 	TapCreate(ctx context.Context, tapName, hostCIDR string) error
 	TapUp(ctx context.Context, tapName string) error
 	TapDelete(ctx context.Context, tapName string) error
 	SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc string, uid, gid int) error
-	StartJailer(ctx context.Context, jobID string, cfg JailerConfig) (*JailerProcess, error)
+	StartJailer(ctx context.Context, runID string, cfg JailerConfig) (*JailerProcess, error)
 	Chmod(ctx context.Context, path string, mode uint32) error
 }
 

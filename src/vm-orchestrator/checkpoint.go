@@ -17,12 +17,12 @@ const checkpointSnapshotPrefix = "ckpt-"
 
 var zfsSnapshotNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
-func (o *Orchestrator) checkpointHandler(job JobConfig, dataset string, observer RunObserver, logger *slog.Logger) checkpointHandler {
-	allowedSaveRefs := normalizeCheckpointRefSet(job.CheckpointSaveRefs)
+func (o *Orchestrator) checkpointHandler(run RunSpec, dataset string, observer RunObserver, logger *slog.Logger) checkpointHandler {
+	allowedSaveRefs := normalizeCheckpointRefSet(run.CheckpointSaveRefs)
 
 	return func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
-		resp := o.handleCheckpointRequest(job, dataset, allowedSaveRefs, req, logger)
-		observer.OnGuestCheckpoint(job.JobID, CheckpointEvent{
+		resp := o.handleCheckpointRequest(run, dataset, allowedSaveRefs, req, logger)
+		observer.OnGuestCheckpoint(run.RunID, CheckpointEvent{
 			RequestID: resp.RequestID,
 			Operation: resp.Operation,
 			Ref:       resp.Ref,
@@ -34,7 +34,7 @@ func (o *Orchestrator) checkpointHandler(job JobConfig, dataset string, observer
 	}
 }
 
-func (o *Orchestrator) handleCheckpointRequest(job JobConfig, dataset string, allowedSaveRefs map[string]struct{}, req vmproto.CheckpointRequest, logger *slog.Logger) vmproto.CheckpointResponse {
+func (o *Orchestrator) handleCheckpointRequest(run RunSpec, dataset string, allowedSaveRefs map[string]struct{}, req vmproto.CheckpointRequest, logger *slog.Logger) vmproto.CheckpointResponse {
 	resp := vmproto.CheckpointResponse{
 		RequestID: req.RequestID,
 		Operation: req.Operation,
@@ -73,7 +73,7 @@ func (o *Orchestrator) handleCheckpointRequest(job JobConfig, dataset string, al
 	defer cancel()
 
 	props := map[string]string{
-		"forge:job_id":               job.JobID,
+		"forge:run_id":               run.RunID,
 		"forge:checkpoint_ref":       resp.Ref,
 		"forge:checkpoint_version":   versionID,
 		"forge:checkpoint_created":   time.Now().UTC().Format(time.RFC3339Nano),
@@ -82,7 +82,7 @@ func (o *Orchestrator) handleCheckpointRequest(job JobConfig, dataset string, al
 	if err := o.ops.ZFSSnapshot(ctx, dataset, snapshotName, props); err != nil {
 		resp.Error = err.Error()
 		if logger != nil {
-			logger.Warn("checkpoint snapshot failed", "job_id", job.JobID, "ref", resp.Ref, "request_id", resp.RequestID, "err", err)
+			logger.Warn("checkpoint snapshot failed", "run_id", run.RunID, "ref", resp.Ref, "request_id", resp.RequestID, "err", err)
 		}
 		return resp
 	}
@@ -90,7 +90,7 @@ func (o *Orchestrator) handleCheckpointRequest(job JobConfig, dataset string, al
 	resp.Accepted = true
 	resp.VersionID = versionID
 	if logger != nil {
-		logger.Info("checkpoint snapshot saved", "job_id", job.JobID, "ref", resp.Ref, "version_id", versionID)
+		logger.Info("checkpoint snapshot saved", "run_id", run.RunID, "ref", resp.Ref, "version_id", versionID)
 	}
 	return resp
 }

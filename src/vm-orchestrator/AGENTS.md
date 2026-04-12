@@ -16,7 +16,7 @@ Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for
 
 ## Workload Boundary
 
-vm-orchestrator accepts direct VM job commands and host-authorized checkpoint save refs only. Repo import, repo scanning, CI policy, queueing, checkpoint ref policy, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle, safe ZFS operations, and telemetry aggregation.
+vm-orchestrator accepts direct VM run commands and host-authorized checkpoint save refs only. Repo import, repo scanning, CI policy, queueing, checkpoint ref policy, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle, safe ZFS operations, and telemetry aggregation.
 
 Host runtime state is authoritative for VM lifecycle. Guest/control-plane inputs are untrusted requests that must be validated before touching host resources.
 

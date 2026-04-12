@@ -6,33 +6,48 @@ import (
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 )
 
-func jobConfigToProto(job JobConfig) *vmrpc.JobConfig {
-	return &vmrpc.JobConfig{
-		JobId:              job.JobID,
-		RunCommand:         cloneStringSlice(job.RunCommand),
-		RunWorkDir:         job.RunWorkDir,
-		Env:                cloneStringMap(job.Env),
-		BillablePhases:     cloneStringSlice(job.BillablePhases),
-		CheckpointSaveRefs: cloneStringSlice(job.CheckpointSaveRefs),
+func hostRunSpecToProto(spec HostRunSpec) *vmrpc.HostRunSpec {
+	return &vmrpc.HostRunSpec{
+		RunId:              spec.RunID,
+		RunCommand:         cloneStringSlice(spec.RunCommand),
+		RunWorkDir:         spec.RunWorkDir,
+		Env:                cloneStringMap(spec.Env),
+		BillablePhases:     cloneStringSlice(spec.BillablePhases),
+		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
+		AttemptId:          spec.AttemptID,
+		SegmentId:          spec.SegmentID,
 	}
 }
 
-func jobConfigFromProto(job *vmrpc.JobConfig) JobConfig {
-	if job == nil {
-		return JobConfig{}
+func hostRunSpecFromProto(spec *vmrpc.HostRunSpec) HostRunSpec {
+	if spec == nil {
+		return HostRunSpec{}
 	}
-	return JobConfig{
-		JobID:              job.GetJobId(),
-		RunCommand:         cloneStringSlice(job.GetRunCommand()),
-		RunWorkDir:         job.GetRunWorkDir(),
-		Env:                cloneStringMap(job.GetEnv()),
-		BillablePhases:     cloneStringSlice(job.GetBillablePhases()),
-		CheckpointSaveRefs: cloneStringSlice(job.GetCheckpointSaveRefs()),
+	return HostRunSpec{
+		RunID:              spec.GetRunId(),
+		RunCommand:         cloneStringSlice(spec.GetRunCommand()),
+		RunWorkDir:         spec.GetRunWorkDir(),
+		Env:                cloneStringMap(spec.GetEnv()),
+		BillablePhases:     cloneStringSlice(spec.GetBillablePhases()),
+		CheckpointSaveRefs: cloneStringSlice(spec.GetCheckpointSaveRefs()),
+		AttemptID:          spec.GetAttemptId(),
+		SegmentID:          spec.GetSegmentId(),
 	}
 }
 
-func jobResultToProto(result JobResult, includeOutput bool) *vmrpc.JobResult {
-	out := &vmrpc.JobResult{
+func runSpecFromHostRunSpec(spec HostRunSpec) RunSpec {
+	return RunSpec{
+		RunID:              spec.RunID,
+		RunCommand:         cloneStringSlice(spec.RunCommand),
+		RunWorkDir:         spec.RunWorkDir,
+		Env:                cloneStringMap(spec.Env),
+		BillablePhases:     cloneStringSlice(spec.BillablePhases),
+		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
+	}
+}
+
+func runResultToProto(result RunResult, includeOutput bool) *vmrpc.HostRunResult {
+	out := &vmrpc.HostRunResult{
 		ExitCode:               int32(result.ExitCode),
 		DurationMs:             result.Duration.Milliseconds(),
 		CloneTimeMs:            result.CloneTime.Milliseconds(),
@@ -79,11 +94,11 @@ func jobResultToProto(result JobResult, includeOutput bool) *vmrpc.JobResult {
 	return out
 }
 
-func jobResultFromProto(result *vmrpc.JobResult) *JobResult {
+func runResultFromProto(result *vmrpc.HostRunResult) *RunResult {
 	if result == nil {
 		return nil
 	}
-	out := &JobResult{
+	out := &RunResult{
 		ExitCode:               int(result.GetExitCode()),
 		Logs:                   result.GetLogs(),
 		SerialLogs:             result.GetSerialLogs(),
@@ -128,135 +143,63 @@ func jobResultFromProto(result *vmrpc.JobResult) *JobResult {
 	return out
 }
 
-func jobStateToProto(state JobState) vmrpc.JobState {
+func runStateToProto(state RunState) vmrpc.RunState {
 	switch state {
-	case JobStatePending:
-		return vmrpc.JobState_JOB_STATE_PENDING
-	case JobStateRunning:
-		return vmrpc.JobState_JOB_STATE_RUNNING
-	case JobStateSucceeded:
-		return vmrpc.JobState_JOB_STATE_SUCCEEDED
-	case JobStateFailed:
-		return vmrpc.JobState_JOB_STATE_FAILED
-	case JobStateCanceled:
-		return vmrpc.JobState_JOB_STATE_CANCELED
+	case RunStatePending:
+		return vmrpc.RunState_RUN_STATE_PENDING
+	case RunStateRunning:
+		return vmrpc.RunState_RUN_STATE_RUNNING
+	case RunStateSucceeded:
+		return vmrpc.RunState_RUN_STATE_SUCCEEDED
+	case RunStateFailed:
+		return vmrpc.RunState_RUN_STATE_FAILED
+	case RunStateCanceled:
+		return vmrpc.RunState_RUN_STATE_CANCELED
 	default:
-		return vmrpc.JobState_JOB_STATE_UNSPECIFIED
+		return vmrpc.RunState_RUN_STATE_UNSPECIFIED
 	}
 }
 
-func jobStateFromProto(state vmrpc.JobState) JobState {
+func runStateFromProto(state vmrpc.RunState) RunState {
 	switch state {
-	case vmrpc.JobState_JOB_STATE_PENDING:
-		return JobStatePending
-	case vmrpc.JobState_JOB_STATE_RUNNING:
-		return JobStateRunning
-	case vmrpc.JobState_JOB_STATE_SUCCEEDED:
-		return JobStateSucceeded
-	case vmrpc.JobState_JOB_STATE_FAILED:
-		return JobStateFailed
-	case vmrpc.JobState_JOB_STATE_CANCELED:
-		return JobStateCanceled
+	case vmrpc.RunState_RUN_STATE_PENDING:
+		return RunStatePending
+	case vmrpc.RunState_RUN_STATE_RUNNING:
+		return RunStateRunning
+	case vmrpc.RunState_RUN_STATE_SUCCEEDED:
+		return RunStateSucceeded
+	case vmrpc.RunState_RUN_STATE_FAILED:
+		return RunStateFailed
+	case vmrpc.RunState_RUN_STATE_CANCELED:
+		return RunStateCanceled
 	default:
-		return JobStateUnspecified
+		return RunStateUnspecified
 	}
 }
 
-func jobStatusFromProto(resp *vmrpc.GetJobStatusResponse) JobStatus {
-	status := JobStatus{
-		JobID:        resp.GetJobId(),
-		State:        jobStateFromProto(resp.GetState()),
-		Terminal:     resp.GetTerminal(),
-		ErrorMessage: resp.GetErrorMessage(),
-		Result:       jobResultFromProto(resp.GetResult()),
+func hostRunSnapshotFromProto(resp *vmrpc.GetRunResponse) HostRunSnapshot {
+	if resp == nil {
+		return HostRunSnapshot{}
 	}
-	return status
-}
-
-func telemetryHelloToProto(frame TelemetryHello) *vmrpc.TelemetryHello {
-	return &vmrpc.TelemetryHello{
-		Seq:        frame.Seq,
-		Flags:      frame.Flags,
-		MonoNs:     frame.MonoNS,
-		WallNs:     frame.WallNS,
-		BootId:     frame.BootID,
-		MemTotalKb: frame.MemTotalKB,
+	return HostRunSnapshot{
+		RunID:          resp.GetRunId(),
+		State:          runStateFromProto(resp.GetState()),
+		Terminal:       resp.GetTerminal(),
+		TerminalReason: resp.GetTerminalReason(),
+		Result:         runResultFromProto(resp.GetResult()),
+		UpdatedAt:      time.Unix(0, int64(resp.GetUpdatedAtUnixNano())).UTC(),
 	}
 }
 
-func telemetrySampleToProto(frame TelemetrySample) *vmrpc.TelemetrySample {
-	return &vmrpc.TelemetrySample{
-		Seq:            frame.Seq,
-		Flags:          frame.Flags,
-		MonoNs:         frame.MonoNS,
-		WallNs:         frame.WallNS,
-		CpuUserTicks:   frame.CPUUserTicks,
-		CpuSystemTicks: frame.CPUSystemTicks,
-		CpuIdleTicks:   frame.CPUIdleTicks,
-		Load1Centis:    frame.Load1Centis,
-		Load5Centis:    frame.Load5Centis,
-		Load15Centis:   frame.Load15Centis,
-		ProcsRunning:   uint32(frame.ProcsRunning),
-		ProcsBlocked:   uint32(frame.ProcsBlocked),
-		MemAvailableKb: frame.MemAvailableKB,
-		IoReadBytes:    frame.IOReadBytes,
-		IoWriteBytes:   frame.IOWriteBytes,
-		NetRxBytes:     frame.NetRXBytes,
-		NetTxBytes:     frame.NetTXBytes,
-		PsiCpuPct100:   uint32(frame.PSICPUPct100),
-		PsiMemPct100:   uint32(frame.PSIMemPct100),
-		PsiIoPct100:    uint32(frame.PSIIOPct100),
+func hostRunEventFromProto(event *vmrpc.HostRunEvent) HostRunEvent {
+	if event == nil {
+		return HostRunEvent{}
 	}
-}
-
-func telemetryHelloFromProto(frame *vmrpc.TelemetryHello) *TelemetryHello {
-	if frame == nil {
-		return nil
-	}
-	return &TelemetryHello{
-		Seq:        frame.GetSeq(),
-		Flags:      frame.GetFlags(),
-		MonoNS:     frame.GetMonoNs(),
-		WallNS:     frame.GetWallNs(),
-		BootID:     frame.GetBootId(),
-		MemTotalKB: frame.GetMemTotalKb(),
-	}
-}
-
-func telemetrySampleFromProto(frame *vmrpc.TelemetrySample) *TelemetrySample {
-	if frame == nil {
-		return nil
-	}
-	return &TelemetrySample{
-		Seq:            frame.GetSeq(),
-		Flags:          frame.GetFlags(),
-		MonoNS:         frame.GetMonoNs(),
-		WallNS:         frame.GetWallNs(),
-		CPUUserTicks:   frame.GetCpuUserTicks(),
-		CPUSystemTicks: frame.GetCpuSystemTicks(),
-		CPUIdleTicks:   frame.GetCpuIdleTicks(),
-		Load1Centis:    frame.GetLoad1Centis(),
-		Load5Centis:    frame.GetLoad5Centis(),
-		Load15Centis:   frame.GetLoad15Centis(),
-		ProcsRunning:   uint16(frame.GetProcsRunning()),
-		ProcsBlocked:   uint16(frame.GetProcsBlocked()),
-		MemAvailableKB: frame.GetMemAvailableKb(),
-		IOReadBytes:    frame.GetIoReadBytes(),
-		IOWriteBytes:   frame.GetIoWriteBytes(),
-		NetRXBytes:     frame.GetNetRxBytes(),
-		NetTXBytes:     frame.GetNetTxBytes(),
-		PSICPUPct100:   uint16(frame.GetPsiCpuPct100()),
-		PSIMemPct100:   uint16(frame.GetPsiMemPct100()),
-		PSIIOPct100:    uint16(frame.GetPsiIoPct100()),
-	}
-}
-
-func fleetVMFromProto(vm *vmrpc.FleetVM) FleetVM {
-	return FleetVM{
-		JobID:        vm.GetJobId(),
-		State:        jobStateFromProto(vm.GetState()),
-		LastUpdateAt: time.Unix(0, int64(vm.GetLastUpdateUnixNano())).UTC(),
-		Hello:        telemetryHelloFromProto(vm.GetHello()),
-		LatestSample: telemetrySampleFromProto(vm.GetLatestSample()),
+	return HostRunEvent{
+		Seq:       event.GetEventSeq(),
+		RunID:     event.GetRunId(),
+		EventType: event.GetEventType(),
+		Attrs:     cloneStringMap(event.GetAttrs()),
+		CreatedAt: time.Unix(0, int64(event.GetCreatedAtUnixNano())).UTC(),
 	}
 }

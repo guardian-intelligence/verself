@@ -112,3 +112,23 @@ See [wire-contracts.md](../../src/apiwire/docs/wire-contracts.md). `src/apiwire`
 ## Identity And IAM
 
 See [identity-and-iam.md](../../src/platform/docs/identity-and-iam.md). Zitadel owns identity and role assignments, Forge Metal owns product policy documents and organization management UX, and each Go service owns the operation catalog it enforces.
+
+## Secrets Plane
+
+See [secrets-plane-openbao.md](../../src/platform/docs/secrets-plane-openbao.md). `secrets-service` is the customer-facing control plane for org/repo/environment secrets and variables, with OpenBao as the preferred backend implementation.
+
+## Deploy Trace Correlation
+
+Ansible deploys emit OTLP traces (`ServiceName='ansible'`) to `default.otel_traces`
+through `deploy_traces.py`, while `deploy_events.py` writes one rollup row to
+`forge_metal.deploy_events`. Both are keyed by the same deterministic identity:
+
+- `deploy_run_key = YYYY-MM-DD.<counter>@<controller-host>`
+- `deploy_id = UUIDv5("forge-metal:" + deploy_run_key)`
+- `trace_id = hex(deploy_id)`
+
+`fm_uri` carries this identity into service HTTP probes via `traceparent`,
+`baggage`, and `X-Forge-Metal-*` headers. Go services attach those headers as
+span attributes (`forge_metal.deploy_id`, `forge_metal.task_instance_id`,
+`forge_metal.probe_id`, etc.), so a single ClickHouse query over `TraceId` can
+show both deploy tasks and downstream service spans for proof-level debugging.

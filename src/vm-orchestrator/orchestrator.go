@@ -30,7 +30,7 @@ var tracer = otel.Tracer("vm-orchestrator")
 type Config struct {
 	Pool            string // ZFS pool name, e.g. "forgepool"
 	GoldenZvol      string // zvol name under pool, e.g. "golden-zvol"
-	WorkloadDataset string // dataset for ephemeral VM job clones
+	WorkloadDataset string // dataset for ephemeral VM run clones
 	KernelPath      string // path to vmlinux on host
 	FirecrackerBin  string // path to firecracker binary
 	JailerBin       string // path to jailer binary
@@ -67,9 +67,9 @@ func DefaultConfig() Config {
 	}
 }
 
-// JobConfig describes the command to run inside the VM.
-type JobConfig struct {
-	JobID              string            `json:"job_id"`
+// RunSpec describes the command to run inside the VM.
+type RunSpec struct {
+	RunID              string            `json:"run_id"`
 	RunCommand         []string          `json:"run_command"`
 	RunWorkDir         string            `json:"run_work_dir,omitempty"`
 	Env                map[string]string `json:"env"`
@@ -83,8 +83,8 @@ type PhaseResult struct {
 	DurationMS int64
 }
 
-// JobResult holds the outcome of a VM job execution.
-type JobResult struct {
+// RunResult holds the outcome of a VM run execution.
+type RunResult struct {
 	ExitCode               int
 	Logs                   string
 	SerialLogs             string
@@ -109,7 +109,7 @@ type JobResult struct {
 
 const firecrackerAPIStepTimeout = 5 * time.Second
 
-// Orchestrator manages the full lifecycle of a Firecracker VM job.
+// Orchestrator manages the full lifecycle of a Firecracker VM run.
 type Orchestrator struct {
 	cfg    Config
 	logger *slog.Logger
@@ -146,12 +146,12 @@ func (o *Orchestrator) goldenSnapshot() string {
 	return o.goldenZvolDataset() + "@ready"
 }
 
-func (o *Orchestrator) cloneDataset(jobID string) string {
-	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.WorkloadDataset, jobID)
+func (o *Orchestrator) cloneDataset(runID string) string {
+	return fmt.Sprintf("%s/%s/%s", o.cfg.Pool, o.cfg.WorkloadDataset, runID)
 }
 
-func (o *Orchestrator) jailDir(jobID string) string {
-	return filepath.Join(o.cfg.JailerRoot, "firecracker", jobID, "root")
+func (o *Orchestrator) jailDir(runID string) string {
+	return filepath.Join(o.cfg.JailerRoot, "firecracker", runID, "root")
 }
 
 func (o *Orchestrator) workloadDatasetPrefix() string {
@@ -169,25 +169,25 @@ func (o *Orchestrator) destroyDisposableWorkloadDataset(ctx context.Context, dat
 }
 
 // Run executes a command inside a Firecracker VM.
-func (o *Orchestrator) Run(ctx context.Context, job JobConfig) (result JobResult, err error) {
-	return o.RunObserved(ctx, job, nil)
+func (o *Orchestrator) Run(ctx context.Context, run RunSpec) (result RunResult, err error) {
+	return o.RunObserved(ctx, run, nil)
 }
 
 // RunObserved executes a command inside a Firecracker VM and forwards live
 // guest events to observer when it is non-nil.
-func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer RunObserver) (result JobResult, err error) {
-	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
-		err = fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
+func (o *Orchestrator) RunObserved(ctx context.Context, run RunSpec, observer RunObserver) (result RunResult, err error) {
+	if _, parseErr := uuid.Parse(run.RunID); parseErr != nil {
+		err = fmt.Errorf("invalid run ID (must be UUID): %w", parseErr)
 		return
 	}
-	if len(job.RunCommand) == 0 {
-		err = fmt.Errorf("job run command is required")
+	if len(run.RunCommand) == 0 {
+		err = fmt.Errorf("run command is required")
 		return
 	}
 
 	ctx, span := tracer.Start(ctx, "vmorchestrator.Run",
 		trace.WithAttributes(
-			attribute.String("job.id", job.JobID),
+			attribute.String("run.id", run.RunID),
 		),
 	)
 	defer func() {
@@ -196,9 +196,9 @@ func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer 
 			span.SetStatus(codes.Error, err.Error())
 		}
 		span.SetAttributes(
-			attribute.Int("job.exit_code", result.ExitCode),
-			attribute.Int64("job.duration_ms", result.Duration.Milliseconds()),
-			attribute.Int64("job.zfs_written", int64(result.ZFSWritten)),
+			attribute.Int("run.exit_code", result.ExitCode),
+			attribute.Int64("run.duration_ms", result.Duration.Milliseconds()),
+			attribute.Int64("run.zfs_written", int64(result.ZFSWritten)),
 		)
 		span.End()
 	}()
@@ -216,15 +216,15 @@ func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer 
 
 	// --- 2. Clone zvol ---
 	cloneStart := time.Now()
-	dataset := o.cloneDataset(job.JobID)
-	if cloneErr := o.ops.ZFSClone(ctx, o.goldenSnapshot(), dataset, job.JobID); cloneErr != nil {
+	dataset := o.cloneDataset(run.RunID)
+	if cloneErr := o.ops.ZFSClone(ctx, o.goldenSnapshot(), dataset, run.RunID); cloneErr != nil {
 		err = fmt.Errorf("clone zvol: %w", cloneErr)
 		return
 	}
 	cloneDuration := time.Since(cloneStart)
-	o.logger.Info("zvol cloned", "job_id", job.JobID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
+	o.logger.Info("zvol cloned", "run_id", run.RunID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
 
-	result, err = o.runDataset(ctx, job, dataset, true, observer)
+	result, err = o.runDataset(ctx, run, dataset, true, observer)
 	if err != nil {
 		return result, err
 	}
@@ -232,31 +232,31 @@ func (o *Orchestrator) RunObserved(ctx context.Context, job JobConfig, observer 
 	return result, nil
 }
 
-// RunDataset executes a job against an existing zvol dataset. When destroyAfter
+// RunDataset executes a run against an existing zvol dataset. When destroyAfter
 // is true, the dataset is destroyed during cleanup.
-func (o *Orchestrator) RunDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool) (JobResult, error) {
-	return o.RunDatasetObserved(ctx, job, dataset, destroyAfter, nil)
+func (o *Orchestrator) RunDataset(ctx context.Context, run RunSpec, dataset string, destroyAfter bool) (RunResult, error) {
+	return o.RunDatasetObserved(ctx, run, dataset, destroyAfter, nil)
 }
 
-// RunDatasetObserved executes a job against an existing zvol dataset. When
+// RunDatasetObserved executes a run against an existing zvol dataset. When
 // destroyAfter is true, the dataset is destroyed during cleanup.
-func (o *Orchestrator) RunDatasetObserved(ctx context.Context, job JobConfig, dataset string, destroyAfter bool, observer RunObserver) (JobResult, error) {
-	if _, parseErr := uuid.Parse(job.JobID); parseErr != nil {
-		return JobResult{}, fmt.Errorf("invalid job ID (must be UUID): %w", parseErr)
+func (o *Orchestrator) RunDatasetObserved(ctx context.Context, run RunSpec, dataset string, destroyAfter bool, observer RunObserver) (RunResult, error) {
+	if _, parseErr := uuid.Parse(run.RunID); parseErr != nil {
+		return RunResult{}, fmt.Errorf("invalid run ID (must be UUID): %w", parseErr)
 	}
-	if len(job.RunCommand) == 0 {
-		return JobResult{}, fmt.Errorf("job run command is required")
+	if len(run.RunCommand) == 0 {
+		return RunResult{}, fmt.Errorf("run command is required")
 	}
-	return o.runDataset(ctx, job, dataset, destroyAfter, observer)
+	return o.runDataset(ctx, run, dataset, destroyAfter, observer)
 }
 
-func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset string, destroyAfter bool, observer RunObserver) (result JobResult, err error) {
+func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset string, destroyAfter bool, observer RunObserver) (result RunResult, err error) {
 	start := time.Now()
 	observer = normalizeRunObserver(observer)
 
 	ctx, span := tracer.Start(ctx, "vmorchestrator.runDataset",
 		trace.WithAttributes(
-			attribute.String("job.id", job.JobID),
+			attribute.String("run.id", run.RunID),
 			attribute.String("dataset", dataset),
 		),
 	)
@@ -268,7 +268,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		span.End()
 	}()
 
-	logger := o.logger.With("job_id", job.JobID, "dataset", dataset)
+	logger := o.logger.With("run_id", run.RunID, "dataset", dataset)
 
 	var checkpointSaved atomic.Bool
 	var cleanups []func()
@@ -300,7 +300,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	}
 
 	jailStart := time.Now()
-	jailRoot := o.jailDir(job.JobID)
+	jailRoot := o.jailDir(run.RunID)
 	if jailErr := o.ops.SetupJail(ctx, jailRoot, devPath, o.cfg.KernelPath, o.cfg.JailerUID, o.cfg.JailerGID); jailErr != nil {
 		return result, fmt.Errorf("setup jail: %w", jailErr)
 	}
@@ -317,7 +317,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		StateDBPath:   o.cfg.StateDBPath,
 		HostInterface: o.cfg.HostInterface,
 	}
-	netSetup, netCleanup, netErr := setupNetwork(ctx, job.JobID, netCfg, o.ops)
+	netSetup, netCleanup, netErr := setupNetwork(ctx, run.RunID, netCfg, o.ops)
 	if netErr != nil {
 		return result, fmt.Errorf("setup network: %w", netErr)
 	}
@@ -332,7 +332,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	controlSockHost := filepath.Join(jailRoot, "run", "forge-control.sock")
 	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
 
-	jailer, startErr := o.ops.StartJailer(ctx, job.JobID, JailerConfig{
+	jailer, startErr := o.ops.StartJailer(ctx, run.RunID, JailerConfig{
 		FirecrackerBin: o.cfg.FirecrackerBin,
 		JailerBin:      o.cfg.JailerBin,
 		ChrootBaseDir:  o.cfg.JailerRoot,
@@ -342,7 +342,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	if startErr != nil {
 		return result, fmt.Errorf("start jailer: %w", startErr)
 	}
-	if attachErr := NewAllocator(netCfg).AttachPID(ctx, job.JobID, jailer.Pid); attachErr != nil {
+	if attachErr := NewAllocator(netCfg).AttachPID(ctx, run.RunID, jailer.Pid); attachErr != nil {
 		return result, fmt.Errorf("record network lease pid: %w", attachErr)
 	}
 
@@ -442,8 +442,8 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	telemetryWg.Add(1)
 	go func() {
 		defer telemetryWg.Done()
-		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, job.JobID, observer, logger); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
-			logger.Warn("guest telemetry stream ended", "job_id", job.JobID, "err", telemetryErr)
+		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, run.RunID, observer, logger); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
+			logger.Warn("guest telemetry stream ended", "run_id", run.RunID, "err", telemetryErr)
 		}
 	}()
 	defer telemetryWg.Wait()
@@ -467,9 +467,9 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		result guestControlResult
 		err    error
 	}, 1)
-	handleCheckpoint := o.checkpointHandler(job, dataset, observer, logger)
+	handleCheckpoint := o.checkpointHandler(run, dataset, observer, logger)
 	go func() {
-		controlResult, err := control.run(job, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
+		controlResult, err := control.run(run, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
 			resp := handleCheckpoint(req)
 			if resp.Accepted {
 				checkpointSaved.Store(true)
@@ -563,7 +563,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 		logger.Warn("zfs volsize unavailable", "dataset", dataset, "error", volsizeErr)
 	}
 
-	logger.Info("job complete",
+	logger.Info("run complete",
 		"exit_code", result.ExitCode,
 		"total_ms", time.Since(start).Milliseconds(),
 		"boot_ms", result.VMBootTime.Milliseconds(),

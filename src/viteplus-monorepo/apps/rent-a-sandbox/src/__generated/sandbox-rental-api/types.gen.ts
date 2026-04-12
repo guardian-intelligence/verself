@@ -186,7 +186,7 @@ export type SandboxAttemptRecord = {
   duration_ms?: number;
   exit_code?: number;
   failure_reason?: string;
-  orchestrator_job_id?: string;
+  orchestrator_run_id?: string;
   started_at?: string;
   state: string;
   stderr_bytes?: number;

@@ -152,7 +152,7 @@ type SandboxAttemptRecord struct {
 	AttemptID         uuid.UUID  `json:"attempt_id"`
 	AttemptSeq        int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`
 	State             string     `json:"state"`
-	OrchestratorJobID string     `json:"orchestrator_job_id,omitempty"`
+	OrchestratorRunID string     `json:"orchestrator_run_id,omitempty"`
 	BillingJobID      int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ExitCode          int        `json:"exit_code,omitempty" minimum:"0" maximum:"255"`

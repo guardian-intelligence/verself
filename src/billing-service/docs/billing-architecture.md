@@ -29,6 +29,16 @@ A product is something billable. A plan chooses which SKUs are active for that p
 
 The price is attached to the plan/SKU pair, not to ad hoc JSON on the plan row. That is the cutover from the legacy plan-local JSON pricing model.
 
+The supported entitlement layers map to `account` bucket -> `product` bucket -> SKU bucket. Entitlements are non-overlapping within a layer:
+
+- `account`: any product bucket in the org
+- `product`: any bucket for one product
+- `bucket`: one product bucket fed by one or more SKUs
+
+The `bucket` layer is the SKU-lane layer. If premium NVMe and non-premium disk need separate allowance behavior, they must be separate buckets and the corresponding SKUs must map to the correct bucket. Premium usage must not drain non-premium bucket grants, and non-premium usage must not drain premium bucket grants. Product-level or account-level grants are the only supported way to fund multiple buckets.
+
+Free tier is not a plan. It is an entitlement policy that grants monthly `source = 'free_tier'` balances to every eligible org regardless of which subscription plan the org has. Upgrading from free usage to a paid plan must not remove the current month's free-tier grants; the reserve waterfall consumes matching free-tier grants before paid subscription or purchased credit grants.
+
 ## PostgreSQL catalog and state
 
 ### `products`
@@ -47,7 +57,7 @@ The product owns the reserve policy because the liability shape is product-speci
 
 ### `credit_buckets`
 
-Named entitlement lanes. These are the buckets subscriptions fund and invoice previews group by.
+Named entitlement lanes. These are the buckets free-tier and subscriptions fund, and invoice previews group by.
 
 Key fields:
 
@@ -85,7 +95,8 @@ Key fields:
 - `is_default`
 - `tier`
 
-A plan no longer carries pricing JSON. It is a tier shell plus entitlement policy.
+A plan no longer carries pricing JSON. It is a tier shell plus subscription entitlement policy.
+A plan's `included_credit_buckets` describe subscription-funded entitlements only. Free-tier entitlements live outside the plan model so paid subscribers keep their free-tier allowances.
 
 ### `plan_sku_rates`
 
@@ -130,6 +141,15 @@ Scope classes:
 - `account` grant: any product bucket in the org
 
 Stripe-funded grants are deterministic over the Stripe reference and scope so retries are idempotent.
+Free-tier grants are deterministic over org, period, scope, and entitlement policy version so monthly reconciliation can safely retry without double-crediting.
+
+Grant consumption follows the entitlement hierarchy first, then source priority inside each hierarchy layer:
+
+1. matching bucket-scoped grants
+2. matching product-scoped grants
+3. account-scoped grants
+
+Inside each layer, `source = 'free_tier'` is consumed before subscription, purchase, promo, or refund credit. This preserves bucket isolation while making free-tier benefits the first matching balance consumed.
 
 ### `billing_windows`
 

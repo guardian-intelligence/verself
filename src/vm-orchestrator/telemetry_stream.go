@@ -11,7 +11,7 @@ import (
 
 var ErrTelemetryHelloFirst = errors.New("telemetry stream first frame must be hello")
 
-func streamGuestTelemetry(ctx context.Context, udsPath, jobID string, observer RunObserver, logger *slog.Logger) error {
+func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer RunObserver, logger *slog.Logger) error {
 	observer = normalizeRunObserver(observer)
 
 	conn, reader, err := connectGuestBridge(ctx, udsPath, guestTelemetryPort)
@@ -20,10 +20,10 @@ func streamGuestTelemetry(ctx context.Context, udsPath, jobID string, observer R
 	}
 	defer conn.Close()
 
-	return consumeGuestTelemetryStream(ctx, reader, jobID, observer, logger)
+	return consumeGuestTelemetryStream(ctx, reader, runID, observer, logger)
 }
 
-func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, jobID string, observer RunObserver, logger *slog.Logger) error {
+func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID string, observer RunObserver, logger *slog.Logger) error {
 	validator := telemetryStreamValidator{}
 
 	for {
@@ -43,7 +43,7 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, jobID st
 			}
 			return err
 		}
-		event.JobID = jobID
+		event.RunID = runID
 		event.ReceivedAtUnix = time.Now().UTC()
 
 		emitFrame, diagnostic, err := validator.validate(event)
@@ -51,13 +51,13 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, jobID st
 			return err
 		}
 		if emitFrame {
-			logTelemetryFrame(logger, jobID, event)
+			logTelemetryFrame(logger, runID, event)
 			observer.OnTelemetryEvent(event)
 		}
 		if diagnostic != nil {
-			logTelemetryDiagnostic(logger, jobID, *diagnostic)
+			logTelemetryDiagnostic(logger, runID, *diagnostic)
 			observer.OnTelemetryEvent(TelemetryEvent{
-				JobID:          jobID,
+				RunID:          runID,
 				ReceivedAtUnix: event.ReceivedAtUnix,
 				Diagnostic:     diagnostic,
 			})
@@ -122,25 +122,25 @@ func telemetryEventKind(event TelemetryEvent) string {
 	}
 }
 
-func logTelemetryFrame(logger *slog.Logger, jobID string, event TelemetryEvent) {
+func logTelemetryFrame(logger *slog.Logger, runID string, event TelemetryEvent) {
 	if logger == nil {
 		return
 	}
 	switch {
 	case event.Hello != nil:
-		logger.Info("guest telemetry hello received", "job_id", jobID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
+		logger.Info("guest telemetry hello received", "run_id", runID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
 	case event.Sample != nil:
-		logger.Debug("guest telemetry sample received", "job_id", jobID, "seq", event.Sample.Seq)
+		logger.Debug("guest telemetry sample received", "run_id", runID, "seq", event.Sample.Seq)
 	}
 }
 
-func logTelemetryDiagnostic(logger *slog.Logger, jobID string, diagnostic TelemetryDiagnostic) {
+func logTelemetryDiagnostic(logger *slog.Logger, runID string, diagnostic TelemetryDiagnostic) {
 	if logger == nil {
 		return
 	}
 	logger.Warn(
 		"guest telemetry stream diagnostic",
-		"job_id", jobID,
+		"run_id", runID,
 		"kind", string(diagnostic.Kind),
 		"expected_seq", diagnostic.ExpectedSeq,
 		"observed_seq", diagnostic.ObservedSeq,

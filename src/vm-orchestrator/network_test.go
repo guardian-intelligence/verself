@@ -127,20 +127,20 @@ func TestAllocatorParallelUniqueSlots(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			jobID := "job-" + string(rune('a'+i))
-			lease, err := allocator.Acquire(context.Background(), jobID)
+			runID := "job-" + string(rune('a'+i))
+			lease, err := allocator.Acquire(context.Background(), runID)
 			if err != nil {
-				t.Errorf("Acquire %s: %v", jobID, err)
+				t.Errorf("Acquire %s: %v", runID, err)
 				return
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
 			if owner, exists := slots[lease.SlotIndex]; exists {
-				t.Errorf("slot %d allocated to both %s and %s", lease.SlotIndex, owner, jobID)
+				t.Errorf("slot %d allocated to both %s and %s", lease.SlotIndex, owner, runID)
 				return
 			}
-			slots[lease.SlotIndex] = jobID
+			slots[lease.SlotIndex] = runID
 		}(i)
 	}
 
@@ -246,7 +246,7 @@ func TestGuestNetworkConfig(t *testing.T) {
 	t.Parallel()
 
 	lease := NetworkLease{
-		JobID:     "job-1",
+		RunID:     "job-1",
 		TapName:   "tap0",
 		GuestIP:   "172.16.0.6",
 		GatewayIP: "172.16.0.5",

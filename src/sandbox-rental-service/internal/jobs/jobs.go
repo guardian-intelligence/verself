@@ -63,10 +63,10 @@ var (
 // Runner abstracts VM execution. Production uses *vmorchestrator.Client.
 type Runner interface {
 	GetCapacity(ctx context.Context) (vmorchestrator.Capacity, error)
-	StartDirectJob(ctx context.Context, job vmorchestrator.JobConfig) (string, error)
-	StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(vmorchestrator.JobGuestEvent) error) error
-	WaitJob(ctx context.Context, jobID string, includeOutput bool) (vmorchestrator.JobStatus, error)
-	CancelJob(ctx context.Context, jobID string) (bool, error)
+	EnsureRun(ctx context.Context, spec vmorchestrator.HostRunSpec) (runID string, created bool, err error)
+	StreamRunEvents(ctx context.Context, runID string, fromSeq uint64, follow bool, handler func(vmorchestrator.HostRunEvent) error) error
+	WaitRun(ctx context.Context, runID string, includeOutput bool) (vmorchestrator.HostRunSnapshot, error)
+	CancelRun(ctx context.Context, runID, reason string) (bool, error)
 }
 
 type BillingClient interface {
@@ -126,7 +126,7 @@ type AttemptRecord struct {
 	AttemptID         uuid.UUID  `json:"attempt_id"`
 	AttemptSeq        int        `json:"attempt_seq"`
 	State             string     `json:"state"`
-	OrchestratorJobID string     `json:"orchestrator_job_id,omitempty"`
+	OrchestratorRunID string     `json:"orchestrator_run_id,omitempty"`
 	BillingJobID      int64      `json:"billing_job_id,omitempty"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	ExitCode          int        `json:"exit_code,omitempty"`
@@ -378,13 +378,13 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	defer span.End()
 
 	traceID := traceIDFromContext(ctx)
-	orchestratorJobID := attemptID.String()
+	orchestratorRunID := attemptID.String()
 	launchTime := time.Now()
-	if err := s.markLaunching(ctx, executionID, attemptID, orchestratorJobID, traceID, launchTime.UTC()); err != nil {
+	if err := s.markLaunching(ctx, executionID, attemptID, orchestratorRunID, traceID, launchTime.UTC()); err != nil {
 		s.Logger.ErrorContext(ctx, "mark launching", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return
 	}
-	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_job_id=%s", req.Kind, orchestratorJobID)
+	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_run_id=%s", req.Kind, orchestratorRunID)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -675,8 +675,8 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 		return executionOutcome{}, err
 	}
 
-	jobCfg := vmorchestrator.JobConfig{
-		JobID:          attemptID.String(),
+	runSpec := vmorchestrator.HostRunSpec{
+		RunID:          attemptID.String(),
 		RunCommand:     []string{"sh", "-c", command},
 		BillablePhases: []string{"run"},
 		Env: map[string]string{
@@ -684,13 +684,13 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 		},
 	}
 
-	jobID, err := s.Orchestrator.StartDirectJob(ctx, jobCfg)
+	runID, _, err := s.Orchestrator.EnsureRun(ctx, runSpec)
 	if err != nil {
 		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
 	}
-	if jobID != attemptID.String() {
-		err := fmt.Errorf("orchestrator job id mismatch: got %s want %s", jobID, attemptID.String())
-		_, _ = s.Orchestrator.CancelJob(context.Background(), jobID)
+	if runID != attemptID.String() {
+		err := fmt.Errorf("orchestrator run id mismatch: got %s want %s", runID, attemptID.String())
+		_, _ = s.Orchestrator.CancelRun(context.Background(), runID, "run_id_mismatch")
 		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
 	}
 	s.writeSystemLog(ctx, executionID, attemptID, "launched direct execution")
@@ -700,17 +700,14 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	streamErrCh := make(chan error, 1)
 	startedAtCh := make(chan time.Time, 1)
 	go func() {
-		streamErrCh <- s.Orchestrator.StreamGuestEvents(streamCtx, jobID, true, func(event vmorchestrator.JobGuestEvent) error {
-			if event.Terminal {
-				return nil
-			}
+		streamErrCh <- s.Orchestrator.StreamRunEvents(streamCtx, runID, 0, true, func(event vmorchestrator.HostRunEvent) error {
 			startedAt, ok := billablePhaseStartedAt(event)
 			if !ok {
 				return nil
 			}
 			activated, activateErr := s.activateBillableWindow(ctx, executionID, attemptID, reservation, startedAt)
 			if activateErr != nil {
-				_, _ = s.Orchestrator.CancelJob(context.Background(), jobID)
+				_, _ = s.Orchestrator.CancelRun(context.Background(), runID, "billing_activate_failed")
 				return activateErr
 			}
 			select {
@@ -725,12 +722,12 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 		})
 	}()
 
-	status, waitErr := s.Orchestrator.WaitJob(ctx, jobID, true)
+	status, waitErr := s.Orchestrator.WaitRun(ctx, runID, true)
 	if waitErr != nil {
 		streamCancel()
 	}
 	streamErr := <-streamErrCh
-	var result vmorchestrator.JobResult
+	var result vmorchestrator.RunResult
 	if status.Result != nil {
 		result = *status.Result
 	}
@@ -794,8 +791,8 @@ func (s *Service) activateBillableWindow(ctx context.Context, executionID, attem
 	return activated, nil
 }
 
-func billablePhaseStartedAt(event vmorchestrator.JobGuestEvent) (time.Time, bool) {
-	if event.Kind != "phase_started" || event.Attrs["billable"] != "true" {
+func billablePhaseStartedAt(event vmorchestrator.HostRunEvent) (time.Time, bool) {
+	if event.EventType != "phase_started" || event.Attrs["billable"] != "true" {
 		return time.Time{}, false
 	}
 	if strings.TrimSpace(event.Attrs["phase"]) == "" {
@@ -806,6 +803,9 @@ func billablePhaseStartedAt(event vmorchestrator.JobGuestEvent) (time.Time, bool
 		if err == nil && nanos > 0 {
 			return time.Unix(0, nanos).UTC(), true
 		}
+	}
+	if !event.CreatedAt.IsZero() {
+		return event.CreatedAt.UTC(), true
 	}
 	return time.Now().UTC(), true
 }
@@ -833,7 +833,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			a.attempt_id,
 			a.attempt_seq,
 			a.state,
-				a.orchestrator_job_id,
+				a.orchestrator_run_id,
 				COALESCE(a.billing_job_id, 0),
 				a.failure_reason,
 			COALESCE(a.exit_code, 0),
@@ -881,7 +881,7 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&attempt.AttemptID,
 		&attempt.AttemptSeq,
 		&attempt.State,
-		&attempt.OrchestratorJobID,
+		&attempt.OrchestratorRunID,
 		&attempt.BillingJobID,
 		&attempt.FailureReason,
 		&attempt.ExitCode,
@@ -1111,7 +1111,7 @@ func (s *Service) markNextWindowReserved(ctx context.Context, attemptID uuid.UUI
 	return tx.Commit()
 }
 
-func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid.UUID, orchestratorJobID, traceID string, now time.Time) error {
+func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid.UUID, orchestratorRunID, traceID string, now time.Time) error {
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1120,9 +1120,9 @@ func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
-		SET state = $2, orchestrator_job_id = $3, trace_id = $4, updated_at = $5
+		SET state = $2, orchestrator_run_id = $3, trace_id = $4, updated_at = $5
 		WHERE attempt_id = $1
-	`, attemptID, StateLaunching, orchestratorJobID, traceID, now); err != nil {
+	`, attemptID, StateLaunching, orchestratorRunID, traceID, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
