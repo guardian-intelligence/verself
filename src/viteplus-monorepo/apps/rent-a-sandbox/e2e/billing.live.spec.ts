@@ -80,38 +80,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       run.started_balance = await app.readBalance();
       await cancelExistingHobbySubscription(app);
 
-      await app.expectSSRHTML("/billing/subscribe", ["Choose a Plan", "Hobby", "$5.00", "/mo"]);
-      await app.assertStableRoute({
-        path: "/billing/subscribe",
-        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
-        expectedText: ["Choose a Plan", "Hobby", "$5.00/mo"],
-      });
-
-      await app.page.getByTestId("subscribe-plan-sandbox-hobby").click();
-      await completeStripeCheckout(app, { returnURLIncludes: "/billing?subscribed=true" });
-      await app.expectSSRHTML("/billing?subscribed=true", [
-        "Subscription activated",
-        "Subscriptions",
-      ]);
-
-      await app.waitForCondition("hobby subscription activation", 120_000, async () => {
-        await app.goto("/billing?subscribed=true");
-        const rowTexts = await app.page
-          .getByTestId("subscription-row-sandbox-hobby")
-          .allInnerTexts()
-          .catch(() => []);
-        const activeRowText = rowTexts.find(
-          (text) =>
-            text.includes("sandbox-hobby") && text.includes("active") && text.includes("paid"),
-        );
-
-        if (activeRowText && (await hasVisibleHobbySubscriptionEntitlements(app))) {
-          return activeRowText;
-        }
-
-        await app.page.waitForTimeout(2_000);
-        return false;
-      });
+      await activateHobbySubscription(app);
 
       await requestHobbyCancellation(app);
 
@@ -152,7 +121,80 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.persistRun(run);
     }
   });
+
+  test("subscription checkout activates Hobby and leaves it active", async ({ app }) => {
+    const run = app.createRun();
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      run.started_balance = await app.readBalance();
+      await cancelExistingHobbySubscription(app);
+      await activateHobbySubscription(app);
+
+      run.detail_url = "/billing?subscribed=true";
+      run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
 });
+
+async function activateHobbySubscription(app: SandboxHarness) {
+  await app.expectSSRHTML("/billing/subscribe", ["Choose a Plan", "Hobby", "$5.00", "/mo"]);
+  await app.assertStableRoute({
+    path: "/billing/subscribe",
+    ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+    expectedText: ["Choose a Plan", "Hobby", "$5.00/mo"],
+  });
+
+  await beginHobbyCheckout(app);
+  await completeStripeCheckout(app, { returnURLIncludes: "/billing?subscribed=true" });
+  await app.expectSSRHTML("/billing?subscribed=true", ["Subscription activated", "Subscriptions"]);
+
+  return await app.waitForCondition("hobby subscription activation", 120_000, async () => {
+    await app.goto("/billing?subscribed=true");
+    const rowTexts = await app.page
+      .getByTestId("subscription-row-sandbox-hobby")
+      .allInnerTexts()
+      .catch(() => []);
+    const activeRowText = rowTexts.find(
+      (text) => text.includes("sandbox-hobby") && text.includes("active") && text.includes("paid"),
+    );
+
+    if (activeRowText && (await hasVisibleHobbySubscriptionEntitlements(app))) {
+      return activeRowText;
+    }
+
+    await app.page.waitForTimeout(2_000);
+    return false;
+  });
+}
+
+async function beginHobbyCheckout(app: SandboxHarness) {
+  await app.waitForCondition("hobby checkout redirect", 30_000, async () => {
+    if (app.page.url().includes("checkout.stripe.com")) {
+      return true;
+    }
+
+    const subscribeButton = app.page.getByTestId("subscribe-plan-sandbox-hobby");
+    if (!(await subscribeButton.isVisible().catch(() => false))) {
+      return false;
+    }
+
+    // SSR can expose the button before the TanStack Start click handler hydrates.
+    await subscribeButton.click();
+    await app.page.waitForTimeout(500);
+    return app.page.url().includes("checkout.stripe.com") ? true : false;
+  });
+}
 
 async function cancelExistingHobbySubscription(app: SandboxHarness) {
   for (let attempt = 0; attempt < 5; attempt += 1) {

@@ -22,8 +22,8 @@ verification_wait_for_http "rent-a-sandbox UI" "${base_url}" "200"
   ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml --tags billing
 )
 
-acme_admin_password="$(
-  verification_remote_sudo_cat /etc/credstore/seed-system/acme-admin-password
+ceo_password="$(
+  verification_remote_sudo_cat /etc/credstore/seed-system/ceo-password
 )"
 
 set +e
@@ -34,14 +34,17 @@ env \
   TEST_BASE_URL="${base_url}" \
   FORGE_METAL_DOMAIN="${VERIFICATION_DOMAIN}" \
   ZITADEL_BASE_URL="https://auth.${VERIFICATION_DOMAIN}" \
-  TEST_EMAIL="acme-admin@${VERIFICATION_DOMAIN}" \
-  TEST_PASSWORD="${acme_admin_password}" \
+  TEST_EMAIL="ceo@${VERIFICATION_DOMAIN}" \
+  TEST_USERNAME="ceo" \
+  TEST_FIRST_NAME="CEO" \
+  TEST_LAST_NAME="Operator" \
+  TEST_PASSWORD="${ceo_password}" \
   FORGE_METAL_RECORD_ARTIFACTS="1" \
   bash -lc '
     cd "$1"
     vp exec playwright test e2e/billing.live.spec.ts \
       --project=chromium \
-      --grep "subscription checkout activates Hobby and cancellation returns to free" \
+      --grep "subscription checkout activates Hobby and leaves it active" \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${artifact_dir}/playwright-results" \
   >"${billing_log_path}" 2>&1
