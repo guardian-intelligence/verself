@@ -1,6 +1,6 @@
 .PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
-       vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
+       vm-guest-telemetry-build traces deploy-trace telemetry-proof clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof grafana-proof
 
@@ -138,6 +138,13 @@ grafana-proof: inventory-check ## Verify Grafana health, datasource execution, P
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)
+
+deploy-trace: inventory-check ## Query Ansible spans only: make deploy-trace QUERY='SpanName = ''ansible.task'''
+	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
+	cd $(FM) && QUERY="$(QUERY)" ./scripts/deploy-trace.sh
+
+telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
+	cd $(FM) && ./scripts/telemetry-proof.sh
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
