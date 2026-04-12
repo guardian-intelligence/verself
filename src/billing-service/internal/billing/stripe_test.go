@@ -118,19 +118,23 @@ func TestStripeSubscriptionStateUsesItemPeriod(t *testing.T) {
 	assertTimePresent(t, state.CurrentPeriodEnd, "current period end")
 }
 
-func TestStripeGrantIDIsDeterministicAndScoped(t *testing.T) {
+func TestSourceReferenceGrantIDIsDeterministicAndScoped(t *testing.T) {
 	t.Parallel()
 
-	first := stripeGrantID(42, GrantScopeBucket, "sandbox", "compute", "in_test")
-	second := stripeGrantID(42, GrantScopeBucket, "sandbox", "compute", "in_test")
-	differentBucket := stripeGrantID(42, GrantScopeBucket, "sandbox", "ram", "in_test")
+	first := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "in_test")
+	second := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "in_test")
+	differentBucket := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "ram", "in_test")
+	differentSource := sourceReferenceGrantID(42, SourceFreeTier, GrantScopeBucket, "sandbox", "compute", "in_test")
 
-	assertEqual(t, first.String(), second.String(), "same stripe grant id")
+	assertEqual(t, first.String(), second.String(), "same source reference grant id")
 	if first == differentBucket {
-		t.Fatal("stripe grant id must be scoped by bucket")
+		t.Fatal("source reference grant id must be scoped by bucket")
+	}
+	if first == differentSource {
+		t.Fatal("source reference grant id must be scoped by source")
 	}
 	if _, err := ParseGrantID(first.String()); err != nil {
-		t.Fatalf("stripe grant id should round-trip through the public grant id format: %v", err)
+		t.Fatalf("source reference grant id should round-trip through the public grant id format: %v", err)
 	}
 }
 

@@ -171,6 +171,48 @@ func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, r
 	return "", unexpected("create portal session", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 }
 
+func (c *ServiceClient) ApplySubscriptionProviderEvent(ctx context.Context, request apiwire.BillingApplySubscriptionProviderEventRequest, reqEditors ...RequestEditorFn) error {
+	body := ApplySubscriptionProviderEventJSONRequestBody{
+		EventType:              request.EventType,
+		OrgId:                  request.OrgID.String(),
+		PlanId:                 request.PlanID,
+		ProductId:              request.ProductID,
+		Provider:               BillingApplySubscriptionProviderEventRequestProvider(request.Provider),
+		ProviderSubscriptionId: request.ProviderSubscriptionID,
+		CurrentPeriodStart:     request.CurrentPeriodStart,
+		CurrentPeriodEnd:       request.CurrentPeriodEnd,
+	}
+	if request.Cadence != "" {
+		value := BillingApplySubscriptionProviderEventRequestCadence(request.Cadence)
+		body.Cadence = &value
+	}
+	if request.Status != "" {
+		body.Status = &request.Status
+	}
+	if request.ProviderCheckoutSessionID != "" {
+		body.ProviderCheckoutSessionId = &request.ProviderCheckoutSessionID
+	}
+	if request.ProviderCustomerID != "" {
+		body.ProviderCustomerId = &request.ProviderCustomerID
+	}
+	if request.PaymentState != "" {
+		value := BillingApplySubscriptionProviderEventRequestPaymentState(request.PaymentState)
+		body.PaymentState = &value
+	}
+	if request.EntitlementState != "" {
+		value := BillingApplySubscriptionProviderEventRequestEntitlementState(request.EntitlementState)
+		body.EntitlementState = &value
+	}
+	resp, err := c.inner.ApplySubscriptionProviderEventWithResponse(ctx, body, reqEditors...)
+	if err != nil {
+		return err
+	}
+	if resp.JSON200 != nil && resp.JSON200.Applied {
+		return nil
+	}
+	return unexpected("apply subscription provider event", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON400))
+}
+
 func (c *ServiceClient) Reserve(
 	ctx context.Context,
 	_ int64,

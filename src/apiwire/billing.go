@@ -16,14 +16,20 @@ type BillingBalance struct {
 }
 
 type BillingGrant struct {
-	GrantID        string        `json:"grant_id"`
-	ScopeType      string        `json:"scope_type"`
-	ScopeProductID string        `json:"scope_product_id"`
-	ScopeBucketID  string        `json:"scope_bucket_id"`
-	Source         string        `json:"source"`
-	Available      DecimalUint64 `json:"available"`
-	Pending        DecimalUint64 `json:"pending"`
-	ExpiresAt      *time.Time    `json:"expires_at,omitempty"`
+	GrantID             string        `json:"grant_id"`
+	ScopeType           string        `json:"scope_type"`
+	ScopeProductID      string        `json:"scope_product_id"`
+	ScopeBucketID       string        `json:"scope_bucket_id"`
+	Source              string        `json:"source"`
+	SourceReferenceID   string        `json:"source_reference_id"`
+	EntitlementPeriodID string        `json:"entitlement_period_id"`
+	PolicyVersion       string        `json:"policy_version"`
+	StartsAt            time.Time     `json:"starts_at"`
+	PeriodStart         *time.Time    `json:"period_start,omitempty"`
+	PeriodEnd           *time.Time    `json:"period_end,omitempty"`
+	Available           DecimalUint64 `json:"available"`
+	Pending             DecimalUint64 `json:"pending"`
+	ExpiresAt           *time.Time    `json:"expires_at,omitempty"`
 }
 
 type BillingGrants struct {
@@ -96,10 +102,13 @@ type BillingStatementTotals struct {
 
 type BillingSubscription struct {
 	SubscriptionID     DecimalInt64 `json:"subscription_id"`
+	ContractID         string       `json:"contract_id"`
 	ProductID          string       `json:"product_id"`
 	PlanID             string       `json:"plan_id"`
 	Cadence            string       `json:"cadence"`
 	Status             string       `json:"status"`
+	PaymentState       string       `json:"payment_state"`
+	EntitlementState   string       `json:"entitlement_state"`
 	CurrentPeriodStart *time.Time   `json:"current_period_start,omitempty"`
 	CurrentPeriodEnd   *time.Time   `json:"current_period_end,omitempty"`
 }
@@ -127,6 +136,27 @@ type BillingCreateSubscriptionRequest struct {
 type BillingCreatePortalSessionRequest struct {
 	OrgID     OrgID  `json:"org_id"`
 	ReturnURL string `json:"return_url" minLength:"1" maxLength:"2048"`
+}
+
+type BillingApplySubscriptionProviderEventRequest struct {
+	Provider                  string     `json:"provider" enum:"stripe"`
+	EventType                 string     `json:"event_type" minLength:"1" maxLength:"255"`
+	OrgID                     OrgID      `json:"org_id"`
+	ProductID                 string     `json:"product_id" minLength:"1" maxLength:"255"`
+	PlanID                    string     `json:"plan_id" minLength:"1" maxLength:"255"`
+	Cadence                   string     `json:"cadence,omitempty" enum:"monthly,annual"`
+	Status                    string     `json:"status,omitempty" maxLength:"255"`
+	ProviderSubscriptionID    string     `json:"provider_subscription_id" minLength:"1" maxLength:"255"`
+	ProviderCheckoutSessionID string     `json:"provider_checkout_session_id,omitempty" maxLength:"255"`
+	ProviderCustomerID        string     `json:"provider_customer_id,omitempty" maxLength:"255"`
+	CurrentPeriodStart        *time.Time `json:"current_period_start,omitempty"`
+	CurrentPeriodEnd          *time.Time `json:"current_period_end,omitempty"`
+	PaymentState              string     `json:"payment_state,omitempty" enum:"not_required,pending,paid,failed,uncollectible,refunded"`
+	EntitlementState          string     `json:"entitlement_state,omitempty" enum:"scheduled,active,grace,closed,voided"`
+}
+
+type BillingApplySubscriptionProviderEventResponse struct {
+	Applied bool `json:"applied"`
 }
 
 type BillingURLResponse struct {

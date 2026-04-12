@@ -23,18 +23,29 @@ func NewGrantID() GrantID {
 	return GrantID(ulid.Make())
 }
 
-func stripeGrantID(orgID OrgID, scopeType GrantScopeType, scopeProductID, scopeBucketID, stripeReferenceID string) GrantID {
+func sourceReferenceGrantID(orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, sourceReferenceID string) GrantID {
 	h := sha256.New()
-	_, _ = h.Write([]byte("stripe-grant"))
+	_, _ = h.Write([]byte("grant-source-reference"))
 	hashUint64(h, uint64(orgID))
+	hashString(h, source.String())
 	hashString(h, scopeType.String())
 	hashString(h, scopeProductID)
 	hashString(h, scopeBucketID)
-	hashString(h, stripeReferenceID)
+	hashString(h, sourceReferenceID)
 	sum := h.Sum(nil)
 	var id GrantID
 	copy(id[:], sum[:16])
 	return id
+}
+
+func deterministicTextID(namespace string, values ...string) string {
+	h := sha256.New()
+	hashString(h, namespace)
+	for _, value := range values {
+		hashString(h, value)
+	}
+	sum := h.Sum(nil)
+	return hex.EncodeToString(sum[:16])
 }
 
 func hashUint64(h hash.Hash, value uint64) {

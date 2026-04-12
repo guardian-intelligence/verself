@@ -10,14 +10,15 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 
 	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-	grantID := stripeGrantID(42, GrantScopeAccount, "", "", "pi_test")
+	grantID := sourceReferenceGrantID(42, SourcePurchase, GrantScopeAccount, "", "", "pi_test")
+	subscriptionGrantID := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "in_test")
 	statement, err := buildStatement(
 		42,
 		"sandbox",
 		statementPeriod{Start: periodStart, End: periodEnd, Source: "subscription"},
 		[]GrantBalance{
 			{
-				GrantID:        stripeGrantID(42, GrantScopeBucket, "sandbox", "block_storage", "in_test"),
+				GrantID:        subscriptionGrantID,
 				ScopeType:      GrantScopeBucket,
 				ScopeProductID: "sandbox",
 				ScopeBucketID:  "block_storage",
@@ -36,7 +37,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 		[]persistedWindow{
 			statementTestWindow("settled-storage", "settled", 100, []WindowFundingLeg{
 				{
-					GrantID:             stripeGrantID(42, GrantScopeBucket, "sandbox", "block_storage", "in_test"),
+					GrantID:             subscriptionGrantID,
 					ChargeProductID:     "sandbox",
 					ChargeBucketID:      "block_storage",
 					Amount:              2_500,

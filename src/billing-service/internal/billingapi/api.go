@@ -174,6 +174,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Post(service, "/activate", handler.activateWindow, operation("activate-window", "Activate a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
+	huma.Post(service, "/subscription-provider-events", handler.applySubscriptionProviderEvent, operation("apply-subscription-provider-event", "Apply a subscription provider event", http.StatusBadRequest, http.StatusInternalServerError))
 }
 
 func operation(id, summary string, errors ...int) func(*huma.Operation) {
@@ -223,14 +224,20 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 	out := make([]GrantResponse, 0, len(grants))
 	for _, grant := range grants {
 		out = append(out, GrantResponse{
-			GrantID:        grant.GrantID.String(),
-			ScopeType:      grant.ScopeType.String(),
-			ScopeProductID: grant.ScopeProductID,
-			ScopeBucketID:  grant.ScopeBucketID,
-			Source:         grant.Source.String(),
-			Available:      apiwire.Uint64(grant.Available),
-			Pending:        apiwire.Uint64(grant.Pending),
-			ExpiresAt:      grant.ExpiresAt,
+			GrantID:             grant.GrantID.String(),
+			ScopeType:           grant.ScopeType.String(),
+			ScopeProductID:      grant.ScopeProductID,
+			ScopeBucketID:       grant.ScopeBucketID,
+			Source:              grant.Source.String(),
+			SourceReferenceID:   grant.SourceReferenceID,
+			EntitlementPeriodID: grant.EntitlementPeriodID,
+			PolicyVersion:       grant.PolicyVersion,
+			StartsAt:            grant.StartsAt,
+			PeriodStart:         grant.PeriodStart,
+			PeriodEnd:           grant.PeriodEnd,
+			Available:           apiwire.Uint64(grant.Available),
+			Pending:             apiwire.Uint64(grant.Pending),
+			ExpiresAt:           grant.ExpiresAt,
 		})
 	}
 	return &body[GrantsResponse]{Body: GrantsResponse{Grants: out}}, nil
@@ -339,10 +346,13 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	for _, subscription := range subscriptions {
 		out = append(out, SubscriptionResponse{
 			SubscriptionID:     apiwire.Int64(subscription.SubscriptionID),
+			ContractID:         subscription.ContractID,
 			ProductID:          subscription.ProductID,
 			PlanID:             subscription.PlanID,
 			Cadence:            subscription.Cadence,
 			Status:             subscription.Status,
+			PaymentState:       string(subscription.PaymentState),
+			EntitlementState:   string(subscription.EntitlementState),
 			CurrentPeriodStart: subscription.CurrentPeriodStart,
 			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
 		})
@@ -407,6 +417,36 @@ func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingC
 		return nil, huma.Error500InternalServerError("create portal session", err)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) applySubscriptionProviderEvent(ctx context.Context, input *body[apiwire.BillingApplySubscriptionProviderEventRequest]) (*body[apiwire.BillingApplySubscriptionProviderEventResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.ApplySubscriptionProviderEvent(ctx, billing.SubscriptionProviderEvent{
+		Provider:                  input.Body.Provider,
+		EventType:                 input.Body.EventType,
+		OrgID:                     orgID,
+		ProductID:                 input.Body.ProductID,
+		PlanID:                    input.Body.PlanID,
+		Cadence:                   input.Body.Cadence,
+		Status:                    input.Body.Status,
+		ProviderSubscriptionID:    input.Body.ProviderSubscriptionID,
+		ProviderCheckoutSessionID: input.Body.ProviderCheckoutSessionID,
+		ProviderCustomerID:        input.Body.ProviderCustomerID,
+		CurrentPeriodStart:        input.Body.CurrentPeriodStart,
+		CurrentPeriodEnd:          input.Body.CurrentPeriodEnd,
+		PaymentState:              billing.EntitlementPaymentState(input.Body.PaymentState),
+		EntitlementState:          billing.EntitlementState(input.Body.EntitlementState),
+	}); err != nil {
+		return nil, huma.Error400BadRequest("apply subscription provider event", err)
+	}
+	return &body[apiwire.BillingApplySubscriptionProviderEventResponse]{Body: apiwire.BillingApplySubscriptionProviderEventResponse{Applied: true}}, nil
 }
 
 func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {

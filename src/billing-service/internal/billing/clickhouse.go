@@ -47,6 +47,29 @@ func (w *ClickHouseMeteringWriter) InsertMeteringRows(ctx context.Context, rows 
 	return nil
 }
 
+// InsertBillingEvents inserts grant/subscription lifecycle events into ClickHouse.
+func (w *ClickHouseMeteringWriter) InsertBillingEvents(ctx context.Context, events []BillingEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	batch, err := w.conn.PrepareBatch(ctx, "INSERT INTO "+w.database+".billing_events")
+	if err != nil {
+		return fmt.Errorf("prepare billing events batch: %w", err)
+	}
+
+	for i := range events {
+		if err := batch.AppendStruct(&events[i]); err != nil {
+			return fmt.Errorf("append billing event: %w", err)
+		}
+	}
+
+	if err := batch.Send(); err != nil {
+		return fmt.Errorf("send billing events batch: %w", err)
+	}
+	return nil
+}
+
 // ClickHouseReconcileQuerier implements ClickHouseQuerier for reconciliation.
 // Separate from the metering writer because reconciliation queries have a
 // different shape than the write path.

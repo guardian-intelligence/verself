@@ -20,6 +20,7 @@ type Client struct {
 	pg       *sql.DB
 	stripe   *stripe.Client
 	metering MeteringWriter
+	events   BillingEventWriter
 	cfg      Config
 	clock    func() time.Time
 }
@@ -41,11 +42,17 @@ func NewClient(tbClient tb.Client, pg *sql.DB, sc *stripe.Client, metering Meter
 		return nil, err
 	}
 
+	eventWriter, ok := metering.(BillingEventWriter)
+	if !ok {
+		eventWriter = noopBillingEventWriter{}
+	}
+
 	client := &Client{
 		tb:       tbClient,
 		pg:       pg,
 		stripe:   sc,
 		metering: metering,
+		events:   eventWriter,
 		cfg:      cfg,
 		clock:    time.Now,
 	}
@@ -73,13 +80,14 @@ func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string,
 	if err != nil {
 		return fmt.Errorf("upsert org: %w", err)
 	}
-	return nil
+	return c.EnsureCurrentEntitlements(ctx, orgID, "")
 }
 
 func (c *Client) ListSubscriptions(ctx context.Context, orgID OrgID) ([]SubscriptionRecord, error) {
 	rows, err := c.pg.QueryContext(ctx, `
-		SELECT subscription_id, org_id, product_id, plan_id, cadence, status, current_period_start, current_period_end
-		FROM subscriptions
+		SELECT subscription_id, contract_id, org_id, product_id, plan_id, cadence, status,
+		       payment_state, entitlement_state, current_period_start, current_period_end
+		FROM subscription_contracts
 		WHERE org_id = $1
 		ORDER BY subscription_id DESC
 	`, strconv.FormatUint(uint64(orgID), 10))
@@ -93,18 +101,25 @@ func (c *Client) ListSubscriptions(ctx context.Context, orgID OrgID) ([]Subscrip
 		var record SubscriptionRecord
 		var start sql.NullTime
 		var end sql.NullTime
+		var paymentState string
+		var entitlementState string
 		if err := rows.Scan(
 			&record.SubscriptionID,
+			&record.ContractID,
 			&record.OrgID,
 			&record.ProductID,
 			&record.PlanID,
 			&record.Cadence,
 			&record.Status,
+			&paymentState,
+			&entitlementState,
 			&start,
 			&end,
 		); err != nil {
 			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
+		record.PaymentState = EntitlementPaymentState(paymentState)
+		record.EntitlementState = EntitlementState(entitlementState)
 		if start.Valid {
 			value := start.Time.UTC()
 			record.CurrentPeriodStart = &value
@@ -186,10 +201,13 @@ func (c *Client) listScopedGrantBalancesForFunding(ctx context.Context, orgID Or
 func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
 	now := c.clock().UTC()
 	query := `
-		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source, expires_at
+		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source,
+		       source_reference_id, entitlement_period_id, policy_version,
+		       starts_at, period_start, period_end, expires_at
 		FROM credit_grants
 		WHERE org_id = $1
 		  AND closed_at IS NULL
+		  AND starts_at <= $2
 		  AND (expires_at IS NULL OR expires_at > $2)
 	`
 	args := []any{strconv.FormatUint(uint64(orgID), 10), now}
@@ -211,6 +229,12 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		ScopeProductID string
 		ScopeBucketID  string
 		Source         GrantSourceType
+		SourceRef      string
+		PeriodID       string
+		PolicyVersion  string
+		StartsAt       time.Time
+		PeriodStart    *time.Time
+		PeriodEnd      *time.Time
 		ExpiresAt      *time.Time
 	}
 	var grantRows []rowGrant
@@ -221,8 +245,27 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		var scopeProductID string
 		var scopeBucketID string
 		var sourceText string
+		var sourceRef string
+		var periodID string
+		var policyVersion string
+		var startsAt time.Time
+		var periodStart sql.NullTime
+		var periodEnd sql.NullTime
 		var expiresAt sql.NullTime
-		if err := rows.Scan(&grantIDText, &scopeTypeText, &scopeProductID, &scopeBucketID, &sourceText, &expiresAt); err != nil {
+		if err := rows.Scan(
+			&grantIDText,
+			&scopeTypeText,
+			&scopeProductID,
+			&scopeBucketID,
+			&sourceText,
+			&sourceRef,
+			&periodID,
+			&policyVersion,
+			&startsAt,
+			&periodStart,
+			&periodEnd,
+			&expiresAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan grant: %w", err)
 		}
 		grantID, err := ParseGrantID(grantIDText)
@@ -245,12 +288,28 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			value := expiresAt.Time.UTC()
 			expiresAtPtr = &value
 		}
+		var periodStartPtr *time.Time
+		if periodStart.Valid {
+			value := periodStart.Time.UTC()
+			periodStartPtr = &value
+		}
+		var periodEndPtr *time.Time
+		if periodEnd.Valid {
+			value := periodEnd.Time.UTC()
+			periodEndPtr = &value
+		}
 		grantRows = append(grantRows, rowGrant{
 			GrantID:        grantID,
 			ScopeType:      scopeType,
 			ScopeProductID: scopeProductID,
 			ScopeBucketID:  scopeBucketID,
 			Source:         source,
+			SourceRef:      sourceRef,
+			PeriodID:       periodID,
+			PolicyVersion:  policyVersion,
+			StartsAt:       startsAt.UTC(),
+			PeriodStart:    periodStartPtr,
+			PeriodEnd:      periodEndPtr,
 			ExpiresAt:      expiresAtPtr,
 		})
 		accountIDs = append(accountIDs, GrantAccountID(grantID).raw)
@@ -286,20 +345,30 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			return nil, fmt.Errorf("pending balance %s: %w", rowGrant.GrantID.String(), err)
 		}
 		out = append(out, GrantBalance{
-			GrantID:        rowGrant.GrantID,
-			ScopeType:      rowGrant.ScopeType,
-			ScopeProductID: rowGrant.ScopeProductID,
-			ScopeBucketID:  rowGrant.ScopeBucketID,
-			Source:         rowGrant.Source,
-			ExpiresAt:      rowGrant.ExpiresAt,
-			Available:      available,
-			Pending:        pending,
+			GrantID:             rowGrant.GrantID,
+			ScopeType:           rowGrant.ScopeType,
+			ScopeProductID:      rowGrant.ScopeProductID,
+			ScopeBucketID:       rowGrant.ScopeBucketID,
+			Source:              rowGrant.Source,
+			SourceReferenceID:   rowGrant.SourceRef,
+			EntitlementPeriodID: rowGrant.PeriodID,
+			PolicyVersion:       rowGrant.PolicyVersion,
+			StartsAt:            rowGrant.StartsAt,
+			PeriodStart:         rowGrant.PeriodStart,
+			PeriodEnd:           rowGrant.PeriodEnd,
+			ExpiresAt:           rowGrant.ExpiresAt,
+			Available:           available,
+			Pending:             pending,
 		})
 	}
 	return out, nil
 }
 
 func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBalance, error) {
+	return c.IssueCreditGrant(ctx, grant)
+}
+
+func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (GrantBalance, error) {
 	if err := ctx.Err(); err != nil {
 		return GrantBalance{}, err
 	}
@@ -313,11 +382,15 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 	if grant.Amount == 0 {
 		return GrantBalance{}, fmt.Errorf("grant amount must be greater than zero")
 	}
+	startsAt := c.clock().UTC()
+	if grant.StartsAt != nil {
+		startsAt = grant.StartsAt.UTC()
+	}
 
 	grantID := NewGrantID()
-	if grant.StripeReferenceID != "" {
-		grantID = stripeGrantID(grant.OrgID, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.StripeReferenceID)
-		existing, err := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.StripeReferenceID)
+	if grant.SourceReferenceID != "" {
+		grantID = sourceReferenceGrantID(grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
+		existing, err := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
 		if err != nil {
 			return GrantBalance{}, err
 		}
@@ -341,32 +414,72 @@ func (c *Client) DepositCredits(ctx context.Context, grant CreditGrant) (GrantBa
 		return GrantBalance{}, fmt.Errorf("deposit grant transfer: %w", err)
 	}
 
-	_, err = c.pg.ExecContext(ctx, `
-		INSERT INTO credit_grants (grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, amount, source, stripe_reference_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ScopeType.String(), grant.ScopeProductID, grant.ScopeBucketID, grant.Amount, grant.Source, grant.StripeReferenceID, grant.ExpiresAt)
+	tx, err := c.pg.BeginTx(ctx, nil)
 	if err != nil {
-		if grant.StripeReferenceID != "" && isUniqueViolation(err) {
-			existing, lookupErr := c.lookupGrantByStripeRef(ctx, grant.OrgID, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.StripeReferenceID)
-			if lookupErr != nil {
-				return GrantBalance{}, fmt.Errorf("lookup grant after stripe reference conflict: %w", lookupErr)
-			}
-			if existing != nil {
-				return *existing, nil
-			}
+		return GrantBalance{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO credit_grants (
+			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, amount, source,
+			source_reference_id, entitlement_period_id, policy_version,
+			starts_at, period_start, period_end, expires_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7,
+		        $8, $9, $10,
+		        $11, $12, $13, $14)
+		ON CONFLICT (grant_id) DO NOTHING
+	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ScopeType.String(), grant.ScopeProductID, grant.ScopeBucketID, grant.Amount, grant.Source,
+		grant.SourceReferenceID, grant.EntitlementPeriodID, grant.PolicyVersion,
+		startsAt, grant.PeriodStart, grant.PeriodEnd, grant.ExpiresAt)
+	if err != nil {
+		if grant.SourceReferenceID != "" && isUniqueViolation(err) {
+			return c.lookupGrantAfterSourceRefConflict(ctx, grant, sourceType)
 		}
 		return GrantBalance{}, fmt.Errorf("insert grant row: %w", err)
 	}
+	inserted, _ := result.RowsAffected()
+	if inserted == 0 {
+		if grant.SourceReferenceID != "" {
+			return c.lookupGrantAfterSourceRefConflict(ctx, grant, sourceType)
+		}
+		return GrantBalance{}, fmt.Errorf("grant %s already exists", grantID.String())
+	}
+
+	if err := insertOutboxEventTx(ctx, tx, grantIssuedEvent(grantID, grant, startsAt)); err != nil {
+		return GrantBalance{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return GrantBalance{}, fmt.Errorf("commit grant row: %w", err)
+	}
 
 	return GrantBalance{
-		GrantID:        grantID,
-		ScopeType:      grant.ScopeType,
-		ScopeProductID: grant.ScopeProductID,
-		ScopeBucketID:  grant.ScopeBucketID,
-		Source:         sourceType,
-		ExpiresAt:      grant.ExpiresAt,
-		Available:      grant.Amount,
+		GrantID:             grantID,
+		ScopeType:           grant.ScopeType,
+		ScopeProductID:      grant.ScopeProductID,
+		ScopeBucketID:       grant.ScopeBucketID,
+		Source:              sourceType,
+		SourceReferenceID:   grant.SourceReferenceID,
+		EntitlementPeriodID: grant.EntitlementPeriodID,
+		PolicyVersion:       grant.PolicyVersion,
+		StartsAt:            startsAt,
+		PeriodStart:         grant.PeriodStart,
+		PeriodEnd:           grant.PeriodEnd,
+		ExpiresAt:           grant.ExpiresAt,
+		Available:           grant.Amount,
 	}, nil
+}
+
+func (c *Client) lookupGrantAfterSourceRefConflict(ctx context.Context, grant CreditGrant, sourceType GrantSourceType) (GrantBalance, error) {
+	existing, lookupErr := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
+	if lookupErr != nil {
+		return GrantBalance{}, fmt.Errorf("lookup grant after source reference conflict: %w", lookupErr)
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+	return GrantBalance{}, fmt.Errorf("source reference conflict without matching grant")
 }
 
 func isUniqueViolation(err error) bool {
@@ -374,23 +487,49 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pqErr) && string(pqErr.Code) == "23505"
 }
 
-func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, scopeType GrantScopeType, scopeProductID, scopeBucketID, stripeRef string) (*GrantBalance, error) {
+func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, sourceRef string) (*GrantBalance, error) {
 	var grantIDText string
 	var scopeTypeText string
 	var grantScopeProductID string
 	var grantScopeBucketID string
 	var sourceText string
+	var foundSourceRef string
+	var entitlementPeriodID string
+	var policyVersion string
+	var startsAt time.Time
+	var periodStart sql.NullTime
+	var periodEnd sql.NullTime
 	var expiresAt sql.NullTime
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source, expires_at
+		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source,
+		       source_reference_id, entitlement_period_id, policy_version,
+		       starts_at, period_start, period_end, expires_at
 		FROM credit_grants
-		WHERE org_id = $1 AND scope_type = $2 AND scope_product_id = $3 AND scope_bucket_id = $4 AND stripe_reference_id = $5
-	`, strconv.FormatUint(uint64(orgID), 10), scopeType.String(), scopeProductID, scopeBucketID, stripeRef).Scan(&grantIDText, &scopeTypeText, &grantScopeProductID, &grantScopeBucketID, &sourceText, &expiresAt)
+		WHERE org_id = $1
+		  AND source = $2
+		  AND scope_type = $3
+		  AND scope_product_id = $4
+		  AND scope_bucket_id = $5
+		  AND source_reference_id = $6
+	`, strconv.FormatUint(uint64(orgID), 10), source.String(), scopeType.String(), scopeProductID, scopeBucketID, sourceRef).Scan(
+		&grantIDText,
+		&scopeTypeText,
+		&grantScopeProductID,
+		&grantScopeBucketID,
+		&sourceText,
+		&foundSourceRef,
+		&entitlementPeriodID,
+		&policyVersion,
+		&startsAt,
+		&periodStart,
+		&periodEnd,
+		&expiresAt,
+	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("lookup grant by stripe ref: %w", err)
+		return nil, fmt.Errorf("lookup grant by source ref: %w", err)
 	}
 
 	grantID, err := ParseGrantID(grantIDText)
@@ -404,7 +543,7 @@ func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, scopeT
 	if err := validateGrantScope(parsedScopeType, grantScopeProductID, grantScopeBucketID); err != nil {
 		return nil, err
 	}
-	source, err := ParseGrantSourceType(sourceText)
+	parsedSource, err := ParseGrantSourceType(sourceText)
 	if err != nil {
 		return nil, err
 	}
@@ -428,15 +567,31 @@ func (c *Client) lookupGrantByStripeRef(ctx context.Context, orgID OrgID, scopeT
 		value := expiresAt.Time.UTC()
 		expiresAtPtr = &value
 	}
+	var periodStartPtr *time.Time
+	if periodStart.Valid {
+		value := periodStart.Time.UTC()
+		periodStartPtr = &value
+	}
+	var periodEndPtr *time.Time
+	if periodEnd.Valid {
+		value := periodEnd.Time.UTC()
+		periodEndPtr = &value
+	}
 	return &GrantBalance{
-		GrantID:        grantID,
-		ScopeType:      parsedScopeType,
-		ScopeProductID: grantScopeProductID,
-		ScopeBucketID:  grantScopeBucketID,
-		Source:         source,
-		ExpiresAt:      expiresAtPtr,
-		Available:      available,
-		Pending:        pending,
+		GrantID:             grantID,
+		ScopeType:           parsedScopeType,
+		ScopeProductID:      grantScopeProductID,
+		ScopeBucketID:       grantScopeBucketID,
+		Source:              parsedSource,
+		SourceReferenceID:   foundSourceRef,
+		EntitlementPeriodID: entitlementPeriodID,
+		PolicyVersion:       policyVersion,
+		StartsAt:            startsAt.UTC(),
+		PeriodStart:         periodStartPtr,
+		PeriodEnd:           periodEndPtr,
+		ExpiresAt:           expiresAtPtr,
+		Available:           available,
+		Pending:             pending,
 	}, nil
 }
 
