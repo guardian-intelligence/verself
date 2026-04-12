@@ -3,11 +3,11 @@ package apiwire
 import "time"
 
 type IdentityOrganization struct {
-	OrgID       OrgID                  `json:"org_id"`
-	Name        string                 `json:"name"`
-	Caller      IdentityMember         `json:"caller"`
-	Policy      IdentityPolicyDocument `json:"policy"`
-	Permissions []string               `json:"permissions"`
+	OrgID              OrgID                              `json:"org_id"`
+	Name               string                             `json:"name"`
+	Caller             IdentityMember                     `json:"caller"`
+	MemberCapabilities IdentityMemberCapabilitiesDocument `json:"member_capabilities"`
+	Permissions        []string                           `json:"permissions"`
 }
 
 type IdentityMember struct {
@@ -41,23 +41,32 @@ type IdentityUpdateMemberRolesRequest struct {
 	RoleKeys []string `json:"role_keys" required:"true" minItems:"1" maxItems:"16"`
 }
 
-type IdentityPolicyDocument struct {
-	OrgID     OrgID                `json:"org_id"`
-	Version   int32                `json:"version" minimum:"0" maximum:"2147483647"`
-	Roles     []IdentityPolicyRole `json:"roles"`
-	UpdatedAt time.Time            `json:"updated_at"`
-	UpdatedBy string               `json:"updated_by"`
+type IdentityMemberCapabilitiesDocument struct {
+	OrgID       OrgID     `json:"org_id"`
+	Version     int32     `json:"version" minimum:"0" maximum:"2147483647"`
+	EnabledKeys []string  `json:"enabled_keys"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	UpdatedBy   string    `json:"updated_by"`
 }
 
-type IdentityPutPolicyRequest struct {
-	Version int32                `json:"version" minimum:"0" maximum:"2147483647"`
-	Roles   []IdentityPolicyRole `json:"roles" required:"true" minItems:"1" maxItems:"32"`
+// IdentityMemberCapability is one row in the static, code-owned capability
+// catalog. The catalog is read-only over the wire — admins toggle Document.EnabledKeys, never the catalog itself.
+type IdentityMemberCapability struct {
+	Key            string   `json:"key"`
+	Label          string   `json:"label"`
+	Description    string   `json:"description"`
+	DefaultEnabled bool     `json:"default_enabled"`
+	Permissions    []string `json:"permissions"`
 }
 
-type IdentityPolicyRole struct {
-	RoleKey     string   `json:"role_key" required:"true" maxLength:"100"`
-	DisplayName string   `json:"display_name" required:"true" maxLength:"200"`
-	Permissions []string `json:"permissions" required:"true" minItems:"1" maxItems:"256"`
+type IdentityMemberCapabilities struct {
+	Document IdentityMemberCapabilitiesDocument `json:"document"`
+	Catalog  []IdentityMemberCapability         `json:"catalog"`
+}
+
+type IdentityPutMemberCapabilitiesRequest struct {
+	Version     int32    `json:"version" minimum:"0" maximum:"2147483647"`
+	EnabledKeys []string `json:"enabled_keys" required:"true" minItems:"0" maxItems:"32"`
 }
 
 type IdentityOperations struct {
@@ -70,11 +79,12 @@ type IdentityServiceOperations struct {
 }
 
 type IdentityOperation struct {
-	OperationID string `json:"operation_id"`
-	Permission  string `json:"permission"`
-	Resource    string `json:"resource"`
-	Action      string `json:"action"`
-	OrgScope    string `json:"org_scope"`
+	OperationID    string `json:"operation_id"`
+	Permission     string `json:"permission"`
+	Resource       string `json:"resource"`
+	Action         string `json:"action"`
+	OrgScope       string `json:"org_scope"`
+	MemberEligible bool   `json:"member_eligible"`
 }
 
 type IdentityAPICredential struct {

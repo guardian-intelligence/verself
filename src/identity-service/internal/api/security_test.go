@@ -64,42 +64,43 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 
 func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing.T) {
 	ctx := context.Background()
+	store := staticPolicyStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())}
 	svc := &identity.Service{
-		Store:     staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
+		Store:     store,
 		ProjectID: "identity-project",
 	}
-	admin := identityServiceToken("identity-project", "42", identity.RoleOrgAdmin)
-	if allowed, err := identityHasPermission(ctx, svc, admin, permissionPolicyWrite); err != nil || !allowed {
-		t.Fatal("org admin should be allowed to write policy")
+	admin := identityServiceToken("identity-project", "42", identity.RoleAdmin)
+	if allowed, err := identityHasPermission(ctx, svc, admin, permissionMemberCapabilitiesWrite); err != nil || !allowed {
+		t.Fatal("org admin should be allowed to write member capabilities")
 	}
 
-	wrongOrg := identityServiceToken("identity-project", "99", identity.RoleOrgAdmin)
+	wrongOrg := identityServiceToken("identity-project", "99", identity.RoleAdmin)
 	wrongOrg.OrgID = "42"
-	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionPolicyWrite); err != nil || allowed {
+	if allowed, err := identityHasPermission(ctx, svc, wrongOrg, permissionMemberCapabilitiesWrite); err != nil || allowed {
 		t.Fatal("role assignment for another org must not grant current org")
 	}
 
-	member := identityServiceToken("identity-project", "42", identity.RoleOrgMember)
+	member := identityServiceToken("identity-project", "42", identity.RoleMember)
 	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberRead); err != nil || !allowed {
 		t.Fatal("member should be allowed to read members")
 	}
-	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberInvite); err != nil || allowed {
-		t.Fatal("member should not be allowed to invite")
+	if allowed, err := identityHasPermission(ctx, svc, member, permissionMemberCapabilitiesWrite); err != nil || allowed {
+		t.Fatal("member should not be allowed to write member capabilities")
 	}
 
 	crossProject := identityServiceToken("sandbox-project", "42", "sandbox_org_admin")
 	svcWithDirectory := &identity.Service{
-		Store:     staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
+		Store:     store,
 		Directory: &staticDirectory{},
 		ProjectID: "identity-project",
 	}
-	if allowed, err := identityHasPermission(ctx, svcWithDirectory, crossProject, permissionPolicyWrite); err != nil || allowed {
+	if allowed, err := identityHasPermission(ctx, svcWithDirectory, crossProject, permissionMemberCapabilitiesWrite); err != nil || allowed {
 		t.Fatalf("cross-project web token must fail closed without a target project role claim, allowed=%v err=%v", allowed, err)
 	}
 
-	owner := identityServiceToken("identity-project", "42", identity.RoleForgeOrgOwner)
-	if allowed, err := identityHasPermission(ctx, svc, owner, permissionPolicyWrite); err != nil || !allowed {
-		t.Fatal("reserved forge org owner should grant all identity-service permissions")
+	owner := identityServiceToken("identity-project", "42", identity.RoleOwner)
+	if allowed, err := identityHasPermission(ctx, svc, owner, permissionMemberCapabilitiesWrite); err != nil || !allowed {
+		t.Fatal("owner should grant all identity-service permissions")
 	}
 
 	unmarkedScope := &auth.Identity{Subject: "user-1", OrgID: "42", Raw: map[string]any{"scope": string(permissionMemberInvite)}}
@@ -138,15 +139,15 @@ func identityServiceToken(projectID, orgID string, roles ...string) *auth.Identi
 }
 
 type staticPolicyStore struct {
-	policy identity.PolicyDocument
+	capabilities identity.MemberCapabilitiesDocument
 }
 
-func (s staticPolicyStore) GetPolicy(context.Context, string, string) (identity.PolicyDocument, error) {
-	return s.policy, nil
+func (s staticPolicyStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {
+	return s.capabilities, nil
 }
 
-func (s staticPolicyStore) PutPolicy(context.Context, identity.PolicyDocument) (identity.PolicyDocument, error) {
-	return s.policy, nil
+func (s staticPolicyStore) PutMemberCapabilities(context.Context, identity.MemberCapabilitiesDocument) (identity.MemberCapabilitiesDocument, error) {
+	return s.capabilities, nil
 }
 
 func (s staticPolicyStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {

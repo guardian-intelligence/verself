@@ -21,17 +21,17 @@ import (
 type permission string
 
 const (
-	permissionOrganizationRead     permission = identity.PermissionOrganizationRead
-	permissionMemberRead           permission = identity.PermissionMemberRead
-	permissionMemberInvite         permission = identity.PermissionMemberInvite
-	permissionMemberRolesWrite     permission = identity.PermissionMemberRolesWrite
-	permissionPolicyRead           permission = identity.PermissionPolicyRead
-	permissionPolicyWrite          permission = identity.PermissionPolicyWrite
-	permissionOperationsRead       permission = identity.PermissionOperationsRead
-	permissionAPICredentialsRead   permission = identity.PermissionAPICredentialsRead
-	permissionAPICredentialsCreate permission = identity.PermissionAPICredentialsCreate
-	permissionAPICredentialsRoll   permission = identity.PermissionAPICredentialsRoll
-	permissionAPICredentialsRevoke permission = identity.PermissionAPICredentialsRevoke
+	permissionOrganizationRead        permission = identity.PermissionOrganizationRead
+	permissionMemberRead              permission = identity.PermissionMemberRead
+	permissionMemberInvite            permission = identity.PermissionMemberInvite
+	permissionMemberRolesWrite        permission = identity.PermissionMemberRolesWrite
+	permissionMemberCapabilitiesRead  permission = identity.PermissionMemberCapabilitiesRead
+	permissionMemberCapabilitiesWrite permission = identity.PermissionMemberCapabilitiesWrite
+	permissionOperationsRead          permission = identity.PermissionOperationsRead
+	permissionAPICredentialsRead      permission = identity.PermissionAPICredentialsRead
+	permissionAPICredentialsCreate    permission = identity.PermissionAPICredentialsCreate
+	permissionAPICredentialsRoll      permission = identity.PermissionAPICredentialsRoll
+	permissionAPICredentialsRevoke    permission = identity.PermissionAPICredentialsRevoke
 
 	idempotencyHeaderKey        = "idempotency_key_header"
 	maxIdempotencyKeyLength     = 128
@@ -211,11 +211,11 @@ func identityHasPermission(ctx context.Context, svc *identity.Service, authIdent
 	if err != nil {
 		return false, err
 	}
-	policy, err := svc.Policy(ctx, principal)
+	capabilities, err := svc.MemberCapabilities(ctx, principal)
 	if err != nil {
 		return false, err
 	}
-	for _, granted := range identity.PermissionsForRoles(policy, principal.Roles) {
+	for _, granted := range identity.PermissionsForRoles(capabilities, principal.Roles) {
 		if granted == string(required) {
 			return true, nil
 		}
@@ -332,10 +332,10 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":                    {Limit: 600, Window: time.Minute},
-	"member_mutation":         {Limit: 60, Window: time.Minute},
-	"policy_mutation":         {Limit: 30, Window: time.Minute},
-	"api_credential_mutation": {Limit: 30, Window: time.Minute},
+	"read":                          {Limit: 600, Window: time.Minute},
+	"member_mutation":               {Limit: 60, Window: time.Minute},
+	"member_capabilities_mutation":  {Limit: 30, Window: time.Minute},
+	"api_credential_mutation":       {Limit: 30, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {

@@ -1,9 +1,12 @@
-CREATE TABLE IF NOT EXISTS identity_policy_documents (
+CREATE TABLE IF NOT EXISTS identity_member_capabilities (
     org_id TEXT PRIMARY KEY,
-    document JSONB NOT NULL,
+    enabled_keys TEXT[] NOT NULL DEFAULT '{}',
     version INTEGER NOT NULL DEFAULT 1,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by TEXT NOT NULL
+    updated_by TEXT NOT NULL,
+    CHECK (length(btrim(org_id)) > 0),
+    CHECK (length(btrim(updated_by)) > 0),
+    CHECK (version >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS identity_api_credentials (

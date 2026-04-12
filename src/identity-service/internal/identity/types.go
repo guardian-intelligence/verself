@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	RoleForgeOrgOwner = "forge_org_owner"
-	RoleOrgAdmin      = "identity_org_admin"
-	RoleOrgMember     = "identity_org_member"
+	RoleOwner  = "owner"
+	RoleAdmin  = "admin"
+	RoleMember = "member"
 )
 
 type Principal struct {
@@ -24,11 +24,11 @@ type APICredentialAuthMethod string
 type APICredentialStatus string
 
 type Organization struct {
-	OrgID       string
-	Name        string
-	Caller      Member
-	Policy      PolicyDocument
-	Permissions []string
+	OrgID              string
+	Name               string
+	Caller             Member
+	MemberCapabilities MemberCapabilitiesDocument
+	Permissions        []string
 }
 
 type Member struct {
@@ -54,18 +54,12 @@ type InviteMemberResult struct {
 	Status   string
 }
 
-type PolicyDocument struct {
-	OrgID     string
-	Version   int32
-	Roles     []PolicyRole
-	UpdatedAt time.Time
-	UpdatedBy string
-}
-
-type PolicyRole struct {
-	RoleKey     string
-	DisplayName string
-	Permissions []string
+type MemberCapabilitiesDocument struct {
+	OrgID       string
+	Version     int32
+	EnabledKeys []string
+	UpdatedAt   time.Time
+	UpdatedBy   string
 }
 
 type Operations struct {
@@ -78,11 +72,12 @@ type ServiceOperations struct {
 }
 
 type Operation struct {
-	OperationID string
-	Permission  string
-	Resource    string
-	Action      string
-	OrgScope    string
+	OperationID    string
+	Permission     string
+	Resource       string
+	Action         string
+	OrgScope       string
+	MemberEligible bool
 }
 
 const (

@@ -13,8 +13,8 @@ import (
 )
 
 type Store interface {
-	GetPolicy(ctx context.Context, orgID, actor string) (PolicyDocument, error)
-	PutPolicy(ctx context.Context, policy PolicyDocument) (PolicyDocument, error)
+	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
+	PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error)
 	CreateAPICredential(ctx context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error)
 	ListAPICredentials(ctx context.Context, orgID string) ([]APICredential, error)
 	GetAPICredential(ctx context.Context, orgID, credentialID string) (APICredential, error)
@@ -45,7 +45,7 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	if err := principal.validate(); err != nil {
 		return Organization{}, err
 	}
-	policy, err := s.policy(ctx, principal.OrgID, principal.Subject)
+	capabilities, err := s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
 	if err != nil {
 		return Organization{}, err
 	}
@@ -55,11 +55,11 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	}
 	caller := callerMember(principal, members)
 	return Organization{
-		OrgID:       principal.OrgID,
-		Name:        organizationName(principal),
-		Caller:      caller,
-		Policy:      policy,
-		Permissions: PermissionsForRoles(policy, caller.RoleKeys),
+		OrgID:              principal.OrgID,
+		Name:               organizationName(principal),
+		Caller:             caller,
+		MemberCapabilities: capabilities,
+		Permissions:        PermissionsForRoles(capabilities, caller.RoleKeys),
 	}, nil
 }
 
@@ -77,7 +77,7 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err := validateInvite(input); err != nil {
 		return InviteMemberResult{}, err
 	}
-	if err := s.validateRoleKeys(ctx, principal.OrgID, principal.Subject, input.RoleKeys); err != nil {
+	if err := s.validateRoleKeys(input.RoleKeys); err != nil {
 		return InviteMemberResult{}, err
 	}
 	directory, err := s.directory()
@@ -99,7 +99,7 @@ func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, us
 	if len(roleKeys) == 0 {
 		return Member{}, fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
 	}
-	if err := s.validateRoleKeys(ctx, principal.OrgID, principal.Subject, roleKeys); err != nil {
+	if err := s.validateRoleKeys(roleKeys); err != nil {
 		return Member{}, err
 	}
 	directory, err := s.directory()
@@ -109,28 +109,29 @@ func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, us
 	return directory.UpdateMemberRoles(ctx, principal.OrgID, s.ProjectID, userID, roleKeys)
 }
 
-func (s *Service) Policy(ctx context.Context, principal Principal) (PolicyDocument, error) {
+func (s *Service) MemberCapabilities(ctx context.Context, principal Principal) (MemberCapabilitiesDocument, error) {
 	if err := principal.validate(); err != nil {
-		return PolicyDocument{}, err
+		return MemberCapabilitiesDocument{}, err
 	}
-	return s.policy(ctx, principal.OrgID, principal.Subject)
+	return s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
 }
 
-func (s *Service) PutPolicy(ctx context.Context, principal Principal, policy PolicyDocument) (PolicyDocument, error) {
+func (s *Service) PutMemberCapabilities(ctx context.Context, principal Principal, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
 	if err := principal.validate(); err != nil {
-		return PolicyDocument{}, err
+		return MemberCapabilitiesDocument{}, err
 	}
-	policy.OrgID = principal.OrgID
-	policy.UpdatedBy = principal.Subject
-	policy.UpdatedAt = s.now()
-	if err := ValidatePolicy(policy); err != nil {
-		return PolicyDocument{}, err
+	doc.OrgID = principal.OrgID
+	doc.UpdatedBy = principal.Subject
+	doc.UpdatedAt = s.now()
+	doc.EnabledKeys = normalizeCapabilityKeys(doc.EnabledKeys)
+	if err := ValidateMemberCapabilities(doc); err != nil {
+		return MemberCapabilitiesDocument{}, err
 	}
 	store, err := s.store()
 	if err != nil {
-		return PolicyDocument{}, err
+		return MemberCapabilitiesDocument{}, err
 	}
-	return store.PutPolicy(ctx, policy)
+	return store.PutMemberCapabilities(ctx, doc)
 }
 
 func (s *Service) Operations(context.Context, Principal) Operations {
@@ -167,7 +168,7 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	if err := principal.validate(); err != nil {
 		return CreateAPICredentialResult{}, err
 	}
-	input, policy, err := s.normalizeCreateAPICredentialRequest(ctx, principal, input)
+	input, capabilities, err := s.normalizeCreateAPICredentialRequest(ctx, principal, input)
 	if err != nil {
 		return CreateAPICredentialResult{}, err
 	}
@@ -190,7 +191,7 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 		Status:               APICredentialStatusActive,
 		AuthMethod:           input.AuthMethod,
 		Permissions:          append([]string(nil), input.Permissions...),
-		PolicyVersionAtIssue: policy.Version,
+		PolicyVersionAtIssue: capabilities.Version,
 		CreatedAt:            now,
 		CreatedBy:            principal.Subject,
 		UpdatedAt:            now,
@@ -330,12 +331,12 @@ func (s *Service) ResolveAPICredentialClaims(ctx context.Context, subjectID stri
 	return store.ResolveAPICredentialClaims(ctx, subjectID, s.now())
 }
 
-func (s *Service) policy(ctx context.Context, orgID, actor string) (PolicyDocument, error) {
+func (s *Service) memberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
 	store, err := s.store()
 	if err != nil {
-		return PolicyDocument{}, err
+		return MemberCapabilitiesDocument{}, err
 	}
-	return store.GetPolicy(ctx, orgID, actor)
+	return store.GetMemberCapabilities(ctx, orgID, actor)
 }
 
 func (s *Service) members(ctx context.Context, orgID string) ([]Member, error) {
@@ -367,22 +368,16 @@ func (s *Service) now() time.Time {
 	return time.Now().UTC()
 }
 
-func (s *Service) validateRoleKeys(ctx context.Context, orgID, actor string, roleKeys []string) error {
-	policy, err := s.policy(ctx, orgID, actor)
-	if err != nil {
-		return err
-	}
-	reserved := ReservedRoleKeys()
-	allowed := map[string]struct{}{}
-	for _, role := range policy.Roles {
-		allowed[role.RoleKey] = struct{}{}
-	}
+func (s *Service) validateRoleKeys(roleKeys []string) error {
+	known := KnownRoleKeys()
 	for _, role := range roleKeys {
-		if _, ok := reserved[role]; ok {
-			return fmt.Errorf("%w: reserved role key %q cannot be assigned through identity-service", ErrInvalidPolicy, role)
+		if _, ok := known[role]; !ok {
+			return fmt.Errorf("%w: unknown role key %q", ErrInvalidCapabilities, role)
 		}
-		if _, ok := allowed[role]; !ok {
-			return fmt.Errorf("%w: unknown role key %q", ErrInvalidPolicy, role)
+		if role == RoleOwner {
+			// Owner is the org-singleton role transferred via a different flow;
+			// it cannot be granted through the standard invite/role-update path.
+			return fmt.Errorf("%w: role key %q cannot be assigned through invite or role update", ErrInvalidCapabilities, role)
 		}
 	}
 	return nil
@@ -398,52 +393,26 @@ func (p Principal) validate() error {
 	return nil
 }
 
-func ValidatePolicy(policy PolicyDocument) error {
-	if strings.TrimSpace(policy.OrgID) == "" {
-		return fmt.Errorf("%w: org_id is required", ErrInvalidPolicy)
+func ValidateMemberCapabilities(doc MemberCapabilitiesDocument) error {
+	if strings.TrimSpace(doc.OrgID) == "" {
+		return fmt.Errorf("%w: org_id is required", ErrInvalidCapabilities)
 	}
-	if policy.Version < 0 {
-		return fmt.Errorf("%w: version must be non-negative", ErrInvalidPolicy)
+	if doc.Version < 0 {
+		return fmt.Errorf("%w: version must be non-negative", ErrInvalidCapabilities)
 	}
-	known := KnownPermissions()
-	knownRoles := KnownRoleKeys()
-	reservedRoles := ReservedRoleKeys()
-	seenRoles := map[string]struct{}{}
-	if len(policy.Roles) == 0 {
-		return fmt.Errorf("%w: at least one role is required", ErrInvalidPolicy)
-	}
-	for _, role := range policy.Roles {
-		roleKey := strings.TrimSpace(role.RoleKey)
-		if roleKey == "" {
-			return fmt.Errorf("%w: role_key is required", ErrInvalidPolicy)
+	seen := map[string]struct{}{}
+	for _, key := range doc.EnabledKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("%w: enabled_keys must not contain empty entries", ErrInvalidCapabilities)
 		}
-		if _, ok := reservedRoles[roleKey]; ok {
-			return fmt.Errorf("%w: reserved role key %q cannot be edited in policy documents", ErrInvalidPolicy, roleKey)
+		if _, ok := CapabilityForKey(key); !ok {
+			return fmt.Errorf("%w: unknown capability key %q", ErrInvalidCapabilities, key)
 		}
-		if _, ok := knownRoles[roleKey]; !ok {
-			return fmt.Errorf("%w: unknown role key %q", ErrInvalidPolicy, roleKey)
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("%w: duplicate capability key %q", ErrInvalidCapabilities, key)
 		}
-		if _, duplicate := seenRoles[roleKey]; duplicate {
-			return fmt.Errorf("%w: duplicate role key %q", ErrInvalidPolicy, roleKey)
-		}
-		seenRoles[roleKey] = struct{}{}
-		if strings.TrimSpace(role.DisplayName) == "" {
-			return fmt.Errorf("%w: display_name is required for role %q", ErrInvalidPolicy, roleKey)
-		}
-		seenPermissions := map[string]struct{}{}
-		if len(role.Permissions) == 0 {
-			return fmt.Errorf("%w: permissions are required for role %q", ErrInvalidPolicy, roleKey)
-		}
-		for _, permission := range role.Permissions {
-			permission = strings.TrimSpace(permission)
-			if _, ok := known[permission]; !ok {
-				return fmt.Errorf("%w: unknown permission %q", ErrInvalidPolicy, permission)
-			}
-			if _, duplicate := seenPermissions[permission]; duplicate {
-				return fmt.Errorf("%w: duplicate permission %q", ErrInvalidPolicy, permission)
-			}
-			seenPermissions[permission] = struct{}{}
-		}
+		seen[key] = struct{}{}
 	}
 	return nil
 }
@@ -487,6 +456,27 @@ func normalizeRoleKeys(roleKeys []string) []string {
 	return out
 }
 
+func normalizeCapabilityKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func sortedKeys(values map[string]struct{}) []string {
 	out := make([]string, 0, len(values))
 	for value := range values {
@@ -513,51 +503,51 @@ func organizationName(principal Principal) string {
 	return principal.OrgID
 }
 
-func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, PolicyDocument, error) {
+func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, MemberCapabilitiesDocument, error) {
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	if input.DisplayName == "" {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
 	}
 	if len(input.DisplayName) > 200 {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
 	}
 	input.AuthMethod = normalizeAuthMethod(string(input.AuthMethod))
 	if err := validateAuthMethod(input.AuthMethod); err != nil {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
 	}
 	input.Permissions = normalizePermissions(input.Permissions)
 	if len(input.Permissions) == 0 {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: permissions are required", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: permissions are required", ErrInvalidInput)
 	}
-	policy, err := s.policy(ctx, principal.OrgID, principal.Subject)
+	capabilities, err := s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
 	if err != nil {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
 	}
-	if err := validateCredentialPermissions(policy, principal, input.Permissions); err != nil {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+	if err := validateCredentialPermissions(capabilities, principal, input.Permissions); err != nil {
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
 	}
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(s.now()) {
-		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
 	}
-	return input, policy, nil
+	return input, capabilities, nil
 }
 
-func validateCredentialPermissions(policy PolicyDocument, principal Principal, requested []string) error {
+func validateCredentialPermissions(capabilities MemberCapabilitiesDocument, principal Principal, requested []string) error {
 	known := KnownPermissions()
-	granted := permissionSet(effectivePrincipalPermissions(policy, principal))
+	granted := permissionSet(effectivePrincipalPermissions(capabilities, principal))
 	for _, permission := range requested {
 		if _, ok := known[permission]; !ok {
-			return fmt.Errorf("%w: unknown permission %q", ErrInvalidPolicy, permission)
+			return fmt.Errorf("%w: unknown permission %q", ErrInvalidCapabilities, permission)
 		}
 		if _, ok := granted[permission]; !ok {
-			return fmt.Errorf("%w: permission %q is not held by caller", ErrInvalidPolicy, permission)
+			return fmt.Errorf("%w: permission %q is not held by caller", ErrInvalidCapabilities, permission)
 		}
 	}
 	return nil
 }
 
-func effectivePrincipalPermissions(policy PolicyDocument, principal Principal) []string {
-	out := append([]string(nil), PermissionsForRoles(policy, principal.Roles)...)
+func effectivePrincipalPermissions(capabilities MemberCapabilitiesDocument, principal Principal) []string {
+	out := append([]string(nil), PermissionsForRoles(capabilities, principal.Roles)...)
 	out = append(out, principal.DirectPermissions...)
 	return normalizePermissions(out)
 }
@@ -658,5 +648,5 @@ func firstNonEmpty(values ...string) string {
 }
 
 func IsInvalid(err error) bool {
-	return errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidPolicy)
+	return errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidCapabilities)
 }
