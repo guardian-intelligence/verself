@@ -1,17 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { LogOutIcon, SettingsIcon } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@forge-metal/ui/components/ui/avatar";
 import { Button, type buttonVariants } from "@forge-metal/ui/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@forge-metal/ui/components/ui/dropdown-menu";
-import { useAuth, useClerk, useUser } from "../react.ts";
+import { useAuth, useClerk, useSignedInAuth, useUser } from "../react.ts";
 import { useIdentityApi } from "./identity-api.ts";
 import { organizationQuery } from "./queries.ts";
 
@@ -70,17 +61,21 @@ function initialsFor(input: { name?: string | null; email?: string | null }): st
 }
 
 export interface UserButtonProps {
-  /** Path the "Organization settings" menu item links to. Set to null to hide. */
-  readonly organizationPath?: string | null;
-  /** Path the "Sign out" menu item links to. */
-  readonly signOutPath?: string;
+  /** Path the avatar links to (the org page hosts both settings and sign out). */
+  readonly organizationPath?: string;
   /** Optional avatar image URL — falls back to initials. */
   readonly imageUrl?: string;
 }
 
+// Minimal user-button: an avatar that links to the organization page where
+// the signed-in user can manage their identity and sign out. We deliberately
+// avoid a Radix DropdownMenu/Popover wrapper because every Radix overlay
+// primitive transitively pulls in `aria-hidden` + the theKashey scroll-lock
+// family, all of which use a tslib UMD CJS shape that nitro's SSR bundler
+// cannot interop. Until vite-plus or nitro grow a fix, the dropdown remains
+// off-table for the SSR import graph; the org page itself owns the menu.
 export function UserButton({
   organizationPath = "/organization",
-  signOutPath = "/logout",
   imageUrl,
 }: UserButtonProps = {}) {
   const { user } = useUser();
@@ -88,65 +83,30 @@ export function UserButton({
   const display = user.name ?? user.preferredUsername ?? user.email ?? user.sub;
   const initials = initialsFor(user);
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Open user menu for ${display}`}
-          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <Avatar>
-            {imageUrl ? <AvatarImage src={imageUrl} alt={display} /> : null}
-            <AvatarFallback>{initials}</AvatarFallback>
-          </Avatar>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="flex flex-col gap-0.5">
-          <span className="truncate font-medium">{display}</span>
-          {user.email && user.email !== display ? (
-            <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
-          ) : null}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {organizationPath ? (
-          <DropdownMenuItem asChild>
-            <a href={organizationPath}>
-              <SettingsIcon />
-              Organization settings
-            </a>
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem asChild>
-          <a href={signOutPath}>
-            <LogOutIcon />
-            Sign out
-          </a>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <a
+      href={organizationPath}
+      aria-label={`Open organization settings for ${display}`}
+      title={display}
+      className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <Avatar>
+        {imageUrl ? <AvatarImage src={imageUrl} alt={display} /> : null}
+        <AvatarFallback>{initials}</AvatarFallback>
+      </Avatar>
+    </a>
   );
 }
 
 // usePermissions resolves the caller's permission set for the current
-// organization. It uses the same suspense-loaded organization query the
-// profile uses, so calling sites within the same suspense boundary share the
-// same fetch.
+// organization. Inside a page that already loads the org via its loader
+// (e.g. `<OrganizationProfile>`), this hits the React Query cache. On a page
+// that does not, the first call triggers a server-fn fetch through the
+// IdentityApiClient and suspends.
 export function usePermissions(): ReadonlySet<string> {
-  // Importing useSignedInAuth lazily would create a cycle; this hook is
-  // documented to require an authenticated subtree.
-  const auth = useSignedInAuthInternal();
+  const auth = useSignedInAuth();
   const api = useIdentityApi();
   const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
   return useMemo(() => new Set(organization.permissions), [organization.permissions]);
-}
-
-function useSignedInAuthInternal() {
-  const auth = useAuth();
-  if (!auth.isSignedIn) {
-    throw new Error("usePermissions() requires a signed-in user");
-  }
-  return auth;
 }
 
 export interface ProtectProps {
