@@ -9,10 +9,21 @@ export const Route = createFileRoute("/_authenticated/jobs/")({
 });
 
 function JobsPage() {
-  const balance = Route.useLoaderData();
+  const entitlements = Route.useLoaderData();
   const { auth } = Route.useRouteContext();
 
-  const creditsExhausted = balance.total_available <= 0;
+  // No honest top-line balance to check; if there is no pool anywhere with
+  // remaining capacity, there is nothing to spend on a new execution.
+  const universalEmpty = (entitlements.universal ?? []).every((pool) =>
+    pool.entries.every((entry) => entry.available <= 0),
+  );
+  const productsEmpty = (entitlements.products ?? []).every((product) =>
+    [
+      ...(product.product_pools ?? []),
+      ...(product.buckets ?? []).flatMap((bucket) => bucket.pools ?? []),
+    ].every((pool) => pool.entries.every((entry) => entry.available <= 0)),
+  );
+  const creditsExhausted = universalEmpty && productsEmpty;
 
   return (
     <div className="space-y-6">

@@ -25,7 +25,7 @@ export function BillingFlashNotice({ purchased, subscribed }: BillingFlashSearch
   return (
     <Callout tone="success" title={purchased ? "Credits purchased" : "Subscription activated"}>
       {purchased
-        ? "Credits purchased successfully. Your balance has been updated."
+        ? "Credits purchased successfully. Your account credit pool has been updated."
         : "Subscription activated. Monthly bucket allowances will be deposited automatically."}
     </Callout>
   );

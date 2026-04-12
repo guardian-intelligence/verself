@@ -125,40 +125,34 @@ components:
       required:
         - applied
       type: object
-    BillingBalance:
+    BillingCancelSubscriptionRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingBalance.json
+          example: http://127.0.0.1:4242/schemas/BillingCancelSubscriptionRequest.json
           format: uri
           readOnly: true
-          type: string
-        credit_available:
-          pattern: ^[0-9]+$
-          type: string
-        credit_pending:
-          pattern: ^[0-9]+$
-          type: string
-        free_tier_available:
-          pattern: ^[0-9]+$
-          type: string
-        free_tier_pending:
-          pattern: ^[0-9]+$
           type: string
         org_id:
           pattern: ^[0-9]+$
           type: string
-        total_available:
-          pattern: ^[0-9]+$
-          type: string
       required:
         - org_id
-        - free_tier_available
-        - free_tier_pending
-        - credit_available
-        - credit_pending
-        - total_available
+      type: object
+    BillingCancelSubscriptionResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingCancelSubscriptionResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        subscription:
+          $ref: "#/components/schemas/BillingSubscription"
+      required:
+        - subscription
       type: object
     BillingCreateCheckoutRequest:
       additionalProperties: false
@@ -251,6 +245,154 @@ components:
         - success_url
         - cancel_url
       type: object
+    BillingEntitlementBucketSection:
+      additionalProperties: false
+      properties:
+        bucket_id:
+          type: string
+        display_name:
+          type: string
+        pools:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementPool"
+          nullable: true
+          type: array
+      required:
+        - bucket_id
+        - display_name
+        - pools
+      type: object
+    BillingEntitlementGrantEntry:
+      additionalProperties: false
+      properties:
+        available:
+          pattern: ^[0-9]+$
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        grant_id:
+          type: string
+        pending:
+          pattern: ^[0-9]+$
+          type: string
+        period_end:
+          format: date-time
+          type: string
+        period_start:
+          format: date-time
+          type: string
+        starts_at:
+          format: date-time
+          type: string
+      required:
+        - grant_id
+        - available
+        - pending
+        - starts_at
+      type: object
+    BillingEntitlementPool:
+      additionalProperties: false
+      properties:
+        bucket_display:
+          type: string
+        bucket_id:
+          type: string
+        coverage_label:
+          type: string
+        entries:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementGrantEntry"
+          nullable: true
+          type: array
+        product_display:
+          type: string
+        product_id:
+          type: string
+        scope_type:
+          enum:
+            - account
+            - product
+            - bucket
+            - sku
+          type: string
+        sku_display:
+          type: string
+        sku_id:
+          type: string
+        source:
+          enum:
+            - free_tier
+            - subscription
+            - purchase
+            - promo
+            - refund
+          type: string
+        source_label:
+          type: string
+      required:
+        - scope_type
+        - product_id
+        - product_display
+        - bucket_id
+        - bucket_display
+        - sku_id
+        - sku_display
+        - coverage_label
+        - source
+        - source_label
+        - entries
+      type: object
+    BillingEntitlementProductSection:
+      additionalProperties: false
+      properties:
+        buckets:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementBucketSection"
+          nullable: true
+          type: array
+        display_name:
+          type: string
+        product_id:
+          type: string
+        product_pools:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementPool"
+          nullable: true
+          type: array
+      required:
+        - product_id
+        - display_name
+        - product_pools
+        - buckets
+      type: object
+    BillingEntitlementsView:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingEntitlementsView.json
+          format: uri
+          readOnly: true
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        products:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementProductSection"
+          nullable: true
+          type: array
+        universal:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementPool"
+          nullable: true
+          type: array
+      required:
+        - org_id
+        - universal
+        - products
+      type: object
     BillingGrant:
       additionalProperties: false
       properties:
@@ -279,6 +421,8 @@ components:
           type: string
         scope_product_id:
           type: string
+        scope_sku_id:
+          type: string
         scope_type:
           type: string
         source:
@@ -293,6 +437,7 @@ components:
         - scope_type
         - scope_product_id
         - scope_bucket_id
+        - scope_sku_id
         - source
         - source_reference_id
         - entitlement_period_id
@@ -317,6 +462,60 @@ components:
           type: array
       required:
         - grants
+      type: object
+    BillingPlan:
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        annual_amount_cents:
+          pattern: ^[0-9]+$
+          type: string
+        billing_mode:
+          type: string
+        currency:
+          type: string
+        display_name:
+          type: string
+        is_default:
+          type: boolean
+        monthly_amount_cents:
+          pattern: ^[0-9]+$
+          type: string
+        plan_id:
+          type: string
+        product_id:
+          type: string
+        tier:
+          type: string
+      required:
+        - plan_id
+        - product_id
+        - display_name
+        - billing_mode
+        - tier
+        - currency
+        - monthly_amount_cents
+        - annual_amount_cents
+        - active
+        - is_default
+      type: object
+    BillingPlans:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingPlans.json
+          format: uri
+          readOnly: true
+          type: string
+        plans:
+          items:
+            $ref: "#/components/schemas/BillingPlan"
+          nullable: true
+          type: array
+      required:
+        - plans
       type: object
     BillingReserveWindowRequest:
       additionalProperties: false
@@ -960,9 +1159,9 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Create a Stripe checkout session
-  /internal/billing/v1/orgs/{org_id}/balance:
+  /internal/billing/v1/orgs/{org_id}/entitlements:
     get:
-      operationId: get-balance
+      operationId: get-entitlements
       parameters:
         - in: path
           name: org_id
@@ -975,7 +1174,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BillingBalance"
+                $ref: "#/components/schemas/BillingEntitlementsView"
           description: OK
         default:
           content:
@@ -983,7 +1182,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get org grant balance
+      summary: Get the entitlements view for an org
   /internal/billing/v1/orgs/{org_id}/grants:
     get:
       operationId: list-grants
@@ -1104,6 +1303,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Create a Stripe customer portal session
+  /internal/billing/v1/products/{product_id}/plans:
+    get:
+      operationId: list-plans
+      parameters:
+        - in: path
+          name: product_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingPlans"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List active subscription plans for a product
   /internal/billing/v1/reserve:
     post:
       operationId: reserve-window
@@ -1250,6 +1474,48 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Apply a subscription provider event
+  /internal/billing/v1/subscriptions/{subscription_id}/cancel:
+    post:
+      operationId: cancel-subscription
+      parameters:
+        - in: path
+          name: subscription_id
+          required: true
+          schema:
+            pattern: ^[0-9]+$
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCancelSubscriptionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingCancelSubscriptionResponse"
+          description: OK
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Cancel a Stripe subscription
   /internal/billing/v1/void:
     post:
       operationId: void-window

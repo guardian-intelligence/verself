@@ -1,7 +1,7 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { balanceQuery } from "~/features/billing/queries";
+import { entitlementsQuery } from "~/features/billing/queries";
 import { importRepo, rescanRepo } from "~/server-fns/api";
 import { repoQuery, reposQuery } from "./queries";
 
@@ -13,7 +13,7 @@ export async function invalidateRepoQueries(
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: reposQuery(auth).queryKey }),
     queryClient.invalidateQueries({ queryKey: authQueryKey(auth, "jobs") }),
-    queryClient.invalidateQueries({ queryKey: balanceQuery(auth).queryKey }),
+    queryClient.invalidateQueries({ queryKey: entitlementsQuery(auth).queryKey }),
     ...(repoId
       ? [queryClient.invalidateQueries({ queryKey: repoQuery(auth, repoId).queryKey })]
       : []),

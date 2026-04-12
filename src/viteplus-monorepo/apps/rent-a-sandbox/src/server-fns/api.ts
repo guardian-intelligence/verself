@@ -25,18 +25,19 @@ import type {
   UpdateMemberRolesRequest,
 } from "~/lib/identity-api";
 import {
+  cancelSubscription as cancelSubscriptionRequest,
+  cancelSubscriptionRequestSchema,
   createCheckoutSession as createCheckoutSessionRequest,
   createPortalSession as createPortalSessionRequest,
   createSubscriptionSession as createSubscriptionSessionRequest,
   executionIdInputSchema,
-  getBalance as getBalanceRequest,
+  getEntitlements as getEntitlementsRequest,
   getExecution as getExecutionRequest,
-  getGrants as getGrantsRequest,
+  getPlans as getPlansRequest,
   getStatement as getStatementRequest,
   getRepo as getRepoRequest,
   getRepos as getReposRequest,
   getSubscriptions as getSubscriptionsRequest,
-  grantsQuerySchema,
   statementQuerySchema,
   importRepo as importRepoRequest,
   importRepoRequestSchema,
@@ -52,10 +53,15 @@ import {
   checkoutRequestSchema,
 } from "~/lib/sandbox-rental-api";
 import type {
-  Balance,
   CheckoutRequest,
+  CancelSubscriptionRequest,
+  EntitlementBucketSection,
+  EntitlementGrantEntry,
+  EntitlementPool,
+  EntitlementProductSection,
+  EntitlementsView,
   Execution,
-  GrantsResponse,
+  PlansResponse,
   Statement,
   StatementQuery,
   ImportRepoRequest,
@@ -78,15 +84,20 @@ const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 export { IdentityApiError, isIdentityApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
-  Balance,
   CheckoutRequest,
+  CancelSubscriptionRequest,
+  EntitlementBucketSection,
+  EntitlementGrantEntry,
+  EntitlementPool,
+  EntitlementProductSection,
+  EntitlementsView,
   Execution,
   ExecutionRequest,
-  GrantsResponse,
   Statement,
   StatementQuery,
   ImportRepoRequest,
   PortalRequest,
+  PlansResponse,
   Repo,
   RepoCompatibilitySummary,
   SubscribeRequest,
@@ -199,10 +210,10 @@ export const putMemberCapabilities = createServerFn({ method: "POST" })
     });
   });
 
-export const getBalance = createServerFn({ method: "GET" })
+export const getEntitlements = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return getBalanceRequest(await sandboxRentalClientOptions(context));
+    return getEntitlementsRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getSubscriptions = createServerFn({ method: "GET" })
@@ -211,14 +222,10 @@ export const getSubscriptions = createServerFn({ method: "GET" })
     return getSubscriptionsRequest(await sandboxRentalClientOptions(context));
   });
 
-export const getGrants = createServerFn({ method: "GET" })
+export const getPlans = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(grantsQuerySchema)
-  .handler(async ({ context, data }) => {
-    return getGrantsRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      query: data,
-    });
+  .handler(async ({ context }) => {
+    return getPlansRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getStatement = createServerFn({ method: "GET" })
@@ -256,6 +263,16 @@ export const createPortalSession = createServerFn({ method: "POST" })
   .inputValidator(portalRequestSchema)
   .handler(async ({ context, data }) => {
     return createPortalSessionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const cancelSubscription = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(cancelSubscriptionRequestSchema)
+  .handler(async ({ context, data }) => {
+    return cancelSubscriptionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });

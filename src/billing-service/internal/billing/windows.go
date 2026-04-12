@@ -700,10 +700,30 @@ func fundedReservationQuantity(productID string, quantity uint32, bucketCostPerU
 			return 0, 0, nil, err
 		}
 	}
-	if _, err := planGrantFunding(productID, bucketChargeUnits, grants); err != nil {
+	if _, err := planGrantFunding(productID, bucketChargeLines(bucketChargeUnits), grants); err != nil {
 		return 0, 0, nil, err
 	}
 	return quantity, totalChargeUnits, bucketChargeUnits, nil
+}
+
+// bucketChargeLines lifts a bucket→amount map into []chargeLine. SKU-scoped
+// grants will not match these lines (SKUID is empty); the reserve path drains
+// bucket-and-wider grants. SKU-aware charge lines are constructed by callers
+// that already know the per-SKU breakdown (entitlements view-model funding
+// equivalence checks, follow-up reserve-time tightening).
+func bucketChargeLines(bucketChargeUnits map[string]uint64) []chargeLine {
+	if len(bucketChargeUnits) == 0 {
+		return nil
+	}
+	out := make([]chargeLine, 0, len(bucketChargeUnits))
+	for _, bucketID := range sortedUint64MapKeys(bucketChargeUnits) {
+		amount := bucketChargeUnits[bucketID]
+		if amount == 0 {
+			continue
+		}
+		out = append(out, chargeLine{BucketID: bucketID, AmountUnits: amount})
+	}
+	return out
 }
 
 func (c *Client) reserveGrantFunding(
@@ -717,7 +737,7 @@ func (c *Client) reserveGrantFunding(
 	if err != nil {
 		return nil, err
 	}
-	planned, err := planGrantFunding(productID, bucketChargeUnits, grants)
+	planned, err := planGrantFunding(productID, bucketChargeLines(bucketChargeUnits), grants)
 	if err != nil {
 		return nil, err
 	}
@@ -734,11 +754,13 @@ func (c *Client) reserveGrantFunding(
 			TransferID:          transferID,
 			ChargeProductID:     plannedLeg.ChargeProductID,
 			ChargeBucketID:      plannedLeg.ChargeBucketID,
+			ChargeSKUID:         plannedLeg.ChargeSKUID,
 			Amount:              plannedLeg.AmountUnits,
 			Source:              plannedLeg.Source,
 			GrantScopeType:      plannedLeg.GrantScopeType,
 			GrantScopeProductID: plannedLeg.GrantScopeProductID,
 			GrantScopeBucketID:  plannedLeg.GrantScopeBucketID,
+			GrantScopeSKUID:     plannedLeg.GrantScopeSKUID,
 		})
 		transfers = append(transfers, types.Transfer{
 			ID:              transferID.raw,

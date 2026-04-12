@@ -55,14 +55,6 @@ const (
 	SourceRefund       GrantSourceType = 5
 )
 
-type Balance struct {
-	FreeTierAvailable uint64
-	FreeTierPending   uint64
-	CreditAvailable   uint64
-	CreditPending     uint64
-	TotalAvailable    uint64
-}
-
 type Statement struct {
 	OrgID           OrgID
 	ProductID       string
@@ -132,6 +124,7 @@ type GrantBalance struct {
 	ScopeType           GrantScopeType
 	ScopeProductID      string
 	ScopeBucketID       string
+	ScopeSKUID          string
 	Source              GrantSourceType
 	SourceReferenceID   string
 	EntitlementPeriodID string
@@ -158,11 +151,13 @@ type WindowFundingLeg struct {
 	TransferID          TransferID      `json:"transfer_id"`
 	ChargeProductID     string          `json:"charge_product_id"`
 	ChargeBucketID      string          `json:"charge_bucket_id"`
+	ChargeSKUID         string          `json:"charge_sku_id,omitempty"`
 	Amount              uint64          `json:"amount"`
 	Source              GrantSourceType `json:"source"`
 	GrantScopeType      GrantScopeType  `json:"grant_scope_type"`
 	GrantScopeProductID string          `json:"grant_scope_product_id"`
 	GrantScopeBucketID  string          `json:"grant_scope_bucket_id"`
+	GrantScopeSKUID     string          `json:"grant_scope_sku_id,omitempty"`
 }
 
 type WindowReservation struct {
@@ -257,6 +252,7 @@ type CreditGrant struct {
 	ScopeType           GrantScopeType
 	ScopeProductID      string
 	ScopeBucketID       string
+	ScopeSKUID          string
 	Amount              uint64
 	Source              string
 	SourceReferenceID   string
@@ -293,6 +289,19 @@ type SubscriptionRecord struct {
 	EntitlementState   EntitlementState
 	CurrentPeriodStart *time.Time
 	CurrentPeriodEnd   *time.Time
+}
+
+type PlanRecord struct {
+	PlanID             string
+	ProductID          string
+	DisplayName        string
+	BillingMode        string
+	Tier               string
+	Currency           string
+	MonthlyAmountCents uint64
+	AnnualAmountCents  uint64
+	Active             bool
+	IsDefault          bool
 }
 
 type SubscriptionProviderEvent struct {
@@ -361,6 +370,7 @@ type EntitlementPolicy struct {
 	ScopeType      GrantScopeType
 	ScopeProductID string
 	ScopeBucketID  string
+	ScopeSKUID     string
 	AmountUnits    uint64
 	Cadence        EntitlementCadence
 	AnchorKind     EntitlementAnchorKind
@@ -380,6 +390,7 @@ type EntitlementPeriod struct {
 	ScopeType         GrantScopeType
 	ScopeProductID    string
 	ScopeBucketID     string
+	ScopeSKUID        string
 	AmountUnits       uint64
 	PeriodStart       time.Time
 	PeriodEnd         time.Time
@@ -438,4 +449,24 @@ func (t GrantSourceType) String() string {
 
 func (t GrantSourceType) IsFreeTier() bool {
 	return t == SourceFreeTier
+}
+
+// GrantSourceLabel is the customer-facing label for a grant source. The
+// entitlements view exposes both the raw enum and this label so the frontend
+// never has to translate.
+func GrantSourceLabel(source GrantSourceType) string {
+	switch source {
+	case SourceFreeTier:
+		return "Free tier"
+	case SourceSubscription:
+		return "Plan"
+	case SourcePurchase:
+		return "Top-up"
+	case SourcePromo:
+		return "Promo"
+	case SourceRefund:
+		return "Refund"
+	default:
+		return source.String()
+	}
 }

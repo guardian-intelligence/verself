@@ -17,4 +17,5 @@ var (
 	ErrPendingTransferExpired = errors.New("billing: pending transfer expired")
 	ErrWindowNotActivated     = errors.New("billing: window not activated")
 	ErrNoStripeCustomer       = errors.New("billing: org has no stripe customer")
+	ErrSubscriptionNotFound   = errors.New("billing: subscription not found")
 )

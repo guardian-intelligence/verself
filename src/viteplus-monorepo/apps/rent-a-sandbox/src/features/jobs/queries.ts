@@ -1,12 +1,12 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { loadBalance } from "~/features/billing/queries";
+import { entitlementsQuery } from "~/features/billing/queries";
 import { getExecution } from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 import { isExecutionActiveStatus } from "./status";
 
 export async function loadJobsIndex(queryClient: QueryClient, auth: AuthenticatedAuth) {
-  return loadBalance(queryClient, auth);
+  return queryClient.ensureQueryData(entitlementsQuery(auth));
 }
 
 export function executionQuery(auth: AuthenticatedAuth, executionId: string) {

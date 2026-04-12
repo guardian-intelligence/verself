@@ -59,11 +59,68 @@ func grantIssuedEvent(grantID GrantID, grant CreditGrant, startsAt time.Time) bi
 	}
 }
 
+func subscriptionProviderEventOutbox(event SubscriptionProviderEvent, state stripeSubscriptionState, occurredAt time.Time) billingOutboxEvent {
+	contractID := stripeContractID(state.StripeSubscriptionID)
+	payload, _ := json.Marshal(map[string]string{
+		"provider":                     event.Provider,
+		"provider_event_type":          event.EventType,
+		"provider_subscription_id":     state.StripeSubscriptionID,
+		"provider_checkout_session_id": state.StripeCheckoutSessionID,
+		"org_id":                       state.OrgIDText,
+		"product_id":                   state.ProductID,
+		"plan_id":                      state.PlanID,
+		"cadence":                      state.Cadence,
+		"status":                       state.Status,
+		"payment_state":                string(event.PaymentState),
+		"entitlement_state":            string(event.EntitlementState),
+		"current_period_start":         timePtrString(state.CurrentPeriodStart),
+		"current_period_end":           timePtrString(state.CurrentPeriodEnd),
+	})
+	eventID := deterministicTextID(
+		"billing-outbox-event",
+		"subscription_provider_event",
+		event.Provider,
+		event.EventType,
+		state.StripeSubscriptionID,
+		string(event.PaymentState),
+		string(event.EntitlementState),
+		timePtrString(state.CurrentPeriodStart),
+		timePtrString(state.CurrentPeriodEnd),
+	)
+	return billingOutboxEvent{
+		EventID:       eventID,
+		EventType:     "subscription_provider_event",
+		AggregateType: "subscription_contract",
+		AggregateID:   contractID,
+		OrgID:         state.OrgIDText,
+		ProductID:     state.ProductID,
+		OccurredAt:    occurredAt.UTC(),
+		Payload:       payload,
+	}
+}
+
 func insertOutboxEventTx(ctx context.Context, tx *sql.Tx, event billingOutboxEvent) error {
 	if event.EventID == "" || event.EventType == "" || event.AggregateID == "" || len(event.Payload) == 0 {
 		return fmt.Errorf("billing outbox event is incomplete")
 	}
 	_, err := tx.ExecContext(ctx, `
+		INSERT INTO billing_outbox_events (
+			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		ON CONFLICT (event_id) DO NOTHING
+	`, event.EventID, event.EventType, event.AggregateType, event.AggregateID, event.OrgID, event.ProductID, event.OccurredAt, string(event.Payload))
+	if err != nil {
+		return fmt.Errorf("insert billing outbox event %s: %w", event.EventID, err)
+	}
+	return nil
+}
+
+func insertOutboxEvent(ctx context.Context, pg *sql.DB, event billingOutboxEvent) error {
+	if event.EventID == "" || event.EventType == "" || event.AggregateID == "" || len(event.Payload) == 0 {
+		return fmt.Errorf("billing outbox event is incomplete")
+	}
+	_, err := pg.ExecContext(ctx, `
 		INSERT INTO billing_outbox_events (
 			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
 		)

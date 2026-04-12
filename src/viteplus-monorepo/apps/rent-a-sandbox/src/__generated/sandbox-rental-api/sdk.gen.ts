@@ -4,6 +4,9 @@
 import { client } from "./client.gen.js";
 import type { Client, Options as Options2, TDataShape } from "./client/index.js";
 import type {
+  CancelBillingSubscriptionData,
+  CancelBillingSubscriptionErrors,
+  CancelBillingSubscriptionResponses,
   CreateBillingCheckoutData,
   CreateBillingCheckoutErrors,
   CreateBillingCheckoutResponses,
@@ -19,9 +22,9 @@ import type {
   DeleteWebhookEndpointData,
   DeleteWebhookEndpointErrors,
   DeleteWebhookEndpointResponses,
-  GetBillingBalanceData,
-  GetBillingBalanceErrors,
-  GetBillingBalanceResponses,
+  GetBillingEntitlementsData,
+  GetBillingEntitlementsErrors,
+  GetBillingEntitlementsResponses,
   GetBillingStatementData,
   GetBillingStatementErrors,
   GetBillingStatementResponses,
@@ -37,9 +40,9 @@ import type {
   ImportRepoData,
   ImportRepoErrors,
   ImportRepoResponses,
-  ListBillingGrantsData,
-  ListBillingGrantsErrors,
-  ListBillingGrantsResponses,
+  ListBillingPlansData,
+  ListBillingPlansErrors,
+  ListBillingPlansResponses,
   ListBillingSubscriptionsData,
   ListBillingSubscriptionsErrors,
   ListBillingSubscriptionsResponses,
@@ -79,22 +82,6 @@ export type Options<
 };
 
 /**
- * Get org credit balance
- */
-export const getBillingBalance = <ThrowOnError extends boolean = false>(
-  options?: Options<GetBillingBalanceData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<
-    GetBillingBalanceResponses,
-    GetBillingBalanceErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/billing/balance",
-    ...options,
-  });
-
-/**
  * Create Stripe checkout session for credit purchase
  */
 export const createBillingCheckout = <ThrowOnError extends boolean = false>(
@@ -115,18 +102,30 @@ export const createBillingCheckout = <ThrowOnError extends boolean = false>(
   });
 
 /**
- * List org credit grants
+ * Get org entitlements view
  */
-export const listBillingGrants = <ThrowOnError extends boolean = false>(
-  options?: Options<ListBillingGrantsData, ThrowOnError>,
+export const getBillingEntitlements = <ThrowOnError extends boolean = false>(
+  options?: Options<GetBillingEntitlementsData, ThrowOnError>,
 ) =>
   (options?.client ?? client).get<
-    ListBillingGrantsResponses,
-    ListBillingGrantsErrors,
+    GetBillingEntitlementsResponses,
+    GetBillingEntitlementsErrors,
     ThrowOnError
   >({
     security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/billing/grants",
+    url: "/api/v1/billing/entitlements",
+    ...options,
+  });
+
+/**
+ * List subscription plans
+ */
+export const listBillingPlans = <ThrowOnError extends boolean = false>(
+  options?: Options<ListBillingPlansData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<ListBillingPlansResponses, ListBillingPlansErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/plans",
     ...options,
   });
 
@@ -199,6 +198,22 @@ export const listBillingSubscriptions = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/subscriptions",
+    ...options,
+  });
+
+/**
+ * Cancel a Stripe subscription
+ */
+export const cancelBillingSubscription = <ThrowOnError extends boolean = false>(
+  options: Options<CancelBillingSubscriptionData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CancelBillingSubscriptionResponses,
+    CancelBillingSubscriptionErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/subscriptions/{subscription_id}/cancel",
     ...options,
   });
 

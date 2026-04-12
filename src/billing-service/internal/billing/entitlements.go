@@ -97,6 +97,7 @@ func (c *Client) ensureCalendarFreeTierEntitlements(
 			ScopeType:           period.ScopeType,
 			ScopeProductID:      period.ScopeProductID,
 			ScopeBucketID:       period.ScopeBucketID,
+			ScopeSKUID:          period.ScopeSKUID,
 			Amount:              period.AmountUnits,
 			Source:              period.Source.String(),
 			SourceReferenceID:   period.SourceReferenceID,
@@ -128,7 +129,7 @@ func (c *Client) orgCreatedAt(ctx context.Context, orgID OrgID) (time.Time, erro
 
 func (c *Client) activeFreeTierPolicies(ctx context.Context, productID string, periodStart, periodEnd time.Time) ([]EntitlementPolicy, error) {
 	query := `
-		SELECT policy_id, source, product_id, scope_type, scope_product_id, scope_bucket_id,
+		SELECT policy_id, source, product_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id,
 		       amount_units, cadence, anchor_kind, proration_mode, policy_version, active_from, active_until
 		FROM entitlement_policies
 		WHERE source = 'free_tier'
@@ -162,6 +163,7 @@ func (c *Client) activeFreeTierPolicies(ctx context.Context, productID string, p
 			&scopeText,
 			&policy.ScopeProductID,
 			&policy.ScopeBucketID,
+			&policy.ScopeSKUID,
 			&amount,
 			&policy.Cadence,
 			&policy.AnchorKind,
@@ -191,7 +193,7 @@ func (c *Client) activeFreeTierPolicies(ctx context.Context, productID string, p
 			value := activeUntil.Time.UTC()
 			policy.ActiveUntil = &value
 		}
-		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID); err != nil {
+		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID); err != nil {
 			return nil, fmt.Errorf("policy %s: %w", policy.PolicyID, err)
 		}
 		out = append(out, policy)
@@ -240,6 +242,7 @@ func entitlementPeriodForPolicy(
 		ScopeType:         policy.ScopeType,
 		ScopeProductID:    policy.ScopeProductID,
 		ScopeBucketID:     policy.ScopeBucketID,
+		ScopeSKUID:        policy.ScopeSKUID,
 		AmountUnits:       amount,
 		PeriodStart:       periodStart,
 		PeriodEnd:         periodEnd,
@@ -295,6 +298,7 @@ func subscriptionEntitlementPeriod(
 		ScopeType:         policy.ScopeType,
 		ScopeProductID:    policy.ScopeProductID,
 		ScopeBucketID:     policy.ScopeBucketID,
+		ScopeSKUID:        policy.ScopeSKUID,
 		AmountUnits:       amount,
 		PeriodStart:       effectiveStart,
 		PeriodEnd:         effectiveEnd,
@@ -313,20 +317,20 @@ func (c *Client) ensureEntitlementPeriod(ctx context.Context, period Entitlement
 	_, err := c.pg.ExecContext(ctx, `
 		INSERT INTO entitlement_periods (
 			period_id, org_id, product_id, source, policy_id, contract_id,
-			scope_type, scope_product_id, scope_bucket_id, amount_units,
+			scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount_units,
 			period_start, period_end, policy_version, payment_state, entitlement_state,
 			source_reference_id, created_reason
 		)
 		VALUES ($1, $2, $3, $4, $5, $6,
-		        $7, $8, $9, $10,
-		        $11, $12, $13, $14, $15,
-		        $16, $17)
+		        $7, $8, $9, $10, $11,
+		        $12, $13, $14, $15, $16,
+		        $17, $18)
 		ON CONFLICT (period_id) DO UPDATE
 		SET payment_state = EXCLUDED.payment_state,
 		    entitlement_state = EXCLUDED.entitlement_state,
 		    updated_at = now()
 	`, period.PeriodID, strconv.FormatUint(uint64(period.OrgID), 10), period.ProductID, period.Source.String(), period.PolicyID, period.ContractID,
-		period.ScopeType.String(), period.ScopeProductID, period.ScopeBucketID, period.AmountUnits,
+		period.ScopeType.String(), period.ScopeProductID, period.ScopeBucketID, period.ScopeSKUID, period.AmountUnits,
 		period.PeriodStart, period.PeriodEnd, period.PolicyVersion, string(period.PaymentState), string(period.EntitlementState),
 		period.SourceReferenceID, period.CreatedReason)
 	if err != nil {
@@ -345,6 +349,7 @@ func entitlementPeriodID(orgID OrgID, policy EntitlementPolicy, periodStart time
 		policy.ScopeType.String(),
 		policy.ScopeProductID,
 		policy.ScopeBucketID,
+		policy.ScopeSKUID,
 		periodStart.UTC().Format(time.RFC3339Nano),
 		periodEnd.UTC().Format(time.RFC3339Nano),
 	)
@@ -361,6 +366,7 @@ func subscriptionEntitlementPeriodID(orgID OrgID, contractID string, policy Enti
 		policy.ScopeType.String(),
 		policy.ScopeProductID,
 		policy.ScopeBucketID,
+		policy.ScopeSKUID,
 		periodStart.UTC().Format(time.RFC3339Nano),
 		periodEnd.UTC().Format(time.RFC3339Nano),
 	)

@@ -52,7 +52,7 @@ verify() {
   case "${verify_target}" in
     none)
       ;;
-    admin | import | refresh | execute)
+    admin | import | refresh | execute | billing)
       "${script_dir}/verify-sandbox-fast.sh" "${verify_target}"
       ;;
     *)

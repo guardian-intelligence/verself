@@ -193,18 +193,18 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
 	registerSecured(api, secured(huma.Operation{
-		OperationID: "get-billing-balance",
+		OperationID: "get-billing-entitlements",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/billing/balance",
-		Summary:     "Get org credit balance",
+		Path:        "/api/v1/billing/entitlements",
+		Summary:     "Get org entitlements view",
 	}, operationPolicy{
 		Permission:     permissionBillingRead,
-		Resource:       "billing_balance",
+		Resource:       "billing_entitlements",
 		Action:         "read",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "read",
-		AuditEvent:     "billing.balance.read",
-	}), getBillingBalance(billing))
+		AuditEvent:     "billing.entitlements.read",
+	}), getBillingEntitlements(billing))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-billing-subscriptions",
@@ -221,18 +221,18 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), listBillingSubscriptions(billing))
 
 	registerSecured(api, secured(huma.Operation{
-		OperationID: "list-billing-grants",
+		OperationID: "list-billing-plans",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/billing/grants",
-		Summary:     "List org credit grants",
+		Path:        "/api/v1/billing/plans",
+		Summary:     "List subscription plans",
 	}, operationPolicy{
 		Permission:     permissionBillingRead,
-		Resource:       "billing_grant",
+		Resource:       "billing_plan",
 		Action:         "list",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "read",
-		AuditEvent:     "billing.grant.list",
-	}), listBillingGrants(billing))
+		AuditEvent:     "billing.plan.list",
+	}), listBillingPlans(billing))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID: "get-billing-statement",
@@ -281,6 +281,23 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		AuditEvent:     "billing.subscription_checkout.create",
 		BodyLimitBytes: bodyLimitSmallJSON,
 	}), createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "cancel-billing-subscription",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/billing/subscriptions/{subscription_id}/cancel",
+		Summary:       "Cancel a Stripe subscription",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionBillingCheckout,
+		Resource:       "billing_subscription",
+		Action:         "cancel",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "billing.subscription.cancel",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), cancelBillingSubscription(billing))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-billing-portal",
@@ -338,14 +355,16 @@ type GetExecutionLogsOutput struct {
 
 type EmptyInput struct{}
 
-type BalanceResponse = apiwire.BillingBalance
-
-type BalanceOutput struct {
-	Body BalanceResponse
+type EntitlementsOutput struct {
+	Body apiwire.BillingEntitlementsView
 }
 
 type SubscriptionsOutput struct {
 	Body apiwire.BillingSubscriptions
+}
+
+type PlansOutput struct {
+	Body apiwire.BillingPlans
 }
 
 type GrantsInput struct {
@@ -375,6 +394,14 @@ type URLOutput struct {
 
 type SubscribeInput struct {
 	Body apiwire.SandboxBillingSubscriptionRequest
+}
+
+type SubscriptionIDPath struct {
+	SubscriptionID string `path:"subscription_id" pattern:"^-?[0-9]+$"`
+}
+
+type CancelSubscriptionOutput struct {
+	Body apiwire.BillingCancelSubscriptionResponse
 }
 
 type PortalInput struct {
@@ -567,17 +594,17 @@ func getExecutionLogs(svc *jobs.Service) func(context.Context, *ExecutionIDPath)
 	}
 }
 
-func getBillingBalance(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*BalanceOutput, error) {
-	return func(ctx context.Context, _ *EmptyInput) (*BalanceOutput, error) {
+func getBillingEntitlements(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*EntitlementsOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*EntitlementsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		balance, err := billing.GetBalance(ctx, orgID)
+		view, err := billing.GetEntitlements(ctx, orgID)
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
-		return &BalanceOutput{Body: balance}, nil
+		return &EntitlementsOutput{Body: view}, nil
 	}
 }
 
@@ -595,17 +622,16 @@ func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context
 	}
 }
 
-func listBillingGrants(billing *billingclient.ServiceClient) func(context.Context, *GrantsInput) (*GrantsOutput, error) {
-	return func(ctx context.Context, input *GrantsInput) (*GrantsOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
+func listBillingPlans(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*PlansOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*PlansOutput, error) {
+		if _, err := requireOrgID(ctx); err != nil {
 			return nil, err
 		}
-		grants, err := billing.ListGrants(ctx, orgID, input.ProductID, input.Active)
+		plans, err := billing.ListPlans(ctx, "sandbox")
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
-		return &GrantsOutput{Body: grants}, nil
+		return &PlansOutput{Body: plans}, nil
 	}
 }
 
@@ -667,6 +693,24 @@ func createBillingSubscription(billing *billingclient.ServiceClient, billingRetu
 	}
 }
 
+func cancelBillingSubscription(billing *billingclient.ServiceClient) func(context.Context, *SubscriptionIDPath) (*CancelSubscriptionOutput, error) {
+	return func(ctx context.Context, input *SubscriptionIDPath) (*CancelSubscriptionOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		subscriptionID, err := apiwire.ParseInt64(input.SubscriptionID)
+		if err != nil || subscriptionID <= 0 {
+			return nil, badRequest(ctx, "invalid-subscription-id", "subscription_id must be a positive integer", err)
+		}
+		subscription, err := billing.CancelSubscription(ctx, orgID, subscriptionID)
+		if err != nil {
+			return nil, billingProxyError(ctx, err)
+		}
+		return &CancelSubscriptionOutput{Body: subscription}, nil
+	}
+}
+
 func createBillingPortal(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *PortalInput) (*URLOutput, error) {
 	return func(ctx context.Context, input *PortalInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
@@ -691,6 +735,9 @@ func createBillingPortal(billing *billingclient.ServiceClient, billingReturnOrig
 func billingProxyError(ctx context.Context, err error) error {
 	if errors.Is(err, billingclient.ErrNoStripeCustomer) {
 		return unprocessableEntity(ctx, "billing-no-stripe-customer", "billing portal requires an existing Stripe customer", err)
+	}
+	if errors.Is(err, billingclient.ErrSubscriptionNotFound) {
+		return notFound(ctx, "billing-subscription-not-found", "billing subscription not found")
 	}
 	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
 }

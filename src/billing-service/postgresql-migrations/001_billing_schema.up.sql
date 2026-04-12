@@ -51,6 +51,9 @@ CREATE TABLE plans (
     active                   BOOLEAN     NOT NULL DEFAULT true,
     stripe_price_id_monthly  TEXT        NOT NULL DEFAULT '',
     stripe_price_id_annual   TEXT        NOT NULL DEFAULT '',
+    monthly_amount_cents     BIGINT      NOT NULL DEFAULT 0 CHECK (monthly_amount_cents >= 0),
+    annual_amount_cents      BIGINT      NOT NULL DEFAULT 0 CHECK (annual_amount_cents >= 0),
+    currency                 TEXT        NOT NULL DEFAULT 'usd',
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -76,9 +79,10 @@ CREATE TABLE entitlement_policies (
     policy_id         TEXT        PRIMARY KEY,
     source            TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
     product_id        TEXT        NOT NULL DEFAULT '',
-    scope_type        TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_type        TEXT        NOT NULL CHECK (scope_type IN ('sku', 'bucket', 'product', 'account')),
     scope_product_id  TEXT        NOT NULL DEFAULT '',
     scope_bucket_id   TEXT        NOT NULL DEFAULT '',
+    scope_sku_id      TEXT        NOT NULL DEFAULT '',
     amount_units      BIGINT      NOT NULL CHECK (amount_units >= 0),
     cadence           TEXT        NOT NULL CHECK (cadence IN ('monthly', 'annual')),
     anchor_kind       TEXT        NOT NULL CHECK (anchor_kind IN ('calendar_month', 'subscription_period')),
@@ -89,9 +93,10 @@ CREATE TABLE entitlement_policies (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (
-        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
-        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
-        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+        (scope_type = 'sku' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id <> '')
+        OR (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id = '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '' AND scope_sku_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '' AND scope_sku_id = '')
     )
 );
 
@@ -147,9 +152,10 @@ CREATE TABLE entitlement_periods (
     source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
     policy_id            TEXT        NOT NULL DEFAULT '',
     contract_id          TEXT        NOT NULL DEFAULT '',
-    scope_type           TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_type           TEXT        NOT NULL CHECK (scope_type IN ('sku', 'bucket', 'product', 'account')),
     scope_product_id     TEXT        NOT NULL DEFAULT '',
     scope_bucket_id      TEXT        NOT NULL DEFAULT '',
+    scope_sku_id         TEXT        NOT NULL DEFAULT '',
     amount_units         BIGINT      NOT NULL CHECK (amount_units >= 0),
     period_start         TIMESTAMPTZ NOT NULL,
     period_end           TIMESTAMPTZ NOT NULL,
@@ -162,9 +168,10 @@ CREATE TABLE entitlement_periods (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (period_end > period_start),
     CHECK (
-        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
-        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
-        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+        (scope_type = 'sku' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id <> '')
+        OR (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id = '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '' AND scope_sku_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '' AND scope_sku_id = '')
     )
 );
 
@@ -177,9 +184,10 @@ CREATE INDEX idx_entitlement_periods_active
 CREATE TABLE credit_grants (
     grant_id                TEXT        PRIMARY KEY,
     org_id                  TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
-    scope_type              TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_type              TEXT        NOT NULL CHECK (scope_type IN ('sku', 'bucket', 'product', 'account')),
     scope_product_id        TEXT        NOT NULL DEFAULT '',
     scope_bucket_id         TEXT        NOT NULL DEFAULT '',
+    scope_sku_id            TEXT        NOT NULL DEFAULT '',
     amount                  BIGINT      NOT NULL CHECK (amount >= 0),
     source                  TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
     source_reference_id     TEXT        NOT NULL DEFAULT '',
@@ -192,9 +200,10 @@ CREATE TABLE credit_grants (
     closed_at               TIMESTAMPTZ,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (
-        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
-        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
-        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+        (scope_type = 'sku' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id <> '')
+        OR (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '' AND scope_sku_id = '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '' AND scope_sku_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '' AND scope_sku_id = '')
     ),
     CHECK (expires_at IS NULL OR expires_at > starts_at),
     CHECK (period_start IS NULL OR period_end IS NOT NULL),
@@ -203,11 +212,11 @@ CREATE TABLE credit_grants (
 );
 
 CREATE INDEX idx_credit_grants_open
-    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, starts_at, expires_at, grant_id)
+    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, starts_at, expires_at, grant_id)
     WHERE closed_at IS NULL;
 
 CREATE UNIQUE INDEX idx_credit_grants_source_reference
-    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, source_reference_id)
+    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id)
     WHERE source_reference_id <> '';
 
 CREATE TABLE billing_outbox_events (

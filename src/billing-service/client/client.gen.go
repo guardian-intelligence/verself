@@ -125,6 +125,57 @@ func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
 	}
 }
 
+// Defines values for BillingEntitlementPoolScopeType.
+const (
+	Account BillingEntitlementPoolScopeType = "account"
+	Bucket  BillingEntitlementPoolScopeType = "bucket"
+	Product BillingEntitlementPoolScopeType = "product"
+	Sku     BillingEntitlementPoolScopeType = "sku"
+)
+
+// Valid indicates whether the value is a known member of the BillingEntitlementPoolScopeType enum.
+func (e BillingEntitlementPoolScopeType) Valid() bool {
+	switch e {
+	case Account:
+		return true
+	case Bucket:
+		return true
+	case Product:
+		return true
+	case Sku:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillingEntitlementPoolSource.
+const (
+	FreeTier     BillingEntitlementPoolSource = "free_tier"
+	Promo        BillingEntitlementPoolSource = "promo"
+	Purchase     BillingEntitlementPoolSource = "purchase"
+	Refund       BillingEntitlementPoolSource = "refund"
+	Subscription BillingEntitlementPoolSource = "subscription"
+)
+
+// Valid indicates whether the value is a known member of the BillingEntitlementPoolSource enum.
+func (e BillingEntitlementPoolSource) Valid() bool {
+	switch e {
+	case FreeTier:
+		return true
+	case Promo:
+		return true
+	case Purchase:
+		return true
+	case Refund:
+		return true
+	case Subscription:
+		return true
+	default:
+		return false
+	}
+}
+
 // BillingActivateWindowRequest defines model for BillingActivateWindowRequest.
 type BillingActivateWindowRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -179,16 +230,18 @@ type BillingApplySubscriptionProviderEventResponse struct {
 	Applied bool    `json:"applied"`
 }
 
-// BillingBalance defines model for BillingBalance.
-type BillingBalance struct {
+// BillingCancelSubscriptionRequest defines model for BillingCancelSubscriptionRequest.
+type BillingCancelSubscriptionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema            *string `json:"$schema,omitempty"`
-	CreditAvailable   string  `json:"credit_available"`
-	CreditPending     string  `json:"credit_pending"`
-	FreeTierAvailable string  `json:"free_tier_available"`
-	FreeTierPending   string  `json:"free_tier_pending"`
-	OrgId             string  `json:"org_id"`
-	TotalAvailable    string  `json:"total_available"`
+	Schema *string `json:"$schema,omitempty"`
+	OrgId  string  `json:"org_id"`
+}
+
+// BillingCancelSubscriptionResponse defines model for BillingCancelSubscriptionResponse.
+type BillingCancelSubscriptionResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string             `json:"$schema,omitempty"`
+	Subscription BillingSubscription `json:"subscription"`
 }
 
 // BillingCreateCheckoutRequest defines model for BillingCreateCheckoutRequest.
@@ -224,6 +277,62 @@ type BillingCreateSubscriptionRequest struct {
 // BillingCreateSubscriptionRequestCadence defines model for BillingCreateSubscriptionRequest.Cadence.
 type BillingCreateSubscriptionRequestCadence string
 
+// BillingEntitlementBucketSection defines model for BillingEntitlementBucketSection.
+type BillingEntitlementBucketSection struct {
+	BucketId    string                    `json:"bucket_id"`
+	DisplayName string                    `json:"display_name"`
+	Pools       *[]BillingEntitlementPool `json:"pools"`
+}
+
+// BillingEntitlementGrantEntry defines model for BillingEntitlementGrantEntry.
+type BillingEntitlementGrantEntry struct {
+	Available   string     `json:"available"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	GrantId     string     `json:"grant_id"`
+	Pending     string     `json:"pending"`
+	PeriodEnd   *time.Time `json:"period_end,omitempty"`
+	PeriodStart *time.Time `json:"period_start,omitempty"`
+	StartsAt    time.Time  `json:"starts_at"`
+}
+
+// BillingEntitlementPool defines model for BillingEntitlementPool.
+type BillingEntitlementPool struct {
+	BucketDisplay  string                          `json:"bucket_display"`
+	BucketId       string                          `json:"bucket_id"`
+	CoverageLabel  string                          `json:"coverage_label"`
+	Entries        *[]BillingEntitlementGrantEntry `json:"entries"`
+	ProductDisplay string                          `json:"product_display"`
+	ProductId      string                          `json:"product_id"`
+	ScopeType      BillingEntitlementPoolScopeType `json:"scope_type"`
+	SkuDisplay     string                          `json:"sku_display"`
+	SkuId          string                          `json:"sku_id"`
+	Source         BillingEntitlementPoolSource    `json:"source"`
+	SourceLabel    string                          `json:"source_label"`
+}
+
+// BillingEntitlementPoolScopeType defines model for BillingEntitlementPool.ScopeType.
+type BillingEntitlementPoolScopeType string
+
+// BillingEntitlementPoolSource defines model for BillingEntitlementPool.Source.
+type BillingEntitlementPoolSource string
+
+// BillingEntitlementProductSection defines model for BillingEntitlementProductSection.
+type BillingEntitlementProductSection struct {
+	Buckets      *[]BillingEntitlementBucketSection `json:"buckets"`
+	DisplayName  string                             `json:"display_name"`
+	ProductId    string                             `json:"product_id"`
+	ProductPools *[]BillingEntitlementPool          `json:"product_pools"`
+}
+
+// BillingEntitlementsView defines model for BillingEntitlementsView.
+type BillingEntitlementsView struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string                             `json:"$schema,omitempty"`
+	OrgId     string                              `json:"org_id"`
+	Products  *[]BillingEntitlementProductSection `json:"products"`
+	Universal *[]BillingEntitlementPool           `json:"universal"`
+}
+
 // BillingGrant defines model for BillingGrant.
 type BillingGrant struct {
 	Available           string     `json:"available"`
@@ -236,6 +345,7 @@ type BillingGrant struct {
 	PolicyVersion       string     `json:"policy_version"`
 	ScopeBucketId       string     `json:"scope_bucket_id"`
 	ScopeProductId      string     `json:"scope_product_id"`
+	ScopeSkuId          string     `json:"scope_sku_id"`
 	ScopeType           string     `json:"scope_type"`
 	Source              string     `json:"source"`
 	SourceReferenceId   string     `json:"source_reference_id"`
@@ -247,6 +357,27 @@ type BillingGrants struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string         `json:"$schema,omitempty"`
 	Grants *[]BillingGrant `json:"grants"`
+}
+
+// BillingPlan defines model for BillingPlan.
+type BillingPlan struct {
+	Active             bool   `json:"active"`
+	AnnualAmountCents  string `json:"annual_amount_cents"`
+	BillingMode        string `json:"billing_mode"`
+	Currency           string `json:"currency"`
+	DisplayName        string `json:"display_name"`
+	IsDefault          bool   `json:"is_default"`
+	MonthlyAmountCents string `json:"monthly_amount_cents"`
+	PlanId             string `json:"plan_id"`
+	ProductId          string `json:"product_id"`
+	Tier               string `json:"tier"`
+}
+
+// BillingPlans defines model for BillingPlans.
+type BillingPlans struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string        `json:"$schema,omitempty"`
+	Plans  *[]BillingPlan `json:"plans"`
 }
 
 // BillingReserveWindowRequest defines model for BillingReserveWindowRequest.
@@ -495,6 +626,9 @@ type CreateSubscriptionJSONRequestBody = BillingCreateSubscriptionRequest
 // ApplySubscriptionProviderEventJSONRequestBody defines body for ApplySubscriptionProviderEvent for application/json ContentType.
 type ApplySubscriptionProviderEventJSONRequestBody = BillingApplySubscriptionProviderEventRequest
 
+// CancelSubscriptionJSONRequestBody defines body for CancelSubscription for application/json ContentType.
+type CancelSubscriptionJSONRequestBody = BillingCancelSubscriptionRequest
+
 // VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
 type VoidWindowJSONRequestBody = BillingVoidWindowRequest
 
@@ -581,8 +715,8 @@ type ClientInterface interface {
 
 	CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetBalance request
-	GetBalance(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetEntitlements request
+	GetEntitlements(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListGrants request
 	ListGrants(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -597,6 +731,9 @@ type ClientInterface interface {
 	CreatePortalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreatePortal(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlans request
+	ListPlans(ctx context.Context, productId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReserveWindowWithBody request with any body
 	ReserveWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -617,6 +754,11 @@ type ClientInterface interface {
 	ApplySubscriptionProviderEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelSubscriptionWithBody request with any body
+	CancelSubscriptionWithBody(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CancelSubscription(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// VoidWindowWithBody request with any body
 	VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -672,8 +814,8 @@ func (c *Client) CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequ
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetBalance(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetBalanceRequest(c.Server, orgId)
+func (c *Client) GetEntitlements(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetEntitlementsRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
 	}
@@ -734,6 +876,18 @@ func (c *Client) CreatePortalWithBody(ctx context.Context, contentType string, b
 
 func (c *Client) CreatePortal(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreatePortalRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPlans(ctx context.Context, productId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPlansRequest(c.Server, productId)
 	if err != nil {
 		return nil, err
 	}
@@ -830,6 +984,30 @@ func (c *Client) ApplySubscriptionProviderEventWithBody(ctx context.Context, con
 
 func (c *Client) ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApplySubscriptionProviderEventRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelSubscriptionWithBody(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelSubscriptionRequestWithBody(c.Server, subscriptionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelSubscription(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelSubscriptionRequest(c.Server, subscriptionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -944,8 +1122,8 @@ func NewCreateCheckoutRequestWithBody(server string, contentType string, body io
 	return req, nil
 }
 
-// NewGetBalanceRequest generates requests for GetBalance
-func NewGetBalanceRequest(server string, orgId string) (*http.Request, error) {
+// NewGetEntitlementsRequest generates requests for GetEntitlements
+func NewGetEntitlementsRequest(server string, orgId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -960,7 +1138,7 @@ func NewGetBalanceRequest(server string, orgId string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/balance", pathParam0)
+	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/entitlements", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1176,6 +1354,40 @@ func NewCreatePortalRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
+// NewListPlansRequest generates requests for ListPlans
+func NewListPlansRequest(server string, productId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "product_id", productId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/products/%s/plans", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewReserveWindowRequest calls the generic ReserveWindow builder with application/json body
 func NewReserveWindowRequest(server string, body ReserveWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1336,6 +1548,53 @@ func NewApplySubscriptionProviderEventRequestWithBody(server string, contentType
 	return req, nil
 }
 
+// NewCancelSubscriptionRequest calls the generic CancelSubscription builder with application/json body
+func NewCancelSubscriptionRequest(server string, subscriptionId string, body CancelSubscriptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCancelSubscriptionRequestWithBody(server, subscriptionId, "application/json", bodyReader)
+}
+
+// NewCancelSubscriptionRequestWithBody generates requests for CancelSubscription with any type of body
+func NewCancelSubscriptionRequestWithBody(server string, subscriptionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "subscription_id", subscriptionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/subscriptions/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewVoidWindowRequest calls the generic VoidWindow builder with application/json body
 func NewVoidWindowRequest(server string, body VoidWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1429,8 +1688,8 @@ type ClientWithResponsesInterface interface {
 
 	CreateCheckoutWithResponse(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
-	// GetBalanceWithResponse request
-	GetBalanceWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error)
+	// GetEntitlementsWithResponse request
+	GetEntitlementsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetEntitlementsResponse, error)
 
 	// ListGrantsWithResponse request
 	ListGrantsWithResponse(ctx context.Context, orgId string, params *ListGrantsParams, reqEditors ...RequestEditorFn) (*ListGrantsResponse, error)
@@ -1445,6 +1704,9 @@ type ClientWithResponsesInterface interface {
 	CreatePortalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error)
 
 	CreatePortalWithResponse(ctx context.Context, body CreatePortalJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error)
+
+	// ListPlansWithResponse request
+	ListPlansWithResponse(ctx context.Context, productId string, reqEditors ...RequestEditorFn) (*ListPlansResponse, error)
 
 	// ReserveWindowWithBodyWithResponse request with any body
 	ReserveWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReserveWindowResponse, error)
@@ -1465,6 +1727,11 @@ type ClientWithResponsesInterface interface {
 	ApplySubscriptionProviderEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
 
 	ApplySubscriptionProviderEventWithResponse(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
+
+	// CancelSubscriptionWithBodyWithResponse request with any body
+	CancelSubscriptionWithBodyWithResponse(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error)
+
+	CancelSubscriptionWithResponse(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error)
 
 	// VoidWindowWithBodyWithResponse request with any body
 	VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
@@ -1521,15 +1788,15 @@ func (r CreateCheckoutResponse) StatusCode() int {
 	return 0
 }
 
-type GetBalanceResponse struct {
+type GetEntitlementsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *BillingBalance
+	JSON200                       *BillingEntitlementsView
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r GetBalanceResponse) Status() string {
+func (r GetEntitlementsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1537,7 +1804,7 @@ func (r GetBalanceResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetBalanceResponse) StatusCode() int {
+func (r GetEntitlementsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1631,6 +1898,29 @@ func (r CreatePortalResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreatePortalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListPlansResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *BillingPlans
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPlansResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPlansResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1738,6 +2028,31 @@ func (r ApplySubscriptionProviderEventResponse) StatusCode() int {
 	return 0
 }
 
+type CancelSubscriptionResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingCancelSubscriptionResponse
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelSubscriptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelSubscriptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type VoidWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
@@ -1798,13 +2113,13 @@ func (c *ClientWithResponses) CreateCheckoutWithResponse(ctx context.Context, bo
 	return ParseCreateCheckoutResponse(rsp)
 }
 
-// GetBalanceWithResponse request returning *GetBalanceResponse
-func (c *ClientWithResponses) GetBalanceWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetBalanceResponse, error) {
-	rsp, err := c.GetBalance(ctx, orgId, reqEditors...)
+// GetEntitlementsWithResponse request returning *GetEntitlementsResponse
+func (c *ClientWithResponses) GetEntitlementsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetEntitlementsResponse, error) {
+	rsp, err := c.GetEntitlements(ctx, orgId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetBalanceResponse(rsp)
+	return ParseGetEntitlementsResponse(rsp)
 }
 
 // ListGrantsWithResponse request returning *ListGrantsResponse
@@ -1849,6 +2164,15 @@ func (c *ClientWithResponses) CreatePortalWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseCreatePortalResponse(rsp)
+}
+
+// ListPlansWithResponse request returning *ListPlansResponse
+func (c *ClientWithResponses) ListPlansWithResponse(ctx context.Context, productId string, reqEditors ...RequestEditorFn) (*ListPlansResponse, error) {
+	rsp, err := c.ListPlans(ctx, productId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPlansResponse(rsp)
 }
 
 // ReserveWindowWithBodyWithResponse request with arbitrary body returning *ReserveWindowResponse
@@ -1917,6 +2241,23 @@ func (c *ClientWithResponses) ApplySubscriptionProviderEventWithResponse(ctx con
 		return nil, err
 	}
 	return ParseApplySubscriptionProviderEventResponse(rsp)
+}
+
+// CancelSubscriptionWithBodyWithResponse request with arbitrary body returning *CancelSubscriptionResponse
+func (c *ClientWithResponses) CancelSubscriptionWithBodyWithResponse(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error) {
+	rsp, err := c.CancelSubscriptionWithBody(ctx, subscriptionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelSubscriptionResponse(rsp)
+}
+
+func (c *ClientWithResponses) CancelSubscriptionWithResponse(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error) {
+	rsp, err := c.CancelSubscription(ctx, subscriptionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelSubscriptionResponse(rsp)
 }
 
 // VoidWindowWithBodyWithResponse request with arbitrary body returning *VoidWindowResponse
@@ -2023,22 +2364,22 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 	return response, nil
 }
 
-// ParseGetBalanceResponse parses an HTTP response from a GetBalanceWithResponse call
-func ParseGetBalanceResponse(rsp *http.Response) (*GetBalanceResponse, error) {
+// ParseGetEntitlementsResponse parses an HTTP response from a GetEntitlementsWithResponse call
+func ParseGetEntitlementsResponse(rsp *http.Response) (*GetEntitlementsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetBalanceResponse{
+	response := &GetEntitlementsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BillingBalance
+		var dest BillingEntitlementsView
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2189,6 +2530,39 @@ func ParseCreatePortalResponse(rsp *http.Response) (*CreatePortalResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPlansResponse parses an HTTP response from a ListPlansWithResponse call
+func ParseListPlansResponse(rsp *http.Response) (*ListPlansResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPlansResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingPlans
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
 
 	}
 
@@ -2370,6 +2744,53 @@ func ParseApplySubscriptionProviderEventResponse(rsp *http.Response) (*ApplySubs
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelSubscriptionResponse parses an HTTP response from a CancelSubscriptionWithResponse call
+func ParseCancelSubscriptionResponse(rsp *http.Response) (*CancelSubscriptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelSubscriptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingCancelSubscriptionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest ErrorModel

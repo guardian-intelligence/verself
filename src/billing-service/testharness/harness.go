@@ -105,14 +105,6 @@ func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string
 	})
 }
 
-func (s *Server) GetBalance(ctx context.Context, orgID uint64) (available uint64, pending uint64, err error) {
-	b, err := s.client.GetOrgBalance(ctx, billing.OrgID(orgID))
-	if err != nil {
-		return 0, 0, err
-	}
-	return b.CreditAvailable, b.CreditPending, nil
-}
-
 func (s *Server) ProjectPendingWindows(ctx context.Context) (int, error) {
 	return s.client.ProjectPendingWindows(ctx, 100)
 }

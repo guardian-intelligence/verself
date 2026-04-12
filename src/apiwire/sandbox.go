@@ -148,6 +148,10 @@ type SandboxBillingPortalRequest struct {
 	ReturnURL string `json:"return_url" required:"true" maxLength:"2048"`
 }
 
+type SandboxBillingCancelSubscriptionRequest struct {
+	SubscriptionID DecimalInt64 `json:"subscription_id" required:"true"`
+}
+
 type SandboxAttemptRecord struct {
 	AttemptID         uuid.UUID  `json:"attempt_id"`
 	AttemptSeq        int        `json:"attempt_seq" minimum:"0" maximum:"9007199254740991"`

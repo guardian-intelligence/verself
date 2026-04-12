@@ -136,43 +136,54 @@ func (c *Client) ListSubscriptions(ctx context.Context, orgID OrgID) ([]Subscrip
 	return out, nil
 }
 
-func (c *Client) GetOrgBalance(ctx context.Context, orgID OrgID) (Balance, error) {
-	if err := ctx.Err(); err != nil {
-		return Balance{}, err
+func (c *Client) ListPlans(ctx context.Context, productID string) ([]PlanRecord, error) {
+	if productID == "" {
+		return nil, fmt.Errorf("product_id is required")
 	}
-
-	grants, err := c.ListGrantBalances(ctx, orgID, "")
+	rows, err := c.pg.QueryContext(ctx, `
+		SELECT plan_id, product_id, display_name, billing_mode, tier, currency,
+		       monthly_amount_cents, annual_amount_cents, active, is_default
+		FROM plans
+		WHERE product_id = $1
+		  AND active
+		  AND NOT is_default
+		ORDER BY monthly_amount_cents, plan_id
+	`, productID)
 	if err != nil {
-		return Balance{}, err
+		return nil, fmt.Errorf("query plans: %w", err)
 	}
+	defer rows.Close()
 
-	var balance Balance
-	for _, grant := range grants {
-		if grant.Source.IsFreeTier() {
-			balance.FreeTierAvailable, err = safeAddUint64(balance.FreeTierAvailable, grant.Available)
-			if err != nil {
-				return Balance{}, fmt.Errorf("sum free tier available: %w", err)
-			}
-			balance.FreeTierPending, err = safeAddUint64(balance.FreeTierPending, grant.Pending)
-			if err != nil {
-				return Balance{}, fmt.Errorf("sum free tier pending: %w", err)
-			}
-			continue
+	var out []PlanRecord
+	for rows.Next() {
+		var record PlanRecord
+		var monthlyAmount int64
+		var annualAmount int64
+		if err := rows.Scan(
+			&record.PlanID,
+			&record.ProductID,
+			&record.DisplayName,
+			&record.BillingMode,
+			&record.Tier,
+			&record.Currency,
+			&monthlyAmount,
+			&annualAmount,
+			&record.Active,
+			&record.IsDefault,
+		); err != nil {
+			return nil, fmt.Errorf("scan plan: %w", err)
 		}
-		balance.CreditAvailable, err = safeAddUint64(balance.CreditAvailable, grant.Available)
-		if err != nil {
-			return Balance{}, fmt.Errorf("sum credit available: %w", err)
+		if monthlyAmount < 0 || annualAmount < 0 {
+			return nil, fmt.Errorf("plan %s has negative amount", record.PlanID)
 		}
-		balance.CreditPending, err = safeAddUint64(balance.CreditPending, grant.Pending)
-		if err != nil {
-			return Balance{}, fmt.Errorf("sum credit pending: %w", err)
-		}
+		record.MonthlyAmountCents = uint64(monthlyAmount)
+		record.AnnualAmountCents = uint64(annualAmount)
+		out = append(out, record)
 	}
-	balance.TotalAvailable, err = safeAddUint64(balance.FreeTierAvailable, balance.CreditAvailable)
-	if err != nil {
-		return Balance{}, fmt.Errorf("total available: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate plans: %w", err)
 	}
-	return balance, nil
+	return out, nil
 }
 
 func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
@@ -192,6 +203,7 @@ func (c *Client) listScopedGrantBalancesForFunding(ctx context.Context, orgID Or
 			ScopeType:      grant.ScopeType,
 			ScopeProductID: grant.ScopeProductID,
 			ScopeBucketID:  grant.ScopeBucketID,
+			ScopeSKUID:     grant.ScopeSKUID,
 			AvailableUnits: grant.Available,
 		})
 	}
@@ -201,7 +213,7 @@ func (c *Client) listScopedGrantBalancesForFunding(ctx context.Context, orgID Or
 func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
 	now := c.clock().UTC()
 	query := `
-		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source,
+		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source,
 		       source_reference_id, entitlement_period_id, policy_version,
 		       starts_at, period_start, period_end, expires_at
 		FROM credit_grants
@@ -228,6 +240,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		ScopeType      GrantScopeType
 		ScopeProductID string
 		ScopeBucketID  string
+		ScopeSKUID     string
 		Source         GrantSourceType
 		SourceRef      string
 		PeriodID       string
@@ -244,6 +257,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		var scopeTypeText string
 		var scopeProductID string
 		var scopeBucketID string
+		var scopeSKUID string
 		var sourceText string
 		var sourceRef string
 		var periodID string
@@ -257,6 +271,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			&scopeTypeText,
 			&scopeProductID,
 			&scopeBucketID,
+			&scopeSKUID,
 			&sourceText,
 			&sourceRef,
 			&periodID,
@@ -276,7 +291,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		if err != nil {
 			return nil, err
 		}
-		if err := validateGrantScope(scopeType, scopeProductID, scopeBucketID); err != nil {
+		if err := validateGrantScope(scopeType, scopeProductID, scopeBucketID, scopeSKUID); err != nil {
 			return nil, err
 		}
 		source, err := ParseGrantSourceType(sourceText)
@@ -303,6 +318,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			ScopeType:      scopeType,
 			ScopeProductID: scopeProductID,
 			ScopeBucketID:  scopeBucketID,
+			ScopeSKUID:     scopeSKUID,
 			Source:         source,
 			SourceRef:      sourceRef,
 			PeriodID:       periodID,
@@ -349,6 +365,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			ScopeType:           rowGrant.ScopeType,
 			ScopeProductID:      rowGrant.ScopeProductID,
 			ScopeBucketID:       rowGrant.ScopeBucketID,
+			ScopeSKUID:          rowGrant.ScopeSKUID,
 			Source:              rowGrant.Source,
 			SourceReferenceID:   rowGrant.SourceRef,
 			EntitlementPeriodID: rowGrant.PeriodID,
@@ -376,7 +393,7 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 	if err != nil {
 		return GrantBalance{}, err
 	}
-	if err := validateGrantScope(grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID); err != nil {
+	if err := validateGrantScope(grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID); err != nil {
 		return GrantBalance{}, err
 	}
 	if grant.Amount == 0 {
@@ -389,8 +406,8 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 
 	grantID := NewGrantID()
 	if grant.SourceReferenceID != "" {
-		grantID = sourceReferenceGrantID(grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
-		existing, err := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
+		grantID = sourceReferenceGrantID(grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.SourceReferenceID)
+		existing, err := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.SourceReferenceID)
 		if err != nil {
 			return GrantBalance{}, err
 		}
@@ -422,15 +439,15 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO credit_grants (
-			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, amount, source,
+			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
 			source_reference_id, entitlement_period_id, policy_version,
 			starts_at, period_start, period_end, expires_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7,
-		        $8, $9, $10,
-		        $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+		        $9, $10, $11,
+		        $12, $13, $14, $15)
 		ON CONFLICT (grant_id) DO NOTHING
-	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ScopeType.String(), grant.ScopeProductID, grant.ScopeBucketID, grant.Amount, grant.Source,
+	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ScopeType.String(), grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.Amount, grant.Source,
 		grant.SourceReferenceID, grant.EntitlementPeriodID, grant.PolicyVersion,
 		startsAt, grant.PeriodStart, grant.PeriodEnd, grant.ExpiresAt)
 	if err != nil {
@@ -459,6 +476,7 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 		ScopeType:           grant.ScopeType,
 		ScopeProductID:      grant.ScopeProductID,
 		ScopeBucketID:       grant.ScopeBucketID,
+		ScopeSKUID:          grant.ScopeSKUID,
 		Source:              sourceType,
 		SourceReferenceID:   grant.SourceReferenceID,
 		EntitlementPeriodID: grant.EntitlementPeriodID,
@@ -472,7 +490,7 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 }
 
 func (c *Client) lookupGrantAfterSourceRefConflict(ctx context.Context, grant CreditGrant, sourceType GrantSourceType) (GrantBalance, error) {
-	existing, lookupErr := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.SourceReferenceID)
+	existing, lookupErr := c.lookupGrantBySourceRef(ctx, grant.OrgID, sourceType, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.SourceReferenceID)
 	if lookupErr != nil {
 		return GrantBalance{}, fmt.Errorf("lookup grant after source reference conflict: %w", lookupErr)
 	}
@@ -487,11 +505,12 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pqErr) && string(pqErr.Code) == "23505"
 }
 
-func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, sourceRef string) (*GrantBalance, error) {
+func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceRef string) (*GrantBalance, error) {
 	var grantIDText string
 	var scopeTypeText string
 	var grantScopeProductID string
 	var grantScopeBucketID string
+	var grantScopeSKUID string
 	var sourceText string
 	var foundSourceRef string
 	var entitlementPeriodID string
@@ -501,7 +520,7 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 	var periodEnd sql.NullTime
 	var expiresAt sql.NullTime
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, source,
+		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source,
 		       source_reference_id, entitlement_period_id, policy_version,
 		       starts_at, period_start, period_end, expires_at
 		FROM credit_grants
@@ -510,12 +529,14 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 		  AND scope_type = $3
 		  AND scope_product_id = $4
 		  AND scope_bucket_id = $5
-		  AND source_reference_id = $6
-	`, strconv.FormatUint(uint64(orgID), 10), source.String(), scopeType.String(), scopeProductID, scopeBucketID, sourceRef).Scan(
+		  AND scope_sku_id = $6
+		  AND source_reference_id = $7
+	`, strconv.FormatUint(uint64(orgID), 10), source.String(), scopeType.String(), scopeProductID, scopeBucketID, scopeSKUID, sourceRef).Scan(
 		&grantIDText,
 		&scopeTypeText,
 		&grantScopeProductID,
 		&grantScopeBucketID,
+		&grantScopeSKUID,
 		&sourceText,
 		&foundSourceRef,
 		&entitlementPeriodID,
@@ -540,7 +561,7 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 	if err != nil {
 		return nil, err
 	}
-	if err := validateGrantScope(parsedScopeType, grantScopeProductID, grantScopeBucketID); err != nil {
+	if err := validateGrantScope(parsedScopeType, grantScopeProductID, grantScopeBucketID, grantScopeSKUID); err != nil {
 		return nil, err
 	}
 	parsedSource, err := ParseGrantSourceType(sourceText)
@@ -582,6 +603,7 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 		ScopeType:           parsedScopeType,
 		ScopeProductID:      grantScopeProductID,
 		ScopeBucketID:       grantScopeBucketID,
+		ScopeSKUID:          grantScopeSKUID,
 		Source:              parsedSource,
 		SourceReferenceID:   foundSourceRef,
 		EntitlementPeriodID: entitlementPeriodID,

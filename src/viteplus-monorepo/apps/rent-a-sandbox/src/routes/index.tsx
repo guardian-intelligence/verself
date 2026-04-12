@@ -1,19 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuth, useSignedInAuth } from "@forge-metal/auth-web/react";
-import { anonymousAuth } from "@forge-metal/auth-web/isomorphic";
-import { BalanceCard } from "~/components/balance-card";
-import { Callout } from "~/components/callout";
+import { useAuth } from "@forge-metal/auth-web/react";
 import { EmptyState } from "~/components/empty-state";
-import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/")({
-  loader: async ({ context }) => {
-    const auth = context?.auth ?? anonymousAuth;
-    if (auth.isAuthenticated && context?.queryClient) {
-      await loadBalance(context.queryClient, auth);
-    }
-  },
   component: Dashboard,
 });
 
@@ -36,7 +25,7 @@ function GuestLanding() {
 
       <EmptyState
         title="Sign in to manage sandboxes"
-        body="View your credit balance, import repos, and run sandboxed executions from one place."
+        body="View your entitlements, import repos, and run sandboxed executions from one place."
         action={
           <a
             href={`/login?redirect=${encodeURIComponent("/")}`}
@@ -63,7 +52,7 @@ function GuestLanding() {
         >
           <h3 className="mb-1 font-semibold">Billing</h3>
           <p className="text-sm text-muted-foreground">
-            Manage subscriptions, credits, and grants.
+            Manage subscriptions, credits, and entitlements.
           </p>
         </Link>
       </div>
@@ -72,19 +61,16 @@ function GuestLanding() {
 }
 
 function MemberDashboard() {
-  const auth = useSignedInAuth();
-  const { data: balance } = useSuspenseQuery(balanceQuery(auth));
-
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <div className="flex gap-3">
           <Link
-            to="/billing/subscribe"
+            to="/billing"
             className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
           >
-            Subscribe
+            View Entitlements
           </Link>
           <Link
             to="/billing/credits"
@@ -94,25 +80,6 @@ function MemberDashboard() {
           </Link>
         </div>
       </div>
-
-      <BalanceCard balance={balance} />
-
-      {balance.total_available <= 0 ? (
-        <Callout
-          tone="warning"
-          title="Credit balance is empty"
-          action={
-            <Link
-              to="/billing/credits"
-              className="inline-flex rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-            >
-              Buy Credits
-            </Link>
-          }
-        >
-          Purchase credits to create sandboxes.
-        </Callout>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Link
@@ -138,7 +105,9 @@ function MemberDashboard() {
         className="block rounded-lg border border-border p-6 transition-colors hover:bg-accent/50"
       >
         <h3 className="mb-1 font-semibold">Billing</h3>
-        <p className="text-sm text-muted-foreground">Manage subscriptions, credits, and grants.</p>
+        <p className="text-sm text-muted-foreground">
+          Manage subscriptions, credits, and entitlements.
+        </p>
       </Link>
     </div>
   );
