@@ -11,11 +11,8 @@ export type {
   MemberCapabilities,
   MemberCapabilitiesDocument,
   MemberCapability,
-  Operation,
-  Operations,
   Organization,
   PutMemberCapabilitiesRequest,
-  ServiceOperations,
   UpdateMemberRolesRequest,
 } from "./types.ts";
 
@@ -24,7 +21,6 @@ export {
   loadOrganizationPage,
   organizationMembersQuery,
   organizationMemberCapabilitiesQuery,
-  organizationOperationsQuery,
   organizationQuery,
 } from "./queries.ts";
 export {

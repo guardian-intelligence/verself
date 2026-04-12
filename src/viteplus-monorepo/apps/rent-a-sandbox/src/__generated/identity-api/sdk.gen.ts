@@ -25,9 +25,6 @@ import type {
   ListOrganizationMembersData,
   ListOrganizationMembersErrors,
   ListOrganizationMembersResponses,
-  ListOrganizationOperationsData,
-  ListOrganizationOperationsErrors,
-  ListOrganizationOperationsResponses,
   PutOrganizationMemberCapabilitiesData,
   PutOrganizationMemberCapabilitiesErrors,
   PutOrganizationMemberCapabilitiesResponses,
@@ -246,20 +243,4 @@ export const updateOrganizationMemberRoles = <ThrowOnError extends boolean = fal
       "Content-Type": "application/json",
       ...options.headers,
     },
-  });
-
-/**
- * List service-declared operations available to policy documents
- */
-export const listOrganizationOperations = <ThrowOnError extends boolean = false>(
-  options?: Options<ListOrganizationOperationsData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<
-    ListOrganizationOperationsResponses,
-    ListOrganizationOperationsErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/organization/operations",
-    ...options,
   });

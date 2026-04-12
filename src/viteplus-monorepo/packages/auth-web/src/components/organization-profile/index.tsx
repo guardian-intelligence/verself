@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
@@ -422,19 +422,21 @@ function CapabilitySection({
   memberCapabilities: MemberCapabilities;
 }) {
   const mutation = usePutMemberCapabilitiesMutation();
-  const initialKeys = useMemo(
+  // The parent remounts this component on every server-confirmed version bump
+  // via key={...document.version}, so the initial server set never changes
+  // during a single mount — capture it once, derive isDirty inline.
+  const [initialKeys] = useState<ReadonlySet<string>>(
     () => new Set(memberCapabilities.document.enabled_keys),
-    [memberCapabilities.document.enabled_keys],
   );
   const [enabled, setEnabled] = useState<Set<string>>(() => new Set(initialKeys));
 
-  const isDirty = useMemo(() => {
+  const isDirty = (() => {
     if (enabled.size !== initialKeys.size) return true;
     for (const key of enabled) {
       if (!initialKeys.has(key)) return true;
     }
     return false;
-  }, [enabled, initialKeys]);
+  })();
 
   const handleToggle = (key: string, next: boolean) => {
     setEnabled((previous) => {

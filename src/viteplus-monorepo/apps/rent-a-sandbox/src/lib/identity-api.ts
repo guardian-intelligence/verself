@@ -5,7 +5,6 @@ import {
   getOrganizationMemberCapabilities as getGeneratedOrganizationMemberCapabilities,
   inviteOrganizationMember as inviteGeneratedOrganizationMember,
   listOrganizationMembers as listGeneratedOrganizationMembers,
-  listOrganizationOperations as listGeneratedOrganizationOperations,
   putOrganizationMemberCapabilities as putGeneratedOrganizationMemberCapabilities,
   updateOrganizationMemberRoles as updateGeneratedOrganizationMemberRoles,
 } from "../__generated/identity-api/index.js";
@@ -21,11 +20,8 @@ import {
   vIdentityMemberCapabilitiesDocument,
   vIdentityMemberCapability,
   vIdentityMembers,
-  vIdentityOperation,
-  vIdentityOperations,
   vIdentityOrganization,
   vIdentityPutMemberCapabilitiesRequestWritable,
-  vIdentityServiceOperations,
   vIdentityUpdateMemberRolesRequestWritable,
 } from "../__generated/identity-api/valibot.gen.js";
 import {
@@ -118,31 +114,6 @@ function parseMemberCapabilities(input: unknown) {
 }
 
 export type MemberCapabilities = ReturnType<typeof parseMemberCapabilities>;
-
-function parseOperation(input: unknown) {
-  return v.parse(vIdentityOperation, input);
-}
-
-export type Operation = ReturnType<typeof parseOperation>;
-
-function parseServiceOperations(input: unknown) {
-  const service = v.parse(vIdentityServiceOperations, input);
-  return {
-    ...service,
-    operations: service.operations?.map((operation) => parseOperation(operation)) ?? [],
-  };
-}
-
-export type ServiceOperations = ReturnType<typeof parseServiceOperations>;
-
-function parseOperations(input: unknown) {
-  const { $schema: _schema, services } = v.parse(vIdentityOperations, input);
-  return {
-    services: services?.map((service) => parseServiceOperations(service)) ?? [],
-  };
-}
-
-export type Operations = ReturnType<typeof parseOperations>;
 
 function parseOrganization(input: unknown) {
   const {
@@ -297,22 +268,6 @@ export async function updateMemberRoles(
   }
 
   return parseMember(result.data);
-}
-
-export async function getOperations(options: IdentityClientOptions): Promise<Operations> {
-  const client = createIdentityClient(options);
-  const path = "/api/v1/organization/operations";
-  const result = await listGeneratedOrganizationOperations({
-    client,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwIdentityError(path, result.response, result.error);
-  }
-
-  return parseOperations(result.data);
 }
 
 export async function getMemberCapabilities(
