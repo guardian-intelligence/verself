@@ -120,7 +120,7 @@ func windowReservationResponse(reservation billing.WindowReservation) apiwire.Bi
 		ReservedChargeUnits: apiwire.Uint64(reservation.ReservedChargeUnits),
 		PricingPhase:        string(reservation.PricingPhase),
 		Allocation:          reservation.Allocation,
-		UnitRates:           decimalUnitRates(reservation.UnitRates),
+		SKURates:            decimalSKURates(reservation.SKURates),
 		CostPerUnit:         apiwire.Uint64(reservation.CostPerUnit),
 		WindowStart:         reservation.WindowStart,
 		ActivatedAt:         reservation.ActivatedAt,
@@ -129,12 +129,12 @@ func windowReservationResponse(reservation billing.WindowReservation) apiwire.Bi
 	}
 }
 
-func decimalUnitRates(unitRates map[string]uint64) map[string]apiwire.DecimalUint64 {
-	if len(unitRates) == 0 {
+func decimalSKURates(skuRates map[string]uint64) map[string]apiwire.DecimalUint64 {
+	if len(skuRates) == 0 {
 		return map[string]apiwire.DecimalUint64{}
 	}
-	out := make(map[string]apiwire.DecimalUint64, len(unitRates))
-	for unit, rate := range unitRates {
+	out := make(map[string]apiwire.DecimalUint64, len(skuRates))
+	for unit, rate := range skuRates {
 		out[unit] = apiwire.Uint64(rate)
 	}
 	return out
@@ -256,15 +256,17 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 	lineItems := make([]apiwire.BillingStatementLineItem, 0, len(statement.LineItems))
 	for _, line := range statement.LineItems {
 		lineItems = append(lineItems, apiwire.BillingStatementLineItem{
-			ProductID:    line.ProductID,
-			PlanID:       line.PlanID,
-			BucketID:     line.BucketID,
-			ComponentID:  line.ComponentID,
-			PricingPhase: line.PricingPhase,
-			Description:  line.Description,
-			Quantity:     line.Quantity,
-			UnitRate:     apiwire.Uint64(line.UnitRate),
-			ChargeUnits:  apiwire.Uint64(line.ChargeUnits),
+			ProductID:         line.ProductID,
+			PlanID:            line.PlanID,
+			BucketID:          line.BucketID,
+			BucketDisplayName: line.BucketDisplayName,
+			SKUID:             line.SKUID,
+			SKUDisplayName:    line.SKUDisplayName,
+			QuantityUnit:      line.QuantityUnit,
+			PricingPhase:      line.PricingPhase,
+			Quantity:          line.Quantity,
+			UnitRate:          apiwire.Uint64(line.UnitRate),
+			ChargeUnits:       apiwire.Uint64(line.ChargeUnits),
 		})
 	}
 	bucketSummaries := make([]apiwire.BillingStatementBucketSummary, 0, len(statement.BucketSummaries))
@@ -272,6 +274,7 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 		bucketSummaries = append(bucketSummaries, apiwire.BillingStatementBucketSummary{
 			ProductID:         bucket.ProductID,
 			BucketID:          bucket.BucketID,
+			BucketDisplayName: bucket.BucketDisplayName,
 			ChargeUnits:       apiwire.Uint64(bucket.ChargeUnits),
 			FreeTierUnits:     apiwire.Uint64(bucket.FreeTierUnits),
 			SubscriptionUnits: apiwire.Uint64(bucket.SubscriptionUnits),

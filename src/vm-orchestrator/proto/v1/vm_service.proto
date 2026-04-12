@@ -63,13 +63,14 @@ message JobResult {
   int64 vm_exit_wait_duration_ms = 10;
   int64 cleanup_time_ms = 11;
   uint64 zfs_written = 12;
-  uint64 stdout_bytes = 13;
-  uint64 stderr_bytes = 14;
-  uint64 dropped_log_bytes = 15;
-  bool forced_shutdown = 16;
-  repeated PhaseResult phase_results = 17;
-  string failure_phase = 18;
-  VMMetrics metrics = 19;
+  uint64 rootfs_provisioned_bytes = 13;
+  uint64 stdout_bytes = 14;
+  uint64 stderr_bytes = 15;
+  uint64 dropped_log_bytes = 16;
+  bool forced_shutdown = 17;
+  repeated PhaseResult phase_results = 18;
+  string failure_phase = 19;
+  VMMetrics metrics = 20;
 }
 
 message DirectJobSpec {
@@ -207,4 +208,5 @@ message GetCapacityResponse {
   uint32 available_slots = 4;
   uint32 vcpus_per_vm = 5;
   uint32 memory_mib_per_vm = 6;
+  uint64 rootfs_provisioned_bytes = 7;
 }

@@ -34,6 +34,7 @@ CREATE TABLE forge_metal.metering (
     bucket_promo_units        Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
     bucket_refund_units       Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
     bucket_receivable_units   Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
+    usage_evidence            Map(LowCardinality(String), UInt64)  CODEC(ZSTD(3)),
     plan_id                   LowCardinality(String) DEFAULT ''    CODEC(ZSTD(3)),
     cost_per_unit             UInt64 DEFAULT 0                     CODEC(T64, ZSTD(3)),
     recorded_at               DateTime64(6) DEFAULT now64(6)       CODEC(DoubleDelta, ZSTD(3)),

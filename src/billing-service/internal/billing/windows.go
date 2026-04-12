@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -17,12 +18,14 @@ import (
 )
 
 type windowRateContext struct {
-	PlanID               string            `json:"plan_id"`
-	UnitRates            map[string]uint64 `json:"unit_rates"`
-	RateBuckets          map[string]string `json:"rate_buckets"`
-	ComponentCostPerUnit map[string]uint64 `json:"component_cost_per_unit"`
-	BucketCostPerUnit    map[string]uint64 `json:"bucket_cost_per_unit"`
-	CostPerUnit          uint64            `json:"cost_per_unit"`
+	PlanID               string                    `json:"plan_id"`
+	SKURates             map[string]uint64         `json:"sku_rates"`
+	SKUBuckets           map[string]string         `json:"sku_buckets"`
+	SKUDetails           map[string]skuRateContext `json:"sku_details"`
+	BucketDisplayNames   map[string]string         `json:"bucket_display_names"`
+	ComponentCostPerUnit map[string]uint64         `json:"component_cost_per_unit"`
+	BucketCostPerUnit    map[string]uint64         `json:"bucket_cost_per_unit"`
+	CostPerUnit          uint64                    `json:"cost_per_unit"`
 }
 
 type persistedWindow struct {
@@ -64,8 +67,10 @@ type windowRowQueryer interface {
 type productPlanConfig struct {
 	PlanID        string
 	BillingMode   string
-	UnitRates     map[string]uint64
-	RateBuckets   map[string]string
+	SKURates      map[string]uint64
+	SKUBuckets    map[string]string
+	SKUs          map[string]SKUConfig
+	Buckets       map[string]BucketConfig
 	ReservePolicy ReservePolicy
 }
 
@@ -100,7 +105,13 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		return WindowReservation{}, ErrUnsupportedBilling
 	}
 
-	rateContext, err := computeRateBreakdown(req.ProductID, req.Allocation, config.UnitRates, config.RateBuckets)
+	rateContext, err := computeRateBreakdown(
+		req.Allocation,
+		config.SKURates,
+		config.SKUBuckets,
+		skuRateContextFromConfig(config.SKUs),
+		bucketDisplayNamesFromConfig(config.Buckets),
+	)
 	if err != nil {
 		return WindowReservation{}, err
 	}
@@ -170,7 +181,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		ReservedChargeUnits: chargeUnits,
 		PricingPhase:        PricingPhaseIncluded,
 		Allocation:          cloneFloat64Map(req.Allocation),
-		UnitRates:           cloneUint64Map(rateContext.UnitRates),
+		SKURates:            cloneUint64Map(rateContext.SKURates),
 		CostPerUnit:         rateContext.CostPerUnit,
 		WindowStart:         windowStart,
 		ActivatedAt:         nil,
@@ -485,10 +496,16 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 		BucketPromoUnits:        map[string]uint64{},
 		BucketRefundUnits:       map[string]uint64{},
 		BucketReceivableUnits:   map[string]uint64{},
+		UsageEvidence:           map[string]uint64{},
 		PlanID:                  window.PlanID,
 		CostPerUnit:             rateContext.CostPerUnit,
 		RecordedAt:              time.Now().UTC(),
 	}
+	usageEvidence, err := usageEvidenceFromSummary(window.UsageSummary)
+	if err != nil {
+		return MeteringRow{}, err
+	}
+	row.UsageEvidence = usageEvidence
 	componentCharges, bucketCharges, err := componentAndBucketChargeUnitsForQuantity(window, window.BillableQuantity)
 	if err != nil {
 		return MeteringRow{}, err
@@ -540,8 +557,6 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 	var (
 		planID            string
 		billingMode       string
-		unitRatesJSON     []byte
-		rateBucketsJSON   []byte
 		reservePolicyJSON []byte
 	)
 
@@ -555,18 +570,19 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 			ORDER BY current_period_end DESC NULLS LAST, subscription_id DESC
 			LIMIT 1
 		)
-		SELECT p.plan_id, p.billing_mode, p.unit_rates::text, p.rate_buckets::text, pr.reserve_policy::text
+		SELECT p.plan_id, p.billing_mode, pr.reserve_policy::text
 		FROM plans p
 		JOIN products pr ON pr.product_id = p.product_id
 		LEFT JOIN active_subscription s ON s.plan_id = p.plan_id
 		WHERE p.product_id = $2
+		  AND p.active
 		  AND (
 			s.plan_id IS NOT NULL
-			OR (NOT EXISTS (SELECT 1 FROM active_subscription) AND p.is_default AND p.active)
+			OR (NOT EXISTS (SELECT 1 FROM active_subscription) AND p.is_default)
 		  )
 		ORDER BY (s.plan_id IS NOT NULL) DESC
 		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &billingMode, &unitRatesJSON, &rateBucketsJSON, &reservePolicyJSON)
+	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &billingMode, &reservePolicyJSON)
 	if err == sql.ErrNoRows {
 		return productPlanConfig{}, ErrNoDefaultPlan
 	}
@@ -574,11 +590,10 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 		return productPlanConfig{}, fmt.Errorf("load plan config: %w", err)
 	}
 
-	unitRates, err := decodeUint64Map(unitRatesJSON)
-	if err != nil {
-		return productPlanConfig{}, err
+	skus, buckets, err := c.loadPlanSKUConfig(ctx, planID)
+	if err == sql.ErrNoRows {
+		return productPlanConfig{}, fmt.Errorf("plan %s has no active sku rates", planID)
 	}
-	rateBuckets, err := decodeStringMap(rateBucketsJSON)
 	if err != nil {
 		return productPlanConfig{}, err
 	}
@@ -598,8 +613,10 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 	return productPlanConfig{
 		PlanID:        planID,
 		BillingMode:   billingMode,
-		UnitRates:     unitRates,
-		RateBuckets:   rateBuckets,
+		SKURates:      skuRatesFromSKUConfig(skus),
+		SKUBuckets:    skuBucketsFromSKUConfig(skus),
+		SKUs:          skus,
+		Buckets:       buckets,
 		ReservePolicy: reservePolicy,
 	}, nil
 }
@@ -866,9 +883,11 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 	if err := json.Unmarshal(rateContextJSON, &row.RateContext); err != nil {
 		return persistedWindow{}, fmt.Errorf("decode rate context: %w", err)
 	}
-	if err := json.Unmarshal(usageSummaryJSON, &row.UsageSummary); err != nil {
+	usageSummary, err := decodeUsageSummary(usageSummaryJSON)
+	if err != nil {
 		return persistedWindow{}, fmt.Errorf("decode usage summary: %w", err)
 	}
+	row.UsageSummary = usageSummary
 	if err := json.Unmarshal(fundingLegsJSON, &row.FundingLegs); err != nil {
 		return persistedWindow{}, fmt.Errorf("decode funding legs: %w", err)
 	}
@@ -906,7 +925,7 @@ func (w persistedWindow) reservation() WindowReservation {
 		ReservedChargeUnits: w.ReservedChargeUnits,
 		PricingPhase:        w.PricingPhase,
 		Allocation:          cloneFloat64Map(w.Allocation),
-		UnitRates:           cloneUint64Map(w.RateContext.UnitRates),
+		SKURates:            cloneUint64Map(w.RateContext.SKURates),
 		CostPerUnit:         w.RateContext.CostPerUnit,
 		WindowStart:         w.WindowStart.UTC(),
 		ActivatedAt:         cloneTimePtr(w.ActivatedAt),
@@ -978,39 +997,48 @@ func activatedRenewBy(window persistedWindow, activatedAt time.Time) *time.Time 
 }
 
 func computeRateBreakdown(
-	productID string,
 	allocation map[string]float64,
-	unitRates map[string]uint64,
-	rateBuckets map[string]string,
+	skuRates map[string]uint64,
+	skuBuckets map[string]string,
+	skuDetails map[string]skuRateContext,
+	bucketDisplayNames map[string]string,
 ) (windowRateContext, error) {
 	breakdown := windowRateContext{
-		UnitRates:            cloneUint64Map(unitRates),
-		RateBuckets:          cloneStringMap(rateBuckets),
+		SKURates:             cloneUint64Map(skuRates),
+		SKUBuckets:           cloneStringMap(skuBuckets),
+		SKUDetails:           cloneSKURateContextMap(skuDetails),
+		BucketDisplayNames:   cloneStringMap(bucketDisplayNames),
 		ComponentCostPerUnit: make(map[string]uint64, len(allocation)),
 		BucketCostPerUnit:    map[string]uint64{},
 	}
-	for _, dimension := range sortedFloat64MapKeys(allocation) {
-		quantity := allocation[dimension]
+	for _, skuID := range sortedFloat64MapKeys(allocation) {
+		quantity := allocation[skuID]
 		if quantity < 0 {
-			return windowRateContext{}, fmt.Errorf("allocation %s must be non-negative", dimension)
+			return windowRateContext{}, fmt.Errorf("allocation %s must be non-negative", skuID)
 		}
-		rate, ok := unitRates[dimension]
+		rate, ok := skuRates[skuID]
 		if !ok {
-			return windowRateContext{}, fmt.Errorf("%w: %s", ErrDimensionMismatch, dimension)
+			return windowRateContext{}, fmt.Errorf("%w: %s", ErrDimensionMismatch, skuID)
+		}
+		sku, ok := skuDetails[skuID]
+		if !ok || sku.DisplayName == "" || sku.BucketID == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
+			return windowRateContext{}, fmt.Errorf("sku metadata missing for %s", skuID)
+		}
+		if sku.UnitRate != 0 && sku.UnitRate != rate {
+			return windowRateContext{}, fmt.Errorf("sku metadata rate mismatch for %s", skuID)
 		}
 		rawComponentCost := quantity * float64(rate)
 		rounded := math.Round(rawComponentCost)
 		if math.Abs(rawComponentCost-rounded) > 1e-9 {
-			return windowRateContext{}, fmt.Errorf("non-integral component cost_per_unit %s %.9f", dimension, rawComponentCost)
+			return windowRateContext{}, fmt.Errorf("non-integral component cost_per_unit %s %.9f", skuID, rawComponentCost)
 		}
 		if rounded < 0 || rounded > float64(^uint64(0)) {
-			return windowRateContext{}, fmt.Errorf("component cost_per_unit %s overflows uint64", dimension)
+			return windowRateContext{}, fmt.Errorf("component cost_per_unit %s overflows uint64", skuID)
 		}
 		componentCost := uint64(rounded)
-		breakdown.ComponentCostPerUnit[dimension] = componentCost
-		bucketID := bucketForDimension(productID, dimension, rateBuckets)
-		if err := addMapUint64(breakdown.BucketCostPerUnit, bucketID, componentCost); err != nil {
-			return windowRateContext{}, fmt.Errorf("add bucket cost %s: %w", bucketID, err)
+		breakdown.ComponentCostPerUnit[skuID] = componentCost
+		if err := addMapUint64(breakdown.BucketCostPerUnit, sku.BucketID, componentCost); err != nil {
+			return windowRateContext{}, fmt.Errorf("add bucket cost %s: %w", sku.BucketID, err)
 		}
 		var err error
 		breakdown.CostPerUnit, err = safeAddUint64(breakdown.CostPerUnit, componentCost)
@@ -1064,6 +1092,98 @@ func componentAndBucketChargeUnitsForQuantity(window persistedWindow, quantity u
 	return componentCharges, bucketCharges, nil
 }
 
+func usageEvidenceFromSummary(summary map[string]any) (map[string]uint64, error) {
+	if len(summary) == 0 {
+		return map[string]uint64{}, nil
+	}
+	out := make(map[string]uint64, len(summary))
+	for _, key := range sortedAnyMapKeys(summary) {
+		value, ok, err := usageEvidenceUint64(summary[key])
+		if err != nil {
+			return nil, fmt.Errorf("usage evidence %s: %w", key, err)
+		}
+		if ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func usageEvidenceUint64(value any) (uint64, bool, error) {
+	switch v := value.(type) {
+	case nil:
+		return 0, false, nil
+	case uint64:
+		return v, true, nil
+	case uint:
+		return uint64(v), true, nil
+	case int:
+		if v < 0 {
+			return 0, false, fmt.Errorf("must be non-negative")
+		}
+		return uint64(v), true, nil
+	case int64:
+		if v < 0 {
+			return 0, false, fmt.Errorf("must be non-negative")
+		}
+		return uint64(v), true, nil
+	case float64:
+		if v < 0 || math.Trunc(v) != v || v > float64(^uint64(0)) {
+			return 0, false, fmt.Errorf("must be an unsigned integer")
+		}
+		return uint64(v), true, nil
+	case json.Number:
+		raw := v.String()
+		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			return parsed, true, nil
+		}
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			if parsed < 0 {
+				return 0, false, fmt.Errorf("must be non-negative")
+			}
+			return uint64(parsed), true, nil
+		}
+		parsed, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return 0, false, err
+		}
+		if parsed < 0 || math.Trunc(parsed) != parsed || parsed > float64(^uint64(0)) {
+			return 0, false, fmt.Errorf("must be an unsigned integer")
+		}
+		return uint64(parsed), true, nil
+	default:
+		return 0, false, fmt.Errorf("unsupported type %T", value)
+	}
+}
+
+func decodeUsageSummary(raw []byte) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var out map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	// UseNumber avoids corrupting byte counters that exceed float64 integer precision.
+	decoder.UseNumber()
+	if err := decoder.Decode(&out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		return map[string]any{}, nil
+	}
+	return out, nil
+}
+
+func cloneSKURateContextMap(in map[string]skuRateContext) map[string]skuRateContext {
+	if len(in) == 0 {
+		return map[string]skuRateContext{}
+	}
+	out := make(map[string]skuRateContext, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func completeRateContext(window persistedWindow) (windowRateContext, error) {
 	rateContext := window.RateContext
 	if rateContext.PlanID == "" {
@@ -1072,8 +1192,14 @@ func completeRateContext(window persistedWindow) (windowRateContext, error) {
 	if len(rateContext.ComponentCostPerUnit) > 0 && len(rateContext.BucketCostPerUnit) > 0 {
 		return rateContext, nil
 	}
-	if len(rateContext.UnitRates) > 0 {
-		breakdown, err := computeRateBreakdown(window.ProductID, window.Allocation, rateContext.UnitRates, rateContext.RateBuckets)
+	if len(rateContext.SKURates) > 0 {
+		breakdown, err := computeRateBreakdown(
+			window.Allocation,
+			rateContext.SKURates,
+			rateContext.SKUBuckets,
+			rateContext.SKUDetails,
+			rateContext.BucketDisplayNames,
+		)
 		if err != nil {
 			return windowRateContext{}, err
 		}
@@ -1085,9 +1211,7 @@ func completeRateContext(window persistedWindow) (windowRateContext, error) {
 		rateContext.BucketCostPerUnit = map[string]uint64{}
 		return rateContext, nil
 	}
-	rateContext.ComponentCostPerUnit = map[string]uint64{}
-	rateContext.BucketCostPerUnit = map[string]uint64{window.ProductID: rateContext.CostPerUnit}
-	return rateContext, nil
+	return windowRateContext{}, fmt.Errorf("rate context for window %s has cost_per_unit without sku allocation", window.WindowID)
 }
 
 func componentQuantitiesForQuantity(allocation map[string]float64, quantity uint32) map[string]float64 {
@@ -1099,13 +1223,6 @@ func componentQuantitiesForQuantity(allocation map[string]float64, quantity uint
 		out[key] = value * float64(quantity)
 	}
 	return out
-}
-
-func bucketForDimension(productID string, dimension string, rateBuckets map[string]string) string {
-	if bucketID := rateBuckets[dimension]; bucketID != "" {
-		return bucketID
-	}
-	return productID
 }
 
 func addMapUint64(out map[string]uint64, key string, amount uint64) error {
@@ -1136,6 +1253,18 @@ func sortedUint64MapKeys(values map[string]uint64) []string {
 }
 
 func sortedFloat64MapKeys(values map[string]float64) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedAnyMapKeys(values map[string]any) []string {
 	if len(values) == 0 {
 		return nil
 	}

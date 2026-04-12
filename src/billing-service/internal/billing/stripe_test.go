@@ -121,8 +121,8 @@ func TestStripeSubscriptionStateUsesItemPeriod(t *testing.T) {
 func TestStripeGrantIDIsDeterministicAndScoped(t *testing.T) {
 	t.Parallel()
 
-	first := stripeGrantID(42, GrantScopeBucket, "sandbox", "vcpu", "in_test")
-	second := stripeGrantID(42, GrantScopeBucket, "sandbox", "vcpu", "in_test")
+	first := stripeGrantID(42, GrantScopeBucket, "sandbox", "compute", "in_test")
+	second := stripeGrantID(42, GrantScopeBucket, "sandbox", "compute", "in_test")
 	differentBucket := stripeGrantID(42, GrantScopeBucket, "sandbox", "ram", "in_test")
 
 	assertEqual(t, first.String(), second.String(), "same stripe grant id")

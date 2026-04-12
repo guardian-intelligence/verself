@@ -3,6 +3,7 @@ package vmorchestrator
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestJobObserverEmitsBillablePhaseEvents(t *testing.T) {
@@ -82,5 +83,60 @@ func TestManagedJobCapsBufferedLogs(t *testing.T) {
 	}
 	if !strings.Contains(chunks[len(chunks)-1].Chunk, "truncated") {
 		t.Fatalf("expected truncation marker in final chunk, got %q", chunks[len(chunks)-1].Chunk)
+	}
+}
+
+func TestJobResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T) {
+	t.Parallel()
+
+	original := JobResult{
+		ExitCode:               7,
+		Duration:               3 * time.Second,
+		CloneTime:              100 * time.Millisecond,
+		JailSetupTime:          200 * time.Millisecond,
+		VMBootTime:             300 * time.Millisecond,
+		BootToReadyDuration:    400 * time.Millisecond,
+		RunDuration:            500 * time.Millisecond,
+		VMExitWaitDuration:     600 * time.Millisecond,
+		CleanupTime:            700 * time.Millisecond,
+		ZFSWritten:             12345,
+		RootfsProvisionedBytes: 67890,
+		StdoutBytes:            11,
+		StderrBytes:            22,
+		DroppedLogBytes:        33,
+		ForcedShutdown:         true,
+		FailurePhase:           "run",
+		Metrics: &VMMetrics{
+			BootTimeUs:      44,
+			BlockReadBytes:  55,
+			BlockWriteBytes: 66,
+			BlockReadCount:  77,
+			BlockWriteCount: 88,
+			NetRxBytes:      99,
+			NetTxBytes:      111,
+			VCPUExitCount:   222,
+		},
+	}
+
+	proto := jobResultToProto(original, false)
+	if got := proto.GetRootfsProvisionedBytes(); got != original.RootfsProvisionedBytes {
+		t.Fatalf("rootfs_provisioned_bytes = %d, want %d", got, original.RootfsProvisionedBytes)
+	}
+	if got := proto.GetZfsWritten(); got != original.ZFSWritten {
+		t.Fatalf("zfs_written = %d, want %d", got, original.ZFSWritten)
+	}
+
+	roundTrip := jobResultFromProto(proto)
+	if roundTrip == nil {
+		t.Fatal("expected round-trip result")
+	}
+	if got := roundTrip.RootfsProvisionedBytes; got != original.RootfsProvisionedBytes {
+		t.Fatalf("round trip rootfs_provisioned_bytes = %d, want %d", got, original.RootfsProvisionedBytes)
+	}
+	if got := roundTrip.ZFSWritten; got != original.ZFSWritten {
+		t.Fatalf("round trip zfs_written = %d, want %d", got, original.ZFSWritten)
+	}
+	if roundTrip.Metrics == nil || roundTrip.Metrics.BootTimeUs != original.Metrics.BootTimeUs {
+		t.Fatalf("round trip metrics = %#v, want boot_time_us %d", roundTrip.Metrics, original.Metrics.BootTimeUs)
 	}
 }

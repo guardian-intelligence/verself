@@ -79,20 +79,23 @@ type Statement struct {
 }
 
 type StatementLineItem struct {
-	ProductID    string
-	PlanID       string
-	BucketID     string
-	ComponentID  string
-	Description  string
-	PricingPhase string
-	Quantity     float64
-	UnitRate     uint64
-	ChargeUnits  uint64
+	ProductID         string
+	PlanID            string
+	BucketID          string
+	BucketDisplayName string
+	SKUID             string
+	SKUDisplayName    string
+	QuantityUnit      string
+	PricingPhase      string
+	Quantity          float64
+	UnitRate          uint64
+	ChargeUnits       uint64
 }
 
 type StatementBucketSummary struct {
 	ProductID         string
 	BucketID          string
+	BucketDisplayName string
 	ChargeUnits       uint64
 	FreeTierUnits     uint64
 	SubscriptionUnits uint64
@@ -170,7 +173,7 @@ type WindowReservation struct {
 	ReservedChargeUnits uint64             `json:"reserved_charge_units"`
 	PricingPhase        PricingPhase       `json:"pricing_phase"`
 	Allocation          map[string]float64 `json:"allocation"`
-	UnitRates           map[string]uint64  `json:"unit_rates"`
+	SKURates            map[string]uint64  `json:"sku_rates"`
 	CostPerUnit         uint64             `json:"cost_per_unit"`
 	WindowStart         time.Time          `json:"window_start"`
 	ActivatedAt         *time.Time         `json:"activated_at,omitempty"`
@@ -232,6 +235,7 @@ type MeteringRow struct {
 	BucketPromoUnits        map[string]uint64  `ch:"bucket_promo_units"`
 	BucketRefundUnits       map[string]uint64  `ch:"bucket_refund_units"`
 	BucketReceivableUnits   map[string]uint64  `ch:"bucket_receivable_units"`
+	UsageEvidence           map[string]uint64  `ch:"usage_evidence"`
 	PlanID                  string             `ch:"plan_id"`
 	CostPerUnit             uint64             `ch:"cost_per_unit"`
 	RecordedAt              time.Time          `ch:"recorded_at"`

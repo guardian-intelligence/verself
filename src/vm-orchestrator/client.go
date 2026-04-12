@@ -177,12 +177,13 @@ func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
 		return Capacity{}, fmt.Errorf("get capacity: %w", err)
 	}
 	return Capacity{
-		GuestPoolCIDR:  resp.GetGuestPoolCidr(),
-		TotalSlots:     resp.GetTotalSlots(),
-		ActiveJobs:     resp.GetActiveJobs(),
-		AvailableSlots: resp.GetAvailableSlots(),
-		VCPUsPerVM:     resp.GetVcpusPerVm(),
-		MemoryMiBPerVM: resp.GetMemoryMibPerVm(),
+		GuestPoolCIDR:          resp.GetGuestPoolCidr(),
+		TotalSlots:             resp.GetTotalSlots(),
+		ActiveJobs:             resp.GetActiveJobs(),
+		AvailableSlots:         resp.GetAvailableSlots(),
+		VCPUsPerVM:             resp.GetVcpusPerVm(),
+		MemoryMiBPerVM:         resp.GetMemoryMibPerVm(),
+		RootfsProvisionedBytes: resp.GetRootfsProvisionedBytes(),
 	}, nil
 }
 

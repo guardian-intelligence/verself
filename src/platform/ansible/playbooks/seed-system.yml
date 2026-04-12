@@ -102,21 +102,14 @@
 
     seed_system_product_id: sandbox
     seed_system_product_display_name: Sandbox
-    seed_system_meter_unit: vcpu_second
+    seed_system_meter_unit: sku_second
     seed_system_billing_model: metered
     seed_system_plan_id: sandbox-default
     seed_system_plan_display_name: Sandbox PAYG
-    seed_system_unit_rates:
-      vcpu: 325
-      gib: 40
-    seed_system_rate_buckets: {}
     seed_system_included_credit_buckets: {}
-    seed_system_overage_unit_rates: {}
     seed_system_quotas: {}
-    seed_system_platform_target_prepaid_units: 1000000000000
-    seed_system_customer_target_prepaid_units: 5000000
-    seed_system_platform_promotion_name: platform-showback
-    seed_system_platform_promotion_percent: 100
+    seed_system_platform_target_prepaid_units: 500000000
+    seed_system_customer_target_prepaid_units: 500000000
     seed_system_expires_after: 8760h
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
     seed_system_helper_remote_path: /tmp/billing-seed
@@ -753,22 +746,12 @@
           - "{{ seed_system_plan_display_name }}"
           - --included-credit-buckets-json
           - "{{ seed_system_included_credit_buckets | to_json }}"
-          - --unit-rates-json
-          - "{{ seed_system_unit_rates | to_json }}"
-          - --rate-buckets-json
-          - "{{ seed_system_rate_buckets | to_json }}"
-          - --overage-unit-rates-json
-          - "{{ seed_system_overage_unit_rates | to_json }}"
           - --quotas-json
           - "{{ seed_system_quotas | to_json }}"
           - --target-prepaid-units
           - "{{ item.target_prepaid_units | string }}"
           - --prepaid-source
           - "{{ item.prepaid_source }}"
-          - --promotion-name
-          - "{{ item.promotion_name }}"
-          - --promotion-percent
-          - "{{ item.promotion_percent | string }}"
           - --expires-after
           - "{{ seed_system_expires_after }}"
       loop:
@@ -778,16 +761,12 @@
           org_trust_tier: platform
           target_prepaid_units: "{{ seed_system_platform_target_prepaid_units }}"
           prepaid_source: purchase
-          promotion_name: "{{ seed_system_platform_promotion_name }}"
-          promotion_percent: "{{ seed_system_platform_promotion_percent }}"
         - key: acme
           org_id: "{{ seed_system_orgs.acme.organization_id }}"
           org_name: "{{ seed_system_orgs.acme.name }}"
           org_trust_tier: established
           target_prepaid_units: "{{ seed_system_customer_target_prepaid_units }}"
           prepaid_source: purchase
-          promotion_name: ""
-          promotion_percent: 0
       loop_control:
         label: "{{ item.key }}"
       register: seed_system_billing_result_raw
@@ -816,7 +795,6 @@
         msg:
           - "Platform billing seeded for {{ seed_system_billing_results.platform.org_id }}"
           - "  Prepaid after: {{ seed_system_billing_results.platform.prepaid_after }}"
-          - "  Promotion:     {{ seed_system_platform_promotion_name }} ({{ seed_system_platform_promotion_percent }}% off)"
           - "Acme billing seeded for {{ seed_system_billing_results.acme.org_id }}"
           - "  Prepaid after: {{ seed_system_billing_results.acme.prepaid_after }}"
       tags: [billing]

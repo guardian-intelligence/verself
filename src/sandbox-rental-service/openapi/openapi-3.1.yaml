@@ -153,6 +153,8 @@ components:
     BillingStatementBucketSummary:
       additionalProperties: false
       properties:
+        bucket_display_name:
+          type: string
         bucket_id:
           type: string
         charge_units:
@@ -184,6 +186,7 @@ components:
       required:
         - product_id
         - bucket_id
+        - bucket_display_name
         - charge_units
         - free_tier_units
         - subscription_units
@@ -221,14 +224,12 @@ components:
     BillingStatementLineItem:
       additionalProperties: false
       properties:
+        bucket_display_name:
+          type: string
         bucket_id:
           type: string
         charge_units:
           pattern: ^[0-9]+$
-          type: string
-        component_id:
-          type: string
-        description:
           type: string
         plan_id:
           type: string
@@ -239,6 +240,12 @@ components:
         quantity:
           format: double
           type: number
+        quantity_unit:
+          type: string
+        sku_display_name:
+          type: string
+        sku_id:
+          type: string
         unit_rate:
           pattern: ^[0-9]+$
           type: string
@@ -246,8 +253,10 @@ components:
         - product_id
         - plan_id
         - bucket_id
-        - component_id
-        - description
+        - bucket_display_name
+        - sku_id
+        - sku_display_name
+        - quantity_unit
         - pricing_phase
         - quantity
         - unit_rate
