@@ -53,10 +53,13 @@ export FORGE_METAL_VERIFICATION_RUN="${deploy_run_key}"
 export FORGE_METAL_CORRELATION_ID="${deploy_id}"
 
 output_file="$(mktemp)"
-trap 'rm -f "${output_file}"' EXIT
+callback_dir="$(mktemp -d)"
+trap 'rm -rf "${output_file}" "${callback_dir}"' EXIT
+ln -s "$(pwd)/ansible/plugins/callback/deploy_events.py" "${callback_dir}/deploy_events.py"
 
 (
   cd ansible
+  export ANSIBLE_CALLBACK_PLUGINS="${callback_dir}"
   ansible-playbook -i inventory/hosts.ini playbooks/observability-smoke.yml
 ) | tee "${output_file}"
 
