@@ -32,7 +32,7 @@ type Config struct {
 }
 
 // Init sets up trace and log providers, registers the global TracerProvider
-// and W3C TraceContext propagator, and returns:
+// and W3C TraceContext+Baggage propagator, and returns:
 //   - a shutdown function that flushes pending data
 //   - an slog.Logger bridged to OTel (trace_id/span_id injected automatically
 //     when callers use slog.InfoContext(ctx, ...))
@@ -86,7 +86,7 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	// --- Register globals ---
 
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
+	otel.SetTextMapPropagator(textMapPropagator())
 
 	// --- slog bridge ---
 	// The OTel Log SDK automatically extracts trace_id and span_id from the
@@ -106,6 +106,13 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 		return errors.Join(tp.Shutdown(ctx), lp.Shutdown(ctx))
 	}
 	return shutdown, logger, nil
+}
+
+func textMapPropagator() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
 }
 
 // resolveHandler wraps an slog.Handler to coerce named string types
