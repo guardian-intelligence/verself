@@ -341,8 +341,11 @@ make assume-persona PERSONA=platform-admin OUTPUT=/tmp/platform-admin.env
 The default output path is `artifacts/personas/<persona>.env`, written `0600`.
 The file contains browser credentials (`BROWSER_EMAIL`, `BROWSER_PASSWORD`) and
 project-scoped access tokens such as `SANDBOX_RENTAL_ACCESS_TOKEN` and
-`MAILBOX_SERVICE_ACCESS_TOKEN`. These tokens are rehearsal credentials, not a
-new persistence layer; regenerate them from Zitadel when they expire.
+`MAILBOX_SERVICE_ACCESS_TOKEN`. In file-output mode, stdout is identity-service
+JSON showing the caller's effective access, all declared operations, and the
+operations matched by the persona's permissions. These tokens are rehearsal
+credentials, not a new persistence layer; regenerate them from Zitadel when
+they expire.
 
 Current access coverage:
 

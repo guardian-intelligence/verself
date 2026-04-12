@@ -15,6 +15,9 @@ Usage:
 Writes a 0600 shell env file with browser credentials and short-lived
 Zitadel client-credentials JWTs for the selected persona.
 
+In file-output mode, also prints identity-service access metadata JSON to
+stdout. --print preserves stdout as shell env only.
+
 These are extremely useful operator and agent utility credentials for live
 rehearsal. They cover repo-owned Zitadel IAM surfaces; provider-native
 credentials such as ClickHouse, direct Stalwart protocol passwords, and Forgejo
@@ -186,6 +189,72 @@ print(token)
 ' <<<"${response}"
 }
 
+
+identity_api_get() {
+  local path="$1"
+  local token="$2"
+  local request_b64
+
+  request_b64="$(
+    API_PATH="${path}" API_TOKEN="${token}" python3 -c 'import base64, json, os; print(base64.b64encode(json.dumps({"path": os.environ["API_PATH"], "token": os.environ["API_TOKEN"]}).encode()).decode())'
+  )"
+
+  printf '%s\n' "${request_b64}" | verification_ssh "python3 -c 'import base64, json, subprocess, sys; payload = json.loads(base64.b64decode(sys.stdin.readline()).decode()); subprocess.run([\"curl\", \"-fsS\", \"-H\", \"Authorization: Bearer \" + payload[\"token\"], \"http://127.0.0.1:4248\" + payload[\"path\"]], check=True)'"
+}
+
+identity_metadata_json() {
+  local persona_name="$1"
+  local access_json="$2"
+  local operations_json="$3"
+
+  IDENTITY_ACCESS_JSON="${access_json}" \
+  IDENTITY_OPERATIONS_JSON="${operations_json}" \
+  python3 - "${persona_name}" <<'PY'
+import json
+import os
+import sys
+
+persona = sys.argv[1]
+access = json.loads(os.environ["IDENTITY_ACCESS_JSON"])
+operations = json.loads(os.environ["IDENTITY_OPERATIONS_JSON"])
+permissions = set(access.get("permissions") or [])
+
+effective_services = []
+operation_permissions = set()
+for service in operations.get("services") or []:
+    effective_operations = []
+    for operation in service.get("operations") or []:
+        permission = operation.get("permission") or ""
+        if permission:
+            operation_permissions.add(permission)
+        if permission in permissions:
+            effective_operations.append(operation)
+    if effective_operations:
+        effective_services.append({
+            "service": service.get("service") or "",
+            "operations": effective_operations,
+        })
+
+json.dump({
+    "persona": persona,
+    "identity_service": {
+        "access": access,
+        "operations": operations,
+        "effective_operations": {
+            "org_id": access.get("org_id") or "",
+            "caller": access.get("caller") or {},
+            "permissions": sorted(permissions),
+            "services": effective_services,
+            "permissions_without_declared_operation": sorted(
+                permissions - operation_permissions
+            ),
+        },
+    },
+}, sys.stdout, indent=2, sort_keys=True)
+print()
+PY
+}
+
 declare -A project_ids
 declare -A project_tokens
 for project in "${token_projects[@]}"; do
@@ -270,4 +339,8 @@ else
   tmp_path_finalized=1
   printf 'persona env written: %s\n' "${output_path}" >&2
   printf 'source %q\n' "${output_path}" >&2
+  verification_wait_for_loopback_api "identity-service" "http://127.0.0.1:4248/readyz" 200
+  identity_access_json="$(identity_api_get "/api/v1/organization" "${project_tokens[identity-service]}")"
+  identity_operations_json="$(identity_api_get "/api/v1/organization/operations" "${project_tokens[identity-service]}")"
+  identity_metadata_json "${persona}" "${identity_access_json}" "${identity_operations_json}"
 fi
