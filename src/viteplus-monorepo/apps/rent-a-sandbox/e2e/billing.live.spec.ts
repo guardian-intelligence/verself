@@ -15,11 +15,11 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
-      await app.expectSSRHTML("/billing/credits", ["Purchase Credits", "Available Credits"]);
+      await app.expectSSRHTML("/billing/credits", ["Purchase Credits", "Available Credit Value"]);
       await app.assertStableRoute({
         path: "/billing/credits",
         ready: app.page.getByRole("heading", { name: "Purchase Credits" }),
-        expectedText: ["Purchase Credits", "Available Credits", "$10"],
+        expectedText: ["Purchase Credits", "Available Credit Value", "$10"],
       });
 
       run.started_balance = await app.readBalance();
