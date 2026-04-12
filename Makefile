@@ -121,7 +121,7 @@ wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe
 verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture
 	cd $(FM) && ./scripts/ensure-verification-repo.sh
 
-vm-orchestrator-proof: inventory-check ## Live proof for deployed vm-orchestrator via direct execution verification flow
+vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator via firecracker deploy + telemetry-dev VM rehearsal
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
