@@ -28,7 +28,7 @@
 
 ## DTO Shape
 
-- Prefer boring exported structs with JSON tags and service-prefix names when the concept is service-specific but shared on the wire, for example `BillingBalance`, `SandboxRepo`, or `MailboxEmail`.
+- Prefer boring exported structs with JSON tags and service-prefix names when the concept is service-specific but shared on the wire, for example `BillingEntitlementsView`, `SandboxRepo`, or `MailboxEmail`.
 - Use semantic aliases for shared identifiers when the alias improves contract readability without hiding the underlying wire encoding.
 - Keep DTO structs free of persistence tags, auth policy state, database handles, and methods with side effects.
 - Keep timestamps as explicit wire types already accepted by the existing codegen path; do not introduce custom time formats without updating Go clients, TypeScript wrappers, and docs together.
@@ -39,14 +39,15 @@
 Service handlers should return DTOs from Huma operations and convert close to the handler:
 
 ```go
-type balanceOutput struct {
-	Body apiwire.BillingBalance
+type entitlementsOutput struct {
+	Body apiwire.BillingEntitlementsView
 }
 
-func toBalanceDTO(balance billing.Balance) apiwire.BillingBalance {
-	return apiwire.BillingBalance{
-		OrgID:          apiwire.Uint64(uint64(balance.OrgID)),
-		TotalAvailable: apiwire.Uint64(balance.TotalAvailable),
+func toEntitlementsDTO(orgID billing.OrgID, view billing.EntitlementsView) apiwire.BillingEntitlementsView {
+	return apiwire.BillingEntitlementsView{
+		OrgID:     apiwire.Uint64(uint64(orgID)),
+		Universal: entitlementPoolList(view.Universal),
+		Products:  entitlementProductSections(view.Products),
 	}
 }
 ```
