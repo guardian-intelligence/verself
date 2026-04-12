@@ -108,11 +108,31 @@
     seed_system_free_tier_buckets: {}
     seed_system_plan_entitlements: {}
     seed_system_quotas: {}
+    seed_system_subscription_tiers:
+      - plan_id: sandbox-hobby
+        display_name: Hobby
+        tier: hobby
+        currency: usd
+        cadence: monthly
+        unit_amount_cents: 500
+        entitlements:
+          compute: 30000000
+          memory: 15000000
+          block_storage: 5000000
     seed_system_platform_target_prepaid_units: 500000000
     seed_system_customer_target_prepaid_units: 500000000
     seed_system_expires_after: 8760h
+    # Acme demos the SKU branch of the entitlements view by carrying a small
+    # promo grant pinned to a specific block-storage SKU. Without it the SKU
+    # row in the rent-a-sandbox /billing screen never renders.
+    seed_system_acme_sku_scoped_grants:
+      - sku_id: sandbox_block_storage_premium_nvme_gib_second
+        units: 50000000
+        source: promo
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
     seed_system_helper_remote_path: /tmp/billing-seed
+    seed_system_stripe_catalog_helper_local_path: "/tmp/billing-stripe-catalog-{{ inventory_hostname }}"
+    seed_system_stripe_catalog_helper_remote_path: /tmp/billing-stripe-catalog
 
     seed_system_stalwart_disabled_permissions:
       - email-send
@@ -714,6 +734,8 @@
           - "{{ item.prepaid_source }}"
           - --expires-after
           - "{{ seed_system_expires_after }}"
+          - --sku-scoped-grants-json
+          - "{{ item.sku_scoped_grants | default([]) | to_json }}"
       loop:
         - key: platform
           org_id: "{{ seed_system_orgs.platform.organization_id }}"
@@ -721,17 +743,20 @@
           org_trust_tier: platform
           target_prepaid_units: "{{ seed_system_platform_target_prepaid_units }}"
           prepaid_source: purchase
+          sku_scoped_grants: []
         - key: acme
           org_id: "{{ seed_system_orgs.acme.organization_id }}"
           org_name: "{{ seed_system_orgs.acme.name }}"
           org_trust_tier: established
           target_prepaid_units: "{{ seed_system_customer_target_prepaid_units }}"
           prepaid_source: purchase
+          sku_scoped_grants: "{{ seed_system_acme_sku_scoped_grants }}"
       loop_control:
         label: "{{ item.key }}"
       register: seed_system_billing_result_raw
       changed_when: >-
         ((seed_system_billing_result_raw.stdout | from_json).deposited_units | int) > 0
+        or ((seed_system_billing_result_raw.stdout | from_json).sku_grants_deposited | int) > 0
       tags: [billing]
 
     - name: Parse billing seed results
@@ -759,15 +784,90 @@
           - "  Prepaid after: {{ seed_system_billing_results.acme.prepaid_after }}"
       tags: [billing]
 
+    - name: Build billing Stripe catalog helper on controller
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -o
+          - "{{ seed_system_stripe_catalog_helper_local_path }}"
+          - ./src/billing-service/cmd/billing-stripe-catalog
+      args:
+        chdir: "{{ playbook_dir }}/../../../.."
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      tags: [billing]
+
+    - name: Upload billing Stripe catalog helper
+      ansible.builtin.copy:
+        src: "{{ seed_system_stripe_catalog_helper_local_path }}"
+        dest: "{{ seed_system_stripe_catalog_helper_remote_path }}"
+        mode: "0755"
+      tags: [billing]
+
+    - name: Ensure Stripe subscription catalog is reconciled
+      ansible.builtin.command:
+        argv:
+          - "{{ seed_system_stripe_catalog_helper_remote_path }}"
+          - --pg-dsn-file
+          - /etc/credstore/billing/pg-dsn
+          - --stripe-secret-key-file
+          - /etc/credstore/billing/stripe-secret-key
+          - --product-id
+          - "{{ seed_system_product_id }}"
+          - --product-display-name
+          - "{{ seed_system_product_display_name }}"
+          - --rate-source-plan-id
+          - "{{ seed_system_plan_id }}"
+          - --tiers-json
+          - "{{ seed_system_subscription_tiers | to_json }}"
+      register: seed_system_stripe_catalog_raw
+      changed_when: false
+      tags: [billing]
+
+    - name: Parse Stripe subscription catalog result
+      ansible.builtin.set_fact:
+        seed_system_stripe_catalog_result: "{{ seed_system_stripe_catalog_raw.stdout | from_json }}"
+      tags: [billing]
+
+    - name: Print Stripe subscription catalog summary
+      ansible.builtin.debug:
+        msg:
+          - "Stripe catalog ready for {{ seed_system_stripe_catalog_result.product_id }} ({{ seed_system_stripe_catalog_result.stripe_product_id }})"
+          - >-
+            Plans:
+            {{
+              seed_system_stripe_catalog_result.plans
+              | map(attribute='plan_id')
+              | list
+              | join(', ')
+            }}
+      tags: [billing]
+
     - name: Remove billing seed helper from server
       ansible.builtin.file:
         path: "{{ seed_system_helper_remote_path }}"
         state: absent
       tags: [billing]
 
+    - name: Remove billing Stripe catalog helper from server
+      ansible.builtin.file:
+        path: "{{ seed_system_stripe_catalog_helper_remote_path }}"
+        state: absent
+      tags: [billing]
+
     - name: Remove local billing seed helper
       ansible.builtin.file:
         path: "{{ seed_system_helper_local_path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      tags: [billing]
+
+    - name: Remove local billing Stripe catalog helper
+      ansible.builtin.file:
+        path: "{{ seed_system_stripe_catalog_helper_local_path }}"
         state: absent
       delegate_to: localhost
       become: false
@@ -1256,13 +1356,13 @@
 
         - name: Verify sandbox-rental billing proxy rejects unauthenticated request
           ansible.builtin.uri:
-            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/entitlements"
             method: GET
             status_code: 401
 
         - name: Verify sandbox-rental billing proxy accepts authenticated request
           ansible.builtin.uri:
-            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/balance"
+            url: "http://{{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}/api/v1/billing/entitlements"
             method: GET
             headers:
               Authorization: "Bearer {{ seed_system_verify_token.json.access_token }}"
@@ -1271,18 +1371,20 @@
           register: seed_system_verify_authed
           no_log: true
 
-        - name: Assert balance response has org_id
+        - name: Assert entitlements response shape
           ansible.builtin.assert:
             that:
               - seed_system_verify_authed.json.org_id is defined
-              - seed_system_verify_authed.json.total_available is defined
-            fail_msg: "Billing proxy returned unexpected payload: {{ seed_system_verify_authed.json }}"
+              - seed_system_verify_authed.json.universal is defined
+              - seed_system_verify_authed.json.products is defined
+            fail_msg: "Billing entitlements proxy returned unexpected payload: {{ seed_system_verify_authed.json }}"
 
         - name: Print verification result
           ansible.builtin.debug:
             msg:
               - "Auth verification passed"
-              - "  Org balance: {{ seed_system_verify_authed.json.total_available | default(0) }} credits available"
+              - "  Universal pools: {{ (seed_system_verify_authed.json.universal | default([])) | length }}"
+              - "  Product sections: {{ (seed_system_verify_authed.json.products | default([])) | length }}"
 
       always:
         - name: Cleanup verification machine user
