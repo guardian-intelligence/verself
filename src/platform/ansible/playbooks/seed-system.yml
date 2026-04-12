@@ -105,7 +105,8 @@
     seed_system_billing_model: metered
     seed_system_plan_id: sandbox-default
     seed_system_plan_display_name: Sandbox PAYG
-    seed_system_included_credit_buckets: {}
+    seed_system_free_tier_buckets: {}
+    seed_system_plan_entitlements: {}
     seed_system_quotas: {}
     seed_system_platform_target_prepaid_units: 500000000
     seed_system_customer_target_prepaid_units: 500000000
@@ -701,8 +702,10 @@
           - "{{ seed_system_plan_id }}"
           - --plan-display-name
           - "{{ seed_system_plan_display_name }}"
-          - --included-credit-buckets-json
-          - "{{ seed_system_included_credit_buckets | to_json }}"
+          - --free-tier-buckets-json
+          - "{{ seed_system_free_tier_buckets | to_json }}"
+          - --plan-entitlements-json
+          - "{{ seed_system_plan_entitlements | to_json }}"
           - --quotas-json
           - "{{ seed_system_quotas | to_json }}"
           - --target-prepaid-units
