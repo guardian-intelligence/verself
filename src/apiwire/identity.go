@@ -69,24 +69,6 @@ type IdentityPutMemberCapabilitiesRequest struct {
 	EnabledKeys []string `json:"enabled_keys" required:"true" minItems:"0" maxItems:"32"`
 }
 
-type IdentityOperations struct {
-	Services []IdentityServiceOperations `json:"services"`
-}
-
-type IdentityServiceOperations struct {
-	Service    string              `json:"service"`
-	Operations []IdentityOperation `json:"operations"`
-}
-
-type IdentityOperation struct {
-	OperationID    string `json:"operation_id"`
-	Permission     string `json:"permission"`
-	Resource       string `json:"resource"`
-	Action         string `json:"action"`
-	OrgScope       string `json:"org_scope"`
-	MemberEligible bool   `json:"member_eligible"`
-}
-
 type IdentityAPICredential struct {
 	CredentialID         string     `json:"credential_id"`
 	OrgID                OrgID      `json:"org_id"`

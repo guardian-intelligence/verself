@@ -64,7 +64,7 @@ func TestOpenAPIPublicAPIOperationsDeclareIAMPolicy(t *testing.T) {
 
 func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing.T) {
 	ctx := context.Background()
-	store := staticPolicyStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())}
+	store := staticIdentityStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())}
 	svc := &identity.Service{
 		Store:     store,
 		ProjectID: "identity-project",
@@ -138,43 +138,43 @@ func identityServiceToken(projectID, orgID string, roles ...string) *auth.Identi
 	}
 }
 
-type staticPolicyStore struct {
+type staticIdentityStore struct {
 	capabilities identity.MemberCapabilitiesDocument
 }
 
-func (s staticPolicyStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {
+func (s staticIdentityStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {
 	return s.capabilities, nil
 }
 
-func (s staticPolicyStore) PutMemberCapabilities(context.Context, identity.MemberCapabilitiesDocument) (identity.MemberCapabilitiesDocument, error) {
+func (s staticIdentityStore) PutMemberCapabilities(context.Context, identity.MemberCapabilitiesDocument) (identity.MemberCapabilitiesDocument, error) {
 	return s.capabilities, nil
 }
 
-func (s staticPolicyStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {
+func (s staticIdentityStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {
 	return identity.APICredential{}, nil
 }
 
-func (s staticPolicyStore) ListAPICredentials(context.Context, string) ([]identity.APICredential, error) {
+func (s staticIdentityStore) ListAPICredentials(context.Context, string) ([]identity.APICredential, error) {
 	return []identity.APICredential{}, nil
 }
 
-func (s staticPolicyStore) GetAPICredential(context.Context, string, string) (identity.APICredential, error) {
+func (s staticIdentityStore) GetAPICredential(context.Context, string, string) (identity.APICredential, error) {
 	return identity.APICredential{}, identity.ErrAPICredentialMissing
 }
 
-func (s staticPolicyStore) ActiveAPICredentialSecrets(context.Context, string, string) ([]identity.APICredentialSecret, error) {
+func (s staticIdentityStore) ActiveAPICredentialSecrets(context.Context, string, string) ([]identity.APICredentialSecret, error) {
 	return []identity.APICredentialSecret{}, nil
 }
 
-func (s staticPolicyStore) AddAPICredentialSecret(context.Context, string, string, string, identity.APICredentialSecret) (identity.APICredential, error) {
+func (s staticIdentityStore) AddAPICredentialSecret(context.Context, string, string, string, identity.APICredentialSecret) (identity.APICredential, error) {
 	return identity.APICredential{}, nil
 }
 
-func (s staticPolicyStore) RevokeAPICredential(context.Context, string, string, string, time.Time) (identity.APICredential, error) {
+func (s staticIdentityStore) RevokeAPICredential(context.Context, string, string, string, time.Time) (identity.APICredential, error) {
 	return identity.APICredential{}, nil
 }
 
-func (s staticPolicyStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (identity.ResolveAPICredentialClaimsResult, error) {
+func (s staticIdentityStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (identity.ResolveAPICredentialClaimsResult, error) {
 	return identity.ResolveAPICredentialClaimsResult{}, identity.ErrAPICredentialMissing
 }
 

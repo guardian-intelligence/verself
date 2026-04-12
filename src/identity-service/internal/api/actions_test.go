@@ -16,7 +16,7 @@ import (
 
 func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	store := actionStore{
-		staticPolicyStore: staticPolicyStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())},
+		staticIdentityStore: staticIdentityStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())},
 		result: identity.ResolveAPICredentialClaimsResult{
 			CredentialID: "credential-1",
 			OrgID:        "42",
@@ -69,7 +69,7 @@ func actionSignatureHeader(ts time.Time, payload []byte, signingKey string) stri
 }
 
 type actionStore struct {
-	staticPolicyStore
+	staticIdentityStore
 	result identity.ResolveAPICredentialClaimsResult
 	err    error
 }

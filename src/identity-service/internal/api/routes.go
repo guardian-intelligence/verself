@@ -108,20 +108,6 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 	}), putMemberCapabilities(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
-		OperationID: "list-organization-operations",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/organization/operations",
-		Summary:     "List service-declared operations available to policy documents",
-	}, operationPolicy{
-		Permission:     permissionOperationsRead,
-		Resource:       "service_operation",
-		Action:         "list",
-		OrgScope:       "token_org_id",
-		RateLimitClass: "read",
-		AuditEvent:     "identity.organization.operations.list",
-	}), listOperations(svc))
-
-	registerSecured(api, svc, secured(huma.Operation{
 		OperationID: "list-api-credentials",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/organization/api-credentials",
@@ -234,10 +220,6 @@ type memberCapabilitiesOutput struct {
 
 type putMemberCapabilitiesInput struct {
 	Body apiwire.IdentityPutMemberCapabilitiesRequest
-}
-
-type operationsOutput struct {
-	Body apiwire.IdentityOperations
 }
 
 type apiCredentialPath struct {
@@ -398,16 +380,6 @@ func putMemberCapabilities(svc *identity.Service) func(context.Context, *putMemb
 	}
 }
 
-func listOperations(svc *identity.Service) func(context.Context, *emptyInput) (*operationsOutput, error) {
-	return func(ctx context.Context, _ *emptyInput) (*operationsOutput, error) {
-		principal, err := principalFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &operationsOutput{Body: operationsDTO(svc.Operations(ctx, principal))}, nil
-	}
-}
-
 func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput) (*apiCredentialsOutput, error) {
 	return func(ctx context.Context, _ *emptyInput) (*apiCredentialsOutput, error) {
 		principal, err := principalFromContext(ctx)
@@ -546,28 +518,6 @@ func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) apiwire.Iden
 		Document: memberCapabilitiesDocumentDTO(doc),
 		Catalog:  dtoCatalog,
 	}
-}
-
-func operationsDTO(operations identity.Operations) apiwire.IdentityOperations {
-	services := make([]apiwire.IdentityServiceOperations, 0, len(operations.Services))
-	for _, service := range operations.Services {
-		serviceDTO := apiwire.IdentityServiceOperations{
-			Service:    service.Service,
-			Operations: make([]apiwire.IdentityOperation, 0, len(service.Operations)),
-		}
-		for _, operation := range service.Operations {
-			serviceDTO.Operations = append(serviceDTO.Operations, apiwire.IdentityOperation{
-				OperationID:    operation.OperationID,
-				Permission:     operation.Permission,
-				Resource:       operation.Resource,
-				Action:         operation.Action,
-				OrgScope:       operation.OrgScope,
-				MemberEligible: operation.MemberEligible,
-			})
-		}
-		services = append(services, serviceDTO)
-	}
-	return apiwire.IdentityOperations{Services: services}
 }
 
 func apiCredentialDTOs(credentials []identity.APICredential) []apiwire.IdentityAPICredential {
