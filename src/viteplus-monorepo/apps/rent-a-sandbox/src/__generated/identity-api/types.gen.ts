@@ -51,6 +51,68 @@ export type ErrorModel = {
   type?: string;
 };
 
+export type IdentityApiCredential = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  auth_method: string;
+  client_id: string;
+  created_at: string;
+  created_by: string;
+  credential_id: string;
+  display_name: string;
+  expires_at?: string;
+  fingerprint: string;
+  last_used_at?: string;
+  org_id: string;
+  permissions: Array<string> | null;
+  policy_version_at_issue: number;
+  revoked_at?: string;
+  revoked_by?: string;
+  status: string;
+  subject_id: string;
+  updated_at: string;
+};
+
+export type IdentityApiCredentialIssuedMaterial = {
+  auth_method: string;
+  client_id: string;
+  client_secret?: string;
+  fingerprint: string;
+  key_content?: string;
+  key_id?: string;
+  token_url: string;
+};
+
+export type IdentityApiCredentials = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  credentials: Array<IdentityApiCredential> | null;
+};
+
+export type IdentityCreateApiCredentialRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  auth_method?: "private_key_jwt" | "client_secret";
+  display_name: string;
+  expires_at?: string;
+  permissions: Array<string> | null;
+};
+
+export type IdentityCreateApiCredentialResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  credential: IdentityApiCredential;
+  issued_material: IdentityApiCredentialIssuedMaterial;
+};
+
 export type IdentityInviteMemberRequest = {
   /**
    * A URL to the JSON Schema for this object.
@@ -149,6 +211,23 @@ export type IdentityPutPolicyRequest = {
   version: number;
 };
 
+export type IdentityRollApiCredentialRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  auth_method?: "private_key_jwt" | "client_secret";
+};
+
+export type IdentityRollApiCredentialResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  credential: IdentityApiCredential;
+  issued_material: IdentityApiCredentialIssuedMaterial;
+};
+
 export type IdentityServiceOperations = {
   operations: Array<IdentityOperation> | null;
   service: string;
@@ -187,6 +266,42 @@ export type ErrorModelWritable = {
    * A URI reference to human-readable documentation for the error.
    */
   type?: string;
+};
+
+export type IdentityApiCredentialWritable = {
+  auth_method: string;
+  client_id: string;
+  created_at: string;
+  created_by: string;
+  credential_id: string;
+  display_name: string;
+  expires_at?: string;
+  fingerprint: string;
+  last_used_at?: string;
+  org_id: string;
+  permissions: Array<string> | null;
+  policy_version_at_issue: number;
+  revoked_at?: string;
+  revoked_by?: string;
+  status: string;
+  subject_id: string;
+  updated_at: string;
+};
+
+export type IdentityApiCredentialsWritable = {
+  credentials: Array<IdentityApiCredentialWritable> | null;
+};
+
+export type IdentityCreateApiCredentialRequestWritable = {
+  auth_method?: "private_key_jwt" | "client_secret";
+  display_name: string;
+  expires_at?: string;
+  permissions: Array<string> | null;
+};
+
+export type IdentityCreateApiCredentialResponseWritable = {
+  credential: IdentityApiCredentialWritable;
+  issued_material: IdentityApiCredentialIssuedMaterial;
 };
 
 export type IdentityInviteMemberRequestWritable = {
@@ -241,6 +356,15 @@ export type IdentityPutPolicyRequestWritable = {
   version: number;
 };
 
+export type IdentityRollApiCredentialRequestWritable = {
+  auth_method?: "private_key_jwt" | "client_secret";
+};
+
+export type IdentityRollApiCredentialResponseWritable = {
+  credential: IdentityApiCredentialWritable;
+  issued_material: IdentityApiCredentialIssuedMaterial;
+};
+
 export type IdentityUpdateMemberRolesRequestWritable = {
   role_keys: Array<string> | null;
 };
@@ -269,6 +393,168 @@ export type GetOrganizationResponses = {
 };
 
 export type GetOrganizationResponse = GetOrganizationResponses[keyof GetOrganizationResponses];
+
+export type ListApiCredentialsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/organization/api-credentials";
+};
+
+export type ListApiCredentialsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListApiCredentialsError = ListApiCredentialsErrors[keyof ListApiCredentialsErrors];
+
+export type ListApiCredentialsResponses = {
+  /**
+   * OK
+   */
+  200: IdentityApiCredentials;
+};
+
+export type ListApiCredentialsResponse =
+  ListApiCredentialsResponses[keyof ListApiCredentialsResponses];
+
+export type CreateApiCredentialData = {
+  body: IdentityCreateApiCredentialRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/organization/api-credentials";
+};
+
+export type CreateApiCredentialErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateApiCredentialError = CreateApiCredentialErrors[keyof CreateApiCredentialErrors];
+
+export type CreateApiCredentialResponses = {
+  /**
+   * Created
+   */
+  201: IdentityCreateApiCredentialResponse;
+};
+
+export type CreateApiCredentialResponse =
+  CreateApiCredentialResponses[keyof CreateApiCredentialResponses];
+
+export type RevokeApiCredentialData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Forge Metal API credential ID
+     */
+    credential_id: string;
+  };
+  query?: never;
+  url: "/api/v1/organization/api-credentials/{credential_id}";
+};
+
+export type RevokeApiCredentialErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type RevokeApiCredentialError = RevokeApiCredentialErrors[keyof RevokeApiCredentialErrors];
+
+export type RevokeApiCredentialResponses = {
+  /**
+   * OK
+   */
+  200: IdentityApiCredential;
+};
+
+export type RevokeApiCredentialResponse =
+  RevokeApiCredentialResponses[keyof RevokeApiCredentialResponses];
+
+export type GetApiCredentialData = {
+  body?: never;
+  path: {
+    /**
+     * Forge Metal API credential ID
+     */
+    credential_id: string;
+  };
+  query?: never;
+  url: "/api/v1/organization/api-credentials/{credential_id}";
+};
+
+export type GetApiCredentialErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetApiCredentialError = GetApiCredentialErrors[keyof GetApiCredentialErrors];
+
+export type GetApiCredentialResponses = {
+  /**
+   * OK
+   */
+  200: IdentityApiCredential;
+};
+
+export type GetApiCredentialResponse = GetApiCredentialResponses[keyof GetApiCredentialResponses];
+
+export type RollApiCredentialData = {
+  body: IdentityRollApiCredentialRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    /**
+     * Forge Metal API credential ID
+     */
+    credential_id: string;
+  };
+  query?: never;
+  url: "/api/v1/organization/api-credentials/{credential_id}/roll";
+};
+
+export type RollApiCredentialErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type RollApiCredentialError = RollApiCredentialErrors[keyof RollApiCredentialErrors];
+
+export type RollApiCredentialResponses = {
+  /**
+   * OK
+   */
+  200: IdentityRollApiCredentialResponse;
+};
+
+export type RollApiCredentialResponse =
+  RollApiCredentialResponses[keyof RollApiCredentialResponses];
 
 export type ListOrganizationMembersData = {
   body?: never;

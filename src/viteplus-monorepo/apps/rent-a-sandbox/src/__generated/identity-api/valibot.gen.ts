@@ -29,6 +29,56 @@ export const vErrorModel = v.strictObject({
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
 });
 
+export const vIdentityApiCredential = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  auth_method: v.string(),
+  client_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  created_by: v.string(),
+  credential_id: v.string(),
+  display_name: v.string(),
+  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  fingerprint: v.string(),
+  last_used_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  permissions: v.nullable(v.array(v.string())),
+  policy_version_at_issue: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  revoked_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  revoked_by: v.optional(v.string()),
+  status: v.string(),
+  subject_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vIdentityApiCredentialIssuedMaterial = v.strictObject({
+  auth_method: v.string(),
+  client_id: v.string(),
+  client_secret: v.optional(v.string()),
+  fingerprint: v.string(),
+  key_content: v.optional(v.string()),
+  key_id: v.optional(v.string()),
+  token_url: v.string(),
+});
+
+export const vIdentityApiCredentials = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  credentials: v.nullable(v.array(vIdentityApiCredential)),
+});
+
+export const vIdentityCreateApiCredentialRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
+  display_name: v.pipe(v.string(), v.maxLength(200)),
+  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  permissions: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(256))),
+});
+
+export const vIdentityCreateApiCredentialResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  credential: vIdentityApiCredential,
+  issued_material: vIdentityApiCredentialIssuedMaterial,
+});
+
 export const vIdentityInviteMemberRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   email: v.pipe(v.string(), v.maxLength(320)),
@@ -98,6 +148,17 @@ export const vIdentityPutPolicyRequest = v.strictObject({
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
+export const vIdentityRollApiCredentialRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
+});
+
+export const vIdentityRollApiCredentialResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  credential: vIdentityApiCredential,
+  issued_material: vIdentityApiCredentialIssuedMaterial,
+});
+
 export const vIdentityServiceOperations = v.strictObject({
   operations: v.nullable(v.array(vIdentityOperation)),
   service: v.string(),
@@ -130,6 +191,42 @@ export const vErrorModelWritable = v.strictObject({
   ),
   title: v.optional(v.string()),
   type: v.optional(v.pipe(v.string(), v.url()), "about:blank"),
+});
+
+export const vIdentityApiCredentialWritable = v.strictObject({
+  auth_method: v.string(),
+  client_id: v.string(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  created_by: v.string(),
+  credential_id: v.string(),
+  display_name: v.string(),
+  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  fingerprint: v.string(),
+  last_used_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  permissions: v.nullable(v.array(v.string())),
+  policy_version_at_issue: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+  revoked_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  revoked_by: v.optional(v.string()),
+  status: v.string(),
+  subject_id: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+});
+
+export const vIdentityApiCredentialsWritable = v.strictObject({
+  credentials: v.nullable(v.array(vIdentityApiCredentialWritable)),
+});
+
+export const vIdentityCreateApiCredentialRequestWritable = v.strictObject({
+  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
+  display_name: v.pipe(v.string(), v.maxLength(200)),
+  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  permissions: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(256))),
+});
+
+export const vIdentityCreateApiCredentialResponseWritable = v.strictObject({
+  credential: vIdentityApiCredentialWritable,
+  issued_material: vIdentityApiCredentialIssuedMaterial,
 });
 
 export const vIdentityInviteMemberRequestWritable = v.strictObject({
@@ -184,6 +281,15 @@ export const vIdentityPutPolicyRequestWritable = v.strictObject({
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
+export const vIdentityRollApiCredentialRequestWritable = v.strictObject({
+  auth_method: v.optional(v.picklist(["private_key_jwt", "client_secret"])),
+});
+
+export const vIdentityRollApiCredentialResponseWritable = v.strictObject({
+  credential: vIdentityApiCredentialWritable,
+  issued_material: vIdentityApiCredentialIssuedMaterial,
+});
+
 export const vIdentityUpdateMemberRolesRequestWritable = v.strictObject({
   role_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(16))),
 });
@@ -192,6 +298,59 @@ export const vIdentityUpdateMemberRolesRequestWritable = v.strictObject({
  * OK
  */
 export const vGetOrganizationResponse = vIdentityOrganization;
+
+/**
+ * OK
+ */
+export const vListApiCredentialsResponse = vIdentityApiCredentials;
+
+export const vCreateApiCredentialBody = vIdentityCreateApiCredentialRequestWritable;
+
+export const vCreateApiCredentialHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * Created
+ */
+export const vCreateApiCredentialResponse = vIdentityCreateApiCredentialResponse;
+
+export const vRevokeApiCredentialHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vRevokeApiCredentialPath = v.object({
+  credential_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vRevokeApiCredentialResponse = vIdentityApiCredential;
+
+export const vGetApiCredentialPath = v.object({
+  credential_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vGetApiCredentialResponse = vIdentityApiCredential;
+
+export const vRollApiCredentialBody = vIdentityRollApiCredentialRequestWritable;
+
+export const vRollApiCredentialHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vRollApiCredentialPath = v.object({
+  credential_id: v.string(),
+});
+
+/**
+ * OK
+ */
+export const vRollApiCredentialResponse = vIdentityRollApiCredentialResponse;
 
 /**
  * OK
