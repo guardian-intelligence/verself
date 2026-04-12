@@ -1,69 +1,80 @@
 package identity
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+)
 
-func TestValidatePolicyRejectsUnknownRoleKeysUntilProjectRoleManagementExists(t *testing.T) {
-	policy := DefaultPolicy("42", "user-1")
-	policy.Roles = append(policy.Roles, PolicyRole{
-		RoleKey:     "custom_role",
-		DisplayName: "Custom Role",
-		Permissions: []string{
-			PermissionOrganizationRead,
-		},
-	})
+func TestValidateMemberCapabilitiesRejectsUnknownKeys(t *testing.T) {
+	doc := DefaultMemberCapabilitiesDocument("42", "user-1", time.Unix(1700000000, 0).UTC())
+	doc.EnabledKeys = append(doc.EnabledKeys, "unknown_capability")
 
-	if err := ValidatePolicy(policy); err == nil {
-		t.Fatal("expected unknown role key to be rejected")
+	if err := ValidateMemberCapabilities(doc); !errors.Is(err, ErrInvalidCapabilities) {
+		t.Fatalf("expected ErrInvalidCapabilities, got %v", err)
 	}
 }
 
-func TestValidatePolicyRejectsUnknownPermissions(t *testing.T) {
-	policy := DefaultPolicy("42", "user-1")
-	policy.Roles[0].Permissions = append(policy.Roles[0].Permissions, "sandbox:vm:reboot")
+func TestValidateMemberCapabilitiesRejectsDuplicates(t *testing.T) {
+	doc := DefaultMemberCapabilitiesDocument("42", "user-1", time.Unix(1700000000, 0).UTC())
+	if len(doc.EnabledKeys) == 0 {
+		t.Fatal("default capability set should not be empty")
+	}
+	doc.EnabledKeys = append(doc.EnabledKeys, doc.EnabledKeys[0])
 
-	if err := ValidatePolicy(policy); err == nil {
-		t.Fatal("expected unknown permission to be rejected")
+	if err := ValidateMemberCapabilities(doc); !errors.Is(err, ErrInvalidCapabilities) {
+		t.Fatalf("expected duplicate rejection, got %v", err)
 	}
 }
 
-func TestValidatePolicyAllowsEditableOrgAdminToBeConstrained(t *testing.T) {
-	policy := DefaultPolicy("42", "user-1")
-	for index, role := range policy.Roles {
-		if role.RoleKey == RoleOrgAdmin {
-			policy.Roles[index].Permissions = []string{PermissionOrganizationRead}
+func TestOwnerAndAdminGrantAllKnownPermissions(t *testing.T) {
+	doc := MemberCapabilitiesDocument{OrgID: "42"}
+	knownCount := len(KnownPermissions())
+
+	for _, role := range []string{RoleOwner, RoleAdmin} {
+		permissions := PermissionsForRoles(doc, []string{role})
+		if len(permissions) != knownCount {
+			t.Fatalf("role %q should grant %d permissions, got %d", role, knownCount, len(permissions))
 		}
 	}
-
-	if err := ValidatePolicy(policy); err != nil {
-		t.Fatalf("editable org admin role should be constrainable: %v", err)
-	}
 }
 
-func TestValidatePolicyRejectsReservedForgeOrgOwnerRole(t *testing.T) {
-	policy := DefaultPolicy("42", "user-1")
-	policy.Roles = append(policy.Roles, PolicyRole{
-		RoleKey:     RoleForgeOrgOwner,
-		DisplayName: "Forge Org Owner",
-		Permissions: []string{
-			PermissionOrganizationRead,
-		},
-	})
+func TestMemberPermissionsAreCapabilityDerived(t *testing.T) {
+	doc := MemberCapabilitiesDocument{OrgID: "42", EnabledKeys: []string{}}
+	baseline := PermissionsForRoles(doc, []string{RoleMember})
 
-	if err := ValidatePolicy(policy); err == nil {
-		t.Fatal("expected reserved forge org owner role to be rejected from editable policy")
-	}
-}
-
-func TestReservedForgeOrgOwnerGrantsAllKnownPermissions(t *testing.T) {
-	policy := DefaultPolicy("42", "user-1")
-	for index, role := range policy.Roles {
-		if role.RoleKey == RoleOrgAdmin {
-			policy.Roles[index].Permissions = []string{PermissionOrganizationRead}
+	for _, expected := range baselineMemberPermissions {
+		if !contains(baseline, expected) {
+			t.Fatalf("baseline member permissions missing %q (got %v)", expected, baseline)
 		}
 	}
-
-	permissions := PermissionsForRoles(policy, []string{RoleForgeOrgOwner})
-	if len(permissions) != len(KnownPermissions()) {
-		t.Fatalf("forge org owner permissions = %v, want all known permissions", permissions)
+	if contains(baseline, PermissionSandboxExecutionSubmit) {
+		t.Fatal("member without deploy_executions capability must not hold sandbox:execution:submit")
 	}
+
+	doc.EnabledKeys = []string{"deploy_executions"}
+	enabled := PermissionsForRoles(doc, []string{RoleMember})
+	if !contains(enabled, PermissionSandboxExecutionSubmit) {
+		t.Fatalf("deploy_executions should grant sandbox:execution:submit, got %v", enabled)
+	}
+}
+
+func TestMemberCannotMintNonMemberEligiblePermission(t *testing.T) {
+	doc := MemberCapabilitiesDocument{OrgID: "42", EnabledKeys: DefaultCapabilityKeys()}
+	principal := Principal{Subject: "u-1", OrgID: "42", Roles: []string{RoleMember}}
+
+	// api_credentials:create is admin-only (not member-eligible).
+	err := validateCredentialPermissions(doc, principal, []string{PermissionAPICredentialsCreate})
+	if !errors.Is(err, ErrInvalidCapabilities) {
+		t.Fatalf("expected ErrInvalidCapabilities for member minting api_credentials:create, got %v", err)
+	}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

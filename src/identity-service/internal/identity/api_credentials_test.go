@@ -8,35 +8,36 @@ import (
 )
 
 func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
+	defaults := DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())
 	svc := &Service{
-		Store:     &apiCredentialTestStore{policy: DefaultPolicy("42", "tester")},
+		Store:     &apiCredentialTestStore{capabilities: defaults},
 		Directory: &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
 		ProjectID: "identity-project",
 		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
 	}
 
 	_, err := svc.CreateAPICredential(context.Background(), Principal{
-		Subject: "admin-1",
+		Subject: "member-1",
 		OrgID:   "42",
-		Roles:   []string{RoleOrgAdmin},
+		Roles:   []string{RoleMember},
 	}, CreateAPICredentialRequest{
-		DisplayName: "sandbox automation",
-		Permissions: []string{PermissionSandboxExecutionSubmit},
+		DisplayName: "credential mint",
+		Permissions: []string{PermissionAPICredentialsCreate},
 	})
-	if !errors.Is(err, ErrInvalidPolicy) {
-		t.Fatalf("identity org admin should not mint sandbox permissions, got %v", err)
+	if !errors.Is(err, ErrInvalidCapabilities) {
+		t.Fatalf("member should not mint api_credentials:create, got %v", err)
 	}
 
 	result, err := svc.CreateAPICredential(context.Background(), Principal{
 		Subject: "owner-1",
 		OrgID:   "42",
-		Roles:   []string{RoleForgeOrgOwner},
+		Roles:   []string{RoleOwner},
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
 		Permissions: []string{PermissionSandboxExecutionSubmit, PermissionSandboxLogsRead},
 	})
 	if err != nil {
-		t.Fatalf("forge org owner should mint sandbox permissions: %v", err)
+		t.Fatalf("owner should mint sandbox permissions: %v", err)
 	}
 	if result.Credential.OrgID != "42" || result.Credential.SubjectID != "subject-1" {
 		t.Fatalf("unexpected credential: %#v", result.Credential)
@@ -53,7 +54,10 @@ func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
 	storeErr := errors.New("store failed")
 	directory := &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")}
 	svc := &Service{
-		Store:     &apiCredentialTestStore{policy: DefaultPolicy("42", "tester"), createErr: storeErr},
+		Store: &apiCredentialTestStore{
+			capabilities: DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC()),
+			createErr:    storeErr,
+		},
 		Directory: directory,
 		ProjectID: "identity-project",
 		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
@@ -62,7 +66,7 @@ func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
 	_, err := svc.CreateAPICredential(context.Background(), Principal{
 		Subject: "owner-1",
 		OrgID:   "42",
-		Roles:   []string{RoleForgeOrgOwner},
+		Roles:   []string{RoleOwner},
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
 		Permissions: []string{PermissionSandboxExecutionSubmit},
@@ -93,17 +97,17 @@ func testIssuedMaterial(method APICredentialAuthMethod, clientID string) APICred
 }
 
 type apiCredentialTestStore struct {
-	policy    PolicyDocument
-	created   APICredential
-	createErr error
+	capabilities MemberCapabilitiesDocument
+	created      APICredential
+	createErr    error
 }
 
-func (s *apiCredentialTestStore) GetPolicy(context.Context, string, string) (PolicyDocument, error) {
-	return s.policy, nil
+func (s *apiCredentialTestStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {
+	return s.capabilities, nil
 }
 
-func (s *apiCredentialTestStore) PutPolicy(context.Context, PolicyDocument) (PolicyDocument, error) {
-	return PolicyDocument{}, nil
+func (s *apiCredentialTestStore) PutMemberCapabilities(context.Context, MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
+	return MemberCapabilitiesDocument{}, nil
 }
 
 func (s *apiCredentialTestStore) CreateAPICredential(_ context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error) {

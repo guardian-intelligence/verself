@@ -3,96 +3,84 @@ package identity
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 type SQLStore struct {
 	DB *sql.DB
 }
 
-type storedPolicyDocument struct {
-	Roles []PolicyRole `json:"roles"`
-}
-
-func (s SQLStore) GetPolicy(ctx context.Context, orgID, actor string) (PolicyDocument, error) {
+func (s SQLStore) GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
 	if s.DB == nil {
-		return PolicyDocument{}, ErrStoreUnavailable
+		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
 	}
 	var (
-		raw       []byte
+		enabled   pq.StringArray
 		version   int32
 		updatedAt time.Time
 		updatedBy string
 	)
 	err := s.DB.QueryRowContext(ctx, `
-SELECT document, version, updated_at, updated_by
-FROM identity_policy_documents
+SELECT enabled_keys, version, updated_at, updated_by
+FROM identity_member_capabilities
 WHERE org_id = $1
-`, orgID).Scan(&raw, &version, &updatedAt, &updatedBy)
+`, orgID).Scan(&enabled, &version, &updatedAt, &updatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
-		policy := DefaultPolicy(orgID, actor)
-		policy.UpdatedAt = time.Now().UTC()
-		return policy, nil
+		return DefaultMemberCapabilitiesDocument(orgID, actor, time.Now().UTC()), nil
 	}
 	if err != nil {
-		return PolicyDocument{}, fmt.Errorf("get identity policy: %w", err)
+		return MemberCapabilitiesDocument{}, fmt.Errorf("get identity member capabilities: %w", err)
 	}
-	var stored storedPolicyDocument
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return PolicyDocument{}, fmt.Errorf("decode identity policy: %w", err)
-	}
-	return PolicyDocument{
-		OrgID:     orgID,
-		Version:   version,
-		Roles:     clonePolicyRoles(stored.Roles),
-		UpdatedAt: updatedAt,
-		UpdatedBy: updatedBy,
+	return MemberCapabilitiesDocument{
+		OrgID:       orgID,
+		Version:     version,
+		EnabledKeys: append([]string(nil), enabled...),
+		UpdatedAt:   updatedAt,
+		UpdatedBy:   updatedBy,
 	}, nil
 }
 
-func (s SQLStore) PutPolicy(ctx context.Context, policy PolicyDocument) (PolicyDocument, error) {
+func (s SQLStore) PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
 	if s.DB == nil {
-		return PolicyDocument{}, ErrStoreUnavailable
+		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
 	}
-	if err := ValidatePolicy(policy); err != nil {
-		return PolicyDocument{}, err
+	if err := ValidateMemberCapabilities(doc); err != nil {
+		return MemberCapabilitiesDocument{}, err
 	}
-	raw, err := json.Marshal(storedPolicyDocument{Roles: clonePolicyRoles(policy.Roles)})
-	if err != nil {
-		return PolicyDocument{}, fmt.Errorf("encode identity policy: %w", err)
-	}
+	enabled := pq.StringArray(doc.EnabledKeys)
 	query := `
-UPDATE identity_policy_documents
-SET document = $2::jsonb,
+UPDATE identity_member_capabilities
+SET enabled_keys = $2,
     version = version + 1,
     updated_at = now(),
     updated_by = $3
 WHERE org_id = $1 AND version = $4
 RETURNING version, updated_at
 `
-	args := []any{policy.OrgID, string(raw), policy.UpdatedBy, policy.Version}
-	if policy.Version == 0 {
+	args := []any{doc.OrgID, enabled, doc.UpdatedBy, doc.Version}
+	if doc.Version == 0 {
 		query = `
-INSERT INTO identity_policy_documents (org_id, document, version, updated_at, updated_by)
-VALUES ($1, $2::jsonb, 1, now(), $3)
+INSERT INTO identity_member_capabilities (org_id, enabled_keys, version, updated_at, updated_by)
+VALUES ($1, $2, 1, now(), $3)
 ON CONFLICT (org_id) DO NOTHING
 RETURNING version, updated_at
 `
-		args = []any{policy.OrgID, string(raw), policy.UpdatedBy}
+		args = []any{doc.OrgID, enabled, doc.UpdatedBy}
 	}
-	err = s.DB.QueryRowContext(ctx, query, args...).Scan(&policy.Version, &policy.UpdatedAt)
+	err := s.DB.QueryRowContext(ctx, query, args...).Scan(&doc.Version, &doc.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PolicyDocument{}, fmt.Errorf("%w: stale version for org %s", ErrPolicyConflict, policy.OrgID)
+		return MemberCapabilitiesDocument{}, fmt.Errorf("%w: stale version for org %s", ErrCapabilitiesConflict, doc.OrgID)
 	}
 	if err != nil {
-		return PolicyDocument{}, fmt.Errorf("put identity policy: %w", err)
+		return MemberCapabilitiesDocument{}, fmt.Errorf("put identity member capabilities: %w", err)
 	}
-	policy.Roles = clonePolicyRoles(policy.Roles)
-	return policy, nil
+	doc.EnabledKeys = append([]string(nil), doc.EnabledKeys...)
+	return doc, nil
 }
 
 type credentialScanner interface {

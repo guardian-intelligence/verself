@@ -77,35 +77,35 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 	}), updateMemberRoles(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
-		OperationID: "get-organization-policy",
+		OperationID: "get-organization-member-capabilities",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/organization/policy",
-		Summary:     "Get organization policy document",
+		Path:        "/api/v1/organization/member-capabilities",
+		Summary:     "Get organization member capabilities and the static capability catalog",
 	}, operationPolicy{
-		Permission:     permissionPolicyRead,
-		Resource:       "organization_policy",
+		Permission:     permissionMemberCapabilitiesRead,
+		Resource:       "organization_member_capabilities",
 		Action:         "read",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "read",
-		AuditEvent:     "identity.organization.policy.read",
-	}), getPolicy(svc))
+		AuditEvent:     "identity.organization.member_capabilities.read",
+	}), getMemberCapabilities(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
-		OperationID:   "put-organization-policy",
+		OperationID:   "put-organization-member-capabilities",
 		Method:        http.MethodPut,
-		Path:          "/api/v1/organization/policy",
-		Summary:       "Replace organization policy document",
+		Path:          "/api/v1/organization/member-capabilities",
+		Summary:       "Replace the organization's enabled member capability set",
 		DefaultStatus: 200,
 	}, operationPolicy{
-		Permission:     permissionPolicyWrite,
-		Resource:       "organization_policy",
+		Permission:     permissionMemberCapabilitiesWrite,
+		Resource:       "organization_member_capabilities",
 		Action:         "write",
 		OrgScope:       "token_org_id",
-		RateLimitClass: "policy_mutation",
+		RateLimitClass: "member_capabilities_mutation",
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "identity.organization.policy.write",
+		AuditEvent:     "identity.organization.member_capabilities.write",
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), putPolicy(svc))
+	}), putMemberCapabilities(svc))
 
 	registerSecured(api, svc, secured(huma.Operation{
 		OperationID: "list-organization-operations",
@@ -228,12 +228,12 @@ type memberOutput struct {
 	Body apiwire.IdentityMember
 }
 
-type policyOutput struct {
-	Body apiwire.IdentityPolicyDocument
+type memberCapabilitiesOutput struct {
+	Body apiwire.IdentityMemberCapabilities
 }
 
-type putPolicyInput struct {
-	Body apiwire.IdentityPutPolicyRequest
+type putMemberCapabilitiesInput struct {
+	Body apiwire.IdentityPutMemberCapabilitiesRequest
 }
 
 type operationsOutput struct {
@@ -367,31 +367,34 @@ func updateMemberRoles(svc *identity.Service) func(context.Context, *memberRoles
 	}
 }
 
-func getPolicy(svc *identity.Service) func(context.Context, *emptyInput) (*policyOutput, error) {
-	return func(ctx context.Context, _ *emptyInput) (*policyOutput, error) {
+func getMemberCapabilities(svc *identity.Service) func(context.Context, *emptyInput) (*memberCapabilitiesOutput, error) {
+	return func(ctx context.Context, _ *emptyInput) (*memberCapabilitiesOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		policy, err := svc.Policy(ctx, principal)
+		doc, err := svc.MemberCapabilities(ctx, principal)
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &policyOutput{Body: policyDTO(policy)}, nil
+		return &memberCapabilitiesOutput{Body: memberCapabilitiesDTO(doc)}, nil
 	}
 }
 
-func putPolicy(svc *identity.Service) func(context.Context, *putPolicyInput) (*policyOutput, error) {
-	return func(ctx context.Context, input *putPolicyInput) (*policyOutput, error) {
+func putMemberCapabilities(svc *identity.Service) func(context.Context, *putMemberCapabilitiesInput) (*memberCapabilitiesOutput, error) {
+	return func(ctx context.Context, input *putMemberCapabilitiesInput) (*memberCapabilitiesOutput, error) {
 		principal, err := principalFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		policy, err := svc.PutPolicy(ctx, principal, policyFromPutDTO(input.Body))
+		doc, err := svc.PutMemberCapabilities(ctx, principal, identity.MemberCapabilitiesDocument{
+			Version:     input.Body.Version,
+			EnabledKeys: append([]string(nil), input.Body.EnabledKeys...),
+		})
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		return &policyOutput{Body: policyDTO(policy)}, nil
+		return &memberCapabilitiesOutput{Body: memberCapabilitiesDTO(doc)}, nil
 	}
 }
 
@@ -490,11 +493,11 @@ func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCreden
 
 func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	return apiwire.IdentityOrganization{
-		OrgID:       orgID(org.OrgID),
-		Name:        org.Name,
-		Caller:      memberDTO(org.Caller),
-		Policy:      policyDTO(org.Policy),
-		Permissions: append([]string(nil), org.Permissions...),
+		OrgID:              orgID(org.OrgID),
+		Name:               org.Name,
+		Caller:             memberDTO(org.Caller),
+		MemberCapabilities: memberCapabilitiesDocumentDTO(org.MemberCapabilities),
+		Permissions:        append([]string(nil), org.Permissions...),
 	}
 }
 
@@ -517,36 +520,31 @@ func memberDTO(member identity.Member) apiwire.IdentityMember {
 	}
 }
 
-func policyDTO(policy identity.PolicyDocument) apiwire.IdentityPolicyDocument {
-	roles := make([]apiwire.IdentityPolicyRole, 0, len(policy.Roles))
-	for _, role := range policy.Roles {
-		roles = append(roles, apiwire.IdentityPolicyRole{
-			RoleKey:     role.RoleKey,
-			DisplayName: role.DisplayName,
-			Permissions: append([]string(nil), role.Permissions...),
-		})
-	}
-	return apiwire.IdentityPolicyDocument{
-		OrgID:     orgID(policy.OrgID),
-		Version:   policy.Version,
-		Roles:     roles,
-		UpdatedAt: policy.UpdatedAt,
-		UpdatedBy: policy.UpdatedBy,
+func memberCapabilitiesDocumentDTO(doc identity.MemberCapabilitiesDocument) apiwire.IdentityMemberCapabilitiesDocument {
+	return apiwire.IdentityMemberCapabilitiesDocument{
+		OrgID:       orgID(doc.OrgID),
+		Version:     doc.Version,
+		EnabledKeys: append([]string(nil), doc.EnabledKeys...),
+		UpdatedAt:   doc.UpdatedAt,
+		UpdatedBy:   doc.UpdatedBy,
 	}
 }
 
-func policyFromPutDTO(policy apiwire.IdentityPutPolicyRequest) identity.PolicyDocument {
-	roles := make([]identity.PolicyRole, 0, len(policy.Roles))
-	for _, role := range policy.Roles {
-		roles = append(roles, identity.PolicyRole{
-			RoleKey:     role.RoleKey,
-			DisplayName: role.DisplayName,
-			Permissions: append([]string(nil), role.Permissions...),
+func memberCapabilitiesDTO(doc identity.MemberCapabilitiesDocument) apiwire.IdentityMemberCapabilities {
+	catalog := identity.DefaultCapabilities()
+	dtoCatalog := make([]apiwire.IdentityMemberCapability, 0, len(catalog))
+	for _, capability := range catalog {
+		dtoCatalog = append(dtoCatalog, apiwire.IdentityMemberCapability{
+			Key:            capability.Key,
+			Label:          capability.Label,
+			Description:    capability.Description,
+			DefaultEnabled: capability.DefaultEnabled,
+			Permissions:    append([]string(nil), capability.Permissions...),
 		})
 	}
-	return identity.PolicyDocument{
-		Version: policy.Version,
-		Roles:   roles,
+	return apiwire.IdentityMemberCapabilities{
+		Document: memberCapabilitiesDocumentDTO(doc),
+		Catalog:  dtoCatalog,
 	}
 }
 
@@ -559,11 +557,12 @@ func operationsDTO(operations identity.Operations) apiwire.IdentityOperations {
 		}
 		for _, operation := range service.Operations {
 			serviceDTO.Operations = append(serviceDTO.Operations, apiwire.IdentityOperation{
-				OperationID: operation.OperationID,
-				Permission:  operation.Permission,
-				Resource:    operation.Resource,
-				Action:      operation.Action,
-				OrgScope:    operation.OrgScope,
+				OperationID:    operation.OperationID,
+				Permission:     operation.Permission,
+				Resource:       operation.Resource,
+				Action:         operation.Action,
+				OrgScope:       operation.OrgScope,
+				MemberEligible: operation.MemberEligible,
 			})
 		}
 		services = append(services, serviceDTO)

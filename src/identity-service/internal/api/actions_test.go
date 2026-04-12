@@ -16,7 +16,7 @@ import (
 
 func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	store := actionStore{
-		staticPolicyStore: staticPolicyStore{policy: identity.DefaultPolicy("42", "tester")},
+		staticPolicyStore: staticPolicyStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())},
 		result: identity.ResolveAPICredentialClaimsResult{
 			CredentialID: "credential-1",
 			OrgID:        "42",

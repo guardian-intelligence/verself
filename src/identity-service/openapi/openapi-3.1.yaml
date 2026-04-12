@@ -318,6 +318,81 @@ components:
         - state
         - role_keys
       type: object
+    IdentityMemberCapabilities:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityMemberCapabilities.json
+          format: uri
+          readOnly: true
+          type: string
+        catalog:
+          items:
+            $ref: "#/components/schemas/IdentityMemberCapability"
+          type:
+            - array
+            - "null"
+        document:
+          $ref: "#/components/schemas/IdentityMemberCapabilitiesDocument"
+      required:
+        - document
+        - catalog
+      type: object
+    IdentityMemberCapabilitiesDocument:
+      additionalProperties: false
+      properties:
+        enabled_keys:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_by:
+          type: string
+        version:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+      required:
+        - org_id
+        - version
+        - enabled_keys
+        - updated_at
+        - updated_by
+      type: object
+    IdentityMemberCapability:
+      additionalProperties: false
+      properties:
+        default_enabled:
+          type: boolean
+        description:
+          type: string
+        key:
+          type: string
+        label:
+          type: string
+        permissions:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - key
+        - label
+        - description
+        - default_enabled
+        - permissions
+      type: object
     IdentityMembers:
       additionalProperties: false
       properties:
@@ -342,6 +417,8 @@ components:
       properties:
         action:
           type: string
+        member_eligible:
+          type: boolean
         operation_id:
           type: string
         org_scope:
@@ -356,6 +433,7 @@ components:
         - resource
         - action
         - org_scope
+        - member_eligible
       type: object
     IdentityOperations:
       additionalProperties: false
@@ -388,6 +466,8 @@ components:
           type: string
         caller:
           $ref: "#/components/schemas/IdentityMember"
+        member_capabilities:
+          $ref: "#/components/schemas/IdentityMemberCapabilitiesDocument"
         name:
           type: string
         org_id:
@@ -399,88 +479,28 @@ components:
           type:
             - array
             - "null"
-        policy:
-          $ref: "#/components/schemas/IdentityPolicyDocument"
       required:
         - org_id
         - name
         - caller
-        - policy
+        - member_capabilities
         - permissions
       type: object
-    IdentityPolicyDocument:
+    IdentityPutMemberCapabilitiesRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4248/schemas/IdentityPolicyDocument.json
+            - http://127.0.0.1:4248/schemas/IdentityPutMemberCapabilitiesRequest.json
           format: uri
           readOnly: true
           type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        roles:
-          items:
-            $ref: "#/components/schemas/IdentityPolicyRole"
-          type:
-            - array
-            - "null"
-        updated_at:
-          format: date-time
-          type: string
-        updated_by:
-          type: string
-        version:
-          format: int32
-          maximum: 2147483647
-          minimum: 0
-          type: integer
-      required:
-        - org_id
-        - version
-        - roles
-        - updated_at
-        - updated_by
-      type: object
-    IdentityPolicyRole:
-      additionalProperties: false
-      properties:
-        display_name:
-          maxLength: 200
-          type: string
-        permissions:
+        enabled_keys:
           items:
             type: string
-          maxItems: 256
-          minItems: 1
-          type:
-            - array
-            - "null"
-        role_key:
-          maxLength: 100
-          type: string
-      required:
-        - role_key
-        - display_name
-        - permissions
-      type: object
-    IdentityPutPolicyRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4248/schemas/IdentityPutPolicyRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        roles:
-          items:
-            $ref: "#/components/schemas/IdentityPolicyRole"
           maxItems: 32
-          minItems: 1
+          minItems: 0
           type:
             - array
             - "null"
@@ -491,7 +511,7 @@ components:
           type: integer
       required:
         - version
-        - roles
+        - enabled_keys
       type: object
     IdentityRollAPICredentialRequest:
       additionalProperties: false
@@ -795,6 +815,74 @@ paths:
         rate_limit_class: api_credential_mutation
         request_body_max_bytes: 16384
         resource: api_credential
+  /api/v1/organization/member-capabilities:
+    get:
+      operationId: get-organization-member-capabilities
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityMemberCapabilities"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get organization member capabilities and the static capability catalog
+      x-forge-metal-iam:
+        action: read
+        audit_event: identity.organization.member_capabilities.read
+        org_scope: token_org_id
+        permission: identity:member_capabilities:read
+        rate_limit_class: read
+        resource: organization_member_capabilities
+    put:
+      operationId: put-organization-member-capabilities
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityPutMemberCapabilitiesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityMemberCapabilities"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Replace the organization's enabled member capability set
+      x-forge-metal-iam:
+        action: write
+        audit_event: identity.organization.member_capabilities.write
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:member_capabilities:write
+        rate_limit_class: member_capabilities_mutation
+        request_body_max_bytes: 16384
+        resource: organization_member_capabilities
   /api/v1/organization/members:
     get:
       operationId: list-organization-members
@@ -939,73 +1027,5 @@ paths:
         permission: identity:operations:read
         rate_limit_class: read
         resource: service_operation
-  /api/v1/organization/policy:
-    get:
-      operationId: get-organization-policy
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityPolicyDocument"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Get organization policy document
-      x-forge-metal-iam:
-        action: read
-        audit_event: identity.organization.policy.read
-        org_scope: token_org_id
-        permission: identity:policy:read
-        rate_limit_class: read
-        resource: organization_policy
-    put:
-      operationId: put-organization-policy
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IdentityPutPolicyRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityPolicyDocument"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Replace organization policy document
-      x-forge-metal-iam:
-        action: write
-        audit_event: identity.organization.policy.write
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: identity:policy:write
-        rate_limit_class: policy_mutation
-        request_body_max_bytes: 16384
-        resource: organization_policy
 servers:
   - url: http://127.0.0.1:4248

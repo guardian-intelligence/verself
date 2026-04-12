@@ -42,7 +42,7 @@ func TestCreateAuthorizationRequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	err = client.createAuthorization(context.Background(), "42", "project-1", "user-1", []string{identity.RoleOrgMember})
+	err = client.createAuthorization(context.Background(), "42", "project-1", "user-1", []string{identity.RoleMember})
 	if err != nil {
 		t.Fatalf("create authorization: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 	}
 	_, err = client.InviteMember(context.Background(), "42", "project-1", identity.InviteMemberRequest{
 		Email:    "new@example.com",
-		RoleKeys: []string{identity.RoleOrgMember},
+		RoleKeys: []string{identity.RoleMember},
 	})
 	if err != nil {
 		t.Fatalf("invite: %v", err)
