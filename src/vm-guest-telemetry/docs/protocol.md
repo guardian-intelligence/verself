@@ -8,6 +8,15 @@ The stream contains:
 
 All integers are little-endian. Every frame is exactly 128 bytes.
 
+The host validates the stream as it ingests it:
+
+- the first frame must be `hello`
+- `sample.seq` must be monotonic
+- a sequence jump forward is a gap diagnostic
+- a sequence regression is a regression diagnostic
+
+These diagnostics are host-side ingestion behavior. They do not change the guest wire format.
+
 ## Frame Header
 
 | Offset | Size | Field | Type |
@@ -59,6 +68,7 @@ Constants:
 | 116 | 2 | `psi_io_pct100` | `u16` |
 
 Samples begin at `seq = 1` and increment monotonically for the lifetime of the stream.
+The host treats `hello.seq + 1` as the first expected sample sequence.
 
 ## Missing-Data Flags
 
@@ -74,13 +84,39 @@ Unavailable fields encode as zero and must be interpreted alongside `flags`.
 
 ## Golden Vectors
 
-`protocol/vectors.json` is the checked-in conformance file. It contains:
+`protocol/vectors.json` is the checked-in conformance file generated from the Zig canonical encoder. It contains:
 
 - `guest_hello`
 - `guest_sample`
 - `guest_sample_max`
 
-Each vector pairs hex-encoded wire bytes with decoded field values. Go or TypeScript decoders should validate against that file rather than re-specifying the layout independently.
+Each vector pairs hex-encoded wire bytes with decoded field values. Go decoder tests should validate against that file rather than re-specifying the layout independently.
+
+Do not maintain separate Go-side protocol fixtures that drift from the Zig encoder output. The Zig encoder defines the canonical byte layout for the guest agent.
+
+## Host Diagnostics
+
+The current host ingestion path validates sequence continuity and emits diagnostics for non-monotonic streams:
+
+- `hello-first` failures terminate ingestion immediately.
+- a forward jump from `expected_seq` to a larger `observed_seq` emits a gap diagnostic with `missing_samples = observed_seq - expected_seq`.
+- a backward jump emits a regression diagnostic and drops the regressed frame.
+
+In ClickHouse, the practical evidence is the host log row:
+
+- log body: `guest telemetry stream diagnostic`
+- structured attributes: `run_id`, `kind`, `expected_seq`, `observed_seq`, `missing_samples`
+
+For healthy streams, look for `guest telemetry hello received` and `guest telemetry sample received` log bodies with their corresponding `run_id` and `seq` attributes.
+
+## Deterministic Fault Profiles
+
+The proof harness uses deterministic host-side ingestion fault profiles to exercise the diagnostics:
+
+- `gap_once@<seq>`
+- `regression_once@<seq>`
+
+These profiles are injected on the host after frame decode. They are not guest wire-format changes, and they do not require regenerating `protocol/vectors.json`.
 
 Regenerate:
 
