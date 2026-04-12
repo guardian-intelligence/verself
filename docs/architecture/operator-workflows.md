@@ -2,9 +2,13 @@
 
 ## Deployment Surface
 
-Use `dev-single-node.yml` for normal platform iteration. It rebuilds the Nix server profile, pushes it to the current worker, and reapplies the Ansible roles without wiping host state. Target individual roles with `--tags` (e.g. `--tags caddy`).
+Use `dev-single-node.yml` for normal platform iteration. It rebuilds the
+server profile, pushes it to the current worker, and reapplies the Ansible roles
+without wiping host state. Target individual roles with `--tags` (e.g.
+`--tags caddy` or `--tags grafana`).
 
-Use `hyperdx-dashboards.yml` when the change is limited to HyperDX sources or dashboards. That path exists specifically so dashboard iteration does not require a full platform redeploy.
+Grafana dashboards are provisioned by the `grafana` role and exercised by
+`make grafana-proof`; no separate dashboard-sync playbook exists.
 
 ## ClickHouse Access
 
@@ -17,7 +21,7 @@ Use it from the repo root:
 ```bash
 make clickhouse-query QUERY='SHOW TABLES' DATABASE=forge_metal
 make clickhouse-shell
-./scripts/clickhouse.sh --database forge_metal --query 'SHOW TABLES'
+./src/platform/scripts/clickhouse.sh --database forge_metal --query 'SHOW TABLES'
 ```
 
 The current database layout is:
