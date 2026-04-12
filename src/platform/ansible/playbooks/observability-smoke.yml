@@ -1,0 +1,28 @@
+---
+# Tiny telemetry smoke probe for deploy-trace / telemetry-proof.
+
+- name: Observability smoke
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Fail the smoke run on demand
+      ansible.builtin.assert:
+        that:
+          - false
+        fail_msg: "EXPECT_FAIL requested the smoke playbook to fail."
+      when: lookup('env', 'EXPECT_FAIL') | default('', true) | lower in ['1', 'true', 'yes']
+
+    - name: Probe billing healthz through fm_uri
+      fm_uri:
+        url: "http://127.0.0.1:4242/healthz"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: observability_smoke_response
+
+    - name: Assert smoke response content
+      ansible.builtin.assert:
+        that:
+          - observability_smoke_response.status == 200
+          - observability_smoke_response.content | default('') | trim == 'ok'
