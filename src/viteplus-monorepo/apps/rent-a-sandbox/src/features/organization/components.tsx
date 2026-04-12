@@ -2,6 +2,7 @@ import { useMemo, useReducer } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { Button } from "@forge-metal/ui/components/ui/button";
 import { Callout } from "~/components/callout";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
@@ -490,13 +491,11 @@ function PolicyEditor({
 
         {mutation.error ? <ErrorCallout error={mutation.error} title="Policy save failed" /> : null}
 
-        <button
-          type="submit"
-          disabled={!canWritePolicy || !isDirty || mutation.isPending}
-          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
-        >
-          {mutation.isPending ? "Saving..." : "Save Policy"}
-        </button>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={!canWritePolicy || !isDirty || mutation.isPending}>
+            {mutation.isPending ? "Saving..." : "Save Policy"}
+          </Button>
+        </div>
       </form>
     </section>
   );
