@@ -52,6 +52,7 @@ func run() error {
 
 	pgDSN := requireCredential("pg-dsn")
 	zitadelAdminToken := requireCredential("zitadel-admin-token")
+	zitadelActionSigningKey := requireCredential("zitadel-action-signing-key")
 
 	listenAddr := envOr("IDENTITY_LISTEN_ADDR", "127.0.0.1:4248")
 	authIssuerURL := requireEnv("IDENTITY_AUTH_ISSUER_URL")
@@ -105,6 +106,7 @@ func run() error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	api.RegisterZitadelActionRoutes(rootMux, identityService, zitadelActionSigningKey)
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService})
