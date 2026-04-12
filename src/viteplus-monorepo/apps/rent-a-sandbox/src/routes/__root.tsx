@@ -8,7 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
-import { AuthProvider, useUser } from "@forge-metal/auth-web/react";
+import { AuthProvider } from "@forge-metal/auth-web/react";
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@forge-metal/auth-web/components";
 import {
   type Auth,
   type AuthSnapshot,
@@ -130,27 +131,15 @@ function Nav() {
 }
 
 function AuthButton() {
-  const { user } = useUser();
   const currentLocation = useRouterState().location.href;
-  const loginHref = `/login?redirect=${encodeURIComponent(currentLocation)}`;
-
-  if (!user) {
-    return (
-      <a
-        href={loginHref}
-        className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-sm"
-      >
-        Sign in
-      </a>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="text-muted-foreground truncate max-w-[200px]">{user.email ?? user.sub}</span>
-      <a href="/logout" className="text-muted-foreground hover:text-foreground">
-        Sign out
-      </a>
-    </div>
+    <>
+      <SignedOut>
+        <SignInButton redirectTo={currentLocation} variant="outline" />
+      </SignedOut>
+      <SignedIn>
+        <UserButton />
+      </SignedIn>
+    </>
   );
 }
