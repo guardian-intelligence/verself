@@ -4,6 +4,12 @@
 import { client } from "./client.gen.js";
 import type { Client, Options as Options2, TDataShape } from "./client/index.js";
 import type {
+  CreateApiCredentialData,
+  CreateApiCredentialErrors,
+  CreateApiCredentialResponses,
+  GetApiCredentialData,
+  GetApiCredentialErrors,
+  GetApiCredentialResponses,
   GetOrganizationData,
   GetOrganizationErrors,
   GetOrganizationPolicyData,
@@ -13,6 +19,9 @@ import type {
   InviteOrganizationMemberData,
   InviteOrganizationMemberErrors,
   InviteOrganizationMemberResponses,
+  ListApiCredentialsData,
+  ListApiCredentialsErrors,
+  ListApiCredentialsResponses,
   ListOrganizationMembersData,
   ListOrganizationMembersErrors,
   ListOrganizationMembersResponses,
@@ -22,6 +31,12 @@ import type {
   PutOrganizationPolicyData,
   PutOrganizationPolicyErrors,
   PutOrganizationPolicyResponses,
+  RevokeApiCredentialData,
+  RevokeApiCredentialErrors,
+  RevokeApiCredentialResponses,
+  RollApiCredentialData,
+  RollApiCredentialErrors,
+  RollApiCredentialResponses,
   UpdateOrganizationMemberRolesData,
   UpdateOrganizationMemberRolesErrors,
   UpdateOrganizationMemberRolesResponses,
@@ -55,6 +70,90 @@ export const getOrganization = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/organization",
     ...options,
+  });
+
+/**
+ * List organization API credentials
+ */
+export const listApiCredentials = <ThrowOnError extends boolean = false>(
+  options?: Options<ListApiCredentialsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListApiCredentialsResponses,
+    ListApiCredentialsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/api-credentials",
+    ...options,
+  });
+
+/**
+ * Create an API credential
+ */
+export const createApiCredential = <ThrowOnError extends boolean = false>(
+  options: Options<CreateApiCredentialData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateApiCredentialResponses,
+    CreateApiCredentialErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/api-credentials",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Revoke an API credential
+ */
+export const revokeApiCredential = <ThrowOnError extends boolean = false>(
+  options: Options<RevokeApiCredentialData, ThrowOnError>,
+) =>
+  (options.client ?? client).delete<
+    RevokeApiCredentialResponses,
+    RevokeApiCredentialErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/api-credentials/{credential_id}",
+    ...options,
+  });
+
+/**
+ * Get API credential metadata
+ */
+export const getApiCredential = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiCredentialData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<GetApiCredentialResponses, GetApiCredentialErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/api-credentials/{credential_id}",
+    ...options,
+  });
+
+/**
+ * Roll API credential secret material
+ */
+export const rollApiCredential = <ThrowOnError extends boolean = false>(
+  options: Options<RollApiCredentialData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    RollApiCredentialResponses,
+    RollApiCredentialErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/api-credentials/{credential_id}/roll",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
 /**
