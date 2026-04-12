@@ -83,7 +83,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 
 	runReq, err := session.waitForRunRequest(controlCh)
 	if err != nil {
-		return err
+		return session.fail(err)
 	}
 	if err := session.applyNetwork(runReq.Network); err != nil {
 		return session.fail(err)
@@ -125,38 +125,20 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		StderrBytes:     session.stderrBytes.Load(),
 		DroppedLogBytes: session.droppedLogBytes.Load(),
 	}
-	if err := session.sendControl(vmproto.TypeResult, result); err != nil {
+	resultEnv, err := session.sendControlEnvelope(vmproto.TypeResult, result)
+	if err != nil {
 		return err
 	}
-
-	ackedResult := false
-	for {
-		env, err := session.waitForControl(controlCh)
-		if err != nil {
-			return err
-		}
-
-		switch env.Type {
-		case vmproto.TypeAck:
-			ack, err := vmproto.DecodePayload[vmproto.Ack](env)
-			if err != nil {
-				return err
-			}
-			if ack.ForType == vmproto.TypeResult {
-				ackedResult = true
-			}
-		case vmproto.TypeShutdown:
-			if !ackedResult {
-				continue
-			}
-			session.sendLogString("system", logPrefix+" shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
-			syscall.Sync()
-			return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
-		case vmproto.TypeCancel:
-			session.jobCancel()
-		default:
-		}
+	if err := session.waitForResultAck(controlCh, resultEnv.Seq); err != nil {
+		return session.fail(err)
 	}
+	if err := session.waitForShutdown(controlCh); err != nil {
+		return session.fail(err)
+	}
+
+	session.sendLogString("system", logPrefix+" shutdown acknowledged; syncing filesystems and rebooting to terminate the microVM\n")
+	syscall.Sync()
+	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 }
 
 func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.Envelope) {
@@ -252,12 +234,67 @@ func (s *agentSession) waitForRunRequest(controlCh <-chan vmproto.Envelope) (vmp
 		case vmproto.TypeRunRequest:
 			req, err := vmproto.DecodePayload[vmproto.RunRequest](env)
 			if err != nil {
-				return vmproto.RunRequest{}, err
+				return vmproto.RunRequest{}, protocolStateError("await_run_request", "decode run_request payload: %v", err)
+			}
+			if req.ProtocolVersion != vmproto.ProtocolVersion {
+				return vmproto.RunRequest{}, protocolStateError(
+					"await_run_request",
+					"run_request protocol_version mismatch: got %d want %d",
+					req.ProtocolVersion,
+					vmproto.ProtocolVersion,
+				)
 			}
 			return req, nil
 		case vmproto.TypeCancel:
 			s.jobCancel()
 		default:
+			return vmproto.RunRequest{}, unexpectedControlFrame("await_run_request", env.Type, vmproto.TypeRunRequest, vmproto.TypeCancel)
+		}
+	}
+}
+
+func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resultSeq uint64) error {
+	for {
+		env, err := s.waitForControl(controlCh)
+		if err != nil {
+			return err
+		}
+
+		switch env.Type {
+		case vmproto.TypeAck:
+			ack, err := vmproto.DecodePayload[vmproto.Ack](env)
+			if err != nil {
+				return protocolStateError("await_result_ack", "decode ack payload: %v", err)
+			}
+			if ack.ForType != vmproto.TypeResult {
+				return protocolStateError("await_result_ack", "ack for_type mismatch: got %s want %s", ack.ForType, vmproto.TypeResult)
+			}
+			if ack.ForSeq != resultSeq {
+				return protocolStateError("await_result_ack", "ack for_seq mismatch: got %d want %d", ack.ForSeq, resultSeq)
+			}
+			return nil
+		case vmproto.TypeCancel:
+			s.jobCancel()
+		default:
+			return unexpectedControlFrame("await_result_ack", env.Type, vmproto.TypeAck, vmproto.TypeCancel)
+		}
+	}
+}
+
+func (s *agentSession) waitForShutdown(controlCh <-chan vmproto.Envelope) error {
+	for {
+		env, err := s.waitForControl(controlCh)
+		if err != nil {
+			return err
+		}
+
+		switch env.Type {
+		case vmproto.TypeShutdown:
+			return nil
+		case vmproto.TypeCancel:
+			s.jobCancel()
+		default:
+			return unexpectedControlFrame("await_shutdown", env.Type, vmproto.TypeShutdown, vmproto.TypeCancel)
 		}
 	}
 }
@@ -277,10 +314,22 @@ func (s *agentSession) nextEnvelope(msgType vmproto.MessageType, payload any) (v
 }
 
 func (s *agentSession) sendControl(msgType vmproto.MessageType, payload any) error {
+	_, err := s.sendControlEnvelope(msgType, payload)
+	return err
+}
+
+func (s *agentSession) sendControlEnvelope(msgType vmproto.MessageType, payload any) (vmproto.Envelope, error) {
 	env, err := s.nextEnvelope(msgType, payload)
 	if err != nil {
-		return err
+		return vmproto.Envelope{}, err
 	}
+	if err := s.enqueueControl(env); err != nil {
+		return vmproto.Envelope{}, err
+	}
+	return env, nil
+}
+
+func (s *agentSession) enqueueControl(env vmproto.Envelope) error {
 	select {
 	case s.controlQ <- outboundFrame{envelope: env}:
 		return nil
@@ -461,8 +510,10 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 			}
 			return duration, exitCode, nil
 		case env := <-controlCh:
-			if env.Type == vmproto.TypeCancel {
-				s.jobCancel()
+			if err := s.handleRunPhaseControl(env); err != nil {
+				terminateProcessGroup(cmd.Process.Pid)
+				s.activeChildPID.Store(0)
+				return time.Since(start), exitCodeFromWait(waitErr), err
 			}
 		case err := <-s.errCh:
 			terminateProcessGroup(cmd.Process.Pid)
@@ -472,6 +523,28 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 			terminateProcessGroup(cmd.Process.Pid)
 		}
 	}
+}
+
+func (s *agentSession) handleRunPhaseControl(env vmproto.Envelope) error {
+	switch env.Type {
+	case vmproto.TypeCancel:
+		s.jobCancel()
+		return nil
+	default:
+		return unexpectedControlFrame("run_phase", env.Type, vmproto.TypeCancel)
+	}
+}
+
+func unexpectedControlFrame(state string, got vmproto.MessageType, expected ...vmproto.MessageType) error {
+	allowed := make([]string, 0, len(expected))
+	for _, msgType := range expected {
+		allowed = append(allowed, string(msgType))
+	}
+	return protocolStateError(state, "unexpected control frame type %s (expected one of: %s)", got, strings.Join(allowed, ", "))
+}
+
+func protocolStateError(state string, format string, args ...any) error {
+	return fmt.Errorf("control protocol violation in %s: %s", state, fmt.Sprintf(format, args...))
 }
 
 type agentLogWriter struct {

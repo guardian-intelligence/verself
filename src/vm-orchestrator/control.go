@@ -135,11 +135,11 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 		return guestControlResult{}, fmt.Errorf("read guest hello: %w", err)
 	}
 	if env.Type != vmproto.TypeHello {
-		return guestControlResult{}, fmt.Errorf("expected guest hello, got %s", env.Type)
+		return guestControlResult{}, unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
 	}
 	hello, err = vmproto.DecodePayload[vmproto.Hello](env)
 	if err != nil {
-		return guestControlResult{}, err
+		return guestControlResult{}, guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
 	}
 	gotHello = true
 
@@ -227,9 +227,12 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 			}
 			return resultWithLogs(), fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
 		case vmproto.TypeResult:
+			if env.Seq == 0 {
+				return resultWithLogs(), guestProtocolError("await_guest_result", "result seq must be non-zero")
+			}
 			msg, err := vmproto.DecodePayload[vmproto.Result](env)
 			if err != nil {
-				return resultWithLogs(), err
+				return resultWithLogs(), guestProtocolError("await_guest_result", "decode result payload: %v", err)
 			}
 			if err := c.send(vmproto.TypeAck, vmproto.Ack{ForType: vmproto.TypeResult, ForSeq: env.Seq}); err != nil {
 				outcome := resultWithLogs()
@@ -248,9 +251,31 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 			outcome.result = msg
 			return outcome, nil
 		default:
-			return resultWithLogs(), fmt.Errorf("unexpected guest message type %s", env.Type)
+			return resultWithLogs(), unexpectedGuestControlFrame(
+				"await_guest_events",
+				env.Type,
+				vmproto.TypeLogChunk,
+				vmproto.TypeHeartbeat,
+				vmproto.TypeCheckpointRequest,
+				vmproto.TypePhaseStart,
+				vmproto.TypePhaseEnd,
+				vmproto.TypeFatal,
+				vmproto.TypeResult,
+			)
 		}
 	}
+}
+
+func unexpectedGuestControlFrame(state string, got vmproto.MessageType, expected ...vmproto.MessageType) error {
+	allowed := make([]string, 0, len(expected))
+	for _, msgType := range expected {
+		allowed = append(allowed, string(msgType))
+	}
+	return guestProtocolError(state, "unexpected guest message type %s (expected one of: %s)", got, strings.Join(allowed, ", "))
+}
+
+func guestProtocolError(state string, format string, args ...any) error {
+	return fmt.Errorf("guest control protocol violation in %s: %s", state, fmt.Sprintf(format, args...))
 }
 
 func appendLogChunk(dst *strings.Builder, data []byte) {
