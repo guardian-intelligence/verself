@@ -1,10 +1,7 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-export function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("animate-pulse rounded-md bg-primary/10", className)} {...props} />;
-}
+// Backward-compatible barrel: existing call sites do `import { cn, Skeleton }
+// from "@forge-metal/ui"`. Newer code should prefer the canonical shadcn
+// import paths — `@forge-metal/ui/lib/utils` for cn and
+// `@forge-metal/ui/components/ui/skeleton` for Skeleton — so the bundle can
+// tree-shake unused primitives and CLI add commands stay round-trippable.
+export { cn } from "./lib/utils";
+export { Skeleton } from "./components/ui/skeleton";
