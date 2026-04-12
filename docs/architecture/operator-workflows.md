@@ -10,6 +10,16 @@ without wiping host state. Target individual roles with `--tags` (e.g.
 Grafana dashboards are provisioned by the `grafana` role and exercised by
 `make grafana-proof`; no separate dashboard-sync playbook exists.
 
+After `make grafana-proof`, verify ClickHouse evidence with:
+
+```sql
+SELECT event_time, type, initial_user, query
+FROM system.query_log
+WHERE event_time >= now() - INTERVAL 15 MINUTE
+  AND query LIKE '%fm:grafana verify=%'
+ORDER BY event_time;
+```
+
 ## ClickHouse Access
 
 ClickHouse is not exposed for unauthenticated remote access. Use the repo wrapper so you do not have to manually prefix SSH, the password file, or the stable worker client path each time.
