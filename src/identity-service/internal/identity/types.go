@@ -12,6 +12,17 @@ const (
 	RoleMember = "member"
 )
 
+// MemberType separates a flesh-and-blood Zitadel user from a Zitadel machine
+// user (service account). The members table renders only humans; machine users
+// are surfaced via the API Credentials path even when they hold project
+// authorizations directly.
+type MemberType string
+
+const (
+	MemberTypeHuman   MemberType = "human"
+	MemberTypeMachine MemberType = "machine"
+)
+
 type Principal struct {
 	Subject           string
 	OrgID             string
@@ -33,6 +44,7 @@ type Organization struct {
 
 type Member struct {
 	UserID      string
+	Type        MemberType
 	Email       string
 	LoginName   string
 	DisplayName string

@@ -87,6 +87,7 @@ func (c *Client) ListMembers(ctx context.Context, orgID, projectID string) ([]id
 	}
 	for userID, user := range users {
 		member := membersByID[userID]
+		member.Type = user.Type
 		member.Email = user.Email
 		member.LoginName = user.LoginName
 		member.DisplayName = firstNonEmpty(member.DisplayName, user.DisplayName, user.LoginName, user.Email)
@@ -132,6 +133,7 @@ func (c *Client) UpdateMemberRoles(ctx context.Context, orgID, projectID, userID
 	user := users[userID]
 	return identity.Member{
 		UserID:      userID,
+		Type:        user.Type,
 		Email:       user.Email,
 		LoginName:   user.LoginName,
 		DisplayName: firstNonEmpty(user.DisplayName, user.LoginName, user.Email, assignment.UserDisplayName),
@@ -249,31 +251,37 @@ func (c *Client) updateAuthorization(ctx context.Context, authorizationID string
 }
 
 type userSummary struct {
+	Type        identity.MemberType
 	Email       string
 	LoginName   string
 	DisplayName string
 	State       string
 }
 
+type humanBlock struct {
+	Profile struct {
+		GivenName   string `json:"givenName"`
+		FamilyName  string `json:"familyName"`
+		DisplayName string `json:"displayName"`
+	} `json:"profile"`
+	Email struct {
+		Email string `json:"email"`
+	} `json:"email"`
+}
+
+type machineBlock struct {
+	Name string `json:"name"`
+}
+
 type usersResponse struct {
 	Result []struct {
-		UserID             string `json:"userId"`
-		State              string `json:"state"`
-		PreferredLoginName string `json:"preferredLoginName"`
-		Human              struct {
-			Username           string   `json:"username"`
-			LoginNames         []string `json:"loginNames"`
-			PreferredLoginName string   `json:"preferredLoginName"`
-			State              string   `json:"state"`
-			Profile            struct {
-				GivenName   string `json:"givenName"`
-				FamilyName  string `json:"familyName"`
-				DisplayName string `json:"displayName"`
-			} `json:"profile"`
-			Email struct {
-				Email string `json:"email"`
-			} `json:"email"`
-		} `json:"human"`
+		UserID             string        `json:"userId"`
+		State              string        `json:"state"`
+		Username           string        `json:"username"`
+		PreferredLoginName string        `json:"preferredLoginName"`
+		LoginNames         []string      `json:"loginNames"`
+		Human              *humanBlock   `json:"human"`
+		Machine            *machineBlock `json:"machine"`
 	} `json:"result"`
 }
 
@@ -294,17 +302,30 @@ func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]us
 	}
 	users := make(map[string]userSummary, len(out.Result))
 	for _, item := range out.Result {
-		loginName := firstNonEmpty(item.Human.PreferredLoginName, item.PreferredLoginName, item.Human.Username)
-		if loginName == "" && len(item.Human.LoginNames) > 0 {
-			loginName = item.Human.LoginNames[0]
+		loginName := item.PreferredLoginName
+		if loginName == "" && len(item.LoginNames) > 0 {
+			loginName = item.LoginNames[0]
 		}
-		displayName := firstNonEmpty(item.Human.Profile.DisplayName, strings.TrimSpace(item.Human.Profile.GivenName+" "+item.Human.Profile.FamilyName), loginName)
-		users[item.UserID] = userSummary{
-			Email:       item.Human.Email.Email,
-			LoginName:   loginName,
-			DisplayName: displayName,
-			State:       firstNonEmpty(item.Human.State, item.State),
+		if loginName == "" {
+			loginName = item.Username
 		}
+		summary := userSummary{State: item.State, LoginName: loginName}
+		switch {
+		case item.Human != nil:
+			summary.Type = identity.MemberTypeHuman
+			summary.Email = item.Human.Email.Email
+			summary.DisplayName = firstNonEmpty(
+				item.Human.Profile.DisplayName,
+				strings.TrimSpace(item.Human.Profile.GivenName+" "+item.Human.Profile.FamilyName),
+				loginName,
+			)
+		case item.Machine != nil:
+			summary.Type = identity.MemberTypeMachine
+			summary.DisplayName = firstNonEmpty(item.Machine.Name, loginName)
+		default:
+			summary.DisplayName = loginName
+		}
+		users[item.UserID] = summary
 	}
 	return users, nil
 }

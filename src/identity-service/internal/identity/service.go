@@ -67,7 +67,49 @@ func (s *Service) Members(ctx context.Context, principal Principal) ([]Member, e
 	if err := principal.validate(); err != nil {
 		return nil, err
 	}
-	return s.members(ctx, principal.OrgID)
+	members, err := s.members(ctx, principal.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	return visibleMembers(members), nil
+}
+
+// visibleMembers narrows the raw Zitadel directory listing to the rows the org
+// console renders. Two classes are dropped:
+//
+//   - Machine users (Zitadel service accounts). These are the same Zitadel
+//     primitive that backs API credentials; they belong on the API Credentials
+//     surface, not the members table. Even though seed-system grants persona
+//     machine users (assume-platform-admin and friends) project authorizations
+//     directly, the table is for human seats.
+//   - Owner-role users. Owner is the org singleton; the role cannot be assigned
+//     or revoked through invite/role-update (validateRoleKeys rejects it), so
+//     showing an owner row would be a UX dead end. The owner is communicated
+//     elsewhere (e.g. the caller's "your roles" badge in the general section).
+//
+// Service.Organization() still resolves callerMember from the unfiltered set so
+// an operator who is the owner can still see themselves in the general section.
+func visibleMembers(members []Member) []Member {
+	out := make([]Member, 0, len(members))
+	for _, member := range members {
+		if member.Type == MemberTypeMachine {
+			continue
+		}
+		if containsRole(member.RoleKeys, RoleOwner) {
+			continue
+		}
+		out = append(out, member)
+	}
+	return out
+}
+
+func containsRole(roles []string, target string) bool {
+	for _, role := range roles {
+		if role == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) InviteMember(ctx context.Context, principal Principal, input InviteMemberRequest) (InviteMemberResult, error) {
