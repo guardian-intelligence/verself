@@ -178,7 +178,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           otelhttp.NewHandler(mux, "mailbox-service"),
+		Handler:           otelhttp.NewHandler(fmotel.CorrelationMiddleware(mux), "mailbox-service"),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

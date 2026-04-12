@@ -160,9 +160,10 @@ func run() error {
 		}
 	}()
 
+	rootHandler := fmotel.CorrelationMiddleware(rootMux)
 	srv := &http.Server{
 		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(rootMux, "billing-service"),
+		Handler:           otelhttp.NewHandler(rootHandler, "billing-service"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

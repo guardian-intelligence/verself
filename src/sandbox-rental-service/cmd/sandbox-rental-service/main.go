@@ -196,6 +196,7 @@ func run() error {
 	rootMux.Handle("/", verificationHandler)
 	rootHandler := http.Handler(rootMux)
 	rootHandler = limitPublicAPIRequestBodies(rootHandler, sandboxAPIRequestBodyLimit)
+	rootHandler = fmotel.CorrelationMiddleware(rootHandler)
 	srv := &http.Server{
 		Addr:              listenAddr,
 		Handler:           otelhttp.NewHandler(rootHandler, "sandbox-rental-service"),
