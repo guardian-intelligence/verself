@@ -44,6 +44,17 @@ function emitLog(
   console.log(line);
 }
 
+function responseStatusCode(response: unknown, event: H3Event): number {
+  if (response !== null && typeof response === "object" && "status" in response) {
+    const status = (response as { status?: unknown }).status;
+    if (typeof status === "number" && status > 0) {
+      return status;
+    }
+  }
+
+  return event.res.status ?? 200;
+}
+
 export default definePlugin((nitroApp) => {
   nitroApp.hooks.hook("request", (event) => {
     const h3Event = event as H3Event;
@@ -54,7 +65,7 @@ export default definePlugin((nitroApp) => {
     context[requestStartKey] = process.hrtime.bigint();
   });
 
-  nitroApp.hooks.hook("response", (_response, event) => {
+  nitroApp.hooks.hook("response", (response, event) => {
     const h3Event = event as H3Event;
     const context = h3Event.context as Record<string, unknown>;
     const requestStartedAt = context[requestStartKey];
@@ -65,7 +76,8 @@ export default definePlugin((nitroApp) => {
     const span = trace.getActiveSpan();
     const spanContext = span?.spanContext();
     const url = h3Event.url;
-    const statusCode = h3Event.res.status ?? 200;
+    // Nitro can return a Response while event.res.status stays at the default 200.
+    const statusCode = responseStatusCode(response, h3Event);
     const level = statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
 
     const correlationID =
