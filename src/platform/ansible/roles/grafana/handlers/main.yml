@@ -1,0 +1,7 @@
+---
+- name: Restart Grafana
+  listen: restart grafana
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: grafana
+    state: restarted

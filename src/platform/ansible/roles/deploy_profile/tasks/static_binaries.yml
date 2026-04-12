@@ -112,6 +112,37 @@
     remote_src: true
     mode: "0755"
 
+# ── Grafana ──────────────────────────────────────────────────────────────────
+
+- name: Download Grafana archive
+  ansible.builtin.get_url:
+    url: "{{ deploy_profile_server_tools_pins.grafana.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/grafana-{{ deploy_profile_server_tools_pins.grafana.version }}.tar.gz"
+    checksum: "sha256:{{ deploy_profile_server_tools_pins.grafana.sha256 }}"
+    mode: "0644"
+
+- name: Create Grafana install directory
+  ansible.builtin.file:
+    path: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Extract Grafana distribution
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/grafana-{{ deploy_profile_server_tools_pins.grafana.version }}.tar.gz"
+    dest: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    creates: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}/bin/{{ deploy_profile_server_tools_pins.grafana.binary_name }}"
+
+- name: Symlink Grafana binary into fm_bin
+  ansible.builtin.file:
+    src: "{{ deploy_profile_server_tools_pins.grafana.install_dir }}/bin/{{ deploy_profile_server_tools_pins.grafana.binary_name }}"
+    dest: "{{ fm_bin }}/grafana"
+    state: link
+    force: true
+
 # ── Stalwart Mail Server ─────────────────────────────────────────────────────
 
 - name: Download Stalwart archive

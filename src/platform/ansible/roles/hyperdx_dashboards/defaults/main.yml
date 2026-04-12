@@ -1,3 +1,0 @@
----
-# HyperDX dashboards — no role-specific defaults.
-# Service endpoints come from the services registry (group_vars/all/services.yml).

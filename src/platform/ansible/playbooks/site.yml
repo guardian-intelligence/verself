@@ -152,8 +152,8 @@
       tags: [otelcol]
     - role: mailbox_service
       tags: [mailbox_service]
-    - role: hyperdx
-      tags: [hyperdx]
+    - role: grafana
+      tags: [grafana]
     - role: verdaccio
       tags: [verdaccio]
     - role: forgejo

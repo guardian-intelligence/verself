@@ -133,8 +133,8 @@
       tags: [letters]
     - role: electric_letters
       tags: [electric_letters]
-    - role: hyperdx
-      tags: [hyperdx]
+    - role: grafana
+      tags: [grafana]
     - role: verdaccio
       tags: [verdaccio]
     - role: forgejo

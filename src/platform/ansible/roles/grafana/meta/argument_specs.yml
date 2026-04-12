@@ -1,0 +1,28 @@
+---
+argument_specs:
+  main:
+    short_description: "Grafana observability UI"
+    description:
+      - "Deploys unmodified Grafana OSS against the existing ClickHouse and PostgreSQL services."
+      - "Service ports come from the services registry (group_vars/all/services.yml)."
+    options:
+      grafana_domain:
+        type: str
+        required: true
+        description: "Public domain for Grafana."
+      grafana_config_dir:
+        type: path
+        default: /etc/grafana
+        description: "Grafana configuration directory."
+      grafana_data_dir:
+        type: path
+        default: /var/lib/grafana
+        description: "Grafana data directory."
+      grafana_log_dir:
+        type: path
+        default: /var/log/grafana
+        description: "Grafana log directory."
+      fm_bin:
+        type: path
+        required: true
+        description: "Path to the server binary directory."

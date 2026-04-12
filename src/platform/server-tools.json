@@ -35,6 +35,22 @@
     "sha256": "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
     "extract_binary": "otelcol-contrib"
   },
+  "grafana": {
+    "version": "12.4.2",
+    "format": "tarball",
+    "url": "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
+    "sha256": "f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
+    "extract_dir": "grafana-v12.4.2",
+    "install_dir": "/opt/forge-metal/grafana",
+    "binary_name": "grafana"
+  },
+  "grafana_clickhouse_datasource": {
+    "version": "4.14.1",
+    "format": "zip",
+    "url": "https://github.com/grafana/clickhouse-datasource/releases/download/v4.14.1/grafana-clickhouse-datasource-4.14.1.linux_amd64.zip",
+    "sha256": "11f569287a607043a9c60c4abca493784cc187b6bc4298270e5ef764719a22f1",
+    "plugin_dir": "grafana-clickhouse-datasource"
+  },
   "containerd": {
     "version": "2.2.2",
     "format": "tarball",

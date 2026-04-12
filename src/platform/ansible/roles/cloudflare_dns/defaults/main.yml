@@ -4,10 +4,10 @@
 # Root domain (required, inherited from group_vars). Also used as the Cloudflare zone.
 
 # Service subdomains to create A records for.
-# Each role defines its own subdomain (e.g. hyperdx_subdomain: admin).
+# Each role defines its own subdomain (e.g. grafana_subdomain: dashboard).
 # This list is the union of all subdomains that need DNS records.
 cloudflare_dns_records:
-  - "{{ hyperdx_subdomain | default('admin') }}"
+  - "{{ grafana_subdomain | default('dashboard') }}"
   - "{{ forgejo_subdomain | default('git') }}"
   - "{{ zitadel_subdomain | default('auth') }}"
   - "{{ billing_service_subdomain | default('billing') }}"

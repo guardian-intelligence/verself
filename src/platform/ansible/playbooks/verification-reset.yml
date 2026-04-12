@@ -39,6 +39,8 @@
       tags: [rent_a_sandbox]
     - role: otelcol
       tags: [otelcol]
+    - role: grafana
+      tags: [grafana]
   handlers:
     - name: Ignore mailbox-service restart during verification reset
       listen: restart mailbox-service

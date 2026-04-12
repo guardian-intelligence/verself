@@ -147,14 +147,6 @@
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        _rand24a: >-
-          {{ lookup('community.general.random_string',
-             length=24, upper=true, lower=true,
-             numbers=true, special=false) }}
-        _slug6a: >-
-          {{ lookup('community.general.random_string',
-             length=6, upper=false, lower=true,
-             numbers=true, special=false) }}
         _rand32h: >-
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
@@ -163,9 +155,6 @@
           {{ lookup('community.general.random_string',
              length=32, upper=true, lower=true,
              numbers=true, special=false) }}
-        _hex64: >-
-          {{ lookup('community.general.random_string',
-             length=64, override_all='0123456789abcdef') }}
       no_log: true
 
     # --- Write and encrypt ---
@@ -182,9 +171,6 @@
           zitadel_masterkey: "{{ _rand32e }}"
           zitadel_admin_password: "{{ _rand32f }}#@F1"
           zitadel_admin_pat: ""
-          hyperdx_admin_email: "admin+{{ _slug6a }}@forge-metal.local"
-          hyperdx_admin_password: "{{ _rand24a }}#@F1"
-          hyperdx_session_secret: "{{ _hex64 }}"
           billing_pg_password: "{{ _rand32g }}"
           postgresql_sandbox_rental_password: "{{ _rand32h }}"
           postgresql_identity_service_password: "{{ _rand32i }}"

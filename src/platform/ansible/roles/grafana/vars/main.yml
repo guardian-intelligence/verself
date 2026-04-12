@@ -1,0 +1,902 @@
+---
+# Provisioned Grafana dashboards for Forge Metal observability.
+grafana_dashboards:
+  - uid: "forge-metal-host-process-metrics"
+    title: "Host Process Metrics"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "cpu-utilization"
+        title: "CPU Utilization %"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 6
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "percentunit"
+        raw_sql:
+          >-
+            SELECT ts as time, round(1 - sum(idle_delta) / sum(total_delta), 4) as cpu_pct, 1 as _max FROM (SELECT $__timeInterval(TimeUnix) as
+            ts, Attributes['cpu'] as cpu, Attributes['state'] as state, max(Value) - min(Value) as delta, if(state = 'idle', delta, 0) as
+            idle_delta, delta as total_delta FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.cpu.time'
+            GROUP BY ts, cpu, state) GROUP BY ts ORDER BY ts
+      - id: 2
+        uid: "memory-utilization"
+        title: "Memory Utilization %"
+        type: "timeseries"
+        x: 6
+        y: 0
+        w: 6
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "percentunit"
+        raw_sql:
+          >-
+            SELECT time, series, pct FROM (SELECT $__timeInterval(TimeUnix) as time, round(sumIf(Value, Attributes['state'] IN ('used',
+            'slab_unreclaimable')) / sum(Value), 4) as pct, 'committed' as series FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix)
+            AND MetricName = 'system.memory.usage' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) as time, round(sumIf(Value,
+            Attributes['state'] = 'free') / sum(Value), 4) as pct, 'free' as series FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix)
+            AND MetricName = 'system.memory.usage' GROUP BY time UNION ALL SELECT $__timeInterval(TimeUnix) as time, round(sumIf(Value,
+            Attributes['state'] = 'cached') / sum(Value), 4) as pct, 'cached' as series FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'system.memory.usage' GROUP BY time) ORDER BY time
+      - id: 3
+        uid: "storage-utilization"
+        title: "Storage Utilization"
+        type: "timeseries"
+        x: 12
+        y: 0
+        w: 6
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT * FROM (SELECT time, concat(volume, ' (avg: ', formatReadableSize(vol_avg), ')') as volume, bytes FROM (SELECT
+            $__timeInterval(TimeUnix) as time, Attributes['mountpoint'] as volume, avgIf(Value, Attributes['state'] = 'used') as bytes,
+            avg(avgIf(Value, Attributes['state'] = 'used')) OVER (PARTITION BY Attributes['mountpoint']) as vol_avg FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.filesystem.usage' AND Attributes['mountpoint'] IN
+            ('/', '/forgepool') GROUP BY time, volume) UNION ALL SELECT $__timeInterval(TimeUnix) as time, 'capacity' as volume,
+            max(total_per_mp) as bytes FROM (SELECT TimeUnix, Attributes['mountpoint'] as mp, sum(Value) as total_per_mp FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.filesystem.usage' AND Attributes['mountpoint'] IN
+            ('/', '/forgepool') GROUP BY TimeUnix, mp) GROUP BY time) ORDER BY time
+      - id: 4
+        uid: "network-overview"
+        title: "Network Overview"
+        type: "timeseries"
+        x: 18
+        y: 0
+        w: 6
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT time, series, bytes FROM (SELECT time, 'north (rx)' as series, toFloat64(sum(delta)) as bytes FROM (SELECT
+            $__timeInterval(TimeUnix) as time, Attributes['device'] as device, max(Value) - min(Value) as delta FROM default.otel_metrics_sum
+            WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.network.io' AND Attributes['direction'] = 'receive' AND Attributes['device']
+            != 'lo' GROUP BY time, device) GROUP BY time UNION ALL SELECT time, 'south (tx)' as series, toFloat64(sum(delta)) as bytes FROM
+            (SELECT $__timeInterval(TimeUnix) as time, Attributes['device'] as device, max(Value) - min(Value) as delta FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'system.network.io' AND Attributes['direction'] = 'transmit'
+            AND Attributes['device'] != 'lo' GROUP BY time, device) GROUP BY time UNION ALL SELECT $__timeInterval(event_time) as time,
+            'east/west (ch)' as series, toFloat64(sum(read_bytes + written_bytes)) as bytes FROM system.query_log WHERE
+            $__timeFilter(event_time) AND type = 'QueryFinish' GROUP BY time) ORDER BY time
+      - id: 5
+        uid: "memory"
+        title: "Memory"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 24
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT time, series, bytes FROM (SELECT time, concat('slab (ZFS ARC) (avg: ', formatReadableSize(slab_avg), ')') as series, bytes
+            FROM (SELECT $__timeInterval(TimeUnix) as time, avgIf(Value, Attributes['state'] = 'slab_reclaimable') as bytes, avg(avgIf(Value,
+            Attributes['state'] = 'slab_reclaimable')) OVER () as slab_avg FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'system.memory.usage' GROUP BY time) UNION ALL SELECT time, concat(process, ' (avg: ', formatReadableSize(process_avg),
+            ')') as series, bytes FROM (SELECT time, process, avg(point_total) as bytes, avg(avg(point_total)) OVER (PARTITION BY process) as
+            process_avg FROM (SELECT $__timeInterval(TimeUnix) as time, TimeUnix, if(startsWith(ResourceAttributes['process.executable.name'],
+            'kworker'), 'kworker', ResourceAttributes['process.executable.name']) as process, sum(Value) as point_total FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' GROUP BY time, TimeUnix, process)
+            GROUP BY time, process)) ORDER BY time
+      - id: 6
+        uid: "process-cpu-cores"
+        title: "Process CPU (cores)"
+        type: "timeseries"
+        x: 0
+        y: 18
+        w: 24
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat(process, ' (avg: ', toString(round(process_avg, 2)), ')') as series, cpu_cores FROM (SELECT ts as time, process,
+            round(sum(delta) / greatest(max(span), 1), 2) as cpu_cores, avg(round(sum(delta) / greatest(max(span), 1), 2)) OVER (PARTITION BY
+            process) as process_avg FROM (SELECT $__timeInterval(TimeUnix) as ts, ResourceAttributes['process.executable.name'] as process,
+            ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second',
+            min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'process.cpu.time' GROUP BY ts, process, pid, state) GROUP BY ts, process) WHERE process_avg > 0 ORDER BY time
+      - id: 7
+        uid: "current-process-memory-live-snapshot"
+        title: "Current Process Memory (live snapshot)"
+        type: "table"
+        x: 0
+        y: 27
+        w: 24
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ResourceAttributes['process.executable.name'] as process, ResourceAttributes['process.pid'] as pid,
+            ResourceAttributes['process.command'] as command, formatReadableSize(argMax(Value, TimeUnix)) as mem, round(argMax(Value, TimeUnix)
+            / 1048576, 1) as mem_mb FROM default.otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 30 SECOND AND MetricName =
+            'process.memory.usage' GROUP BY process, pid, command ORDER BY mem_mb DESC
+  - uid: "forge-metal-deploy-health"
+    title: "Deploy Health"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "deploy-success-rate"
+        title: "Deploy Success Rate (%)"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfDay(started_at) as time, 'success rate' as series, round(countIf(ok = 1) * 100.0 / greatest(count(), 1), 1) as rate
+            FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
+      - id: 2
+        uid: "deploy-duration-p50-p95"
+        title: "Deploy Duration (p50 / p95)"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, seconds FROM (SELECT toStartOfDay(started_at) as time, 'p50' as series, round(quantile(0.5)(total_ns /
+            1000000000), 1) as seconds FROM forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT
+            toStartOfDay(started_at) as time, 'p95' as series, round(quantile(0.95)(total_ns / 1000000000), 1) as seconds FROM
+            forge_metal.deploy_events WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY time
+      - id: 3
+        uid: "deploy-frequency"
+        title: "Deploy Frequency"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfDay(started_at) as time, 'deploys' as series, toFloat64(count()) as deploys FROM forge_metal.deploy_events WHERE
+            started_at >= now() - INTERVAL 30 DAY GROUP BY time ORDER BY time
+      - id: 4
+        uid: "recent-deploys"
+        title: "Recent Deploys"
+        type: "table"
+        x: 0
+        y: 9
+        w: 24
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') as time, playbook, if(ok = 1, 'OK', 'FAIL') as status, round(total_ns /
+            1000000000, 1) as duration_s, substring(commit_sha, 1, 8) as commit, if(dirty = 1, 'dirty', 'clean') as tree, tasks_changed FROM
+            forge_metal.deploy_events ORDER BY started_at DESC LIMIT 20
+      - id: 5
+        uid: "top-10-slowest-tasks-last-30d"
+        title: "Top 10 Slowest Tasks (last 30d)"
+        type: "table"
+        x: 0
+        y: 18
+        w: 24
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT task_name, round(avg(duration_s), 2) as avg_seconds, round(max(duration_s), 2) as max_seconds, count() as occurrences FROM
+            (SELECT JSONExtractString(task, 'name') as task_name, JSONExtractFloat(task, 'duration_ns') / 1000000000 as duration_s FROM
+            forge_metal.deploy_events ARRAY JOIN JSONExtractArrayRaw(slowest_tasks) as task WHERE started_at >= now() - INTERVAL 30 DAY) GROUP
+            BY task_name ORDER BY avg_seconds DESC LIMIT 10
+  - uid: "forge-metal-billing-service"
+    title: "Billing Service"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "heartbeat"
+        title: "Heartbeat (%)"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('uptime (avg: ', toString(round(avg_pct, 1)), '%)') as series, heartbeat_pct FROM (SELECT *, avg(heartbeat_pct)
+            OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] =
+            'billing-service' GROUP BY time)) ORDER BY time
+      - id: 2
+        uid: "memory-rss"
+        title: "Memory (RSS)"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'billing-service' GROUP BY time ORDER BY
+            time
+      - id: 3
+        uid: "cpu-cores"
+        title: "CPU (cores)"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ts as time, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts,
+            ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second',
+            min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'billing-service' GROUP BY ts, pid, state) GROUP BY ts ORDER
+            BY ts
+      - id: 4
+        uid: "process-i-o-bytes-s"
+        title: "Process I/O (bytes/s)"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT time, greatest(round((val_last - val_prev) / greatest(dateDiff('second', ts_prev, time), 1), 0), 0) as bytes_per_sec,
+            direction FROM (SELECT $__timeInterval(TimeUnix) as time, Attributes['direction'] as direction, argMax(Value, TimeUnix) as val_last,
+            lagInFrame(argMax(Value, TimeUnix)) OVER (PARTITION BY Attributes['direction'] ORDER BY $__timeInterval(TimeUnix)) as val_prev,
+            lagInFrame($__timeInterval(TimeUnix)) OVER (PARTITION BY Attributes['direction'] ORDER BY $__timeInterval(TimeUnix)) as ts_prev FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'process.disk.io' AND
+            ResourceAttributes['process.executable.name'] = 'billing-service' GROUP BY time, direction) WHERE val_prev IS NOT NULL ORDER BY time
+      - id: 5
+        uid: "log-volume-by-severity"
+        title: "Log Volume by Severity"
+        type: "timeseries"
+        x: 8
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) as time, SeverityText as severity, count() as cnt FROM default.otel_logs WHERE
+            $__timeFilter(Timestamp) AND ServiceName = 'billing-service' GROUP BY time, severity ORDER BY time
+      - id: 6
+        uid: "log-error-rate"
+        title: "Log Error Rate (%)"
+        type: "timeseries"
+        x: 16
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('error rate (avg: ', toString(round(avg_pct, 2)), '%)') as series, error_pct FROM (SELECT *, avg(error_pct) OVER
+            () as avg_pct FROM (SELECT $__timeInterval(Timestamp) as time, round(countIf(SeverityText IN ('ERROR', 'FATAL')) / greatest(count(),
+            1) * 100, 2) as error_pct FROM default.otel_logs WHERE $__timeFilter(Timestamp) AND ServiceName = 'billing-service' GROUP BY time))
+            ORDER BY time
+      - id: 7
+        uid: "billing-windows-by-state"
+        title: "Billing Windows by State"
+        type: "timeseries"
+        x: 0
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfInterval(created_at, INTERVAL 1 hour) as time, state, count() as cnt FROM forge_metal.billing_windows_pg WHERE
+            created_at >= now() - INTERVAL 7 DAY GROUP BY time, state ORDER BY time
+      - id: 8
+        uid: "recent-billing-windows"
+        title: "Recent Billing Windows"
+        type: "table"
+        x: 8
+        y: 18
+        w: 8
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT created_at, window_id, org_id, product_id, source_type, source_ref, window_seq, state, reserved_quantity, actual_quantity,
+            billed_charge_units, metering_projected_at FROM forge_metal.billing_windows_pg ORDER BY created_at DESC LIMIT 20
+      - id: 9
+        uid: "worker-task-queue-depth"
+        title: "Worker Task Queue Depth"
+        type: "timeseries"
+        x: 16
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) as time, countIf(Body LIKE '%dispatch%') as dispatched, countIf(Body LIKE '%completed%' OR Body
+            LIKE '%success%') as completed, countIf(Body LIKE '%fail%' OR Body LIKE '%error%') as failed FROM default.otel_logs WHERE
+            $__timeFilter(Timestamp) AND ServiceName = 'billing-service' GROUP BY time ORDER BY time
+  - uid: "forge-metal-billing-health"
+    title: "Billing Health"
+    tags:
+      - "billing"
+    panels:
+      - id: 1
+        uid: "credit-burn-rate-by-phase"
+        title: "Credit Burn Rate by Phase"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(started_at) AS time, pricing_phase AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering
+            WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+      - id: 2
+        uid: "metering-volume"
+        title: "Metering Volume"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM forge_metal.metering WHERE
+            started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
+      - id: 3
+        uid: "per-source-unit-breakdown"
+        title: "Per-Source Unit Breakdown"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, units FROM (SELECT toStartOfHour(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
+            units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at)
+            AS time, 'subscription' AS series, toFloat64(sum(subscription_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'purchase' AS series,
+            toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
+            SELECT toStartOfHour(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
+            started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'refund' AS series,
+            toFloat64(sum(refund_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY
+            time
+      - id: 4
+        uid: "billing-windows-by-state"
+        title: "Billing Windows by State"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(created_at) AS time, state AS series, toFloat64(count()) AS windows FROM forge_metal.billing_windows_pg WHERE
+            created_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+      - id: 5
+        uid: "operator-writeoffs"
+        title: "Operator Writeoffs"
+        type: "timeseries"
+        x: 8
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(started_at) AS time, 'writeoff_units' AS series, toFloat64(sum(writeoff_charge_units)) AS units FROM
+            forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
+      - id: 6
+        uid: "projection-lag"
+        title: "Projection Lag"
+        type: "timeseries"
+        x: 16
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(created_at) AS time, 'unprojected_settled_windows' AS series, toFloat64(count()) AS windows FROM
+            forge_metal.billing_windows_pg WHERE state = 'settled' AND isNull(metering_projected_at) AND created_at >= now() - INTERVAL 7 DAY
+            GROUP BY time ORDER BY time
+  - uid: "forge-metal-billing-metering"
+    title: "Billing Metering"
+    tags:
+      - "billing"
+    panels:
+      - id: 1
+        uid: "charge-units-by-pricing-phase"
+        title: "Charge Units by Pricing Phase"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(started_at) AS time, pricing_phase AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering
+            WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+      - id: 2
+        uid: "overage-units-current-period"
+        title: "Overage Units (Current Period)"
+        type: "timeseries"
+        x: 12
+        y: 0
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfHour(started_at) AS time, org_id AS series, toFloat64(sum(charge_units)) AS overage_units FROM forge_metal.metering
+            WHERE pricing_phase = 'overage' AND started_at >= now() - INTERVAL 30 DAY GROUP BY time, series ORDER BY time
+      - id: 3
+        uid: "metering-rows-per-day"
+        title: "Metering Rows per Day"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfDay(started_at) AS time, 'rows' AS series, toFloat64(count()) AS row_count FROM forge_metal.metering WHERE
+            started_at >= now() - INTERVAL 30 DAY GROUP BY time ORDER BY time
+      - id: 4
+        uid: "charge-units-by-product"
+        title: "Charge Units by Product"
+        type: "timeseries"
+        x: 8
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT toStartOfDay(started_at) AS time, product_id AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE
+            started_at >= now() - INTERVAL 30 DAY GROUP BY time, series ORDER BY time
+      - id: 5
+        uid: "funding-source-breakdown"
+        title: "Funding Source Breakdown"
+        type: "timeseries"
+        x: 16
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, series, units FROM (SELECT toStartOfDay(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
+            units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at)
+            AS time, 'subscription' AS series, toFloat64(sum(subscription_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at) AS time, 'purchase' AS series,
+            toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION
+            ALL SELECT toStartOfDay(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
+            started_at >= now() - INTERVAL 30 DAY GROUP BY time) ORDER BY time
+      - id: 6
+        uid: "recent-metering-activity"
+        title: "Recent Metering Activity"
+        type: "table"
+        x: 0
+        y: 18
+        w: 24
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, plan_id, pricing_phase, charge_units,
+            billable_quantity, cost_per_unit, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25
+  - uid: "forge-metal-postgresql"
+    title: "PostgreSQL"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "memory-rss"
+        title: "Memory (RSS)"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP BY time ORDER BY time
+      - id: 2
+        uid: "cpu-cores"
+        title: "CPU (cores)"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ts as time, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts,
+            ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second',
+            min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP BY ts, pid, state) GROUP BY ts ORDER BY ts
+      - id: 3
+        uid: "active-connections"
+        title: "Active Connections"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, avg(Value) as connections FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'postgresql.backends' GROUP BY time ORDER BY time
+      - id: 4
+        uid: "transactions-s-commits-rollbacks"
+        title: "Transactions/s (commits + rollbacks)"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, greatest(round((commits_last - commits_prev + rollbacks_last - rollbacks_prev) / greatest(dateDiff('second', ts_prev,
+            time), 1), 2), 0) as tps FROM (SELECT time, commits_last, rollbacks_last, lagInFrame(commits_last) OVER (ORDER BY time) as
+            commits_prev, lagInFrame(rollbacks_last) OVER (ORDER BY time) as rollbacks_prev, lagInFrame(time) OVER (ORDER BY time) as ts_prev
+            FROM (SELECT time, sumIf(last_value, metric = 'postgresql.commits') as commits_last, sumIf(last_value, metric =
+            'postgresql.rollbacks') as rollbacks_last FROM (SELECT $__timeInterval(TimeUnix) as time, MetricName as metric, argMax(Value,
+            TimeUnix) as last_value FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName IN ('postgresql.commits',
+            'postgresql.rollbacks') GROUP BY time, metric) GROUP BY time)) WHERE commits_prev IS NOT NULL ORDER BY time
+      - id: 5
+        uid: "cache-hit-ratio"
+        title: "Cache Hit Ratio (%)"
+        type: "timeseries"
+        x: 8
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, round(sumIf(Value, MetricName = 'postgresql.blocks_read' AND Attributes['source'] =
+            'heap_hit') / greatest(sumIf(Value, MetricName = 'postgresql.blocks_read'), 1) * 100, 2) as cache_hit_pct FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'postgresql.blocks_read' GROUP BY time ORDER BY time
+      - id: 6
+        uid: "database-size"
+        title: "Database Size"
+        type: "timeseries"
+        x: 16
+        y: 9
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, Attributes['postgresql.database.name'] as db, avg(Value) as bytes FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'postgresql.db_size' GROUP BY time, db ORDER BY time
+      - id: 7
+        uid: "row-operations-s"
+        title: "Row Operations/s"
+        type: "timeseries"
+        x: 0
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, greatest(round((val_last - val_prev) / greatest(dateDiff('second', ts_prev, time), 1), 2), 0) as ops_per_sec, op FROM
+            (SELECT $__timeInterval(TimeUnix) as time, Attributes['operation'] as op, argMax(Value, TimeUnix) as val_last,
+            lagInFrame(argMax(Value, TimeUnix)) OVER (PARTITION BY Attributes['operation'] ORDER BY $__timeInterval(TimeUnix)) as val_prev,
+            lagInFrame($__timeInterval(TimeUnix)) OVER (PARTITION BY Attributes['operation'] ORDER BY $__timeInterval(TimeUnix)) as ts_prev FROM
+            default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName = 'postgresql.operations' GROUP BY time, op) WHERE val_prev IS
+            NOT NULL ORDER BY time
+      - id: 8
+        uid: "log-errors-count-by-severity"
+        title: "Log Errors (count by severity)"
+        type: "timeseries"
+        x: 8
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(Timestamp) as time, SeverityText as severity, count() as cnt FROM default.otel_logs WHERE
+            $__timeFilter(Timestamp) AND ServiceName = 'postgresql' AND SeverityText IN ('WARN', 'ERROR') GROUP BY time, severity ORDER BY time
+      - id: 9
+        uid: "heartbeat"
+        title: "Heartbeat (%)"
+        type: "timeseries"
+        x: 16
+        y: 18
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('uptime (avg: ', toString(round(avg_pct, 1)), '%)') as series, heartbeat_pct FROM (SELECT *, avg(heartbeat_pct)
+            OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'postgres' GROUP
+            BY time)) ORDER BY time
+  - uid: "forge-metal-tigerbeetle"
+    title: "TigerBeetle"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "memory-rss"
+        title: "Memory (RSS)"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "bytes"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, avg(Value) as bytes FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND
+            MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'tigerbeetle' GROUP BY time ORDER BY time
+      - id: 2
+        uid: "cpu-cores"
+        title: "CPU (cores)"
+        type: "timeseries"
+        x: 12
+        y: 0
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT ts as time, round(sum(delta) / greatest(max(span), 1), 4) as cpu_cores FROM (SELECT $__timeInterval(TimeUnix) as ts,
+            ResourceAttributes['process.pid'] as pid, Attributes['state'] as state, max(Value) - min(Value) as delta, dateDiff('second',
+            min(TimeUnix), max(TimeUnix)) as span FROM default.otel_metrics_sum WHERE $__timeFilter(TimeUnix) AND MetricName =
+            'process.cpu.time' AND ResourceAttributes['process.executable.name'] = 'tigerbeetle' GROUP BY ts, pid, state) GROUP BY ts ORDER BY
+            ts
+      - id: 3
+        uid: "committed-ops-s"
+        title: "Committed Ops/s"
+        type: "timeseries"
+        x: 0
+        y: 9
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, greatest(round((op_last - op_prev) / greatest(dateDiff('second', ts_prev, time), 1), 1), 0) as ops_per_sec FROM (SELECT
+            $__timeInterval(TimeUnix) as time, argMax(Value, TimeUnix) as op_last, lagInFrame(argMax(Value, TimeUnix)) OVER (ORDER BY
+            $__timeInterval(TimeUnix)) as op_prev, lagInFrame($__timeInterval(TimeUnix)) OVER (ORDER BY $__timeInterval(TimeUnix)) as ts_prev
+            FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'tb.replica_op' GROUP BY time) WHERE op_prev IS NOT
+            NULL ORDER BY time
+      - id: 4
+        uid: "request-latency-p100-ms"
+        title: "Request Latency p100 (ms)"
+        type: "timeseries"
+        x: 12
+        y: 9
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, replaceAll(Attributes['operation'], 'Operation.', '') as operation, round(max(Value) /
+            1000, 2) as latency_ms FROM default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName = 'tb.replica_request_us.max'
+            AND Attributes['operation'] NOT IN ('Operation.register', 'Operation.pulse') GROUP BY time, operation ORDER BY time
+      - id: 5
+        uid: "grid-cache-hit-rate"
+        title: "Grid Cache Hit Rate"
+        type: "timeseries"
+        x: 0
+        y: 18
+        w: 12
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "percentunit"
+        raw_sql:
+          >-
+            SELECT $__timeInterval(TimeUnix) as time, round(sumIf(Value, MetricName = 'tb.grid_cache_hits') / greatest(sumIf(Value, MetricName =
+            'tb.grid_cache_hits') + sumIf(Value, MetricName = 'tb.grid_cache_misses'), 1), 4) as hit_rate FROM default.otel_metrics_gauge WHERE
+            $__timeFilter(TimeUnix) AND MetricName IN ('tb.grid_cache_hits', 'tb.grid_cache_misses') GROUP BY time ORDER BY time
+      - id: 6
+        uid: "all-statsd-metrics-tb"
+        title: "All StatsD Metrics (tb.*)"
+        type: "table"
+        x: 12
+        y: 18
+        w: 12
+        h: 9
+        query_type: "table"
+        query_format: 1
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT MetricName, count() as samples, round(avg(Value), 2) as avg_value, round(max(Value), 2) as max_value FROM
+            default.otel_metrics_gauge WHERE $__timeFilter(TimeUnix) AND MetricName LIKE 'tb.%' GROUP BY MetricName ORDER BY MetricName
+  - uid: "forge-metal-zitadel"
+    title: "Zitadel"
+    tags:
+      - "infrastructure"
+    panels:
+      - id: 1
+        uid: "oidc-latency-p95-p99"
+        title: "OIDC Latency (p95 / p99)"
+        type: "timeseries"
+        x: 0
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat(series, ' (avg: ', toString(round(series_avg, 1)), ' ms)') as series, ms FROM (SELECT *, avg(ms) OVER (PARTITION
+            BY series) as series_avg FROM (SELECT $__timeInterval(Timestamp) as time, 'p95' as series, quantile(0.95)(Duration / 1000000) as ms
+            FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'zitadel' AND (SpanName LIKE '%/oauth/%' OR SpanName LIKE
+            '%/oidc/%') AND Duration > 0 GROUP BY time UNION ALL SELECT $__timeInterval(Timestamp) as time, 'p99' as series,
+            quantile(0.99)(Duration / 1000000) as ms FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'zitadel' AND
+            (SpanName LIKE '%/oauth/%' OR SpanName LIKE '%/oidc/%') AND Duration > 0 GROUP BY time)) ORDER BY time
+      - id: 2
+        uid: "oidc-error-rate"
+        title: "OIDC Error Rate (%)"
+        type: "timeseries"
+        x: 8
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('error rate (avg: ', toString(round(avg_pct, 2)), '%)') as series, error_pct FROM (SELECT *, avg(error_pct) OVER
+            () as avg_pct FROM (SELECT $__timeInterval(Timestamp) as time, round(countIf(StatusCode = 'Error') / greatest(count(), 1) * 100, 2)
+            as error_pct FROM default.otel_traces WHERE $__timeFilter(Timestamp) AND ServiceName = 'zitadel' AND (SpanName LIKE '%/oauth/%' OR
+            SpanName LIKE '%/oidc/%') GROUP BY time)) ORDER BY time
+      - id: 3
+        uid: "zitadel-heartbeat"
+        title: "Zitadel Heartbeat (%)"
+        type: "timeseries"
+        x: 16
+        y: 0
+        w: 8
+        h: 9
+        query_type: "timeseries"
+        query_format: 0
+        unit: "short"
+        raw_sql:
+          >-
+            SELECT time, concat('uptime (avg: ', toString(round(avg_pct, 1)), '%)') as series, heartbeat_pct FROM (SELECT *, avg(heartbeat_pct)
+            OVER () as avg_pct FROM (SELECT $__timeInterval(TimeUnix) as time, 100 as heartbeat_pct FROM default.otel_metrics_sum WHERE
+            $__timeFilter(TimeUnix) AND MetricName = 'process.memory.usage' AND ResourceAttributes['process.executable.name'] = 'zitadel' GROUP
+            BY time)) ORDER BY time

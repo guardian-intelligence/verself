@@ -7,7 +7,7 @@ forge_metal_version: "0.1.0"
 fm_bin: "/opt/forge-metal/profile/bin"
 
 # Root domain (required). Services get subdomains automatically:
-#   admin.<domain>  → ClickStack dashboard
+#   dashboard.<domain>  → Grafana dashboard
 #   git.<domain>    → Forgejo
 forge_metal_domain: "anveio.com"
 
