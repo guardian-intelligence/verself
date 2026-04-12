@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof grafana-proof
+       wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof grafana-proof
 
 FM       := src/platform
 AW       := src/apiwire
@@ -123,6 +123,15 @@ verification-repo: inventory-check ## Ensure the public local Forgejo verificati
 
 vm-orchestrator-proof: inventory-check ## Live proof for vm-orchestrator via firecracker deploy + telemetry-dev VM rehearsal
 	cd $(FM) && ./scripts/verify-vm-orchestrator-live.sh
+
+vm-orchestrator-proof-gap: inventory-check ## Live proof with deterministic telemetry gap fault injection
+	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=telemetry_gap ./scripts/verify-vm-orchestrator-live.sh
+
+vm-orchestrator-proof-regression: inventory-check ## Live proof with deterministic telemetry regression fault injection
+	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=telemetry_regression ./scripts/verify-vm-orchestrator-live.sh
+
+vm-orchestrator-proof-bridge-fault: inventory-check ## Live proof with deterministic vm-bridge result sequence violation
+	cd $(FM) && VM_ORCHESTRATOR_PROOF_SCENARIO=bridge_result_seq_zero ./scripts/verify-vm-orchestrator-live.sh
 
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh
