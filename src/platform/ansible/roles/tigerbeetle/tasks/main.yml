@@ -88,7 +88,7 @@
       ExecStart={{ fm_bin }}/tigerbeetle start \
         --addresses={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }} \
         --experimental \
-        --statsd={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.statsd_port }} \
+        --statsd={{ services.otelcol.host }}:{{ services.otelcol.statsd_port }} \
         {{ tigerbeetle_data_file }}
       Restart=on-failure
       RestartSec=5

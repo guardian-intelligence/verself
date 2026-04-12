@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof grafana-proof
+       wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof grafana-proof services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -144,6 +144,9 @@ sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and 
 
 grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
 	cd $(FM) && ./scripts/verify-grafana-live.sh
+
+services-doctor: inventory-check ## Cross-check declared services.yml against live listeners on the box: make services-doctor [FORMAT=table|json|nftables]
+	@python3 $(FM)/scripts/services-doctor.py
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)

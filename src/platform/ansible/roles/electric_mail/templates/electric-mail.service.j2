@@ -15,7 +15,7 @@ ExecStart=/usr/bin/podman run --rm --replace \
   -e ELECTRIC_STORAGE_DIR=/data \
   -e ELECTRIC_INSTANCE_ID=electric-mail \
   -e ELECTRIC_REPLICATION_STREAM_ID=mail \
-  -e RELEASE_NAME=electric_mail \
+  -e RELEASE_DISTRIBUTION=none \
   -v {{ electric_mail_storage_dir }}:/data \
   {{ electric_mail_image }}
 ExecStop=/usr/bin/podman stop electric-mail
