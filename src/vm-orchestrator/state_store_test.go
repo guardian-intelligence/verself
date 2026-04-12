@@ -3,6 +3,7 @@ package vmorchestrator
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -126,6 +127,121 @@ func TestHostStateStoreCountActiveRuns(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("active runs = %d, want 2", count)
+	}
+}
+
+func TestHostStateStorePersistsCheckpointOpsAuditRows(t *testing.T) {
+	t.Parallel()
+
+	store := mustOpenStateStoreForTest(t)
+	defer store.close()
+
+	ctx := context.Background()
+	runID := "run-checkpoint-audit"
+	if err := store.createRun(ctx, runID, RunStatePending, nil); err != nil {
+		t.Fatalf("createRun: %v", err)
+	}
+
+	first := map[string]string{
+		"request_id": "req-1",
+		"operation":  "save",
+		"ref":        "checkpoints/default",
+		"accepted":   "true",
+		"version_id": "v-1",
+		"error":      "",
+	}
+	second := map[string]string{
+		"request_id": "req-2",
+		"operation":  "save",
+		"ref":        "checkpoints/default",
+		"accepted":   "false",
+		"version_id": "",
+		"error":      "not authorized",
+	}
+	if err := store.appendRunEvent(ctx, runID, "checkpoint_request", first); err != nil {
+		t.Fatalf("appendRunEvent first checkpoint request: %v", err)
+	}
+	if err := store.appendRunEvent(ctx, runID, "checkpoint_request", second); err != nil {
+		t.Fatalf("appendRunEvent second checkpoint request: %v", err)
+	}
+
+	type checkpointOpRow struct {
+		seq       int64
+		requestID string
+		opType    string
+		ref       string
+		accepted  int64
+		versionID string
+		errorText string
+	}
+
+	rows, err := store.db.QueryContext(
+		ctx,
+		`SELECT op_seq, request_id, op_type, ref, accepted, version_id, error_text
+		 FROM checkpoint_ops
+		 WHERE run_id = ?
+		 ORDER BY op_seq ASC`,
+		runID,
+	)
+	if err != nil {
+		t.Fatalf("query checkpoint_ops: %v", err)
+	}
+	defer rows.Close()
+
+	var got []checkpointOpRow
+	for rows.Next() {
+		var row checkpointOpRow
+		if err := rows.Scan(&row.seq, &row.requestID, &row.opType, &row.ref, &row.accepted, &row.versionID, &row.errorText); err != nil {
+			t.Fatalf("scan checkpoint_ops row: %v", err)
+		}
+		got = append(got, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate checkpoint_ops rows: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("checkpoint_ops rows = %d, want 2", len(got))
+	}
+	if got[0].seq != 1 || got[0].requestID != "req-1" || got[0].accepted != 1 || got[0].versionID != "v-1" {
+		t.Fatalf("checkpoint_ops row[0] = %#v", got[0])
+	}
+	if got[1].seq != 2 || got[1].requestID != "req-2" || got[1].accepted != 0 || got[1].errorText != "not authorized" {
+		t.Fatalf("checkpoint_ops row[1] = %#v", got[1])
+	}
+}
+
+func TestHostStateStoreRejectsInvalidCheckpointAcceptedValue(t *testing.T) {
+	t.Parallel()
+
+	store := mustOpenStateStoreForTest(t)
+	defer store.close()
+
+	ctx := context.Background()
+	runID := "run-checkpoint-invalid-accepted"
+	if err := store.createRun(ctx, runID, RunStatePending, nil); err != nil {
+		t.Fatalf("createRun: %v", err)
+	}
+
+	err := store.appendRunEvent(ctx, runID, "checkpoint_request", map[string]string{
+		"request_id": "req-invalid",
+		"operation":  "save",
+		"ref":        "checkpoints/default",
+		"accepted":   "not-a-bool",
+	})
+	if err == nil {
+		t.Fatal("expected appendRunEvent to fail on invalid accepted value")
+	}
+	if !strings.Contains(err.Error(), "invalid accepted value") {
+		t.Fatalf("expected invalid accepted error, got %v", err)
+	}
+
+	var count int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM checkpoint_ops WHERE run_id = ?`, runID).Scan(&count); err != nil {
+		t.Fatalf("count checkpoint_ops rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("checkpoint_ops row count = %d, want 0", count)
 	}
 }
 
