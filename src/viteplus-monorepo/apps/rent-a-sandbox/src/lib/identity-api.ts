@@ -2,28 +2,29 @@ import * as v from "valibot";
 import { createClient, type Client } from "../__generated/identity-api/client/index.js";
 import {
   getOrganization as getGeneratedOrganization,
-  getOrganizationPolicy as getGeneratedOrganizationPolicy,
+  getOrganizationMemberCapabilities as getGeneratedOrganizationMemberCapabilities,
   inviteOrganizationMember as inviteGeneratedOrganizationMember,
   listOrganizationMembers as listGeneratedOrganizationMembers,
   listOrganizationOperations as listGeneratedOrganizationOperations,
-  putOrganizationPolicy as putGeneratedOrganizationPolicy,
+  putOrganizationMemberCapabilities as putGeneratedOrganizationMemberCapabilities,
   updateOrganizationMemberRoles as updateGeneratedOrganizationMemberRoles,
 } from "../__generated/identity-api/index.js";
 import type {
   IdentityInviteMemberRequestWritable,
-  IdentityPutPolicyRequestWritable,
+  IdentityPutMemberCapabilitiesRequestWritable,
 } from "../__generated/identity-api/types.gen.js";
 import {
   vIdentityInviteMemberRequestWritable,
   vIdentityInviteMemberResponse,
   vIdentityMember,
+  vIdentityMemberCapabilities,
+  vIdentityMemberCapabilitiesDocument,
+  vIdentityMemberCapability,
   vIdentityMembers,
   vIdentityOperation,
   vIdentityOperations,
   vIdentityOrganization,
-  vIdentityPolicyDocument,
-  vIdentityPolicyRole,
-  vIdentityPutPolicyRequestWritable,
+  vIdentityPutMemberCapabilitiesRequestWritable,
   vIdentityServiceOperations,
   vIdentityUpdateMemberRolesRequestWritable,
 } from "../__generated/identity-api/valibot.gen.js";
@@ -67,6 +68,12 @@ const roleKeysSchema = v.pipe(
   v.transform((roleKeys) => Array.from(new Set(roleKeys)).sort()),
 );
 
+const capabilityKeySchema = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(64));
+const capabilityKeysSchema = v.pipe(
+  v.array(capabilityKeySchema),
+  v.transform((keys) => Array.from(new Set(keys)).sort()),
+);
+
 function omitEmptyText(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -82,25 +89,35 @@ function parseMember(input: unknown) {
 
 export type Member = ReturnType<typeof parseMember>;
 
-function parsePolicyRole(input: unknown) {
-  const role = v.parse(vIdentityPolicyRole, input);
+function parseMemberCapabilitiesDocument(input: unknown) {
+  const { enabled_keys, ...doc } = v.parse(vIdentityMemberCapabilitiesDocument, input);
   return {
-    ...role,
-    permissions: role.permissions ?? [],
+    ...doc,
+    enabled_keys: enabled_keys ?? [],
   };
 }
 
-export type PolicyRole = ReturnType<typeof parsePolicyRole>;
+export type MemberCapabilitiesDocument = ReturnType<typeof parseMemberCapabilitiesDocument>;
 
-function parsePolicyDocument(input: unknown) {
-  const { $schema: _schema, roles, ...policy } = v.parse(vIdentityPolicyDocument, input);
+function parseMemberCapability(input: unknown) {
+  const capability = v.parse(vIdentityMemberCapability, input);
   return {
-    ...policy,
-    roles: roles?.map((role) => parsePolicyRole(role)) ?? [],
+    ...capability,
+    permissions: capability.permissions ?? [],
   };
 }
 
-export type PolicyDocument = ReturnType<typeof parsePolicyDocument>;
+export type MemberCapability = ReturnType<typeof parseMemberCapability>;
+
+function parseMemberCapabilities(input: unknown) {
+  const { $schema: _schema, document, catalog } = v.parse(vIdentityMemberCapabilities, input);
+  return {
+    document: parseMemberCapabilitiesDocument(document),
+    catalog: catalog?.map((capability) => parseMemberCapability(capability)) ?? [],
+  };
+}
+
+export type MemberCapabilities = ReturnType<typeof parseMemberCapabilities>;
 
 function parseOperation(input: unknown) {
   return v.parse(vIdentityOperation, input);
@@ -132,14 +149,14 @@ function parseOrganization(input: unknown) {
     $schema: _schema,
     caller,
     permissions,
-    policy,
+    member_capabilities,
     ...organization
   } = v.parse(vIdentityOrganization, input);
   return {
     ...organization,
     caller: parseMember(caller),
     permissions: permissions ?? [],
-    policy: parsePolicyDocument(policy),
+    member_capabilities: parseMemberCapabilitiesDocument(member_capabilities),
   };
 }
 
@@ -173,18 +190,12 @@ export const updateMemberRolesRequestSchema = v.pipe(
 
 export type UpdateMemberRolesRequest = v.InferInput<typeof updateMemberRolesRequestSchema>;
 
-export const putPolicyRequestSchema = v.strictObject({
-  roles: v.array(
-    v.strictObject({
-      display_name: v.pipe(v.string(), v.maxLength(200)),
-      permissions: v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(256)),
-      role_key: v.pipe(v.string(), v.maxLength(100)),
-    }),
-  ),
+export const putMemberCapabilitiesRequestSchema = v.strictObject({
+  enabled_keys: capabilityKeysSchema,
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
-export type PutPolicyRequest = v.InferInput<typeof putPolicyRequestSchema>;
+export type PutMemberCapabilitiesRequest = v.InferInput<typeof putMemberCapabilitiesRequestSchema>;
 
 export async function getOrganization(options: IdentityClientOptions): Promise<Organization> {
   const client = createIdentityClient(options);
@@ -304,10 +315,12 @@ export async function getOperations(options: IdentityClientOptions): Promise<Ope
   return parseOperations(result.data);
 }
 
-export async function getPolicy(options: IdentityClientOptions): Promise<PolicyDocument> {
+export async function getMemberCapabilities(
+  options: IdentityClientOptions,
+): Promise<MemberCapabilities> {
   const client = createIdentityClient(options);
-  const path = "/api/v1/organization/policy";
-  const result = await getGeneratedOrganizationPolicy({
+  const path = "/api/v1/organization/member-capabilities";
+  const result = await getGeneratedOrganizationMemberCapabilities({
     client,
     responseStyle: "fields",
     throwOnError: false,
@@ -317,23 +330,26 @@ export async function getPolicy(options: IdentityClientOptions): Promise<PolicyD
     throwIdentityError(path, result.response, result.error);
   }
 
-  return parsePolicyDocument(result.data);
+  return parseMemberCapabilities(result.data);
 }
 
-export async function putPolicy(
-  options: IdentityClientOptions & { body: PutPolicyRequest },
-): Promise<PolicyDocument> {
+export async function putMemberCapabilities(
+  options: IdentityClientOptions & { body: PutMemberCapabilitiesRequest },
+): Promise<MemberCapabilities> {
   const client = createIdentityClient(options);
-  const input = v.parse(putPolicyRequestSchema, options.body);
-  const body: IdentityPutPolicyRequestWritable = v.parse(vIdentityPutPolicyRequestWritable, {
-    roles: input.roles,
-    version: input.version,
-  });
-  const path = "/api/v1/organization/policy";
-  const result = await putGeneratedOrganizationPolicy({
+  const input = v.parse(putMemberCapabilitiesRequestSchema, options.body);
+  const body: IdentityPutMemberCapabilitiesRequestWritable = v.parse(
+    vIdentityPutMemberCapabilitiesRequestWritable,
+    {
+      enabled_keys: input.enabled_keys,
+      version: input.version,
+    },
+  );
+  const path = "/api/v1/organization/member-capabilities";
+  const result = await putGeneratedOrganizationMemberCapabilities({
     body,
     client,
-    headers: idempotencyHeaders("identity-policy"),
+    headers: idempotencyHeaders("identity-member-capabilities"),
     responseStyle: "fields",
     throwOnError: false,
   });
@@ -342,5 +358,5 @@ export async function putPolicy(
     throwIdentityError(path, result.response, result.error);
   }
 
-  return parsePolicyDocument(result.data);
+  return parseMemberCapabilities(result.data);
 }

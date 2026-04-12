@@ -5,7 +5,9 @@ test.describe("Rent-a-Sandbox Organization", () => {
     await ensureTestUserExists();
   });
 
-  test("organization management route renders from the identity service", async ({ app }) => {
+  test("organization management route renders the capability switchboard from identity-service", async ({
+    app,
+  }) => {
     const run = app.createRun();
 
     try {
@@ -15,27 +17,30 @@ test.describe("Rent-a-Sandbox Organization", () => {
       await app.expectSSRHTML("/organization", [
         "Invite member",
         "Members",
-        "Policy",
-        "identity:policy:write",
+        "Member capabilities",
+        "Deploy executions",
+        "Manage repositories",
+        "Invite members",
+        "View billing",
       ]);
       await app.assertStableRoute({
         path: "/organization",
-        ready: app.page.getByRole("heading", { name: "Policy" }),
+        ready: app.page.getByRole("heading", { name: "Member capabilities" }),
         expectedText: [
           "Invite member",
           "Members",
-          "Policy",
-          "forge_org_owner",
-          "identity:policy:write",
+          "Member capabilities",
+          "Deploy executions",
+          "Manage repositories",
+          "Owner",
         ],
       });
 
       await expect(app.page.getByRole("button", { name: "Invite member" })).toBeEnabled();
-      // Save policy starts disabled until the policy form is dirty — the new
-      // tree reducer compares against the loaded document and only flips the
-      // button on after a real toggle. Asserting visibility is enough here;
-      // a separate test can exercise the dirty→save→reload round-trip.
-      await expect(app.page.getByRole("button", { name: "Save policy" })).toBeVisible();
+      // Save capabilities starts disabled until the switchboard becomes dirty.
+      // Asserting visibility is enough here; a separate test will exercise
+      // toggle → save → reload persistence once stable.
+      await expect(app.page.getByRole("button", { name: "Save capabilities" })).toBeVisible();
 
       run.detail_url = "/organization";
       run.status = "succeeded";

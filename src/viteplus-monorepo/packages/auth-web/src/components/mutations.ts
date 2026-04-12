@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignedInAuth } from "../react.ts";
 import { useIdentityApi } from "./identity-api.ts";
 import { invalidateOrganizationQueries } from "./queries.ts";
-import type { InviteMemberRequest, PutPolicyRequest, UpdateMemberRolesRequest } from "./types.ts";
+import type {
+  InviteMemberRequest,
+  PutMemberCapabilitiesRequest,
+  UpdateMemberRolesRequest,
+} from "./types.ts";
 
 export function useInviteMemberMutation() {
   const auth = useSignedInAuth();
@@ -30,17 +34,17 @@ export function useUpdateMemberRolesMutation() {
   });
 }
 
-export function usePutPolicyMutation() {
+export function usePutMemberCapabilitiesMutation() {
   const auth = useSignedInAuth();
   const api = useIdentityApi();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: PutPolicyRequest) => api.putPolicy(input),
+    mutationFn: (input: PutMemberCapabilitiesRequest) => api.putMemberCapabilities(input),
     onSuccess: async () => {
-      // Server is the source of truth for the version bump; invalidating
-      // forces refetch which re-keys the editor (see <PolicyEditor key=
-      // policy.version>).
+      // Server is the source of truth for the version bump; invalidating the
+      // org subtree forces a refetch which re-keys the editor below
+      // <CapabilitySection key={document.version}>.
       await invalidateOrganizationQueries(queryClient, auth);
     },
   });

@@ -1,11 +1,11 @@
 import type { IdentityApiClient } from "@forge-metal/auth-web/components";
 import {
   getMembers,
+  getMemberCapabilities,
   getOperations,
   getOrganization,
-  getPolicy,
   inviteMember,
-  putPolicy,
+  putMemberCapabilities,
   updateMemberRoles,
 } from "~/server-fns/api";
 
@@ -17,8 +17,8 @@ export const identityApiClient: IdentityApiClient = {
   getOrganization: () => getOrganization(),
   listMembers: () => getMembers(),
   listOperations: () => getOperations(),
-  getPolicy: () => getPolicy(),
-  putPolicy: (data) => putPolicy({ data }),
+  getMemberCapabilities: () => getMemberCapabilities(),
+  putMemberCapabilities: (data) => putMemberCapabilities({ data }),
   inviteMember: (data) => inviteMember({ data }),
   updateMemberRoles: (data) => updateMemberRoles({ data }),
 };

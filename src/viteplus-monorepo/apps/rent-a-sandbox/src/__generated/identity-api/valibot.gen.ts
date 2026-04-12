@@ -105,6 +105,28 @@ export const vIdentityMember = v.strictObject({
   user_id: v.string(),
 });
 
+export const vIdentityMemberCapabilitiesDocument = v.strictObject({
+  enabled_keys: v.nullable(v.array(v.string())),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  updated_by: v.string(),
+  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
+});
+
+export const vIdentityMemberCapability = v.strictObject({
+  default_enabled: v.boolean(),
+  description: v.string(),
+  key: v.string(),
+  label: v.string(),
+  permissions: v.nullable(v.array(v.string())),
+});
+
+export const vIdentityMemberCapabilities = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  catalog: v.nullable(v.array(vIdentityMemberCapability)),
+  document: vIdentityMemberCapabilitiesDocument,
+});
+
 export const vIdentityMembers = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   members: v.nullable(v.array(vIdentityMember)),
@@ -112,39 +134,25 @@ export const vIdentityMembers = v.strictObject({
 
 export const vIdentityOperation = v.strictObject({
   action: v.string(),
+  member_eligible: v.boolean(),
   operation_id: v.string(),
   org_scope: v.string(),
   permission: v.string(),
   resource: v.string(),
 });
 
-export const vIdentityPolicyRole = v.strictObject({
-  display_name: v.pipe(v.string(), v.maxLength(200)),
-  permissions: v.nullable(v.pipe(v.array(v.string()), v.minLength(1), v.maxLength(256))),
-  role_key: v.pipe(v.string(), v.maxLength(100)),
-});
-
-export const vIdentityPolicyDocument = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  roles: v.nullable(v.array(vIdentityPolicyRole)),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  updated_by: v.string(),
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
-});
-
 export const vIdentityOrganization = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   caller: vIdentityMember,
+  member_capabilities: vIdentityMemberCapabilitiesDocument,
   name: v.string(),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
-  policy: vIdentityPolicyDocument,
 });
 
-export const vIdentityPutPolicyRequest = v.strictObject({
+export const vIdentityPutMemberCapabilitiesRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  roles: v.nullable(v.pipe(v.array(vIdentityPolicyRole), v.minLength(1), v.maxLength(32))),
+  enabled_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(0), v.maxLength(32))),
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
@@ -252,6 +260,11 @@ export const vIdentityMemberWritable = v.strictObject({
   user_id: v.string(),
 });
 
+export const vIdentityMemberCapabilitiesWritable = v.strictObject({
+  catalog: v.nullable(v.array(vIdentityMemberCapability)),
+  document: vIdentityMemberCapabilitiesDocument,
+});
+
 export const vIdentityMembersWritable = v.strictObject({
   members: v.nullable(v.array(vIdentityMemberWritable)),
 });
@@ -260,24 +273,16 @@ export const vIdentityOperationsWritable = v.strictObject({
   services: v.nullable(v.array(vIdentityServiceOperations)),
 });
 
-export const vIdentityPolicyDocumentWritable = v.strictObject({
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  roles: v.nullable(v.array(vIdentityPolicyRole)),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  updated_by: v.string(),
-  version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
-});
-
 export const vIdentityOrganizationWritable = v.strictObject({
   caller: vIdentityMemberWritable,
+  member_capabilities: vIdentityMemberCapabilitiesDocument,
   name: v.string(),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   permissions: v.nullable(v.array(v.string())),
-  policy: vIdentityPolicyDocumentWritable,
 });
 
-export const vIdentityPutPolicyRequestWritable = v.strictObject({
-  roles: v.nullable(v.pipe(v.array(vIdentityPolicyRole), v.minLength(1), v.maxLength(32))),
+export const vIdentityPutMemberCapabilitiesRequestWritable = v.strictObject({
+  enabled_keys: v.nullable(v.pipe(v.array(v.string()), v.minLength(0), v.maxLength(32))),
   version: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2147483647)),
 });
 
@@ -355,6 +360,22 @@ export const vRollApiCredentialResponse = vIdentityRollApiCredentialResponse;
 /**
  * OK
  */
+export const vGetOrganizationMemberCapabilitiesResponse = vIdentityMemberCapabilities;
+
+export const vPutOrganizationMemberCapabilitiesBody = vIdentityPutMemberCapabilitiesRequestWritable;
+
+export const vPutOrganizationMemberCapabilitiesHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vPutOrganizationMemberCapabilitiesResponse = vIdentityMemberCapabilities;
+
+/**
+ * OK
+ */
 export const vListOrganizationMembersResponse = vIdentityMembers;
 
 export const vInviteOrganizationMemberBody = vIdentityInviteMemberRequestWritable;
@@ -387,19 +408,3 @@ export const vUpdateOrganizationMemberRolesResponse = vIdentityMember;
  * OK
  */
 export const vListOrganizationOperationsResponse = vIdentityOperations;
-
-/**
- * OK
- */
-export const vGetOrganizationPolicyResponse = vIdentityPolicyDocument;
-
-export const vPutOrganizationPolicyBody = vIdentityPutPolicyRequestWritable;
-
-export const vPutOrganizationPolicyHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-/**
- * OK
- */
-export const vPutOrganizationPolicyResponse = vIdentityPolicyDocument;

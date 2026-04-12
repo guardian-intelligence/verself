@@ -74,10 +74,7 @@ export interface UserButtonProps {
 // family, all of which use a tslib UMD CJS shape that nitro's SSR bundler
 // cannot interop. Until vite-plus or nitro grow a fix, the dropdown remains
 // off-table for the SSR import graph; the org page itself owns the menu.
-export function UserButton({
-  organizationPath = "/organization",
-  imageUrl,
-}: UserButtonProps = {}) {
+export function UserButton({ organizationPath = "/organization", imageUrl }: UserButtonProps = {}) {
   const { user } = useUser();
   if (!user) return null;
   const display = user.name ?? user.preferredUsername ?? user.email ?? user.sub;

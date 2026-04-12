@@ -1,4 +1,4 @@
-import { useMemo, useReducer } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Badge } from "@forge-metal/ui/components/ui/badge";
@@ -12,6 +12,7 @@ import {
 } from "@forge-metal/ui/components/ui/card";
 import { Input } from "@forge-metal/ui/components/ui/input";
 import { Label } from "@forge-metal/ui/components/ui/label";
+import { Switch } from "@forge-metal/ui/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -24,44 +25,40 @@ import { useSignedInAuth } from "../../react.ts";
 import { useIdentityApi } from "../identity-api.ts";
 import {
   useInviteMemberMutation,
-  usePutPolicyMutation,
+  usePutMemberCapabilitiesMutation,
   useUpdateMemberRolesMutation,
 } from "../mutations.ts";
 import {
   organizationMembersQuery,
-  organizationOperationsQuery,
-  organizationPolicyQuery,
+  organizationMemberCapabilitiesQuery,
   organizationQuery,
 } from "../queries.ts";
-import type { Member, Operations, PolicyDocument } from "../types.ts";
+import type { Member, MemberCapabilities } from "../types.ts";
 import { ErrorAlert, formErrorText, PermissionAlert } from "./error-alert.tsx";
-import {
-  buildCatalogTree,
-  PolicyMatrix,
-  policyFormEqual,
-  policyFormFromDocument,
-  policyFormToRoles,
-  policyReducer,
-  type PolicyFormState,
-} from "./policy/index.ts";
 import { RoleCheckboxes } from "./role-checkboxes.tsx";
 
 const PERMISSION_MEMBER_INVITE = "identity:member:invite";
 const PERMISSION_MEMBER_ROLES_WRITE = "identity:member:roles:write";
-const PERMISSION_POLICY_WRITE = "identity:policy:write";
+const PERMISSION_MEMBER_CAPABILITIES_WRITE = "identity:member_capabilities:write";
+
+const INVITE_ROLES = [
+  { role_key: "admin", display_name: "Admin" },
+  { role_key: "member", display_name: "Member" },
+] as const;
 
 function hasPermission(permissions: ReadonlyArray<string>, permission: string): boolean {
   return permissions.includes(permission);
 }
 
-function defaultRoleKeys(policy: PolicyDocument): Array<string> {
-  const member = policy.roles.find((role) => role.role_key === "identity_org_member");
-  const fallback = member ?? policy.roles[0];
-  return fallback ? [fallback.role_key] : [];
+function defaultRoleKeys(): Array<string> {
+  return ["member"];
 }
 
-function roleLabel(policy: PolicyDocument, roleKey: string): string {
-  return policy.roles.find((role) => role.role_key === roleKey)?.display_name ?? roleKey;
+function roleLabel(roleKey: string): string {
+  const known = INVITE_ROLES.find((role) => role.role_key === roleKey);
+  if (known) return known.display_name;
+  if (roleKey === "owner") return "Owner";
+  return roleKey;
 }
 
 export interface OrganizationProfileProps {
@@ -74,27 +71,27 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
   const api = useIdentityApi();
   const organization = useSuspenseQuery(organizationQuery(auth, api)).data;
   const members = useSuspenseQuery(organizationMembersQuery(auth, api)).data;
-  const operations = useSuspenseQuery(organizationOperationsQuery(auth, api)).data;
-  const policy = useSuspenseQuery(organizationPolicyQuery(auth, api)).data;
+  const memberCapabilities = useSuspenseQuery(organizationMemberCapabilitiesQuery(auth, api)).data;
 
   const canInvite = hasPermission(organization.permissions, PERMISSION_MEMBER_INVITE);
   const canUpdateRoles = hasPermission(organization.permissions, PERMISSION_MEMBER_ROLES_WRITE);
-  const canWritePolicy = hasPermission(organization.permissions, PERMISSION_POLICY_WRITE);
+  const canEditCapabilities = hasPermission(
+    organization.permissions,
+    PERMISSION_MEMBER_CAPABILITIES_WRITE,
+  );
 
   return (
     <div className="space-y-6">
-      <GeneralSection organization={organization} policy={policy} />
-      <InviteMemberSection canInvite={canInvite} policy={policy} />
-      <MembersSection canUpdateRoles={canUpdateRoles} members={[...members]} policy={policy} />
-      <PolicySection
-        canWritePolicy={canWritePolicy}
-        operations={operations}
-        // Remount the editor whenever the server hands us a fresh policy
-        // version (after save → invalidate → refetch). This is the React-
-        // idiomatic way to reset reducer state on prop changes — see
-        // https://react.dev/reference/react/useState#resetting-state-with-a-key.
-        key={policy.version}
-        policy={policy}
+      <GeneralSection organization={organization} />
+      <InviteMemberSection canInvite={canInvite} />
+      <MembersSection canUpdateRoles={canUpdateRoles} members={[...members]} />
+      <CapabilitySection
+        canEditCapabilities={canEditCapabilities}
+        // Remount the editor whenever the server hands us a fresh document
+        // version (after save → invalidate → refetch). React-idiomatic state
+        // reset via key — see https://react.dev/reference/react/useState#resetting-state-with-a-key.
+        key={memberCapabilities.document.version}
+        memberCapabilities={memberCapabilities}
       />
     </div>
   );
@@ -106,10 +103,9 @@ interface GeneralSectionProps {
     readonly name: string;
     readonly caller: Member;
   };
-  readonly policy: PolicyDocument;
 }
 
-function GeneralSection({ organization, policy }: GeneralSectionProps) {
+function GeneralSection({ organization }: GeneralSectionProps) {
   const callerRoles = organization.caller.role_keys;
   return (
     <Card>
@@ -129,7 +125,7 @@ function GeneralSection({ organization, policy }: GeneralSectionProps) {
               <div className="flex flex-wrap gap-1">
                 {callerRoles.map((roleKey) => (
                   <Badge key={roleKey} variant="secondary">
-                    {roleLabel(policy, roleKey)}
+                    {roleLabel(roleKey)}
                   </Badge>
                 ))}
               </div>
@@ -152,20 +148,14 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function InviteMemberSection({
-  canInvite,
-  policy,
-}: {
-  canInvite: boolean;
-  policy: PolicyDocument;
-}) {
+function InviteMemberSection({ canInvite }: { canInvite: boolean }) {
   const inviteMutation = useInviteMemberMutation();
   const form = useForm({
     defaultValues: {
       email: "",
       familyName: "",
       givenName: "",
-      roleKeys: defaultRoleKeys(policy),
+      roleKeys: defaultRoleKeys(),
     },
     onSubmit: async ({ value }) => {
       await inviteMutation.mutateAsync(value);
@@ -270,7 +260,7 @@ function InviteMemberSection({
                   field.state.meta.isTouched ? formErrorText(field.state.meta.errors[0]) : undefined
                 }
                 onChange={field.handleChange}
-                roles={policy.roles}
+                roles={INVITE_ROLES}
                 value={field.state.value}
                 legend="Invite roles"
               />
@@ -304,11 +294,9 @@ function InviteMemberSection({
 function MembersSection({
   canUpdateRoles,
   members,
-  policy,
 }: {
   canUpdateRoles: boolean;
   members: Array<Member>;
-  policy: PolicyDocument;
 }) {
   return (
     <Card>
@@ -334,7 +322,6 @@ function MembersSection({
                   canUpdateRoles={canUpdateRoles}
                   key={`${member.user_id}:${member.role_keys.join(",")}`}
                   member={member}
-                  policy={policy}
                 />
               ))
             ) : (
@@ -354,15 +341,7 @@ function MembersSection({
   );
 }
 
-function MemberRow({
-  canUpdateRoles,
-  member,
-  policy,
-}: {
-  canUpdateRoles: boolean;
-  member: Member;
-  policy: PolicyDocument;
-}) {
+function MemberRow({ canUpdateRoles, member }: { canUpdateRoles: boolean; member: Member }) {
   const mutation = useUpdateMemberRolesMutation();
   const form = useForm({
     defaultValues: {
@@ -406,7 +385,7 @@ function MemberRow({
                   field.state.meta.isTouched ? formErrorText(field.state.meta.errors[0]) : undefined
                 }
                 onChange={field.handleChange}
-                roles={policy.roles}
+                roles={INVITE_ROLES}
                 value={field.state.value}
                 legend={`Roles for ${member.email}`}
               />
@@ -435,27 +414,46 @@ function MemberRow({
   );
 }
 
-function PolicySection({
-  canWritePolicy,
-  operations,
-  policy,
+function CapabilitySection({
+  canEditCapabilities,
+  memberCapabilities,
 }: {
-  canWritePolicy: boolean;
-  operations: Operations;
-  policy: PolicyDocument;
+  canEditCapabilities: boolean;
+  memberCapabilities: MemberCapabilities;
 }) {
-  const mutation = usePutPolicyMutation();
-  const catalog = useMemo(() => buildCatalogTree(operations), [operations]);
-  const initialState = useMemo<PolicyFormState>(() => policyFormFromDocument(policy), [policy]);
-  const [state, dispatch] = useReducer(policyReducer, initialState);
-  const isDirty = !policyFormEqual(state, initialState);
+  const mutation = usePutMemberCapabilitiesMutation();
+  const initialKeys = useMemo(
+    () => new Set(memberCapabilities.document.enabled_keys),
+    [memberCapabilities.document.enabled_keys],
+  );
+  const [enabled, setEnabled] = useState<Set<string>>(() => new Set(initialKeys));
+
+  const isDirty = useMemo(() => {
+    if (enabled.size !== initialKeys.size) return true;
+    for (const key of enabled) {
+      if (!initialKeys.has(key)) return true;
+    }
+    return false;
+  }, [enabled, initialKeys]);
+
+  const handleToggle = (key: string, next: boolean) => {
+    setEnabled((previous) => {
+      const updated = new Set(previous);
+      if (next) {
+        updated.add(key);
+      } else {
+        updated.delete(key);
+      }
+      return updated;
+    });
+  };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     event.stopPropagation();
     void mutation.mutateAsync({
-      roles: policyFormToRoles(state),
-      version: state.version,
+      enabled_keys: Array.from(enabled).sort(),
+      version: memberCapabilities.document.version,
     });
   };
 
@@ -463,33 +461,52 @@ function PolicySection({
     <Card>
       <CardHeader>
         <CardTitle role="heading" aria-level={2}>
-          Policy
+          Member capabilities
         </CardTitle>
         <CardDescription>
-          Service operations are grouped by namespace. Toggling a group sets every permission
-          underneath it.
+          Toggle which actions the <strong>member</strong> role can take in this organization.
+          Owners and admins always have full access.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!canWritePolicy ? (
-          <PermissionAlert title="Policy write permission required">
-            Your current role can view the policy but cannot save changes.
+        {!canEditCapabilities ? (
+          <PermissionAlert title="Capability edit permission required">
+            Your current role can view member capabilities but cannot save changes.
           </PermissionAlert>
         ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <PolicyMatrix
-            catalog={catalog}
-            state={state}
-            dispatch={dispatch}
-            canEdit={canWritePolicy}
-          />
+          <div className="divide-y divide-border rounded-md border border-border">
+            {memberCapabilities.catalog.map((capability) => {
+              const switchId = `capability-${capability.key}`;
+              const checked = enabled.has(capability.key);
+              return (
+                <div key={capability.key} className="flex items-start justify-between gap-4 p-4">
+                  <div className="space-y-1">
+                    <Label htmlFor={switchId} className="text-sm font-medium">
+                      {capability.label}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">{capability.description}</p>
+                  </div>
+                  <Switch
+                    id={switchId}
+                    checked={checked}
+                    onCheckedChange={(next) => handleToggle(capability.key, next)}
+                    disabled={!canEditCapabilities || mutation.isPending}
+                    aria-label={capability.label}
+                  />
+                </div>
+              );
+            })}
+          </div>
 
-          {mutation.error ? <ErrorAlert error={mutation.error} title="Policy save failed" /> : null}
+          {mutation.error ? (
+            <ErrorAlert error={mutation.error} title="Capabilities save failed" />
+          ) : null}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={!canWritePolicy || !isDirty || mutation.isPending}>
-              {mutation.isPending ? "Saving…" : "Save policy"}
+            <Button type="submit" disabled={!canEditCapabilities || !isDirty || mutation.isPending}>
+              {mutation.isPending ? "Saving…" : "Save capabilities"}
             </Button>
           </div>
         </form>
