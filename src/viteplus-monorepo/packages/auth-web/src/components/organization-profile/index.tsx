@@ -115,7 +115,9 @@ function GeneralSection({ organization, policy }: GeneralSectionProps) {
     <Card>
       <CardHeader>
         <CardDescription>Organization</CardDescription>
-        <CardTitle className="break-words text-2xl">{organization.name}</CardTitle>
+        <CardTitle role="heading" aria-level={1} className="break-words text-2xl">
+          {organization.name}
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-3">
         <Metric label="Org ID" value={<code className="break-all">{organization.org_id}</code>} />
@@ -174,7 +176,9 @@ function InviteMemberSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Invite member</CardTitle>
+        <CardTitle role="heading" aria-level={2}>
+          Invite member
+        </CardTitle>
         <CardDescription>New members receive a Zitadel email code.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -309,7 +313,9 @@ function MembersSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Members</CardTitle>
+        <CardTitle role="heading" aria-level={2}>
+          Members
+        </CardTitle>
         <CardDescription>Role assignments are written to Zitadel.</CardDescription>
       </CardHeader>
       <CardContent className="px-0">
@@ -456,7 +462,9 @@ function PolicySection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Policy</CardTitle>
+        <CardTitle role="heading" aria-level={2}>
+          Policy
+        </CardTitle>
         <CardDescription>
           Service operations are grouped by namespace. Toggling a group sets every permission
           underneath it.
