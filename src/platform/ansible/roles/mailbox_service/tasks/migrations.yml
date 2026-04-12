@@ -109,31 +109,14 @@
       -d mailbox_service
       -v ON_ERROR_STOP=1
     stdin: |
+      -- Electric Mail must own shape tables; mailbox_service writes via explicit table grants.
       DO $$
       BEGIN
-        IF to_regclass('public.mailbox_accounts') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.mailbox_accounts OWNER TO mailbox_service';
-        END IF;
         IF to_regclass('public.mailbox_bindings') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.mailbox_bindings OWNER TO mailbox_service';
         END IF;
         IF to_regclass('public.sync_state') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.sync_state OWNER TO mailbox_service';
-        END IF;
-        IF to_regclass('public.mailboxes') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.mailboxes OWNER TO mailbox_service';
-        END IF;
-        IF to_regclass('public.emails') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.emails OWNER TO mailbox_service';
-        END IF;
-        IF to_regclass('public.email_mailboxes') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.email_mailboxes OWNER TO mailbox_service';
-        END IF;
-        IF to_regclass('public.email_bodies') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.email_bodies OWNER TO mailbox_service';
-        END IF;
-        IF to_regclass('public.threads') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.threads OWNER TO mailbox_service';
         END IF;
       END
       $$;
