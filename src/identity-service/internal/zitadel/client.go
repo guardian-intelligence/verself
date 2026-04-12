@@ -459,6 +459,18 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	return nil
 }
 
+func zitadelResourceAlreadyGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "Errors.User.NotExisting") ||
+		strings.Contains(text, "User could not be found") ||
+		strings.Contains(text, "Errors.User.Key.NotExisting") ||
+		strings.Contains(text, "Errors.User.Secret.NotExisting") ||
+		strings.Contains(text, "Errors.Key.NotExisting")
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -569,11 +581,17 @@ func (c *Client) RemoveServiceAccountCredential(ctx context.Context, subjectID s
 	case identity.APICredentialAuthMethodPrivateKeyJWT:
 		path := "/v2/users/" + url.PathEscape(subjectID) + "/keys/" + url.PathEscape(secret.ProviderKeyID)
 		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+			if zitadelResourceAlreadyGone(err) {
+				return nil
+			}
 			return fmt.Errorf("%w: remove service account key: %v", identity.ErrZitadelUnavailable, err)
 		}
 	case identity.APICredentialAuthMethodClientSecret:
 		path := "/v2/users/" + url.PathEscape(subjectID) + "/secret"
 		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+			if zitadelResourceAlreadyGone(err) {
+				return nil
+			}
 			return fmt.Errorf("%w: remove service account secret: %v", identity.ErrZitadelUnavailable, err)
 		}
 	default:
@@ -588,6 +606,9 @@ func (c *Client) DeactivateServiceAccount(ctx context.Context, subjectID string)
 		return fmt.Errorf("%w: subject_id is required", identity.ErrInvalidInput)
 	}
 	if err := c.doJSON(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(subjectID), map[string]any{}, nil, false); err != nil {
+		if zitadelResourceAlreadyGone(err) {
+			return nil
+		}
 		return fmt.Errorf("%w: delete service account: %v", identity.ErrZitadelUnavailable, err)
 	}
 	return nil

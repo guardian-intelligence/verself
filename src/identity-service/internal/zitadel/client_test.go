@@ -178,3 +178,45 @@ func TestAddServiceAccountClientSecretRequestShape(t *testing.T) {
 		t.Fatalf("unexpected material %#v", material)
 	}
 }
+
+func TestRemoveServiceAccountCredentialAllowsAlreadyDeletedUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/v2/users/subject-1/secret" {
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 5, "message": "User could not be found (COMMAND-test)"})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	err = client.RemoveServiceAccountCredential(context.Background(), "subject-1", identity.APICredentialSecret{
+		AuthMethod:    identity.APICredentialAuthMethodClientSecret,
+		ProviderKeyID: "client-secret",
+	})
+	if err != nil {
+		t.Fatalf("expected already-deleted user to be ignored, got %v", err)
+	}
+}
+
+func TestDeactivateServiceAccountAllowsAlreadyDeletedUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/v2/users/subject-1" {
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 9, "message": "Errors.User.NotExisting (COMMAND-test)"})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	if err := client.DeactivateServiceAccount(context.Background(), "subject-1"); err != nil {
+		t.Fatalf("expected already-deleted user to be ignored, got %v", err)
+	}
+}
