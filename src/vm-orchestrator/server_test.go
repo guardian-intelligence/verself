@@ -1,6 +1,9 @@
 package vmorchestrator
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -94,5 +97,71 @@ func TestHostRunResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T)
 	}
 	if roundTrip.Metrics == nil || roundTrip.Metrics.BootTimeUs != original.Metrics.BootTimeUs {
 		t.Fatalf("round trip metrics = %#v, want boot_time_us %d", roundTrip.Metrics, original.Metrics.BootTimeUs)
+	}
+}
+
+func TestRunObserverPersistsTelemetryDiagnosticsAsRunEvents(t *testing.T) {
+	t.Parallel()
+
+	store := mustOpenStateStoreForTest(t)
+	defer store.close()
+
+	ctx := context.Background()
+	runID := "run-telemetry-diag"
+	if err := store.createRun(ctx, runID, RunStatePending, nil); err != nil {
+		t.Fatalf("createRun: %v", err)
+	}
+
+	server := &APIServer{
+		state:  store,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	observer := &runObserver{
+		server: server,
+		run: &managedRun{
+			id:             runID,
+			billablePhases: map[string]struct{}{},
+		},
+	}
+
+	observer.OnTelemetryEvent(TelemetryEvent{
+		RunID: runID,
+		Diagnostic: &TelemetryDiagnostic{
+			Kind:           TelemetryDiagnosticKindGap,
+			ExpectedSeq:    7,
+			ObservedSeq:    9,
+			MissingSamples: 2,
+		},
+	})
+	observer.OnTelemetryEvent(TelemetryEvent{
+		RunID: runID,
+		Diagnostic: &TelemetryDiagnostic{
+			Kind:           TelemetryDiagnosticKindRegression,
+			ExpectedSeq:    10,
+			ObservedSeq:    8,
+			MissingSamples: 0,
+		},
+	})
+
+	events, err := store.listRunEvents(ctx, runID, 0, 100)
+	if err != nil {
+		t.Fatalf("listRunEvents: %v", err)
+	}
+
+	var foundGap, foundRegression bool
+	for _, event := range events {
+		if event.EventType == "telemetry_gap_detected" {
+			foundGap = true
+		}
+		if event.EventType == "telemetry_regression_detected" {
+			foundRegression = true
+		}
+	}
+
+	if !foundGap {
+		t.Fatalf("missing run event type telemetry_gap_detected; events=%#v", events)
+	}
+	if !foundRegression {
+		t.Fatalf("missing run event type telemetry_regression_detected; events=%#v", events)
 	}
 }

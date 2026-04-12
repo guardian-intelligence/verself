@@ -493,8 +493,41 @@ func (o *runObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
 	}
 }
 
-func (o *runObserver) OnTelemetryEvent(TelemetryEvent) {
-	// Telemetry fanout API was removed in the run-event cutover.
+func (o *runObserver) OnTelemetryEvent(event TelemetryEvent) {
+	if o == nil || o.server == nil || o.run == nil || event.Diagnostic == nil {
+		return
+	}
+
+	runID := strings.TrimSpace(event.RunID)
+	if runID == "" {
+		runID = o.run.id
+	}
+	if runID == "" {
+		return
+	}
+
+	var eventType string
+	switch event.Diagnostic.Kind {
+	case TelemetryDiagnosticKindGap:
+		eventType = "telemetry_gap_detected"
+	case TelemetryDiagnosticKindRegression:
+		eventType = "telemetry_regression_detected"
+	default:
+		return
+	}
+
+	attrs := map[string]string{
+		"kind":                    string(event.Diagnostic.Kind),
+		"expected_seq":            strconv.FormatUint(uint64(event.Diagnostic.ExpectedSeq), 10),
+		"observed_seq":            strconv.FormatUint(uint64(event.Diagnostic.ObservedSeq), 10),
+		"missing_samples":         strconv.FormatUint(uint64(event.Diagnostic.MissingSamples), 10),
+		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+	}
+	if !event.ReceivedAtUnix.IsZero() {
+		attrs["telemetry_received_unix_nano"] = strconv.FormatInt(event.ReceivedAtUnix.UTC().UnixNano(), 10)
+	}
+
+	o.server.appendRunEvent(runID, eventType, attrs)
 }
 
 func (r *managedRun) setRunning(cancel context.CancelFunc) {
