@@ -1,8 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
-    "types": ["node"]
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    // We now consume @forge-metal/ui's raw .tsx sources via subpath exports.
+    // The UI package itself relaxes exactOptionalPropertyTypes (see its
+    // tsconfig.json) because Radix wrappers spread optional props through
+    // Slot/asChild plumbing; mirroring that here keeps tsc green when
+    // walking transitive imports under workspace symlinks.
+    "exactOptionalPropertyTypes": false
   },
   "include": ["src", "vite.config.ts"]
 }

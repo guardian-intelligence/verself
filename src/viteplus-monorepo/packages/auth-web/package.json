@@ -31,18 +31,26 @@
       "types": "./src/react.ts",
       "default": "./src/react.ts"
     },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "default": "./src/components/index.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "vp pack src/index.ts src/config.ts src/isomorphic.ts src/react.ts",
-    "dev": "vp pack src/index.ts src/config.ts src/isomorphic.ts src/react.ts --watch",
-    "test": "cd ../.. && vp test run packages/auth-web/src/index.test.ts",
+    "build": "vp pack src/index.ts src/config.ts src/isomorphic.ts src/react.ts src/components/index.ts",
+    "dev": "vp pack src/index.ts src/config.ts src/isomorphic.ts src/react.ts src/components/index.ts --watch",
+    "test": "cd ../.. && vp test run packages/auth-web/src",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@forge-metal/ui": "workspace:*",
+    "@tanstack/react-form": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
     "jose": "catalog:",
+    "lucide-react": "catalog:",
     "postgres": "catalog:",
     "valibot": "catalog:"
   },
@@ -50,6 +58,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "fast-check": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "catalog:",
