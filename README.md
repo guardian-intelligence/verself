@@ -65,12 +65,13 @@ behind the existing operator wrappers and remote credstore files.
 ### 5. Log in
 
 ```bash
-# HyperDX admin credentials are in the SOPS-encrypted secrets file
-sops -d --extract '["hyperdx_admin_email"]' src/platform/ansible/group_vars/all/secrets.sops.yml
-sops -d --extract '["hyperdx_admin_password"]' src/platform/ansible/group_vars/all/secrets.sops.yml
+# Grafana keeps a local bootstrap admin for recovery; normal login uses Zitadel.
+ssh ubuntu@<server-ip> 'sudo cat /etc/credstore/grafana/admin-password'
 ```
 
-Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
+Open `https://dashboard.<domain>` for Grafana. Use `https://<ip>` only for
+direct host access when DNS is not configured (self-signed cert for IP
+addresses, auto Let's Encrypt for domains).
 
 ## Snapshot-Backed VM Farm
 
@@ -113,6 +114,17 @@ stale unless they point back to the code above.
 
 ## Licensing
 
-This project is open-source. Most bundled server components (ClickHouse, TigerBeetle, Forgejo, PostgreSQL) use permissive or weak-copyleft licenses with no network-interaction obligations.
+This project is open-source. Most bundled server components (ClickHouse,
+TigerBeetle, Forgejo, PostgreSQL) use permissive or weak-copyleft licenses with
+no network-interaction obligations.
 
-**Stalwart Mail Server** is licensed under AGPL-3.0. If you run Stalwart unmodified (deployed as a pinned binary from `server-tools.json`), your obligation is to provide users with a link to the upstream source at `github.com/stalwartlabs/stalwart`. Your own application code that communicates with Stalwart over JMAP/SMTP/IMAP is a separate work and is not covered by AGPL. If you modify Stalwart's source and serve it over a network, you must make your modifications available to users who interact with it. Consult a lawyer if you are offering hosted email as a closed-source commercial product built on this stack.
+**Grafana OSS** and **Stalwart Mail Server** are licensed under AGPL-3.0. If
+you run upstream binaries unmodified (as pinned in `server-tools.json`), your
+obligation is to provide users with source links:
+`github.com/grafana/grafana` and `github.com/stalwartlabs/stalwart`.
+
+Your own application code that talks to these services over HTTP/JMAP/SMTP/IMAP
+remains a separate work. If you modify Grafana or Stalwart and provide the
+modified services over a network, you must make those modifications available to
+interacting users. Consult a lawyer for production licensing/compliance
+obligations.

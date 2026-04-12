@@ -4,9 +4,10 @@ Polyglot Repo:
 
 src/apps/viteplus-monorepo -- TypeScript (Vite Plus + TanStack Start/DB/Query/Router)
 go.work -- All of those are Golang
-src/vm-orchestrator -- Zig guest agent that lives in all Firecracker VMs.
+src/vm-orchestrator -- Go host daemon for Firecracker, ZFS, TAP networking, jailer lifecycle, vm-bridge, and gRPC control.
+src/vm-guest-telemetry -- Zig guest agent that streams health samples from Firecracker VMs.
 
-This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, ClickStack observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
+This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
 
 Features:
 
@@ -25,7 +26,7 @@ Billing figured out for you, layered on top of Stripe to make it easy to go from
 
 ## Direction
 
-* vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones, TAP networking, jailer lifecycle, and guest telemetry aggregation. Exposes a gRPC API over a Unix socket for K8s services. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. Same infrastructure powers CI and customer sandbox workloads.
+* vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. sandbox-rental-service is the product control plane layered on that substrate.
 * Avoid CLIs. Things talk to each other over HTTP. 
 * We're moving to k3s soon.
 * Broad direction: every service should do the following:
@@ -36,27 +37,30 @@ Billing figured out for you, layered on top of Stripe to make it easy to go from
 * Product IAM direction: Zitadel owns identity, organizations, users, OAuth/OIDC, project roles, and role assignments; Forge Metal owns the product policy model; each Go service owns and enforces its operation catalog. The platform should ship working default role bundles and policy documents, then expose customer editing through a constrained Forge Metal organization console rather than requiring operators to hand-author IAM documents. See src/platform/docs/identity-and-iam.md.
 * Improvements to our usage-based billing system with subscriptions + credits
 * An S-Team goal is for us to start dogfooding our own Forgejo and running our own CI, establishing a main, beta, gamma, and different preview environments of the entire system for different dev branches -- with automatic promotions: dev branches merge to gamma, gamma bakes and runs more expensive automation tests and promots to beta. Beta may see some private invite-only users and have manual or time-gated promotion to main. Dev branches are accesible only by the operator and their agent.
+* in a similar vein we want to start defining e2e canaries of our own infrastructure as repeatable/scheduled workloads
 
-### VM Runtime Roadmap
+### Sandbox Runtime Products
 
-The runtime product is a general-purpose ultrafast VM orchestrator service, not
-only a CI backend. The same Firecracker/ZFS checkpoint substrate should support
-customer VM workloads, internal canaries, and repository CI.
+sandbox-rental-service sells isolated compute products built from the same
+vm-orchestrator + vm-bridge + vm-guest-telemetry substrate. Firecracker provides
+the isolation boundary; ZFS zvols/checkpoints provide fast clone, restore, and
+persistent filesystem semantics; billing, IAM, logs, traces, metrics, and
+checkpoint policy stay in service-owned control-plane state.
 
-Roadmap shape:
+The three customer-facing products are:
 
-1. Build the VM orchestrator as a customer-facing, org-scoped service with
-   billing, policy, telemetry, and checkpoint state. Dogfood it through an
-   internal test account that runs through the same billing and policy paths as
-   customers, with invoice-time adjustments making internal usage net to zero.
-2. Use that service to run canaries against live Forge Metal services and
-   webapps. Canaries should be normal metered VM workloads with first-class logs,
-   traces, metrics, checkpoint refs, and failure state in ClickHouse/PostgreSQL,
-   not a parallel operator-only script system.
-3. Build a Blacksmith-like runner integration so customers can use Forge Metal
-   VMs as GitHub Actions runners. Dogfood the same runner API through Forgejo so
-   this repo's `.forgejo/workflows/ci.yml` executes on the same VM orchestrator
-   service exposed to customers.
+1. A Blacksmith-like clean-room Actions runner: customers install a Forge Metal
+   GitHub Action or Forgejo Actions equivalent and run repository workflows on
+   Forge Metal Firecracker VMs for a 2-10x CI speedup.
+2. Arbitrary workload execution: customers define Lambda-like workloads with a
+   persistent filesystem, first invoked manually and later schedulable as
+   minimum-60-second loops.
+3. Long-running VMs: customers run persistent VM sessions on the same isolation,
+   telemetry, billing, and checkpoint substrate.
+
+Dogfood all three through the same org, IAM, billing, telemetry, and checkpoint
+paths customers use. Internal usage should be unlimited by entitlement and net
+to zero at invoice time via adjustment, not by bypassing product control planes.
 
 ## Deployment Topology
 
@@ -64,7 +68,7 @@ This is a deploy-together system. Single-node is the default deployment. Everyth
 
 There are three safety rings:
 
-Internet-Exposed: Frontend TanStack (src/viteplus-monorepo/apps/*) + Golang Services (src/sandbox-rental-service, src/mailbox service, src/billing-service's webhook handler). Security hardened through nftables as much as possible (always improving) + Forgejo + HyperDX
+Internet-Exposed: Frontend TanStack (src/viteplus-monorepo/apps/*) + Golang Services (src/sandbox-rental-service, src/mailbox service, src/billing-service's webhook handler). Security hardened through nftables as much as possible (always improving) + Forgejo + Grafana
 Private Subnet/Linux Userspace: Golang internal services (billing-service), Databases (PG, ClickHouse, TigerBeetle), Self-Hosted Platform Stuff (Zitadel, Stalwart)
 Linux Root: ZFS, src/vm-orchestrator
 
@@ -198,7 +202,7 @@ Services get subdomains automatically:
 
 | Subdomain | Service |
 |-----------|---------|
-| `admin.<domain>` | ClickStack dashboard |
+| `dashboard.<domain>` | Grafana |
 | `git.<domain>` | Forgejo |
 | `auth.<domain>` | Zitadel |
 | `mail.<domain>` | Stalwart (JMAP API + webmail) |
@@ -209,7 +213,7 @@ All server software is managed by the `deploy_profile` Ansible role. It populate
 
 - **Go service binaries** (billing-service, sandbox-rental-service, mailbox-service): built on the controller via `go build`, copied to server
 - **Caddy** (with Coraza WAF plugin): built on the controller via `xcaddy`, copied to server
-- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
+- **Static binaries** (ClickHouse, TigerBeetle, Zitadel, Forgejo, Grafana, grafana-clickhouse-datasource plugin, otelcol-contrib, containerd, Node.js, Stalwart, stalwart-cli): pinned in `src/platform/server-tools.json` with URLs and SHA256 hashes, downloaded and verified on the server
 - **apt packages** (PostgreSQL 16, wireguard-tools): installed from PGDG/Ubuntu repos, symlinked into fm_bin
 
 The only other `apt install` is `zfsutils-linux` (kernel-dependent, must match running kernel).
@@ -229,7 +233,6 @@ Read the Makefile for other common task automation.
 | `playbooks/dev-single-node.yml` | Deploy to single node (idempotent) |
 | `playbooks/site.yml` | Deploy to multi-node cluster (workers + infra) |
 | `playbooks/guest-rootfs.yml` | Build guest rootfs and stage Firecracker guest artifacts |
-| `playbooks/hyperdx-dashboards.yml` | Sync HyperDX dashboards without full redeploy |
 | `playbooks/vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `playbooks/security-patch.yml` | Rolling OS security updates |
 | `playbooks/billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL state and restart billing callers |

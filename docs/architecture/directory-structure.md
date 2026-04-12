@@ -106,7 +106,7 @@ forge-metal/                            # Monorepo root
     │       ├── resend/                 # Outbound email delivery config
     │       ├── forgejo/                # Git server
     │       ├── zitadel/                # Identity provider (OIDC)
-    │       ├── hyperdx/                # Observability UI + MongoDB
+    │       ├── grafana/                # Observability UI + ClickHouse dashboards
     │       ├── verdaccio/              # Sealed npm registry mirror
     │       ├── firecracker/            # KVM, jailer, golden zvol, vm-orchestrator
     │       ├── containerd/             # Container runtime

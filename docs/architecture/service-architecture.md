@@ -1,62 +1,109 @@
+# Service Architecture
 
+```mermaid
+flowchart TB
+  browser["Browsers<br/>customer APIs"]
+  github["GitHub / Forgejo<br/>repository workflows"]
+  smtp["Inbound SMTP"]
+  stripe["Stripe<br/>webhooks + checkout"]
+
+  caddy["Caddy<br/>TLS, WAF, routing"]
+  stalwart["Stalwart<br/>SMTP + JMAP"]
+  forgejo["Forgejo<br/>git hosting + Actions source"]
+  zitadel["Zitadel<br/>OIDC, orgs, role assignments"]
+  grafana["Grafana<br/>observability UI"]
+
+  rent["rent-a-sandbox<br/>TanStack Start BFF"]
+  identity["identity-service<br/>org + product IAM control plane"]
+  sandbox["sandbox-rental-service<br/>compute product control plane"]
+  billing["billing-service<br/>Reserve / Settle / Void"]
+  authmw["auth-middleware<br/>local JWT validation"]
+
+  actions["Actions runner product<br/>Blacksmith-like clean-room"]
+  workloads["Arbitrary workload execution<br/>manual now, schedulable later"]
+  longvms["Long-running VMs<br/>persistent sessions"]
+
+  vmorch["vm-orchestrator<br/>privileged Go host daemon"]
+  zfs["ZFS pool<br/>zvols, clones, checkpoint versions"]
+  fc["Firecracker VMs<br/>jailer + TAP networking"]
+  bridge["vm-bridge<br/>guest PID 1 + checkpoint control"]
+  telemetry["vm-guest-telemetry<br/>Zig 60Hz health stream"]
+
+  pg["PostgreSQL<br/>service schemas, execution state,<br/>checkpoint refs, frontend auth"]
+  electric["ElectricSQL<br/>browser sync shapes"]
+  clickhouse["ClickHouse<br/>OTel logs, traces, metrics,<br/>wide events, metering"]
+  tigerbeetle["TigerBeetle<br/>billing ledger"]
+
+  browser --> caddy
+  smtp --> stalwart
+  stripe --> caddy
+  github --> actions
+
+  caddy --> rent
+  caddy --> sandbox
+  caddy --> billing
+  caddy --> identity
+  caddy --> zitadel
+  caddy --> forgejo
+  caddy --> grafana
+  caddy --> stalwart
+
+  rent --> sandbox
+  rent --> identity
+  rent --> billing
+  pg --> electric --> rent
+
+  forgejo --> actions
+  actions --> sandbox
+  workloads --> sandbox
+  longvms --> sandbox
+
+  sandbox --> billing
+  sandbox --> pg
+  sandbox --> clickhouse
+  sandbox --> vmorch
+  billing --> pg
+  billing --> tigerbeetle
+  billing --> clickhouse
+  identity --> pg
+
+  authmw --> zitadel
+  sandbox -. validates bearer JWTs .-> authmw
+  billing -. validates bearer JWTs .-> authmw
+  identity -. validates bearer JWTs .-> authmw
+
+  vmorch --> zfs
+  vmorch --> fc
+  fc --> bridge
+  fc --> telemetry
+  bridge -- "host-authorized checkpoint requests" --> vmorch
+  telemetry -- "vsock health frames" --> vmorch
+  vmorch --> clickhouse
+
+  clickhouse --> grafana
 ```
-                              Internet (port 25)
-                                      │
-                              ┌───────▼───────┐
-                              │  Stalwart     │
-                              │  (SMTP+JMAP)  │───── OTLP ──┐
-                              └───────────────┘              │
-                                                             │
-                                    ┌─────────────────────────────────────────────────────────┐
-                                    │                     Caddy (TLS + WAF)                    │
-                                    │   allowlist routing, Coraza WAF, Stripe IP allowlist     │
-                                    └──┬──────────┬──────────┬──────────┬──────────┬──────────┘
-                                       │          │          │          │          │
-                              ┌────────▼──┐ ┌─────▼────┐ ┌──▼───┐ ┌───▼────┐ ┌───▼──────────┐
-                              │rent-a-    │ │billing-  │ │Zitadel│ │Forgejo │ │  HyperDX     │
-                              │sandbox    │ │service   │ │(OIDC) │ │(git+CI)│ │  (obs UI)    │
-                              │(webapp)   │ │(Go/Huma) │ │       │ │        │ │              │
-                              └─────┬─────┘ └──┬───┬───┘ └──┬───┘ └───┬────┘ └──────────────┘
-                                    │          │   │        │         │
-                              ┌─────▼──────────▼┐  │   OIDC JWKS      │
-                              │sandbox-rental-  │  │   (cached)       │
-                              │service (Go/Huma)│  │        │         │
-                              └──┬────┬────┬────┘  │        │         │
-                                 │    │    │       │        │         │
-                    ┌────────────▼┐   │  ┌─▼───────▼───┐    │    ┌────▼─────────────┐
-                    │vm-          │   │  │auth-        │    │
-                    │orchestrator │   │  │middleware   │    │
-                    │(Go daemon)  │   │  │(Go library) │    │
-                    └──┬──────────┘   │  └─────────────┘    │
-                       │              │                     │
-              ┌────────▼──────┐       │
-              │  Firecracker  │       │
-              │  VMs (jailer) │       │                    Data Stores
-              │  ┌──────────┐ │       │    ┌─────────────────────────────────────────┐
-              │  │vm-guest- │ │       │    │                                         │
-              │  │telemetry │ │       │    │  PostgreSQL ◄── billing schemas         │
-              │  │(Zig agent│ │       │    │               ◄── sandbox job_logs      │
-              │  │ 60Hz)    │ │       │    │               ◄── Zitadel event store   │
-              │  └──────────┘ │       │    │               ◄── Forgejo metadata      │
-              └───────────────┘       │    │               ◄── Stalwart mail store   │
-                                      │    │                                         │
-                                      │    │  TigerBeetle ◄── billing ledger         │
-                                      │    │                   (Reserve/Settle/Void) │
-                                      │    │                                         │
-                                      │    │  ClickHouse  ◄── OTel logs/traces       │
-                                      ├───►│               ◄── billing metering      │
-                                      │    │               ◄── sandbox wide events   │
-                                      │    │               ◄── sandbox job logs      │
-                                      │    │               ◄── deploy events         │
-                                      │    │                                         │
-                                      │    │  MongoDB     ◄── HyperDX app state      │
-                                      │    └─────────────────────────────────────────┘
-                                      │
-                              ┌───────▼───────┐
-                              │  Stripe       │
-                              │  (webhooks)   │
-                              └───────────────┘
-```
+
+`sandbox-rental-service` is the product control plane for three related compute
+products: a Blacksmith-like clean-room Actions runner, arbitrary workload
+execution, and long-running VMs. These products must reuse the same runtime
+substrate rather than developing separate runners: `vm-orchestrator` manages the
+privileged host operations, `vm-bridge` exposes a narrow guest control surface,
+`vm-guest-telemetry` streams health data, Firecracker provides the isolation
+boundary, and ZFS zvols/checkpoints provide fast restore and persistent
+filesystem semantics.
+
+`sandbox-rental-service` owns customer semantics: organization policy, workflow
+planning, execution records, checkpoint refs, billing windows, logs, public DTOs,
+and the future scheduling model. `vm-orchestrator` owns privileged VM lifecycle
+and ZFS operations. Guest checkpoint requests are untrusted input; the guest may
+name only service-authorized checkpoint refs, and it must never provide org IDs,
+ZFS paths, dataset names, or checkpoint version paths.
+
+The next architecture gaps are customer secret management and block-layer
+composition. Secret handling needs a first-class product service rather than
+ad hoc execution env vars. zvol restore/composition belongs behind the
+`sandbox-rental-service` checkpoint policy model and the `vm-orchestrator`
+privileged restore API, not in customer-visible ZFS paths.
 
 ## Wire Contracts
 
