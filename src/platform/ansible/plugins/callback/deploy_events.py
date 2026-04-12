@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 
 from ansible.plugins.callback import CallbackBase
 
@@ -38,6 +41,91 @@ FALLBACK_DIR = os.environ.get(
     "DEPLOY_EVENT_DIR",
     str(Path.home() / ".cache" / "forge-metal" / "deploy-events"),
 )
+RUN_KEY_DIR = Path(
+    os.environ.get(
+        "DEPLOY_RUN_KEY_DIR",
+        str(Path.home() / ".cache" / "forge-metal" / "deploy-runs"),
+    )
+)
+_IDENTITY_LOCK = Lock()
+_IDENTITY = None
+
+
+def _sanitize_hostname(hostname: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", hostname or "unknown")
+
+
+def _trace_id_from_deploy_id(deploy_id: str) -> str:
+    try:
+        return uuid.UUID(deploy_id).hex
+    except Exception:
+        return uuid.uuid5(uuid.NAMESPACE_OID, deploy_id).hex
+
+
+def _next_run_counter(day: str, hostname: str) -> int:
+    RUN_KEY_DIR.mkdir(parents=True, exist_ok=True)
+    counter_path = RUN_KEY_DIR / f"{day}.{hostname}.counter"
+
+    try:
+        import fcntl
+    except Exception:
+        current = int(counter_path.read_text().strip() or "0") if counter_path.exists() else 0
+        current += 1
+        counter_path.write_text(f"{current}\n")
+        return current
+
+    with counter_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        raw = handle.read().strip()
+        try:
+            current = int(raw) if raw else 0
+        except Exception:
+            current = 0
+        current += 1
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"{current}\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return current
+
+
+def get_deploy_identity():
+    global _IDENTITY
+    if _IDENTITY is not None:
+        return _IDENTITY
+
+    with _IDENTITY_LOCK:
+        if _IDENTITY is not None:
+            return _IDENTITY
+
+        deploy_run_key = os.environ.get("FORGE_METAL_DEPLOY_RUN_KEY")
+        if not deploy_run_key:
+            day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            hostname = _sanitize_hostname(
+                os.environ.get("FORGE_METAL_DEPLOY_HOSTNAME")
+                or socket.gethostname()
+            )
+            counter = _next_run_counter(day, hostname)
+            deploy_run_key = f"{day}.{counter:06d}@{hostname}"
+        deploy_id = os.environ.get("FORGE_METAL_DEPLOY_ID")
+        if not deploy_id:
+            deploy_id = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"forge-metal:{deploy_run_key}")
+            )
+
+        trace_id = _trace_id_from_deploy_id(deploy_id)
+        _IDENTITY = {
+            "deploy_id": deploy_id,
+            "deploy_run_key": deploy_run_key,
+            "trace_id": trace_id,
+        }
+        os.environ["FORGE_METAL_DEPLOY_ID"] = deploy_id
+        os.environ["FORGE_METAL_DEPLOY_RUN_KEY"] = deploy_run_key
+        os.environ["FORGE_METAL_TRACE_ID"] = trace_id
+        return _IDENTITY
 
 
 class CallbackModule(CallbackBase):
@@ -48,7 +136,10 @@ class CallbackModule(CallbackBase):
 
     def __init__(self):
         super().__init__()
-        self._deploy_id = str(uuid.uuid4())
+        identity = get_deploy_identity()
+        self._deploy_id = identity["deploy_id"]
+        self._deploy_run_key = identity["deploy_run_key"]
+        self._trace_id = identity["trace_id"]
         self._start_ns = time.time_ns()
         self._playbook_file = ""
         self._plays = []
@@ -174,6 +265,8 @@ class CallbackModule(CallbackBase):
 
         event = {
             "deploy_id": self._deploy_id,
+            "trace_id": self._trace_id,
+            "deploy_run_key": self._deploy_run_key,
             "playbook": os.path.basename(self._playbook_file),
             "plays": self._plays,
             "commit_sha": self._git("rev-parse", "HEAD"),
@@ -202,8 +295,11 @@ class CallbackModule(CallbackBase):
             ],
             "ansible_version": "",
         }
-
         row = self._to_clickhouse_row(event)
+        legacy_event = dict(event)
+        legacy_event.pop("trace_id", None)
+        legacy_event.pop("deploy_run_key", None)
+        legacy_row = self._to_clickhouse_row(legacy_event)
 
         # Write fallback file first so events survive insert failures.
         fallback = Path(FALLBACK_DIR)
@@ -216,6 +312,12 @@ class CallbackModule(CallbackBase):
             self._display.display(
                 f"deploy_events: {self._deploy_id} inserted into ClickHouse",
                 color="cyan",
+            )
+        elif self._try_insert(legacy_row):
+            artifact.unlink(missing_ok=True)
+            self._display.display(
+                "deploy_events: inserted using legacy schema (run migrations)",
+                color="yellow",
             )
         else:
             self._display.display(
