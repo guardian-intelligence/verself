@@ -66,9 +66,8 @@ behind the existing operator wrappers and remote credstore files.
 
 ```bash
 # HyperDX admin credentials are in the SOPS-encrypted secrets file
-sops -d --extract '["hyperdx_admin_email_slug"]' src/platform/ansible/group_vars/all/secrets.sops.yml
-sops -d --extract '["hyperdx_admin_password_base"]' src/platform/ansible/group_vars/all/secrets.sops.yml
-# Email: admin+{slug}@forge-metal.local, Password: {base}#@F1
+sops -d --extract '["hyperdx_admin_email"]' src/platform/ansible/group_vars/all/secrets.sops.yml
+sops -d --extract '["hyperdx_admin_password"]' src/platform/ansible/group_vars/all/secrets.sops.yml
 ```
 
 Open `https://<ip>` in your browser (self-signed cert for IP addresses, auto Let's Encrypt for domains).
