@@ -245,6 +245,25 @@
   when: dev_tools_manifest.sops is defined
 
 # ============================================================================
+# agent-browser (vercel-labs) — CDP-driven browser CLI for design iteration
+# ============================================================================
+
+- name: Install agent-browser {{ dev_tools_manifest['agent-browser'].version }}
+  ansible.builtin.get_url:
+    url: "{{ dev_tools_manifest['agent-browser'].url }}"
+    dest: /usr/local/bin/agent-browser
+    checksum: "sha256:{{ dev_tools_manifest['agent-browser'].sha256 }}"
+    mode: "0755"
+  when: dev_tools_manifest['agent-browser'] is defined
+
+- name: Verify agent-browser version
+  ansible.builtin.command: /usr/local/bin/agent-browser --version
+  register: dev_tools_agent_browser_version_check
+  changed_when: false
+  failed_when: "dev_tools_manifest['agent-browser'].version not in dev_tools_agent_browser_version_check.stdout"
+  when: dev_tools_manifest['agent-browser'] is defined
+
+# ============================================================================
 # Stripe CLI (tarball → single binary)
 # ============================================================================
 

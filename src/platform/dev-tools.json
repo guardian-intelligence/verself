@@ -197,5 +197,13 @@
     "sha256": "a0f9c131d1e06240f97dedfdf05bb9cb96ee33a865e8877807945bab160eaa0f",
     "install_path": "/usr/local/bin/stripe",
     "version_cmd": "stripe version"
+  },
+  "agent-browser": {
+    "version": "0.25.4",
+    "strategy": "binary",
+    "url": "https://github.com/vercel-labs/agent-browser/releases/download/v0.25.4/agent-browser-linux-x64",
+    "sha256": "02d26f105a9d8e203f8f966acfeb4bab191cfa4625431a535b8be5f8f5905472",
+    "install_path": "/usr/local/bin/agent-browser",
+    "version_cmd": "agent-browser --version"
   }
 }
