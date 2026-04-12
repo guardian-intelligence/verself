@@ -29,11 +29,12 @@ A product is something billable. A plan chooses which SKUs are active for that p
 
 Metered usage prices are attached to the plan/SKU pair, not to ad hoc JSON on the plan row. Stripe subscription price IDs stay on the plan row for checkout because they identify the provider's recurring invoice item, not the internal SKU rate card. That is the cutover from the legacy plan-local JSON pricing model.
 
-The supported entitlement layers map to `account` bucket -> `product` bucket -> SKU bucket. Entitlements are non-overlapping within a layer:
+The supported entitlement scopes form a tightest-to-widest funnel: `sku` -> `bucket` -> `product` -> `account`. Entitlements are non-overlapping within a layer:
 
-- `account`: any product bucket in the org
+- `sku`: one specific SKU within one product bucket
+- `bucket`: one product bucket, fed by any of its SKUs
 - `product`: any bucket for one product
-- `bucket`: one product bucket fed by one or more SKUs
+- `account`: any product bucket in the org
 
 The `bucket` layer is the SKU-lane layer. If premium NVMe and non-premium disk need separate allowance behavior, they must be separate buckets and the corresponding SKUs must map to the correct bucket. Premium usage must not drain non-premium bucket grants, and non-premium usage must not drain premium bucket grants. Product-level or account-level grants are the only supported way to fund multiple buckets.
 
@@ -198,21 +199,35 @@ The `source_reference_id` is deterministic and source-specific. Free-tier source
 
 Prepaid balances with explicit scope.
 
-Scope classes:
+Scope classes (tightest to widest):
 
-- `bucket` grant: only one product bucket
+- `sku` grant: one SKU within one product bucket
+- `bucket` grant: only one product bucket, fed by any of its SKUs
 - `product` grant: any bucket for one product
 - `account` grant: any product bucket in the org
 
 Source-funded grants are deterministic over `org_id`, `source`, scope, and `source_reference_id` so retries are idempotent without making Stripe the only reference namespace. Free-tier and subscription grants carry `entitlement_period_id`, `policy_version`, `period_start`, `period_end`, `starts_at`, and `expires_at`. Terminal subscription events close the local grant rows so remaining units stop funding future reservations even though TigerBeetle retains the immutable financial history.
 
-Grant consumption follows the entitlement hierarchy first, then source priority inside each hierarchy layer:
+Grant consumption is two-level precedence: scope tightness first, source priority second. The constants live in `internal/billing/grant_funding_plan.go` and are also baked into the entitlements view's row sort:
 
-1. matching bucket-scoped grants
-2. matching product-scoped grants
-3. account-scoped grants
+```go
+GrantScopeFundingOrder  = []GrantScopeType{ GrantScopeSKU, GrantScopeBucket, GrantScopeProduct, GrantScopeAccount }
+GrantSourceFundingOrder = []GrantSourceType{ SourceFreeTier, SourceSubscription, SourcePurchase, SourcePromo, SourceRefund }
+```
 
-Inside each layer, `source = 'free_tier'` is consumed before subscription, purchase, promo, or refund credit. This preserves bucket isolation while making free-tier benefits the first matching balance consumed.
+`planGrantFunding` walks the outer scope loop tightest-first, and inside each (scope, source) step it drains grants in expires-asc order — the same tiebreak `listGrantBalances` already applies. SKU-scoped grants only fund charges that name the SKU; bucket-only charge lines fall through them. Bucket isolation is preserved at every layer: a `premium_nvme` SKU grant can never drain into a `compute` charge, and a `premium_disk` bucket grant can never drain into a `regular_disk` charge. `source = 'free_tier'` always burns first inside a given scope, so paid balances last as long as possible.
+
+## Entitlements view
+
+`GET /internal/billing/v1/orgs/{org_id}/entitlements` returns the same grants the funder will consume, grouped into customer-facing pools by `(scope, source, product, bucket, sku)`. The view-model deliberately refuses to sum across pools — neither on the wire nor in the rendered UI — because the moment a customer holds any credit narrower than account scope (a tiny free-tier crumb on top of a paid bucket grant), a single top-line "balance" number is dishonest about what the next reservation can actually spend.
+
+The shape:
+
+- A `universal` strip carries every `account`-scope pool, one cell per source.
+- A `products[]` array carries one section per product. Each section has `product_pools[]` for `product`-scope pools and a `buckets[]` table where each bucket carries `bucket`-scope pools and any `sku`-scope pools nested under it.
+- Each pool surfaces its grants sorted by expires-asc — the topmost entry is what the funder will drain first when that pool is reached.
+
+Within a bucket table, rows are sorted bucket-scope-first then SKU-scope, then by `GrantSourceFundingOrder`. Across the view, the cell-level "next-to-spend" position is a load-bearing claim about funder behavior. The contract is pinned by `entitlements_view_funding_test.go`: every cell projects back to a `scopedGrantBalance` and runs `planGrantFunding` against a representative charge, asserting the funder's first leg matches the cell's top entry. Any future change to `GrantScopeFundingOrder`, `GrantSourceFundingOrder`, or the view's sort logic must keep that test green or the customer-facing claim drifts from reality.
 
 ### `billing_outbox_events`
 
