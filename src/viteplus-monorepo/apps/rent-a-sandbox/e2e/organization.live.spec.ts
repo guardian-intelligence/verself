@@ -13,7 +13,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
       app.resetBrowserSignals();
 
       await app.expectSSRHTML("/organization", [
-        "Invite Member",
+        "Invite member",
         "Members",
         "Policy",
         "identity-service",
@@ -23,7 +23,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
         path: "/organization",
         ready: app.page.getByRole("heading", { name: "Policy" }),
         expectedText: [
-          "Invite Member",
+          "Invite member",
           "Members",
           "Policy",
           "forge_org_owner",
@@ -32,8 +32,8 @@ test.describe("Rent-a-Sandbox Organization", () => {
         ],
       });
 
-      await expect(app.page.getByRole("button", { name: "Invite Member" })).toBeEnabled();
-      await expect(app.page.getByRole("button", { name: "Save Policy" })).toBeEnabled();
+      await expect(app.page.getByRole("button", { name: "Invite member" })).toBeEnabled();
+      await expect(app.page.getByRole("button", { name: "Save policy" })).toBeEnabled();
 
       run.detail_url = "/organization";
       run.status = "succeeded";
