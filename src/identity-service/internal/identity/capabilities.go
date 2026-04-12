@@ -26,7 +26,6 @@ type Capability struct {
 var baselineMemberPermissions = []string{
 	PermissionOrganizationRead,
 	PermissionMemberRead,
-	PermissionOperationsRead,
 	PermissionMemberCapabilitiesRead,
 }
 

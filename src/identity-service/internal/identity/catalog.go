@@ -7,7 +7,6 @@ const (
 	PermissionMemberRolesWrite          = "identity:member:roles:write"
 	PermissionMemberCapabilitiesRead    = "identity:member_capabilities:read"
 	PermissionMemberCapabilitiesWrite   = "identity:member_capabilities:write"
-	PermissionOperationsRead            = "identity:operations:read"
 	PermissionAPICredentialsRead        = "identity:api_credentials:read"
 	PermissionAPICredentialsCreate      = "identity:api_credentials:create"
 	PermissionAPICredentialsRoll        = "identity:api_credentials:roll"
@@ -38,7 +37,6 @@ var defaultOperations = Operations{
 				{OperationID: "update-organization-member-roles", Permission: PermissionMemberRolesWrite, Resource: "organization_member_roles", Action: "write", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-organization-member-capabilities", Permission: PermissionMemberCapabilitiesRead, Resource: "organization_member_capabilities", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "put-organization-member-capabilities", Permission: PermissionMemberCapabilitiesWrite, Resource: "organization_member_capabilities", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "list-organization-operations", Permission: PermissionOperationsRead, Resource: "service_operation", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-api-credentials", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "get-api-credential", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "create-api-credential", Permission: PermissionAPICredentialsCreate, Resource: "api_credential", Action: "create", OrgScope: "token_org_id"},
@@ -78,18 +76,6 @@ func KnownRoleKeys() map[string]struct{} {
 		RoleAdmin:  {},
 		RoleMember: {},
 	}
-}
-
-func DefaultOperations() Operations {
-	out := Operations{Services: make([]ServiceOperations, 0, len(defaultOperations.Services))}
-	for _, service := range defaultOperations.Services {
-		copied := ServiceOperations{
-			Service:    service.Service,
-			Operations: append([]Operation(nil), service.Operations...),
-		}
-		out.Services = append(out.Services, copied)
-	}
-	return out
 }
 
 func KnownPermissions() map[string]struct{} {

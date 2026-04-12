@@ -134,10 +134,6 @@ func (s *Service) PutMemberCapabilities(ctx context.Context, principal Principal
 	return store.PutMemberCapabilities(ctx, doc)
 }
 
-func (s *Service) Operations(context.Context, Principal) Operations {
-	return DefaultOperations()
-}
-
 func (s *Service) ListAPICredentials(ctx context.Context, principal Principal) ([]APICredential, error) {
 	if err := principal.validate(); err != nil {
 		return nil, err

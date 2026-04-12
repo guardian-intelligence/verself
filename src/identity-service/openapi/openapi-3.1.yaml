@@ -412,48 +412,6 @@ components:
       required:
         - members
       type: object
-    IdentityOperation:
-      additionalProperties: false
-      properties:
-        action:
-          type: string
-        member_eligible:
-          type: boolean
-        operation_id:
-          type: string
-        org_scope:
-          type: string
-        permission:
-          type: string
-        resource:
-          type: string
-      required:
-        - operation_id
-        - permission
-        - resource
-        - action
-        - org_scope
-        - member_eligible
-      type: object
-    IdentityOperations:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4248/schemas/IdentityOperations.json
-          format: uri
-          readOnly: true
-          type: string
-        services:
-          items:
-            $ref: "#/components/schemas/IdentityServiceOperations"
-          type:
-            - array
-            - "null"
-      required:
-        - services
-      type: object
     IdentityOrganization:
       additionalProperties: false
       properties:
@@ -546,21 +504,6 @@ components:
       required:
         - credential
         - issued_material
-      type: object
-    IdentityServiceOperations:
-      additionalProperties: false
-      properties:
-        operations:
-          items:
-            $ref: "#/components/schemas/IdentityOperation"
-          type:
-            - array
-            - "null"
-        service:
-          type: string
-      required:
-        - service
-        - operations
       type: object
     IdentityUpdateMemberRolesRequest:
       additionalProperties: false
@@ -1001,31 +944,5 @@ paths:
         rate_limit_class: member_mutation
         request_body_max_bytes: 16384
         resource: organization_member_roles
-  /api/v1/organization/operations:
-    get:
-      operationId: list-organization-operations
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IdentityOperations"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: List service-declared operations available to policy documents
-      x-forge-metal-iam:
-        action: list
-        audit_event: identity.organization.operations.list
-        org_scope: token_org_id
-        permission: identity:operations:read
-        rate_limit_class: read
-        resource: service_operation
 servers:
   - url: http://127.0.0.1:4248

@@ -27,7 +27,6 @@ const (
 	permissionMemberRolesWrite        permission = identity.PermissionMemberRolesWrite
 	permissionMemberCapabilitiesRead  permission = identity.PermissionMemberCapabilitiesRead
 	permissionMemberCapabilitiesWrite permission = identity.PermissionMemberCapabilitiesWrite
-	permissionOperationsRead          permission = identity.PermissionOperationsRead
 	permissionAPICredentialsRead      permission = identity.PermissionAPICredentialsRead
 	permissionAPICredentialsCreate    permission = identity.PermissionAPICredentialsCreate
 	permissionAPICredentialsRoll      permission = identity.PermissionAPICredentialsRoll
