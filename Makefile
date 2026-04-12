@@ -1,6 +1,6 @@
 .PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
-       vm-guest-telemetry-build traces deploy-trace telemetry-proof clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
+       vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof grafana-proof
 
@@ -145,6 +145,9 @@ deploy-trace: inventory-check ## Query Ansible spans only: make deploy-trace QUE
 
 telemetry-proof: inventory-check ## Run observability smoke and verify ansible spans land in ClickHouse
 	cd $(FM) && ./scripts/telemetry-proof.sh
+
+telemetry-proof-fail: inventory-check ## Run observability smoke fail-path and verify Error spans land in ClickHouse
+	cd $(FM) && TELEMETRY_PROOF_EXPECT_FAIL=1 ./scripts/telemetry-proof.sh
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
