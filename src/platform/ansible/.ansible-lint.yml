@@ -6,6 +6,7 @@ rulesdir:
 
 exclude_paths:
   - .cache/
+  - group_vars/all/secrets.sops.yml
 
 enable_list:
   - no-default-ports
