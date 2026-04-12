@@ -343,6 +343,7 @@ Architecture documents live with the service they describe:
 * Avoid simplifying technical explanations. Details matter and the user cares about things like arcane versioning issues, subtle race conditions, preventing security issues such as timing attack vulnerability, optimizing GC pressure, understanding when abstractions leak. Simplicity should be saved for code and architecture.
 * Some directories have their own AGENTS.md file. When working inside those directories, please read them as they contain juicy context.
 * Edit beyond what you intded as a result of runting linters/formatters are expected. You don't have to worry about them.
+* When in doubt, use the industry standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines -- these and basically everything else are all solved problems with boring and battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
 
 ## Tool Use Contract
 

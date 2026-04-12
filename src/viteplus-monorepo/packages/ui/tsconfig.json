@@ -3,7 +3,15 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "types": ["node"],
+    // shadcn primitives forward optional props (checked, value, theme, ...)
+    // straight to Radix/Sonner. Their generated wrappers spread `...props`
+    // through Slot/asChild plumbing, so the prop type ends up `T | undefined`
+    // even when the underlying primitive expects `T`. The workspace runs
+    // with exactOptionalPropertyTypes elsewhere; we relax it just for the
+    // primitive package so consuming apps still get the strict signature
+    // through component props that we author ourselves.
+    "exactOptionalPropertyTypes": false
   },
   "include": ["src", "vite.config.ts"]
 }
