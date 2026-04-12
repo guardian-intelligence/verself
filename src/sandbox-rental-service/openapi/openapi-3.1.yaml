@@ -42,6 +42,8 @@ components:
         available:
           pattern: ^[0-9]+$
           type: string
+        entitlement_period_id:
+          type: string
         expires_at:
           format: date-time
           type: string
@@ -49,6 +51,14 @@ components:
           type: string
         pending:
           pattern: ^[0-9]+$
+          type: string
+        period_end:
+          format: date-time
+          type: string
+        period_start:
+          format: date-time
+          type: string
+        policy_version:
           type: string
         scope_bucket_id:
           type: string
@@ -58,12 +68,21 @@ components:
           type: string
         source:
           type: string
+        source_reference_id:
+          type: string
+        starts_at:
+          format: date-time
+          type: string
       required:
         - grant_id
         - scope_type
         - scope_product_id
         - scope_bucket_id
         - source
+        - source_reference_id
+        - entitlement_period_id
+        - policy_version
+        - starts_at
         - available
         - pending
       type: object
@@ -308,11 +327,17 @@ components:
       properties:
         cadence:
           type: string
+        contract_id:
+          type: string
         current_period_end:
           format: date-time
           type: string
         current_period_start:
           format: date-time
+          type: string
+        entitlement_state:
+          type: string
+        payment_state:
           type: string
         plan_id:
           type: string
@@ -325,10 +350,13 @@ components:
           type: string
       required:
         - subscription_id
+        - contract_id
         - product_id
         - plan_id
         - cadence
         - status
+        - payment_state
+        - entitlement_state
       type: object
     BillingSubscriptions:
       additionalProperties: false
