@@ -318,7 +318,7 @@ function MembersSection({
         </CardTitle>
         <CardDescription>Role assignments are written to Zitadel.</CardDescription>
       </CardHeader>
-      <CardContent className="px-0">
+      <CardContent>
         <Table>
           <TableHeader>
             <TableRow>

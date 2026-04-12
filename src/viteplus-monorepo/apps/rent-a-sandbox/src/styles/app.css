@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/*
+ * Tailwind v4 auto-detects source files in this app's directory tree but
+ * does not follow the module graph into sibling workspace packages. Any
+ * utility class referenced only inside @forge-metal/ui or /auth-web
+ * primitives (Card/Table padding, gap-6, bg-card, etc.) must be registered
+ * here or it never reaches the final stylesheet.
+ * https://tailwindcss.com/docs/detecting-classes-in-source-files
+ */
+@source "../../../../packages/ui/src";
+@source "../../../../packages/auth-web/src";
+
 @theme {
   --color-background: oklch(1 0 0);
   --color-foreground: oklch(0.145 0 0);

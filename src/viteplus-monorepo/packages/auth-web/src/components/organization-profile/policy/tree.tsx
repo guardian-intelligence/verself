@@ -89,35 +89,34 @@ export function PolicyMatrix({ catalog, state, dispatch, canEdit }: PolicyMatrix
     );
   }
 
+  // Table renders its own overflow-x-auto container — no outer wrapper needed.
   return (
-    <div className="rounded-lg border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">Permission</TableHead>
-            {state.roles.map((role) => (
-              <TableHead key={role.roleKey} scope="col">
-                {role.displayName}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => (
-            <PolicyRow
-              key={pathKey(row.node)}
-              row={row}
-              roles={state.roles}
-              renderTrees={renderTrees}
-              dispatch={dispatch}
-              canEdit={canEdit}
-              isExpanded={row.node.kind === "group" ? expanded.has(pathKey(row.node)) : false}
-              onToggleExpanded={() => toggleExpanded(pathKey(row.node))}
-            />
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Permission</TableHead>
+          {state.roles.map((role) => (
+            <TableHead key={role.roleKey} scope="col">
+              {role.displayName}
+            </TableHead>
           ))}
-        </TableBody>
-      </Table>
-    </div>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <PolicyRow
+            key={pathKey(row.node)}
+            row={row}
+            roles={state.roles}
+            renderTrees={renderTrees}
+            dispatch={dispatch}
+            canEdit={canEdit}
+            isExpanded={row.node.kind === "group" ? expanded.has(pathKey(row.node)) : false}
+            onToggleExpanded={() => toggleExpanded(pathKey(row.node))}
+          />
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
