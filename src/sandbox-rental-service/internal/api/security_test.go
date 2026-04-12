@@ -150,14 +150,14 @@ func TestIdentityPermissionChecksRoleBundlesAndDirectScopes(t *testing.T) {
 		Subject: "credential-1",
 		Raw: map[string]any{
 			"forge_metal:credential_id": "credential-1",
-			"scope":                     "openid sandbox:logs:read",
+			"permissions":               []string{"sandbox:logs:read"},
 		},
 	}
 	if !identityHasPermission(scopedClient, permissionLogsRead) {
-		t.Fatal("API credential scope should grant matching operation permission")
+		t.Fatal("API credential permissions claim should grant matching operation permission")
 	}
 	if identityHasPermission(scopedClient, permissionExecutionSubmit) {
-		t.Fatal("API credential scope should not grant unrelated permissions")
+		t.Fatal("API credential permissions claim should not grant unrelated permissions")
 	}
 }
 

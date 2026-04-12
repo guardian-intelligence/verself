@@ -484,11 +484,11 @@ func identityRolesForCurrentOrg(identity *auth.Identity) []string {
 
 func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
 	credentialID, _ := identity.Raw["forge_metal:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" {
+	if strings.TrimSpace(credentialID) == "" || strings.TrimSpace(identity.OrgID) == "" {
 		return false
 	}
 	requiredText := string(required)
-	for _, claimKey := range []string{"scope", "scp", "permissions", "permission"} {
+	for _, claimKey := range []string{"permissions", "permission"} {
 		for _, value := range stringClaimList(identity.Raw[claimKey]) {
 			if value == requiredText {
 				return true
