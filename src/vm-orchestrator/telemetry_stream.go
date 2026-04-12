@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 )
 
 var ErrTelemetryHelloFirst = errors.New("telemetry stream first frame must be hello")
 
-func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer RunObserver, logger *slog.Logger) error {
+const telemetryFaultProfileEnvVar = "FORGE_METAL_TELEMETRY_FAULT_PROFILE"
+
+func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer RunObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
 	observer = normalizeRunObserver(observer)
 
 	conn, reader, err := connectGuestBridge(ctx, udsPath, guestTelemetryPort)
@@ -20,10 +24,96 @@ func streamGuestTelemetry(ctx context.Context, udsPath, runID string, observer R
 	}
 	defer conn.Close()
 
-	return consumeGuestTelemetryStream(ctx, reader, runID, observer, logger)
+	return consumeGuestTelemetryStream(ctx, reader, runID, observer, logger, faultProfile)
 }
 
-func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID string, observer RunObserver, logger *slog.Logger) error {
+type telemetryFaultProfileKind uint8
+
+const (
+	telemetryFaultProfileKindGapOnce telemetryFaultProfileKind = iota + 1
+	telemetryFaultProfileKindRegressionOnce
+)
+
+type telemetryFaultProfile struct {
+	kind      telemetryFaultProfileKind
+	targetSeq uint32
+	injected  bool
+	seqDelta  int8
+}
+
+func parseTelemetryFaultProfile(raw string) (*telemetryFaultProfile, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	switch {
+	case strings.HasPrefix(raw, "gap_once@"):
+		seq, err := parseTelemetryFaultSeq(strings.TrimPrefix(raw, "gap_once@"))
+		if err != nil || seq == ^uint32(0) {
+			return nil, fmt.Errorf("unsupported telemetry fault profile: %q", raw)
+		}
+		return &telemetryFaultProfile{
+			kind:      telemetryFaultProfileKindGapOnce,
+			targetSeq: seq,
+			seqDelta:  1,
+		}, nil
+	case strings.HasPrefix(raw, "regression_once@"):
+		seq, err := parseTelemetryFaultSeq(strings.TrimPrefix(raw, "regression_once@"))
+		if err != nil || seq == 0 {
+			return nil, fmt.Errorf("unsupported telemetry fault profile: %q", raw)
+		}
+		return &telemetryFaultProfile{
+			kind:      telemetryFaultProfileKindRegressionOnce,
+			targetSeq: seq,
+			seqDelta:  -1,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported telemetry fault profile: %q", raw)
+	}
+}
+
+func parseTelemetryFaultSeq(raw string) (uint32, error) {
+	if raw == "" {
+		return 0, errors.New("missing seq")
+	}
+	n, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(n), nil
+}
+
+func injectTelemetryFault(profile *telemetryFaultProfile, event *TelemetryEvent) {
+	if profile == nil || event == nil || event.Sample == nil {
+		return
+	}
+	if !profile.injected {
+		if event.Sample.Seq != profile.targetSeq {
+			return
+		}
+		profile.injected = true
+	}
+
+	if profile.seqDelta == 0 {
+		return
+	}
+
+	switch profile.seqDelta {
+	case 1:
+		if event.Sample.Seq == ^uint32(0) {
+			return
+		}
+		event.Sample.Seq++
+	case -1:
+		if event.Sample.Seq == 0 {
+			return
+		}
+		event.Sample.Seq--
+	}
+}
+
+func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID string, observer RunObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
 	validator := telemetryStreamValidator{}
 
 	for {
@@ -45,6 +135,7 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID st
 		}
 		event.RunID = runID
 		event.ReceivedAtUnix = time.Now().UTC()
+		injectTelemetryFault(faultProfile, &event)
 
 		emitFrame, diagnostic, err := validator.validate(event)
 		if err != nil {
