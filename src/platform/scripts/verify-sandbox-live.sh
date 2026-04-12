@@ -24,7 +24,7 @@ VERIFICATION_REPO_REVISION="${run_id}-seed" \
   # verification-reset restarts the service stack; wait for the loopback API
   # before seed-system starts probing authz behavior against sandbox-rental.
   verification_wait_for_loopback_api "sandbox-rental-service" \
-    "http://127.0.0.1:4243/api/v1/billing/balance" "401"
+    "http://127.0.0.1:4243/api/v1/billing/entitlements" "401"
   ansible-playbook -i inventory/hosts.ini playbooks/seed-system.yml
 )
 

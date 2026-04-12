@@ -17,14 +17,15 @@ Shared DTO structs live in `src/apiwire` once their field language is shared acr
 Use this shape:
 
 ```go
-type balanceOutput struct {
-	Body apiwire.BillingBalance
+type entitlementsOutput struct {
+	Body apiwire.BillingEntitlementsView
 }
 
-func toBalanceDTO(balance billing.Balance) apiwire.BillingBalance {
-	return apiwire.BillingBalance{
-		OrgID:          apiwire.Uint64(balance.OrgID),
-		TotalAvailable: apiwire.Uint64(balance.TotalAvailable),
+func toEntitlementsDTO(orgID billing.OrgID, view billing.EntitlementsView) apiwire.BillingEntitlementsView {
+	return apiwire.BillingEntitlementsView{
+		OrgID:     apiwire.Uint64(uint64(orgID)),
+		Universal: entitlementPoolList(view.Universal),
+		Products:  entitlementProductSections(view.Products),
 	}
 }
 ```
