@@ -650,12 +650,32 @@
   failed_when: false
   when: dev_tools_manifest['ansible-lint'] is defined
 
+- name: Check ansible tool OpenTelemetry SDK version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
+  register: dev_tools_ansible_otel_sdk_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest['ansible-opentelemetry-sdk'] is defined
+
+- name: Check ansible tool OTLP gRPC exporter version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
+  register: dev_tools_ansible_otel_exporter_current
+  changed_when: false
+  failed_when: false
+  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
+
 - name: Install ansible-core with ansible-lint via uv tool
   ansible.builtin.command:
     cmd: >-
       /usr/local/bin/uv tool install
       ansible-core=={{ dev_tools_manifest.ansible.version }}
-      --with ansible-lint=={{ dev_tools_manifest['ansible-lint'].version }}
+      {% for dep in (dev_tools_manifest.ansible.with | default([])) %}
+      --with {{ dep }}
+      {% endfor %}
   environment:
     UV_TOOL_DIR: /opt/uv-tools
     UV_TOOL_BIN_DIR: /usr/local/bin
@@ -671,6 +691,16 @@
       or dev_tools_manifest.ansible.version not in (dev_tools_ansible_current.stdout | default(''))
       or dev_tools_ansible_lint_current.rc != 0
       or dev_tools_manifest['ansible-lint'].version not in (dev_tools_ansible_lint_current.stdout | default(''))
+      or (dev_tools_manifest['ansible-opentelemetry-sdk'] is defined and (
+            dev_tools_ansible_otel_sdk_current.rc != 0
+            or dev_tools_manifest['ansible-opentelemetry-sdk'].version
+              not in (dev_tools_ansible_otel_sdk_current.stdout | default(''))
+         ))
+      or (dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined and (
+            dev_tools_ansible_otel_exporter_current.rc != 0
+            or dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
+              not in (dev_tools_ansible_otel_exporter_current.stdout | default(''))
+         ))
 
 # uv tool install --with does not symlink companion executables; ensure ansible-lint is linked.
 - name: Symlink ansible-lint from uv venv
@@ -694,6 +724,28 @@
   changed_when: false
   failed_when: "dev_tools_manifest['ansible-lint'].version not in dev_tools_ansible_lint_version_check.stdout"
   when: dev_tools_manifest['ansible-lint'] is defined
+
+- name: Verify ansible tool OpenTelemetry SDK version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-sdk'))"
+  register: dev_tools_ansible_otel_sdk_version_check
+  changed_when: false
+  failed_when: >-
+    dev_tools_manifest['ansible-opentelemetry-sdk'].version
+    not in dev_tools_ansible_otel_sdk_version_check.stdout
+  when: dev_tools_manifest['ansible-opentelemetry-sdk'] is defined
+
+- name: Verify ansible tool OTLP gRPC exporter version
+  ansible.builtin.command: >-
+    /opt/uv-tools/ansible-core/bin/python -c
+    "import importlib.metadata as m; print(m.version('opentelemetry-exporter-otlp-proto-grpc'))"
+  register: dev_tools_ansible_otel_exporter_version_check
+  changed_when: false
+  failed_when: >-
+    dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'].version
+    not in dev_tools_ansible_otel_exporter_version_check.stdout
+  when: dev_tools_manifest['ansible-opentelemetry-exporter-otlp-proto-grpc'] is defined
 
 - name: Check pre-commit version
   ansible.builtin.command: /usr/local/bin/pre-commit --version
