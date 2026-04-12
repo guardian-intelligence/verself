@@ -5,7 +5,7 @@ function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(
-      `${name} is required. Seed the Acme user and provide the stored password explicitly.`,
+      `${name} is required. Seed the test user and provide the stored password explicitly.`,
     );
   }
   return value;
@@ -13,11 +13,11 @@ function requiredEnv(name: string): string {
 
 export const env = {
   baseURL: deriveAppBaseURL("rentasandbox"),
-  testEmail: deriveSeededEmail(process.env, "acme-admin"),
+  testEmail: deriveSeededEmail(process.env, "ceo"),
   testPassword: requiredEnv("TEST_PASSWORD"),
-  testUsername: process.env.TEST_USERNAME || "acme-admin",
-  testFirstName: process.env.TEST_FIRST_NAME || "Acme",
-  testLastName: process.env.TEST_LAST_NAME || "Admin",
+  testUsername: process.env.TEST_USERNAME || "ceo",
+  testFirstName: process.env.TEST_FIRST_NAME || "CEO",
+  testLastName: process.env.TEST_LAST_NAME || "Operator",
 
   // Zitadel admin PAT — optional. If set, the test will auto-provision the
   // test user via the Zitadel Management API. If not set, the user must
