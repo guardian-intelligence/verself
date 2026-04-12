@@ -1,6 +1,10 @@
 package identity
 
-import "time"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
+)
 
 const (
 	RoleForgeOrgOwner = "forge_org_owner"
@@ -9,11 +13,15 @@ const (
 )
 
 type Principal struct {
-	Subject string
-	OrgID   string
-	Roles   []string
-	Email   string
+	Subject           string
+	OrgID             string
+	Roles             []string
+	DirectPermissions []string
+	Email             string
 }
+
+type APICredentialAuthMethod string
+type APICredentialStatus string
 
 type Organization struct {
 	OrgID       string
@@ -75,4 +83,104 @@ type Operation struct {
 	Resource    string
 	Action      string
 	OrgScope    string
+}
+
+const (
+	APICredentialAuthMethodPrivateKeyJWT APICredentialAuthMethod = "private_key_jwt"
+	APICredentialAuthMethodClientSecret  APICredentialAuthMethod = "client_secret"
+
+	APICredentialStatusActive  APICredentialStatus = "active"
+	APICredentialStatusRevoked APICredentialStatus = "revoked"
+)
+
+type APICredential struct {
+	CredentialID         string
+	OrgID                string
+	SubjectID            string
+	ClientID             string
+	DisplayName          string
+	Status               APICredentialStatus
+	AuthMethod           APICredentialAuthMethod
+	Fingerprint          string
+	Permissions          []string
+	PolicyVersionAtIssue int32
+	CreatedAt            time.Time
+	CreatedBy            string
+	UpdatedAt            time.Time
+	ExpiresAt            *time.Time
+	RevokedAt            *time.Time
+	RevokedBy            string
+	LastUsedAt           *time.Time
+}
+
+type APICredentialSecret struct {
+	SecretID      string
+	CredentialID  string
+	AuthMethod    APICredentialAuthMethod
+	ProviderKeyID string
+	Fingerprint   string
+	SecretHash    []byte
+	HashAlgorithm string
+	CreatedAt     time.Time
+	CreatedBy     string
+	ExpiresAt     *time.Time
+	RevokedAt     *time.Time
+	RevokedBy     string
+}
+
+type APICredentialIssuedMaterial struct {
+	AuthMethod   APICredentialAuthMethod
+	ClientID     string
+	TokenURL     string
+	KeyID        string
+	KeyContent   string
+	ClientSecret string
+	Fingerprint  string
+}
+
+type ServiceAccountCredentialInput struct {
+	CredentialID string
+	ClientID     string
+	DisplayName  string
+	AuthMethod   APICredentialAuthMethod
+	ExpiresAt    *time.Time
+}
+
+type AddServiceAccountCredentialInput struct {
+	SubjectID  string
+	ClientID   string
+	AuthMethod APICredentialAuthMethod
+	ExpiresAt  *time.Time
+}
+
+type CreateAPICredentialRequest struct {
+	DisplayName string
+	AuthMethod  APICredentialAuthMethod
+	Permissions []string
+	ExpiresAt   *time.Time
+}
+
+type CreateAPICredentialResult struct {
+	Credential     APICredential
+	IssuedMaterial APICredentialIssuedMaterial
+}
+
+type RollAPICredentialRequest struct {
+	AuthMethod APICredentialAuthMethod
+}
+
+type RollAPICredentialResult struct {
+	Credential     APICredential
+	IssuedMaterial APICredentialIssuedMaterial
+}
+
+type ResolveAPICredentialClaimsResult struct {
+	CredentialID string
+	OrgID        string
+	Permissions  []string
+}
+
+func SecretHash(secret string) (fingerprint string, raw []byte) {
+	sum := sha256.Sum256([]byte(secret))
+	return "sha256:" + hex.EncodeToString(sum[:]), sum[:]
 }

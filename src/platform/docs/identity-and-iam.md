@@ -174,13 +174,13 @@ An operation policy contains the required permission, resource, action,
 organization scope, rate-limit class, idempotency rule, and audit event. The
 permission check is intentionally small: a caller is allowed if a target-project
 role assignment for the current organization maps through the Forge Metal policy
-document to that permission. Direct permission scopes are accepted only for
-Forge Metal API credential tokens carrying `forge_metal:credential_id`; normal
-human OAuth scopes are not permission grants.
+document to that permission. Direct permission claims are accepted only for
+Forge Metal API credential tokens carrying both `forge_metal:credential_id` and
+an organization scope; normal human OAuth scopes are not permission grants.
 
-API credential direct scopes are issued as exact operation permissions and must
-be checked at issuance/roll time against the creating principal's effective
-permissions. Human users should receive Zitadel project roles first, then
+API credential direct permissions are issued as exact operation permissions
+and must be checked at issuance/roll time against the creating principal's
+effective permissions. Human users should receive Zitadel project roles first, then
 customer-editable Forge Metal policy bundles once that surface exists.
 
 Embedded organization widgets are a special cross-service web-session path.
@@ -293,12 +293,12 @@ do not currently hold. Credential scopes are exact operation permissions such as
 `billing:read`, and future CI operations such as `ci:workflow:dispatch`.
 
 Token minting uses a Zitadel pre-access-token Action. The Action appends
-`forge_metal:credential_id` and an exact `permissions` claim from Forge
-Metal-owned credential metadata. It must not embed full Forge Metal policy
+`forge_metal:credential_id`, `org_id`, and an exact `permissions` claim from
+Forge Metal-owned credential metadata. It must not embed full Forge Metal policy
 documents into the token. If the Action cannot resolve an active credential or
 exact permission set, the token must not receive Forge Metal direct-permission
-claims; services already fail closed because direct permission scopes are only
-accepted when `forge_metal:credential_id` is present.
+claims; services already fail closed because direct permission claims are only
+accepted when the credential marker and organization scope are present.
 
 Product services must continue to verify issuer, signature, expiration, and
 audience, but audience is not authorization. Zitadel can place requested

@@ -104,8 +104,9 @@ metadata such as display name, status, auth method, key or secret fingerprint,
 exact operation permissions, created/revoked timestamps, and last-used
 telemetry. Never persist or return plaintext customer credential secrets.
 
-Use a Zitadel pre-access-token Action to append `forge_metal:credential_id` and
-the exact Forge Metal operation permissions granted to the active credential.
+Use a Zitadel pre-access-token Action to append `forge_metal:credential_id`,
+`org_id`, and the exact Forge Metal operation permissions granted to the active
+credential.
 Do not embed full Forge Metal policy documents into Zitadel tokens. Issuance and
 roll must reject any requested permission that is not in a service-declared
 operation catalog or is not held by the creating principal.

@@ -97,3 +97,84 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 		t.Fatalf("expected email.sendCode object in %#v", createUserBody)
 	}
 }
+
+func TestCreateServiceAccountCredentialRequestShape(t *testing.T) {
+	var createBody map[string]any
+	var keyBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/new":
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "subject-1"})
+		case "/v2/users/subject-1/keys":
+			if err := json.NewDecoder(r.Body).Decode(&keyBody); err != nil {
+				t.Fatalf("decode key body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"keyId": "key-1", "keyContent": "private-key"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, HostHeader: "auth.example.com", AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	subjectID, material, err := client.CreateServiceAccountCredential(context.Background(), "42", identity.ServiceAccountCredentialInput{
+		CredentialID: "credential-1",
+		ClientID:     "client-1",
+		DisplayName:  "Automation",
+		AuthMethod:   identity.APICredentialAuthMethodPrivateKeyJWT,
+	})
+	if err != nil {
+		t.Fatalf("create service account credential: %v", err)
+	}
+	if subjectID != "subject-1" {
+		t.Fatalf("subject = %q", subjectID)
+	}
+	if material.AuthMethod != identity.APICredentialAuthMethodPrivateKeyJWT || material.KeyID != "key-1" || material.KeyContent != "private-key" {
+		t.Fatalf("unexpected material %#v", material)
+	}
+	if material.TokenURL != "https://auth.example.com/oauth/v2/token" {
+		t.Fatalf("token url = %q", material.TokenURL)
+	}
+	machine, _ := createBody["machine"].(map[string]any)
+	if createBody["organizationId"] != "42" || createBody["username"] != "client-1" || machine["accessTokenType"] != "ACCESS_TOKEN_TYPE_JWT" {
+		t.Fatalf("unexpected create body %#v", createBody)
+	}
+	if len(keyBody) != 0 {
+		t.Fatalf("unexpected key body %#v", keyBody)
+	}
+}
+
+func TestAddServiceAccountClientSecretRequestShape(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/users/subject-1/secret" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"clientSecret": "secret-1"})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	material, err := client.AddServiceAccountCredential(context.Background(), identity.AddServiceAccountCredentialInput{
+		SubjectID:  "subject-1",
+		ClientID:   "client-1",
+		AuthMethod: identity.APICredentialAuthMethodClientSecret,
+	})
+	if err != nil {
+		t.Fatalf("add service account secret: %v", err)
+	}
+	if material.AuthMethod != identity.APICredentialAuthMethodClientSecret || material.ClientSecret != "secret-1" {
+		t.Fatalf("unexpected material %#v", material)
+	}
+}

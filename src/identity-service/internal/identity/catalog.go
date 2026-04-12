@@ -3,13 +3,26 @@ package identity
 import "sort"
 
 const (
-	PermissionOrganizationRead = "identity:organization:read"
-	PermissionMemberRead       = "identity:member:read"
-	PermissionMemberInvite     = "identity:member:invite"
-	PermissionMemberRolesWrite = "identity:member:roles:write"
-	PermissionPolicyRead       = "identity:policy:read"
-	PermissionPolicyWrite      = "identity:policy:write"
-	PermissionOperationsRead   = "identity:operations:read"
+	PermissionOrganizationRead       = "identity:organization:read"
+	PermissionMemberRead             = "identity:member:read"
+	PermissionMemberInvite           = "identity:member:invite"
+	PermissionMemberRolesWrite       = "identity:member:roles:write"
+	PermissionPolicyRead             = "identity:policy:read"
+	PermissionPolicyWrite            = "identity:policy:write"
+	PermissionOperationsRead         = "identity:operations:read"
+	PermissionAPICredentialsRead     = "identity:api_credentials:read"
+	PermissionAPICredentialsCreate   = "identity:api_credentials:create"
+	PermissionAPICredentialsRoll     = "identity:api_credentials:roll"
+	PermissionAPICredentialsRevoke   = "identity:api_credentials:revoke"
+	PermissionSandboxRepoRead        = "sandbox:repo:read"
+	PermissionSandboxRepoWrite       = "sandbox:repo:write"
+	PermissionSandboxWebhookRead     = "sandbox:webhook_endpoint:read"
+	PermissionSandboxWebhookWrite    = "sandbox:webhook_endpoint:write"
+	PermissionSandboxExecutionSubmit = "sandbox:execution:submit"
+	PermissionSandboxExecutionRead   = "sandbox:execution:read"
+	PermissionSandboxLogsRead        = "sandbox:logs:read"
+	PermissionBillingRead            = "billing:read"
+	PermissionBillingCheckout        = "billing:checkout"
 )
 
 var defaultOperations = Operations{
@@ -24,6 +37,34 @@ var defaultOperations = Operations{
 				{OperationID: "get-organization-policy", Permission: PermissionPolicyRead, Resource: "organization_policy", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "put-organization-policy", Permission: PermissionPolicyWrite, Resource: "organization_policy", Action: "write", OrgScope: "token_org_id"},
 				{OperationID: "list-organization-operations", Permission: PermissionOperationsRead, Resource: "service_operation", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-api-credentials", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-api-credential", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "create-api-credential", Permission: PermissionAPICredentialsCreate, Resource: "api_credential", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "roll-api-credential", Permission: PermissionAPICredentialsRoll, Resource: "api_credential", Action: "roll", OrgScope: "token_org_id"},
+				{OperationID: "revoke-api-credential", Permission: PermissionAPICredentialsRevoke, Resource: "api_credential", Action: "revoke", OrgScope: "token_org_id"},
+			},
+		},
+		{
+			Service: "sandbox-rental-service",
+			Operations: []Operation{
+				{OperationID: "import-repo", Permission: PermissionSandboxRepoWrite, Resource: "repo", Action: "import", OrgScope: "token_org_id"},
+				{OperationID: "list-repos", Permission: PermissionSandboxRepoRead, Resource: "repo", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-repo", Permission: PermissionSandboxRepoRead, Resource: "repo", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "rescan-repo", Permission: PermissionSandboxRepoWrite, Resource: "repo", Action: "rescan", OrgScope: "token_org_id"},
+				{OperationID: "create-webhook-endpoint", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-webhook-endpoints", Permission: PermissionSandboxWebhookRead, Resource: "webhook_endpoint", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "rotate-webhook-endpoint-secret", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint_secret", Action: "rotate", OrgScope: "token_org_id"},
+				{OperationID: "delete-webhook-endpoint", Permission: PermissionSandboxWebhookWrite, Resource: "webhook_endpoint", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "submit-execution", Permission: PermissionSandboxExecutionSubmit, Resource: "execution", Action: "submit", OrgScope: "token_org_id"},
+				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-billing-balance", Permission: PermissionBillingRead, Resource: "billing_balance", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-subscriptions", Permission: PermissionBillingRead, Resource: "billing_subscription", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-grants", Permission: PermissionBillingRead, Resource: "billing_grant", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-billing-statement", Permission: PermissionBillingRead, Resource: "billing_statement", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "create-billing-checkout", Permission: PermissionBillingCheckout, Resource: "billing_checkout", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-billing-subscription", Permission: PermissionBillingCheckout, Resource: "billing_subscription_checkout", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
 			},
 		},
 	},
@@ -41,6 +82,10 @@ var defaultRoleBundles = []PolicyRole{
 			PermissionPolicyRead,
 			PermissionPolicyWrite,
 			PermissionOperationsRead,
+			PermissionAPICredentialsRead,
+			PermissionAPICredentialsCreate,
+			PermissionAPICredentialsRoll,
+			PermissionAPICredentialsRevoke,
 		},
 	},
 	{
@@ -70,7 +115,6 @@ func ReservedRoleKeys() map[string]struct{} {
 }
 
 func DefaultOperations() Operations {
-	// This catalog is identity-service-only until policy documents become service-scoped bundles.
 	out := Operations{Services: make([]ServiceOperations, 0, len(defaultOperations.Services))}
 	for _, service := range defaultOperations.Services {
 		copied := ServiceOperations{
