@@ -267,12 +267,6 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	import access_log
 	import waf_detection
 
-	handle /v1/shape {
-		uri query -secret
-		uri query +secret {{ caddy_electric_letters_api_secret }}
-		reverse_proxy {{ services.electric_letters.host }}:{{ services.electric_letters.port }}
-	}
-
 	handle {
 		reverse_proxy {{ services.letters.host }}:{{ services.letters.port }}
 	}

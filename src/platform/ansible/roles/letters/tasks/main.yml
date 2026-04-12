@@ -1,10 +1,4 @@
 ---
-- name: Include letters PostgreSQL database tasks
-  ansible.builtin.include_tasks: database.yml
-
-- name: Include letters PostgreSQL migration tasks
-  ansible.builtin.include_tasks: migrations.yml
-
 - name: Create letters install directory
   ansible.builtin.file:
     path: "{{ letters_install_dir }}"
@@ -148,8 +142,13 @@
   changed_when: true
   notify: Restart letters
 
-- name: Set up Zitadel OIDC application
-  ansible.builtin.include_tasks: zitadel_app.yml
+- name: Ensure letters env directory exists
+  ansible.builtin.file:
+    path: /etc/letters
+    state: directory
+    owner: root
+    group: "{{ ansible_user }}"
+    mode: "0750"
 
 - name: Deploy letters environment file
   ansible.builtin.template:

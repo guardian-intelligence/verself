@@ -1,8 +1,7 @@
 [Unit]
 Description=Letters Blog Frontend (TanStack Start)
-After=forge-metal-firewall.target network.target postgresql.service electric-letters.service
+After=forge-metal-firewall.target network.target
 Requires=forge-metal-firewall.target
-Wants=postgresql.service electric-letters.service
 
 [Service]
 Type=simple
