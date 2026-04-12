@@ -136,7 +136,7 @@ vm-orchestrator-proof-bridge-fault: inventory-check ## Live proof with determini
 sandbox-inner: inventory-check ## Inner loop: default starts local HMR; use SANDBOX_INNER_MODE=verify for local smoke evidence
 	cd $(FM) && ./scripts/sandbox-inner.sh
 
-sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|none SANDBOX_SEED_VERIFY=1
+sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admin smoke; use SANDBOX_DEPLOY_TARGET=ui|service|both|none SANDBOX_VERIFY_TARGET=admin|import|refresh|execute|billing|none SANDBOX_SEED_VERIFY=1
 	cd $(FM) && ./scripts/sandbox-middle.sh
 
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
