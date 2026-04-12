@@ -3,10 +3,10 @@ import type {
   InviteMemberRequest,
   InviteMemberResponse,
   Member,
+  MemberCapabilities,
   Operations,
   Organization,
-  PolicyDocument,
-  PutPolicyRequest,
+  PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
 } from "./types.ts";
 
@@ -19,8 +19,8 @@ export interface IdentityApiClient {
   getOrganization: () => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
   listOperations: () => Promise<Operations>;
-  getPolicy: () => Promise<PolicyDocument>;
-  putPolicy: (input: PutPolicyRequest) => Promise<PolicyDocument>;
+  getMemberCapabilities: () => Promise<MemberCapabilities>;
+  putMemberCapabilities: (input: PutMemberCapabilitiesRequest) => Promise<MemberCapabilities>;
   inviteMember: (input: InviteMemberRequest) => Promise<InviteMemberResponse>;
   updateMemberRoles: (input: UpdateMemberRolesRequest) => Promise<Member>;
 }

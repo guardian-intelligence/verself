@@ -1,9 +1,13 @@
 import { Checkbox } from "@forge-metal/ui/components/ui/checkbox";
 import { Label } from "@forge-metal/ui/components/ui/label";
-import type { PolicyRole } from "../types.ts";
+
+export interface RoleOption {
+  readonly role_key: string;
+  readonly display_name: string;
+}
 
 interface RoleCheckboxesProps {
-  readonly roles: ReadonlyArray<PolicyRole>;
+  readonly roles: ReadonlyArray<RoleOption>;
   readonly value: ReadonlyArray<string>;
   readonly onChange: (next: Array<string>) => void;
   readonly disabled?: boolean;
@@ -12,9 +16,9 @@ interface RoleCheckboxesProps {
 }
 
 // Multi-select role picker shared between the invite form and the per-member
-// row editor. The "many roles share one operation permission" bug only
-// applies to the policy matrix; this widget is one checkbox per role and is
-// flat by construction.
+// row editor. Roles are code-owned constants now (`admin` / `member`); the
+// owner role is a singleton transferred through a different flow and is not
+// offered here.
 export function RoleCheckboxes({
   roles,
   value,

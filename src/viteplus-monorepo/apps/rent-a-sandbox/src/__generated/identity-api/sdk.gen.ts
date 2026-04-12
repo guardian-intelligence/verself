@@ -12,9 +12,9 @@ import type {
   GetApiCredentialResponses,
   GetOrganizationData,
   GetOrganizationErrors,
-  GetOrganizationPolicyData,
-  GetOrganizationPolicyErrors,
-  GetOrganizationPolicyResponses,
+  GetOrganizationMemberCapabilitiesData,
+  GetOrganizationMemberCapabilitiesErrors,
+  GetOrganizationMemberCapabilitiesResponses,
   GetOrganizationResponses,
   InviteOrganizationMemberData,
   InviteOrganizationMemberErrors,
@@ -28,9 +28,9 @@ import type {
   ListOrganizationOperationsData,
   ListOrganizationOperationsErrors,
   ListOrganizationOperationsResponses,
-  PutOrganizationPolicyData,
-  PutOrganizationPolicyErrors,
-  PutOrganizationPolicyResponses,
+  PutOrganizationMemberCapabilitiesData,
+  PutOrganizationMemberCapabilitiesErrors,
+  PutOrganizationMemberCapabilitiesResponses,
   RevokeApiCredentialData,
   RevokeApiCredentialErrors,
   RevokeApiCredentialResponses,
@@ -157,6 +157,42 @@ export const rollApiCredential = <ThrowOnError extends boolean = false>(
   });
 
 /**
+ * Get organization member capabilities and the static capability catalog
+ */
+export const getOrganizationMemberCapabilities = <ThrowOnError extends boolean = false>(
+  options?: Options<GetOrganizationMemberCapabilitiesData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    GetOrganizationMemberCapabilitiesResponses,
+    GetOrganizationMemberCapabilitiesErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/member-capabilities",
+    ...options,
+  });
+
+/**
+ * Replace the organization's enabled member capability set
+ */
+export const putOrganizationMemberCapabilities = <ThrowOnError extends boolean = false>(
+  options: Options<PutOrganizationMemberCapabilitiesData, ThrowOnError>,
+) =>
+  (options.client ?? client).put<
+    PutOrganizationMemberCapabilitiesResponses,
+    PutOrganizationMemberCapabilitiesErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/organization/member-capabilities",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
  * List organization members
  */
 export const listOrganizationMembers = <ThrowOnError extends boolean = false>(
@@ -226,40 +262,4 @@ export const listOrganizationOperations = <ThrowOnError extends boolean = false>
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/organization/operations",
     ...options,
-  });
-
-/**
- * Get organization policy document
- */
-export const getOrganizationPolicy = <ThrowOnError extends boolean = false>(
-  options?: Options<GetOrganizationPolicyData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<
-    GetOrganizationPolicyResponses,
-    GetOrganizationPolicyErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/organization/policy",
-    ...options,
-  });
-
-/**
- * Replace organization policy document
- */
-export const putOrganizationPolicy = <ThrowOnError extends boolean = false>(
-  options: Options<PutOrganizationPolicyData, ThrowOnError>,
-) =>
-  (options.client ?? client).put<
-    PutOrganizationPolicyResponses,
-    PutOrganizationPolicyErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/organization/policy",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
   });

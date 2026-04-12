@@ -2,18 +2,25 @@
 // types satisfy these structurally — components only read these fields, so
 // the package stays decoupled from any specific generated client.
 
-export interface PolicyRole {
-  readonly role_key: string;
-  readonly display_name: string;
+export interface MemberCapability {
+  readonly key: string;
+  readonly label: string;
+  readonly description: string;
+  readonly default_enabled: boolean;
   readonly permissions: ReadonlyArray<string>;
 }
 
-export interface PolicyDocument {
+export interface MemberCapabilitiesDocument {
   readonly org_id: string;
   readonly version: number;
-  readonly roles: ReadonlyArray<PolicyRole>;
+  readonly enabled_keys: ReadonlyArray<string>;
   readonly updated_at: string;
   readonly updated_by: string;
+}
+
+export interface MemberCapabilities {
+  readonly document: MemberCapabilitiesDocument;
+  readonly catalog: ReadonlyArray<MemberCapability>;
 }
 
 export interface Operation {
@@ -22,6 +29,7 @@ export interface Operation {
   readonly resource: string;
   readonly action: string;
   readonly org_scope: string;
+  readonly member_eligible: boolean;
 }
 
 export interface ServiceOperations {
@@ -46,7 +54,7 @@ export interface Organization {
   readonly name: string;
   readonly caller: Member;
   readonly permissions: ReadonlyArray<string>;
-  readonly policy: PolicyDocument;
+  readonly member_capabilities: MemberCapabilitiesDocument;
 }
 
 // Request DTOs use mutable arrays so consuming-app validators (which produce
@@ -69,13 +77,7 @@ export interface UpdateMemberRolesRequest {
   roleKeys: Array<string>;
 }
 
-export interface PutPolicyRequestRole {
-  role_key: string;
-  display_name: string;
-  permissions: Array<string>;
-}
-
-export interface PutPolicyRequest {
+export interface PutMemberCapabilitiesRequest {
   version: number;
-  roles: Array<PutPolicyRequestRole>;
+  enabled_keys: Array<string>;
 }

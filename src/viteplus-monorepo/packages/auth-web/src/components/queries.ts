@@ -27,10 +27,13 @@ export const organizationOperationsQuery = (auth: AuthenticatedAuth, api: Identi
     queryFn: () => api.listOperations(),
   });
 
-export const organizationPolicyQuery = (auth: AuthenticatedAuth, api: IdentityApiClient) =>
+export const organizationMemberCapabilitiesQuery = (
+  auth: AuthenticatedAuth,
+  api: IdentityApiClient,
+) =>
   queryOptions({
-    queryKey: organizationQueryKey(auth, "policy"),
-    queryFn: () => api.getPolicy(),
+    queryKey: organizationQueryKey(auth, "member-capabilities"),
+    queryFn: () => api.getMemberCapabilities(),
   });
 
 export async function loadOrganizationPage(
@@ -38,14 +41,14 @@ export async function loadOrganizationPage(
   auth: AuthenticatedAuth,
   api: IdentityApiClient,
 ) {
-  const [organization, members, operations, policy] = await Promise.all([
+  const [organization, members, operations, memberCapabilities] = await Promise.all([
     queryClient.ensureQueryData(organizationQuery(auth, api)),
     queryClient.ensureQueryData(organizationMembersQuery(auth, api)),
     queryClient.ensureQueryData(organizationOperationsQuery(auth, api)),
-    queryClient.ensureQueryData(organizationPolicyQuery(auth, api)),
+    queryClient.ensureQueryData(organizationMemberCapabilitiesQuery(auth, api)),
   ]);
 
-  return { members, operations, organization, policy };
+  return { members, memberCapabilities, operations, organization };
 }
 
 export async function invalidateOrganizationQueries(

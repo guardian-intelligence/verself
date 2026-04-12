@@ -3,14 +3,14 @@ import { requireURLFromEnv } from "@forge-metal/web-env";
 import {
   IdentityApiError,
   getMembers as getMembersRequest,
+  getMemberCapabilities as getMemberCapabilitiesRequest,
   getOperations as getOperationsRequest,
   getOrganization as getOrganizationRequest,
-  getPolicy as getPolicyRequest,
   inviteMember as inviteMemberRequest,
   inviteMemberRequestSchema,
   isIdentityApiError,
-  putPolicy as putPolicyRequest,
-  putPolicyRequestSchema,
+  putMemberCapabilities as putMemberCapabilitiesRequest,
+  putMemberCapabilitiesRequestSchema,
   updateMemberRoles as updateMemberRolesRequest,
   updateMemberRolesRequestSchema,
 } from "~/lib/identity-api";
@@ -18,11 +18,12 @@ import type {
   InviteMemberRequest,
   InviteMemberResponse,
   Member,
+  MemberCapabilities,
+  MemberCapabilitiesDocument,
+  MemberCapability,
   Operations,
   Organization,
-  PolicyDocument,
-  PolicyRole,
-  PutPolicyRequest,
+  PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
 } from "~/lib/identity-api";
 import {
@@ -97,11 +98,12 @@ export type {
   InviteMemberRequest,
   InviteMemberResponse,
   Member,
+  MemberCapabilities,
+  MemberCapabilitiesDocument,
+  MemberCapability,
   Operations,
   Organization,
-  PolicyDocument,
-  PolicyRole,
-  PutPolicyRequest,
+  PutMemberCapabilitiesRequest,
   UpdateMemberRolesRequest,
 };
 
@@ -190,17 +192,17 @@ export const getOperations = createServerFn({ method: "GET" })
     return getOperationsRequest(await identityClientOptions(context));
   });
 
-export const getPolicy = createServerFn({ method: "GET" })
+export const getMemberCapabilities = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return getPolicyRequest(await identityClientOptions(context));
+    return getMemberCapabilitiesRequest(await identityClientOptions(context));
   });
 
-export const putPolicy = createServerFn({ method: "POST" })
+export const putMemberCapabilities = createServerFn({ method: "POST" })
   .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(putPolicyRequestSchema)
+  .inputValidator(putMemberCapabilitiesRequestSchema)
   .handler(async ({ context, data }) => {
-    return putPolicyRequest({
+    return putMemberCapabilitiesRequest({
       ...(await identityClientOptions(context)),
       body: data,
     });

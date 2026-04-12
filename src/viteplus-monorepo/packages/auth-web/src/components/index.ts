@@ -1,4 +1,4 @@
-// Clerk-shaped React surface for organizations, members, and policy.
+// Clerk-shaped React surface for organizations, members, and member capabilities.
 // Pair this with @forge-metal/auth-web/react's <AuthProvider>: wrap your
 // authenticated subtree in <IdentityApiProvider client={...}> and these
 // components do the rest.
@@ -8,12 +8,13 @@ export type {
   InviteMemberRequest,
   InviteMemberResponse,
   Member,
+  MemberCapabilities,
+  MemberCapabilitiesDocument,
+  MemberCapability,
   Operation,
   Operations,
   Organization,
-  PolicyDocument,
-  PolicyRole,
-  PutPolicyRequest,
+  PutMemberCapabilitiesRequest,
   ServiceOperations,
   UpdateMemberRolesRequest,
 } from "./types.ts";
@@ -22,13 +23,13 @@ export {
   invalidateOrganizationQueries,
   loadOrganizationPage,
   organizationMembersQuery,
+  organizationMemberCapabilitiesQuery,
   organizationOperationsQuery,
-  organizationPolicyQuery,
   organizationQuery,
 } from "./queries.ts";
 export {
   useInviteMemberMutation,
-  usePutPolicyMutation,
+  usePutMemberCapabilitiesMutation,
   useUpdateMemberRolesMutation,
 } from "./mutations.ts";
 
@@ -36,7 +37,6 @@ export {
   OrganizationProfile,
   type OrganizationProfileProps,
 } from "./organization-profile/index.tsx";
-export { PolicyMatrix, type PolicyMatrixProps } from "./organization-profile/policy/index.ts";
 
 export {
   Protect,

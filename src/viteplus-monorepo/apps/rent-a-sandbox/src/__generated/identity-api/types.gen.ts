@@ -148,6 +148,31 @@ export type IdentityMember = {
   user_id: string;
 };
 
+export type IdentityMemberCapabilities = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  catalog: Array<IdentityMemberCapability> | null;
+  document: IdentityMemberCapabilitiesDocument;
+};
+
+export type IdentityMemberCapabilitiesDocument = {
+  enabled_keys: Array<string> | null;
+  org_id: string;
+  updated_at: string;
+  updated_by: string;
+  version: number;
+};
+
+export type IdentityMemberCapability = {
+  default_enabled: boolean;
+  description: string;
+  key: string;
+  label: string;
+  permissions: Array<string> | null;
+};
+
 export type IdentityMembers = {
   /**
    * A URL to the JSON Schema for this object.
@@ -158,6 +183,7 @@ export type IdentityMembers = {
 
 export type IdentityOperation = {
   action: string;
+  member_eligible: boolean;
   operation_id: string;
   org_scope: string;
   permission: string;
@@ -178,36 +204,18 @@ export type IdentityOrganization = {
    */
   readonly $schema?: string;
   caller: IdentityMember;
+  member_capabilities: IdentityMemberCapabilitiesDocument;
   name: string;
   org_id: string;
   permissions: Array<string> | null;
-  policy: IdentityPolicyDocument;
 };
 
-export type IdentityPolicyDocument = {
+export type IdentityPutMemberCapabilitiesRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  org_id: string;
-  roles: Array<IdentityPolicyRole> | null;
-  updated_at: string;
-  updated_by: string;
-  version: number;
-};
-
-export type IdentityPolicyRole = {
-  display_name: string;
-  permissions: Array<string> | null;
-  role_key: string;
-};
-
-export type IdentityPutPolicyRequest = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  roles: Array<IdentityPolicyRole> | null;
+  enabled_keys: Array<string> | null;
   version: number;
 };
 
@@ -327,6 +335,11 @@ export type IdentityMemberWritable = {
   user_id: string;
 };
 
+export type IdentityMemberCapabilitiesWritable = {
+  catalog: Array<IdentityMemberCapability> | null;
+  document: IdentityMemberCapabilitiesDocument;
+};
+
 export type IdentityMembersWritable = {
   members: Array<IdentityMemberWritable> | null;
 };
@@ -337,22 +350,14 @@ export type IdentityOperationsWritable = {
 
 export type IdentityOrganizationWritable = {
   caller: IdentityMemberWritable;
+  member_capabilities: IdentityMemberCapabilitiesDocument;
   name: string;
   org_id: string;
   permissions: Array<string> | null;
-  policy: IdentityPolicyDocumentWritable;
 };
 
-export type IdentityPolicyDocumentWritable = {
-  org_id: string;
-  roles: Array<IdentityPolicyRole> | null;
-  updated_at: string;
-  updated_by: string;
-  version: number;
-};
-
-export type IdentityPutPolicyRequestWritable = {
-  roles: Array<IdentityPolicyRole> | null;
+export type IdentityPutMemberCapabilitiesRequestWritable = {
+  enabled_keys: Array<string> | null;
   version: number;
 };
 
@@ -556,6 +561,66 @@ export type RollApiCredentialResponses = {
 export type RollApiCredentialResponse =
   RollApiCredentialResponses[keyof RollApiCredentialResponses];
 
+export type GetOrganizationMemberCapabilitiesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/organization/member-capabilities";
+};
+
+export type GetOrganizationMemberCapabilitiesErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type GetOrganizationMemberCapabilitiesError =
+  GetOrganizationMemberCapabilitiesErrors[keyof GetOrganizationMemberCapabilitiesErrors];
+
+export type GetOrganizationMemberCapabilitiesResponses = {
+  /**
+   * OK
+   */
+  200: IdentityMemberCapabilities;
+};
+
+export type GetOrganizationMemberCapabilitiesResponse =
+  GetOrganizationMemberCapabilitiesResponses[keyof GetOrganizationMemberCapabilitiesResponses];
+
+export type PutOrganizationMemberCapabilitiesData = {
+  body: IdentityPutMemberCapabilitiesRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/organization/member-capabilities";
+};
+
+export type PutOrganizationMemberCapabilitiesErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type PutOrganizationMemberCapabilitiesError =
+  PutOrganizationMemberCapabilitiesErrors[keyof PutOrganizationMemberCapabilitiesErrors];
+
+export type PutOrganizationMemberCapabilitiesResponses = {
+  /**
+   * OK
+   */
+  200: IdentityMemberCapabilities;
+};
+
+export type PutOrganizationMemberCapabilitiesResponse =
+  PutOrganizationMemberCapabilitiesResponses[keyof PutOrganizationMemberCapabilitiesResponses];
+
 export type ListOrganizationMembersData = {
   body?: never;
   path?: never;
@@ -680,63 +745,3 @@ export type ListOrganizationOperationsResponses = {
 
 export type ListOrganizationOperationsResponse =
   ListOrganizationOperationsResponses[keyof ListOrganizationOperationsResponses];
-
-export type GetOrganizationPolicyData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/api/v1/organization/policy";
-};
-
-export type GetOrganizationPolicyErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type GetOrganizationPolicyError =
-  GetOrganizationPolicyErrors[keyof GetOrganizationPolicyErrors];
-
-export type GetOrganizationPolicyResponses = {
-  /**
-   * OK
-   */
-  200: IdentityPolicyDocument;
-};
-
-export type GetOrganizationPolicyResponse =
-  GetOrganizationPolicyResponses[keyof GetOrganizationPolicyResponses];
-
-export type PutOrganizationPolicyData = {
-  body: IdentityPutPolicyRequestWritable;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path?: never;
-  query?: never;
-  url: "/api/v1/organization/policy";
-};
-
-export type PutOrganizationPolicyErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type PutOrganizationPolicyError =
-  PutOrganizationPolicyErrors[keyof PutOrganizationPolicyErrors];
-
-export type PutOrganizationPolicyResponses = {
-  /**
-   * OK
-   */
-  200: IdentityPolicyDocument;
-};
-
-export type PutOrganizationPolicyResponse =
-  PutOrganizationPolicyResponses[keyof PutOrganizationPolicyResponses];
