@@ -154,23 +154,15 @@
     - /var/lib/forge-metal
     - /var/lib/forge-metal/guest-artifacts
     - /var/lib/forge-metal/guest-artifacts/net
-    - "{{ firecracker_net_lease_dir }}"
+    - "{{ firecracker_state_db_path | dirname }}"
 
-- name: Allow Firecracker lease directory writes for service consumers
+- name: Ensure vm-orchestrator state directory ownership
   ansible.builtin.file:
-    path: "{{ firecracker_net_lease_dir }}"
+    path: "{{ firecracker_state_db_path | dirname }}"
     state: directory
     owner: root
-    group: "{{ firecracker_jailer_user }}"
-    mode: "2775"
-
-- name: Normalize Firecracker lease lock file permissions
-  ansible.builtin.file:
-    path: "{{ firecracker_net_lease_dir }}/.lock"
-    state: touch
-    owner: root
-    group: "{{ firecracker_jailer_user }}"
-    mode: "0664"
+    group: root
+    mode: "0755"
 
 # --- Host networking (native nftables) ---
 

@@ -41,7 +41,7 @@ type Config struct {
 	MemoryMiB       int    // memory per VM in MiB (default 512)
 	HostInterface   string // outbound interface for guest egress (auto-detected if empty)
 	GuestPoolCIDR   string // guest IPv4 pool subdivided into /30s
-	NetworkLeaseDir string // persistent lease directory for guest network slots
+	StateDBPath     string // durable host runtime ledger (SQLite WAL)
 	HostServiceIP   string // host-only service address reachable from guests
 	HostServicePort int    // host-only HTTP reverse proxy port for platform services
 }
@@ -61,7 +61,7 @@ func DefaultConfig() Config {
 		VCPUs:           2,
 		MemoryMiB:       2048,
 		GuestPoolCIDR:   defaultGuestPoolCIDR,
-		NetworkLeaseDir: defaultLeaseDir,
+		StateDBPath:     defaultStateDBPath,
 		HostServiceIP:   defaultHostServiceIP,
 		HostServicePort: defaultHostServicePort,
 	}
@@ -314,7 +314,7 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 
 	netCfg := NetworkPoolConfig{
 		PoolCIDR:      o.cfg.GuestPoolCIDR,
-		LeaseDir:      o.cfg.NetworkLeaseDir,
+		StateDBPath:   o.cfg.StateDBPath,
 		HostInterface: o.cfg.HostInterface,
 	}
 	netSetup, netCleanup, netErr := setupNetwork(ctx, job.JobID, netCfg, o.ops)
