@@ -343,6 +343,7 @@ func scanAPICredential(scanner credentialScanner) (APICredential, error) {
 	var credential APICredential
 	var status, method string
 	var expiresAt, revokedAt, lastUsedAt sql.NullTime
+	var revokedBy sql.NullString
 	err := scanner.Scan(
 		&credential.CredentialID,
 		&credential.OrgID,
@@ -358,7 +359,7 @@ func scanAPICredential(scanner credentialScanner) (APICredential, error) {
 		&credential.UpdatedAt,
 		&expiresAt,
 		&revokedAt,
-		&credential.RevokedBy,
+		&revokedBy,
 		&lastUsedAt,
 	)
 	if err != nil {
@@ -368,6 +369,7 @@ func scanAPICredential(scanner credentialScanner) (APICredential, error) {
 	credential.AuthMethod = APICredentialAuthMethod(method)
 	credential.ExpiresAt = nullableTime(expiresAt)
 	credential.RevokedAt = nullableTime(revokedAt)
+	credential.RevokedBy = nullableString(revokedBy)
 	credential.LastUsedAt = nullableTime(lastUsedAt)
 	return credential, nil
 }
@@ -414,6 +416,7 @@ func scanAPICredentialSecret(scanner credentialScanner) (APICredentialSecret, er
 	var secret APICredentialSecret
 	var method string
 	var expiresAt, revokedAt sql.NullTime
+	var revokedBy sql.NullString
 	if err := scanner.Scan(
 		&secret.SecretID,
 		&secret.CredentialID,
@@ -426,13 +429,14 @@ func scanAPICredentialSecret(scanner credentialScanner) (APICredentialSecret, er
 		&secret.CreatedBy,
 		&expiresAt,
 		&revokedAt,
-		&secret.RevokedBy,
+		&revokedBy,
 	); err != nil {
 		return APICredentialSecret{}, fmt.Errorf("scan api credential secret: %w", err)
 	}
 	secret.AuthMethod = APICredentialAuthMethod(method)
 	secret.ExpiresAt = nullableTime(expiresAt)
 	secret.RevokedAt = nullableTime(revokedAt)
+	secret.RevokedBy = nullableString(revokedBy)
 	return secret, nil
 }
 
@@ -442,6 +446,13 @@ func nullableTime(value sql.NullTime) *time.Time {
 	}
 	instant := value.Time
 	return &instant
+}
+
+func nullableString(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func rollback(tx *sql.Tx) {
