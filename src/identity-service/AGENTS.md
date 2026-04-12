@@ -82,6 +82,13 @@ documented through OpenAPI. Adding a capability or moving an operation between
 member-eligible and admin-only is a code change in `identity-service`, gated by
 the `init()` invariant check.
 
+The members table is human-non-owner only. `Service.Members` filters Zitadel
+machine users (they hold project authorizations as service accounts but live
+on the API Credentials surface) and owner-role users (the org singleton role
+is non-editable from this UI per `validateRoleKeys`). `Service.Organization`
+still resolves the caller from the unfiltered set so an operator who is the
+owner can still see themselves in the general section.
+
 ## Zitadel Integration
 
 All direct Zitadel Management/API calls belong behind an internal adapter

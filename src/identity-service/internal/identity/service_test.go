@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -77,4 +78,108 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestServiceMembersHidesMachineUsersAndOwners(t *testing.T) {
+	directory := &fakeMembersDirectory{members: []Member{
+		{UserID: "u1", Type: MemberTypeHuman, Email: "ceo@example.test", DisplayName: "CEO", RoleKeys: []string{RoleOwner}},
+		{UserID: "u2", Type: MemberTypeHuman, Email: "agent@example.test", DisplayName: "Agent", RoleKeys: []string{RoleAdmin}},
+		{UserID: "u3", Type: MemberTypeHuman, Email: "rocky@example.test", DisplayName: "Rocky", RoleKeys: []string{RoleMember}},
+		{UserID: "u4", Type: MemberTypeMachine, LoginName: "assume-platform-admin", DisplayName: "assume-platform-admin", RoleKeys: []string{RoleOwner}},
+		{UserID: "u5", Type: MemberTypeMachine, LoginName: "ci-bot", DisplayName: "ci-bot", RoleKeys: []string{RoleAdmin}},
+	}}
+	svc := &Service{
+		Store:     fakeMembersStore{},
+		Directory: directory,
+		ProjectID: "identity",
+	}
+
+	got, err := svc.Members(context.Background(), Principal{Subject: "u2", OrgID: "42"})
+	if err != nil {
+		t.Fatalf("Members: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 visible members (admin + member), got %d: %#v", len(got), got)
+	}
+	for _, member := range got {
+		if member.Type == MemberTypeMachine {
+			t.Fatalf("machine user leaked into members table: %#v", member)
+		}
+		if contains(member.RoleKeys, RoleOwner) {
+			t.Fatalf("owner-role member leaked into members table: %#v", member)
+		}
+	}
+}
+
+type fakeMembersDirectory struct {
+	members []Member
+}
+
+func (d *fakeMembersDirectory) ListMembers(context.Context, string, string) ([]Member, error) {
+	out := make([]Member, len(d.members))
+	copy(out, d.members)
+	return out, nil
+}
+
+func (d *fakeMembersDirectory) InviteMember(context.Context, string, string, InviteMemberRequest) (InviteMemberResult, error) {
+	return InviteMemberResult{}, nil
+}
+
+func (d *fakeMembersDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (Member, error) {
+	return Member{}, nil
+}
+
+func (d *fakeMembersDirectory) CreateServiceAccountCredential(context.Context, string, ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
+	return "", APICredentialIssuedMaterial{}, nil
+}
+
+func (d *fakeMembersDirectory) AddServiceAccountCredential(context.Context, AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error) {
+	return APICredentialIssuedMaterial{}, nil
+}
+
+func (d *fakeMembersDirectory) RemoveServiceAccountCredential(context.Context, string, APICredentialSecret) error {
+	return nil
+}
+
+func (d *fakeMembersDirectory) DeactivateServiceAccount(context.Context, string) error {
+	return nil
+}
+
+type fakeMembersStore struct{}
+
+func (fakeMembersStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {
+	return MemberCapabilitiesDocument{}, nil
+}
+
+func (fakeMembersStore) PutMemberCapabilities(context.Context, MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
+	return MemberCapabilitiesDocument{}, nil
+}
+
+func (fakeMembersStore) CreateAPICredential(context.Context, APICredential, APICredentialSecret) (APICredential, error) {
+	return APICredential{}, nil
+}
+
+func (fakeMembersStore) ListAPICredentials(context.Context, string) ([]APICredential, error) {
+	return nil, nil
+}
+
+func (fakeMembersStore) GetAPICredential(context.Context, string, string) (APICredential, error) {
+	return APICredential{}, ErrAPICredentialMissing
+}
+
+func (fakeMembersStore) ActiveAPICredentialSecrets(context.Context, string, string) ([]APICredentialSecret, error) {
+	return nil, nil
+}
+
+func (fakeMembersStore) AddAPICredentialSecret(context.Context, string, string, string, APICredentialSecret) (APICredential, error) {
+	return APICredential{}, nil
+}
+
+func (fakeMembersStore) RevokeAPICredential(context.Context, string, string, string, time.Time) (APICredential, error) {
+	return APICredential{}, nil
+}
+
+func (fakeMembersStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (ResolveAPICredentialClaimsResult, error) {
+	return ResolveAPICredentialClaimsResult{}, ErrAPICredentialMissing
 }
