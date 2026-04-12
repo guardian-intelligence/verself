@@ -24,7 +24,7 @@ Guest event streams are host-derived phase/lifecycle/checkpoint signals; do not 
 
 ## Proof Target
 
-`make vm-orchestrator-proof` is the maintained live-proof entrypoint for this daemon. It delegates to the existing direct-execution verification flow (`verify-sandbox-fast.sh execute`) so the proof path exercises deployed `sandbox-rental-service -> vm-orchestrator` integration while preserving a stable vm-orchestrator-specific make target.
+`make vm-orchestrator-proof` is the maintained live-proof entrypoint for this daemon. It runs the firecracker role deploy followed by `playbooks/vm-guest-telemetry-dev.yml`, which boots a Firecracker VM from a hot-swapped telemetry golden and verifies vm-orchestrator telemetry evidence in ClickHouse.
 
 ## Shell Scripting Inside Guests
 
