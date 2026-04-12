@@ -83,11 +83,26 @@ type TelemetrySample struct {
 	PSIIOPct100    uint16
 }
 
+type TelemetryDiagnosticKind string
+
+const (
+	TelemetryDiagnosticKindGap        TelemetryDiagnosticKind = "gap"
+	TelemetryDiagnosticKindRegression TelemetryDiagnosticKind = "regression"
+)
+
+type TelemetryDiagnostic struct {
+	Kind           TelemetryDiagnosticKind
+	ExpectedSeq    uint32
+	ObservedSeq    uint32
+	MissingSamples uint32
+}
+
 type TelemetryEvent struct {
 	JobID          string
 	ReceivedAtUnix time.Time
 	Hello          *TelemetryHello
 	Sample         *TelemetrySample
+	Diagnostic     *TelemetryDiagnostic
 }
 
 type FleetVM struct {
