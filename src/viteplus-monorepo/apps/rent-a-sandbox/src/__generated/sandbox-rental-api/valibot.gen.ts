@@ -15,13 +15,19 @@ export const vBillingBalance = v.strictObject({
 
 export const vBillingGrant = v.strictObject({
   available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  entitlement_period_id: v.string(),
   expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   grant_id: v.string(),
   pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  policy_version: v.string(),
   scope_bucket_id: v.string(),
   scope_product_id: v.string(),
   scope_type: v.string(),
   source: v.string(),
+  source_reference_id: v.string(),
+  starts_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
 export const vBillingGrants = v.strictObject({
@@ -96,8 +102,11 @@ export const vBillingStatement = v.strictObject({
 
 export const vBillingSubscription = v.strictObject({
   cadence: v.string(),
+  contract_id: v.string(),
   current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   current_period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  entitlement_state: v.string(),
+  payment_state: v.string(),
   plan_id: v.string(),
   product_id: v.string(),
   status: v.string(),

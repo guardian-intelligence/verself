@@ -20,13 +20,19 @@ export type BillingBalance = {
 
 export type BillingGrant = {
   available: string;
+  entitlement_period_id: string;
   expires_at?: string;
   grant_id: string;
   pending: string;
+  period_end?: string;
+  period_start?: string;
+  policy_version: string;
   scope_bucket_id: string;
   scope_product_id: string;
   scope_type: string;
   source: string;
+  source_reference_id: string;
+  starts_at: string;
 };
 
 export type BillingGrants = {
@@ -107,8 +113,11 @@ export type BillingStatementTotals = {
 
 export type BillingSubscription = {
   cadence: string;
+  contract_id: string;
   current_period_end?: string;
   current_period_start?: string;
+  entitlement_state: string;
+  payment_state: string;
   plan_id: string;
   product_id: string;
   status: string;

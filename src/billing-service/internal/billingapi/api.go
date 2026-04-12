@@ -196,7 +196,7 @@ func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[Balance
 	}
 	balance, err := client.GetOrgBalance(ctx, orgID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get balance", err)
+		return nil, h.internalServerError(ctx, "get balance", err, "org_id", uint64(orgID))
 	}
 	return &body[BalanceResponse]{Body: BalanceResponse{
 		OrgID:             apiwire.Uint64(uint64(orgID)),
@@ -219,7 +219,7 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 	}
 	grants, err := client.ListGrantBalances(ctx, orgID, input.ProductID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list grants", err)
+		return nil, h.internalServerError(ctx, "list grants", err, "org_id", uint64(orgID), "product_id", input.ProductID)
 	}
 	out := make([]GrantResponse, 0, len(grants))
 	for _, grant := range grants {
@@ -254,7 +254,7 @@ func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*bod
 	}
 	statement, err := client.PreviewStatement(ctx, orgID, input.ProductID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get statement", err)
+		return nil, h.internalServerError(ctx, "get statement", err, "org_id", uint64(orgID), "product_id", input.ProductID)
 	}
 	return &body[StatementResponse]{Body: statementResponse(statement)}, nil
 }
@@ -340,7 +340,7 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	}
 	subscriptions, err := client.ListSubscriptions(ctx, orgID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list subscriptions", err)
+		return nil, h.internalServerError(ctx, "list subscriptions", err, "org_id", uint64(orgID))
 	}
 	out := make([]SubscriptionResponse, 0, len(subscriptions))
 	for _, subscription := range subscriptions {
@@ -375,7 +375,7 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.Billin
 		CancelURL:   input.Body.CancelURL,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("create checkout", err)
+		return nil, h.internalServerError(ctx, "create checkout", err, "org_id", uint64(orgID), "product_id", input.Body.ProductID)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
@@ -391,7 +391,7 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.Bi
 	}
 	url, err := client.CreateSubscription(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("create subscription checkout", err)
+		return nil, h.internalServerError(ctx, "create subscription checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
@@ -414,7 +414,7 @@ func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingC
 			}
 			return nil, problem
 		}
-		return nil, huma.Error500InternalServerError("create portal session", err)
+		return nil, h.internalServerError(ctx, "create portal session", err, "org_id", uint64(orgID))
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
@@ -468,7 +468,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.Billing
 		SourceRef:       input.Body.SourceRef,
 	})
 	if err != nil {
-		return nil, reserveWindowError(err)
+		return nil, h.reserveWindowError(ctx, err)
 	}
 	return &body[apiwire.BillingReserveWindowResult]{Body: apiwire.BillingReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
 }
@@ -515,14 +515,14 @@ func (h *Handler) requireClient() (*billing.Client, error) {
 	return h.client, nil
 }
 
-func reserveWindowError(err error) error {
+func (h *Handler) reserveWindowError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, billing.ErrInsufficientBalance):
 		return huma.Error402PaymentRequired("reserve", err)
 	case errors.Is(err, billing.ErrOrgSuspended):
 		return huma.Error403Forbidden("reserve", err)
 	default:
-		return huma.Error500InternalServerError("reserve", err)
+		return h.internalServerError(ctx, "reserve", err)
 	}
 }
 
@@ -535,8 +535,7 @@ func (h *Handler) settleWindowError(ctx context.Context, input apiwire.BillingSe
 	case errors.Is(err, billing.ErrWindowNotActivated):
 		return huma.Error400BadRequest("window not activated")
 	default:
-		h.logError(ctx, "settle billing window", "window_id", input.WindowID, "actual_quantity", input.ActualQuantity, "error", err)
-		return huma.Error500InternalServerError("settle", err)
+		return h.internalServerError(ctx, "settle", err, "window_id", input.WindowID, "actual_quantity", input.ActualQuantity)
 	}
 }
 
@@ -549,8 +548,7 @@ func (h *Handler) activateWindowError(ctx context.Context, windowID string, err 
 	case errors.Is(err, billing.ErrWindowAlreadyVoided):
 		return huma.Error400BadRequest("window already voided")
 	default:
-		h.logError(ctx, "activate billing window", "window_id", windowID, "error", err)
-		return huma.Error500InternalServerError("activate", err)
+		return h.internalServerError(ctx, "activate", err, "window_id", windowID)
 	}
 }
 
@@ -561,9 +559,16 @@ func (h *Handler) voidWindowError(ctx context.Context, windowID string, err erro
 	case errors.Is(err, billing.ErrWindowAlreadySettled):
 		return huma.Error400BadRequest("window already settled")
 	default:
-		h.logError(ctx, "void billing window", "window_id", windowID, "error", err)
-		return huma.Error500InternalServerError("void", err)
+		return h.internalServerError(ctx, "void", err, "window_id", windowID)
 	}
+}
+
+func (h *Handler) internalServerError(ctx context.Context, operation string, err error, attrs ...any) error {
+	args := make([]any, 0, len(attrs)+2)
+	args = append(args, attrs...)
+	args = append(args, "error", err)
+	h.logError(ctx, "billing api "+operation, args...)
+	return huma.Error500InternalServerError(operation, err)
 }
 
 func (h *Handler) logError(ctx context.Context, msg string, args ...any) {
