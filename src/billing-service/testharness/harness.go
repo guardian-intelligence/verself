@@ -100,7 +100,7 @@ func (s *Server) SeedCredits(ctx context.Context, orgID uint64, productID string
 		ScopeProductID:    productID,
 		Amount:            amount,
 		Source:            source,
-		StripeReferenceID: stripeRef,
+		SourceReferenceID: stripeRef,
 		ExpiresAt:         &expiresAt,
 	})
 }

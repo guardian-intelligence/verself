@@ -214,6 +214,94 @@ func (s stripeSubscriptionState) withDefaults() stripeSubscriptionState {
 	return s
 }
 
+func (s stripeSubscriptionState) providerEvent(eventType string, paymentState EntitlementPaymentState, entitlementState EntitlementState) (SubscriptionProviderEvent, error) {
+	var orgID OrgID
+	if s.OrgIDText != "" {
+		parsed, err := strconv.ParseUint(s.OrgIDText, 10, 64)
+		if err != nil {
+			return SubscriptionProviderEvent{}, fmt.Errorf("parse provider event org id: %w", err)
+		}
+		orgID = OrgID(parsed)
+	}
+	return SubscriptionProviderEvent{
+		Provider:                  "stripe",
+		EventType:                 eventType,
+		OrgID:                     orgID,
+		ProductID:                 s.ProductID,
+		PlanID:                    s.PlanID,
+		Cadence:                   s.Cadence,
+		Status:                    s.Status,
+		ProviderSubscriptionID:    s.StripeSubscriptionID,
+		ProviderCheckoutSessionID: s.StripeCheckoutSessionID,
+		ProviderCustomerID:        s.StripeCustomerID,
+		CurrentPeriodStart:        s.CurrentPeriodStart,
+		CurrentPeriodEnd:          s.CurrentPeriodEnd,
+		PaymentState:              paymentState,
+		EntitlementState:          entitlementState,
+	}, nil
+}
+
+func (c *Client) ApplySubscriptionProviderEvent(ctx context.Context, event SubscriptionProviderEvent) error {
+	if event.Provider != "stripe" {
+		return fmt.Errorf("unsupported subscription provider %q", event.Provider)
+	}
+	if event.OrgID == 0 {
+		return fmt.Errorf("subscription provider event org id is required")
+	}
+	if err := validateSubscriptionProviderEvent(event); err != nil {
+		return err
+	}
+	state := stripeSubscriptionState{
+		OrgIDText:               strconv.FormatUint(uint64(event.OrgID), 10),
+		ProductID:               event.ProductID,
+		PlanID:                  event.PlanID,
+		Cadence:                 event.Cadence,
+		Status:                  event.Status,
+		StripeSubscriptionID:    event.ProviderSubscriptionID,
+		StripeCheckoutSessionID: event.ProviderCheckoutSessionID,
+		StripeCustomerID:        event.ProviderCustomerID,
+		CurrentPeriodStart:      event.CurrentPeriodStart,
+		CurrentPeriodEnd:        event.CurrentPeriodEnd,
+	}.withDefaults()
+	if !state.hasRequiredForgeMetadata() {
+		return fmt.Errorf("subscription provider event is missing required forge metadata")
+	}
+	if err := c.upsertStripeSubscription(ctx, state); err != nil {
+		return err
+	}
+	if event.EntitlementState == EntitlementClosed || event.EntitlementState == EntitlementVoided {
+		return c.closeSubscriptionEntitlements(ctx, state, event.PaymentState, event.EntitlementState)
+	}
+	if event.EntitlementState != "" {
+		if err := c.ensureSubscriptionEntitlements(ctx, state, event.PaymentState, event.EntitlementState); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSubscriptionProviderEvent(event SubscriptionProviderEvent) error {
+	switch BillingCadence(event.Cadence) {
+	case "", CadenceMonthly, CadenceAnnual:
+	default:
+		return fmt.Errorf("unsupported subscription cadence %q", event.Cadence)
+	}
+	switch event.PaymentState {
+	case "", PaymentNotRequired, PaymentPending, PaymentPaid, PaymentFailed, PaymentUncollectible, PaymentRefunded:
+	default:
+		return fmt.Errorf("unsupported subscription payment state %q", event.PaymentState)
+	}
+	switch event.EntitlementState {
+	case "", EntitlementScheduled, EntitlementActive, EntitlementGrace, EntitlementClosed, EntitlementVoided:
+	default:
+		return fmt.Errorf("unsupported subscription entitlement state %q", event.EntitlementState)
+	}
+	if event.EntitlementState != "" && event.PaymentState == "" {
+		return fmt.Errorf("subscription provider event payment_state is required when entitlement_state is set")
+	}
+	return nil
+}
+
 func (c *Client) handleCheckoutSessionCompleted(ctx context.Context, event stripe.Event) error {
 	session, err := decodeStripeEventObject[stripe.CheckoutSession](event, "checkout.session.completed")
 	if err != nil {
@@ -239,8 +327,12 @@ func (c *Client) handleCheckoutSessionCompleted(ctx context.Context, event strip
 		if !state.hasRequiredForgeMetadata() {
 			return fmt.Errorf("checkout.session.completed: missing forge subscription metadata for stripe subscription %q", state.StripeSubscriptionID)
 		}
-		if err := c.upsertStripeSubscription(ctx, state); err != nil {
-			return fmt.Errorf("checkout.session.completed: upsert subscription: %w", err)
+		providerEvent, err := state.providerEvent("checkout.session.completed", PaymentPending, "")
+		if err != nil {
+			return fmt.Errorf("checkout.session.completed: provider event: %w", err)
+		}
+		if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+			return fmt.Errorf("checkout.session.completed: apply provider event: %w", err)
 		}
 	}
 
@@ -275,7 +367,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 		ScopeType:         GrantScopeAccount,
 		Amount:            ledgerUnits,
 		Source:            "purchase",
-		StripeReferenceID: paymentIntentID,
+		SourceReferenceID: "stripe:payment_intent:" + paymentIntentID,
 		ExpiresAt:         &expiresAt,
 	})
 	if err != nil {
@@ -303,11 +395,12 @@ func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) erro
 	if !state.hasRequiredForgeMetadata() {
 		return fmt.Errorf("invoice.paid: missing forge subscription metadata for stripe subscription %q", state.StripeSubscriptionID)
 	}
-	if err := c.upsertStripeSubscription(ctx, state); err != nil {
-		return fmt.Errorf("invoice.paid: upsert subscription: %w", err)
+	providerEvent, err := state.providerEvent("invoice.paid", PaymentPaid, EntitlementActive)
+	if err != nil {
+		return fmt.Errorf("invoice.paid: provider event: %w", err)
 	}
-	if err := c.depositSubscriptionEntitlements(ctx, state, invoice.ID); err != nil {
-		return fmt.Errorf("invoice.paid: deposit entitlements: %w", err)
+	if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+		return fmt.Errorf("invoice.paid: apply provider event: %w", err)
 	}
 	return nil
 }
@@ -326,8 +419,12 @@ func (c *Client) handleInvoicePaymentFailed(ctx context.Context, event stripe.Ev
 		return nil
 	}
 	if state.hasRequiredForgeMetadata() {
-		if err := c.upsertStripeSubscription(ctx, state); err != nil {
-			return fmt.Errorf("invoice.payment_failed: upsert subscription: %w", err)
+		providerEvent, err := state.providerEvent("invoice.payment_failed", PaymentFailed, EntitlementGrace)
+		if err != nil {
+			return fmt.Errorf("invoice.payment_failed: provider event: %w", err)
+		}
+		if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+			return fmt.Errorf("invoice.payment_failed: apply provider event: %w", err)
 		}
 		return nil
 	}
@@ -352,8 +449,16 @@ func (c *Client) handleSubscriptionUpdated(ctx context.Context, event stripe.Eve
 		return nil
 	}
 	if state.hasRequiredForgeMetadata() {
-		if err := c.upsertStripeSubscription(ctx, state); err != nil {
-			return fmt.Errorf("customer.subscription.updated: upsert subscription: %w", err)
+		entitlementState := EntitlementState("")
+		if state.CurrentPeriodStart != nil && state.CurrentPeriodEnd != nil && state.Status != "canceled" {
+			entitlementState = EntitlementGrace
+		}
+		providerEvent, err := state.providerEvent("customer.subscription.updated", PaymentPending, entitlementState)
+		if err != nil {
+			return fmt.Errorf("customer.subscription.updated: provider event: %w", err)
+		}
+		if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+			return fmt.Errorf("customer.subscription.updated: apply provider event: %w", err)
 		}
 		return nil
 	}
@@ -378,8 +483,12 @@ func (c *Client) handleSubscriptionDeleted(ctx context.Context, event stripe.Eve
 		return nil
 	}
 	if state.hasRequiredForgeMetadata() {
-		if err := c.upsertStripeSubscription(ctx, state); err != nil {
-			return fmt.Errorf("customer.subscription.deleted: upsert subscription: %w", err)
+		providerEvent, err := state.providerEvent("customer.subscription.deleted", PaymentFailed, EntitlementClosed)
+		if err != nil {
+			return fmt.Errorf("customer.subscription.deleted: provider event: %w", err)
+		}
+		if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+			return fmt.Errorf("customer.subscription.deleted: apply provider event: %w", err)
 		}
 		return nil
 	}
@@ -406,29 +515,39 @@ func (c *Client) upsertStripeSubscription(ctx context.Context, state stripeSubsc
 	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO subscriptions (
+		INSERT INTO subscription_contracts (
+			contract_id,
 			org_id,
 			product_id,
 			plan_id,
 			cadence,
 			status,
+			payment_state,
+			entitlement_state,
+			billing_anchor,
+			grace_until,
 			current_period_start,
 			current_period_end,
 			stripe_subscription_id,
 			stripe_checkout_session_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6,
+		        'pending', 'grace', $7, $8,
+		        $9, $10, $11, $12)
 		ON CONFLICT (stripe_subscription_id) WHERE stripe_subscription_id <> '' DO UPDATE
-		SET org_id = EXCLUDED.org_id,
+		SET contract_id = COALESCE(NULLIF(EXCLUDED.contract_id, ''), subscription_contracts.contract_id),
+		    org_id = EXCLUDED.org_id,
 		    product_id = EXCLUDED.product_id,
 		    plan_id = EXCLUDED.plan_id,
 		    cadence = EXCLUDED.cadence,
 		    status = EXCLUDED.status,
-		    current_period_start = COALESCE(EXCLUDED.current_period_start, subscriptions.current_period_start),
-		    current_period_end = COALESCE(EXCLUDED.current_period_end, subscriptions.current_period_end),
-		    stripe_checkout_session_id = COALESCE(NULLIF(EXCLUDED.stripe_checkout_session_id, ''), subscriptions.stripe_checkout_session_id),
+		    current_period_start = COALESCE(EXCLUDED.current_period_start, subscription_contracts.current_period_start),
+		    current_period_end = COALESCE(EXCLUDED.current_period_end, subscription_contracts.current_period_end),
+		    stripe_checkout_session_id = COALESCE(NULLIF(EXCLUDED.stripe_checkout_session_id, ''), subscription_contracts.stripe_checkout_session_id),
 		    updated_at = now()
-	`, state.OrgIDText, state.ProductID, state.PlanID, state.Cadence, state.Status, sqlTime(state.CurrentPeriodStart), sqlTime(state.CurrentPeriodEnd), state.StripeSubscriptionID, state.StripeCheckoutSessionID)
+	`, stripeContractID(state.StripeSubscriptionID), state.OrgIDText, state.ProductID, state.PlanID, state.Cadence, state.Status,
+		sqlTime(state.CurrentPeriodStart), sqlTime(graceUntil(state.CurrentPeriodEnd, c.cfg.SubscriptionGracePeriod)),
+		sqlTime(state.CurrentPeriodStart), sqlTime(state.CurrentPeriodEnd), state.StripeSubscriptionID, state.StripeCheckoutSessionID)
 	if err != nil {
 		return err
 	}
@@ -453,7 +572,7 @@ func (c *Client) updateStripeSubscriptionStatus(ctx context.Context, state strip
 		return 0, nil
 	}
 	result, err := c.pg.ExecContext(ctx, `
-		UPDATE subscriptions
+		UPDATE subscription_contracts
 		SET status = COALESCE(NULLIF($1, ''), status),
 		    current_period_start = COALESCE($2, current_period_start),
 		    current_period_end = COALESCE($3, current_period_end),
@@ -537,7 +656,7 @@ func (c *Client) loadLocalStripeSubscriptionState(ctx context.Context, stripeSub
 	var start, end sql.NullTime
 	err := c.pg.QueryRowContext(ctx, `
 		SELECT org_id, product_id, plan_id, cadence, status, current_period_start, current_period_end, stripe_subscription_id, stripe_checkout_session_id
-		FROM subscriptions
+		FROM subscription_contracts
 		WHERE stripe_subscription_id = $1
 	`, stripeSubscriptionID).Scan(
 		&state.OrgIDText,
@@ -610,67 +729,200 @@ func mergeStripeSubscriptionState(primary, fallback stripeSubscriptionState) str
 	return out
 }
 
-func (c *Client) depositSubscriptionEntitlements(ctx context.Context, state stripeSubscriptionState, invoiceID string) error {
-	if invoiceID == "" {
+func (c *Client) ensureSubscriptionEntitlements(ctx context.Context, state stripeSubscriptionState, paymentState EntitlementPaymentState, entitlementState EntitlementState) error {
+	if state.CurrentPeriodStart == nil || state.CurrentPeriodEnd == nil || !state.CurrentPeriodEnd.After(*state.CurrentPeriodStart) {
 		return nil
+	}
+	if err := c.updateStripeSubscriptionEntitlementState(ctx, state, paymentState, entitlementState); err != nil {
+		return err
 	}
 	orgID, err := strconv.ParseUint(state.OrgIDText, 10, 64)
 	if err != nil {
 		return fmt.Errorf("parse org id: %w", err)
 	}
-	includedBuckets, err := c.includedCreditBuckets(ctx, state.PlanID)
+	policies, err := c.subscriptionEntitlementPolicies(ctx, state.PlanID, *state.CurrentPeriodStart, *state.CurrentPeriodEnd)
 	if err != nil {
 		return err
 	}
-	if len(includedBuckets) == 0 {
-		return nil
-	}
-	expiresAt := c.clock().UTC().AddDate(1, 0, 0)
-	if state.CurrentPeriodEnd != nil {
-		expiresAt = state.CurrentPeriodEnd.UTC()
-	}
-	for _, bucketID := range sortedUint64MapKeys(includedBuckets) {
-		amount := includedBuckets[bucketID]
-		if amount == 0 {
+	contractID := stripeContractID(state.StripeSubscriptionID)
+	for _, policy := range policies {
+		period, ok := subscriptionEntitlementPeriod(OrgID(orgID), contractID, policy, *state.CurrentPeriodStart, *state.CurrentPeriodEnd, paymentState, entitlementState)
+		if !ok {
 			continue
 		}
-		_, err := c.DepositCredits(ctx, CreditGrant{
-			OrgID:             OrgID(orgID),
-			ScopeType:         GrantScopeBucket,
-			ScopeProductID:    state.ProductID,
-			ScopeBucketID:     bucketID,
-			Amount:            amount,
-			Source:            "subscription",
-			StripeReferenceID: invoiceID,
-			ExpiresAt:         &expiresAt,
-		})
-		if err != nil {
-			return fmt.Errorf("deposit bucket %s: %w", bucketID, err)
+		if err := c.ensureEntitlementPeriod(ctx, period); err != nil {
+			return err
+		}
+		periodStart := period.PeriodStart
+		periodEnd := period.PeriodEnd
+		if _, err := c.IssueCreditGrant(ctx, CreditGrant{
+			OrgID:               period.OrgID,
+			ScopeType:           period.ScopeType,
+			ScopeProductID:      period.ScopeProductID,
+			ScopeBucketID:       period.ScopeBucketID,
+			Amount:              period.AmountUnits,
+			Source:              period.Source.String(),
+			SourceReferenceID:   period.SourceReferenceID,
+			EntitlementPeriodID: period.PeriodID,
+			PolicyVersion:       period.PolicyVersion,
+			StartsAt:            &periodStart,
+			PeriodStart:         &periodStart,
+			PeriodEnd:           &periodEnd,
+			ExpiresAt:           &periodEnd,
+		}); err != nil {
+			return fmt.Errorf("issue subscription grant for policy %s: %w", policy.PolicyID, err)
 		}
 	}
 	return nil
 }
 
-func (c *Client) includedCreditBuckets(ctx context.Context, planID string) (map[string]uint64, error) {
-	var raw string
-	if err := c.pg.QueryRowContext(ctx, `
-		SELECT included_credit_buckets::text FROM plans WHERE plan_id = $1
-	`, planID).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("lookup plan included credit buckets: %w", err)
+func (c *Client) updateStripeSubscriptionEntitlementState(ctx context.Context, state stripeSubscriptionState, paymentState EntitlementPaymentState, entitlementState EntitlementState) error {
+	if state.StripeSubscriptionID == "" {
+		return nil
 	}
-	if raw == "" {
-		return nil, nil
+	_, err := c.pg.ExecContext(ctx, `
+		UPDATE subscription_contracts
+		SET payment_state = $2,
+		    entitlement_state = $3,
+		    current_period_start = COALESCE($4, current_period_start),
+		    current_period_end = COALESCE($5, current_period_end),
+		    grace_until = COALESCE($6, grace_until),
+		    updated_at = now()
+		WHERE stripe_subscription_id = $1
+	`, state.StripeSubscriptionID, string(paymentState), string(entitlementState), sqlTime(state.CurrentPeriodStart), sqlTime(state.CurrentPeriodEnd), sqlTime(graceUntil(state.CurrentPeriodEnd, c.cfg.SubscriptionGracePeriod)))
+	if err != nil {
+		return fmt.Errorf("update subscription entitlement state: %w", err)
 	}
-	var buckets map[string]uint64
-	if err := json.Unmarshal([]byte(raw), &buckets); err != nil {
-		return nil, fmt.Errorf("parse included credit buckets: %w", err)
+	return nil
+}
+
+func (c *Client) closeSubscriptionEntitlements(ctx context.Context, state stripeSubscriptionState, paymentState EntitlementPaymentState, entitlementState EntitlementState) error {
+	if state.StripeSubscriptionID == "" {
+		return nil
 	}
-	for bucketID := range buckets {
-		if bucketID == "" {
-			return nil, fmt.Errorf("included credit bucket id is required")
+	contractID := stripeContractID(state.StripeSubscriptionID)
+	if contractID == "" {
+		return nil
+	}
+	tx, err := c.pg.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	closedAt := c.clock().UTC()
+	_, err = tx.ExecContext(ctx, `
+		UPDATE subscription_contracts
+		SET status = COALESCE(NULLIF($2, ''), status),
+		    payment_state = $3,
+		    entitlement_state = $4,
+		    current_period_start = COALESCE($5, current_period_start),
+		    current_period_end = COALESCE($6, current_period_end),
+		    grace_until = COALESCE($7, grace_until),
+		    updated_at = now()
+		WHERE stripe_subscription_id = $1
+	`, state.StripeSubscriptionID, state.Status, string(paymentState), string(entitlementState), sqlTime(state.CurrentPeriodStart), sqlTime(state.CurrentPeriodEnd), sqlTime(graceUntil(state.CurrentPeriodEnd, c.cfg.SubscriptionGracePeriod)))
+	if err != nil {
+		return fmt.Errorf("close subscription contract: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE entitlement_periods
+		SET payment_state = $2,
+		    entitlement_state = $3,
+		    updated_at = now()
+		WHERE contract_id = $1
+		  AND entitlement_state NOT IN ('closed', 'voided')
+	`, contractID, string(paymentState), string(entitlementState))
+	if err != nil {
+		return fmt.Errorf("close entitlement periods: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE credit_grants
+		SET closed_at = $2
+		WHERE entitlement_period_id IN (
+			SELECT period_id
+			FROM entitlement_periods
+			WHERE contract_id = $1
+		)
+		  AND closed_at IS NULL
+	`, contractID, closedAt)
+	if err != nil {
+		return fmt.Errorf("close subscription grants: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit subscription close: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) subscriptionEntitlementPolicies(ctx context.Context, planID string, periodStart time.Time, periodEnd time.Time) ([]EntitlementPolicy, error) {
+	rows, err := c.pg.QueryContext(ctx, `
+		SELECT p.policy_id, p.source, p.product_id, p.scope_type, p.scope_product_id, p.scope_bucket_id,
+		       p.amount_units, p.cadence, p.anchor_kind, p.proration_mode, p.policy_version, p.active_from, p.active_until
+		FROM plan_entitlements pe
+		JOIN entitlement_policies p ON p.policy_id = pe.policy_id
+		WHERE pe.plan_id = $1
+		  AND p.source = 'subscription'
+		  AND p.active_from < $2
+		  AND (p.active_until IS NULL OR p.active_until > $3)
+		ORDER BY p.policy_id
+	`, planID, periodEnd.UTC(), periodStart.UTC())
+	if err != nil {
+		return nil, fmt.Errorf("lookup plan entitlement policies: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EntitlementPolicy
+	for rows.Next() {
+		var policy EntitlementPolicy
+		var sourceText, scopeText string
+		var amount int64
+		var activeUntil sql.NullTime
+		if err := rows.Scan(
+			&policy.PolicyID,
+			&sourceText,
+			&policy.ProductID,
+			&scopeText,
+			&policy.ScopeProductID,
+			&policy.ScopeBucketID,
+			&amount,
+			&policy.Cadence,
+			&policy.AnchorKind,
+			&policy.ProrationMode,
+			&policy.PolicyVersion,
+			&policy.ActiveFrom,
+			&activeUntil,
+		); err != nil {
+			return nil, fmt.Errorf("scan plan entitlement policy: %w", err)
 		}
+		source, err := ParseGrantSourceType(sourceText)
+		if err != nil {
+			return nil, err
+		}
+		scope, err := ParseGrantScopeType(scopeText)
+		if err != nil {
+			return nil, err
+		}
+		if amount < 0 {
+			return nil, fmt.Errorf("policy %s has negative amount", policy.PolicyID)
+		}
+		policy.Source = source
+		policy.ScopeType = scope
+		policy.AmountUnits = uint64(amount)
+		policy.ActiveFrom = policy.ActiveFrom.UTC()
+		if activeUntil.Valid {
+			value := activeUntil.Time.UTC()
+			policy.ActiveUntil = &value
+		}
+		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID); err != nil {
+			return nil, fmt.Errorf("policy %s: %w", policy.PolicyID, err)
+		}
+		out = append(out, policy)
 	}
-	return buckets, nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate plan entitlement policies: %w", err)
+	}
+	return out, nil
 }
 
 func firstNonEmpty(values ...string) string {

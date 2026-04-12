@@ -128,14 +128,20 @@ type StatementTotals struct {
 }
 
 type GrantBalance struct {
-	GrantID        GrantID
-	ScopeType      GrantScopeType
-	ScopeProductID string
-	ScopeBucketID  string
-	Source         GrantSourceType
-	ExpiresAt      *time.Time
-	Available      uint64
-	Pending        uint64
+	GrantID             GrantID
+	ScopeType           GrantScopeType
+	ScopeProductID      string
+	ScopeBucketID       string
+	Source              GrantSourceType
+	SourceReferenceID   string
+	EntitlementPeriodID string
+	PolicyVersion       string
+	StartsAt            time.Time
+	PeriodStart         *time.Time
+	PeriodEnd           *time.Time
+	ExpiresAt           *time.Time
+	Available           uint64
+	Pending             uint64
 }
 
 type ReservePolicy struct {
@@ -247,14 +253,19 @@ type MeteringWriter interface {
 }
 
 type CreditGrant struct {
-	OrgID             OrgID
-	ScopeType         GrantScopeType
-	ScopeProductID    string
-	ScopeBucketID     string
-	Amount            uint64
-	Source            string
-	StripeReferenceID string
-	ExpiresAt         *time.Time
+	OrgID               OrgID
+	ScopeType           GrantScopeType
+	ScopeProductID      string
+	ScopeBucketID       string
+	Amount              uint64
+	Source              string
+	SourceReferenceID   string
+	EntitlementPeriodID string
+	PolicyVersion       string
+	StartsAt            *time.Time
+	PeriodStart         *time.Time
+	PeriodEnd           *time.Time
+	ExpiresAt           *time.Time
 }
 
 type CheckoutParams struct {
@@ -272,13 +283,123 @@ const (
 
 type SubscriptionRecord struct {
 	SubscriptionID     int64
+	ContractID         string
 	OrgID              string
 	ProductID          string
 	PlanID             string
 	Cadence            string
 	Status             string
+	PaymentState       EntitlementPaymentState
+	EntitlementState   EntitlementState
 	CurrentPeriodStart *time.Time
 	CurrentPeriodEnd   *time.Time
+}
+
+type SubscriptionProviderEvent struct {
+	Provider                  string
+	EventType                 string
+	OrgID                     OrgID
+	ProductID                 string
+	PlanID                    string
+	Cadence                   string
+	Status                    string
+	ProviderSubscriptionID    string
+	ProviderCheckoutSessionID string
+	ProviderCustomerID        string
+	CurrentPeriodStart        *time.Time
+	CurrentPeriodEnd          *time.Time
+	PaymentState              EntitlementPaymentState
+	EntitlementState          EntitlementState
+}
+
+type EntitlementCadence string
+
+const (
+	EntitlementCadenceMonthly EntitlementCadence = "monthly"
+	EntitlementCadenceAnnual  EntitlementCadence = "annual"
+)
+
+type EntitlementAnchorKind string
+
+const (
+	AnchorCalendarMonth      EntitlementAnchorKind = "calendar_month"
+	AnchorSubscriptionPeriod EntitlementAnchorKind = "subscription_period"
+)
+
+type EntitlementProrationMode string
+
+const (
+	ProrationNone       EntitlementProrationMode = "none"
+	ProrationByTimeLeft EntitlementProrationMode = "prorate_by_time_left"
+)
+
+type EntitlementPaymentState string
+
+const (
+	PaymentNotRequired   EntitlementPaymentState = "not_required"
+	PaymentPending       EntitlementPaymentState = "pending"
+	PaymentPaid          EntitlementPaymentState = "paid"
+	PaymentFailed        EntitlementPaymentState = "failed"
+	PaymentUncollectible EntitlementPaymentState = "uncollectible"
+	PaymentRefunded      EntitlementPaymentState = "refunded"
+)
+
+type EntitlementState string
+
+const (
+	EntitlementScheduled EntitlementState = "scheduled"
+	EntitlementActive    EntitlementState = "active"
+	EntitlementGrace     EntitlementState = "grace"
+	EntitlementClosed    EntitlementState = "closed"
+	EntitlementVoided    EntitlementState = "voided"
+)
+
+type EntitlementPolicy struct {
+	PolicyID       string
+	Source         GrantSourceType
+	ProductID      string
+	ScopeType      GrantScopeType
+	ScopeProductID string
+	ScopeBucketID  string
+	AmountUnits    uint64
+	Cadence        EntitlementCadence
+	AnchorKind     EntitlementAnchorKind
+	ProrationMode  EntitlementProrationMode
+	PolicyVersion  string
+	ActiveFrom     time.Time
+	ActiveUntil    *time.Time
+}
+
+type EntitlementPeriod struct {
+	PeriodID          string
+	OrgID             OrgID
+	ProductID         string
+	Source            GrantSourceType
+	PolicyID          string
+	ContractID        string
+	ScopeType         GrantScopeType
+	ScopeProductID    string
+	ScopeBucketID     string
+	AmountUnits       uint64
+	PeriodStart       time.Time
+	PeriodEnd         time.Time
+	PolicyVersion     string
+	PaymentState      EntitlementPaymentState
+	EntitlementState  EntitlementState
+	SourceReferenceID string
+	CreatedReason     string
+}
+
+type BillingEvent struct {
+	EventID       string    `ch:"event_id"`
+	EventType     string    `ch:"event_type"`
+	AggregateType string    `ch:"aggregate_type"`
+	AggregateID   string    `ch:"aggregate_id"`
+	OrgID         string    `ch:"org_id"`
+	ProductID     string    `ch:"product_id"`
+	OccurredAt    time.Time `ch:"occurred_at"`
+	Payload       string    `ch:"payload"`
+	RecordedAt    time.Time `ch:"recorded_at"`
 }
 
 func ParseGrantSourceType(source string) (GrantSourceType, error) {

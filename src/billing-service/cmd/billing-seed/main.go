@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,39 +29,41 @@ const (
 )
 
 type config struct {
-	pgDSNFile           string
-	pgDSN               string
-	tbAddress           string
-	tbClusterID         uint64
-	orgID               uint64
-	orgName             string
-	orgTrustTier        string
-	productID           string
-	productDisplayName  string
-	meterUnit           string
-	billingModel        string
-	planID              string
-	planDisplayName     string
-	includedBucketsJSON string
-	quotasJSON          string
-	targetPrepaidUnits  uint64
-	prepaidSource       string
-	expiresAfter        time.Duration
+	pgDSNFile            string
+	pgDSN                string
+	tbAddress            string
+	tbClusterID          uint64
+	orgID                uint64
+	orgName              string
+	orgTrustTier         string
+	productID            string
+	productDisplayName   string
+	meterUnit            string
+	billingModel         string
+	planID               string
+	planDisplayName      string
+	freeTierBucketsJSON  string
+	planEntitlementsJSON string
+	quotasJSON           string
+	targetPrepaidUnits   uint64
+	prepaidSource        string
+	expiresAfter         time.Duration
 }
 
 type seedResult struct {
-	OrgID               uint64 `json:"org_id"`
-	OrgName             string `json:"org_name"`
-	OrgTrustTier        string `json:"org_trust_tier"`
-	ProductID           string `json:"product_id"`
-	PlanID              string `json:"plan_id"`
-	PrepaidBefore       uint64 `json:"prepaid_before"`
-	DepositedUnits      uint64 `json:"deposited_units"`
-	PrepaidAfter        uint64 `json:"prepaid_after"`
-	TargetPrepaidUnits  uint64 `json:"target_prepaid_units"`
-	ProductUpserted     bool   `json:"product_upserted"`
-	CatalogUpserted     bool   `json:"catalog_upserted"`
-	DefaultPlanUpserted bool   `json:"default_plan_upserted"`
+	OrgID                uint64 `json:"org_id"`
+	OrgName              string `json:"org_name"`
+	OrgTrustTier         string `json:"org_trust_tier"`
+	ProductID            string `json:"product_id"`
+	PlanID               string `json:"plan_id"`
+	PrepaidBefore        uint64 `json:"prepaid_before"`
+	DepositedUnits       uint64 `json:"deposited_units"`
+	PrepaidAfter         uint64 `json:"prepaid_after"`
+	TargetPrepaidUnits   uint64 `json:"target_prepaid_units"`
+	ProductUpserted      bool   `json:"product_upserted"`
+	CatalogUpserted      bool   `json:"catalog_upserted"`
+	DefaultPlanUpserted  bool   `json:"default_plan_upserted"`
+	EntitlementsUpserted bool   `json:"entitlements_upserted"`
 }
 
 type bucketSeed struct {
@@ -142,6 +145,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	entitlementsUpserted, err := upsertEntitlementPolicies(ctx, pg, cfg)
+	if err != nil {
+		return err
+	}
+	if err := client.EnsureCurrentEntitlements(ctx, billing.OrgID(cfg.orgID), cfg.productID); err != nil {
+		return err
+	}
 
 	before, err := currentPrepaidUnits(ctx, client, cfg.orgID, cfg.productID)
 	if err != nil {
@@ -157,7 +167,7 @@ func run() error {
 			ScopeType:         billing.GrantScopeAccount,
 			Amount:            deposited,
 			Source:            cfg.prepaidSource,
-			StripeReferenceID: fmt.Sprintf("seed:%d:%s", cfg.orgID, cfg.productID),
+			SourceReferenceID: fmt.Sprintf("seed:%d:%s", cfg.orgID, cfg.productID),
 			ExpiresAt:         &expiresAt,
 		}); err != nil {
 			return fmt.Errorf("deposit prepaid credits: %w", err)
@@ -170,18 +180,19 @@ func run() error {
 	}
 
 	encoded, err := json.Marshal(seedResult{
-		OrgID:               cfg.orgID,
-		OrgName:             cfg.orgName,
-		OrgTrustTier:        cfg.orgTrustTier,
-		ProductID:           cfg.productID,
-		PlanID:              cfg.planID,
-		PrepaidBefore:       before,
-		DepositedUnits:      deposited,
-		PrepaidAfter:        after,
-		TargetPrepaidUnits:  cfg.targetPrepaidUnits,
-		ProductUpserted:     productUpserted,
-		CatalogUpserted:     catalogUpserted,
-		DefaultPlanUpserted: defaultPlanUpserted,
+		OrgID:                cfg.orgID,
+		OrgName:              cfg.orgName,
+		OrgTrustTier:         cfg.orgTrustTier,
+		ProductID:            cfg.productID,
+		PlanID:               cfg.planID,
+		PrepaidBefore:        before,
+		DepositedUnits:       deposited,
+		PrepaidAfter:         after,
+		TargetPrepaidUnits:   cfg.targetPrepaidUnits,
+		ProductUpserted:      productUpserted,
+		CatalogUpserted:      catalogUpserted,
+		DefaultPlanUpserted:  defaultPlanUpserted,
+		EntitlementsUpserted: entitlementsUpserted,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal seed result: %w", err)
@@ -197,6 +208,9 @@ func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint
 	}
 	var total uint64
 	for _, grant := range grants {
+		if grant.Source.IsFreeTier() {
+			continue
+		}
 		total += grant.Available
 	}
 	return total, nil
@@ -204,18 +218,19 @@ func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint
 
 func parseFlags() (config, error) {
 	cfg := config{
-		productID:           sandboxProductID,
-		productDisplayName:  "Sandbox",
-		meterUnit:           "sku_second",
-		billingModel:        "metered",
-		orgTrustTier:        "new",
-		planID:              "sandbox-default",
-		planDisplayName:     "Sandbox PAYG",
-		includedBucketsJSON: `{}`,
-		quotasJSON:          `{}`,
-		targetPrepaidUnits:  500_000_000,
-		prepaidSource:       "purchase",
-		expiresAfter:        365 * 24 * time.Hour,
+		productID:            sandboxProductID,
+		productDisplayName:   "Sandbox",
+		meterUnit:            "sku_second",
+		billingModel:         "metered",
+		orgTrustTier:         "new",
+		planID:               "sandbox-default",
+		planDisplayName:      "Sandbox PAYG",
+		freeTierBucketsJSON:  `{}`,
+		planEntitlementsJSON: `{}`,
+		quotasJSON:           `{}`,
+		targetPrepaidUnits:   500_000_000,
+		prepaidSource:        "purchase",
+		expiresAfter:         365 * 24 * time.Hour,
 	}
 
 	flag.StringVar(&cfg.pgDSNFile, "pg-dsn-file", "", "path to PostgreSQL DSN file")
@@ -231,7 +246,8 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.billingModel, "billing-model", cfg.billingModel, "product billing model")
 	flag.StringVar(&cfg.planID, "plan-id", cfg.planID, "default plan ID")
 	flag.StringVar(&cfg.planDisplayName, "plan-display-name", cfg.planDisplayName, "default plan display name")
-	flag.StringVar(&cfg.includedBucketsJSON, "included-credit-buckets-json", cfg.includedBucketsJSON, "default plan included credit buckets JSON")
+	flag.StringVar(&cfg.freeTierBucketsJSON, "free-tier-buckets-json", cfg.freeTierBucketsJSON, "free-tier bucket grants JSON")
+	flag.StringVar(&cfg.planEntitlementsJSON, "plan-entitlements-json", cfg.planEntitlementsJSON, "subscription bucket grants JSON for the default plan")
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
 	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
@@ -336,19 +352,18 @@ func upsertCatalog(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 
 func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	result, err := pg.ExecContext(ctx, `
-		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credit_buckets, quotas, is_default, tier, active)
-		VALUES ($1, $2, $3, 'prepaid', $4::jsonb, $5::jsonb, true, 'default', true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, quotas, is_default, tier, active)
+		VALUES ($1, $2, $3, 'prepaid', $4::jsonb, true, 'default', true)
 		ON CONFLICT (plan_id) DO UPDATE
 		SET product_id = EXCLUDED.product_id,
 		    display_name = EXCLUDED.display_name,
 		    billing_mode = EXCLUDED.billing_mode,
-		    included_credit_buckets = EXCLUDED.included_credit_buckets,
 		    quotas = EXCLUDED.quotas,
 		    is_default = EXCLUDED.is_default,
 		    tier = EXCLUDED.tier,
 		    active = EXCLUDED.active,
 		    updated_at = now()
-	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.includedBucketsJSON, cfg.quotasJSON)
+	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.quotasJSON)
 	if err != nil {
 		return false, fmt.Errorf("upsert default plan %s: %w", cfg.planID, err)
 	}
@@ -373,6 +388,99 @@ func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config) (bool, error
 		changed = changed || rows > 0
 	}
 	return changed, nil
+}
+
+func upsertEntitlementPolicies(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
+	freeTierBuckets, err := parseUint64JSONMap(cfg.freeTierBucketsJSON)
+	if err != nil {
+		return false, fmt.Errorf("parse free-tier buckets: %w", err)
+	}
+	planEntitlements, err := parseUint64JSONMap(cfg.planEntitlementsJSON)
+	if err != nil {
+		return false, fmt.Errorf("parse plan entitlements: %w", err)
+	}
+
+	var changed bool
+	for _, bucketID := range sortedMapKeys(freeTierBuckets) {
+		policyID := fmt.Sprintf("free-tier:%s:%s:v1", cfg.productID, bucketID)
+		upserted, err := upsertEntitlementPolicy(ctx, pg, policyID, "free_tier", cfg.productID, bucketID, freeTierBuckets[bucketID], "calendar_month")
+		if err != nil {
+			return false, err
+		}
+		changed = changed || upserted
+	}
+	for _, bucketID := range sortedMapKeys(planEntitlements) {
+		policyID := fmt.Sprintf("subscription:%s:%s:%s:v1", cfg.planID, cfg.productID, bucketID)
+		upserted, err := upsertEntitlementPolicy(ctx, pg, policyID, "subscription", cfg.productID, bucketID, planEntitlements[bucketID], "subscription_period")
+		if err != nil {
+			return false, err
+		}
+		changed = changed || upserted
+		result, err := pg.ExecContext(ctx, `
+			INSERT INTO plan_entitlements (plan_id, policy_id)
+			VALUES ($1, $2)
+			ON CONFLICT (plan_id, policy_id) DO NOTHING
+		`, cfg.planID, policyID)
+		if err != nil {
+			return false, fmt.Errorf("upsert plan entitlement %s/%s: %w", cfg.planID, policyID, err)
+		}
+		rows, _ := result.RowsAffected()
+		changed = changed || rows > 0
+	}
+	return changed, nil
+}
+
+func upsertEntitlementPolicy(ctx context.Context, pg *sql.DB, policyID string, source string, productID string, bucketID string, amount uint64, anchorKind string) (bool, error) {
+	result, err := pg.ExecContext(ctx, `
+		INSERT INTO entitlement_policies (
+			policy_id, source, product_id, scope_type, scope_product_id, scope_bucket_id,
+			amount_units, cadence, anchor_kind, proration_mode, policy_version
+		)
+		VALUES ($1, $2, $3, 'bucket', $3, $4,
+		        $5, 'monthly', $6, 'prorate_by_time_left', 'v1')
+		ON CONFLICT (policy_id) DO UPDATE
+		SET source = EXCLUDED.source,
+		    product_id = EXCLUDED.product_id,
+		    scope_type = EXCLUDED.scope_type,
+		    scope_product_id = EXCLUDED.scope_product_id,
+		    scope_bucket_id = EXCLUDED.scope_bucket_id,
+		    amount_units = EXCLUDED.amount_units,
+		    cadence = EXCLUDED.cadence,
+		    anchor_kind = EXCLUDED.anchor_kind,
+		    proration_mode = EXCLUDED.proration_mode,
+		    policy_version = EXCLUDED.policy_version,
+		    updated_at = now()
+	`, policyID, source, productID, bucketID, amount, anchorKind)
+	if err != nil {
+		return false, fmt.Errorf("upsert entitlement policy %s: %w", policyID, err)
+	}
+	rows, _ := result.RowsAffected()
+	return rows > 0, nil
+}
+
+func parseUint64JSONMap(raw string) (map[string]uint64, error) {
+	out := map[string]uint64{}
+	if strings.TrimSpace(raw) == "" {
+		return out, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	for key := range out {
+		if key == "" {
+			return nil, fmt.Errorf("bucket id is required")
+		}
+	}
+	return out, nil
+}
+
+func sortedMapKeys(in map[string]uint64) []string {
+	keys := make([]string, 0, len(in))
+	for key := range in {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func sandboxBuckets() []bucketSeed {

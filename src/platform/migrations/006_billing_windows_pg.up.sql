@@ -2,7 +2,7 @@
 -- Uses the PostgreSQL table engine for operational diagnostics; no data is copied.
 -- Credentials come from the billing_pg named collection in clickhouse-config.xml.
 
-DROP TABLE IF EXISTS forge_metal.billing_events_pg;
+DROP TABLE IF EXISTS forge_metal.billing_windows_pg;
 
 CREATE TABLE IF NOT EXISTS forge_metal.billing_windows_pg (
     window_id               String,

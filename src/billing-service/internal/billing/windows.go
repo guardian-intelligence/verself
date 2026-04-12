@@ -96,6 +96,9 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	if err := c.ensureOrgNotSuspended(ctx, req.OrgID); err != nil {
 		return WindowReservation{}, err
 	}
+	if err := c.EnsureCurrentEntitlements(ctx, req.OrgID, req.ProductID); err != nil {
+		return WindowReservation{}, err
+	}
 
 	config, err := c.loadPlanConfig(ctx, req.OrgID, req.ProductID)
 	if err != nil {
@@ -563,10 +566,11 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 	err := c.pg.QueryRowContext(ctx, `
 		WITH active_subscription AS (
 			SELECT plan_id
-			FROM subscriptions
+			FROM subscription_contracts
 			WHERE org_id = $1
 			  AND product_id = $2
 			  AND status NOT IN ('canceled', 'suspended')
+			  AND entitlement_state IN ('active', 'grace')
 			ORDER BY current_period_end DESC NULLS LAST, subscription_id DESC
 			LIMIT 1
 		)
@@ -951,7 +955,7 @@ func (c *Client) ensureOrgNotSuspended(ctx context.Context, orgID OrgID) error {
 	var suspended bool
 	if err := c.pg.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM subscriptions WHERE org_id = $1 AND status = 'suspended'
+			SELECT 1 FROM subscription_contracts WHERE org_id = $1 AND status = 'suspended'
 		)
 	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&suspended); err != nil {
 		return fmt.Errorf("check org suspension: %w", err)

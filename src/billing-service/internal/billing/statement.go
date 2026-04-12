@@ -61,7 +61,7 @@ func (c *Client) currentStatementPeriod(ctx context.Context, orgID OrgID, produc
 	var end sql.NullTime
 	err := c.pg.QueryRowContext(ctx, `
 		SELECT current_period_start, current_period_end
-		FROM subscriptions
+		FROM subscription_contracts
 		WHERE org_id = $1
 		  AND product_id = $2
 		  AND status <> 'canceled'

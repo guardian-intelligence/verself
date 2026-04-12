@@ -17,18 +17,108 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for BillingApplySubscriptionProviderEventRequestCadence.
+const (
+	BillingApplySubscriptionProviderEventRequestCadenceAnnual  BillingApplySubscriptionProviderEventRequestCadence = "annual"
+	BillingApplySubscriptionProviderEventRequestCadenceMonthly BillingApplySubscriptionProviderEventRequestCadence = "monthly"
+)
+
+// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestCadence enum.
+func (e BillingApplySubscriptionProviderEventRequestCadence) Valid() bool {
+	switch e {
+	case BillingApplySubscriptionProviderEventRequestCadenceAnnual:
+		return true
+	case BillingApplySubscriptionProviderEventRequestCadenceMonthly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillingApplySubscriptionProviderEventRequestEntitlementState.
+const (
+	Active    BillingApplySubscriptionProviderEventRequestEntitlementState = "active"
+	Closed    BillingApplySubscriptionProviderEventRequestEntitlementState = "closed"
+	Grace     BillingApplySubscriptionProviderEventRequestEntitlementState = "grace"
+	Scheduled BillingApplySubscriptionProviderEventRequestEntitlementState = "scheduled"
+	Voided    BillingApplySubscriptionProviderEventRequestEntitlementState = "voided"
+)
+
+// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestEntitlementState enum.
+func (e BillingApplySubscriptionProviderEventRequestEntitlementState) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Closed:
+		return true
+	case Grace:
+		return true
+	case Scheduled:
+		return true
+	case Voided:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillingApplySubscriptionProviderEventRequestPaymentState.
+const (
+	Failed        BillingApplySubscriptionProviderEventRequestPaymentState = "failed"
+	NotRequired   BillingApplySubscriptionProviderEventRequestPaymentState = "not_required"
+	Paid          BillingApplySubscriptionProviderEventRequestPaymentState = "paid"
+	Pending       BillingApplySubscriptionProviderEventRequestPaymentState = "pending"
+	Refunded      BillingApplySubscriptionProviderEventRequestPaymentState = "refunded"
+	Uncollectible BillingApplySubscriptionProviderEventRequestPaymentState = "uncollectible"
+)
+
+// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestPaymentState enum.
+func (e BillingApplySubscriptionProviderEventRequestPaymentState) Valid() bool {
+	switch e {
+	case Failed:
+		return true
+	case NotRequired:
+		return true
+	case Paid:
+		return true
+	case Pending:
+		return true
+	case Refunded:
+		return true
+	case Uncollectible:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillingApplySubscriptionProviderEventRequestProvider.
+const (
+	Stripe BillingApplySubscriptionProviderEventRequestProvider = "stripe"
+)
+
+// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestProvider enum.
+func (e BillingApplySubscriptionProviderEventRequestProvider) Valid() bool {
+	switch e {
+	case Stripe:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BillingCreateSubscriptionRequestCadence.
 const (
-	Annual  BillingCreateSubscriptionRequestCadence = "annual"
-	Monthly BillingCreateSubscriptionRequestCadence = "monthly"
+	BillingCreateSubscriptionRequestCadenceAnnual  BillingCreateSubscriptionRequestCadence = "annual"
+	BillingCreateSubscriptionRequestCadenceMonthly BillingCreateSubscriptionRequestCadence = "monthly"
 )
 
 // Valid indicates whether the value is a known member of the BillingCreateSubscriptionRequestCadence enum.
 func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
 	switch e {
-	case Annual:
+	case BillingCreateSubscriptionRequestCadenceAnnual:
 		return true
-	case Monthly:
+	case BillingCreateSubscriptionRequestCadenceMonthly:
 		return true
 	default:
 		return false
@@ -48,6 +138,45 @@ type BillingActivateWindowResult struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema      *string                  `json:"$schema,omitempty"`
 	Reservation BillingWindowReservation `json:"reservation"`
+}
+
+// BillingApplySubscriptionProviderEventRequest defines model for BillingApplySubscriptionProviderEventRequest.
+type BillingApplySubscriptionProviderEventRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema                    *string                                                       `json:"$schema,omitempty"`
+	Cadence                   *BillingApplySubscriptionProviderEventRequestCadence          `json:"cadence,omitempty"`
+	CurrentPeriodEnd          *time.Time                                                    `json:"current_period_end,omitempty"`
+	CurrentPeriodStart        *time.Time                                                    `json:"current_period_start,omitempty"`
+	EntitlementState          *BillingApplySubscriptionProviderEventRequestEntitlementState `json:"entitlement_state,omitempty"`
+	EventType                 string                                                        `json:"event_type"`
+	OrgId                     string                                                        `json:"org_id"`
+	PaymentState              *BillingApplySubscriptionProviderEventRequestPaymentState     `json:"payment_state,omitempty"`
+	PlanId                    string                                                        `json:"plan_id"`
+	ProductId                 string                                                        `json:"product_id"`
+	Provider                  BillingApplySubscriptionProviderEventRequestProvider          `json:"provider"`
+	ProviderCheckoutSessionId *string                                                       `json:"provider_checkout_session_id,omitempty"`
+	ProviderCustomerId        *string                                                       `json:"provider_customer_id,omitempty"`
+	ProviderSubscriptionId    string                                                        `json:"provider_subscription_id"`
+	Status                    *string                                                       `json:"status,omitempty"`
+}
+
+// BillingApplySubscriptionProviderEventRequestCadence defines model for BillingApplySubscriptionProviderEventRequest.Cadence.
+type BillingApplySubscriptionProviderEventRequestCadence string
+
+// BillingApplySubscriptionProviderEventRequestEntitlementState defines model for BillingApplySubscriptionProviderEventRequest.EntitlementState.
+type BillingApplySubscriptionProviderEventRequestEntitlementState string
+
+// BillingApplySubscriptionProviderEventRequestPaymentState defines model for BillingApplySubscriptionProviderEventRequest.PaymentState.
+type BillingApplySubscriptionProviderEventRequestPaymentState string
+
+// BillingApplySubscriptionProviderEventRequestProvider defines model for BillingApplySubscriptionProviderEventRequest.Provider.
+type BillingApplySubscriptionProviderEventRequestProvider string
+
+// BillingApplySubscriptionProviderEventResponse defines model for BillingApplySubscriptionProviderEventResponse.
+type BillingApplySubscriptionProviderEventResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string `json:"$schema,omitempty"`
+	Applied bool    `json:"applied"`
 }
 
 // BillingBalance defines model for BillingBalance.
@@ -97,14 +226,20 @@ type BillingCreateSubscriptionRequestCadence string
 
 // BillingGrant defines model for BillingGrant.
 type BillingGrant struct {
-	Available      string     `json:"available"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
-	GrantId        string     `json:"grant_id"`
-	Pending        string     `json:"pending"`
-	ScopeBucketId  string     `json:"scope_bucket_id"`
-	ScopeProductId string     `json:"scope_product_id"`
-	ScopeType      string     `json:"scope_type"`
-	Source         string     `json:"source"`
+	Available           string     `json:"available"`
+	EntitlementPeriodId string     `json:"entitlement_period_id"`
+	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
+	GrantId             string     `json:"grant_id"`
+	Pending             string     `json:"pending"`
+	PeriodEnd           *time.Time `json:"period_end,omitempty"`
+	PeriodStart         *time.Time `json:"period_start,omitempty"`
+	PolicyVersion       string     `json:"policy_version"`
+	ScopeBucketId       string     `json:"scope_bucket_id"`
+	ScopeProductId      string     `json:"scope_product_id"`
+	ScopeType           string     `json:"scope_type"`
+	Source              string     `json:"source"`
+	SourceReferenceId   string     `json:"source_reference_id"`
+	StartsAt            time.Time  `json:"starts_at"`
 }
 
 // BillingGrants defines model for BillingGrants.
@@ -230,8 +365,11 @@ type BillingStatementTotals struct {
 // BillingSubscription defines model for BillingSubscription.
 type BillingSubscription struct {
 	Cadence            string     `json:"cadence"`
+	ContractId         string     `json:"contract_id"`
 	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
 	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
+	EntitlementState   string     `json:"entitlement_state"`
+	PaymentState       string     `json:"payment_state"`
 	PlanId             string     `json:"plan_id"`
 	ProductId          string     `json:"product_id"`
 	Status             string     `json:"status"`
@@ -354,6 +492,9 @@ type SettleWindowJSONRequestBody = BillingSettleWindowRequest
 // CreateSubscriptionJSONRequestBody defines body for CreateSubscription for application/json ContentType.
 type CreateSubscriptionJSONRequestBody = BillingCreateSubscriptionRequest
 
+// ApplySubscriptionProviderEventJSONRequestBody defines body for ApplySubscriptionProviderEvent for application/json ContentType.
+type ApplySubscriptionProviderEventJSONRequestBody = BillingApplySubscriptionProviderEventRequest
+
 // VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
 type VoidWindowJSONRequestBody = BillingVoidWindowRequest
 
@@ -471,6 +612,11 @@ type ClientInterface interface {
 	CreateSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateSubscription(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApplySubscriptionProviderEventWithBody request with any body
+	ApplySubscriptionProviderEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// VoidWindowWithBody request with any body
 	VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -660,6 +806,30 @@ func (c *Client) CreateSubscriptionWithBody(ctx context.Context, contentType str
 
 func (c *Client) CreateSubscription(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateSubscriptionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ApplySubscriptionProviderEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplySubscriptionProviderEventRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplySubscriptionProviderEventRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,6 +1296,46 @@ func NewCreateSubscriptionRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
+// NewApplySubscriptionProviderEventRequest calls the generic ApplySubscriptionProviderEvent builder with application/json body
+func NewApplySubscriptionProviderEventRequest(server string, body ApplySubscriptionProviderEventJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewApplySubscriptionProviderEventRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewApplySubscriptionProviderEventRequestWithBody generates requests for ApplySubscriptionProviderEvent with any type of body
+func NewApplySubscriptionProviderEventRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/subscription-provider-events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewVoidWindowRequest calls the generic VoidWindow builder with application/json body
 func NewVoidWindowRequest(server string, body VoidWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1250,6 +1460,11 @@ type ClientWithResponsesInterface interface {
 	CreateSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
 
 	CreateSubscriptionWithResponse(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
+
+	// ApplySubscriptionProviderEventWithBodyWithResponse request with any body
+	ApplySubscriptionProviderEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
+
+	ApplySubscriptionProviderEventWithResponse(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
 
 	// VoidWindowWithBodyWithResponse request with any body
 	VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
@@ -1498,6 +1713,31 @@ func (r CreateSubscriptionResponse) StatusCode() int {
 	return 0
 }
 
+type ApplySubscriptionProviderEventResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingApplySubscriptionProviderEventResponse
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ApplySubscriptionProviderEventResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApplySubscriptionProviderEventResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type VoidWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
@@ -1660,6 +1900,23 @@ func (c *ClientWithResponses) CreateSubscriptionWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseCreateSubscriptionResponse(rsp)
+}
+
+// ApplySubscriptionProviderEventWithBodyWithResponse request with arbitrary body returning *ApplySubscriptionProviderEventResponse
+func (c *ClientWithResponses) ApplySubscriptionProviderEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error) {
+	rsp, err := c.ApplySubscriptionProviderEventWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApplySubscriptionProviderEventResponse(rsp)
+}
+
+func (c *ClientWithResponses) ApplySubscriptionProviderEventWithResponse(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error) {
+	rsp, err := c.ApplySubscriptionProviderEvent(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApplySubscriptionProviderEventResponse(rsp)
 }
 
 // VoidWindowWithBodyWithResponse request with arbitrary body returning *VoidWindowResponse
@@ -2066,6 +2323,53 @@ func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionRes
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseApplySubscriptionProviderEventResponse parses an HTTP response from a ApplySubscriptionProviderEventWithResponse call
+func ParseApplySubscriptionProviderEventResponse(rsp *http.Response) (*ApplySubscriptionProviderEventResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApplySubscriptionProviderEventResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingApplySubscriptionProviderEventResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest ErrorModel

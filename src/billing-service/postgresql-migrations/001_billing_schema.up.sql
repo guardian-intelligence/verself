@@ -45,7 +45,6 @@ CREATE TABLE plans (
     product_id               TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     display_name             TEXT        NOT NULL,
     billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
-    included_credit_buckets  JSONB       NOT NULL DEFAULT '{}'::jsonb,
     quotas                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     is_default               BOOLEAN     NOT NULL DEFAULT false,
     tier                     TEXT        NOT NULL DEFAULT 'default',
@@ -73,45 +72,22 @@ CREATE TABLE plan_sku_rates (
 CREATE INDEX idx_plan_sku_rates_active
     ON plan_sku_rates (plan_id, active, sku_id);
 
-CREATE TABLE subscriptions (
-    subscription_id            BIGSERIAL    PRIMARY KEY,
-    org_id                     TEXT         NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
-    product_id                 TEXT         NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-    plan_id                    TEXT         NOT NULL REFERENCES plans(plan_id),
-    cadence                    TEXT         NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'annual')),
-    status                     TEXT         NOT NULL DEFAULT 'active',
-    stripe_subscription_id     TEXT         NOT NULL DEFAULT '',
-    stripe_checkout_session_id TEXT         NOT NULL DEFAULT '',
-    current_period_start       TIMESTAMPTZ,
-    current_period_end         TIMESTAMPTZ,
-    created_at                 TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at                 TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_subscriptions_org_product
-    ON subscriptions (org_id, product_id, status, current_period_end DESC);
-
-CREATE UNIQUE INDEX idx_subscriptions_stripe_subscription
-    ON subscriptions (stripe_subscription_id)
-    WHERE stripe_subscription_id <> '';
-
-CREATE UNIQUE INDEX idx_subscriptions_stripe_checkout_session
-    ON subscriptions (stripe_checkout_session_id)
-    WHERE stripe_checkout_session_id <> '';
-
-CREATE TABLE credit_grants (
-    grant_id             TEXT        PRIMARY KEY,
-    org_id               TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
-    scope_type           TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
-    scope_product_id     TEXT        NOT NULL DEFAULT '',
-    scope_bucket_id      TEXT        NOT NULL DEFAULT '',
-    amount               BIGINT      NOT NULL CHECK (amount >= 0),
-    source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
-    contract_id          TEXT        NOT NULL DEFAULT '',
-    stripe_reference_id  TEXT        NOT NULL DEFAULT '',
-    expires_at           TIMESTAMPTZ,
-    closed_at            TIMESTAMPTZ,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE entitlement_policies (
+    policy_id         TEXT        PRIMARY KEY,
+    source            TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
+    product_id        TEXT        NOT NULL DEFAULT '',
+    scope_type        TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_product_id  TEXT        NOT NULL DEFAULT '',
+    scope_bucket_id   TEXT        NOT NULL DEFAULT '',
+    amount_units      BIGINT      NOT NULL CHECK (amount_units >= 0),
+    cadence           TEXT        NOT NULL CHECK (cadence IN ('monthly', 'annual')),
+    anchor_kind       TEXT        NOT NULL CHECK (anchor_kind IN ('calendar_month', 'subscription_period')),
+    proration_mode    TEXT        NOT NULL CHECK (proration_mode IN ('none', 'prorate_by_time_left')),
+    policy_version    TEXT        NOT NULL DEFAULT 'v1',
+    active_from       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    active_until      TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (
         (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
         OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
@@ -119,13 +95,139 @@ CREATE TABLE credit_grants (
     )
 );
 
+CREATE INDEX idx_entitlement_policies_active
+    ON entitlement_policies (source, product_id, active_from, active_until, policy_id);
+
+CREATE TABLE plan_entitlements (
+    plan_id     TEXT        NOT NULL REFERENCES plans(plan_id) ON DELETE CASCADE,
+    policy_id   TEXT        NOT NULL REFERENCES entitlement_policies(policy_id) ON DELETE RESTRICT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (plan_id, policy_id)
+);
+
+CREATE TABLE subscription_contracts (
+    subscription_id             BIGSERIAL    PRIMARY KEY,
+    contract_id                 TEXT         NOT NULL DEFAULT '',
+    org_id                      TEXT         NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    product_id                  TEXT         NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    plan_id                     TEXT         NOT NULL REFERENCES plans(plan_id),
+    cadence                     TEXT         NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'annual')),
+    status                      TEXT         NOT NULL DEFAULT 'active',
+    payment_state               TEXT         NOT NULL DEFAULT 'pending' CHECK (payment_state IN ('not_required', 'pending', 'paid', 'failed', 'uncollectible', 'refunded')),
+    entitlement_state           TEXT         NOT NULL DEFAULT 'grace' CHECK (entitlement_state IN ('scheduled', 'active', 'grace', 'closed', 'voided')),
+    billing_anchor              TIMESTAMPTZ,
+    grace_until                 TIMESTAMPTZ,
+    current_period_start        TIMESTAMPTZ,
+    current_period_end          TIMESTAMPTZ,
+    stripe_subscription_id      TEXT         NOT NULL DEFAULT '',
+    stripe_checkout_session_id  TEXT         NOT NULL DEFAULT '',
+    created_at                  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at                  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_subscription_contracts_contract
+    ON subscription_contracts (contract_id)
+    WHERE contract_id <> '';
+
+CREATE INDEX idx_subscription_contracts_org_product
+    ON subscription_contracts (org_id, product_id, status, current_period_end DESC);
+
+CREATE UNIQUE INDEX idx_subscription_contracts_stripe_subscription
+    ON subscription_contracts (stripe_subscription_id)
+    WHERE stripe_subscription_id <> '';
+
+CREATE UNIQUE INDEX idx_subscription_contracts_stripe_checkout_session
+    ON subscription_contracts (stripe_checkout_session_id)
+    WHERE stripe_checkout_session_id <> '';
+
+CREATE TABLE entitlement_periods (
+    period_id            TEXT        PRIMARY KEY,
+    org_id               TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    product_id           TEXT        NOT NULL DEFAULT '',
+    source               TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
+    policy_id            TEXT        NOT NULL DEFAULT '',
+    contract_id          TEXT        NOT NULL DEFAULT '',
+    scope_type           TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_product_id     TEXT        NOT NULL DEFAULT '',
+    scope_bucket_id      TEXT        NOT NULL DEFAULT '',
+    amount_units         BIGINT      NOT NULL CHECK (amount_units >= 0),
+    period_start         TIMESTAMPTZ NOT NULL,
+    period_end           TIMESTAMPTZ NOT NULL,
+    policy_version       TEXT        NOT NULL DEFAULT 'v1',
+    payment_state        TEXT        NOT NULL DEFAULT 'not_required' CHECK (payment_state IN ('not_required', 'pending', 'paid', 'failed', 'uncollectible', 'refunded')),
+    entitlement_state    TEXT        NOT NULL DEFAULT 'active' CHECK (entitlement_state IN ('scheduled', 'active', 'grace', 'closed', 'voided')),
+    source_reference_id  TEXT        NOT NULL,
+    created_reason       TEXT        NOT NULL DEFAULT '',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (period_end > period_start),
+    CHECK (
+        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+    )
+);
+
+CREATE UNIQUE INDEX idx_entitlement_periods_source_reference
+    ON entitlement_periods (org_id, source, source_reference_id);
+
+CREATE INDEX idx_entitlement_periods_active
+    ON entitlement_periods (org_id, product_id, source, period_start, period_end, entitlement_state);
+
+CREATE TABLE credit_grants (
+    grant_id                TEXT        PRIMARY KEY,
+    org_id                  TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    scope_type              TEXT        NOT NULL CHECK (scope_type IN ('bucket', 'product', 'account')),
+    scope_product_id        TEXT        NOT NULL DEFAULT '',
+    scope_bucket_id         TEXT        NOT NULL DEFAULT '',
+    amount                  BIGINT      NOT NULL CHECK (amount >= 0),
+    source                  TEXT        NOT NULL CHECK (source IN ('free_tier', 'subscription', 'purchase', 'promo', 'refund')),
+    source_reference_id     TEXT        NOT NULL DEFAULT '',
+    entitlement_period_id   TEXT        NOT NULL DEFAULT '',
+    policy_version          TEXT        NOT NULL DEFAULT '',
+    starts_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    period_start            TIMESTAMPTZ,
+    period_end              TIMESTAMPTZ,
+    expires_at              TIMESTAMPTZ,
+    closed_at               TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (scope_type = 'bucket' AND scope_product_id <> '' AND scope_bucket_id <> '')
+        OR (scope_type = 'product' AND scope_product_id <> '' AND scope_bucket_id = '')
+        OR (scope_type = 'account' AND scope_product_id = '' AND scope_bucket_id = '')
+    ),
+    CHECK (expires_at IS NULL OR expires_at > starts_at),
+    CHECK (period_start IS NULL OR period_end IS NOT NULL),
+    CHECK (period_end IS NULL OR period_start IS NOT NULL),
+    CHECK (period_start IS NULL OR period_end > period_start)
+);
+
 CREATE INDEX idx_credit_grants_open
-    ON credit_grants (org_id, scope_type, scope_product_id, scope_bucket_id, expires_at, grant_id)
+    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, starts_at, expires_at, grant_id)
     WHERE closed_at IS NULL;
 
-CREATE UNIQUE INDEX idx_credit_grants_stripe_reference
-    ON credit_grants (org_id, scope_type, scope_product_id, scope_bucket_id, stripe_reference_id)
-    WHERE stripe_reference_id <> '';
+CREATE UNIQUE INDEX idx_credit_grants_source_reference
+    ON credit_grants (org_id, source, scope_type, scope_product_id, scope_bucket_id, source_reference_id)
+    WHERE source_reference_id <> '';
+
+CREATE TABLE billing_outbox_events (
+    event_id        TEXT        PRIMARY KEY,
+    event_type      TEXT        NOT NULL,
+    aggregate_type  TEXT        NOT NULL,
+    aggregate_id    TEXT        NOT NULL,
+    org_id          TEXT        NOT NULL,
+    product_id      TEXT        NOT NULL DEFAULT '',
+    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    payload         JSONB       NOT NULL,
+    delivered_at    TIMESTAMPTZ,
+    delivery_error  TEXT        NOT NULL DEFAULT '',
+    attempts        INTEGER     NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_billing_outbox_pending
+    ON billing_outbox_events (occurred_at, event_id)
+    WHERE delivered_at IS NULL;
 
 CREATE TABLE billing_windows (
     window_id               TEXT        PRIMARY KEY,

@@ -36,6 +36,99 @@ components:
       required:
         - reservation
       type: object
+    BillingApplySubscriptionProviderEventRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingApplySubscriptionProviderEventRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cadence:
+          enum:
+            - monthly
+            - annual
+          type: string
+        current_period_end:
+          format: date-time
+          type: string
+        current_period_start:
+          format: date-time
+          type: string
+        entitlement_state:
+          enum:
+            - scheduled
+            - active
+            - grace
+            - closed
+            - voided
+          type: string
+        event_type:
+          maxLength: 255
+          minLength: 1
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        payment_state:
+          enum:
+            - not_required
+            - pending
+            - paid
+            - failed
+            - uncollectible
+            - refunded
+          type: string
+        plan_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        product_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        provider:
+          enum:
+            - stripe
+          type: string
+        provider_checkout_session_id:
+          maxLength: 255
+          type: string
+        provider_customer_id:
+          maxLength: 255
+          type: string
+        provider_subscription_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+        status:
+          maxLength: 255
+          type: string
+      required:
+        - provider
+        - event_type
+        - org_id
+        - product_id
+        - plan_id
+        - provider_subscription_id
+      type: object
+    BillingApplySubscriptionProviderEventResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingApplySubscriptionProviderEventResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        applied:
+          type: boolean
+      required:
+        - applied
+      type: object
     BillingBalance:
       additionalProperties: false
       properties:
@@ -172,6 +265,8 @@ components:
         available:
           pattern: ^[0-9]+$
           type: string
+        entitlement_period_id:
+          type: string
         expires_at:
           format: date-time
           type: string
@@ -179,6 +274,14 @@ components:
           type: string
         pending:
           pattern: ^[0-9]+$
+          type: string
+        period_end:
+          format: date-time
+          type: string
+        period_start:
+          format: date-time
+          type: string
+        policy_version:
           type: string
         scope_bucket_id:
           type: string
@@ -188,12 +291,21 @@ components:
           type: string
         source:
           type: string
+        source_reference_id:
+          type: string
+        starts_at:
+          format: date-time
+          type: string
       required:
         - grant_id
         - scope_type
         - scope_product_id
         - scope_bucket_id
         - source
+        - source_reference_id
+        - entitlement_period_id
+        - policy_version
+        - starts_at
         - available
         - pending
       type: object
@@ -573,11 +685,17 @@ components:
       properties:
         cadence:
           type: string
+        contract_id:
+          type: string
         current_period_end:
           format: date-time
           type: string
         current_period_start:
           format: date-time
+          type: string
+        entitlement_state:
+          type: string
+        payment_state:
           type: string
         plan_id:
           type: string
@@ -590,10 +708,13 @@ components:
           type: string
       required:
         - subscription_id
+        - contract_id
         - product_id
         - plan_id
         - cadence
         - status
+        - payment_state
+        - entitlement_state
       type: object
     BillingSubscriptions:
       additionalProperties: false
@@ -1124,6 +1245,41 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Create a Stripe subscription checkout
+  /internal/billing/v1/subscription-provider-events:
+    post:
+      operationId: apply-subscription-provider-event
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingApplySubscriptionProviderEventRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingApplySubscriptionProviderEventResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Apply a subscription provider event
   /internal/billing/v1/void:
     post:
       operationId: void-window

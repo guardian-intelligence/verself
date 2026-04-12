@@ -145,8 +145,9 @@ func run() error {
 	defer cancelProjector()
 	projectorDone := make(chan error, 1)
 	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond)
+		ticker := time.NewTicker(cfg.OutboxProjectEvery)
 		defer ticker.Stop()
+		lastEntitlementReconcile := time.Time{}
 		for {
 			select {
 			case <-projectorCtx.Done():
@@ -155,6 +156,15 @@ func run() error {
 			case <-ticker.C:
 				if _, err := billingClient.ProjectPendingWindows(projectorCtx, 100); err != nil && !errors.Is(err, context.Canceled) {
 					logger.ErrorContext(projectorCtx, "billing projector", "error", err)
+				}
+				if _, err := billingClient.ProjectPendingOutboxEvents(projectorCtx, 100); err != nil && !errors.Is(err, context.Canceled) {
+					logger.ErrorContext(projectorCtx, "billing outbox projector", "error", err)
+				}
+				if lastEntitlementReconcile.IsZero() || time.Since(lastEntitlementReconcile) >= cfg.EntitlementReconcileEvery {
+					if _, err := billingClient.ReconcileEntitlements(projectorCtx, 10000); err != nil && !errors.Is(err, context.Canceled) {
+						logger.ErrorContext(projectorCtx, "billing entitlement reconciler", "error", err)
+					}
+					lastEntitlementReconcile = time.Now()
 				}
 			}
 		}
