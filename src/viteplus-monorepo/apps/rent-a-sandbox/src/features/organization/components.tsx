@@ -1,3 +1,4 @@
+import { useMemo, useReducer } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
@@ -10,6 +11,15 @@ import {
   usePutPolicyMutation,
   useUpdateMemberRolesMutation,
 } from "./mutations";
+import {
+  buildCatalogTree,
+  PolicyMatrix,
+  policyFormEqual,
+  policyFormFromDocument,
+  policyFormToRoles,
+  policyReducer,
+  type PolicyFormState,
+} from "./policy";
 import {
   organizationMembersQuery,
   organizationOperationsQuery,
@@ -34,10 +44,6 @@ function defaultRoleKeys(policy: PolicyDocument) {
 
 function roleLabel(policy: PolicyDocument, roleKey: string) {
   return policy.roles.find((role) => role.role_key === roleKey)?.display_name ?? roleKey;
-}
-
-function permissionSet(permissions: Array<string>) {
-  return new Set(permissions);
 }
 
 function formErrorText(error: unknown) {
@@ -93,6 +99,10 @@ export function OrganizationWidget() {
 
       <InviteMemberForm canInvite={canInvite} policy={policy} />
       <MembersTable canUpdateRoles={canUpdateRoles} members={members} policy={policy} />
+      {/* Remount the editor whenever the server hands us a fresh policy version
+       * (after a successful save → query invalidation → refetch). This is the
+       * React-idiomatic way to reset reducer state on prop changes — see
+       * https://react.dev/reference/react/useState#resetting-state-with-a-key. */}
       <PolicyEditor
         canWritePolicy={canWritePolicy}
         key={policy.version}
@@ -440,27 +450,27 @@ function PolicyEditor({
   policy: PolicyDocument;
 }) {
   const mutation = usePutPolicyMutation();
-  const flattenedOperations = operations.services.flatMap((service) =>
-    service.operations.map((operation) => ({ service: service.service, operation })),
-  );
-  const form = useForm({
-    defaultValues: {
-      roles: policy.roles,
-    },
-    onSubmit: async ({ value }) => {
-      await mutation.mutateAsync({
-        roles: value.roles,
-        version: policy.version,
-      });
-    },
-  });
+  const catalog = useMemo(() => buildCatalogTree(operations), [operations]);
+  const initialState = useMemo<PolicyFormState>(() => policyFormFromDocument(policy), [policy]);
+  const [state, dispatch] = useReducer(policyReducer, initialState);
+  const isDirty = !policyFormEqual(state, initialState);
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void mutation.mutateAsync({
+      roles: policyFormToRoles(state),
+      version: state.version,
+    });
+  };
 
   return (
     <section className="space-y-3">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold">Policy</h2>
         <p className="text-sm text-muted-foreground">
-          Service operations are the allow-list for permission documents.
+          Service operations are grouped by namespace. Toggling a group sets every permission
+          underneath it.
         </p>
       </div>
 
@@ -470,86 +480,23 @@ function PolicyEditor({
         </Callout>
       ) : null}
 
-      <form
-        key={policy.version}
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void form.handleSubmit();
-        }}
-        className="space-y-4"
-      >
-        <form.Field name="roles">
-          {(field) => (
-            <div className="overflow-hidden rounded-lg border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium">Permission</th>
-                    {field.state.value.map((role) => (
-                      <th key={role.role_key} className="px-4 py-2 text-left font-medium">
-                        {role.display_name}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {flattenedOperations.map(({ operation, service }) => (
-                    <tr key={operation.permission}>
-                      <td className="px-4 py-3 align-top">
-                        <div className="font-medium">{operation.resource}</div>
-                        <div className="break-all text-xs text-muted-foreground">
-                          {service} / {operation.action} / {operation.permission}
-                        </div>
-                      </td>
-                      {field.state.value.map((role, roleIndex) => {
-                        const selectedPermissions = permissionSet(role.permissions);
-                        return (
-                          <td key={role.role_key} className="px-4 py-3 align-top">
-                            <input
-                              aria-label={`${role.display_name}: ${operation.permission}`}
-                              type="checkbox"
-                              checked={selectedPermissions.has(operation.permission)}
-                              disabled={!canWritePolicy}
-                              onChange={(event) => {
-                                const nextRoles = field.state.value.map((nextRole, index) => {
-                                  if (index !== roleIndex) return nextRole;
-                                  const nextPermissions = event.target.checked
-                                    ? Array.from(
-                                        new Set([...nextRole.permissions, operation.permission]),
-                                      ).sort()
-                                    : nextRole.permissions.filter(
-                                        (permission) => permission !== operation.permission,
-                                      );
-                                  return { ...nextRole, permissions: nextPermissions };
-                                });
-                                field.handleChange(nextRoles);
-                              }}
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </form.Field>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <PolicyMatrix
+          catalog={catalog}
+          state={state}
+          dispatch={dispatch}
+          canEdit={canWritePolicy}
+        />
 
         {mutation.error ? <ErrorCallout error={mutation.error} title="Policy save failed" /> : null}
 
-        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-          {([canSubmit, isSubmitting]) => (
-            <button
-              type="submit"
-              disabled={!canWritePolicy || !canSubmit || isSubmitting || mutation.isPending}
-              className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            >
-              {isSubmitting || mutation.isPending ? "Saving..." : "Save Policy"}
-            </button>
-          )}
-        </form.Subscribe>
+        <button
+          type="submit"
+          disabled={!canWritePolicy || !isDirty || mutation.isPending}
+          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {mutation.isPending ? "Saving..." : "Save Policy"}
+        </button>
       </form>
     </section>
   );
