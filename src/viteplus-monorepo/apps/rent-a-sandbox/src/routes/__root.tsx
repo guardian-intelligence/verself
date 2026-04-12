@@ -138,7 +138,15 @@ function AuthButton() {
         <SignInButton redirectTo={currentLocation} variant="outline" />
       </SignedOut>
       <SignedIn>
-        <UserButton />
+        <div className="flex items-center gap-3">
+          <UserButton />
+          <a
+            href="/logout"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Sign out
+          </a>
+        </div>
       </SignedIn>
     </>
   );
