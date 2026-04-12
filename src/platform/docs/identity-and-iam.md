@@ -15,14 +15,18 @@ customer-defined resource. Huma services attach operation metadata to OpenAPI
 with `x-forge-metal-iam` and enforce the required permission in the service
 process. Frontend route guards and widgets are UX only.
 
-Forge Metal owns product policy. The platform ships working default role
-bundles and policy documents, and customers can later edit those policy
-documents through a constrained first-party surface. Customers should not have
-to hand-author raw IAM documents to make a default install usable.
+Forge Metal product IAM is intentionally a fixed three-role model: `owner`,
+`admin`, `member`. The roles are code constants — not customer-editable rows.
+Owner and admin always hold the full known permission set; the org admin
+console only exposes a switchboard of named **member capabilities** that bundle
+permissions for the member role. Adding or changing a capability is a code
+change, not a runtime mutation. Per-member overrides are not modeled — every
+member of an organization sees the same capability set.
 
 Customer configuration starts with role assignment: invite users, add them to
-organizations, and assign built-in roles. Custom role-to-permission bundles come
-after the default model is usable.
+organizations, and assign one of `admin` or `member`. The owner role is a
+singleton transferred through a separate flow and is not assigned through
+the standard invite/role-update path.
 
 External systems are not Forge Metal users. Git hosts, Stripe, Resend, and other
 integrations authenticate through provider-native credentials and webhook
@@ -59,9 +63,13 @@ Service operation catalogs:
 - Are exposed through OpenAPI `x-forge-metal-iam`.
 - Include operation ID, permission, resource, action, org scope, rate-limit
   class, idempotency semantics, and audit event.
-- The service-local Huma metadata is not an `apiwire` DTO. Public responses that
-  return an operation catalog to customers are normal request/response wire data
-  and should use `apiwire`.
+- Tag each operation with `member_eligible: true|false`. The flag is the
+  denylist that prevents non-eligible permissions from ever leaking into the
+  member role's resolved set, enforced at catalog init and at credential
+  issuance.
+- The service-local Huma metadata is not an `apiwire` DTO. Public responses
+  that return an operation catalog to customers are normal request/response
+  wire data and should use `apiwire`.
 
 Zitadel role assignments:
 
@@ -69,22 +77,29 @@ Zitadel role assignments:
 - Are the membership plane for users and service accounts.
 - Are surfaced to Go services through validated JWT claims or, when needed,
   through Zitadel APIs.
+- Within the identity-service Zitadel project, only three role keys exist:
+  `owner`, `admin`, `member`. Other services follow their own per-project role
+  conventions.
 
-Forge Metal policy documents:
+Forge Metal member capabilities:
 
-- Map role keys to service-declared permissions.
-- Provide the product-level model the organization console edits.
-- Should be stored as Forge Metal-owned state, not embedded into Zitadel tokens
-  as full policy documents.
-- May be evaluated locally from service code for built-in defaults, then from a
-  cached shared policy source once custom customer policies span multiple
-  services.
+- Are a fixed, code-owned catalog of capability bundles (e.g.
+  `deploy_executions`, `manage_repositories`, `invite_members`,
+  `view_billing`). Each bundle pins a hardcoded set of member-eligible
+  permissions.
+- Are toggled per organization via a small switchboard in the org console.
+  The wire shape is just `{ version, enabled_keys[] }`; the catalog itself is
+  read-only.
+- Apply collectively to every member of an organization. There is no
+  per-member override.
+- Live in `identity-service` PostgreSQL as `identity_member_capabilities`,
+  keyed by `org_id` with optimistic-lock `version`.
 
-For v1, `identity-service` owns the organization policy document and seeds the
-built-in Zitadel roles it can assign. Other services continue to own and enforce
-their operation catalogs. As more services expose customer-editable permissions,
-the policy document should reference service-declared permissions, not copied
-ad hoc permission strings.
+`identity-service` owns the catalog, the document storage, and the resolution
+path. Other services continue to own and enforce their own operation catalogs;
+when a service adds a permission that should be member-grantable, it tags the
+operation `member_eligible: true` and the identity-service catalog adds (or
+extends) a capability bundle that includes that permission.
 
 ## Runtime Token Contract
 
@@ -172,16 +187,22 @@ The service boundary is:
 
 An operation policy contains the required permission, resource, action,
 organization scope, rate-limit class, idempotency rule, and audit event. The
-permission check is intentionally small: a caller is allowed if a target-project
-role assignment for the current organization maps through the Forge Metal policy
-document to that permission. Direct permission claims are accepted only for
-Forge Metal API credential tokens carrying both `forge_metal:credential_id` and
-an organization scope; normal human OAuth scopes are not permission grants.
+permission check is intentionally small. The resolution chain is:
+
+1. `owner` role → all known permissions (always).
+2. `admin` role → all known permissions (always).
+3. `member` role → baseline member permissions ∪ permissions bundled into
+   each capability key the org admin has enabled.
+
+Direct permission claims are accepted only for Forge Metal API credential
+tokens carrying both `forge_metal:credential_id` and an organization scope;
+normal human OAuth scopes are not permission grants.
 
 API credential direct permissions are issued as exact operation permissions
 and must be checked at issuance/roll time against the creating principal's
-effective permissions. Human users should receive Zitadel project roles first, then
-customer-editable Forge Metal policy bundles once that surface exists.
+effective permissions. A member-role caller cannot mint a credential whose
+permissions are not held by the member set under the org's current capability
+configuration.
 
 Embedded organization widgets are a special cross-service web-session path.
 The rent-a-sandbox frontend owns the interactive OIDC application and stores the
@@ -322,9 +343,9 @@ for API rehearsal:
 
 | Persona | Human login | Machine user | Organization | Built-in roles |
 |---|---|---|---|---|
-| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | human/browser and machine `forge_org_owner`; `sandbox_org_admin`, `letters_admin`, `forgejo_admin`, `mailbox_user` |
-| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | human/browser `forge_org_owner`; machine `identity_org_admin`; `sandbox_org_admin` |
-| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member`, `identity_org_member` |
+| `platform-admin` | `agent@<domain>` | `assume-platform-admin` | platform | identity-service `owner`; `sandbox_org_admin`, `forgejo_admin`, `mailbox_user` |
+| `acme-admin` | `acme-admin@<domain>` | `assume-acme-admin` | Acme Corp | human/browser identity-service `owner`; machine identity-service `admin`; `sandbox_org_admin` |
+| `acme-member` | `acme-user@<domain>` | `assume-acme-member` | Acme Corp | `sandbox_org_member`, identity-service `member` |
 
 Use the Make wrappers to mint short-lived token files from the deployed
 credential store. These are extremely useful utility scripts for operators and
@@ -352,9 +373,8 @@ Current access coverage:
 | Surface | `platform-admin` | `acme-admin` | `acme-member` | Credential path |
 |---|---|---|---|---|
 | rent-a-sandbox / `sandbox-rental-service` | platform `sandbox_org_admin` | Acme `sandbox_org_admin` | Acme `sandbox_org_member` | Zitadel browser login and `SANDBOX_RENTAL_ACCESS_TOKEN` |
-| rent-a-sandbox organization surface / `identity-service` | browser and machine `forge_org_owner` | browser `forge_org_owner`, machine `identity_org_admin` | Acme `identity_org_member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
+| rent-a-sandbox organization surface / `identity-service` | browser and machine `owner` | browser `owner`, machine `admin` | Acme `member` | BFF token exchange and `IDENTITY_SERVICE_ACCESS_TOKEN` |
 | webmail / `mailbox-service` | `mailbox_user`, bound to `agents` | none | none | Zitadel browser login and `MAILBOX_SERVICE_ACCESS_TOKEN` |
-| Letters | `letters_admin` | none | none | Zitadel browser login and `LETTERS_ACCESS_TOKEN` |
 | Forgejo OIDC login | `forgejo_admin` | none | none | Zitadel browser login and `FORGEJO_OIDC_ACCESS_TOKEN` |
 | ClickHouse | operator access only | none | none | `CLICKHOUSE_OPERATOR_COMMAND`, currently `make clickhouse-query` |
 | Forgejo provider API automation | operator access only | none | none | `FORGEJO_OPERATOR_CREDENTIAL`, currently the remote `forgejo-automation` token |
@@ -401,7 +421,10 @@ programmatically.
   organization/resource ownership from storage.
 - Built-in defaults must remain enough for a non-technical operator to run the
   platform.
-- Advanced policy editing must be constrained to service-declared permissions.
+- A member can never be granted a permission whose operation is not tagged
+  `member_eligible: true`. The catalog's init() check enforces this for the
+  capability bundles, and `validateCredentialPermissions` enforces it at
+  credential issuance.
 - The platform dogfoods the same policy and billing abstractions, with internal
   unlimited usage modeled as an adjustment rather than as a bypass.
 - External webhooks and provider callbacks authenticate through their own
@@ -419,10 +442,10 @@ programmatically.
   resource owner organization. A richer multi-org UX needs an explicit active
   organization switch and services must continue filtering structured role
   assignments by that organization.
-- Built-in identity role-to-permission bundles currently live in
-  `identity-service`. Other services still need to publish their operation
-  catalogs into the policy-editing surface before customer-editable permissions
-  can span the full product.
+- The capability catalog and the role set are intentionally code-owned. The
+  current MVP intentionally does not surface a generic permission editor to
+  customers; the next-quarter roadmap is the enterprise floor (SSO, audit log,
+  backups, security posture doc, MFA), not a policy matrix.
 - Stalwart direct JMAP/IMAP/SMTP auth remains outside the Zitadel service-auth
   model. The repo-owned `mailbox-service` HTTP API uses Zitadel bearer tokens
   plus `mailbox_bindings`, but direct mail protocol credentials are still
@@ -440,10 +463,13 @@ Local code anchors:
 - `src/auth-middleware/auth.go`: JWT verification, split JWKS, identity claim
   extraction, role-assignment extraction.
 - `src/identity-service/internal/api/policy.go`: operation policy metadata,
-  policy-document-backed permission enforcement, idempotency and rate-limit
-  hooks for the organization-management API.
+  capability-backed permission enforcement, idempotency and rate-limit hooks
+  for the organization-management API.
 - `src/identity-service/internal/identity/catalog.go`: built-in identity
-  operation catalog and default role-to-permission policy bundles.
+  operation catalog (including the `member_eligible` denylist tags).
+- `src/identity-service/internal/identity/capabilities.go`: code-owned
+  capability catalog, baseline member permissions, and the init() check that
+  prevents non-eligible permissions from leaking into the member role.
 - `src/sandbox-rental-service/internal/api/policy.go`: operation policy
   catalog, `x-forge-metal-iam`, sandbox role bundles, direct-scope permission
   checks, idempotency and rate-limit hooks.

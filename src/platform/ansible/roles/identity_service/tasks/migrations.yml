@@ -25,7 +25,7 @@
       -U postgres
       -d identity_service
       -tAc
-      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'identity_policy_documents';"
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'identity_member_capabilities';"
   environment:
     PGPASSWORD: "{{ postgresql_admin_password }}"
   register: identity_service_pg_table_probe
@@ -110,8 +110,8 @@
     stdin: |
       DO $$
       BEGIN
-        IF to_regclass('public.identity_policy_documents') IS NOT NULL THEN
-          EXECUTE 'ALTER TABLE public.identity_policy_documents OWNER TO identity_service';
+        IF to_regclass('public.identity_member_capabilities') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.identity_member_capabilities OWNER TO identity_service';
         END IF;
         IF to_regclass('public.identity_api_credentials') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.identity_api_credentials OWNER TO identity_service';
@@ -126,7 +126,7 @@
       $$;
       GRANT USAGE, CREATE ON SCHEMA public TO identity_service;
       GRANT ALL PRIVILEGES ON TABLE
-        public.identity_policy_documents,
+        public.identity_member_capabilities,
         public.identity_api_credentials,
         public.identity_api_credential_permissions,
         public.identity_api_credential_secrets
