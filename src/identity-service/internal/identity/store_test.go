@@ -77,3 +77,15 @@ func TestScanAPICredentialSecretAcceptsNullRevokedBy(t *testing.T) {
 		t.Fatalf("unexpected credential secret: %#v", secret)
 	}
 }
+
+func TestNullableStringParamTreatsBlankValuesAsNull(t *testing.T) {
+	if value := nullableStringParam(""); value != nil {
+		t.Fatalf("expected empty string to become nil, got %#v", value)
+	}
+	if value := nullableStringParam("   "); value != nil {
+		t.Fatalf("expected blank string to become nil, got %#v", value)
+	}
+	if value := nullableStringParam("owner-1"); value != "owner-1" {
+		t.Fatalf("expected non-empty string to be preserved, got %#v", value)
+	}
+}
