@@ -18,7 +18,13 @@ Do not reintroduce DNAT to `127.0.0.1` or `net.ipv4.conf.*.route_localnet=1` for
 
 vm-orchestrator accepts direct VM job commands and host-authorized checkpoint save refs only. Repo import, repo scanning, CI policy, queueing, checkpoint ref policy, and billing semantics belong in the services that own those resources; this daemon stays focused on privileged VM lifecycle, safe ZFS operations, and telemetry aggregation.
 
+Host runtime state is authoritative for VM lifecycle. Guest/control-plane inputs are untrusted requests that must be validated before touching host resources.
+
 Guest event streams are host-derived phase/lifecycle/checkpoint signals; do not add workload-writable billing event channels. Guest checkpoint requests are untrusted input: they may name only a service-authorized ref and must never include ZFS paths, org IDs, or host dataset/version IDs.
+
+## Proof Target
+
+`make vm-orchestrator-proof` is the maintained live-proof entrypoint for this daemon. It delegates to the existing direct-execution verification flow (`verify-sandbox-fast.sh execute`) so the proof path exercises deployed `sandbox-rental-service -> vm-orchestrator` integration while preserving a stable vm-orchestrator-specific make target.
 
 ## Shell Scripting Inside Guests
 
