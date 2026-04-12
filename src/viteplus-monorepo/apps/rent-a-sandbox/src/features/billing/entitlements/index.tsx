@@ -119,12 +119,7 @@ function ProductSection({ section }: { section: EntitlementProductSection }) {
     <Card data-testid={`entitlements-product-${section.product_id}`}>
       <CardHeader>
         <CardTitle>{section.display_name}</CardTitle>
-        <CardDescription>
-          Credits scoped to {section.display_name}. Each row is independent — read it by what it
-          says it covers, never by adding it to another row.
-        </CardDescription>
       </CardHeader>
-      <CardContent className="p-0">
         <div className="border-t border-border">
           <Table>
             <TableHeader>
@@ -151,7 +146,6 @@ function ProductSection({ section }: { section: EntitlementProductSection }) {
             </TableBody>
           </Table>
         </div>
-      </CardContent>
     </Card>
   );
 }

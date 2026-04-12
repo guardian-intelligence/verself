@@ -34,7 +34,7 @@ var defaultOperations = Operations{
 				{OperationID: "get-organization", Permission: PermissionOrganizationRead, Resource: "organization", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "list-organization-members", Permission: PermissionMemberRead, Resource: "organization_member", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "invite-organization-member", Permission: PermissionMemberInvite, Resource: "organization_member", Action: "invite", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "update-organization-member-roles", Permission: PermissionMemberRolesWrite, Resource: "organization_member_roles", Action: "write", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "update-organization-member-roles", Permission: PermissionMemberRolesWrite, Resource: "organization_member_roles", Action: "write", OrgScope: "token_org_id"},
 				{OperationID: "get-organization-member-capabilities", Permission: PermissionMemberCapabilitiesRead, Resource: "organization_member_capabilities", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "put-organization-member-capabilities", Permission: PermissionMemberCapabilitiesWrite, Resource: "organization_member_capabilities", Action: "write", OrgScope: "token_org_id"},
 				{OperationID: "list-api-credentials", Permission: PermissionAPICredentialsRead, Resource: "api_credential", Action: "list", OrgScope: "token_org_id"},
