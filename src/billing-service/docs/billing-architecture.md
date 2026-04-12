@@ -13,9 +13,9 @@ Reference points in this repo:
 | System | Role |
 |---|---|
 | Stripe | Recurring payment collection, Customer Portal, invoices, tax calculation, payment methods, refunds, and subscription lifecycle events. |
-| PostgreSQL | Catalog tables, subscriptions, grants, billing windows, invoices, adjustments, and the billing service's source of truth for commercial state. |
+| PostgreSQL | Catalog tables, subscription contracts, entitlement policies/periods, grants, billing windows, invoices, adjustments, the billing outbox, and the billing service's source of truth for commercial state. |
 | TigerBeetle | Financial ledger for credit grants, receivables, reservations, settlements, voids, refunds, and spend-cap enforcement. |
-| ClickHouse | Append-only usage evidence plus metering projections used for invoice preview, statements, dashboards, and reconciliation. |
+| ClickHouse | Append-only usage evidence plus billing event and metering projections used for invoice preview, statements, dashboards, and reconciliation. |
 
 ## Core model
 
@@ -90,13 +90,11 @@ Key fields:
 - `product_id`
 - `display_name`
 - `billing_mode` (`prepaid` or `postpaid`)
-- `included_credit_buckets`
 - `quotas`
 - `is_default`
 - `tier`
 
-A plan no longer carries pricing JSON. It is a tier shell plus subscription entitlement policy.
-A plan's `included_credit_buckets` describe subscription-funded entitlements only. Free-tier entitlements live outside the plan model so paid subscribers keep their free-tier allowances.
+A plan no longer carries pricing or included-credit JSON. It is a tier shell plus rate-card rows and linked entitlement policies. Free-tier entitlements live outside the plan model so paid subscribers keep their free-tier allowances.
 
 ### `plan_sku_rates`
 
@@ -111,24 +109,88 @@ Key fields:
 
 This table is the rate card.
 
-### `subscriptions`
+### `entitlement_policies`
+
+Reusable grant templates. The policy says which source funds the grant, which entitlement layer receives it, how much is granted, when the policy is active, how the period is anchored, and whether partial periods prorate.
+
+Key fields:
+
+- `policy_id`
+- `source` (`free_tier`, `subscription`, `purchase`, `promo`, `refund`)
+- `product_id`
+- `scope_type`
+- `scope_product_id`
+- `scope_bucket_id`
+- `amount_units`
+- `cadence`
+- `anchor_kind` (`calendar_month` or `subscription_period`)
+- `proration_mode`
+- `policy_version`
+- `active_from`
+- `active_until`
+
+Free-tier policies are universal scheduled entitlements. They are reconciled for every org on calendar-month anchors and are also synchronously self-healed on org creation and reserve. Subscription policies are linked to plans and become grants when a provider event confirms or extends a subscription period.
+
+### `plan_entitlements`
+
+Many-to-many link table between commercial plans and subscription entitlement policies.
+
+Key fields:
+
+- `plan_id`
+- `policy_id`
+
+This avoids embedding entitlements inside plan JSON and makes policy versioning explicit.
+
+### `subscription_contracts`
 
 The org's binding to a plan.
 
 Key fields:
 
 - `subscription_id`
+- `contract_id`
 - `org_id`
-- `plan_id`
 - `product_id`
+- `plan_id`
 - `cadence`
+- `status`
+- `payment_state`
+- `entitlement_state`
+- `billing_anchor`
+- `grace_until`
 - `current_period_start`
 - `current_period_end`
-- `status`
-- `overage_cap_units`
-- `prorated_from_plan_id`
+- `stripe_subscription_id`
+- `stripe_checkout_session_id`
 
-Subscriptions are created and mutated by Stripe Checkout and Stripe webhooks, but the local row is authoritative for billing logic.
+Subscription contracts are created and mutated by Stripe Checkout and Stripe webhooks, but the local row is authoritative for billing logic. The payment state machine is separate from the entitlement state machine so late Stripe payment events can coexist with immediate entitlement availability during an explicit grace window.
+
+### `entitlement_periods`
+
+Durable period-level projection from entitlement policies. Period rows are the bridge between scheduled policy truth and grant issuance.
+
+Key fields:
+
+- `period_id`
+- `org_id`
+- `product_id`
+- `source`
+- `policy_id`
+- `contract_id`
+- `scope_type`
+- `scope_product_id`
+- `scope_bucket_id`
+- `amount_units`
+- `period_start`
+- `period_end`
+- `policy_version`
+- `payment_state`
+- `entitlement_state`
+- `source_reference_id`
+- `created_reason`
+
+The `source_reference_id` is deterministic and source-specific. Free-tier source references are policy/period scoped. Subscription source references additionally include the local contract ID, so two different subscription contracts cannot collapse into one grant.
 
 ### `credit_grants`
 
@@ -140,8 +202,7 @@ Scope classes:
 - `product` grant: any bucket for one product
 - `account` grant: any product bucket in the org
 
-Stripe-funded grants are deterministic over the Stripe reference and scope so retries are idempotent.
-Free-tier grants are deterministic over org, period, scope, and entitlement policy version so monthly reconciliation can safely retry without double-crediting.
+Source-funded grants are deterministic over `org_id`, `source`, scope, and `source_reference_id` so retries are idempotent without making Stripe the only reference namespace. Free-tier and subscription grants carry `entitlement_period_id`, `policy_version`, `period_start`, `period_end`, `starts_at`, and `expires_at`. Terminal subscription events close the local grant rows so remaining units stop funding future reservations even though TigerBeetle retains the immutable financial history.
 
 Grant consumption follows the entitlement hierarchy first, then source priority inside each hierarchy layer:
 
@@ -150,6 +211,26 @@ Grant consumption follows the entitlement hierarchy first, then source priority 
 3. account-scoped grants
 
 Inside each layer, `source = 'free_tier'` is consumed before subscription, purchase, promo, or refund credit. This preserves bucket isolation while making free-tier benefits the first matching balance consumed.
+
+### `billing_outbox_events`
+
+Durable PostgreSQL outbox for facts that must reach ClickHouse.
+
+Key fields:
+
+- `event_id`
+- `event_type`
+- `aggregate_type`
+- `aggregate_id`
+- `org_id`
+- `product_id`
+- `occurred_at`
+- `payload`
+- `delivered_at`
+- `delivery_error`
+- `attempts`
+
+Grant issuance writes the PostgreSQL grant row and an outbox event in the same transaction. The service-local projector claims undelivered rows with `FOR UPDATE SKIP LOCKED`, writes to `forge_metal.billing_events`, then marks rows delivered. ClickHouse is proof/read-model infrastructure; PostgreSQL remains authoritative.
 
 ### `billing_windows`
 
@@ -285,7 +366,26 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-4. **Bucket totals reconcile**
+4. **Grant events present**
+   - Confirm grant issuance facts are visible in ClickHouse after org creation, free-tier reconciliation, purchase, or subscription invoice processing.
+
+```sql
+SELECT
+  event_id,
+  event_type,
+  aggregate_type,
+  aggregate_id,
+  org_id,
+  product_id,
+  payload,
+  recorded_at
+FROM forge_metal.billing_events
+WHERE event_type = 'grant_issued'
+ORDER BY recorded_at DESC
+LIMIT 5
+```
+
+5. **Bucket totals reconcile**
    - Confirm component charges sum into bucket charges, and bucket charges sum into the row charge units.
 
 ```sql
@@ -300,7 +400,7 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-5. **Invoice preview matches projection**
+6. **Invoice preview matches projection**
    - Confirm the latest billing statement line items use SKU display names, bucket display names, and quantity units from the catalog, not legacy `description` fields.
 
 ## Related docs
