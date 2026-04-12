@@ -42,7 +42,6 @@
 
     seed_system_sandbox_project_name: "{{ sandbox_rental_service_auth_project_name | default('sandbox-rental') }}"
     seed_system_identity_project_name: "{{ identity_service_auth_project_name | default('identity-service') }}"
-    seed_system_letters_project_name: "{{ letters_auth_project_name | default('letters') }}"
     seed_system_forgejo_project_name: "{{ forgejo_auth_project_name | default('forgejo') }}"
     seed_system_mailbox_project_name: "{{ mailbox_service_auth_project_name | default('mailbox-service') }}"
 
@@ -207,36 +206,6 @@
       ansible.builtin.assert:
         that: seed_system_identity_project_id is defined
         fail_msg: "Identity-service Zitadel project '{{ seed_system_identity_project_name }}' not found. Run the full deploy first."
-      tags: [identity, dev-oidc]
-
-    - name: Find letters project
-      ansible.builtin.uri:
-        url: "{{ seed_system_zitadel_base_url }}/management/v1/projects/_search"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ seed_system_admin_pat }}"
-          Host: "{{ seed_system_zitadel_host }}"
-        body_format: json
-        body:
-          queries:
-            - nameQuery:
-                name: "{{ seed_system_letters_project_name }}"
-                method: TEXT_QUERY_METHOD_EQUALS
-        return_content: true
-      register: seed_system_letters_project_search
-      no_log: true
-      tags: [identity, dev-oidc]
-
-    - name: Set letters project ID fact
-      ansible.builtin.set_fact:
-        seed_system_letters_project_id: "{{ seed_system_letters_project_search.json.result[0].id }}"
-      when: seed_system_letters_project_search.json.result is defined and seed_system_letters_project_search.json.result | length > 0
-      tags: [identity, dev-oidc]
-
-    - name: Assert letters project exists
-      ansible.builtin.assert:
-        that: seed_system_letters_project_id is defined
-        fail_msg: "Letters Zitadel project '{{ seed_system_letters_project_name }}' not found. Run the full deploy first."
       tags: [identity, dev-oidc]
 
     - name: Find Forgejo project
@@ -540,9 +509,9 @@
           - project_id: "{{ seed_system_identity_project_id }}"
             granted_organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             role_keys:
-              - forge_org_owner
-              - identity_org_admin
-              - identity_org_member
+              - owner
+              - admin
+              - member
             existing_grants: "{{ seed_system_identity_project_grants }}"
       tags: [identity]
 
@@ -573,11 +542,7 @@
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [forge_org_owner]
-          - user_id: "{{ seed_system_users_state.ceo.user_id }}"
-            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
-            project_id: "{{ seed_system_letters_project_id }}"
-            role_keys: [letters_admin]
+            role_keys: [owner]
           - user_id: "{{ seed_system_users_state.ceo.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_forgejo_project_id }}"
@@ -593,11 +558,7 @@
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_admin]
-          - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
-            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
-            project_id: "{{ seed_system_letters_project_id }}"
-            role_keys: [letters_admin]
+            role_keys: [admin]
           - user_id: "{{ seed_system_users_state.platform_agent.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_forgejo_project_id }}"
@@ -613,7 +574,7 @@
           - user_id: "{{ seed_system_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [forge_org_owner]
+            role_keys: [owner]
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
@@ -621,7 +582,7 @@
           - user_id: "{{ seed_system_users_state.acme_user.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_member]
+            role_keys: [member]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
@@ -629,11 +590,7 @@
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [forge_org_owner]
-          - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
-            organization_id: "{{ seed_system_orgs.platform.organization_id }}"
-            project_id: "{{ seed_system_letters_project_id }}"
-            role_keys: [letters_admin]
+            role_keys: [owner]
           - user_id: "{{ seed_system_machine_users_state.platform_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.platform.organization_id }}"
             project_id: "{{ seed_system_forgejo_project_id }}"
@@ -649,7 +606,7 @@
           - user_id: "{{ seed_system_machine_users_state.acme_admin.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_admin]
+            role_keys: [admin]
           - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_sandbox_project_id }}"
@@ -657,7 +614,7 @@
           - user_id: "{{ seed_system_machine_users_state.acme_member.user_id }}"
             organization_id: "{{ seed_system_orgs.acme.organization_id }}"
             project_id: "{{ seed_system_identity_project_id }}"
-            role_keys: [identity_org_member]
+            role_keys: [member]
       tags: [identity]
 
     - name: Upsert seeded project authorizations
@@ -1116,9 +1073,6 @@
           - name: webmail-dev
             project_id: "{{ seed_system_mailbox_project_id }}"
             port: 4245
-          - name: letters-dev
-            project_id: "{{ seed_system_letters_project_id }}"
-            port: 4247
       tags: [dev-oidc]
 
     - name: Search for existing dev OIDC apps
