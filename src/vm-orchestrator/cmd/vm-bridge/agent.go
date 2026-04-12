@@ -22,10 +22,11 @@ type outboundFrame struct {
 }
 
 type agentSession struct {
-	conn      io.ReadWriteCloser
-	codec     *vmproto.Codec
-	bootStart time.Time
-	readyAt   time.Time
+	conn        io.ReadWriteCloser
+	codec       *vmproto.Codec
+	bootStart   time.Time
+	readyAt     time.Time
+	bridgeFault bridgeFaultMode
 
 	controlQ chan outboundFrame
 	logQ     chan outboundFrame
@@ -43,15 +44,16 @@ type agentSession struct {
 	checkpointWaiters map[string]chan vmproto.CheckpointResponse
 }
 
-func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal) error {
+func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode) error {
 	session := &agentSession{
-		conn:      conn,
-		codec:     vmproto.NewCodec(conn, conn),
-		bootStart: bootStart,
-		readyAt:   readyAt,
-		controlQ:  make(chan outboundFrame, vmproto.ControlQueueCapacity),
-		logQ:      make(chan outboundFrame, vmproto.LogQueueCapacity),
-		errCh:     make(chan error, 2),
+		conn:        conn,
+		codec:       vmproto.NewCodec(conn, conn),
+		bootStart:   bootStart,
+		readyAt:     readyAt,
+		bridgeFault: bridgeFault,
+		controlQ:    make(chan outboundFrame, vmproto.ControlQueueCapacity),
+		logQ:        make(chan outboundFrame, vmproto.LogQueueCapacity),
+		errCh:       make(chan error, 2),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -125,7 +127,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		StderrBytes:     session.stderrBytes.Load(),
 		DroppedLogBytes: session.droppedLogBytes.Load(),
 	}
-	resultEnv, err := session.sendControlEnvelope(vmproto.TypeResult, result)
+	resultEnv, err := session.sendResultEnvelope(result)
 	if err != nil {
 		return err
 	}
@@ -247,6 +249,13 @@ func (s *agentSession) waitForRunRequest(controlCh <-chan vmproto.Envelope) (vmp
 					vmproto.ProtocolVersion,
 				)
 			}
+			if rawMode, ok := req.Env[bridgeFaultEnvVar]; ok {
+				mode, err := parseBridgeFaultMode(rawMode)
+				if err != nil {
+					return vmproto.RunRequest{}, protocolStateError("await_run_request", "invalid run_request bridge fault mode: %v", err)
+				}
+				s.bridgeFault = mode
+			}
 			return req, nil
 		case vmproto.TypeCancel:
 			s.jobCancel()
@@ -329,6 +338,21 @@ func (s *agentSession) sendControl(msgType vmproto.MessageType, payload any) err
 
 func (s *agentSession) sendControlEnvelope(msgType vmproto.MessageType, payload any) (vmproto.Envelope, error) {
 	env, err := s.nextEnvelope(msgType, payload)
+	if err != nil {
+		return vmproto.Envelope{}, err
+	}
+	if err := s.enqueueControl(env); err != nil {
+		return vmproto.Envelope{}, err
+	}
+	return env, nil
+}
+
+func (s *agentSession) sendResultEnvelope(result vmproto.Result) (vmproto.Envelope, error) {
+	if s.bridgeFault != bridgeFaultResultSeqZero {
+		return s.sendControlEnvelope(vmproto.TypeResult, result)
+	}
+
+	env, err := vmproto.NewEnvelope(vmproto.TypeResult, 0, time.Since(s.bootStart).Nanoseconds(), result)
 	if err != nil {
 		return vmproto.Envelope{}, err
 	}
