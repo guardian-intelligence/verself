@@ -13,42 +13,40 @@ ssh -o StrictHostKeyChecking=no "${USER}@${HOST}" 'sudo bash -s' <<'EOF'
 set -euo pipefail
 
 echo "=== Stopping all forge-metal services ==="
-systemctl stop caddy forgejo hyperdx-api hyperdx-app \
+systemctl stop caddy forgejo grafana \
   zitadel clickhouse-server postgresql tigerbeetle otelcol verdaccio \
-  mongod containerd nftables 2>/dev/null || true
+  containerd nftables 2>/dev/null || true
 
 echo "=== Disabling all forge-metal services ==="
-systemctl disable caddy forgejo hyperdx-api hyperdx-app \
+systemctl disable caddy forgejo grafana \
   zitadel clickhouse-server postgresql tigerbeetle otelcol verdaccio \
-  mongod containerd nftables 2>/dev/null || true
+  containerd nftables 2>/dev/null || true
 
 echo "=== Removing systemd units ==="
 rm -f /etc/systemd/system/caddy.service \
       /etc/systemd/system/forgejo.service \
-      /etc/systemd/system/hyperdx-api.service \
-      /etc/systemd/system/hyperdx-app.service \
+      /etc/systemd/system/grafana.service \
       /etc/systemd/system/zitadel.service \
       /etc/systemd/system/clickhouse-server.service \
       /etc/systemd/system/postgresql.service \
       /etc/systemd/system/tigerbeetle.service \
       /etc/systemd/system/otelcol.service \
       /etc/systemd/system/verdaccio.service \
-      /etc/systemd/system/mongod.service \
       /etc/systemd/system/containerd.service
 systemctl daemon-reload
 
 echo "=== Removing config directories ==="
-for d in /etc/forgejo /etc/zitadel /etc/clickhouse-server /etc/caddy \
+for d in /etc/forgejo /etc/zitadel /etc/grafana /etc/clickhouse-server /etc/caddy \
          /etc/otelcol /etc/credstore /etc/forge-metal /etc/verdaccio \
          /etc/containerd /etc/nftables.d /etc/wireguard; do
   [ -d "$d" ] && rm -r "$d"
 done
 
 echo "=== Removing data directories ==="
-for d in /var/lib/tigerbeetle /var/lib/forgejo /var/lib/clickhouse \
+for d in /var/lib/tigerbeetle /var/lib/forgejo /var/lib/grafana /var/lib/clickhouse \
          /var/lib/verdaccio /var/lib/forge-metal/guest-artifacts \
          /var/log/clickhouse-server /opt/forge-metal /opt/verdaccio \
-         /var/lib/postgresql /var/lib/mongodb; do
+         /var/log/grafana /var/lib/postgresql; do
   [ -d "$d" ] && rm -r "$d"
 done
 
@@ -56,7 +54,7 @@ echo "=== Destroying ZFS pool ==="
 zpool destroy forgepool 2>/dev/null || true
 
 echo "=== Removing system users/groups ==="
-for u in forgejo zitadel clickhouse tigerbeetle verdaccio caddy; do
+for u in forgejo zitadel grafana clickhouse tigerbeetle verdaccio caddy; do
   userdel -r "$u" 2>/dev/null || true
   groupdel "$u" 2>/dev/null || true
 done

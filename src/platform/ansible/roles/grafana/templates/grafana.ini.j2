@@ -1,0 +1,77 @@
+[paths]
+data = {{ grafana_data_dir }}
+logs = {{ grafana_log_dir }}
+plugins = {{ grafana_plugin_dir }}
+provisioning = {{ grafana_provisioning_dir }}
+
+[server]
+protocol = http
+http_addr = {{ services.grafana.host }}
+http_port = {{ services.grafana.port }}
+domain = {{ grafana_domain }}
+root_url = https://{{ grafana_domain }}/
+serve_from_sub_path = false
+
+[database]
+type = postgres
+host = {{ services.postgresql.host }}:{{ services.postgresql.port }}
+name = {{ grafana_db_name }}
+user = {{ grafana_db_user }}
+password = $__env{GF_DATABASE_PASSWORD}
+ssl_mode = disable
+
+[security]
+admin_user = admin
+admin_password = $__env{GF_SECURITY_ADMIN_PASSWORD}
+secret_key = $__env{GF_SECURITY_SECRET_KEY}
+cookie_secure = true
+cookie_samesite = strict
+disable_gravatar = true
+allow_embedding = false
+
+[users]
+allow_sign_up = false
+auto_assign_org = true
+auto_assign_org_role = Viewer
+
+[analytics]
+reporting_enabled = false
+check_for_updates = false
+check_for_plugin_updates = false
+feedback_links_enabled = false
+
+[plugins]
+plugin_admin_enabled = false
+plugin_admin_external_manage_enabled = false
+plugin_catalog_url =
+preinstall_disabled = true
+preinstall_auto_update = false
+
+[auth]
+disable_login_form = false
+oauth_auto_login = false
+
+[auth.generic_oauth]
+enabled = true
+name = Zitadel
+allow_sign_up = true
+client_id = $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_ID}
+client_secret = $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+scopes = {{ grafana_oidc_scopes }}
+auth_url = https://auth.{{ forge_metal_domain }}/oauth/v2/authorize
+token_url = https://auth.{{ forge_metal_domain }}/oauth/v2/token
+api_url = https://auth.{{ forge_metal_domain }}/oidc/v1/userinfo
+auth_style = InParams
+use_pkce = true
+use_refresh_token = true
+login_attribute_path = preferred_username
+name_attribute_path = name
+email_attribute_path = email
+allow_assign_grafana_admin = false
+
+[auth.anonymous]
+enabled = false
+
+[log]
+mode = console
+level = info

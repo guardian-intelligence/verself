@@ -65,10 +65,10 @@
 	}
 }
 
-{{ hyperdx_domain }} {
+{{ grafana_domain }} {
 	import access_log
 	import waf_detection
-	reverse_proxy {{ services.hyperdx.host }}:{{ services.hyperdx.app_port }}
+	reverse_proxy {{ services.grafana.host }}:{{ services.grafana.port }}
 }
 
 {{ forgejo_domain }} {

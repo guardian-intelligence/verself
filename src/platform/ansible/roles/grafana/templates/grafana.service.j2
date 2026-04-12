@@ -1,0 +1,19 @@
+[Unit]
+Description=Grafana
+After=forge-metal-firewall.target network.target postgresql.service clickhouse-server.service
+Requires=forge-metal-firewall.target postgresql.service clickhouse-server.service
+
+[Service]
+Type=simple
+User=grafana
+Group=grafana
+EnvironmentFile={{ grafana_credstore_dir }}/grafana.env
+WorkingDirectory={{ grafana_install_dir }}
+ExecStart={{ fm_bin }}/grafana server --homepath {{ grafana_install_dir }} --config {{ grafana_config_dir }}/grafana.ini
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

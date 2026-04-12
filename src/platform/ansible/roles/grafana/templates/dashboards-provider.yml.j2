@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: forge-metal
+    orgId: 1
+    folder: Forge Metal
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: {{ grafana_config_dir }}/dashboards
+

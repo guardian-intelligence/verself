@@ -1,0 +1,406 @@
+---
+# Grafana observability UI against the existing ClickHouse store.
+
+- name: Load server tool pins
+  ansible.builtin.set_fact:
+    grafana_server_tools_pins: "{{ lookup('ansible.builtin.file', deploy_profile_server_tools) | from_json }}"
+
+- name: Verify Grafana binary exists in profile
+  ansible.builtin.stat:
+    path: "{{ fm_bin }}/grafana"
+  register: grafana_binary
+  failed_when: not grafana_binary.stat.exists
+
+- name: Create Grafana system group
+  ansible.builtin.group:
+    name: grafana
+    system: true
+
+- name: Create Grafana system user
+  ansible.builtin.user:
+    name: grafana
+    group: grafana
+    system: true
+    home: "{{ grafana_data_dir }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create Grafana directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('grafana') }}"
+    group: "{{ item.group | default('grafana') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ grafana_config_dir }}"
+      owner: root
+      group: grafana
+      mode: "0750"
+    - path: "{{ grafana_provisioning_dir }}"
+      owner: root
+      group: grafana
+      mode: "0750"
+    - path: "{{ grafana_provisioning_dir }}/datasources"
+      owner: root
+      group: grafana
+      mode: "0750"
+    - path: "{{ grafana_provisioning_dir }}/dashboards"
+      owner: root
+      group: grafana
+      mode: "0750"
+    - path: "{{ grafana_config_dir }}/dashboards"
+      owner: root
+      group: grafana
+      mode: "0750"
+    - path: "{{ grafana_data_dir }}"
+      mode: "0750"
+    - path: "{{ grafana_plugin_dir }}"
+      mode: "0750"
+    - path: "{{ grafana_log_dir }}"
+      mode: "0750"
+    - path: "{{ grafana_credstore_dir }}"
+      owner: root
+      group: grafana
+      mode: "0750"
+
+- name: Stop and disable legacy HyperDX and MongoDB services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - hyperdx-api
+    - hyperdx-app
+    - mongod
+  failed_when: false
+
+- name: Remove legacy HyperDX and MongoDB systemd units
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/hyperdx-api.service
+    - /etc/systemd/system/hyperdx-app.service
+    - /etc/systemd/system/mongod.service.d
+
+- name: Remove legacy MongoDB apt packages
+  ansible.builtin.apt:
+    name:
+      - mongodb-database-tools
+      - mongodb-mongosh
+      - mongodb-org
+      - mongodb-org-database
+      - mongodb-org-database-tools-extra
+      - mongodb-org-mongos
+      - mongodb-org-server
+      - mongodb-org-shell
+      - mongodb-org-tools
+    state: absent
+    purge: true
+
+- name: Remove legacy MongoDB apt repository files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/sources.list.d/mongodb-org-7.0.list
+    - /usr/share/keyrings/mongodb-server-7.0.gpg
+
+- name: Remove legacy HyperDX and MongoDB state
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/hyperdx
+    - /etc/credstore/hyperdx
+    - /opt/hyperdx
+    - /var/lib/mongodb
+    - /var/log/mongodb
+
+- name: Ensure Grafana generated secrets exist
+  ansible.builtin.copy:
+    content: "{{ item.value }}"
+    dest: "{{ grafana_credstore_dir }}/{{ item.name }}"
+    owner: root
+    group: grafana
+    mode: "0640"
+    force: false
+  loop:
+    - name: admin-password
+      value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
+    - name: db-password
+      value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
+    - name: clickhouse-password
+      value: "{{ lookup('community.general.random_string', length=32, upper=true, lower=true, numbers=true, special=false) }}"
+    - name: secret-key
+      value: "{{ lookup('community.general.random_string', length=64, upper=true, lower=true, numbers=true, special=false) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+
+- name: Read Grafana generated secrets
+  ansible.builtin.slurp:
+    src: "{{ grafana_credstore_dir }}/{{ item }}"
+  loop:
+    - admin-password
+    - db-password
+    - clickhouse-password
+    - secret-key
+  register: grafana_secret_files
+  no_log: true
+
+- name: Set Grafana secret facts
+  ansible.builtin.set_fact:
+    grafana_admin_password: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'admin-password') | first).content | b64decode | trim }}"
+    grafana_db_password: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'db-password') | first).content | b64decode | trim }}"
+    grafana_clickhouse_password: >-
+      {{ (grafana_secret_files.results | selectattr('item', 'equalto', 'clickhouse-password') | first).content | b64decode | trim }}
+    grafana_secret_key: "{{ (grafana_secret_files.results | selectattr('item', 'equalto', 'secret-key') | first).content | b64decode | trim }}"
+  no_log: true
+
+- name: Configure Grafana Zitadel OIDC application
+  ansible.builtin.include_tasks: zitadel_app.yml
+
+- name: Ensure Grafana PostgreSQL role and database exist
+  module_defaults:
+    community.postgresql.postgresql_user:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      trust_input: false
+    community.postgresql.postgresql_db:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      maintenance_db: postgres
+      trust_input: false
+    community.postgresql.postgresql_owner:
+      login_host: "{{ services.postgresql.host }}"
+      login_port: "{{ services.postgresql.port }}"
+      login_user: postgres
+      login_password: "{{ postgresql_admin_password }}"
+      login_db: postgres
+      trust_input: false
+  block:
+    - name: Ensure Grafana PostgreSQL user exists
+      community.postgresql.postgresql_user:
+        name: "{{ grafana_db_user }}"
+        password: "{{ grafana_db_password }}"
+        role_attr_flags: LOGIN
+      no_log: true
+
+    - name: Ensure Grafana PostgreSQL database exists
+      community.postgresql.postgresql_db:
+        name: "{{ grafana_db_name }}"
+        owner: "{{ grafana_db_user }}"
+        state: present
+      no_log: true
+
+    - name: Ensure Grafana PostgreSQL database ownership
+      community.postgresql.postgresql_owner:
+        obj_name: "{{ grafana_db_name }}"
+        obj_type: database
+        new_owner: "{{ grafana_db_user }}"
+      no_log: true
+
+- name: Ensure Grafana ClickHouse user exists with read-only grants
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --multiquery <<'SQL'
+    CREATE USER IF NOT EXISTS {{ grafana_clickhouse_user }} IDENTIFIED WITH sha256_password BY '{{ grafana_clickhouse_password }}' HOST LOCAL;
+    ALTER USER {{ grafana_clickhouse_user }} IDENTIFIED WITH sha256_password BY '{{ grafana_clickhouse_password }}' HOST LOCAL;
+    GRANT SELECT ON default.* TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON forge_metal.* TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON system.query_log TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON system.tables TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON system.columns TO {{ grafana_clickhouse_user }};
+    GRANT SELECT ON system.databases TO {{ grafana_clickhouse_user }};
+    SQL
+  args:
+    executable: /bin/bash
+  environment:
+    CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
+  changed_when: false
+  no_log: true
+- name: Read installed ClickHouse datasource plugin marker
+  ansible.builtin.slurp:
+    src: "{{ grafana_plugin_dir }}/.grafana-clickhouse-datasource-version"
+  register: grafana_clickhouse_plugin_marker
+  failed_when: false
+  no_log: true
+
+- name: Check installed ClickHouse datasource plugin directory
+  ansible.builtin.stat:
+    path: "{{ grafana_plugin_dir }}/{{ grafana_server_tools_pins.grafana_clickhouse_datasource.plugin_dir }}"
+  register: grafana_clickhouse_plugin_dir
+
+- name: Determine whether ClickHouse datasource plugin needs install
+  ansible.builtin.set_fact:
+    grafana_clickhouse_plugin_needs_install: >-
+      {{
+        grafana_clickhouse_plugin_marker is failed
+        or not grafana_clickhouse_plugin_dir.stat.exists
+        or (
+          grafana_clickhouse_plugin_marker.content | default('') | b64decode | trim
+        ) != grafana_server_tools_pins.grafana_clickhouse_datasource.version
+      }}
+
+- name: Remove old ClickHouse datasource plugin when version drifts
+  ansible.builtin.file:
+    path: "{{ grafana_plugin_dir }}/{{ grafana_server_tools_pins.grafana_clickhouse_datasource.plugin_dir }}"
+    state: absent
+  when: grafana_clickhouse_plugin_needs_install | bool
+
+- name: Remove Grafana unmanaged preinstalled plugins
+  ansible.builtin.file:
+    path: "{{ grafana_plugin_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ grafana_unmanaged_plugin_dirs }}"
+  notify: restart grafana
+
+- name: Download Grafana ClickHouse datasource plugin
+  ansible.builtin.get_url:
+    url: "{{ grafana_server_tools_pins.grafana_clickhouse_datasource.url }}"
+    dest: "{{ deploy_profile_staging_dir }}/grafana-clickhouse-datasource-{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}.zip"
+    checksum: "sha256:{{ grafana_server_tools_pins.grafana_clickhouse_datasource.sha256 }}"
+    mode: "0644"
+  when: grafana_clickhouse_plugin_needs_install | bool
+
+- name: Extract Grafana ClickHouse datasource plugin
+  ansible.builtin.unarchive:
+    src: "{{ deploy_profile_staging_dir }}/grafana-clickhouse-datasource-{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}.zip"
+    dest: "{{ grafana_plugin_dir }}"
+    remote_src: true
+    owner: grafana
+    group: grafana
+  when: grafana_clickhouse_plugin_needs_install | bool
+  notify: restart grafana
+
+- name: Record installed ClickHouse datasource plugin version
+  ansible.builtin.copy:
+    content: "{{ grafana_server_tools_pins.grafana_clickhouse_datasource.version }}\n"
+    dest: "{{ grafana_plugin_dir }}/.grafana-clickhouse-datasource-version"
+    owner: grafana
+    group: grafana
+    mode: "0640"
+  when: grafana_clickhouse_plugin_needs_install | bool
+
+- name: Deploy Grafana configuration
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: "{{ grafana_config_dir }}/grafana.ini"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Deploy Grafana secret environment
+  ansible.builtin.template:
+    src: grafana.env.j2
+    dest: "{{ grafana_credstore_dir }}/grafana.env"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+  no_log: true
+
+- name: Deploy Grafana ClickHouse datasource provisioning
+  ansible.builtin.template:
+    src: clickhouse-datasource.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/datasources/clickhouse.yml"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Deploy Grafana dashboard provider
+  ansible.builtin.template:
+    src: dashboards-provider.yml.j2
+    dest: "{{ grafana_provisioning_dir }}/dashboards/forge-metal.yml"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: Set expected Grafana dashboard filenames
+  ansible.builtin.set_fact:
+    grafana_dashboard_filenames: >-
+      {{ grafana_dashboards | map(attribute='uid') | map('regex_replace', '$', '.json') | list }}
+
+- name: List existing provisioned Grafana dashboards
+  ansible.builtin.find:
+    paths: "{{ grafana_config_dir }}/dashboards"
+    patterns: "*.json"
+    file_type: file
+  register: grafana_existing_dashboard_files
+
+- name: Remove stale provisioned Grafana dashboards
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ grafana_existing_dashboard_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: (item.path | basename) not in grafana_dashboard_filenames
+  notify: restart grafana
+
+- name: Deploy Grafana dashboards
+  ansible.builtin.template:
+    src: dashboard.json.j2
+    dest: "{{ grafana_config_dir }}/dashboards/{{ dashboard.uid }}.json"
+    owner: root
+    group: grafana
+    mode: "0640"
+  loop: "{{ grafana_dashboards }}"
+  loop_control:
+    label: "{{ dashboard.title }}"
+    loop_var: dashboard
+  notify: restart grafana
+
+- name: Deploy Grafana systemd unit
+  ansible.builtin.template:
+    src: grafana.service.j2
+    dest: /etc/systemd/system/grafana.service
+    mode: "0644"
+  notify: restart grafana
+
+- name: Apply Grafana unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd:
+    name: grafana
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Grafana HTTP health
+  ansible.builtin.uri:
+    url: "http://{{ services.grafana.host }}:{{ services.grafana.port }}/api/health"
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 30
+  delay: 1
+
+- name: Converge Grafana admin password
+  ansible.builtin.command:
+    argv:
+      - "{{ fm_bin }}/grafana"
+      - cli
+      - --homepath
+      - "{{ grafana_install_dir }}"
+      - --config
+      - "{{ grafana_config_dir }}/grafana.ini"
+      - admin
+      - reset-admin-password
+      - "{{ grafana_admin_password }}"
+  environment:
+    GF_DATABASE_PASSWORD: "{{ grafana_db_password }}"
+    GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+    GF_SECURITY_SECRET_KEY: "{{ grafana_secret_key }}"
+  changed_when: false
+  no_log: true

@@ -1,0 +1,86 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+{% for panel in dashboard.panels %}
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "{{ grafana_datasource_uid }}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "{{ panel.unit }}"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": {{ panel.h }},
+        "w": {{ panel.w }},
+        "x": {{ panel.x }},
+        "y": {{ panel.y }}
+      },
+      "id": {{ panel.id }},
+      "options": {% if panel.type == 'table' %}{
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      }{% else %}{
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }{% endif %},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "{{ grafana_datasource_uid }}"
+          },
+          "format": {{ panel.query_format }},
+          "queryType": "{{ panel.query_type }}",
+          "rawSql": {{ (panel.raw_sql ~ "\n/* fm:grafana dashboard=" ~ dashboard.uid ~ " panel=" ~ panel.uid ~ " */") | to_json }},
+          "refId": "A"
+        }
+      ],
+      "title": {{ panel.title | to_json }},
+      "type": "{{ panel.type }}"
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": {{ dashboard.tags | to_json }},
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": {{ dashboard.title | to_json }},
+  "uid": "{{ dashboard.uid }}",
+  "version": 1,
+  "weekStart": ""
+}

@@ -16,18 +16,13 @@ services:
     host: "127.0.0.1"
     grpc_port: 4317
     http_port: 4318
-  mongodb:
-    host: "127.0.0.1"
-    port: 27017
   forgejo:
     host: "127.0.0.1"
     port: 3000
     ssh_port: 2222
-  hyperdx:
+  grafana:
     host: "127.0.0.1"
-    app_port: 8080
-    api_port: 8000
-    opamp_port: 4320
+    port: 4300
   verdaccio:
     host: "127.0.0.1"
     listen_host: "0.0.0.0"

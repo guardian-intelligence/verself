@@ -1,4 +1,0 @@
----
-# deploy_profile: provides node and supporting build tools at fm_bin.
-dependencies:
-  - role: deploy_profile
