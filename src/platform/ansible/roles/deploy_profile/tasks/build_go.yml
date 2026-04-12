@@ -137,7 +137,7 @@
 - name: Trigger sandbox-rental-service restart when binary changed
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_sandbox_rental_service_binary_copy.changed | default(false)
-  notify: restart sandbox-rental-service
+  notify: deploy-profile restart sandbox-rental-service
 
 - name: Set mailbox-service binary copy fact
   ansible.builtin.set_fact:
@@ -154,7 +154,7 @@
 - name: Trigger mailbox-service restart when binary changed
   ansible.builtin.command: /bin/true
   changed_when: deploy_profile_mailbox_service_binary_copy.changed | default(false)
-  notify: restart mailbox-service
+  notify: deploy-profile restart mailbox-service
 
 - name: Set identity-service binary copy fact
   ansible.builtin.set_fact:

@@ -12,3 +12,31 @@
     name: identity-service
     state: restarted
   when: deploy_profile_identity_service_unit_file.stat.exists
+
+- name: Check if mailbox-service unit exists for deploy profile restart
+  listen: deploy-profile restart mailbox-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/mailbox-service.service
+  register: deploy_profile_mailbox_service_unit_file
+
+- name: Restart mailbox-service from deploy profile
+  listen: deploy-profile restart mailbox-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: mailbox-service
+    state: restarted
+  when: deploy_profile_mailbox_service_unit_file.stat.exists
+
+- name: Check if sandbox-rental-service unit exists for deploy profile restart
+  listen: deploy-profile restart sandbox-rental-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/sandbox-rental-service.service
+  register: deploy_profile_sandbox_rental_service_unit_file
+
+- name: Restart sandbox-rental-service from deploy profile
+  listen: deploy-profile restart sandbox-rental-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: sandbox-rental-service
+    state: restarted
+  when: deploy_profile_sandbox_rental_service_unit_file.stat.exists
