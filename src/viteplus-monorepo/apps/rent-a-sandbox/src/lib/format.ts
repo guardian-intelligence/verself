@@ -12,6 +12,7 @@ const ledgerPreciseMoneyFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 6,
 });
+const centsFormatters = new Map<string, Intl.NumberFormat>();
 
 export function formatDateUTC(value: Date | number | string): string {
   return formatStableUTCDateTime(
@@ -38,6 +39,20 @@ export function formatDateTimeUTC(value: Date | number | string): string {
 
 export function formatInteger(value: number): string {
   return numberFormatter.format(value);
+}
+
+export function formatCents(value: number, currency: string): string {
+  const normalizedCurrency = currency.toUpperCase();
+  const key = `en-US:${normalizedCurrency}`;
+  let formatter = centsFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+    });
+    centsFormatters.set(key, formatter);
+  }
+  return formatter.format(value / 100);
 }
 
 export function formatLedgerAmount(value: number): string {

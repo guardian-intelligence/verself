@@ -8,7 +8,7 @@ Lives at `src/viteplus-monorepo/apps/rent-a-sandbox/` within a pnpm workspace ma
 
 ### No useEffect
 
-This codebase has zero `useEffect`. Do not introduce any. Every common `useEffect` pattern has a proper TanStack replacement:
+Do not introduce useEffect. Every common `useEffect` pattern has a proper TanStack or other library replacement:
 
 | Anti-pattern                                                                      | Correct replacement                                                                                                          |
 | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -47,3 +47,7 @@ Auth state is server-owned (`@forge-metal/auth-web/server` + HTTP-only session c
 - Seed loader-backed queries with `queryClient.ensureQueryData(...)` or feature `load*` helpers, then read them with `useSuspenseQuery(...)` inside the route component.
 - Keep mutation invalidation and navigation glue in `src/features/*/mutations.ts` when possible so route files stay declarative.
 - Do not add a shared `query-keys.ts` layer. Feature-local `queryOptions(...)` factories are the source of truth for keys, stale policies, and polling.
+
+## ShadCN/ui
+
+Use the /shadcn skill when working in this repo. All components are installed. Blocks are not installed.

@@ -1,7 +1,12 @@
 import type { SandboxHarness } from "./harness";
 import { env } from "./env";
 
-export async function completeStripeCheckout(app: SandboxHarness): Promise<void> {
+export async function completeStripeCheckout(
+  app: SandboxHarness,
+  options: { returnURLIncludes?: string } = {},
+): Promise<void> {
+  const returnURLIncludes = options.returnURLIncludes ?? "/billing?purchased=true";
+
   await app.waitForCondition("stripe checkout redirect", 30_000, async () => {
     return app.page.url().includes("checkout.stripe.com") ? true : false;
   });
@@ -49,8 +54,8 @@ export async function completeStripeCheckout(app: SandboxHarness): Promise<void>
     await postalCode.fill("10001");
   }
 
-  await app.page.getByRole("button", { name: /^Pay/ }).click();
+  await app.page.getByRole("button", { name: /^(Pay|Subscribe)/ }).click();
   await app.waitForCondition("billing return redirect", 60_000, async () => {
-    return app.page.url().includes("/billing?purchased=true") ? true : false;
+    return app.page.url().includes(returnURLIncludes) ? true : false;
   });
 }

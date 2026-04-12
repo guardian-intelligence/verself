@@ -77,13 +77,29 @@ type StatementInput struct {
 	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255"`
 }
 
+type ProductPath struct {
+	ProductID string `path:"product_id" minLength:"1" maxLength:"255"`
+}
+
+type SubscriptionPath struct {
+	SubscriptionID string `path:"subscription_id" pattern:"^[0-9]+$"`
+}
+
+type CancelSubscriptionInput struct {
+	SubscriptionPath
+	Body apiwire.BillingCancelSubscriptionRequest `required:"true"`
+}
+
 type (
-	BalanceResponse       = apiwire.BillingBalance
-	GrantResponse         = apiwire.BillingGrant
-	GrantsResponse        = apiwire.BillingGrants
-	StatementResponse     = apiwire.BillingStatement
-	SubscriptionsResponse = apiwire.BillingSubscriptions
-	SubscriptionResponse  = apiwire.BillingSubscription
+	GrantResponse              = apiwire.BillingGrant
+	GrantsResponse             = apiwire.BillingGrants
+	StatementResponse          = apiwire.BillingStatement
+	SubscriptionsResponse      = apiwire.BillingSubscriptions
+	SubscriptionResponse       = apiwire.BillingSubscription
+	PlansResponse              = apiwire.BillingPlans
+	PlanResponse               = apiwire.BillingPlan
+	CancelSubscriptionResponse = apiwire.BillingCancelSubscriptionResponse
+	EntitlementsResponse       = apiwire.BillingEntitlementsView
 )
 
 func billingOrgID(id string) (billing.OrgID, error) {
@@ -160,13 +176,15 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	}
 
 	public := huma.NewGroup(api, "/internal/billing/v1")
-	huma.Get(public, "/orgs/{org_id}/balance", handler.getBalance, operation("get-balance", "Get org grant balance"))
+	huma.Get(public, "/orgs/{org_id}/entitlements", handler.getEntitlements, operation("get-entitlements", "Get the entitlements view for an org"))
 	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
 	huma.Get(public, "/orgs/{org_id}/statement", handler.getStatement, operation("get-statement", "Get current billing statement for an org"))
 	huma.Get(public, "/orgs/{org_id}/subscriptions", handler.listSubscriptions, operation("list-subscriptions", "List subscriptions for an org"))
+	huma.Get(public, "/products/{product_id}/plans", handler.listPlans, operation("list-plans", "List active subscription plans for a product"))
 	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
 	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusInternalServerError))
 	huma.Post(public, "/portal", handler.createPortal, operation("create-portal", "Create a Stripe customer portal session", http.StatusUnprocessableEntity, http.StatusInternalServerError))
+	huma.Post(public, "/subscriptions/{subscription_id}/cancel", handler.cancelSubscription, operation("cancel-subscription", "Cancel a Stripe subscription", http.StatusNotFound, http.StatusInternalServerError))
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
@@ -185,7 +203,7 @@ func operation(id, summary string, errors ...int) func(*huma.Operation) {
 	}
 }
 
-func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[BalanceResponse], error) {
+func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[EntitlementsResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -194,18 +212,11 @@ func (h *Handler) getBalance(ctx context.Context, input *OrgPath) (*body[Balance
 	if err != nil {
 		return nil, err
 	}
-	balance, err := client.GetOrgBalance(ctx, orgID)
+	view, err := client.ListEntitlementsView(ctx, orgID)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "get balance", err, "org_id", uint64(orgID))
+		return nil, h.internalServerError(ctx, "get entitlements", err, "org_id", uint64(orgID))
 	}
-	return &body[BalanceResponse]{Body: BalanceResponse{
-		OrgID:             apiwire.Uint64(uint64(orgID)),
-		FreeTierAvailable: apiwire.Uint64(balance.FreeTierAvailable),
-		FreeTierPending:   apiwire.Uint64(balance.FreeTierPending),
-		CreditAvailable:   apiwire.Uint64(balance.CreditAvailable),
-		CreditPending:     apiwire.Uint64(balance.CreditPending),
-		TotalAvailable:    apiwire.Uint64(balance.TotalAvailable),
-	}}, nil
+	return &body[EntitlementsResponse]{Body: entitlementsResponse(orgID, view)}, nil
 }
 
 func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[GrantsResponse], error) {
@@ -228,6 +239,7 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 			ScopeType:           grant.ScopeType.String(),
 			ScopeProductID:      grant.ScopeProductID,
 			ScopeBucketID:       grant.ScopeBucketID,
+			ScopeSKUID:          grant.ScopeSKUID,
 			Source:              grant.Source.String(),
 			SourceReferenceID:   grant.SourceReferenceID,
 			EntitlementPeriodID: grant.EntitlementPeriodID,
@@ -329,6 +341,71 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 	}
 }
 
+func entitlementsResponse(orgID billing.OrgID, view billing.EntitlementsView) apiwire.BillingEntitlementsView {
+	return apiwire.BillingEntitlementsView{
+		OrgID:     apiwire.Uint64(uint64(orgID)),
+		Universal: entitlementPoolList(view.Universal),
+		Products:  entitlementProductSections(view.Products),
+	}
+}
+
+func entitlementProductSections(in []billing.EntitlementProductSection) []apiwire.BillingEntitlementProductSection {
+	out := make([]apiwire.BillingEntitlementProductSection, 0, len(in))
+	for _, section := range in {
+		out = append(out, apiwire.BillingEntitlementProductSection{
+			ProductID:    section.ProductID,
+			DisplayName:  section.DisplayName,
+			ProductPools: entitlementPoolList(section.ProductPools),
+			Buckets:      entitlementBucketSections(section.Buckets),
+		})
+	}
+	return out
+}
+
+func entitlementBucketSections(in []billing.EntitlementBucketSection) []apiwire.BillingEntitlementBucketSection {
+	out := make([]apiwire.BillingEntitlementBucketSection, 0, len(in))
+	for _, section := range in {
+		out = append(out, apiwire.BillingEntitlementBucketSection{
+			BucketID:    section.BucketID,
+			DisplayName: section.DisplayName,
+			Pools:       entitlementPoolList(section.Pools),
+		})
+	}
+	return out
+}
+
+func entitlementPoolList(in []billing.EntitlementPool) []apiwire.BillingEntitlementPool {
+	out := make([]apiwire.BillingEntitlementPool, 0, len(in))
+	for _, pool := range in {
+		entries := make([]apiwire.BillingEntitlementGrantEntry, 0, len(pool.Entries))
+		for _, entry := range pool.Entries {
+			entries = append(entries, apiwire.BillingEntitlementGrantEntry{
+				GrantID:     entry.GrantID,
+				Available:   apiwire.Uint64(entry.Available),
+				Pending:     apiwire.Uint64(entry.Pending),
+				StartsAt:    entry.StartsAt,
+				PeriodStart: entry.PeriodStart,
+				PeriodEnd:   entry.PeriodEnd,
+				ExpiresAt:   entry.ExpiresAt,
+			})
+		}
+		out = append(out, apiwire.BillingEntitlementPool{
+			ScopeType:      pool.ScopeType.String(),
+			ProductID:      pool.ProductID,
+			ProductDisplay: pool.ProductDisplay,
+			BucketID:       pool.BucketID,
+			BucketDisplay:  pool.BucketDisplay,
+			SKUID:          pool.SKUID,
+			SKUDisplay:     pool.SKUDisplay,
+			CoverageLabel:  pool.CoverageLabel,
+			Source:         pool.Source.String(),
+			SourceLabel:    billing.GrantSourceLabel(pool.Source),
+			Entries:        entries,
+		})
+	}
+	return out
+}
+
 func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[SubscriptionsResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
@@ -358,6 +435,33 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 		})
 	}
 	return &body[SubscriptionsResponse]{Body: SubscriptionsResponse{Subscriptions: out}}, nil
+}
+
+func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[PlansResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	plans, err := client.ListPlans(ctx, input.ProductID)
+	if err != nil {
+		return nil, h.internalServerError(ctx, "list plans", err, "product_id", input.ProductID)
+	}
+	out := make([]PlanResponse, 0, len(plans))
+	for _, plan := range plans {
+		out = append(out, PlanResponse{
+			PlanID:             plan.PlanID,
+			ProductID:          plan.ProductID,
+			DisplayName:        plan.DisplayName,
+			BillingMode:        plan.BillingMode,
+			Tier:               plan.Tier,
+			Currency:           plan.Currency,
+			MonthlyAmountCents: apiwire.Uint64(plan.MonthlyAmountCents),
+			AnnualAmountCents:  apiwire.Uint64(plan.AnnualAmountCents),
+			Active:             plan.Active,
+			IsDefault:          plan.IsDefault,
+		})
+	}
+	return &body[PlansResponse]{Body: PlansResponse{Plans: out}}, nil
 }
 
 func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.BillingCreateCheckoutRequest]) (*body[apiwire.BillingURLResponse], error) {
@@ -394,6 +498,45 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.Bi
 		return nil, h.internalServerError(ctx, "create subscription checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) cancelSubscription(ctx context.Context, input *CancelSubscriptionInput) (*body[CancelSubscriptionResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	subscriptionID, err := apiwire.ParseInt64(input.SubscriptionID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("subscription_id must be positive", err)
+	}
+	if subscriptionID <= 0 {
+		return nil, huma.Error400BadRequest("subscription_id must be positive")
+	}
+	subscription, err := client.CancelSubscription(ctx, orgID, subscriptionID)
+	if err != nil {
+		if errors.Is(err, billing.ErrSubscriptionNotFound) {
+			return nil, huma.Error404NotFound("subscription not found", err)
+		}
+		return nil, h.internalServerError(ctx, "cancel subscription", err, "org_id", uint64(orgID), "subscription_id", subscriptionID)
+	}
+	return &body[CancelSubscriptionResponse]{Body: CancelSubscriptionResponse{
+		Subscription: SubscriptionResponse{
+			SubscriptionID:     apiwire.Int64(subscription.SubscriptionID),
+			ContractID:         subscription.ContractID,
+			ProductID:          subscription.ProductID,
+			PlanID:             subscription.PlanID,
+			Cadence:            subscription.Cadence,
+			Status:             subscription.Status,
+			PaymentState:       string(subscription.PaymentState),
+			EntitlementState:   string(subscription.EntitlementState),
+			CurrentPeriodStart: subscription.CurrentPeriodStart,
+			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
+		},
+	}}, nil
 }
 
 func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingCreatePortalSessionRequest]) (*body[apiwire.BillingURLResponse], error) {

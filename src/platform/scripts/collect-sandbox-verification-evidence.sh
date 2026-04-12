@@ -188,6 +188,23 @@ ORDER BY Timestamp
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/otel_traces.tsv"
 
+ch_query "
+SELECT
+  event_id,
+  event_type,
+  aggregate_type,
+  aggregate_id,
+  org_id,
+  product_id,
+  occurred_at,
+  payload,
+  recorded_at
+FROM forge_metal.billing_events
+WHERE occurred_at BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
+ORDER BY occurred_at, event_id
+FORMAT TSVWithNames
+" >"${output_dir}/clickhouse/billing_events.tsv"
+
 if [[ -n "${execution_id}" ]]; then
   remote_psql sandbox_rental "
   COPY (
@@ -367,6 +384,7 @@ Collected files:
 - clickhouse/metering.tsv
 - clickhouse/otel_logs.tsv
 - clickhouse/otel_traces.tsv
+- clickhouse/billing_events.tsv
 - postgres/execution.csv
 - postgres/execution_billing_windows.csv
 - postgres/billing_windows.csv

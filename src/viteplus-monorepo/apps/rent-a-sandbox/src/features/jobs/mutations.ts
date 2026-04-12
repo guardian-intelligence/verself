@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authQueryKey } from "@forge-metal/auth-web/isomorphic";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { balanceQuery } from "~/features/billing/queries";
+import { entitlementsQuery } from "~/features/billing/queries";
 import { submitDirectExecution, type ExecutionRequest } from "~/server-fns/api";
 
 export interface CreateExecutionResult {
@@ -23,7 +23,7 @@ export function useCreateExecutionMutation({
     onSuccess: async (execution) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: authQueryKey(auth, "jobs") }),
-        queryClient.invalidateQueries({ queryKey: balanceQuery(auth).queryKey }),
+        queryClient.invalidateQueries({ queryKey: entitlementsQuery(auth).queryKey }),
       ]);
       await onSuccess?.(execution);
     },

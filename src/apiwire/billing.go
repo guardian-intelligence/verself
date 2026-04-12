@@ -6,20 +6,12 @@ const MaxSafeInteger = 9007199254740991
 
 type OrgID = DecimalUint64
 
-type BillingBalance struct {
-	OrgID             OrgID         `json:"org_id"`
-	FreeTierAvailable DecimalUint64 `json:"free_tier_available"`
-	FreeTierPending   DecimalUint64 `json:"free_tier_pending"`
-	CreditAvailable   DecimalUint64 `json:"credit_available"`
-	CreditPending     DecimalUint64 `json:"credit_pending"`
-	TotalAvailable    DecimalUint64 `json:"total_available"`
-}
-
 type BillingGrant struct {
 	GrantID             string        `json:"grant_id"`
 	ScopeType           string        `json:"scope_type"`
 	ScopeProductID      string        `json:"scope_product_id"`
 	ScopeBucketID       string        `json:"scope_bucket_id"`
+	ScopeSKUID          string        `json:"scope_sku_id"`
 	Source              string        `json:"source"`
 	SourceReferenceID   string        `json:"source_reference_id"`
 	EntitlementPeriodID string        `json:"entitlement_period_id"`
@@ -117,6 +109,66 @@ type BillingSubscriptions struct {
 	Subscriptions []BillingSubscription `json:"subscriptions"`
 }
 
+type BillingPlan struct {
+	PlanID             string        `json:"plan_id"`
+	ProductID          string        `json:"product_id"`
+	DisplayName        string        `json:"display_name"`
+	BillingMode        string        `json:"billing_mode"`
+	Tier               string        `json:"tier"`
+	Currency           string        `json:"currency"`
+	MonthlyAmountCents DecimalUint64 `json:"monthly_amount_cents"`
+	AnnualAmountCents  DecimalUint64 `json:"annual_amount_cents"`
+	Active             bool          `json:"active"`
+	IsDefault          bool          `json:"is_default"`
+}
+
+type BillingPlans struct {
+	Plans []BillingPlan `json:"plans"`
+}
+
+type BillingEntitlementsView struct {
+	OrgID     OrgID                              `json:"org_id"`
+	Universal []BillingEntitlementPool           `json:"universal"`
+	Products  []BillingEntitlementProductSection `json:"products"`
+}
+
+type BillingEntitlementProductSection struct {
+	ProductID    string                            `json:"product_id"`
+	DisplayName  string                            `json:"display_name"`
+	ProductPools []BillingEntitlementPool          `json:"product_pools"`
+	Buckets      []BillingEntitlementBucketSection `json:"buckets"`
+}
+
+type BillingEntitlementBucketSection struct {
+	BucketID    string                   `json:"bucket_id"`
+	DisplayName string                   `json:"display_name"`
+	Pools       []BillingEntitlementPool `json:"pools"`
+}
+
+type BillingEntitlementPool struct {
+	ScopeType      string                          `json:"scope_type" enum:"account,product,bucket,sku"`
+	ProductID      string                          `json:"product_id"`
+	ProductDisplay string                          `json:"product_display"`
+	BucketID       string                          `json:"bucket_id"`
+	BucketDisplay  string                          `json:"bucket_display"`
+	SKUID          string                          `json:"sku_id"`
+	SKUDisplay     string                          `json:"sku_display"`
+	CoverageLabel  string                          `json:"coverage_label"`
+	Source         string                          `json:"source" enum:"free_tier,subscription,purchase,promo,refund"`
+	SourceLabel    string                          `json:"source_label"`
+	Entries        []BillingEntitlementGrantEntry  `json:"entries"`
+}
+
+type BillingEntitlementGrantEntry struct {
+	GrantID     string        `json:"grant_id"`
+	Available   DecimalUint64 `json:"available"`
+	Pending     DecimalUint64 `json:"pending"`
+	StartsAt    time.Time     `json:"starts_at"`
+	PeriodStart *time.Time    `json:"period_start,omitempty"`
+	PeriodEnd   *time.Time    `json:"period_end,omitempty"`
+	ExpiresAt   *time.Time    `json:"expires_at,omitempty"`
+}
+
 type BillingCreateCheckoutRequest struct {
 	OrgID       OrgID  `json:"org_id"`
 	ProductID   string `json:"product_id" minLength:"1" maxLength:"255"`
@@ -136,6 +188,14 @@ type BillingCreateSubscriptionRequest struct {
 type BillingCreatePortalSessionRequest struct {
 	OrgID     OrgID  `json:"org_id"`
 	ReturnURL string `json:"return_url" minLength:"1" maxLength:"2048"`
+}
+
+type BillingCancelSubscriptionRequest struct {
+	OrgID OrgID `json:"org_id"`
+}
+
+type BillingCancelSubscriptionResponse struct {
+	Subscription BillingSubscription `json:"subscription"`
 }
 
 type BillingApplySubscriptionProviderEventRequest struct {

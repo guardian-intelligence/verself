@@ -332,16 +332,15 @@ export class SandboxHarness {
     const skipButton = this.page.getByRole("button", { name: /^Skip$/ });
     const dashboardHeading = this.page.getByRole("heading", { name: "Dashboard" });
     const signOutLink = this.page.getByRole("link", { name: "Sign out" });
-    const balanceCard = this.page.getByTestId("balance-card");
 
     await this.goto("/");
-    if (await isDashboardReady({ balanceCard, dashboardHeading, signOutLink })) {
+    if (await isDashboardReady({ dashboardHeading, signOutLink })) {
       return;
     }
 
     await this.goto("/login");
     await this.waitForCondition("login flow", 30_000, async () => {
-      if (await isDashboardReady({ balanceCard, dashboardHeading, signOutLink })) {
+      if (await isDashboardReady({ dashboardHeading, signOutLink })) {
         return true;
       }
 
@@ -414,28 +413,27 @@ export class SandboxHarness {
       return false;
     });
 
-    await expect(balanceCard).toBeVisible({ timeout: shortTimeoutMS });
+    await expect(signOutLink).toBeVisible({ timeout: shortTimeoutMS });
   }
 
   async readBalance(): Promise<number> {
-    const balanceCard = this.page.getByTestId("balance-card");
-    const balanceText = this.page.getByTestId("balance-total");
-
-    await balanceText.waitFor({ state: "visible", timeout: shortTimeoutMS });
-    const rawUnits = await balanceCard.getAttribute("data-balance-total-units");
-    if (rawUnits) {
-      const units = Number.parseInt(rawUnits, 10);
-      if (Number.isFinite(units)) {
-        return units;
-      }
+    // Sums the entitlements view's hidden test attribute. The visible UI never
+    // shows a top-line balance — this is a relative-comparison anchor for e2e
+    // (started vs finished) only.
+    if (!this.page.url().includes("/billing")) {
+      await this.goto("/billing");
     }
-
-    const raw = await balanceText.textContent();
-    if (!raw) {
-      throw new Error("Could not read balance text");
+    const view = this.page.getByTestId("entitlements-view");
+    await view.first().waitFor({ state: "visible", timeout: shortTimeoutMS });
+    const raw = await view.first().getAttribute("data-test-available-units");
+    if (raw === null) {
+      throw new Error("entitlements view missing data-test-available-units");
     }
-
-    return Number.parseInt(raw.replace(/[^0-9-]/g, ""), 10);
+    const units = Number.parseInt(raw, 10);
+    if (!Number.isFinite(units)) {
+      throw new Error(`entitlements view test-available-units is not numeric: ${raw}`);
+    }
+    return units;
   }
 
   async readText(locator: Locator): Promise<string> {
@@ -564,21 +562,18 @@ function formatError(error: unknown): string {
 }
 
 async function isDashboardReady({
-  balanceCard,
   dashboardHeading,
   signOutLink,
 }: {
-  balanceCard: Locator;
   dashboardHeading: Locator;
   signOutLink: Locator;
 }): Promise<boolean> {
-  const [dashboardVisible, balanceVisible, signOutVisible] = await Promise.all([
+  const [dashboardVisible, signOutVisible] = await Promise.all([
     dashboardHeading.isVisible().catch(() => false),
-    balanceCard.isVisible().catch(() => false),
     signOutLink.isVisible().catch(() => false),
   ]);
 
-  return dashboardVisible && balanceVisible && signOutVisible;
+  return dashboardVisible && signOutVisible;
 }
 
 async function waitForAuthBoundary(

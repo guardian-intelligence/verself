@@ -1,9 +1,12 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import {
+  cancelSubscription,
   createCheckoutSession,
   createPortalSession,
   createSubscriptionSession,
 } from "~/server-fns/api";
+import { entitlementsQuery, subscriptionsQuery } from "./queries";
 
 const sandboxProductID = "sandbox";
 
@@ -55,6 +58,27 @@ export function useCreatePortalSessionMutation() {
   });
 }
 
+export function useCancelSubscriptionMutation() {
+  const auth = useSignedInAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (subscriptionId: string) =>
+      cancelSubscription({
+        data: {
+          subscriptionId,
+        },
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: entitlementsQuery(auth).queryKey }),
+        queryClient.invalidateQueries({ queryKey: subscriptionsQuery(auth).queryKey }),
+      ]);
+    },
+  });
+}
+
 export { useCreateCheckoutSessionMutation as useCreditCheckoutMutation };
 export { useCreateSubscriptionSessionMutation as useSubscriptionCheckoutMutation };
 export { useCreatePortalSessionMutation as useBillingPortalMutation };
+export { useCancelSubscriptionMutation as useSubscriptionCancelMutation };

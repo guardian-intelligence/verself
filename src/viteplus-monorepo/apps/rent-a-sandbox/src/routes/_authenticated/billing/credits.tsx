@@ -1,13 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
-import { BalanceCard } from "~/components/balance-card";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
-import { balanceQuery, loadBalance } from "~/features/billing/queries";
 
 export const Route = createFileRoute("/_authenticated/billing/credits")({
-  loader: ({ context }) => loadBalance(context.queryClient, context.auth),
   component: CreditsPage,
 });
 
@@ -19,20 +14,22 @@ const CREDIT_PACKS = [
 ];
 
 function CreditsPage() {
-  const auth = useSignedInAuth();
-  const balance = useSuspenseQuery(balanceQuery(auth)).data;
   const mutation = useCreateCheckoutSessionMutation();
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Purchase Credits</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Purchase Credits</h1>
+        <Link
+          to="/billing"
+          className="text-sm text-muted-foreground underline hover:text-foreground"
+        >
+          Back to billing
+        </Link>
+      </div>
       <p className="text-muted-foreground">
         Add prepaid account balance for usage beyond your current bucket allowances.
       </p>
-
-      <div className="max-w-md">
-        <BalanceCard balance={balance} />
-      </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         {CREDIT_PACKS.map((pack) => (

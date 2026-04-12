@@ -13,7 +13,7 @@ func TestOrgPathDecimalUint64Validation(t *testing.T) {
 
 	t.Run("accepts decimal string path param", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/367889413595774308/balance", nil)
+		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/367889413595774308/grants", nil)
 		mux.ServeHTTP(rec, req)
 
 		if rec.Code == http.StatusUnprocessableEntity {
@@ -26,7 +26,7 @@ func TestOrgPathDecimalUint64Validation(t *testing.T) {
 
 	t.Run("rejects non-decimal path param", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/notdecimal/balance", nil)
+		req := httptest.NewRequest(http.MethodGet, "/internal/billing/v1/orgs/notdecimal/grants", nil)
 		mux.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusUnprocessableEntity {

@@ -56,8 +56,8 @@ func TestPickBucketReservationShrinksToTightestFundedBucket(t *testing.T) {
 			"block_storage": 500,
 		},
 		[]scopedGrantBalance{
-			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", 10_000),
-			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", 3_500),
+			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
+			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != nil {
@@ -85,8 +85,8 @@ func TestPickBucketReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
 			"block_storage": 500,
 		},
 		[]scopedGrantBalance{
-			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", 10_000),
-			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", 3_500),
+			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
+			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != ErrInsufficientBalance {

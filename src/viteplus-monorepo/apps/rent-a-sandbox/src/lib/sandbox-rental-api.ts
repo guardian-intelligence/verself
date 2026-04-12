@@ -1,26 +1,32 @@
 import * as v from "valibot";
 import { createClient, type Client } from "../__generated/sandbox-rental-api/client/index.js";
 import {
+  cancelBillingSubscription,
   createBillingCheckout,
   createBillingPortal,
   createBillingSubscription,
-  getBillingBalance,
+  getBillingEntitlements,
   getBillingStatement,
   getExecution as getGeneratedExecution,
   getRepo as getGeneratedRepo,
   importRepo as importGeneratedRepo,
-  listBillingGrants,
+  listBillingPlans,
   listBillingSubscriptions,
   listRepos,
   rescanRepo as rescanGeneratedRepo,
   submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
 import {
-  vBillingBalance,
-  vBillingGrant,
-  vBillingGrants,
+  vBillingCancelSubscriptionResponse,
+  vBillingEntitlementBucketSection,
+  vBillingEntitlementGrantEntry,
+  vBillingEntitlementPool,
+  vBillingEntitlementProductSection,
+  vBillingEntitlementsView,
+  vBillingPlan,
   vBillingStatement,
   vBillingSubscription,
+  vCancelBillingSubscriptionPath,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
   vCreateBillingPortalBody,
@@ -31,6 +37,7 @@ import {
   vGetExecutionPath,
   vGetRepoPath,
   vImportRepoBody,
+  vListBillingPlansResponse,
   vListBillingSubscriptionsResponse,
   vListReposResponse,
   vSandboxAttemptRecord,
@@ -155,29 +162,89 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vSandboxBillingWindo
 
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
-function parseBalance(input: unknown) {
-  const { $schema: _schema, ...balance } = v.parse(vBillingBalance, input);
+type RawEntitlementProductSection = v.InferOutput<typeof vBillingEntitlementProductSection>;
+type RawEntitlementBucketSection = v.InferOutput<typeof vBillingEntitlementBucketSection>;
+type RawEntitlementPool = v.InferOutput<typeof vBillingEntitlementPool>;
+type RawEntitlementGrantEntry = v.InferOutput<typeof vBillingEntitlementGrantEntry>;
+
+function parseEntitlementGrantEntry(input: RawEntitlementGrantEntry) {
   return {
-    ...balance,
-    credit_available: decimalStringToSafeNumber(balance.credit_available, "credit_available"),
-    credit_pending: decimalStringToSafeNumber(balance.credit_pending, "credit_pending"),
-    free_tier_available: decimalStringToSafeNumber(
-      balance.free_tier_available,
-      "free_tier_available",
-    ),
-    free_tier_pending: decimalStringToSafeNumber(balance.free_tier_pending, "free_tier_pending"),
-    org_id: balance.org_id,
-    total_available: decimalStringToSafeNumber(balance.total_available, "total_available"),
+    ...input,
+    available: decimalStringToSafeNumber(input.available, "entries.available"),
+    pending: decimalStringToSafeNumber(input.pending, "entries.pending"),
   };
 }
 
-export type Balance = ReturnType<typeof parseBalance>;
+function parseEntitlementPool(input: RawEntitlementPool) {
+  return {
+    ...input,
+    entries: input.entries?.map((entry) => parseEntitlementGrantEntry(entry)) ?? [],
+  };
+}
+
+function parseEntitlementBucketSection(input: RawEntitlementBucketSection) {
+  return {
+    ...input,
+    pools: input.pools?.map((pool) => parseEntitlementPool(pool)) ?? [],
+  };
+}
+
+function parseEntitlementProductSection(input: RawEntitlementProductSection) {
+  return {
+    ...input,
+    product_pools: input.product_pools?.map((pool) => parseEntitlementPool(pool)) ?? [],
+    buckets: input.buckets?.map((bucket) => parseEntitlementBucketSection(bucket)) ?? [],
+  };
+}
+
+function parseEntitlementsView(input: unknown) {
+  const {
+    $schema: _schema,
+    products,
+    universal,
+    ...rest
+  } = v.parse(vBillingEntitlementsView, input);
+  return {
+    ...rest,
+    universal: universal?.map((pool) => parseEntitlementPool(pool)) ?? [],
+    products: products?.map((product) => parseEntitlementProductSection(product)) ?? [],
+  };
+}
+
+export type EntitlementGrantEntry = ReturnType<typeof parseEntitlementGrantEntry>;
+export type EntitlementPool = ReturnType<typeof parseEntitlementPool>;
+export type EntitlementBucketSection = ReturnType<typeof parseEntitlementBucketSection>;
+export type EntitlementProductSection = ReturnType<typeof parseEntitlementProductSection>;
+export type EntitlementsView = ReturnType<typeof parseEntitlementsView>;
 
 function parseSubscription(input: unknown) {
   return v.parse(vBillingSubscription, input);
 }
 
 export type Subscription = ReturnType<typeof parseSubscription>;
+
+function parsePlan(input: unknown) {
+  const plan = v.parse(vBillingPlan, input);
+  return {
+    ...plan,
+    annual_amount_cents: decimalStringToSafeNumber(plan.annual_amount_cents, "annual_amount_cents"),
+    monthly_amount_cents: decimalStringToSafeNumber(
+      plan.monthly_amount_cents,
+      "monthly_amount_cents",
+    ),
+  };
+}
+
+export type BillingPlan = ReturnType<typeof parsePlan>;
+
+function parsePlansResponse(input: unknown) {
+  const { $schema: _schema, plans } = v.parse(vListBillingPlansResponse, input);
+  return {
+    plans: plans?.map((plan) => parsePlan(plan)) ?? null,
+  };
+}
+
+export type PlansResponse = ReturnType<typeof parsePlansResponse>;
 
 function parseSubscriptionsResponse(input: unknown) {
   const { $schema: _schema, subscriptions } = v.parse(vListBillingSubscriptionsResponse, input);
@@ -187,26 +254,6 @@ function parseSubscriptionsResponse(input: unknown) {
 }
 
 export type SubscriptionsResponse = ReturnType<typeof parseSubscriptionsResponse>;
-
-function parseGrant(input: unknown) {
-  const grant = v.parse(vBillingGrant, input);
-  return {
-    ...grant,
-    available: decimalStringToSafeNumber(grant.available, "available"),
-    pending: decimalStringToSafeNumber(grant.pending, "pending"),
-  };
-}
-
-export type Grant = ReturnType<typeof parseGrant>;
-
-function parseGrantsResponse(input: unknown) {
-  const { $schema: _schema, grants } = v.parse(vBillingGrants, input);
-  return {
-    grants: grants?.map((grant) => parseGrant(grant)) ?? null,
-  };
-}
-
-export type GrantsResponse = ReturnType<typeof parseGrantsResponse>;
 
 type RawStatement = v.InferOutput<typeof vBillingStatement>;
 type RawStatementLineItem = NonNullable<RawStatement["line_items"]>[number];
@@ -321,16 +368,6 @@ function parseRepo(input: unknown) {
 
 export type Repo = ReturnType<typeof parseRepo>;
 
-export const grantsQuerySchema = v.optional(
-  v.object({
-    active: v.optional(v.boolean()),
-    productId: v.optional(v.string()),
-  }),
-  {},
-);
-
-export type GrantsQuery = v.InferOutput<typeof grantsQuerySchema>;
-
 export const statementQuerySchema = v.pipe(
   v.strictObject({
     productId: v.string(),
@@ -367,6 +404,12 @@ export type SubscribeRequest = v.InferOutput<typeof subscribeRequestSchema>;
 export const portalRequestSchema = vCreateBillingPortalBody;
 
 export type PortalRequest = v.InferOutput<typeof portalRequestSchema>;
+
+export const cancelSubscriptionRequestSchema = v.strictObject({
+  subscriptionId: v.string(),
+});
+
+export type CancelSubscriptionRequest = v.InferInput<typeof cancelSubscriptionRequestSchema>;
 
 type DirectExecutionRequestBody = {
   idempotency_key: string;
@@ -425,10 +468,12 @@ export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutRespons
 export type SubscriptionSession = v.InferOutput<typeof vCreateBillingSubscriptionResponse>;
 export type PortalSession = v.InferOutput<typeof vCreateBillingPortalResponse>;
 
-export async function getBalance(options: SandboxRentalClientOptions): Promise<Balance> {
+export async function getEntitlements(
+  options: SandboxRentalClientOptions,
+): Promise<EntitlementsView> {
   const client = createSandboxRentalClient(options);
-  const path = "/api/v1/billing/balance";
-  const result = await getBillingBalance({
+  const path = "/api/v1/billing/entitlements";
+  const result = await getBillingEntitlements({
     client,
     responseStyle: "fields",
     throwOnError: false,
@@ -438,7 +483,7 @@ export async function getBalance(options: SandboxRentalClientOptions): Promise<B
     throwSandboxRentalError(path, result.response, result.error);
   }
 
-  return parseBalance(result.data);
+  return parseEntitlementsView(result.data);
 }
 
 export async function getSubscriptions(
@@ -459,35 +504,20 @@ export async function getSubscriptions(
   return parseSubscriptionsResponse(result.data);
 }
 
-export async function getGrants(
-  options: SandboxRentalClientOptions & { query?: GrantsQuery },
-): Promise<GrantsResponse> {
+export async function getPlans(options: SandboxRentalClientOptions): Promise<PlansResponse> {
   const client = createSandboxRentalClient(options);
-  const query = v.parse(grantsQuerySchema, options.query);
-  const path = "/api/v1/billing/grants";
-  const result = await listBillingGrants(
-    query === undefined
-      ? {
-          client,
-          responseStyle: "fields",
-          throwOnError: false,
-        }
-      : {
-          client,
-          query: {
-            ...(query.active !== undefined ? { active: query.active } : {}),
-            ...(query.productId !== undefined ? { product_id: query.productId } : {}),
-          },
-          responseStyle: "fields",
-          throwOnError: false,
-        },
-  );
+  const path = "/api/v1/billing/plans";
+  const result = await listBillingPlans({
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
 
   if (result.error !== undefined) {
     throwSandboxRentalError(path, result.response, result.error);
   }
 
-  return parseGrantsResponse(result.data);
+  return parsePlansResponse(result.data);
 }
 
 export async function getStatement(
@@ -577,6 +607,31 @@ export async function createPortalSession(
   }
 
   return v.parse(vCreateBillingPortalResponse, result.data);
+}
+
+export async function cancelSubscription(
+  options: SandboxRentalClientOptions & { body: CancelSubscriptionRequest },
+): Promise<{ subscription: Subscription }> {
+  const client = createSandboxRentalClient(options);
+  const body = v.parse(cancelSubscriptionRequestSchema, options.body);
+  const pathParams = v.parse(vCancelBillingSubscriptionPath, {
+    subscription_id: body.subscriptionId,
+  });
+  const path = "/api/v1/billing/subscriptions/{subscription_id}/cancel";
+  const result = await cancelBillingSubscription({
+    client,
+    headers: idempotencyHeaders("billing-subscription-cancel"),
+    path: pathParams,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  const parsed = v.parse(vBillingCancelSubscriptionResponse, result.data);
+  return { subscription: parseSubscription(parsed.subscription) };
 }
 
 export async function submitDirectExecution(

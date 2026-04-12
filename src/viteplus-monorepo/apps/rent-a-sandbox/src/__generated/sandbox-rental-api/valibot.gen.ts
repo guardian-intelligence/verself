@@ -3,36 +3,66 @@
 
 import * as v from "valibot";
 
-export const vBillingBalance = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  credit_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  credit_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  total_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-});
-
-export const vBillingGrant = v.strictObject({
+export const vBillingEntitlementGrantEntry = v.strictObject({
   available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  entitlement_period_id: v.string(),
   expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   grant_id: v.string(),
   pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  policy_version: v.string(),
-  scope_bucket_id: v.string(),
-  scope_product_id: v.string(),
-  scope_type: v.string(),
-  source: v.string(),
-  source_reference_id: v.string(),
   starts_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vBillingGrants = v.strictObject({
+export const vBillingEntitlementPool = v.strictObject({
+  bucket_display: v.string(),
+  bucket_id: v.string(),
+  coverage_label: v.string(),
+  entries: v.nullable(v.array(vBillingEntitlementGrantEntry)),
+  product_display: v.string(),
+  product_id: v.string(),
+  scope_type: v.picklist(["account", "product", "bucket", "sku"]),
+  sku_display: v.string(),
+  sku_id: v.string(),
+  source: v.picklist(["free_tier", "subscription", "purchase", "promo", "refund"]),
+  source_label: v.string(),
+});
+
+export const vBillingEntitlementBucketSection = v.strictObject({
+  bucket_id: v.string(),
+  display_name: v.string(),
+  pools: v.nullable(v.array(vBillingEntitlementPool)),
+});
+
+export const vBillingEntitlementProductSection = v.strictObject({
+  buckets: v.nullable(v.array(vBillingEntitlementBucketSection)),
+  display_name: v.string(),
+  product_id: v.string(),
+  product_pools: v.nullable(v.array(vBillingEntitlementPool)),
+});
+
+export const vBillingEntitlementsView = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  grants: v.nullable(v.array(vBillingGrant)),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  products: v.nullable(v.array(vBillingEntitlementProductSection)),
+  universal: v.nullable(v.array(vBillingEntitlementPool)),
+});
+
+export const vBillingPlan = v.strictObject({
+  active: v.boolean(),
+  annual_amount_cents: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  billing_mode: v.string(),
+  currency: v.string(),
+  display_name: v.string(),
+  is_default: v.boolean(),
+  monthly_amount_cents: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  plan_id: v.string(),
+  product_id: v.string(),
+  tier: v.string(),
+});
+
+export const vBillingPlans = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  plans: v.nullable(v.array(vBillingPlan)),
 });
 
 export const vBillingStatementBucketSummary = v.strictObject({
@@ -111,6 +141,11 @@ export const vBillingSubscription = v.strictObject({
   product_id: v.string(),
   status: v.string(),
   subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
+});
+
+export const vBillingCancelSubscriptionResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  subscription: vBillingSubscription,
 });
 
 export const vBillingSubscriptions = v.strictObject({
@@ -414,17 +449,18 @@ export const vSandboxWebhookEndpointRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vBillingBalanceWritable = v.strictObject({
-  credit_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  credit_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  total_available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+export const vBillingCancelSubscriptionResponseWritable = v.strictObject({
+  subscription: vBillingSubscription,
 });
 
-export const vBillingGrantsWritable = v.strictObject({
-  grants: v.nullable(v.array(vBillingGrant)),
+export const vBillingEntitlementsViewWritable = v.strictObject({
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  products: v.nullable(v.array(vBillingEntitlementProductSection)),
+  universal: v.nullable(v.array(vBillingEntitlementPool)),
+});
+
+export const vBillingPlansWritable = v.strictObject({
+  plans: v.nullable(v.array(vBillingPlan)),
 });
 
 export const vBillingStatementWritable = v.strictObject({
@@ -605,11 +641,6 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   run_command: v.optional(v.string()),
 });
 
-/**
- * OK
- */
-export const vGetBillingBalanceResponse = vBillingBalance;
-
 export const vCreateBillingCheckoutBody = vSandboxBillingCheckoutRequestWritable;
 
 export const vCreateBillingCheckoutHeaders = v.object({
@@ -621,15 +652,15 @@ export const vCreateBillingCheckoutHeaders = v.object({
  */
 export const vCreateBillingCheckoutResponse = vBillingUrlResponse;
 
-export const vListBillingGrantsQuery = v.object({
-  product_id: v.optional(v.string()),
-  active: v.optional(v.boolean()),
-});
+/**
+ * OK
+ */
+export const vGetBillingEntitlementsResponse = vBillingEntitlementsView;
 
 /**
  * OK
  */
-export const vListBillingGrantsResponse = vBillingGrants;
+export const vListBillingPlansResponse = vBillingPlans;
 
 export const vCreateBillingPortalBody = vSandboxBillingPortalRequestWritable;
 
@@ -666,6 +697,19 @@ export const vCreateBillingSubscriptionResponse = vBillingUrlResponse;
  * OK
  */
 export const vListBillingSubscriptionsResponse = vBillingSubscriptions;
+
+export const vCancelBillingSubscriptionHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vCancelBillingSubscriptionPath = v.object({
+  subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
+});
+
+/**
+ * OK
+ */
+export const vCancelBillingSubscriptionResponse = vBillingCancelSubscriptionResponse;
 
 export const vSubmitExecutionBody = vSandboxSubmitRequestWritable;
 

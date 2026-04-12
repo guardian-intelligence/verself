@@ -106,10 +106,9 @@ func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID str
 	`, orgIDText).Scan(&stripeCustomerID)
 
 	sessionParams := &stripe.CheckoutSessionCreateParams{
-		Mode:             stripe.String(string(stripe.CheckoutSessionModeSubscription)),
-		CustomerCreation: stripe.String("always"),
-		SuccessURL:       stripe.String(successURL),
-		CancelURL:        stripe.String(cancelURL),
+		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		SuccessURL: stripe.String(successURL),
+		CancelURL:  stripe.String(cancelURL),
 		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{
 			Price:    stripe.String(stripePriceID),
 			Quantity: stripe.Int64(1),
@@ -125,7 +124,6 @@ func (c *Client) CreateSubscription(ctx context.Context, orgID OrgID, planID str
 	}
 	if stripeCustomerID.Valid && stripeCustomerID.String != "" {
 		sessionParams.Customer = stripe.String(stripeCustomerID.String)
-		sessionParams.CustomerCreation = nil
 	}
 	sessionParams.AddMetadata("org_id", orgIDText)
 	sessionParams.AddMetadata("plan_id", planID)
@@ -163,6 +161,52 @@ func (c *Client) CreatePortalSession(ctx context.Context, orgID OrgID, returnURL
 	return session.URL, nil
 }
 
+func (c *Client) CancelSubscription(ctx context.Context, orgID OrgID, subscriptionID int64) (SubscriptionRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return SubscriptionRecord{}, err
+	}
+	if subscriptionID <= 0 {
+		return SubscriptionRecord{}, fmt.Errorf("%w: subscription_id must be positive", ErrSubscriptionNotFound)
+	}
+
+	local, err := c.loadLocalStripeSubscriptionByID(ctx, orgID, subscriptionID)
+	if err != nil {
+		return SubscriptionRecord{}, err
+	}
+	if local.Record.Status == "canceled" || local.Record.EntitlementState == EntitlementClosed || local.Record.EntitlementState == EntitlementVoided {
+		return local.Record, nil
+	}
+	if local.StripeSubscriptionID == "" {
+		return SubscriptionRecord{}, fmt.Errorf("%w: subscription %d has no stripe subscription id", ErrSubscriptionNotFound, subscriptionID)
+	}
+
+	subscription, err := c.stripe.V1Subscriptions.Cancel(ctx, local.StripeSubscriptionID, &stripe.SubscriptionCancelParams{
+		InvoiceNow: stripe.Bool(false),
+		Prorate:    stripe.Bool(false),
+	})
+	if err != nil {
+		return SubscriptionRecord{}, fmt.Errorf("cancel stripe subscription: %w", err)
+	}
+
+	state := mergeStripeSubscriptionState(
+		stripeSubscriptionStateFromSubscription(*subscription, "canceled"),
+		local.State(),
+	).withDefaults()
+	providerEvent, err := state.providerEvent("customer.subscription.deleted", closedSubscriptionPaymentState(state), EntitlementClosed)
+	if err != nil {
+		return SubscriptionRecord{}, fmt.Errorf("cancel subscription provider event: %w", err)
+	}
+	if err := c.ApplySubscriptionProviderEvent(ctx, providerEvent); err != nil {
+		return SubscriptionRecord{}, fmt.Errorf("apply cancellation provider event: %w", err)
+	}
+
+	refreshed, err := c.loadLocalStripeSubscriptionByID(ctx, orgID, subscriptionID)
+	if err != nil {
+		return SubscriptionRecord{}, err
+	}
+	return refreshed.Record, nil
+}
+
 func (c *Client) HandleStripeWebhook(ctx context.Context, payload []byte, signatureHeader string, webhookSecret string) error {
 	event, err := webhook.ConstructEvent(payload, signatureHeader, webhookSecret)
 	if err != nil {
@@ -193,6 +237,7 @@ type stripeSubscriptionState struct {
 	PlanID                  string
 	Cadence                 string
 	Status                  string
+	PaymentState            EntitlementPaymentState
 	StripeSubscriptionID    string
 	StripeCheckoutSessionID string
 	StripeCustomerID        string
@@ -200,8 +245,33 @@ type stripeSubscriptionState struct {
 	CurrentPeriodEnd        *time.Time
 }
 
+type localStripeSubscription struct {
+	Record                  SubscriptionRecord
+	StripeSubscriptionID    string
+	StripeCheckoutSessionID string
+}
+
+func (s localStripeSubscription) State() stripeSubscriptionState {
+	return stripeSubscriptionState{
+		OrgIDText:               s.Record.OrgID,
+		ProductID:               s.Record.ProductID,
+		PlanID:                  s.Record.PlanID,
+		Cadence:                 s.Record.Cadence,
+		Status:                  s.Record.Status,
+		PaymentState:            s.Record.PaymentState,
+		StripeSubscriptionID:    s.StripeSubscriptionID,
+		StripeCheckoutSessionID: s.StripeCheckoutSessionID,
+		CurrentPeriodStart:      s.Record.CurrentPeriodStart,
+		CurrentPeriodEnd:        s.Record.CurrentPeriodEnd,
+	}
+}
+
 func (s stripeSubscriptionState) hasRequiredForgeMetadata() bool {
 	return s.OrgIDText != "" && s.ProductID != "" && s.PlanID != "" && s.StripeSubscriptionID != ""
+}
+
+func (s stripeSubscriptionState) hasCurrentPeriod() bool {
+	return subscriptionPeriodValid(s.CurrentPeriodStart, s.CurrentPeriodEnd)
 }
 
 func (s stripeSubscriptionState) withDefaults() stripeSubscriptionState {
@@ -270,12 +340,23 @@ func (c *Client) ApplySubscriptionProviderEvent(ctx context.Context, event Subsc
 		return err
 	}
 	if event.EntitlementState == EntitlementClosed || event.EntitlementState == EntitlementVoided {
-		return c.closeSubscriptionEntitlements(ctx, state, event.PaymentState, event.EntitlementState)
+		if err := c.closeSubscriptionEntitlements(ctx, state, event.PaymentState, event.EntitlementState); err != nil {
+			return err
+		}
+		return c.recordSubscriptionProviderEvent(ctx, event, state)
 	}
 	if event.EntitlementState != "" {
 		if err := c.ensureSubscriptionEntitlements(ctx, state, event.PaymentState, event.EntitlementState); err != nil {
 			return err
 		}
+	}
+	return c.recordSubscriptionProviderEvent(ctx, event, state)
+}
+
+func (c *Client) recordSubscriptionProviderEvent(ctx context.Context, event SubscriptionProviderEvent, state stripeSubscriptionState) error {
+	outboxEvent := subscriptionProviderEventOutbox(event, state, c.clock().UTC())
+	if err := insertOutboxEvent(ctx, c.pg, outboxEvent); err != nil {
+		return fmt.Errorf("record subscription provider event: %w", err)
 	}
 	return nil
 }
@@ -483,7 +564,12 @@ func (c *Client) handleSubscriptionDeleted(ctx context.Context, event stripe.Eve
 		return nil
 	}
 	if state.hasRequiredForgeMetadata() {
-		providerEvent, err := state.providerEvent("customer.subscription.deleted", PaymentFailed, EntitlementClosed)
+		if local, found, err := c.loadLocalStripeSubscriptionState(ctx, state.StripeSubscriptionID); err != nil {
+			return fmt.Errorf("customer.subscription.deleted: load local subscription: %w", err)
+		} else if found {
+			state = mergeStripeSubscriptionState(state, local).withDefaults()
+		}
+		providerEvent, err := state.providerEvent("customer.subscription.deleted", closedSubscriptionPaymentState(state), EntitlementClosed)
 		if err != nil {
 			return fmt.Errorf("customer.subscription.deleted: provider event: %w", err)
 		}
@@ -587,6 +673,7 @@ func (c *Client) updateStripeSubscriptionStatus(ctx context.Context, state strip
 
 func (c *Client) subscriptionStateFromInvoice(ctx context.Context, invoice stripe.Invoice, status string) (stripeSubscriptionState, error) {
 	metadata := invoiceSubscriptionMetadata(invoice)
+	periodStart, periodEnd := invoiceSubscriptionPeriod(invoice)
 	state := stripeSubscriptionState{
 		OrgIDText:            metadata["org_id"],
 		ProductID:            metadata["product_id"],
@@ -595,10 +682,10 @@ func (c *Client) subscriptionStateFromInvoice(ctx context.Context, invoice strip
 		Status:               status,
 		StripeSubscriptionID: invoiceSubscriptionID(invoice),
 		StripeCustomerID:     stripeCustomerID(invoice.Customer),
-		CurrentPeriodStart:   unixTimePtr(invoice.PeriodStart),
-		CurrentPeriodEnd:     unixTimePtr(invoice.PeriodEnd),
+		CurrentPeriodStart:   periodStart,
+		CurrentPeriodEnd:     periodEnd,
 	}.withDefaults()
-	if state.StripeSubscriptionID == "" || state.hasRequiredForgeMetadata() {
+	if state.StripeSubscriptionID == "" || (state.hasRequiredForgeMetadata() && state.hasCurrentPeriod()) || c == nil {
 		return state, nil
 	}
 
@@ -608,7 +695,7 @@ func (c *Client) subscriptionStateFromInvoice(ctx context.Context, invoice strip
 	}
 	if found {
 		state = mergeStripeSubscriptionState(state, local).withDefaults()
-		if state.hasRequiredForgeMetadata() {
+		if state.hasRequiredForgeMetadata() && state.hasCurrentPeriod() {
 			return state, nil
 		}
 	}
@@ -654,8 +741,10 @@ func stripeSubscriptionStateFromSubscription(subscription stripe.Subscription, s
 func (c *Client) loadLocalStripeSubscriptionState(ctx context.Context, stripeSubscriptionID string) (stripeSubscriptionState, bool, error) {
 	var state stripeSubscriptionState
 	var start, end sql.NullTime
+	var paymentState string
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT org_id, product_id, plan_id, cadence, status, current_period_start, current_period_end, stripe_subscription_id, stripe_checkout_session_id
+		SELECT org_id, product_id, plan_id, cadence, status, payment_state,
+		       current_period_start, current_period_end, stripe_subscription_id, stripe_checkout_session_id
 		FROM subscription_contracts
 		WHERE stripe_subscription_id = $1
 	`, stripeSubscriptionID).Scan(
@@ -664,6 +753,7 @@ func (c *Client) loadLocalStripeSubscriptionState(ctx context.Context, stripeSub
 		&state.PlanID,
 		&state.Cadence,
 		&state.Status,
+		&paymentState,
 		&start,
 		&end,
 		&state.StripeSubscriptionID,
@@ -675,6 +765,7 @@ func (c *Client) loadLocalStripeSubscriptionState(ctx context.Context, stripeSub
 	if err != nil {
 		return stripeSubscriptionState{}, false, err
 	}
+	state.PaymentState = EntitlementPaymentState(paymentState)
 	if start.Valid {
 		value := start.Time.UTC()
 		state.CurrentPeriodStart = &value
@@ -684,6 +775,52 @@ func (c *Client) loadLocalStripeSubscriptionState(ctx context.Context, stripeSub
 		state.CurrentPeriodEnd = &value
 	}
 	return state, true, nil
+}
+
+func (c *Client) loadLocalStripeSubscriptionByID(ctx context.Context, orgID OrgID, subscriptionID int64) (localStripeSubscription, error) {
+	var out localStripeSubscription
+	var start, end sql.NullTime
+	var paymentState string
+	var entitlementState string
+	err := c.pg.QueryRowContext(ctx, `
+		SELECT subscription_id, contract_id, org_id, product_id, plan_id, cadence, status,
+		       payment_state, entitlement_state, current_period_start, current_period_end,
+		       stripe_subscription_id, stripe_checkout_session_id
+		FROM subscription_contracts
+		WHERE subscription_id = $1
+		  AND org_id = $2
+	`, subscriptionID, strconv.FormatUint(uint64(orgID), 10)).Scan(
+		&out.Record.SubscriptionID,
+		&out.Record.ContractID,
+		&out.Record.OrgID,
+		&out.Record.ProductID,
+		&out.Record.PlanID,
+		&out.Record.Cadence,
+		&out.Record.Status,
+		&paymentState,
+		&entitlementState,
+		&start,
+		&end,
+		&out.StripeSubscriptionID,
+		&out.StripeCheckoutSessionID,
+	)
+	if err == sql.ErrNoRows {
+		return localStripeSubscription{}, fmt.Errorf("%w: %d", ErrSubscriptionNotFound, subscriptionID)
+	}
+	if err != nil {
+		return localStripeSubscription{}, fmt.Errorf("load subscription %d: %w", subscriptionID, err)
+	}
+	out.Record.PaymentState = EntitlementPaymentState(paymentState)
+	out.Record.EntitlementState = EntitlementState(entitlementState)
+	if start.Valid {
+		value := start.Time.UTC()
+		out.Record.CurrentPeriodStart = &value
+	}
+	if end.Valid {
+		value := end.Time.UTC()
+		out.Record.CurrentPeriodEnd = &value
+	}
+	return out, nil
 }
 
 func (c *Client) retrieveStripeSubscriptionState(ctx context.Context, stripeSubscriptionID, status string) (stripeSubscriptionState, error) {
@@ -711,6 +848,9 @@ func mergeStripeSubscriptionState(primary, fallback stripeSubscriptionState) str
 	if out.Status == "" {
 		out.Status = fallback.Status
 	}
+	if out.PaymentState == "" {
+		out.PaymentState = fallback.PaymentState
+	}
 	if out.StripeSubscriptionID == "" {
 		out.StripeSubscriptionID = fallback.StripeSubscriptionID
 	}
@@ -720,17 +860,26 @@ func mergeStripeSubscriptionState(primary, fallback stripeSubscriptionState) str
 	if out.StripeCustomerID == "" {
 		out.StripeCustomerID = fallback.StripeCustomerID
 	}
-	if out.CurrentPeriodStart == nil {
+	if !subscriptionPeriodValid(out.CurrentPeriodStart, out.CurrentPeriodEnd) && subscriptionPeriodValid(fallback.CurrentPeriodStart, fallback.CurrentPeriodEnd) {
 		out.CurrentPeriodStart = fallback.CurrentPeriodStart
-	}
-	if out.CurrentPeriodEnd == nil {
+		out.CurrentPeriodEnd = fallback.CurrentPeriodEnd
+	} else if out.CurrentPeriodStart == nil {
+		out.CurrentPeriodStart = fallback.CurrentPeriodStart
+	} else if out.CurrentPeriodEnd == nil {
 		out.CurrentPeriodEnd = fallback.CurrentPeriodEnd
 	}
 	return out
 }
 
+func closedSubscriptionPaymentState(state stripeSubscriptionState) EntitlementPaymentState {
+	if state.PaymentState != "" {
+		return state.PaymentState
+	}
+	return PaymentPending
+}
+
 func (c *Client) ensureSubscriptionEntitlements(ctx context.Context, state stripeSubscriptionState, paymentState EntitlementPaymentState, entitlementState EntitlementState) error {
-	if state.CurrentPeriodStart == nil || state.CurrentPeriodEnd == nil || !state.CurrentPeriodEnd.After(*state.CurrentPeriodStart) {
+	if !state.hasCurrentPeriod() {
 		return nil
 	}
 	if err := c.updateStripeSubscriptionEntitlementState(ctx, state, paymentState, entitlementState); err != nil {
@@ -760,6 +909,7 @@ func (c *Client) ensureSubscriptionEntitlements(ctx context.Context, state strip
 			ScopeType:           period.ScopeType,
 			ScopeProductID:      period.ScopeProductID,
 			ScopeBucketID:       period.ScopeBucketID,
+			ScopeSKUID:          period.ScopeSKUID,
 			Amount:              period.AmountUnits,
 			Source:              period.Source.String(),
 			SourceReferenceID:   period.SourceReferenceID,
@@ -857,7 +1007,7 @@ func (c *Client) closeSubscriptionEntitlements(ctx context.Context, state stripe
 
 func (c *Client) subscriptionEntitlementPolicies(ctx context.Context, planID string, periodStart time.Time, periodEnd time.Time) ([]EntitlementPolicy, error) {
 	rows, err := c.pg.QueryContext(ctx, `
-		SELECT p.policy_id, p.source, p.product_id, p.scope_type, p.scope_product_id, p.scope_bucket_id,
+		SELECT p.policy_id, p.source, p.product_id, p.scope_type, p.scope_product_id, p.scope_bucket_id, p.scope_sku_id,
 		       p.amount_units, p.cadence, p.anchor_kind, p.proration_mode, p.policy_version, p.active_from, p.active_until
 		FROM plan_entitlements pe
 		JOIN entitlement_policies p ON p.policy_id = pe.policy_id
@@ -885,6 +1035,7 @@ func (c *Client) subscriptionEntitlementPolicies(ctx context.Context, planID str
 			&scopeText,
 			&policy.ScopeProductID,
 			&policy.ScopeBucketID,
+			&policy.ScopeSKUID,
 			&amount,
 			&policy.Cadence,
 			&policy.AnchorKind,
@@ -914,7 +1065,7 @@ func (c *Client) subscriptionEntitlementPolicies(ctx context.Context, planID str
 			value := activeUntil.Time.UTC()
 			policy.ActiveUntil = &value
 		}
-		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID); err != nil {
+		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID); err != nil {
 			return nil, fmt.Errorf("policy %s: %w", policy.PolicyID, err)
 		}
 		out = append(out, policy)
@@ -971,6 +1122,38 @@ func invoiceSubscriptionID(invoice stripe.Invoice) string {
 	return stripeSubscriptionID(invoice.Parent.SubscriptionDetails.Subscription)
 }
 
+func invoiceSubscriptionPeriod(invoice stripe.Invoice) (*time.Time, *time.Time) {
+	if invoice.Lines != nil {
+		var selectedStart *time.Time
+		var selectedEnd *time.Time
+		for _, line := range invoice.Lines.Data {
+			if line == nil || line.Period == nil {
+				continue
+			}
+			start := unixTimePtr(line.Period.Start)
+			end := unixTimePtr(line.Period.End)
+			if !subscriptionPeriodValid(start, end) {
+				continue
+			}
+			if selectedEnd == nil || end.After(*selectedEnd) {
+				selectedStart = start
+				selectedEnd = end
+			}
+		}
+		if selectedEnd != nil {
+			return selectedStart, selectedEnd
+		}
+	}
+
+	// Invoice-level periods are usage collection windows; line item periods are the service period.
+	start := unixTimePtr(invoice.PeriodStart)
+	end := unixTimePtr(invoice.PeriodEnd)
+	if subscriptionPeriodValid(start, end) {
+		return start, end
+	}
+	return nil, nil
+}
+
 func stripeSubscriptionCurrentPeriod(subscription *stripe.Subscription) (*time.Time, *time.Time) {
 	if subscription == nil || subscription.Items == nil {
 		return nil, nil
@@ -985,6 +1168,10 @@ func stripeSubscriptionCurrentPeriod(subscription *stripe.Subscription) (*time.T
 		return unixTimePtr(item.CurrentPeriodStart), unixTimePtr(item.CurrentPeriodEnd)
 	}
 	return nil, nil
+}
+
+func subscriptionPeriodValid(start *time.Time, end *time.Time) bool {
+	return start != nil && end != nil && end.After(*start)
 }
 
 func stripeCustomerID(customer *stripe.Customer) string {

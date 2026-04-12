@@ -23,7 +23,7 @@ func NewGrantID() GrantID {
 	return GrantID(ulid.Make())
 }
 
-func sourceReferenceGrantID(orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, sourceReferenceID string) GrantID {
+func sourceReferenceGrantID(orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceReferenceID string) GrantID {
 	h := sha256.New()
 	_, _ = h.Write([]byte("grant-source-reference"))
 	hashUint64(h, uint64(orgID))
@@ -31,6 +31,7 @@ func sourceReferenceGrantID(orgID OrgID, source GrantSourceType, scopeType Grant
 	hashString(h, scopeType.String())
 	hashString(h, scopeProductID)
 	hashString(h, scopeBucketID)
+	hashString(h, scopeSKUID)
 	hashString(h, sourceReferenceID)
 	sum := h.Sum(nil)
 	var id GrantID

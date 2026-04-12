@@ -1,7 +1,7 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { trace } from "@opentelemetry/api";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { getBalance, getGrants, getStatement, getSubscriptions } from "~/server-fns/api";
+import { getEntitlements, getPlans, getStatement, getSubscriptions } from "~/server-fns/api";
 
 function billingQueryKey<TParts extends readonly unknown[]>(
   auth: AuthenticatedAuth,
@@ -10,10 +10,10 @@ function billingQueryKey<TParts extends readonly unknown[]>(
   return authQueryKey(auth, "billing", ...parts);
 }
 
-export const balanceQuery = (auth: AuthenticatedAuth) =>
+export const entitlementsQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(auth, "balance"),
-    queryFn: () => getBalance(),
+    queryKey: billingQueryKey(auth, "entitlements"),
+    queryFn: () => getEntitlements(),
   });
 
 export const subscriptionsQuery = (auth: AuthenticatedAuth) =>
@@ -22,10 +22,10 @@ export const subscriptionsQuery = (auth: AuthenticatedAuth) =>
     queryFn: () => getSubscriptions(),
   });
 
-export const activeGrantsQuery = (auth: AuthenticatedAuth) =>
+export const plansQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(auth, "grants", { active: true }),
-    queryFn: () => getGrants({ data: { active: true } }),
+    queryKey: billingQueryKey(auth, "plans"),
+    queryFn: () => getPlans(),
   });
 
 export const statementQuery = (auth: AuthenticatedAuth, productId: string) =>
@@ -33,10 +33,6 @@ export const statementQuery = (auth: AuthenticatedAuth, productId: string) =>
     queryKey: billingQueryKey(auth, "statement", { productId }),
     queryFn: () => getStatement({ data: { productId } }),
   });
-
-export async function loadBalance(queryClient: QueryClient, auth: AuthenticatedAuth) {
-  return queryClient.ensureQueryData(balanceQuery(auth));
-}
 
 function logBillingPageLoadError(error: unknown) {
   const spanContext = trace.getActiveSpan()?.spanContext();
@@ -56,16 +52,14 @@ function logBillingPageLoadError(error: unknown) {
 
 export async function loadBillingPage(queryClient: QueryClient, auth: AuthenticatedAuth) {
   try {
-    const [balance, subscriptions, grants] = await Promise.all([
-      queryClient.ensureQueryData(balanceQuery(auth)),
+    const [entitlements, subscriptions] = await Promise.all([
+      queryClient.ensureQueryData(entitlementsQuery(auth)),
       queryClient.ensureQueryData(subscriptionsQuery(auth)),
-      queryClient.ensureQueryData(activeGrantsQuery(auth)),
     ]);
 
     return {
-      balance,
+      entitlements,
       subscriptions,
-      grants,
     };
   } catch (error) {
     logBillingPageLoadError(error);

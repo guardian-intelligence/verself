@@ -82,6 +82,52 @@ func TestStripeInvoiceStateUsesParentSubscriptionSnapshot(t *testing.T) {
 	assertTimePresent(t, state.CurrentPeriodEnd, "current period end")
 }
 
+func TestStripeInvoiceStatePrefersLineItemServicePeriod(t *testing.T) {
+	t.Parallel()
+
+	event := stripe.Event{Data: &stripe.EventData{Raw: []byte(`{
+		"id": "in_test",
+		"customer": "cus_test",
+		"period_start": 1776028570,
+		"period_end": 1776028570,
+		"parent": {
+			"type": "subscription_details",
+			"subscription_details": {
+				"subscription": "sub_test",
+				"metadata": {
+					"org_id": "42",
+					"product_id": "sandbox",
+					"plan_id": "sandbox-hobby",
+					"cadence": "monthly"
+				}
+			}
+		},
+		"lines": {
+			"object": "list",
+			"data": [{
+				"id": "il_test",
+				"period": {
+					"start": 1776028570,
+					"end": 1778620570
+				}
+			}]
+		}
+	}`)}}
+
+	invoice, err := decodeStripeEventObject[stripe.Invoice](event, "invoice.paid")
+	if err != nil {
+		t.Fatalf("decode invoice: %v", err)
+	}
+	state, err := (*Client)(nil).subscriptionStateFromInvoice(context.Background(), invoice, "active")
+	if err != nil {
+		t.Fatalf("subscriptionStateFromInvoice: %v", err)
+	}
+
+	assertEqual(t, state.PlanID, "sandbox-hobby", "plan id")
+	assertTimeEqual(t, state.CurrentPeriodStart, time.Unix(1776028570, 0).UTC(), "current period start")
+	assertTimeEqual(t, state.CurrentPeriodEnd, time.Unix(1778620570, 0).UTC(), "current period end")
+}
+
 func TestStripeSubscriptionStateUsesItemPeriod(t *testing.T) {
 	t.Parallel()
 
@@ -118,13 +164,25 @@ func TestStripeSubscriptionStateUsesItemPeriod(t *testing.T) {
 	assertTimePresent(t, state.CurrentPeriodEnd, "current period end")
 }
 
+func TestClosedSubscriptionPaymentStatePreservesLastKnownState(t *testing.T) {
+	t.Parallel()
+
+	state := mergeStripeSubscriptionState(
+		stripeSubscriptionState{Status: "canceled"},
+		stripeSubscriptionState{PaymentState: PaymentPaid},
+	)
+
+	assertEqual(t, closedSubscriptionPaymentState(state), PaymentPaid, "closed subscription payment state")
+	assertEqual(t, closedSubscriptionPaymentState(stripeSubscriptionState{}), PaymentPending, "unknown closed subscription payment state")
+}
+
 func TestSourceReferenceGrantIDIsDeterministicAndScoped(t *testing.T) {
 	t.Parallel()
 
-	first := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "in_test")
-	second := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "in_test")
-	differentBucket := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "ram", "in_test")
-	differentSource := sourceReferenceGrantID(42, SourceFreeTier, GrantScopeBucket, "sandbox", "compute", "in_test")
+	first := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", "in_test")
+	second := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", "in_test")
+	differentBucket := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "ram", "", "in_test")
+	differentSource := sourceReferenceGrantID(42, SourceFreeTier, GrantScopeBucket, "sandbox", "compute", "", "in_test")
 
 	assertEqual(t, first.String(), second.String(), "same source reference grant id")
 	if first == differentBucket {
@@ -142,5 +200,15 @@ func assertTimePresent(t *testing.T, value *time.Time, label string) {
 	t.Helper()
 	if value == nil || value.IsZero() {
 		t.Fatalf("%s is not present", label)
+	}
+}
+
+func assertTimeEqual(t *testing.T, value *time.Time, expected time.Time, label string) {
+	t.Helper()
+	if value == nil {
+		t.Fatalf("%s is not present", label)
+	}
+	if !value.Equal(expected) {
+		t.Fatalf("%s: got %s, want %s", label, value.Format(time.RFC3339), expected.Format(time.RFC3339))
 	}
 }
