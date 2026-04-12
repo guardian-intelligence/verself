@@ -1,4 +1,0 @@
----
-electric_letters_version: "1.5.0"
-electric_letters_image: "docker.io/electricsql/electric:{{ electric_letters_version }}"
-electric_letters_storage_dir: /var/lib/electric-letters

@@ -1,329 +1,42 @@
-import { chromium } from "@playwright/test";
-import fs from "node:fs/promises";
+// Static-blog smoke check: SSR HTML for /, a known post, and a 404 path.
+// No browser, no auth — Letters is now a code-authored static blog.
 
-const runId = process.env.VERIFICATION_RUN_ID;
-const domain = process.env.FORGE_METAL_DOMAIN ?? "anveio.com";
-const baseURL = process.env.TEST_BASE_URL ?? `https://letters.${domain}`;
-const email = process.env.TEST_EMAIL ?? `ceo@${domain}`;
-const password = process.env.TEST_PASSWORD;
-const routeBaseURL = normalizeBaseURL(baseURL);
-const shortTimeoutMS = 5_000;
-const pollIntervalMS = 250;
+const baseURL = (process.env.TEST_BASE_URL ?? "http://127.0.0.1:4247").replace(/\/$/, "");
+const knownSlug = process.env.TEST_KNOWN_SLUG ?? "hello-world";
+const knownTitleFragment = process.env.TEST_KNOWN_TITLE ?? "Hello, world";
 
-if (!runId) {
-  throw new Error("VERIFICATION_RUN_ID is required");
+async function fetchExpect(path, expectStatus) {
+  const url = `${baseURL}${path}`;
+  const res = await fetch(url, { redirect: "manual" });
+  if (res.status !== expectStatus) {
+    throw new Error(`GET ${url}: expected ${expectStatus}, got ${res.status}`);
+  }
+  const body = await res.text();
+  return { url, status: res.status, body };
 }
 
-if (!password) {
-  throw new Error("TEST_PASSWORD is required");
-}
-
-await fs.mkdir("artifacts/letters-live-check", { recursive: true });
-
-const browser = await chromium.launch({ headless: true });
-const context = await browser.newContext({
-  baseURL,
-  ignoreHTTPSErrors: true,
-});
-await context.route(`${routeBaseURL}/**`, async (route) => {
-  await route.continue({
-    headers: {
-      ...route.request().headers(),
-      "X-Forge-Metal-Verification-Run": runId,
-    },
-  });
-});
-const page = await context.newPage();
-const consoleMessages = [];
-const pageErrors = [];
-const failedRequests = [];
-
-page.on("console", (msg) => consoleMessages.push({ type: msg.type(), text: msg.text() }));
-page.on("pageerror", (err) => pageErrors.push(err.stack || String(err)));
-page.on("requestfailed", (req) =>
-  failedRequests.push({ url: req.url(), failure: req.failure()?.errorText || "unknown" }),
-);
-
-const result = {
-  run_id: runId,
-  email,
-  slug: "",
-  editor_index_url: "",
-  editor_url: "",
-  public_url: "",
-  console_messages: consoleMessages,
-  page_errors: pageErrors,
-  failed_requests: failedRequests,
-  editor_title_before_hydration: "",
-  editor_title_after_hydration: "",
-  ssr_article_text: "",
-  hydrated_article_text: "",
-  status: "unknown",
-  timestamp: new Date().toISOString(),
-};
-
-function actionableFailures(requests) {
-  return requests.filter((request) => {
-    if (!request.url.startsWith(routeBaseURL)) {
-      return false;
-    }
-    return !(request.failure === "net::ERR_ABORTED" && request.url.includes("/v1/shape"));
-  });
-}
-
-try {
-  const title = `Verification ${runId}`;
-  const body = `letters live verification ${runId}`;
-  const titleInput = page.getByPlaceholder("Post title");
-  const loginNameInput = page.locator("#loginName");
-  const passwordInput = page.locator("#password");
-  const redirectButton = page.getByRole("button", { name: /click here/i });
-  const otherUserButton = page.getByRole("button", { name: /other user/i });
-  const skipButton = page.getByRole("button", { name: /^Skip$/ });
-
-  await page.goto("/editor/new");
-  await page.waitForLoadState("domcontentloaded");
-  if (!(await titleInput.isVisible().catch(() => false))) {
-    await completeLoginFlow(page, {
-      readyLocator: titleInput,
-      loginNameInput,
-      passwordInput,
-      redirectButton,
-      otherUserButton,
-      skipButton,
-      email,
-      password,
-    });
-  }
-
-  await titleInput.fill(title);
-  await page.locator(".ProseMirror").click();
-  await page.locator(".ProseMirror").fill(body);
-
-  await Promise.all([page.getByRole("button", { name: "Publish" }).click()]);
-  await page.waitForURL(
-    (url) => url.pathname.startsWith("/editor/") && url.pathname !== "/editor/new",
-    { timeout: shortTimeoutMS },
-  );
-
-  result.editor_url = page.url();
-  result.slug = page.url().split("/").pop() ?? "";
-
-  await page.getByText("Status:").waitFor({ state: "visible", timeout: shortTimeoutMS });
-  await page
-    .getByText("Published", { exact: true })
-    .waitFor({ state: "visible", timeout: shortTimeoutMS });
-
-  await page.goto("/editor", { waitUntil: "domcontentloaded" });
-  const editorTitleLink = page.getByRole("link", { name: title }).first();
-  await editorTitleLink.waitFor({ state: "visible", timeout: shortTimeoutMS });
-  result.editor_index_url = page.url();
-  result.editor_title_before_hydration = normalizeText(await editorTitleLink.innerText());
-  await page.waitForLoadState("networkidle");
-  await editorTitleLink.waitFor({ state: "visible", timeout: shortTimeoutMS });
-  result.editor_title_after_hydration = normalizeText(await editorTitleLink.innerText());
-
-  if (result.editor_title_before_hydration !== result.editor_title_after_hydration) {
-    throw new Error(
-      `Editor list changed during hydration: ${result.editor_title_before_hydration} -> ${result.editor_title_after_hydration}`,
-    );
-  }
-  if (
-    await page
-      .getByText("No posts yet. Start writing!")
-      .isVisible()
-      .catch(() => false)
-  ) {
-    throw new Error("Editor dashboard collapsed to the empty state after hydration");
-  }
-
-  result.public_url = `${baseURL}/${result.slug}`;
-  await page.goto(`/${result.slug}`, { waitUntil: "domcontentloaded" });
-  const article = page.locator("article");
-  await page
-    .getByRole("heading", { name: title })
-    .waitFor({ state: "visible", timeout: shortTimeoutMS });
-  await page.getByText(body).waitFor({ state: "visible", timeout: shortTimeoutMS });
-  result.ssr_article_text = normalizeText(await article.innerText());
-  await page
-    .getByRole("button", { name: /Clap/ })
-    .waitFor({ state: "visible", timeout: shortTimeoutMS });
-
-  let sameOriginFailures = actionableFailures(failedRequests);
-  if (pageErrors.length > 0 || sameOriginFailures.length > 0) {
-    throw new Error(
-      `Verification errors detected: ${[pageErrors[0], sameOriginFailures[0]?.failure, sameOriginFailures[0]?.url].filter(Boolean).join(" | ")}`,
-    );
-  }
-
-  await page
-    .getByRole("heading", { name: title })
-    .waitFor({ state: "visible", timeout: shortTimeoutMS });
-  await page.getByText(body).waitFor({ state: "visible", timeout: shortTimeoutMS });
-  result.hydrated_article_text = normalizeText(await article.innerText());
-
-  if (result.ssr_article_text !== result.hydrated_article_text) {
-    throw new Error(
-      `SSR content changed during hydration: ${result.ssr_article_text} -> ${result.hydrated_article_text}`,
-    );
-  }
-
-  sameOriginFailures = actionableFailures(failedRequests);
-  const hydrationWarnings = consoleMessages.filter(
-    (message) =>
-      message.type === "error" &&
-      /hydration|did not match|text content does not match/i.test(message.text),
-  );
-  if (pageErrors.length > 0 || sameOriginFailures.length > 0 || hydrationWarnings.length > 0) {
-    throw new Error(
-      `Verification errors detected after hydration: ${[
-        pageErrors[0],
-        sameOriginFailures[0]?.failure,
-        sameOriginFailures[0]?.url,
-        hydrationWarnings[0]?.text,
-      ]
-        .filter(Boolean)
-        .join(" | ")}`,
-    );
-  }
-
-  await page.screenshot({
-    path: `artifacts/letters-live-check/${runId}.png`,
-    fullPage: true,
-  });
-  result.status = "ok";
-} catch (error) {
-  result.status = "failed";
-  result.error = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  await page
-    .screenshot({
-      path: `artifacts/letters-live-check/${runId}-failed.png`,
-      fullPage: true,
-    })
-    .catch(() => {});
-} finally {
-  const resultPath = `artifacts/letters-live-check/${runId}.json`;
-  await fs.writeFile(resultPath, JSON.stringify(result, null, 2));
-  console.log(JSON.stringify({ resultPath, result }, null, 2));
-  await context.close();
-  await browser.close();
-}
-
-function normalizeBaseURL(baseURL) {
-  return new URL(baseURL).href.replace(/\/$/, "");
-}
-
-function normalizeText(value) {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-async function completeLoginFlow(
-  page,
-  {
-    readyLocator,
-    loginNameInput,
-    passwordInput,
-    redirectButton,
-    otherUserButton,
-    skipButton,
-    email,
-    password,
-  },
-) {
-  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
-    if (await readyLocator.isVisible().catch(() => false)) {
-      return;
-    }
-
-    if (await redirectButton.isVisible().catch(() => false)) {
-      await redirectButton.click();
-      await waitForAuthBoundary(page, {
-        readyLocator,
-        loginNameInput,
-        passwordInput,
-        redirectButton,
-        otherUserButton,
-        skipButton,
-      });
-      continue;
-    }
-
-    if (await otherUserButton.isVisible().catch(() => false)) {
-      await otherUserButton.click();
-      await waitForAuthBoundary(page, {
-        readyLocator,
-        loginNameInput,
-        passwordInput,
-        redirectButton,
-        otherUserButton,
-        skipButton,
-      });
-      continue;
-    }
-
-    if (await loginNameInput.isVisible().catch(() => false)) {
-      await loginNameInput.fill(email);
-      await page.locator('button[type="submit"]').click();
-      await waitForAuthBoundary(page, {
-        readyLocator,
-        loginNameInput,
-        passwordInput,
-        redirectButton,
-        otherUserButton,
-        skipButton,
-      });
-      continue;
-    }
-
-    if (await passwordInput.isVisible().catch(() => false)) {
-      await passwordInput.fill(password);
-      await page.locator('button[type="submit"]').click();
-      await waitForAuthBoundary(page, {
-        readyLocator,
-        loginNameInput,
-        passwordInput,
-        redirectButton,
-        otherUserButton,
-        skipButton,
-      });
-      continue;
-    }
-
-    if (await skipButton.isVisible().catch(() => false)) {
-      await skipButton.click();
-      await waitForAuthBoundary(page, {
-        readyLocator,
-        loginNameInput,
-        passwordInput,
-        redirectButton,
-        otherUserButton,
-        skipButton,
-      });
-      continue;
-    }
-
-    await page.waitForTimeout(pollIntervalMS);
-  }
-
-  throw new Error(`Unable to complete login flow from ${page.url()}`);
-}
-
-async function waitForAuthBoundary(
-  page,
-  { readyLocator, loginNameInput, passwordInput, redirectButton, otherUserButton, skipButton },
-) {
-  for (let attempt = 0; attempt < shortTimeoutMS / pollIntervalMS; attempt += 1) {
-    if (
-      (await readyLocator.isVisible().catch(() => false)) ||
-      (await loginNameInput.isVisible().catch(() => false)) ||
-      (await passwordInput.isVisible().catch(() => false)) ||
-      (await redirectButton.isVisible().catch(() => false)) ||
-      (await otherUserButton.isVisible().catch(() => false)) ||
-      (await skipButton.isVisible().catch(() => false))
-    ) {
-      return;
-    }
-    await page.waitForLoadState("domcontentloaded").catch(() => {});
-    await page.waitForTimeout(pollIntervalMS);
+function assertContains(body, fragment, label) {
+  if (!body.includes(fragment)) {
+    throw new Error(`${label}: response did not contain ${JSON.stringify(fragment)}`);
   }
 }
+
+const checks = [];
+
+const home = await fetchExpect("/", 200);
+assertContains(home.body, "<title>Letters", "GET /");
+assertContains(home.body, '<meta name="description"', "GET / description meta");
+assertContains(home.body, knownSlug, "GET / known slug link");
+checks.push({ path: "/", status: home.status });
+
+const post = await fetchExpect(`/${knownSlug}`, 200);
+assertContains(post.body, knownTitleFragment, `GET /${knownSlug}`);
+assertContains(post.body, 'property="og:type" content="article"', `GET /${knownSlug} og:type`);
+assertContains(post.body, "application/ld+json", `GET /${knownSlug} JSON-LD`);
+assertContains(post.body, '<link rel="canonical"', `GET /${knownSlug} canonical`);
+checks.push({ path: `/${knownSlug}`, status: post.status });
+
+const missing = await fetchExpect("/this-post-does-not-exist", 404);
+checks.push({ path: "/this-post-does-not-exist", status: missing.status });
+
+console.log(JSON.stringify({ ok: true, baseURL, checks }, null, 2));

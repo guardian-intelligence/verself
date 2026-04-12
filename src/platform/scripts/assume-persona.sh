@@ -84,7 +84,7 @@ case "${persona}" in
     machine_secret_path="/etc/credstore/seed-system/assume-platform-admin-client-secret"
     include_platform_ops=1
     mailbox_account="agents"
-    token_projects=(sandbox-rental identity-service mailbox-service letters forgejo)
+    token_projects=(sandbox-rental identity-service mailbox-service forgejo)
     ;;
   acme-admin)
     human_email="acme-admin@${VERIFICATION_DOMAIN}"
@@ -313,11 +313,6 @@ if [[ -n "${project_tokens[mailbox-service]:-}" ]]; then
   write_export MAILBOX_SERVICE_AUTH_PROJECT_ID "${project_ids[mailbox-service]}"
   write_export MAILBOX_SERVICE_ACCESS_TOKEN "${project_tokens[mailbox-service]}"
   write_export MAILBOX_SERVICE_TOKEN "${project_tokens[mailbox-service]}"
-fi
-if [[ -n "${project_tokens[letters]:-}" ]]; then
-  write_export LETTERS_AUTH_PROJECT_ID "${project_ids[letters]}"
-  write_export LETTERS_ACCESS_TOKEN "${project_tokens[letters]}"
-  write_export LETTERS_TOKEN "${project_tokens[letters]}"
 fi
 if [[ -n "${project_tokens[forgejo]:-}" ]]; then
   write_export FORGEJO_AUTH_PROJECT_ID "${project_ids[forgejo]}"

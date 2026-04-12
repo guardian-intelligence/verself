@@ -1,9 +1,0 @@
-# Electric Letters sync service — loopback only, Caddy reverse proxy.
-table inet forge_metal_electric_letters
-delete table inet forge_metal_electric_letters
-table inet forge_metal_electric_letters {
-    chain input {
-        type filter hook input priority filter; policy accept;
-        tcp dport {{ services.electric_letters.port }} iifname != "lo" drop
-    }
-}

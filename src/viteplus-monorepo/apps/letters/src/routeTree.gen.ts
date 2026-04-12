@@ -9,36 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LogoutRouteImport } from './routes/logout'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as EditorRouteImport } from './routes/editor'
-import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as EditorIndexRouteImport } from './routes/editor.index'
-import { Route as EditorNewRouteImport } from './routes/editor.new'
-import { Route as EditorSlugRouteImport } from './routes/editor.$slug'
 
-const LogoutRoute = LogoutRouteImport.update({
-  id: '/logout',
-  path: '/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EditorRoute = EditorRouteImport.update({
-  id: '/editor',
-  path: '/editor',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CallbackRoute = CallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SlugRoute = SlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
@@ -49,129 +22,35 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const EditorIndexRoute = EditorIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => EditorRoute,
-} as any)
-const EditorNewRoute = EditorNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => EditorRoute,
-} as any)
-const EditorSlugRoute = EditorSlugRouteImport.update({
-  id: '/$slug',
-  path: '/$slug',
-  getParentRoute: () => EditorRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/callback': typeof CallbackRoute
-  '/editor': typeof EditorRouteWithChildren
-  '/login': typeof LoginRoute
-  '/logout': typeof LogoutRoute
-  '/editor/$slug': typeof EditorSlugRoute
-  '/editor/new': typeof EditorNewRoute
-  '/editor/': typeof EditorIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/callback': typeof CallbackRoute
-  '/login': typeof LoginRoute
-  '/logout': typeof LogoutRoute
-  '/editor/$slug': typeof EditorSlugRoute
-  '/editor/new': typeof EditorNewRoute
-  '/editor': typeof EditorIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
-  '/callback': typeof CallbackRoute
-  '/editor': typeof EditorRouteWithChildren
-  '/login': typeof LoginRoute
-  '/logout': typeof LogoutRoute
-  '/editor/$slug': typeof EditorSlugRoute
-  '/editor/new': typeof EditorNewRoute
-  '/editor/': typeof EditorIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/$slug'
-    | '/callback'
-    | '/editor'
-    | '/login'
-    | '/logout'
-    | '/editor/$slug'
-    | '/editor/new'
-    | '/editor/'
+  fullPaths: '/' | '/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/$slug'
-    | '/callback'
-    | '/login'
-    | '/logout'
-    | '/editor/$slug'
-    | '/editor/new'
-    | '/editor'
-  id:
-    | '__root__'
-    | '/'
-    | '/$slug'
-    | '/callback'
-    | '/editor'
-    | '/login'
-    | '/logout'
-    | '/editor/$slug'
-    | '/editor/new'
-    | '/editor/'
+  to: '/' | '/$slug'
+  id: '__root__' | '/' | '/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
-  CallbackRoute: typeof CallbackRoute
-  EditorRoute: typeof EditorRouteWithChildren
-  LoginRoute: typeof LoginRoute
-  LogoutRoute: typeof LogoutRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/logout': {
-      id: '/logout'
-      path: '/logout'
-      fullPath: '/logout'
-      preLoaderRoute: typeof LogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/editor': {
-      id: '/editor'
-      path: '/editor'
-      fullPath: '/editor'
-      preLoaderRoute: typeof EditorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/callback': {
-      id: '/callback'
-      path: '/callback'
-      fullPath: '/callback'
-      preLoaderRoute: typeof CallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/$slug': {
       id: '/$slug'
       path: '/$slug'
@@ -186,52 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/editor/': {
-      id: '/editor/'
-      path: '/'
-      fullPath: '/editor/'
-      preLoaderRoute: typeof EditorIndexRouteImport
-      parentRoute: typeof EditorRoute
-    }
-    '/editor/new': {
-      id: '/editor/new'
-      path: '/new'
-      fullPath: '/editor/new'
-      preLoaderRoute: typeof EditorNewRouteImport
-      parentRoute: typeof EditorRoute
-    }
-    '/editor/$slug': {
-      id: '/editor/$slug'
-      path: '/$slug'
-      fullPath: '/editor/$slug'
-      preLoaderRoute: typeof EditorSlugRouteImport
-      parentRoute: typeof EditorRoute
-    }
   }
 }
-
-interface EditorRouteChildren {
-  EditorSlugRoute: typeof EditorSlugRoute
-  EditorNewRoute: typeof EditorNewRoute
-  EditorIndexRoute: typeof EditorIndexRoute
-}
-
-const EditorRouteChildren: EditorRouteChildren = {
-  EditorSlugRoute: EditorSlugRoute,
-  EditorNewRoute: EditorNewRoute,
-  EditorIndexRoute: EditorIndexRoute,
-}
-
-const EditorRouteWithChildren =
-  EditorRoute._addFileChildren(EditorRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
-  CallbackRoute: CallbackRoute,
-  EditorRoute: EditorRouteWithChildren,
-  LoginRoute: LoginRoute,
-  LogoutRoute: LogoutRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 
 @theme {
   --color-background: oklch(1 0 0);
@@ -30,7 +29,7 @@
   }
 }
 
-/* Medium-style serif typography for post body */
+/* Long-form serif typography for post body */
 .prose-letters {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 1.25rem;
@@ -114,23 +113,6 @@
   text-underline-offset: 2px;
 }
 
-/* Clap button animation */
-@keyframes clap-burst {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.3);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.clap-animate {
-  animation: clap-burst 0.3s ease-in-out;
-}
-
 /* Reading progress bar */
 .reading-progress {
   position: fixed;
@@ -140,18 +122,4 @@
   background: oklch(0.52 0.16 155);
   z-index: 50;
   transition: width 50ms linear;
-}
-
-/* Tiptap editor overrides */
-.tiptap-editor .ProseMirror {
-  outline: none;
-  min-height: 400px;
-}
-
-.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  color: oklch(0.7 0 0);
-  pointer-events: none;
-  height: 0;
 }

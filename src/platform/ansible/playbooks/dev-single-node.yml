@@ -116,7 +116,7 @@
     - role: electric
       tags: [electric]
     - role: frontend_auth_sessions
-      tags: [frontend_auth_sessions, rent_a_sandbox, webmail, letters]
+      tags: [frontend_auth_sessions, rent_a_sandbox, webmail]
     - role: rent_a_sandbox
       tags: [rent_a_sandbox]
     - role: stalwart
@@ -131,8 +131,6 @@
       tags: [webmail]
     - role: letters
       tags: [letters]
-    - role: electric_letters
-      tags: [electric_letters]
     - role: grafana
       tags: [grafana]
     - role: verdaccio

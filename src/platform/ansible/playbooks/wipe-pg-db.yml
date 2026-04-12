@@ -9,7 +9,6 @@
 # - sandbox_rental
 # - mailbox_service
 # - identity_service
-# - letters
 
 - name: Wipe one managed PostgreSQL database
   hosts: all
@@ -21,7 +20,6 @@
       - sandbox_rental
       - mailbox_service
       - identity_service
-      - letters
   pre_tasks:
     - name: Assert supported PostgreSQL wipe target
       ansible.builtin.assert:
@@ -126,17 +124,3 @@
       vars:
         identity_service_force_schema_reset: true
       when: wipe_pg_db_name == 'identity_service'
-
-    - name: Include letters for letters PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: letters
-      tags: [letters]
-      vars:
-        letters_force_schema_reset: true
-      when: wipe_pg_db_name == 'letters'
-
-    - name: Include Electric Letters after letters PostgreSQL wipe
-      ansible.builtin.include_role:
-        name: electric_letters
-      tags: [electric_letters]
-      when: wipe_pg_db_name == 'letters'
