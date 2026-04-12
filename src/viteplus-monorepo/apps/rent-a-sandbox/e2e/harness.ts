@@ -309,7 +309,7 @@ export class SandboxHarness {
     while (Date.now() < deadline) {
       try {
         const result = await predicate();
-        if (result) {
+        if (result !== false && result !== null && result !== undefined) {
           return result;
         }
       } catch (error) {
@@ -418,9 +418,18 @@ export class SandboxHarness {
   }
 
   async readBalance(): Promise<number> {
+    const balanceCard = this.page.getByTestId("balance-card");
     const balanceText = this.page.getByTestId("balance-total");
 
     await balanceText.waitFor({ state: "visible", timeout: shortTimeoutMS });
+    const rawUnits = await balanceCard.getAttribute("data-balance-total-units");
+    if (rawUnits) {
+      const units = Number.parseInt(rawUnits, 10);
+      if (Number.isFinite(units)) {
+        return units;
+      }
+    }
+
     const raw = await balanceText.textContent();
     if (!raw) {
       throw new Error("Could not read balance text");
