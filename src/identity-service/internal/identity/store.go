@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -224,7 +225,7 @@ func (s SQLStore) AddAPICredentialSecret(ctx context.Context, orgID, credentialI
 	defer rollback(tx)
 	if _, err := tx.ExecContext(ctx, `
 UPDATE identity_api_credential_secrets s
-SET revoked_at = $4, revoked_by = $3
+SET revoked_at = $4, revoked_by = COALESCE(NULLIF(s.revoked_by, ''), $3)
 FROM identity_api_credentials c
 WHERE c.credential_id = s.credential_id
   AND c.org_id = $1
@@ -264,7 +265,7 @@ func (s SQLStore) RevokeAPICredential(ctx context.Context, orgID, credentialID, 
 	defer rollback(tx)
 	if _, err := tx.ExecContext(ctx, `
 UPDATE identity_api_credential_secrets s
-SET revoked_at = COALESCE(s.revoked_at, $4), revoked_by = COALESCE(s.revoked_by, $3)
+SET revoked_at = COALESCE(s.revoked_at, $4), revoked_by = COALESCE(NULLIF(s.revoked_by, ''), $3)
 FROM identity_api_credentials c
 WHERE c.credential_id = s.credential_id
   AND c.org_id = $1
@@ -406,7 +407,7 @@ INSERT INTO identity_api_credential_secrets (
     hash_algorithm, created_at, created_by, expires_at, revoked_at, revoked_by
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-`, secret.SecretID, secret.CredentialID, string(secret.AuthMethod), secret.ProviderKeyID, secret.Fingerprint, secret.SecretHash, secret.HashAlgorithm, secret.CreatedAt, secret.CreatedBy, secret.ExpiresAt, secret.RevokedAt, secret.RevokedBy); err != nil {
+`, secret.SecretID, secret.CredentialID, string(secret.AuthMethod), secret.ProviderKeyID, secret.Fingerprint, secret.SecretHash, secret.HashAlgorithm, secret.CreatedAt, secret.CreatedBy, secret.ExpiresAt, secret.RevokedAt, nullableStringParam(secret.RevokedBy)); err != nil {
 		return fmt.Errorf("insert api credential secret: %w", err)
 	}
 	return nil
@@ -453,6 +454,13 @@ func nullableString(value sql.NullString) string {
 		return ""
 	}
 	return value.String
+}
+
+func nullableStringParam(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
 }
 
 func rollback(tx *sql.Tx) {
