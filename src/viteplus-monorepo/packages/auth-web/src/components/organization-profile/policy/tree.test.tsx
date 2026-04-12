@@ -40,9 +40,10 @@ describe("PolicyMatrix render", () => {
         canEdit={true}
       />,
     );
-    // Radix Checkbox propagates the checked prop to a `data-state` attribute
-    // on the rendered button: "checked" | "unchecked" | "indeterminate".
-    expect(html).toContain('data-state="indeterminate"');
+    // aria-checked is the WAI-ARIA contract for tri-state checkboxes
+    // (https://www.w3.org/WAI/ARIA/apg/patterns/checkbox-tri-state/), so the
+    // assertion stays correct even if Radix renames its internal data-state.
+    expect(html).toContain('aria-checked="mixed"');
   });
 
   it("renders a checked checkbox when the group is fully on", () => {
@@ -54,7 +55,7 @@ describe("PolicyMatrix render", () => {
         canEdit={true}
       />,
     );
-    expect(html).toContain('data-state="checked"');
+    expect(html).toContain('aria-checked="true"');
   });
 
   it("renders an unchecked checkbox when the group is fully off", () => {
@@ -66,7 +67,7 @@ describe("PolicyMatrix render", () => {
         canEdit={true}
       />,
     );
-    expect(html).toContain('data-state="unchecked"');
+    expect(html).toContain('aria-checked="false"');
   });
 
   it("includes an aria-expanded toggle for every group row", () => {
