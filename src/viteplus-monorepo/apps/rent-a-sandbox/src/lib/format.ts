@@ -6,10 +6,10 @@ const ledgerMoneyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
 });
-const ledgerRateFormatter = new Intl.NumberFormat("en-US", {
+const ledgerPreciseMoneyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  minimumFractionDigits: 0,
+  minimumFractionDigits: 2,
   maximumFractionDigits: 6,
 });
 
@@ -45,6 +45,10 @@ export function formatLedgerAmount(value: number): string {
   return ledgerMoneyFormatter.format(value / ledgerUnitsPerUSD);
 }
 
-export function formatLedgerRate(value: number): string {
-  return `${ledgerRateFormatter.format(value / ledgerUnitsPerUSD)} / unit`;
+export function formatLedgerAmountPrecise(value: number): string {
+  return ledgerPreciseMoneyFormatter.format(value / ledgerUnitsPerUSD);
+}
+
+export function formatLedgerRate(value: number, quantityUnit = "unit"): string {
+  return `${formatLedgerAmountPrecise(value)} / ${quantityUnit}`;
 }

@@ -30,6 +30,7 @@ export const vBillingGrants = v.strictObject({
 });
 
 export const vBillingStatementBucketSummary = v.strictObject({
+  bucket_display_name: v.string(),
   bucket_id: v.string(),
   charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
@@ -52,14 +53,16 @@ export const vBillingStatementGrantSummary = v.strictObject({
 });
 
 export const vBillingStatementLineItem = v.strictObject({
+  bucket_display_name: v.string(),
   bucket_id: v.string(),
   charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  component_id: v.string(),
-  description: v.string(),
   plan_id: v.string(),
   pricing_phase: v.string(),
   product_id: v.string(),
   quantity: v.number(),
+  quantity_unit: v.string(),
+  sku_display_name: v.string(),
+  sku_id: v.string(),
   unit_rate: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
