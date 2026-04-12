@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -280,6 +281,11 @@ func (s *hostStateStore) appendRunEvent(ctx context.Context, runID, eventType st
 	if err := insertHostRunEventTx(ctx, tx, runID, eventType, attrs, nowUnixNano); err != nil {
 		return err
 	}
+	if strings.TrimSpace(eventType) == "checkpoint_request" {
+		if err := insertCheckpointOpTx(ctx, tx, runID, attrs, nowUnixNano); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit append run event for %s: %w", runID, err)
 	}
@@ -432,6 +438,76 @@ func insertHostRunEventTx(
 		return fmt.Errorf("insert host run event for %s: %w", runID, err)
 	}
 	return nil
+}
+
+func insertCheckpointOpTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	runID string,
+	attrs map[string]string,
+	nowUnixNano int64,
+) error {
+	var nextSeq uint64
+	if err := tx.QueryRowContext(
+		ctx,
+		`SELECT COALESCE(MAX(op_seq), 0) + 1 FROM checkpoint_ops WHERE run_id = ?`,
+		runID,
+	).Scan(&nextSeq); err != nil {
+		return fmt.Errorf("compute checkpoint op seq for %s: %w", runID, err)
+	}
+
+	requestID := strings.TrimSpace(attrs["request_id"])
+	opType := strings.TrimSpace(attrs["operation"])
+	ref := strings.TrimSpace(attrs["ref"])
+	versionID := strings.TrimSpace(attrs["version_id"])
+	errorText := strings.TrimSpace(attrs["error"])
+	accepted, err := parseCheckpointAccepted(attrs["accepted"])
+	if err != nil {
+		return fmt.Errorf("parse checkpoint accepted for %s: %w", runID, err)
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO checkpoint_ops (
+			run_id,
+			op_seq,
+			request_id,
+			op_type,
+			ref,
+			accepted,
+			version_id,
+			error_text,
+			created_at_unix_nano
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		runID,
+		nextSeq,
+		requestID,
+		opType,
+		ref,
+		accepted,
+		versionID,
+		errorText,
+		nowUnixNano,
+	); err != nil {
+		return fmt.Errorf("insert checkpoint op for %s: %w", runID, err)
+	}
+
+	return nil
+}
+
+func parseCheckpointAccepted(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid accepted value %q", raw)
+	}
+	if parsed {
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func runStateName(state RunState) string {
