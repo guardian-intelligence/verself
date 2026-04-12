@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -118,6 +120,85 @@ func RegisterRoutes(api huma.API, svc *identity.Service) {
 		RateLimitClass: "read",
 		AuditEvent:     "identity.organization.operations.list",
 	}), listOperations(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "list-api-credentials",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/organization/api-credentials",
+		Summary:     "List organization API credentials",
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRead,
+		Resource:       "api_credential",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "identity.api_credential.list",
+	}), listAPICredentials(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID: "get-api-credential",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/organization/api-credentials/{credential_id}",
+		Summary:     "Get API credential metadata",
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRead,
+		Resource:       "api_credential",
+		Action:         "read",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "identity.api_credential.read",
+	}), getAPICredential(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID:   "create-api-credential",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/organization/api-credentials",
+		Summary:       "Create an API credential",
+		DefaultStatus: 201,
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsCreate,
+		Resource:       "api_credential",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "api_credential_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "identity.api_credential.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createAPICredential(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID:   "roll-api-credential",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/organization/api-credentials/{credential_id}/roll",
+		Summary:       "Roll API credential secret material",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRoll,
+		Resource:       "api_credential",
+		Action:         "roll",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "api_credential_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "identity.api_credential.roll",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), rollAPICredential(svc))
+
+	registerSecured(api, svc, secured(huma.Operation{
+		OperationID:   "revoke-api-credential",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/organization/api-credentials/{credential_id}",
+		Summary:       "Revoke an API credential",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionAPICredentialsRevoke,
+		Resource:       "api_credential",
+		Action:         "revoke",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "api_credential_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "identity.api_credential.revoke",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), revokeAPICredential(svc))
 }
 
 type emptyInput struct{}
@@ -159,6 +240,35 @@ type operationsOutput struct {
 	Body apiwire.IdentityOperations
 }
 
+type apiCredentialPath struct {
+	CredentialID string `path:"credential_id" doc:"Forge Metal API credential ID"`
+}
+
+type apiCredentialsOutput struct {
+	Body apiwire.IdentityAPICredentials
+}
+
+type apiCredentialOutput struct {
+	Body apiwire.IdentityAPICredential
+}
+
+type createAPICredentialInput struct {
+	Body apiwire.IdentityCreateAPICredentialRequest
+}
+
+type createAPICredentialOutput struct {
+	Body apiwire.IdentityCreateAPICredentialResponse
+}
+
+type rollAPICredentialInput struct {
+	CredentialID string `path:"credential_id" doc:"Forge Metal API credential ID"`
+	Body         apiwire.IdentityRollAPICredentialRequest
+}
+
+type rollAPICredentialOutput struct {
+	Body apiwire.IdentityRollAPICredentialResponse
+}
+
 func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
@@ -183,10 +293,11 @@ func principalFromAuthIdentity(ctx context.Context, authIdentity *auth.Identity)
 		return identity.Principal{}, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
 	}
 	return identity.Principal{
-		Subject: authIdentity.Subject,
-		OrgID:   authIdentity.OrgID,
-		Roles:   identityRolesForCurrentOrg(authIdentity),
-		Email:   authIdentity.Email,
+		Subject:           authIdentity.Subject,
+		OrgID:             authIdentity.OrgID,
+		Roles:             identityRolesForCurrentOrg(authIdentity),
+		DirectPermissions: directPermissionsFromAuthIdentity(authIdentity),
+		Email:             authIdentity.Email,
 	}, nil
 }
 
@@ -294,6 +405,89 @@ func listOperations(svc *identity.Service) func(context.Context, *emptyInput) (*
 	}
 }
 
+func listAPICredentials(svc *identity.Service) func(context.Context, *emptyInput) (*apiCredentialsOutput, error) {
+	return func(ctx context.Context, _ *emptyInput) (*apiCredentialsOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		credentials, err := svc.ListAPICredentials(ctx, principal)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &apiCredentialsOutput{Body: apiwire.IdentityAPICredentials{Credentials: apiCredentialDTOs(credentials)}}, nil
+	}
+}
+
+func getAPICredential(svc *identity.Service) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
+	return func(ctx context.Context, input *apiCredentialPath) (*apiCredentialOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		credential, err := svc.GetAPICredential(ctx, principal, input.CredentialID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &apiCredentialOutput{Body: apiCredentialDTO(credential)}, nil
+	}
+}
+
+func createAPICredential(svc *identity.Service) func(context.Context, *createAPICredentialInput) (*createAPICredentialOutput, error) {
+	return func(ctx context.Context, input *createAPICredentialInput) (*createAPICredentialOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, err := svc.CreateAPICredential(ctx, principal, identity.CreateAPICredentialRequest{
+			DisplayName: input.Body.DisplayName,
+			AuthMethod:  identity.APICredentialAuthMethod(input.Body.AuthMethod),
+			Permissions: input.Body.Permissions,
+			ExpiresAt:   input.Body.ExpiresAt,
+		})
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &createAPICredentialOutput{Body: apiwire.IdentityCreateAPICredentialResponse{
+			Credential:     apiCredentialDTO(result.Credential),
+			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
+		}}, nil
+	}
+}
+
+func rollAPICredential(svc *identity.Service) func(context.Context, *rollAPICredentialInput) (*rollAPICredentialOutput, error) {
+	return func(ctx context.Context, input *rollAPICredentialInput) (*rollAPICredentialOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, err := svc.RollAPICredential(ctx, principal, input.CredentialID, identity.RollAPICredentialRequest{
+			AuthMethod: identity.APICredentialAuthMethod(input.Body.AuthMethod),
+		})
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &rollAPICredentialOutput{Body: apiwire.IdentityRollAPICredentialResponse{
+			Credential:     apiCredentialDTO(result.Credential),
+			IssuedMaterial: issuedMaterialDTO(result.IssuedMaterial),
+		}}, nil
+	}
+}
+
+func revokeAPICredential(svc *identity.Service) func(context.Context, *apiCredentialPath) (*apiCredentialOutput, error) {
+	return func(ctx context.Context, input *apiCredentialPath) (*apiCredentialOutput, error) {
+		principal, err := principalFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		credential, err := svc.RevokeAPICredential(ctx, principal, input.CredentialID)
+		if err != nil {
+			return nil, identityError(ctx, err)
+		}
+		return &apiCredentialOutput{Body: apiCredentialDTO(credential)}, nil
+	}
+}
+
 func organizationDTO(org identity.Organization) apiwire.IdentityOrganization {
 	return apiwire.IdentityOrganization{
 		OrgID:       orgID(org.OrgID),
@@ -375,6 +569,64 @@ func operationsDTO(operations identity.Operations) apiwire.IdentityOperations {
 		services = append(services, serviceDTO)
 	}
 	return apiwire.IdentityOperations{Services: services}
+}
+
+func apiCredentialDTOs(credentials []identity.APICredential) []apiwire.IdentityAPICredential {
+	out := make([]apiwire.IdentityAPICredential, 0, len(credentials))
+	for _, credential := range credentials {
+		out = append(out, apiCredentialDTO(credential))
+	}
+	return out
+}
+
+func apiCredentialDTO(credential identity.APICredential) apiwire.IdentityAPICredential {
+	return apiwire.IdentityAPICredential{
+		CredentialID:         credential.CredentialID,
+		OrgID:                orgID(credential.OrgID),
+		SubjectID:            credential.SubjectID,
+		ClientID:             credential.ClientID,
+		DisplayName:          credential.DisplayName,
+		Status:               string(credential.Status),
+		AuthMethod:           string(credential.AuthMethod),
+		Fingerprint:          credential.Fingerprint,
+		Permissions:          append([]string(nil), credential.Permissions...),
+		PolicyVersionAtIssue: credential.PolicyVersionAtIssue,
+		CreatedAt:            credential.CreatedAt,
+		CreatedBy:            credential.CreatedBy,
+		UpdatedAt:            credential.UpdatedAt,
+		ExpiresAt:            credential.ExpiresAt,
+		RevokedAt:            credential.RevokedAt,
+		RevokedBy:            credential.RevokedBy,
+		LastUsedAt:           credential.LastUsedAt,
+	}
+}
+
+func issuedMaterialDTO(material identity.APICredentialIssuedMaterial) apiwire.IdentityAPICredentialIssuedMaterial {
+	return apiwire.IdentityAPICredentialIssuedMaterial{
+		AuthMethod:   string(material.AuthMethod),
+		ClientID:     material.ClientID,
+		TokenURL:     material.TokenURL,
+		KeyID:        material.KeyID,
+		KeyContent:   material.KeyContent,
+		ClientSecret: material.ClientSecret,
+		Fingerprint:  material.Fingerprint,
+	}
+}
+
+func directPermissionsFromAuthIdentity(authIdentity *auth.Identity) []string {
+	if authIdentity == nil {
+		return nil
+	}
+	credentialID, _ := authIdentity.Raw["forge_metal:credential_id"].(string)
+	if strings.TrimSpace(credentialID) == "" {
+		return nil
+	}
+	out := []string{}
+	for _, claimKey := range []string{"permissions", "permission"} {
+		out = append(out, stringClaimList(authIdentity.Raw[claimKey])...)
+	}
+	sort.Strings(out)
+	return compactStrings(out)
 }
 
 func orgID(value string) apiwire.OrgID {

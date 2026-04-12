@@ -66,6 +66,8 @@ func identityError(ctx context.Context, err error) error {
 		return notFound(ctx, "member-not-found", "organization member not found")
 	case errors.Is(err, identity.ErrPolicyConflict):
 		return conflict(ctx, "policy-version-conflict", "organization policy version conflict", err)
+	case errors.Is(err, identity.ErrAPICredentialMissing):
+		return notFound(ctx, "api-credential-not-found", "API credential not found")
 	case errors.Is(err, identity.ErrZitadelUnavailable):
 		return upstreamFailure(ctx, "zitadel-unavailable", "identity provider unavailable", err)
 	case errors.Is(err, identity.ErrStoreUnavailable):

@@ -60,6 +60,171 @@ components:
           format: uri
           type: string
       type: object
+    IdentityAPICredential:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityAPICredential.json
+          format: uri
+          readOnly: true
+          type: string
+        auth_method:
+          type: string
+        client_id:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        credential_id:
+          type: string
+        display_name:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        fingerprint:
+          type: string
+        last_used_at:
+          format: date-time
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        permissions:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        policy_version_at_issue:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
+        revoked_at:
+          format: date-time
+          type: string
+        revoked_by:
+          type: string
+        status:
+          type: string
+        subject_id:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - credential_id
+        - org_id
+        - subject_id
+        - client_id
+        - display_name
+        - status
+        - auth_method
+        - fingerprint
+        - permissions
+        - policy_version_at_issue
+        - created_at
+        - created_by
+        - updated_at
+      type: object
+    IdentityAPICredentialIssuedMaterial:
+      additionalProperties: false
+      properties:
+        auth_method:
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          type: string
+        fingerprint:
+          type: string
+        key_content:
+          type: string
+        key_id:
+          type: string
+        token_url:
+          type: string
+      required:
+        - auth_method
+        - client_id
+        - token_url
+        - fingerprint
+      type: object
+    IdentityAPICredentials:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityAPICredentials.json
+          format: uri
+          readOnly: true
+          type: string
+        credentials:
+          items:
+            $ref: "#/components/schemas/IdentityAPICredential"
+          type:
+            - array
+            - "null"
+      required:
+        - credentials
+      type: object
+    IdentityCreateAPICredentialRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityCreateAPICredentialRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        auth_method:
+          enum:
+            - private_key_jwt
+            - client_secret
+          type: string
+        display_name:
+          maxLength: 200
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        permissions:
+          items:
+            type: string
+          maxItems: 256
+          minItems: 1
+          type:
+            - array
+            - "null"
+      required:
+        - display_name
+        - permissions
+      type: object
+    IdentityCreateAPICredentialResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityCreateAPICredentialResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        credential:
+          $ref: "#/components/schemas/IdentityAPICredential"
+        issued_material:
+          $ref: "#/components/schemas/IdentityAPICredentialIssuedMaterial"
+      required:
+        - credential
+        - issued_material
+      type: object
     IdentityInviteMemberRequest:
       additionalProperties: false
       properties:
@@ -328,6 +493,40 @@ components:
         - version
         - roles
       type: object
+    IdentityRollAPICredentialRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityRollAPICredentialRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        auth_method:
+          enum:
+            - private_key_jwt
+            - client_secret
+          type: string
+      type: object
+    IdentityRollAPICredentialResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4248/schemas/IdentityRollAPICredentialResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        credential:
+          $ref: "#/components/schemas/IdentityAPICredential"
+        issued_material:
+          $ref: "#/components/schemas/IdentityAPICredentialIssuedMaterial"
+      required:
+        - credential
+        - issued_material
+      type: object
     IdentityServiceOperations:
       additionalProperties: false
       properties:
@@ -401,6 +600,201 @@ paths:
         permission: identity:organization:read
         rate_limit_class: read
         resource: organization
+  /api/v1/organization/api-credentials:
+    get:
+      operationId: list-api-credentials
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityAPICredentials"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List organization API credentials
+      x-forge-metal-iam:
+        action: list
+        audit_event: identity.api_credential.list
+        org_scope: token_org_id
+        permission: identity:api_credentials:read
+        rate_limit_class: read
+        resource: api_credential
+    post:
+      operationId: create-api-credential
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityCreateAPICredentialRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityCreateAPICredentialResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create an API credential
+      x-forge-metal-iam:
+        action: create
+        audit_event: identity.api_credential.create
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:api_credentials:create
+        rate_limit_class: api_credential_mutation
+        request_body_max_bytes: 16384
+        resource: api_credential
+  /api/v1/organization/api-credentials/{credential_id}:
+    delete:
+      operationId: revoke-api-credential
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - description: Forge Metal API credential ID
+          in: path
+          name: credential_id
+          required: true
+          schema:
+            description: Forge Metal API credential ID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityAPICredential"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Revoke an API credential
+      x-forge-metal-iam:
+        action: revoke
+        audit_event: identity.api_credential.revoke
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:api_credentials:revoke
+        rate_limit_class: api_credential_mutation
+        request_body_max_bytes: 1024
+        resource: api_credential
+    get:
+      operationId: get-api-credential
+      parameters:
+        - description: Forge Metal API credential ID
+          in: path
+          name: credential_id
+          required: true
+          schema:
+            description: Forge Metal API credential ID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityAPICredential"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Get API credential metadata
+      x-forge-metal-iam:
+        action: read
+        audit_event: identity.api_credential.read
+        org_scope: token_org_id
+        permission: identity:api_credentials:read
+        rate_limit_class: read
+        resource: api_credential
+  /api/v1/organization/api-credentials/{credential_id}/roll:
+    post:
+      operationId: roll-api-credential
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - description: Forge Metal API credential ID
+          in: path
+          name: credential_id
+          required: true
+          schema:
+            description: Forge Metal API credential ID
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityRollAPICredentialRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityRollAPICredentialResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Roll API credential secret material
+      x-forge-metal-iam:
+        action: roll
+        audit_event: identity.api_credential.roll
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: identity:api_credentials:roll
+        rate_limit_class: api_credential_mutation
+        request_body_max_bytes: 16384
+        resource: api_credential
   /api/v1/organization/members:
     get:
       operationId: list-organization-members

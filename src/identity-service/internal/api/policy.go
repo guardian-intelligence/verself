@@ -21,13 +21,17 @@ import (
 type permission string
 
 const (
-	permissionOrganizationRead permission = identity.PermissionOrganizationRead
-	permissionMemberRead       permission = identity.PermissionMemberRead
-	permissionMemberInvite     permission = identity.PermissionMemberInvite
-	permissionMemberRolesWrite permission = identity.PermissionMemberRolesWrite
-	permissionPolicyRead       permission = identity.PermissionPolicyRead
-	permissionPolicyWrite      permission = identity.PermissionPolicyWrite
-	permissionOperationsRead   permission = identity.PermissionOperationsRead
+	permissionOrganizationRead     permission = identity.PermissionOrganizationRead
+	permissionMemberRead           permission = identity.PermissionMemberRead
+	permissionMemberInvite         permission = identity.PermissionMemberInvite
+	permissionMemberRolesWrite     permission = identity.PermissionMemberRolesWrite
+	permissionPolicyRead           permission = identity.PermissionPolicyRead
+	permissionPolicyWrite          permission = identity.PermissionPolicyWrite
+	permissionOperationsRead       permission = identity.PermissionOperationsRead
+	permissionAPICredentialsRead   permission = identity.PermissionAPICredentialsRead
+	permissionAPICredentialsCreate permission = identity.PermissionAPICredentialsCreate
+	permissionAPICredentialsRoll   permission = identity.PermissionAPICredentialsRoll
+	permissionAPICredentialsRevoke permission = identity.PermissionAPICredentialsRevoke
 
 	idempotencyHeaderKey        = "idempotency_key_header"
 	maxIdempotencyKeyLength     = 128
@@ -328,9 +332,10 @@ type fixedWindowOperationRateLimiter struct {
 }
 
 var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rateLimitRule{
-	"read":            {Limit: 600, Window: time.Minute},
-	"member_mutation": {Limit: 60, Window: time.Minute},
-	"policy_mutation": {Limit: 30, Window: time.Minute},
+	"read":                    {Limit: 600, Window: time.Minute},
+	"member_mutation":         {Limit: 60, Window: time.Minute},
+	"policy_mutation":         {Limit: 30, Window: time.Minute},
+	"api_credential_mutation": {Limit: 30, Window: time.Minute},
 })
 
 func newFixedWindowOperationRateLimiter(rules map[string]rateLimitRule) *fixedWindowOperationRateLimiter {
@@ -407,11 +412,11 @@ func identityRolesForCurrentOrg(identity *auth.Identity) []string {
 
 func identityHasDirectPermission(identity *auth.Identity, required permission) bool {
 	credentialID, _ := identity.Raw["forge_metal:credential_id"].(string)
-	if strings.TrimSpace(credentialID) == "" {
+	if strings.TrimSpace(credentialID) == "" || strings.TrimSpace(identity.OrgID) == "" {
 		return false
 	}
 	requiredText := string(required)
-	for _, claimKey := range []string{"scope", "scp", "permissions", "permission"} {
+	for _, claimKey := range []string{"permissions", "permission"} {
 		for _, value := range stringClaimList(identity.Raw[claimKey]) {
 			if value == requiredText {
 				return true

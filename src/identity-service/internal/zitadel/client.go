@@ -459,6 +459,18 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	return nil
 }
 
+func zitadelResourceAlreadyGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "Errors.User.NotExisting") ||
+		strings.Contains(text, "User could not be found") ||
+		strings.Contains(text, "Errors.User.Key.NotExisting") ||
+		strings.Contains(text, "Errors.User.Secret.NotExisting") ||
+		strings.Contains(text, "Errors.Key.NotExisting")
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -496,4 +508,160 @@ func keys[T any](values map[string]T) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+type serviceAccountKeyResponse struct {
+	KeyID      string `json:"keyId"`
+	ID         string `json:"id"`
+	KeyContent string `json:"keyContent"`
+}
+
+type serviceAccountSecretResponse struct {
+	ClientSecret string `json:"clientSecret"`
+}
+
+func (c *Client) CreateServiceAccountCredential(ctx context.Context, orgID string, input identity.ServiceAccountCredentialInput) (string, identity.APICredentialIssuedMaterial, error) {
+	orgID = strings.TrimSpace(orgID)
+	input.ClientID = strings.TrimSpace(input.ClientID)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	if orgID == "" || input.ClientID == "" || input.DisplayName == "" {
+		return "", identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: org_id, client_id, and display_name are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"organizationId": orgID,
+		"username":       input.ClientID,
+		"machine": map[string]any{
+			"name":            input.DisplayName,
+			"description":     "Forge Metal API credential " + input.CredentialID,
+			"accessTokenType": "ACCESS_TOKEN_TYPE_JWT",
+		},
+	}
+	var out createUserResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out, false); err != nil {
+		return "", identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: create service account: %v", identity.ErrZitadelUnavailable, err)
+	}
+	subjectID := firstNonEmpty(out.ID, out.UserID)
+	if subjectID == "" {
+		return "", identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: create service account returned no user id", identity.ErrZitadelUnavailable)
+	}
+	material, err := c.AddServiceAccountCredential(ctx, identity.AddServiceAccountCredentialInput{
+		SubjectID:  subjectID,
+		ClientID:   input.ClientID,
+		AuthMethod: input.AuthMethod,
+		ExpiresAt:  input.ExpiresAt,
+	})
+	if err != nil {
+		return "", identity.APICredentialIssuedMaterial{}, err
+	}
+	return subjectID, material, nil
+}
+
+func (c *Client) AddServiceAccountCredential(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
+	input.SubjectID = strings.TrimSpace(input.SubjectID)
+	input.ClientID = strings.TrimSpace(input.ClientID)
+	if input.SubjectID == "" || input.ClientID == "" {
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: subject_id and client_id are required", identity.ErrInvalidInput)
+	}
+	switch input.AuthMethod {
+	case identity.APICredentialAuthMethodPrivateKeyJWT, "":
+		return c.addServiceAccountKey(ctx, input)
+	case identity.APICredentialAuthMethodClientSecret:
+		return c.addServiceAccountSecret(ctx, input)
+	default:
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: unsupported auth_method %q", identity.ErrInvalidInput, input.AuthMethod)
+	}
+}
+
+func (c *Client) RemoveServiceAccountCredential(ctx context.Context, subjectID string, secret identity.APICredentialSecret) error {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" || strings.TrimSpace(secret.ProviderKeyID) == "" {
+		return fmt.Errorf("%w: subject_id and provider_key_id are required", identity.ErrInvalidInput)
+	}
+	switch secret.AuthMethod {
+	case identity.APICredentialAuthMethodPrivateKeyJWT:
+		path := "/v2/users/" + url.PathEscape(subjectID) + "/keys/" + url.PathEscape(secret.ProviderKeyID)
+		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+			if zitadelResourceAlreadyGone(err) {
+				return nil
+			}
+			return fmt.Errorf("%w: remove service account key: %v", identity.ErrZitadelUnavailable, err)
+		}
+	case identity.APICredentialAuthMethodClientSecret:
+		path := "/v2/users/" + url.PathEscape(subjectID) + "/secret"
+		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+			if zitadelResourceAlreadyGone(err) {
+				return nil
+			}
+			return fmt.Errorf("%w: remove service account secret: %v", identity.ErrZitadelUnavailable, err)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported auth_method %q", identity.ErrInvalidInput, secret.AuthMethod)
+	}
+	return nil
+}
+
+func (c *Client) DeactivateServiceAccount(ctx context.Context, subjectID string) error {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return fmt.Errorf("%w: subject_id is required", identity.ErrInvalidInput)
+	}
+	if err := c.doJSON(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(subjectID), map[string]any{}, nil, false); err != nil {
+		if zitadelResourceAlreadyGone(err) {
+			return nil
+		}
+		return fmt.Errorf("%w: delete service account: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
+func (c *Client) addServiceAccountKey(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
+	body := map[string]any{}
+	if input.ExpiresAt != nil {
+		body["expirationDate"] = input.ExpiresAt.Format(time.RFC3339Nano)
+	}
+	var out serviceAccountKeyResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/keys", body, &out, false); err != nil {
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account key: %v", identity.ErrZitadelUnavailable, err)
+	}
+	keyID := firstNonEmpty(out.KeyID, out.ID)
+	if keyID == "" || strings.TrimSpace(out.KeyContent) == "" {
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account key returned incomplete material", identity.ErrZitadelUnavailable)
+	}
+	fingerprint, _ := identity.SecretHash(out.KeyContent)
+	return identity.APICredentialIssuedMaterial{
+		AuthMethod:  identity.APICredentialAuthMethodPrivateKeyJWT,
+		ClientID:    input.ClientID,
+		TokenURL:    c.tokenURL(),
+		KeyID:       keyID,
+		KeyContent:  out.KeyContent,
+		Fingerprint: fingerprint,
+	}, nil
+}
+
+func (c *Client) addServiceAccountSecret(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
+	var out serviceAccountSecretResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/secret", map[string]any{}, &out, false); err != nil {
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account secret: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if strings.TrimSpace(out.ClientSecret) == "" {
+		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account secret returned no secret", identity.ErrZitadelUnavailable)
+	}
+	fingerprint, _ := identity.SecretHash(out.ClientSecret)
+	return identity.APICredentialIssuedMaterial{
+		AuthMethod:   identity.APICredentialAuthMethodClientSecret,
+		ClientID:     input.ClientID,
+		TokenURL:     c.tokenURL(),
+		ClientSecret: out.ClientSecret,
+		Fingerprint:  fingerprint,
+	}, nil
+}
+
+func (c *Client) tokenURL() string {
+	if c == nil || c.baseURL == nil {
+		return ""
+	}
+	if c.hostHeader != "" {
+		return "https://" + c.hostHeader + "/oauth/v2/token"
+	}
+	return c.baseURL.ResolveReference(&url.URL{Path: "/oauth/v2/token"}).String()
 }

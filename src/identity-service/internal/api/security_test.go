@@ -112,7 +112,7 @@ func TestIdentityPermissionChecksCurrentOrgRoleBundlesAndDirectScopes(t *testing
 		OrgID:   "42",
 		Raw: map[string]any{
 			"forge_metal:credential_id": "credential-1",
-			"scope":                     string(permissionMemberInvite),
+			"permissions":               []string{string(permissionMemberInvite)},
 		},
 	}
 	if allowed, err := identityHasPermission(ctx, nil, scoped, permissionMemberInvite); err != nil || !allowed {
@@ -149,6 +149,34 @@ func (s staticPolicyStore) PutPolicy(context.Context, identity.PolicyDocument) (
 	return s.policy, nil
 }
 
+func (s staticPolicyStore) CreateAPICredential(context.Context, identity.APICredential, identity.APICredentialSecret) (identity.APICredential, error) {
+	return identity.APICredential{}, nil
+}
+
+func (s staticPolicyStore) ListAPICredentials(context.Context, string) ([]identity.APICredential, error) {
+	return []identity.APICredential{}, nil
+}
+
+func (s staticPolicyStore) GetAPICredential(context.Context, string, string) (identity.APICredential, error) {
+	return identity.APICredential{}, identity.ErrAPICredentialMissing
+}
+
+func (s staticPolicyStore) ActiveAPICredentialSecrets(context.Context, string, string) ([]identity.APICredentialSecret, error) {
+	return []identity.APICredentialSecret{}, nil
+}
+
+func (s staticPolicyStore) AddAPICredentialSecret(context.Context, string, string, string, identity.APICredentialSecret) (identity.APICredential, error) {
+	return identity.APICredential{}, nil
+}
+
+func (s staticPolicyStore) RevokeAPICredential(context.Context, string, string, string, time.Time) (identity.APICredential, error) {
+	return identity.APICredential{}, nil
+}
+
+func (s staticPolicyStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (identity.ResolveAPICredentialClaimsResult, error) {
+	return identity.ResolveAPICredentialClaimsResult{}, identity.ErrAPICredentialMissing
+}
+
 type staticDirectory struct{}
 
 func (s *staticDirectory) ListMembers(context.Context, string, string) ([]identity.Member, error) {
@@ -161,6 +189,22 @@ func (s *staticDirectory) InviteMember(context.Context, string, string, identity
 
 func (s *staticDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (identity.Member, error) {
 	return identity.Member{}, nil
+}
+
+func (s *staticDirectory) CreateServiceAccountCredential(context.Context, string, identity.ServiceAccountCredentialInput) (string, identity.APICredentialIssuedMaterial, error) {
+	return "subject-1", identity.APICredentialIssuedMaterial{}, nil
+}
+
+func (s *staticDirectory) AddServiceAccountCredential(context.Context, identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
+	return identity.APICredentialIssuedMaterial{}, nil
+}
+
+func (s *staticDirectory) RemoveServiceAccountCredential(context.Context, string, identity.APICredentialSecret) error {
+	return nil
+}
+
+func (s *staticDirectory) DeactivateServiceAccount(context.Context, string) error {
+	return nil
 }
 
 func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {
