@@ -16,12 +16,12 @@ import (
 // Requires the calling process to run as root.
 type DirectPrivOps struct{}
 
-func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, jobID string) error {
+func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, runID string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "zfs", "clone",
-		"-o", "forge:job_id="+jobID,
+		"-o", "forge:run_id="+runID,
 		"-o", "forge:created_at="+time.Now().UTC().Format(time.RFC3339),
 		snapshot, target)
 	out, err := cmd.CombinedOutput()
@@ -139,9 +139,9 @@ func (DirectPrivOps) SetupJail(ctx context.Context, jailRoot, zvolDev, kernelSrc
 	return nil
 }
 
-func (DirectPrivOps) StartJailer(_ context.Context, jobID string, cfg JailerConfig) (*JailerProcess, error) {
+func (DirectPrivOps) StartJailer(_ context.Context, runID string, cfg JailerConfig) (*JailerProcess, error) {
 	args := []string{
-		"--id", jobID,
+		"--id", runID,
 		"--exec-file", cfg.FirecrackerBin,
 		"--uid", strconv.Itoa(cfg.UID),
 		"--gid", strconv.Itoa(cfg.GID),

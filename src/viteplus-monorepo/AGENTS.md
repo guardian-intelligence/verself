@@ -38,6 +38,7 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 
 ## Common Pitfalls
 
+- **Not using shadcn/ui components:** They have accessibility, default cohesive styling, extensibility, and cross-browser compatibility fixes baked in. Use them over regular DOM elements where possible.
 - **Using the package manager directly:** Do not use pnpm, npm, or Yarn directly. Vite+ can handle all package manager operations.
 - **Always use Vite commands to run tools:** Don't attempt to run `vp vitest` or `vp oxlint`. They do not exist. Use `vp test` and `vp lint` instead.
 - **Running scripts:** Vite+ built-in commands (`vp dev`, `vp build`, `vp test`, etc.) always run the Vite+ built-in tool, not any `package.json` script of the same name. To run a custom script that shares a name with a built-in command, use `vp run <script>`. For example, if you have a custom `dev` script that runs multiple services concurrently, run it with `vp run dev`, not `vp dev` (which always starts Vite's dev server).
@@ -198,3 +199,7 @@ Each Electric instance also needs its own publication (`CREATE PUBLICATION ... F
 **Frontend SSR footgun:** browser-visible time formatting is hydration-sensitive. `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()` without an explicit timezone will drift between server and browser and can cause React to throw away SSR output during hydration. Do not introduce app-local date formatting helpers for SSR-visible timestamps.
 
 **Shared frontend time abstraction:** use `formatUTCDateTime()` from `src/viteplus-monorepo/packages/web-env/src/time.ts` for SSR-visible timestamps in the web apps. It centralizes `Intl.DateTimeFormat` with `timeZone: "UTC"` and caches formatters so `letters`, `mail`, and `rent-a-sandbox` render the same text on the server and client.
+
+### - UI
+
+Use the shadcn/ui components from src/viteplus-monorepo/packages/ui/src/components/ui

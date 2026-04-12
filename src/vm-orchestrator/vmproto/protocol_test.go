@@ -15,7 +15,7 @@ func TestCodecRoundTrip(t *testing.T) {
 	codec := NewCodec(&buf, &buf)
 
 	wantPayload := RunRequest{
-		JobID:           "job-1",
+		RunID:           "job-1",
 		RunCommand:      []string{"true"},
 		RunWorkDir:      "/workspace",
 		Network:         NetworkConfig{AddressCIDR: "172.16.0.2/30", Gateway: "172.16.0.1", LinkName: "eth0"},
@@ -40,8 +40,8 @@ func TestCodecRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodePayload: %v", err)
 	}
-	if gotPayload.JobID != wantPayload.JobID {
-		t.Fatalf("job_id: got %q want %q", gotPayload.JobID, wantPayload.JobID)
+	if gotPayload.RunID != wantPayload.RunID {
+		t.Fatalf("run_id: got %q want %q", gotPayload.RunID, wantPayload.RunID)
 	}
 	if gotPayload.Network.AddressCIDR != wantPayload.Network.AddressCIDR {
 		t.Fatalf("network.address_cidr: got %q want %q", gotPayload.Network.AddressCIDR, wantPayload.Network.AddressCIDR)

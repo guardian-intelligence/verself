@@ -74,7 +74,7 @@ type NetworkConfig struct {
 }
 
 type RunRequest struct {
-	JobID               string            `json:"job_id"`
+	RunID               string            `json:"run_id"`
 	RunCommand          []string          `json:"run_command"`
 	RunWorkDir          string            `json:"run_work_dir,omitempty"`
 	Env                 map[string]string `json:"env,omitempty"`

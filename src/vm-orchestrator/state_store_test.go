@@ -14,7 +14,7 @@ func TestHostStateStoreLifecycle(t *testing.T) {
 	defer store.close()
 
 	runID := "run-1"
-	if err := store.createRun(context.Background(), runID, JobStatePending, map[string]string{"source": "test"}); err != nil {
+	if err := store.createRun(context.Background(), runID, RunStatePending, map[string]string{"source": "test"}); err != nil {
 		t.Fatalf("createRun: %v", err)
 	}
 	if err := store.appendRunEvent(context.Background(), runID, "phase_started", map[string]string{"phase": "run"}); err != nil {
@@ -24,8 +24,8 @@ func TestHostStateStoreLifecycle(t *testing.T) {
 	if err := store.transitionRunState(
 		context.Background(),
 		runID,
-		[]JobState{JobStatePending},
-		JobStateRunning,
+		[]RunState{RunStatePending},
+		RunStateRunning,
 		"run_started",
 		map[string]string{"phase": "run"},
 		"",
@@ -34,7 +34,7 @@ func TestHostStateStoreLifecycle(t *testing.T) {
 		t.Fatalf("transitionRunState pending->running: %v", err)
 	}
 
-	finishedResult := &JobResult{
+	finishedResult := &RunResult{
 		ExitCode:    0,
 		Duration:    2 * time.Second,
 		RunDuration: 1500 * time.Millisecond,
@@ -42,8 +42,8 @@ func TestHostStateStoreLifecycle(t *testing.T) {
 	if err := store.transitionRunState(
 		context.Background(),
 		runID,
-		[]JobState{JobStateRunning},
-		JobStateSucceeded,
+		[]RunState{RunStateRunning},
+		RunStateSucceeded,
 		"run_finished",
 		map[string]string{"reason": "ok"},
 		"",
@@ -56,8 +56,8 @@ func TestHostStateStoreLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getRunSnapshot: %v", err)
 	}
-	if snapshot.State != JobStateSucceeded {
-		t.Fatalf("snapshot state = %v, want %v", snapshot.State, JobStateSucceeded)
+	if snapshot.State != RunStateSucceeded {
+		t.Fatalf("snapshot state = %v, want %v", snapshot.State, RunStateSucceeded)
 	}
 	if snapshot.Result == nil || snapshot.Result.ExitCode != 0 {
 		t.Fatalf("snapshot result = %#v", snapshot.Result)
@@ -86,17 +86,17 @@ func TestHostStateStoreCountActiveRuns(t *testing.T) {
 	store := mustOpenStateStoreForTest(t)
 	defer store.close()
 
-	if err := store.createRun(context.Background(), "run-pending", JobStatePending, nil); err != nil {
+	if err := store.createRun(context.Background(), "run-pending", RunStatePending, nil); err != nil {
 		t.Fatalf("create run-pending: %v", err)
 	}
-	if err := store.createRun(context.Background(), "run-running", JobStatePending, nil); err != nil {
+	if err := store.createRun(context.Background(), "run-running", RunStatePending, nil); err != nil {
 		t.Fatalf("create run-running: %v", err)
 	}
 	if err := store.transitionRunState(
 		context.Background(),
 		"run-running",
-		[]JobState{JobStatePending},
-		JobStateRunning,
+		[]RunState{RunStatePending},
+		RunStateRunning,
 		"run_started",
 		nil,
 		"",
@@ -104,18 +104,18 @@ func TestHostStateStoreCountActiveRuns(t *testing.T) {
 	); err != nil {
 		t.Fatalf("transition run-running: %v", err)
 	}
-	if err := store.createRun(context.Background(), "run-terminal", JobStatePending, nil); err != nil {
+	if err := store.createRun(context.Background(), "run-terminal", RunStatePending, nil); err != nil {
 		t.Fatalf("create run-terminal: %v", err)
 	}
 	if err := store.transitionRunState(
 		context.Background(),
 		"run-terminal",
-		[]JobState{JobStatePending},
-		JobStateFailed,
+		[]RunState{RunStatePending},
+		RunStateFailed,
 		"run_finished",
 		nil,
 		"boom",
-		&JobResult{ExitCode: 1},
+		&RunResult{ExitCode: 1},
 	); err != nil {
 		t.Fatalf("transition run-terminal: %v", err)
 	}

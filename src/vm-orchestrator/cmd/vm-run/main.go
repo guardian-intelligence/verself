@@ -44,8 +44,8 @@ func run() error {
 	flag.StringVar(&apiSocket, "api-socket", vmorchestrator.DefaultSocketPath, "Unix socket path for vm-orchestrator")
 	flag.StringVar(&repo, "repo", "", "Repository URL (metadata)")
 	flag.StringVar(&commitSHA, "commit", "", "Commit SHA (metadata)")
-	flag.StringVar(&timeout, "timeout", "2m", "Job timeout")
-	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream host-derived guest phase events")
+	flag.StringVar(&timeout, "timeout", "2m", "Run timeout")
+	flag.BoolVar(&traceGuestEvents, "trace-guest-events", false, "Stream host-derived run phase events")
 	flag.Var(&checkpointRefs, "checkpoint-save-ref", "Checkpoint ref the guest may save; repeatable")
 	flag.Parse()
 
@@ -78,72 +78,69 @@ func run() error {
 	}
 	defer client.Close()
 
-	jobID := uuid.New().String()
-	job := vmorchestrator.JobConfig{
-		JobID:              jobID,
+	runID := uuid.New().String()
+	spec := vmorchestrator.HostRunSpec{
+		RunID:              runID,
 		RunCommand:         args,
 		RunWorkDir:         "/workspace",
 		BillablePhases:     []string{"run"},
 		CheckpointSaveRefs: []string(checkpointRefs),
 		Env: map[string]string{
 			"REPO":                   repo,
-			"FORGE_METAL_ATTEMPT_ID": jobID,
+			"FORGE_METAL_ATTEMPT_ID": runID,
 		},
 	}
 	if commitSHA != "" {
-		job.Env["COMMIT_SHA"] = commitSHA
+		spec.Env["COMMIT_SHA"] = commitSHA
 	}
 
-	logger.Info("starting VM job", "job_id", jobID, "command", args)
+	logger.Info("starting VM run", "run_id", runID, "command", args)
 
-	var result vmorchestrator.JobResult
+	var result vmorchestrator.RunResult
 	if traceGuestEvents {
-		startedJobID, err := client.StartDirectJob(ctx, job)
+		ensuredRunID, _, err := client.EnsureRun(ctx, spec)
 		if err != nil {
-			return fmt.Errorf("vm start: %w", err)
+			return fmt.Errorf("run ensure: %w", err)
 		}
-		if startedJobID != jobID {
-			return fmt.Errorf("started job id mismatch: got %s want %s", startedJobID, jobID)
+		if ensuredRunID != runID {
+			return fmt.Errorf("ensured run id mismatch: got %s want %s", ensuredRunID, runID)
 		}
 
 		streamErrCh := make(chan error, 1)
 		go func() {
-			streamErrCh <- client.StreamGuestEvents(ctx, jobID, true, func(event vmorchestrator.JobGuestEvent) error {
-				if event.Terminal {
-					return nil
-				}
+			streamErrCh <- client.StreamRunEvents(ctx, runID, 0, true, func(event vmorchestrator.HostRunEvent) error {
 				attrsJSON, err := json.Marshal(event.Attrs)
 				if err != nil {
-					return fmt.Errorf("marshal guest event attrs: %w", err)
+					return fmt.Errorf("marshal run event attrs: %w", err)
 				}
-				fmt.Printf("[guest-event] seq=%d kind=%s attrs=%s\n", event.Seq, event.Kind, string(attrsJSON))
+				fmt.Printf("[run-event] seq=%d type=%s attrs=%s\n", event.Seq, event.EventType, string(attrsJSON))
 				return nil
 			})
 		}()
 
-		status, err := client.WaitJob(ctx, jobID, true)
+		snapshot, err := client.WaitRun(ctx, runID, true)
 		if err != nil {
-			return fmt.Errorf("vm wait: %w", err)
+			return fmt.Errorf("run wait: %w", err)
 		}
-		if status.Result == nil {
-			return fmt.Errorf("job %s completed without result", jobID)
+		if snapshot.Result == nil {
+			return fmt.Errorf("run %s completed without result", runID)
 		}
-		result = *status.Result
+		result = *snapshot.Result
 
 		if err := <-streamErrCh; err != nil {
-			return fmt.Errorf("guest event stream: %w", err)
+			return fmt.Errorf("run event stream: %w", err)
 		}
 	} else {
-		runResult, err := client.Run(ctx, job)
+		runResult, err := client.Run(ctx, spec)
 		if err != nil {
-			return fmt.Errorf("vm run: %w", err)
+			return fmt.Errorf("run execute: %w", err)
 		}
 		result = runResult
 	}
 
 	fmt.Println()
 	fmt.Println("=== VM Results ===")
-	fmt.Printf("Job ID:         %s\n", jobID)
+	fmt.Printf("Run ID:         %s\n", runID)
 	fmt.Printf("Exit Code:      %d\n", result.ExitCode)
 	fmt.Printf("Total Duration: %s\n", result.Duration.Round(time.Millisecond))
 	fmt.Printf("  Clone:        %s\n", result.CloneTime.Round(time.Millisecond))
@@ -172,16 +169,16 @@ func run() error {
 		fmt.Println(result.SerialLogs)
 	}
 
-	jobJSON, _ := json.Marshal(job)
+	specJSON, _ := json.Marshal(spec)
 	fmt.Println()
 	fmt.Println("=== Wide Event (ClickHouse) ===")
-	fmt.Printf("job_id:            %s\n", jobID)
+	fmt.Printf("run_id:            %s\n", runID)
 	if result.Metrics != nil {
 		fmt.Printf("vm_boot_time_us:   %d\n", result.Metrics.BootTimeUs)
 	}
 	fmt.Printf("vm_exit_code:      %d\n", result.ExitCode)
 	fmt.Printf("zfs_written_bytes: %d\n", result.ZFSWritten)
-	fmt.Printf("job_config_json:   %s\n", string(jobJSON))
+	fmt.Printf("run_spec_json:     %s\n", string(specJSON))
 
 	if result.ExitCode != 0 {
 		os.Exit(result.ExitCode)

@@ -19,27 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_CreateJob_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/CreateJob"
-	VMService_GetJobStatus_FullMethodName      = "/forge_metal.vm_orchestrator.v1.VMService/GetJobStatus"
-	VMService_CancelJob_FullMethodName         = "/forge_metal.vm_orchestrator.v1.VMService/CancelJob"
-	VMService_StreamJobLogs_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/StreamJobLogs"
-	VMService_StreamGuestEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamGuestEvents"
-	VMService_StreamTelemetry_FullMethodName   = "/forge_metal.vm_orchestrator.v1.VMService/StreamTelemetry"
-	VMService_GetFleetSnapshot_FullMethodName  = "/forge_metal.vm_orchestrator.v1.VMService/GetFleetSnapshot"
-	VMService_GetCapacity_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_EnsureRun_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/EnsureRun"
+	VMService_GetRun_FullMethodName          = "/forge_metal.vm_orchestrator.v1.VMService/GetRun"
+	VMService_StreamRunEvents_FullMethodName = "/forge_metal.vm_orchestrator.v1.VMService/StreamRunEvents"
+	VMService_CancelRun_FullMethodName       = "/forge_metal.vm_orchestrator.v1.VMService/CancelRun"
+	VMService_GetCapacity_FullMethodName     = "/forge_metal.vm_orchestrator.v1.VMService/GetCapacity"
 )
 
 // VMServiceClient is the client API for VMService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type VMServiceClient interface {
-	CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error)
-	GetJobStatus(ctx context.Context, in *GetJobStatusRequest, opts ...grpc.CallOption) (*GetJobStatusResponse, error)
-	CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error)
-	StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobLogChunk], error)
-	StreamGuestEvents(ctx context.Context, in *StreamGuestEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobGuestEvent], error)
-	StreamTelemetry(ctx context.Context, in *StreamTelemetryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TelemetryEvent], error)
-	GetFleetSnapshot(ctx context.Context, in *GetFleetSnapshotRequest, opts ...grpc.CallOption) (*GetFleetSnapshotResponse, error)
+	EnsureRun(ctx context.Context, in *EnsureRunRequest, opts ...grpc.CallOption) (*EnsureRunResponse, error)
+	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error)
+	StreamRunEvents(ctx context.Context, in *StreamRunEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HostRunEvent], error)
+	CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 }
 
@@ -51,43 +45,33 @@ func NewVMServiceClient(cc grpc.ClientConnInterface) VMServiceClient {
 	return &vMServiceClient{cc}
 }
 
-func (c *vMServiceClient) CreateJob(ctx context.Context, in *CreateJobRequest, opts ...grpc.CallOption) (*CreateJobResponse, error) {
+func (c *vMServiceClient) EnsureRun(ctx context.Context, in *EnsureRunRequest, opts ...grpc.CallOption) (*EnsureRunResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateJobResponse)
-	err := c.cc.Invoke(ctx, VMService_CreateJob_FullMethodName, in, out, cOpts...)
+	out := new(EnsureRunResponse)
+	err := c.cc.Invoke(ctx, VMService_EnsureRun_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *vMServiceClient) GetJobStatus(ctx context.Context, in *GetJobStatusRequest, opts ...grpc.CallOption) (*GetJobStatusResponse, error) {
+func (c *vMServiceClient) GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetJobStatusResponse)
-	err := c.cc.Invoke(ctx, VMService_GetJobStatus_FullMethodName, in, out, cOpts...)
+	out := new(GetRunResponse)
+	err := c.cc.Invoke(ctx, VMService_GetRun_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *vMServiceClient) CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*CancelJobResponse, error) {
+func (c *vMServiceClient) StreamRunEvents(ctx context.Context, in *StreamRunEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HostRunEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CancelJobResponse)
-	err := c.cc.Invoke(ctx, VMService_CancelJob_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[0], VMService_StreamRunEvents_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (c *vMServiceClient) StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobLogChunk], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[0], VMService_StreamJobLogs_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[StreamJobLogsRequest, JobLogChunk]{ClientStream: stream}
+	x := &grpc.GenericClientStream[StreamRunEventsRequest, HostRunEvent]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -98,50 +82,12 @@ func (c *vMServiceClient) StreamJobLogs(ctx context.Context, in *StreamJobLogsRe
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamJobLogsClient = grpc.ServerStreamingClient[JobLogChunk]
+type VMService_StreamRunEventsClient = grpc.ServerStreamingClient[HostRunEvent]
 
-func (c *vMServiceClient) StreamGuestEvents(ctx context.Context, in *StreamGuestEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JobGuestEvent], error) {
+func (c *vMServiceClient) CancelRun(ctx context.Context, in *CancelRunRequest, opts ...grpc.CallOption) (*CancelRunResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[1], VMService_StreamGuestEvents_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[StreamGuestEventsRequest, JobGuestEvent]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamGuestEventsClient = grpc.ServerStreamingClient[JobGuestEvent]
-
-func (c *vMServiceClient) StreamTelemetry(ctx context.Context, in *StreamTelemetryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TelemetryEvent], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &VMService_ServiceDesc.Streams[2], VMService_StreamTelemetry_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[StreamTelemetryRequest, TelemetryEvent]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamTelemetryClient = grpc.ServerStreamingClient[TelemetryEvent]
-
-func (c *vMServiceClient) GetFleetSnapshot(ctx context.Context, in *GetFleetSnapshotRequest, opts ...grpc.CallOption) (*GetFleetSnapshotResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetFleetSnapshotResponse)
-	err := c.cc.Invoke(ctx, VMService_GetFleetSnapshot_FullMethodName, in, out, cOpts...)
+	out := new(CancelRunResponse)
+	err := c.cc.Invoke(ctx, VMService_CancelRun_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -162,13 +108,10 @@ func (c *vMServiceClient) GetCapacity(ctx context.Context, in *GetCapacityReques
 // All implementations must embed UnimplementedVMServiceServer
 // for forward compatibility.
 type VMServiceServer interface {
-	CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error)
-	GetJobStatus(context.Context, *GetJobStatusRequest) (*GetJobStatusResponse, error)
-	CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error)
-	StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[JobLogChunk]) error
-	StreamGuestEvents(*StreamGuestEventsRequest, grpc.ServerStreamingServer[JobGuestEvent]) error
-	StreamTelemetry(*StreamTelemetryRequest, grpc.ServerStreamingServer[TelemetryEvent]) error
-	GetFleetSnapshot(context.Context, *GetFleetSnapshotRequest) (*GetFleetSnapshotResponse, error)
+	EnsureRun(context.Context, *EnsureRunRequest) (*EnsureRunResponse, error)
+	GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error)
+	StreamRunEvents(*StreamRunEventsRequest, grpc.ServerStreamingServer[HostRunEvent]) error
+	CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	mustEmbedUnimplementedVMServiceServer()
 }
@@ -180,26 +123,17 @@ type VMServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedVMServiceServer struct{}
 
-func (UnimplementedVMServiceServer) CreateJob(context.Context, *CreateJobRequest) (*CreateJobResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CreateJob not implemented")
+func (UnimplementedVMServiceServer) EnsureRun(context.Context, *EnsureRunRequest) (*EnsureRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnsureRun not implemented")
 }
-func (UnimplementedVMServiceServer) GetJobStatus(context.Context, *GetJobStatusRequest) (*GetJobStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetJobStatus not implemented")
+func (UnimplementedVMServiceServer) GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRun not implemented")
 }
-func (UnimplementedVMServiceServer) CancelJob(context.Context, *CancelJobRequest) (*CancelJobResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CancelJob not implemented")
+func (UnimplementedVMServiceServer) StreamRunEvents(*StreamRunEventsRequest, grpc.ServerStreamingServer[HostRunEvent]) error {
+	return status.Error(codes.Unimplemented, "method StreamRunEvents not implemented")
 }
-func (UnimplementedVMServiceServer) StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[JobLogChunk]) error {
-	return status.Error(codes.Unimplemented, "method StreamJobLogs not implemented")
-}
-func (UnimplementedVMServiceServer) StreamGuestEvents(*StreamGuestEventsRequest, grpc.ServerStreamingServer[JobGuestEvent]) error {
-	return status.Error(codes.Unimplemented, "method StreamGuestEvents not implemented")
-}
-func (UnimplementedVMServiceServer) StreamTelemetry(*StreamTelemetryRequest, grpc.ServerStreamingServer[TelemetryEvent]) error {
-	return status.Error(codes.Unimplemented, "method StreamTelemetry not implemented")
-}
-func (UnimplementedVMServiceServer) GetFleetSnapshot(context.Context, *GetFleetSnapshotRequest) (*GetFleetSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetFleetSnapshot not implemented")
+func (UnimplementedVMServiceServer) CancelRun(context.Context, *CancelRunRequest) (*CancelRunResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelRun not implemented")
 }
 func (UnimplementedVMServiceServer) GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCapacity not implemented")
@@ -225,107 +159,67 @@ func RegisterVMServiceServer(s grpc.ServiceRegistrar, srv VMServiceServer) {
 	s.RegisterService(&VMService_ServiceDesc, srv)
 }
 
-func _VMService_CreateJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateJobRequest)
+func _VMService_EnsureRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnsureRunRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).CreateJob(ctx, in)
+		return srv.(VMServiceServer).EnsureRun(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_CreateJob_FullMethodName,
+		FullMethod: VMService_EnsureRun_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).CreateJob(ctx, req.(*CreateJobRequest))
+		return srv.(VMServiceServer).EnsureRun(ctx, req.(*EnsureRunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_GetJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetJobStatusRequest)
+func _VMService_GetRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRunRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).GetJobStatus(ctx, in)
+		return srv.(VMServiceServer).GetRun(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_GetJobStatus_FullMethodName,
+		FullMethod: VMService_GetRun_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).GetJobStatus(ctx, req.(*GetJobStatusRequest))
+		return srv.(VMServiceServer).GetRun(ctx, req.(*GetRunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_CancelJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CancelJobRequest)
+func _VMService_StreamRunEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamRunEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(VMServiceServer).StreamRunEvents(m, &grpc.GenericServerStream[StreamRunEventsRequest, HostRunEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type VMService_StreamRunEventsServer = grpc.ServerStreamingServer[HostRunEvent]
+
+func _VMService_CancelRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelRunRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).CancelJob(ctx, in)
+		return srv.(VMServiceServer).CancelRun(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_CancelJob_FullMethodName,
+		FullMethod: VMService_CancelRun_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).CancelJob(ctx, req.(*CancelJobRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _VMService_StreamJobLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamJobLogsRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(VMServiceServer).StreamJobLogs(m, &grpc.GenericServerStream[StreamJobLogsRequest, JobLogChunk]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamJobLogsServer = grpc.ServerStreamingServer[JobLogChunk]
-
-func _VMService_StreamGuestEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamGuestEventsRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(VMServiceServer).StreamGuestEvents(m, &grpc.GenericServerStream[StreamGuestEventsRequest, JobGuestEvent]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamGuestEventsServer = grpc.ServerStreamingServer[JobGuestEvent]
-
-func _VMService_StreamTelemetry_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(StreamTelemetryRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(VMServiceServer).StreamTelemetry(m, &grpc.GenericServerStream[StreamTelemetryRequest, TelemetryEvent]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type VMService_StreamTelemetryServer = grpc.ServerStreamingServer[TelemetryEvent]
-
-func _VMService_GetFleetSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetFleetSnapshotRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VMServiceServer).GetFleetSnapshot(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VMService_GetFleetSnapshot_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).GetFleetSnapshot(ctx, req.(*GetFleetSnapshotRequest))
+		return srv.(VMServiceServer).CancelRun(ctx, req.(*CancelRunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -356,20 +250,16 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*VMServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateJob",
-			Handler:    _VMService_CreateJob_Handler,
+			MethodName: "EnsureRun",
+			Handler:    _VMService_EnsureRun_Handler,
 		},
 		{
-			MethodName: "GetJobStatus",
-			Handler:    _VMService_GetJobStatus_Handler,
+			MethodName: "GetRun",
+			Handler:    _VMService_GetRun_Handler,
 		},
 		{
-			MethodName: "CancelJob",
-			Handler:    _VMService_CancelJob_Handler,
-		},
-		{
-			MethodName: "GetFleetSnapshot",
-			Handler:    _VMService_GetFleetSnapshot_Handler,
+			MethodName: "CancelRun",
+			Handler:    _VMService_CancelRun_Handler,
 		},
 		{
 			MethodName: "GetCapacity",
@@ -378,18 +268,8 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "StreamJobLogs",
-			Handler:       _VMService_StreamJobLogs_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "StreamGuestEvents",
-			Handler:       _VMService_StreamGuestEvents_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "StreamTelemetry",
-			Handler:       _VMService_StreamTelemetry_Handler,
+			StreamName:    "StreamRunEvents",
+			Handler:       _VMService_StreamRunEvents_Handler,
 			ServerStreams: true,
 		},
 	},

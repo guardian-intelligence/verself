@@ -6,40 +6,52 @@ const (
 	DefaultSocketPath = "/run/vm-orchestrator/api.sock"
 )
 
-type JobState int
+type RunState int
 
 const (
-	JobStateUnspecified JobState = iota
-	JobStatePending
-	JobStateRunning
-	JobStateSucceeded
-	JobStateFailed
-	JobStateCanceled
+	RunStateUnspecified RunState = iota
+	RunStatePending
+	RunStateRunning
+	RunStateSucceeded
+	RunStateFailed
+	RunStateCanceled
 )
 
-func (s JobState) Terminal() bool {
+func (s RunState) Terminal() bool {
 	switch s {
-	case JobStateSucceeded, JobStateFailed, JobStateCanceled:
+	case RunStateSucceeded, RunStateFailed, RunStateCanceled:
 		return true
 	default:
 		return false
 	}
 }
 
-type JobStatus struct {
-	JobID        string
-	State        JobState
-	Terminal     bool
-	ErrorMessage string
-	Result       *JobResult
+type HostRunSpec struct {
+	RunID              string
+	RunCommand         []string
+	RunWorkDir         string
+	Env                map[string]string
+	BillablePhases     []string
+	CheckpointSaveRefs []string
+	AttemptID          string
+	SegmentID          string
 }
 
-type JobGuestEvent struct {
-	Seq      uint64
-	JobID    string
-	Kind     string
-	Attrs    map[string]string
-	Terminal bool
+type HostRunSnapshot struct {
+	RunID          string
+	State          RunState
+	Terminal       bool
+	TerminalReason string
+	Result         *RunResult
+	UpdatedAt      time.Time
+}
+
+type HostRunEvent struct {
+	Seq       uint64
+	RunID     string
+	EventType string
+	Attrs     map[string]string
+	CreatedAt time.Time
 }
 
 type CheckpointEvent struct {
@@ -98,25 +110,17 @@ type TelemetryDiagnostic struct {
 }
 
 type TelemetryEvent struct {
-	JobID          string
+	RunID          string
 	ReceivedAtUnix time.Time
 	Hello          *TelemetryHello
 	Sample         *TelemetrySample
 	Diagnostic     *TelemetryDiagnostic
 }
 
-type FleetVM struct {
-	JobID        string
-	State        JobState
-	LastUpdateAt time.Time
-	Hello        *TelemetryHello
-	LatestSample *TelemetrySample
-}
-
 type Capacity struct {
 	GuestPoolCIDR          string
 	TotalSlots             uint32
-	ActiveJobs             uint32
+	ActiveRuns             uint32
 	AvailableSlots         uint32
 	VCPUsPerVM             uint32
 	MemoryMiBPerVM         uint32

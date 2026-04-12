@@ -175,7 +175,7 @@ export const vSandboxAttemptRecord = v.strictObject({
     ),
   ),
   failure_reason: v.optional(v.string()),
-  orchestrator_job_id: v.optional(v.string()),
+  orchestrator_run_id: v.optional(v.string()),
   started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   state: v.string(),
   stderr_bytes: v.optional(

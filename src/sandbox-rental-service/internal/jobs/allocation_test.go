@@ -18,20 +18,20 @@ func (r capacityRunner) GetCapacity(context.Context) (vmorchestrator.Capacity, e
 	return r.capacity, r.err
 }
 
-func (capacityRunner) StartDirectJob(context.Context, vmorchestrator.JobConfig) (string, error) {
-	panic("unexpected StartDirectJob")
+func (capacityRunner) EnsureRun(context.Context, vmorchestrator.HostRunSpec) (string, bool, error) {
+	panic("unexpected EnsureRun")
 }
 
-func (capacityRunner) StreamGuestEvents(context.Context, string, bool, func(vmorchestrator.JobGuestEvent) error) error {
-	panic("unexpected StreamGuestEvents")
+func (capacityRunner) StreamRunEvents(context.Context, string, uint64, bool, func(vmorchestrator.HostRunEvent) error) error {
+	panic("unexpected StreamRunEvents")
 }
 
-func (capacityRunner) WaitJob(context.Context, string, bool) (vmorchestrator.JobStatus, error) {
-	panic("unexpected WaitJob")
+func (capacityRunner) WaitRun(context.Context, string, bool) (vmorchestrator.HostRunSnapshot, error) {
+	panic("unexpected WaitRun")
 }
 
-func (capacityRunner) CancelJob(context.Context, string) (bool, error) {
-	panic("unexpected CancelJob")
+func (capacityRunner) CancelRun(context.Context, string, string) (bool, error) {
+	panic("unexpected CancelRun")
 }
 
 func TestBuildBillingAllocationUsesFinalSKUIDs(t *testing.T) {

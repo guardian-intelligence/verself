@@ -182,7 +182,7 @@ CREATE TABLE execution_attempts (
     execution_id          UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
     attempt_seq           INTEGER     NOT NULL,
     state                 TEXT        NOT NULL,
-    orchestrator_job_id   TEXT        NOT NULL DEFAULT '',
+    orchestrator_run_id   TEXT        NOT NULL DEFAULT '',
     billing_job_id        BIGINT,
     failure_reason        TEXT        NOT NULL DEFAULT '',
     exit_code             INTEGER,

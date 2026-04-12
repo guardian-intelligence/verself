@@ -1,95 +1,51 @@
 package vmorchestrator
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestJobObserverEmitsBillablePhaseEvents(t *testing.T) {
-	job := &managedJob{
-		id:             "job-1",
-		state:          JobStateRunning,
-		billablePhases: map[string]struct{}{"run": {}},
-	}
-	observer := &jobObserver{job: job}
+func TestHostRunSpecProtoRoundTrip(t *testing.T) {
+	t.Parallel()
 
-	observer.OnGuestPhaseStart("job-1", "run")
-	observer.OnGuestPhaseEnd("job-1", PhaseResult{Name: "run", ExitCode: 0, DurationMS: 1234})
-
-	events, terminal := job.guestEventSnapshot(0)
-	if terminal {
-		t.Fatal("running job reported terminal guest event stream")
-	}
-	if len(events) != 2 {
-		t.Fatalf("expected 2 phase events, got %d", len(events))
+	original := HostRunSpec{
+		RunID:              "5c80f2bf-b22c-4ec5-bf9a-61578a7f7158",
+		RunCommand:         []string{"sh", "-c", "echo hello"},
+		RunWorkDir:         "/workspace",
+		Env:                map[string]string{"A": "1", "B": "2"},
+		BillablePhases:     []string{"prepare", "run"},
+		CheckpointSaveRefs: []string{"checkpoints/default"},
+		AttemptID:          "attempt-1",
+		SegmentID:          "segment-2",
 	}
 
-	start := events[0]
-	if start.Kind != "phase_started" {
-		t.Fatalf("expected first event kind=phase_started, got %q", start.Kind)
-	}
-	if start.Attrs["phase"] != "run" {
-		t.Fatalf("expected phase attr run, got %q", start.Attrs["phase"])
-	}
-	if start.Attrs["billable"] != "true" {
-		t.Fatalf("expected billable attr true, got %q", start.Attrs["billable"])
-	}
-	if start.Attrs["host_received_unix_nano"] == "" {
-		t.Fatal("expected host_received_unix_nano on phase start")
-	}
+	proto := hostRunSpecToProto(original)
+	roundTrip := hostRunSpecFromProto(proto)
 
-	end := events[1]
-	if end.Kind != "phase_ended" {
-		t.Fatalf("expected second event kind=phase_ended, got %q", end.Kind)
+	if roundTrip.RunID != original.RunID {
+		t.Fatalf("run_id = %q, want %q", roundTrip.RunID, original.RunID)
 	}
-	if end.Attrs["phase"] != "run" {
-		t.Fatalf("expected phase attr run, got %q", end.Attrs["phase"])
+	if len(roundTrip.RunCommand) != len(original.RunCommand) {
+		t.Fatalf("run_command length = %d, want %d", len(roundTrip.RunCommand), len(original.RunCommand))
 	}
-	if end.Attrs["billable"] != "true" {
-		t.Fatalf("expected billable attr true, got %q", end.Attrs["billable"])
+	if roundTrip.RunWorkDir != original.RunWorkDir {
+		t.Fatalf("run_work_dir = %q, want %q", roundTrip.RunWorkDir, original.RunWorkDir)
 	}
-	if end.Attrs["exit_code"] != "0" {
-		t.Fatalf("expected exit_code attr 0, got %q", end.Attrs["exit_code"])
+	if roundTrip.Env["A"] != "1" || roundTrip.Env["B"] != "2" {
+		t.Fatalf("env round-trip mismatch: %#v", roundTrip.Env)
 	}
-	if end.Attrs["duration_ms"] != "1234" {
-		t.Fatalf("expected duration_ms attr 1234, got %q", end.Attrs["duration_ms"])
+	if roundTrip.AttemptID != original.AttemptID {
+		t.Fatalf("attempt_id = %q, want %q", roundTrip.AttemptID, original.AttemptID)
 	}
-	if end.Attrs["host_received_unix_nano"] == "" {
-		t.Fatal("expected host_received_unix_nano on phase end")
+	if roundTrip.SegmentID != original.SegmentID {
+		t.Fatalf("segment_id = %q, want %q", roundTrip.SegmentID, original.SegmentID)
 	}
 }
 
-func TestManagedJobCapsBufferedLogs(t *testing.T) {
+func TestHostRunResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T) {
 	t.Parallel()
 
-	job := &managedJob{id: "job-1", state: JobStateRunning}
-	job.appendLogChunk(strings.Repeat("x", maxBufferedGuestLogs+1024))
-
-	chunks, terminal := job.logSnapshot(0)
-	if terminal {
-		t.Fatal("running job reported terminal log stream")
-	}
-	if len(chunks) == 0 {
-		t.Fatal("expected retained log chunks")
-	}
-
-	var total int
-	for _, chunk := range chunks {
-		total += len(chunk.Chunk)
-	}
-	if total > maxBufferedGuestLogs {
-		t.Fatalf("buffered logs exceeded cap: got %d want <= %d", total, maxBufferedGuestLogs)
-	}
-	if !strings.Contains(chunks[len(chunks)-1].Chunk, "truncated") {
-		t.Fatalf("expected truncation marker in final chunk, got %q", chunks[len(chunks)-1].Chunk)
-	}
-}
-
-func TestJobResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T) {
-	t.Parallel()
-
-	original := JobResult{
+	original := RunResult{
 		ExitCode:               7,
 		Duration:               3 * time.Second,
 		CloneTime:              100 * time.Millisecond,
@@ -118,7 +74,7 @@ func TestJobResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T) {
 		},
 	}
 
-	proto := jobResultToProto(original, false)
+	proto := runResultToProto(original, false)
 	if got := proto.GetRootfsProvisionedBytes(); got != original.RootfsProvisionedBytes {
 		t.Fatalf("rootfs_provisioned_bytes = %d, want %d", got, original.RootfsProvisionedBytes)
 	}
@@ -126,7 +82,7 @@ func TestJobResultProtoRoundTripIncludesRootfsProvisionedBytes(t *testing.T) {
 		t.Fatalf("zfs_written = %d, want %d", got, original.ZFSWritten)
 	}
 
-	roundTrip := jobResultFromProto(proto)
+	roundTrip := runResultFromProto(proto)
 	if roundTrip == nil {
 		t.Fatal("expected round-trip result")
 	}

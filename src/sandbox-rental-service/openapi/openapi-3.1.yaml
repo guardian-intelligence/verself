@@ -457,7 +457,7 @@ components:
           type: integer
         failure_reason:
           type: string
-        orchestrator_job_id:
+        orchestrator_run_id:
           type: string
         started_at:
           format: date-time

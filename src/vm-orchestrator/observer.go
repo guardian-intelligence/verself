@@ -1,10 +1,10 @@
 package vmorchestrator
 
 type RunObserver interface {
-	OnGuestLogChunk(jobID string, chunk string)
-	OnGuestPhaseStart(jobID string, phase string)
-	OnGuestPhaseEnd(jobID string, phase PhaseResult)
-	OnGuestCheckpoint(jobID string, event CheckpointEvent)
+	OnGuestLogChunk(runID string, chunk string)
+	OnGuestPhaseStart(runID string, phase string)
+	OnGuestPhaseEnd(runID string, phase PhaseResult)
+	OnGuestCheckpoint(runID string, event CheckpointEvent)
 	OnTelemetryEvent(event TelemetryEvent)
 }
 

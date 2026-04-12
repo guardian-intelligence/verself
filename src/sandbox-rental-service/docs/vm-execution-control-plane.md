@@ -10,6 +10,8 @@ Code pointers:
 - `internal/api/` - secured Huma routes and IAM operation catalog.
 - `migrations/` - PostgreSQL tables for executions, segments, checkpoint refs,
   checkpoint versions, save requests, logs, and billing windows.
+- `docs/durable-execution-workflow-plan.md` - phased rewrite plan for durable
+  River-backed execution workflow, reconciliation, pagination, and evidence gates.
 - `../../vm-orchestrator/proto/v1/` - host daemon gRPC API consumed by this service.
 - `../../apiwire/sandbox.go` - frontend/service wire DTOs.
 - `../openapi/` - generated OpenAPI contracts.

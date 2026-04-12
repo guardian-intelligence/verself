@@ -57,76 +57,78 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) Run(ctx context.Context, job JobConfig) (JobResult, error) {
-	status, err := c.runAndWait(ctx, &vmrpc.CreateJobRequest{
-		Spec: &vmrpc.CreateJobRequest_DirectJob{
-			DirectJob: &vmrpc.DirectJobSpec{
-				Job: jobConfigToProto(job),
-			},
-		},
-	})
+func (c *Client) EnsureRun(ctx context.Context, spec HostRunSpec) (string, bool, error) {
+	resp, err := c.client.EnsureRun(ctx, &vmrpc.EnsureRunRequest{Spec: hostRunSpecToProto(spec)})
 	if err != nil {
-		return JobResult{}, err
+		return "", false, fmt.Errorf("ensure run: %w", err)
 	}
-	if status.Result == nil {
-		return JobResult{}, fmt.Errorf("job %s completed without result", status.JobID)
-	}
-	return *status.Result, nil
+	return resp.GetRunId(), resp.GetCreated(), nil
 }
 
-func (c *Client) StartDirectJob(ctx context.Context, job JobConfig) (string, error) {
-	resp, err := c.client.CreateJob(ctx, &vmrpc.CreateJobRequest{
-		Spec: &vmrpc.CreateJobRequest_DirectJob{
-			DirectJob: &vmrpc.DirectJobSpec{
-				Job: jobConfigToProto(job),
-			},
-		},
-	})
+func (c *Client) Run(ctx context.Context, spec HostRunSpec) (RunResult, error) {
+	runID, _, err := c.EnsureRun(ctx, spec)
 	if err != nil {
-		return "", fmt.Errorf("create direct job: %w", err)
+		return RunResult{}, err
 	}
-	return resp.GetJobId(), nil
+
+	snapshot, err := c.WaitRun(ctx, runID, true)
+	if err != nil {
+		cancelErr := err
+		if ctx.Err() != nil {
+			_, _ = c.CancelRun(context.Background(), runID, "context_canceled")
+			cancelErr = ctx.Err()
+		}
+		return RunResult{}, cancelErr
+	}
+	if snapshot.Result == nil {
+		return RunResult{}, fmt.Errorf("run %s completed without result", snapshot.RunID)
+	}
+	if snapshot.TerminalReason != "" && snapshot.State != RunStateSucceeded {
+		return *snapshot.Result, fmt.Errorf("run %s failed: %s", snapshot.RunID, snapshot.TerminalReason)
+	}
+	return *snapshot.Result, nil
 }
 
-func (c *Client) WaitJob(ctx context.Context, jobID string, includeOutput bool) (JobStatus, error) {
+func (c *Client) WaitRun(ctx context.Context, runID string, includeOutput bool) (HostRunSnapshot, error) {
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
 
 	for {
-		status, err := c.GetJobStatus(ctx, jobID, includeOutput)
+		snapshot, err := c.GetRun(ctx, runID, includeOutput)
 		if err != nil {
-			return JobStatus{}, err
+			return HostRunSnapshot{}, err
 		}
-		if status.Terminal {
-			return status, nil
+		if snapshot.Terminal {
+			return snapshot, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return JobStatus{}, ctx.Err()
+			return HostRunSnapshot{}, ctx.Err()
 		case <-ticker.C:
 		}
 	}
 }
 
-func (c *Client) GetJobStatus(ctx context.Context, jobID string, includeOutput bool) (JobStatus, error) {
-	resp, err := c.client.GetJobStatus(ctx, &vmrpc.GetJobStatusRequest{
-		JobId:         jobID,
+func (c *Client) GetRun(ctx context.Context, runID string, includeOutput bool) (HostRunSnapshot, error) {
+	resp, err := c.client.GetRun(ctx, &vmrpc.GetRunRequest{
+		RunId:         runID,
 		IncludeOutput: includeOutput,
 	})
 	if err != nil {
-		return JobStatus{}, fmt.Errorf("get job status %s: %w", jobID, err)
+		return HostRunSnapshot{}, fmt.Errorf("get run %s: %w", runID, err)
 	}
-	return jobStatusFromProto(resp), nil
+	return hostRunSnapshotFromProto(resp), nil
 }
 
-func (c *Client) StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(JobGuestEvent) error) error {
-	stream, err := c.client.StreamGuestEvents(ctx, &vmrpc.StreamGuestEventsRequest{
-		JobId:  jobID,
-		Follow: follow,
+func (c *Client) StreamRunEvents(ctx context.Context, runID string, fromSeq uint64, follow bool, handler func(HostRunEvent) error) error {
+	stream, err := c.client.StreamRunEvents(ctx, &vmrpc.StreamRunEventsRequest{
+		RunId:   runID,
+		FromSeq: fromSeq,
+		Follow:  follow,
 	})
 	if err != nil {
-		return fmt.Errorf("stream guest events %s: %w", jobID, err)
+		return fmt.Errorf("stream run events %s: %w", runID, err)
 	}
 	for {
 		event, recvErr := stream.Recv()
@@ -134,41 +136,23 @@ func (c *Client) StreamGuestEvents(ctx context.Context, jobID string, follow boo
 			if recvErr == io.EOF {
 				return nil
 			}
-			return fmt.Errorf("recv guest event %s: %w", jobID, recvErr)
+			return fmt.Errorf("recv run event %s: %w", runID, recvErr)
 		}
 		if handler == nil {
 			continue
 		}
-		if err := handler(JobGuestEvent{
-			Seq:      event.GetSeq(),
-			JobID:    event.GetJobId(),
-			Kind:     event.GetKind(),
-			Attrs:    cloneStringMap(event.GetAttrs()),
-			Terminal: event.GetTerminal(),
-		}); err != nil {
+		if err := handler(hostRunEventFromProto(event)); err != nil {
 			return err
 		}
 	}
 }
 
-func (c *Client) CancelJob(ctx context.Context, jobID string) (bool, error) {
-	resp, err := c.client.CancelJob(ctx, &vmrpc.CancelJobRequest{JobId: jobID})
+func (c *Client) CancelRun(ctx context.Context, runID, reason string) (bool, error) {
+	resp, err := c.client.CancelRun(ctx, &vmrpc.CancelRunRequest{RunId: runID, Reason: reason})
 	if err != nil {
-		return false, fmt.Errorf("cancel job %s: %w", jobID, err)
+		return false, fmt.Errorf("cancel run %s: %w", runID, err)
 	}
-	return resp.GetCanceled(), nil
-}
-
-func (c *Client) GetFleetSnapshot(ctx context.Context) ([]FleetVM, error) {
-	resp, err := c.client.GetFleetSnapshot(ctx, &vmrpc.GetFleetSnapshotRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("get fleet snapshot: %w", err)
-	}
-	out := make([]FleetVM, 0, len(resp.GetVms()))
-	for _, vm := range resp.GetVms() {
-		out = append(out, fleetVMFromProto(vm))
-	}
-	return out, nil
+	return resp.GetAccepted(), nil
 }
 
 func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
@@ -179,30 +163,10 @@ func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
 	return Capacity{
 		GuestPoolCIDR:          resp.GetGuestPoolCidr(),
 		TotalSlots:             resp.GetTotalSlots(),
-		ActiveJobs:             resp.GetActiveJobs(),
+		ActiveRuns:             resp.GetActiveRuns(),
 		AvailableSlots:         resp.GetAvailableSlots(),
 		VCPUsPerVM:             resp.GetVcpusPerVm(),
 		MemoryMiBPerVM:         resp.GetMemoryMibPerVm(),
 		RootfsProvisionedBytes: resp.GetRootfsProvisionedBytes(),
 	}, nil
-}
-
-func (c *Client) runAndWait(ctx context.Context, req *vmrpc.CreateJobRequest) (JobStatus, error) {
-	resp, err := c.client.CreateJob(ctx, req)
-	if err != nil {
-		return JobStatus{}, fmt.Errorf("create job: %w", err)
-	}
-	status, err := c.WaitJob(ctx, resp.GetJobId(), true)
-	if err != nil {
-		cancelErr := err
-		if ctx.Err() != nil {
-			_, _ = c.CancelJob(context.Background(), resp.GetJobId())
-			cancelErr = ctx.Err()
-		}
-		return JobStatus{}, cancelErr
-	}
-	if status.ErrorMessage != "" && status.Result == nil {
-		return status, fmt.Errorf("job %s failed: %s", status.JobID, status.ErrorMessage)
-	}
-	return status, nil
 }

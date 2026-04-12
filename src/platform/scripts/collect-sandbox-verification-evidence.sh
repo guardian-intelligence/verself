@@ -204,7 +204,7 @@ if [[ -n "${execution_id}" ]]; then
       a.attempt_id,
       a.state,
       a.billing_job_id,
-      a.orchestrator_job_id,
+      a.orchestrator_run_id,
       a.exit_code,
       a.duration_ms,
       a.trace_id,

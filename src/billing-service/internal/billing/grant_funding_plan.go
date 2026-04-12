@@ -47,7 +47,15 @@ type plannedGrantFundingLeg struct {
 	GrantScopeBucketID  string
 }
 
-// planGrantFunding applies grant-scope precedence; callers still own grant waterfall ordering.
+var grantSourceFundingOrder = []GrantSourceType{
+	SourceFreeTier,
+	SourceSubscription,
+	SourcePurchase,
+	SourcePromo,
+	SourceRefund,
+}
+
+// planGrantFunding applies grant-scope precedence and source priority inside each scope.
 func planGrantFunding(productID string, bucketChargeUnits map[string]uint64, grants []scopedGrantBalance) ([]plannedGrantFundingLeg, error) {
 	if productID == "" {
 		return nil, fmt.Errorf("product_id is required")
@@ -70,26 +78,28 @@ func planGrantFunding(productID string, bucketChargeUnits map[string]uint64, gra
 	legs := make([]plannedGrantFundingLeg, 0, len(grants))
 	for _, scope := range []GrantScopeType{GrantScopeBucket, GrantScopeProduct, GrantScopeAccount} {
 		for _, bucketID := range sortedUint64MapKeys(remainingByBucket) {
-			for i, grant := range grants {
-				if remainingByBucket[bucketID] == 0 {
-					break
+			for _, source := range grantSourceFundingOrder {
+				for i, grant := range grants {
+					if remainingByBucket[bucketID] == 0 {
+						break
+					}
+					if grant.Source != source || grantRemaining[i] == 0 || !grantCanFundCharge(grant, scope, productID, bucketID) {
+						continue
+					}
+					amount := minUint64(grantRemaining[i], remainingByBucket[bucketID])
+					grantRemaining[i] -= amount
+					remainingByBucket[bucketID] -= amount
+					legs = append(legs, plannedGrantFundingLeg{
+						GrantID:             grant.GrantID,
+						Source:              grant.Source,
+						AmountUnits:         amount,
+						ChargeProductID:     productID,
+						ChargeBucketID:      bucketID,
+						GrantScopeType:      grant.ScopeType,
+						GrantScopeProductID: grant.ScopeProductID,
+						GrantScopeBucketID:  grant.ScopeBucketID,
+					})
 				}
-				if grantRemaining[i] == 0 || !grantCanFundCharge(grant, scope, productID, bucketID) {
-					continue
-				}
-				amount := minUint64(grantRemaining[i], remainingByBucket[bucketID])
-				grantRemaining[i] -= amount
-				remainingByBucket[bucketID] -= amount
-				legs = append(legs, plannedGrantFundingLeg{
-					GrantID:             grant.GrantID,
-					Source:              grant.Source,
-					AmountUnits:         amount,
-					ChargeProductID:     productID,
-					ChargeBucketID:      bucketID,
-					GrantScopeType:      grant.ScopeType,
-					GrantScopeProductID: grant.ScopeProductID,
-					GrantScopeBucketID:  grant.ScopeBucketID,
-				})
 			}
 		}
 	}

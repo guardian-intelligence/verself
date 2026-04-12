@@ -1,7 +1,7 @@
-// Package vmorchestrator manages Firecracker microVM lifecycle for sandboxed jobs.
+// Package vmorchestrator manages Firecracker microVM lifecycle for sandboxed runs.
 //
 // It provides a single entry point: [Orchestrator.Run], which takes a
-// [JobConfig] and returns a [JobResult]. The full lifecycle is:
+// [RunSpec] and returns a [RunResult]. The full lifecycle is:
 //
 //  1. Clone golden zvol (ZFS COW, ~1.7ms kernel)
 //  2. Set up jail (mknod zvol device, copy kernel)
@@ -22,6 +22,6 @@
 //     ZFS block device — clone/destroy/written work identically.
 //   - Shell out to zfs/ip/mknod CLI, matching zfsharness conventions.
 //   - LIFO cleanup on any error, matching Clone.Release pattern.
-//   - The per-job runtime control plane is vsock only. MMDS is not part of the
+//   - The per-run runtime control plane is vsock only. MMDS is not part of the
 //     steady-state execution path, and serial is not authoritative.
 package vmorchestrator

@@ -25,11 +25,11 @@ var (
 
 type hostRunSnapshot struct {
 	RunID          string
-	State          JobState
+	State          RunState
 	TerminalReason string
 	ExitCode       int
 	ErrorMessage   string
-	Result         *JobResult
+	Result         *RunResult
 	UpdatedAt      time.Time
 }
 
@@ -169,7 +169,7 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *hostStateStore) createRun(ctx context.Context, runID string, initialState JobState, attrs map[string]string) error {
+func (s *hostStateStore) createRun(ctx context.Context, runID string, initialState RunState, attrs map[string]string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin create run tx: %w", err)
@@ -181,7 +181,7 @@ func (s *hostStateStore) createRun(ctx context.Context, runID string, initialSta
 		ctx,
 		`INSERT INTO host_runs (run_id, state, created_at_unix_nano, updated_at_unix_nano) VALUES (?, ?, ?, ?)`,
 		runID,
-		jobStateName(initialState),
+		runStateName(initialState),
 		nowUnixNano,
 		nowUnixNano,
 	); err != nil {
@@ -204,12 +204,12 @@ func (s *hostStateStore) createRun(ctx context.Context, runID string, initialSta
 func (s *hostStateStore) transitionRunState(
 	ctx context.Context,
 	runID string,
-	expected []JobState,
-	next JobState,
+	expected []RunState,
+	next RunState,
 	eventType string,
 	attrs map[string]string,
 	terminalReason string,
-	result *JobResult,
+	result *RunResult,
 ) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -230,17 +230,17 @@ func (s *hostStateStore) transitionRunState(
 	}
 
 	query := `UPDATE host_runs SET state = ?, result_json = ?, terminal_reason = ?, exit_code = ?, updated_at_unix_nano = ? WHERE run_id = ?`
-	args := []any{jobStateName(next), resultJSON, terminalReason, exitCode, nowUnixNano, runID}
+	args := []any{runStateName(next), resultJSON, terminalReason, exitCode, nowUnixNano, runID}
 	if len(expected) > 0 {
 		query += ` AND state IN (` + sqlPlaceholders(len(expected)) + `)`
 		for _, state := range expected {
-			args = append(args, jobStateName(state))
+			args = append(args, runStateName(state))
 		}
 	}
 
 	updateRes, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("update run state %s -> %s for %s: %w", strings.Join(jobStateNames(expected), ","), jobStateName(next), runID, err)
+		return fmt.Errorf("update run state %s -> %s for %s: %w", strings.Join(runStateNames(expected), ","), runStateName(next), runID, err)
 	}
 	rows, err := updateRes.RowsAffected()
 	if err != nil {
@@ -306,14 +306,14 @@ func (s *hostStateStore) getRunSnapshot(ctx context.Context, runID string) (host
 		return hostRunSnapshot{}, fmt.Errorf("query host run snapshot %s: %w", runID, err)
 	}
 
-	state, err := parseJobState(stateName)
+	state, err := parseRunState(stateName)
 	if err != nil {
 		return hostRunSnapshot{}, err
 	}
 
-	var result *JobResult
+	var result *RunResult
 	if strings.TrimSpace(resultJSON) != "" {
-		decoded := JobResult{}
+		decoded := RunResult{}
 		if err := json.Unmarshal([]byte(resultJSON), &decoded); err != nil {
 			return hostRunSnapshot{}, fmt.Errorf("decode host run result %s: %w", runID, err)
 		}
@@ -388,8 +388,8 @@ func (s *hostStateStore) countActiveRuns(ctx context.Context) (int, error) {
 	if err := s.db.QueryRowContext(
 		ctx,
 		`SELECT COUNT(*) FROM host_runs WHERE state IN (?, ?)`,
-		jobStateName(JobStatePending),
-		jobStateName(JobStateRunning),
+		runStateName(RunStatePending),
+		runStateName(RunStateRunning),
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count active host runs: %w", err)
 	}
@@ -434,47 +434,47 @@ func insertHostRunEventTx(
 	return nil
 }
 
-func jobStateName(state JobState) string {
+func runStateName(state RunState) string {
 	switch state {
-	case JobStatePending:
+	case RunStatePending:
 		return "pending"
-	case JobStateRunning:
+	case RunStateRunning:
 		return "running"
-	case JobStateSucceeded:
+	case RunStateSucceeded:
 		return "succeeded"
-	case JobStateFailed:
+	case RunStateFailed:
 		return "failed"
-	case JobStateCanceled:
+	case RunStateCanceled:
 		return "canceled"
 	default:
 		return "unspecified"
 	}
 }
 
-func jobStateNames(states []JobState) []string {
+func runStateNames(states []RunState) []string {
 	out := make([]string, 0, len(states))
 	for _, state := range states {
-		out = append(out, jobStateName(state))
+		out = append(out, runStateName(state))
 	}
 	return out
 }
 
-func parseJobState(name string) (JobState, error) {
+func parseRunState(name string) (RunState, error) {
 	switch strings.TrimSpace(name) {
 	case "pending":
-		return JobStatePending, nil
+		return RunStatePending, nil
 	case "running":
-		return JobStateRunning, nil
+		return RunStateRunning, nil
 	case "succeeded":
-		return JobStateSucceeded, nil
+		return RunStateSucceeded, nil
 	case "failed":
-		return JobStateFailed, nil
+		return RunStateFailed, nil
 	case "canceled":
-		return JobStateCanceled, nil
+		return RunStateCanceled, nil
 	case "unspecified", "":
-		return JobStateUnspecified, nil
+		return RunStateUnspecified, nil
 	default:
-		return JobStateUnspecified, fmt.Errorf("unknown persisted job state %q", name)
+		return RunStateUnspecified, fmt.Errorf("unknown persisted run state %q", name)
 	}
 }
 

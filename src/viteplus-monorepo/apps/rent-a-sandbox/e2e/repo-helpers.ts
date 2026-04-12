@@ -39,8 +39,13 @@ export async function importRepoFromURL(
     },
   );
 
-  const repoName = await app.readText(app.page.getByRole("heading", { level: 1 }).first());
+  const repoHeading = app.page.getByRole("heading", { level: 1 }).first();
+  await app.waitForCondition("repo heading stabilize", repoRedirectTimeoutMS, async () => {
+    const heading = await app.readText(repoHeading);
+    return heading !== "Import Repo" && heading.length > 0 ? heading : false;
+  });
   const ready = await waitForRepoReady(app);
+  const repoName = await app.readText(repoHeading);
 
   return {
     import_scanned_sha: ready.last_scanned_sha,

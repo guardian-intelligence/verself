@@ -113,7 +113,7 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
+func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
 	var (
 		logBuf       strings.Builder
 		hello        vmproto.Hello
@@ -144,10 +144,10 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 	gotHello = true
 
 	if err := c.send(vmproto.TypeRunRequest, vmproto.RunRequest{
-		JobID:               job.JobID,
-		RunCommand:          cloneStringSlice(job.RunCommand),
-		RunWorkDir:          job.RunWorkDir,
-		Env:                 cloneStringMap(job.Env),
+		RunID:               run.RunID,
+		RunCommand:          cloneStringSlice(run.RunCommand),
+		RunWorkDir:          run.RunWorkDir,
+		Env:                 cloneStringMap(run.Env),
 		Network:             lease.GuestNetworkConfig(hostServiceIP, hostServicePort),
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
@@ -171,7 +171,7 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 				return resultWithLogs(), err
 			}
 			appendLogChunk(&logBuf, msg.Data)
-			observer.OnGuestLogChunk(job.JobID, string(msg.Data))
+			observer.OnGuestLogChunk(run.RunID, string(msg.Data))
 		case vmproto.TypeHeartbeat:
 		case vmproto.TypeCheckpointRequest:
 			req, err := vmproto.DecodePayload[vmproto.CheckpointRequest](env)
@@ -195,11 +195,11 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 			}
 		case vmproto.TypePhaseStart:
 			if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
-				observer.OnGuestPhaseStart(job.JobID, msg.Name)
+				observer.OnGuestPhaseStart(run.RunID, msg.Name)
 			}
 			if logger != nil {
 				if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
-					logger.Info("guest phase start", "phase", msg.Name, "job_id", job.JobID)
+					logger.Info("guest phase start", "phase", msg.Name, "run_id", run.RunID)
 				}
 			}
 		case vmproto.TypePhaseEnd:
@@ -212,13 +212,13 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 				ExitCode:   msg.ExitCode,
 				DurationMS: msg.DurationMS,
 			})
-			observer.OnGuestPhaseEnd(job.JobID, PhaseResult{
+			observer.OnGuestPhaseEnd(run.RunID, PhaseResult{
 				Name:       msg.Name,
 				ExitCode:   msg.ExitCode,
 				DurationMS: msg.DurationMS,
 			})
 			if logger != nil {
-				logger.Info("guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "job_id", job.JobID)
+				logger.Info("guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "run_id", run.RunID)
 			}
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
@@ -240,7 +240,7 @@ func (c *guestControl) run(job JobConfig, lease NetworkLease, hostServiceIP stri
 				return outcome, fmt.Errorf("ack guest result: %w", err)
 			}
 			if logger != nil {
-				logger.Info("guest result received; requesting graceful guest reboot", "job_id", job.JobID, "exit_code", msg.ExitCode)
+				logger.Info("guest result received; requesting graceful guest reboot", "run_id", run.RunID, "exit_code", msg.ExitCode)
 			}
 			if err := c.send(vmproto.TypeShutdown, vmproto.Shutdown{}); err != nil {
 				outcome := resultWithLogs()
