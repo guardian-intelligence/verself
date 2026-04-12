@@ -8,17 +8,30 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Store interface {
 	GetPolicy(ctx context.Context, orgID, actor string) (PolicyDocument, error)
 	PutPolicy(ctx context.Context, policy PolicyDocument) (PolicyDocument, error)
+	CreateAPICredential(ctx context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error)
+	ListAPICredentials(ctx context.Context, orgID string) ([]APICredential, error)
+	GetAPICredential(ctx context.Context, orgID, credentialID string) (APICredential, error)
+	ActiveAPICredentialSecrets(ctx context.Context, orgID, credentialID string) ([]APICredentialSecret, error)
+	AddAPICredentialSecret(ctx context.Context, orgID, credentialID, actor string, secret APICredentialSecret) (APICredential, error)
+	RevokeAPICredential(ctx context.Context, orgID, credentialID, actor string, now time.Time) (APICredential, error)
+	ResolveAPICredentialClaims(ctx context.Context, subjectID string, usedAt time.Time) (ResolveAPICredentialClaimsResult, error)
 }
 
 type Directory interface {
 	ListMembers(ctx context.Context, orgID, projectID string) ([]Member, error)
 	InviteMember(ctx context.Context, orgID, projectID string, input InviteMemberRequest) (InviteMemberResult, error)
 	UpdateMemberRoles(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (Member, error)
+	CreateServiceAccountCredential(ctx context.Context, orgID string, input ServiceAccountCredentialInput) (subjectID string, material APICredentialIssuedMaterial, err error)
+	AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error)
+	RemoveServiceAccountCredential(ctx context.Context, subjectID string, secret APICredentialSecret) error
+	DeactivateServiceAccount(ctx context.Context, subjectID string) error
 }
 
 type Service struct {
@@ -122,6 +135,199 @@ func (s *Service) PutPolicy(ctx context.Context, principal Principal, policy Pol
 
 func (s *Service) Operations(context.Context, Principal) Operations {
 	return DefaultOperations()
+}
+
+func (s *Service) ListAPICredentials(ctx context.Context, principal Principal) ([]APICredential, error) {
+	if err := principal.validate(); err != nil {
+		return nil, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return nil, err
+	}
+	return store.ListAPICredentials(ctx, principal.OrgID)
+}
+
+func (s *Service) GetAPICredential(ctx context.Context, principal Principal, credentialID string) (APICredential, error) {
+	if err := principal.validate(); err != nil {
+		return APICredential{}, err
+	}
+	credentialID = strings.TrimSpace(credentialID)
+	if credentialID == "" {
+		return APICredential{}, fmt.Errorf("%w: credential_id is required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return APICredential{}, err
+	}
+	return store.GetAPICredential(ctx, principal.OrgID, credentialID)
+}
+
+func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialResult, error) {
+	if err := principal.validate(); err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	input, policy, err := s.normalizeCreateAPICredentialRequest(ctx, principal, input)
+	if err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	now := s.now()
+	credentialID := uuid.NewString()
+	clientID := "fm-api-" + strings.ReplaceAll(credentialID, "-", "")
+	credential := APICredential{
+		CredentialID:         credentialID,
+		OrgID:                principal.OrgID,
+		ClientID:             clientID,
+		DisplayName:          input.DisplayName,
+		Status:               APICredentialStatusActive,
+		AuthMethod:           input.AuthMethod,
+		Permissions:          append([]string(nil), input.Permissions...),
+		PolicyVersionAtIssue: policy.Version,
+		CreatedAt:            now,
+		CreatedBy:            principal.Subject,
+		UpdatedAt:            now,
+		ExpiresAt:            input.ExpiresAt,
+	}
+	subjectID, material, err := directory.CreateServiceAccountCredential(ctx, principal.OrgID, ServiceAccountCredentialInput{
+		CredentialID: credentialID,
+		ClientID:     clientID,
+		DisplayName:  input.DisplayName,
+		AuthMethod:   input.AuthMethod,
+		ExpiresAt:    input.ExpiresAt,
+	})
+	if err != nil {
+		return CreateAPICredentialResult{}, err
+	}
+	if err := validateIssuedMaterial(input.AuthMethod, material); err != nil {
+		cleanupErr := directory.DeactivateServiceAccount(ctx, subjectID)
+		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
+	}
+	credential.SubjectID = subjectID
+	credential.ClientID = firstNonEmpty(material.ClientID, clientID)
+	secret := credentialSecretFromMaterial(credential, material, principal.Subject, now, input.ExpiresAt)
+	credential.Fingerprint = secret.Fingerprint
+	credential, err = store.CreateAPICredential(ctx, credential, secret)
+	if err != nil {
+		cleanupErr := directory.DeactivateServiceAccount(ctx, subjectID)
+		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
+	}
+	material.Fingerprint = credential.Fingerprint
+	material.ClientID = credential.ClientID
+	return CreateAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
+}
+
+func (s *Service) RollAPICredential(ctx context.Context, principal Principal, credentialID string, input RollAPICredentialRequest) (RollAPICredentialResult, error) {
+	if err := principal.validate(); err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	credential, err := s.GetAPICredential(ctx, principal, credentialID)
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	if credential.Status != APICredentialStatusActive {
+		return RollAPICredentialResult{}, fmt.Errorf("%w: credential is not active", ErrInvalidInput)
+	}
+	input.AuthMethod = normalizeAuthMethod(firstNonEmpty(string(input.AuthMethod), string(credential.AuthMethod)))
+	if err := validateAuthMethod(input.AuthMethod); err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	oldSecrets, err := store.ActiveAPICredentialSecrets(ctx, principal.OrgID, credential.CredentialID)
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	material, err := directory.AddServiceAccountCredential(ctx, AddServiceAccountCredentialInput{
+		SubjectID:  credential.SubjectID,
+		ClientID:   credential.ClientID,
+		AuthMethod: input.AuthMethod,
+		ExpiresAt:  credential.ExpiresAt,
+	})
+	if err != nil {
+		return RollAPICredentialResult{}, err
+	}
+	now := s.now()
+	secret := credentialSecretFromMaterial(credential, material, principal.Subject, now, credential.ExpiresAt)
+	cleanupNewSecret := func(cause error) error {
+		cleanupErr := directory.RemoveServiceAccountCredential(ctx, credential.SubjectID, secret)
+		return errors.Join(cause, cleanupErr)
+	}
+	if err := validateIssuedMaterial(input.AuthMethod, material); err != nil {
+		return RollAPICredentialResult{}, cleanupNewSecret(err)
+	}
+	for _, old := range oldSecrets {
+		// Zitadel exposes one machine-user client secret; deleting after AddSecret would delete the new secret.
+		if old.AuthMethod == APICredentialAuthMethodClientSecret || old.ProviderKeyID == material.KeyID {
+			continue
+		}
+		if err := directory.RemoveServiceAccountCredential(ctx, credential.SubjectID, old); err != nil {
+			return RollAPICredentialResult{}, cleanupNewSecret(err)
+		}
+	}
+	credential, err = store.AddAPICredentialSecret(ctx, principal.OrgID, credential.CredentialID, principal.Subject, secret)
+	if err != nil {
+		return RollAPICredentialResult{}, cleanupNewSecret(err)
+	}
+	material.Fingerprint = credential.Fingerprint
+	material.ClientID = credential.ClientID
+	return RollAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
+}
+
+func (s *Service) RevokeAPICredential(ctx context.Context, principal Principal, credentialID string) (APICredential, error) {
+	if err := principal.validate(); err != nil {
+		return APICredential{}, err
+	}
+	credential, err := s.GetAPICredential(ctx, principal, credentialID)
+	if err != nil {
+		return APICredential{}, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return APICredential{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return APICredential{}, err
+	}
+	secrets, err := store.ActiveAPICredentialSecrets(ctx, principal.OrgID, credential.CredentialID)
+	if err != nil {
+		return APICredential{}, err
+	}
+	for _, secret := range secrets {
+		if err := directory.RemoveServiceAccountCredential(ctx, credential.SubjectID, secret); err != nil {
+			return APICredential{}, err
+		}
+	}
+	if err := directory.DeactivateServiceAccount(ctx, credential.SubjectID); err != nil {
+		return APICredential{}, err
+	}
+	return store.RevokeAPICredential(ctx, principal.OrgID, credential.CredentialID, principal.Subject, s.now())
+}
+
+func (s *Service) ResolveAPICredentialClaims(ctx context.Context, subjectID string) (ResolveAPICredentialClaimsResult, error) {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return ResolveAPICredentialClaimsResult{}, fmt.Errorf("%w: subject_id is required", ErrInvalidInput)
+	}
+	store, err := s.store()
+	if err != nil {
+		return ResolveAPICredentialClaimsResult{}, err
+	}
+	return store.ResolveAPICredentialClaims(ctx, subjectID, s.now())
 }
 
 func (s *Service) policy(ctx context.Context, orgID, actor string) (PolicyDocument, error) {
@@ -305,6 +511,150 @@ func callerMember(principal Principal, members []Member) Member {
 
 func organizationName(principal Principal) string {
 	return principal.OrgID
+}
+
+func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, PolicyDocument, error) {
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	if input.DisplayName == "" {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
+	}
+	if len(input.DisplayName) > 200 {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
+	}
+	input.AuthMethod = normalizeAuthMethod(string(input.AuthMethod))
+	if err := validateAuthMethod(input.AuthMethod); err != nil {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+	}
+	input.Permissions = normalizePermissions(input.Permissions)
+	if len(input.Permissions) == 0 {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: permissions are required", ErrInvalidInput)
+	}
+	policy, err := s.policy(ctx, principal.OrgID, principal.Subject)
+	if err != nil {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+	}
+	if err := validateCredentialPermissions(policy, principal, input.Permissions); err != nil {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, err
+	}
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(s.now()) {
+		return CreateAPICredentialRequest{}, PolicyDocument{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
+	}
+	return input, policy, nil
+}
+
+func validateCredentialPermissions(policy PolicyDocument, principal Principal, requested []string) error {
+	known := KnownPermissions()
+	granted := permissionSet(effectivePrincipalPermissions(policy, principal))
+	for _, permission := range requested {
+		if _, ok := known[permission]; !ok {
+			return fmt.Errorf("%w: unknown permission %q", ErrInvalidPolicy, permission)
+		}
+		if _, ok := granted[permission]; !ok {
+			return fmt.Errorf("%w: permission %q is not held by caller", ErrInvalidPolicy, permission)
+		}
+	}
+	return nil
+}
+
+func effectivePrincipalPermissions(policy PolicyDocument, principal Principal) []string {
+	out := append([]string(nil), PermissionsForRoles(policy, principal.Roles)...)
+	out = append(out, principal.DirectPermissions...)
+	return normalizePermissions(out)
+}
+
+func permissionSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		out[value] = struct{}{}
+	}
+	return out
+}
+
+func normalizeAuthMethod(value string) APICredentialAuthMethod {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return APICredentialAuthMethodPrivateKeyJWT
+	}
+	return APICredentialAuthMethod(value)
+}
+
+func validateAuthMethod(method APICredentialAuthMethod) error {
+	switch method {
+	case APICredentialAuthMethodPrivateKeyJWT, APICredentialAuthMethodClientSecret:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported auth_method %q", ErrInvalidInput, method)
+	}
+}
+
+func validateIssuedMaterial(expected APICredentialAuthMethod, material APICredentialIssuedMaterial) error {
+	if material.AuthMethod != expected {
+		return fmt.Errorf("%w: issued material auth_method %q does not match requested %q", ErrZitadelUnavailable, material.AuthMethod, expected)
+	}
+	if strings.TrimSpace(material.TokenURL) == "" {
+		return fmt.Errorf("%w: issued material missing token_url", ErrZitadelUnavailable)
+	}
+	switch expected {
+	case APICredentialAuthMethodPrivateKeyJWT:
+		if strings.TrimSpace(material.KeyID) == "" || strings.TrimSpace(material.KeyContent) == "" {
+			return fmt.Errorf("%w: issued private-key JWT material is incomplete", ErrZitadelUnavailable)
+		}
+	case APICredentialAuthMethodClientSecret:
+		if strings.TrimSpace(material.ClientSecret) == "" {
+			return fmt.Errorf("%w: issued client-secret material is incomplete", ErrZitadelUnavailable)
+		}
+	default:
+		return validateAuthMethod(expected)
+	}
+	return nil
+}
+
+func credentialSecretFromMaterial(credential APICredential, material APICredentialIssuedMaterial, actor string, now time.Time, expiresAt *time.Time) APICredentialSecret {
+	secretText := firstNonEmpty(material.KeyContent, material.ClientSecret, material.KeyID)
+	fingerprint, rawHash := SecretHash(secretText)
+	providerKeyID := firstNonEmpty(material.KeyID, material.ClientID)
+	return APICredentialSecret{
+		SecretID:      uuid.NewString(),
+		CredentialID:  credential.CredentialID,
+		AuthMethod:    material.AuthMethod,
+		ProviderKeyID: providerKeyID,
+		Fingerprint:   fingerprint,
+		SecretHash:    rawHash,
+		HashAlgorithm: "sha256",
+		CreatedAt:     now,
+		CreatedBy:     actor,
+		ExpiresAt:     expiresAt,
+	}
+}
+
+func normalizePermissions(permissions []string) []string {
+	if len(permissions) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(permissions))
+	for _, permission := range permissions {
+		permission = strings.TrimSpace(permission)
+		if permission == "" {
+			continue
+		}
+		if _, duplicate := seen[permission]; duplicate {
+			continue
+		}
+		seen[permission] = struct{}{}
+		out = append(out, permission)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func IsInvalid(err error) bool {

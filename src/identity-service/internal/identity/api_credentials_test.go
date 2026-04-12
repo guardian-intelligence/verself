@@ -1,0 +1,177 @@
+package identity
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+)
+
+func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
+	svc := &Service{
+		Store:     &apiCredentialTestStore{policy: DefaultPolicy("42", "tester")},
+		Directory: &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
+		ProjectID: "identity-project",
+		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	}
+
+	_, err := svc.CreateAPICredential(context.Background(), Principal{
+		Subject: "admin-1",
+		OrgID:   "42",
+		Roles:   []string{RoleOrgAdmin},
+	}, CreateAPICredentialRequest{
+		DisplayName: "sandbox automation",
+		Permissions: []string{PermissionSandboxExecutionSubmit},
+	})
+	if !errors.Is(err, ErrInvalidPolicy) {
+		t.Fatalf("identity org admin should not mint sandbox permissions, got %v", err)
+	}
+
+	result, err := svc.CreateAPICredential(context.Background(), Principal{
+		Subject: "owner-1",
+		OrgID:   "42",
+		Roles:   []string{RoleForgeOrgOwner},
+	}, CreateAPICredentialRequest{
+		DisplayName: "sandbox automation",
+		Permissions: []string{PermissionSandboxExecutionSubmit, PermissionSandboxLogsRead},
+	})
+	if err != nil {
+		t.Fatalf("forge org owner should mint sandbox permissions: %v", err)
+	}
+	if result.Credential.OrgID != "42" || result.Credential.SubjectID != "subject-1" {
+		t.Fatalf("unexpected credential: %#v", result.Credential)
+	}
+	if result.Credential.PolicyVersionAtIssue != 0 {
+		t.Fatalf("unexpected policy version at issue: %d", result.Credential.PolicyVersionAtIssue)
+	}
+	if result.IssuedMaterial.KeyContent == "" || result.IssuedMaterial.Fingerprint == "" {
+		t.Fatalf("issued material was not returned once: %#v", result.IssuedMaterial)
+	}
+}
+
+func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
+	storeErr := errors.New("store failed")
+	directory := &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")}
+	svc := &Service{
+		Store:     &apiCredentialTestStore{policy: DefaultPolicy("42", "tester"), createErr: storeErr},
+		Directory: directory,
+		ProjectID: "identity-project",
+		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	}
+
+	_, err := svc.CreateAPICredential(context.Background(), Principal{
+		Subject: "owner-1",
+		OrgID:   "42",
+		Roles:   []string{RoleForgeOrgOwner},
+	}, CreateAPICredentialRequest{
+		DisplayName: "sandbox automation",
+		Permissions: []string{PermissionSandboxExecutionSubmit},
+	})
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("expected store error, got %v", err)
+	}
+	if len(directory.deactivatedSubjects) != 1 || directory.deactivatedSubjects[0] != "subject-1" {
+		t.Fatalf("service account was not cleaned up: %#v", directory.deactivatedSubjects)
+	}
+}
+
+func testIssuedMaterial(method APICredentialAuthMethod, clientID string) APICredentialIssuedMaterial {
+	material := APICredentialIssuedMaterial{
+		AuthMethod:  method,
+		ClientID:    clientID,
+		TokenURL:    "https://auth.example.com/oauth/v2/token",
+		Fingerprint: "sha256:test",
+	}
+	switch method {
+	case APICredentialAuthMethodPrivateKeyJWT:
+		material.KeyID = "key-1"
+		material.KeyContent = "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----"
+	case APICredentialAuthMethodClientSecret:
+		material.ClientSecret = "secret-1"
+	}
+	return material
+}
+
+type apiCredentialTestStore struct {
+	policy    PolicyDocument
+	created   APICredential
+	createErr error
+}
+
+func (s *apiCredentialTestStore) GetPolicy(context.Context, string, string) (PolicyDocument, error) {
+	return s.policy, nil
+}
+
+func (s *apiCredentialTestStore) PutPolicy(context.Context, PolicyDocument) (PolicyDocument, error) {
+	return PolicyDocument{}, nil
+}
+
+func (s *apiCredentialTestStore) CreateAPICredential(_ context.Context, credential APICredential, secret APICredentialSecret) (APICredential, error) {
+	if s.createErr != nil {
+		return APICredential{}, s.createErr
+	}
+	credential.Fingerprint = secret.Fingerprint
+	credential.Permissions = append([]string(nil), credential.Permissions...)
+	s.created = credential
+	return credential, nil
+}
+
+func (s *apiCredentialTestStore) ListAPICredentials(context.Context, string) ([]APICredential, error) {
+	return nil, nil
+}
+
+func (s *apiCredentialTestStore) GetAPICredential(context.Context, string, string) (APICredential, error) {
+	return s.created, nil
+}
+
+func (s *apiCredentialTestStore) ActiveAPICredentialSecrets(context.Context, string, string) ([]APICredentialSecret, error) {
+	return nil, nil
+}
+
+func (s *apiCredentialTestStore) AddAPICredentialSecret(context.Context, string, string, string, APICredentialSecret) (APICredential, error) {
+	return APICredential{}, nil
+}
+
+func (s *apiCredentialTestStore) RevokeAPICredential(context.Context, string, string, string, time.Time) (APICredential, error) {
+	return APICredential{}, nil
+}
+
+func (s *apiCredentialTestStore) ResolveAPICredentialClaims(context.Context, string, time.Time) (ResolveAPICredentialClaimsResult, error) {
+	return ResolveAPICredentialClaimsResult{}, ErrAPICredentialMissing
+}
+
+type apiCredentialTestDirectory struct {
+	material            APICredentialIssuedMaterial
+	deactivatedSubjects []string
+}
+
+func (d *apiCredentialTestDirectory) ListMembers(context.Context, string, string) ([]Member, error) {
+	return nil, nil
+}
+
+func (d *apiCredentialTestDirectory) InviteMember(context.Context, string, string, InviteMemberRequest) (InviteMemberResult, error) {
+	return InviteMemberResult{}, nil
+}
+
+func (d *apiCredentialTestDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (Member, error) {
+	return Member{}, nil
+}
+
+func (d *apiCredentialTestDirectory) CreateServiceAccountCredential(_ context.Context, _ string, input ServiceAccountCredentialInput) (string, APICredentialIssuedMaterial, error) {
+	material := d.material
+	material.ClientID = input.ClientID
+	return "subject-1", material, nil
+}
+
+func (d *apiCredentialTestDirectory) AddServiceAccountCredential(context.Context, AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error) {
+	return d.material, nil
+}
+
+func (d *apiCredentialTestDirectory) RemoveServiceAccountCredential(context.Context, string, APICredentialSecret) error {
+	return nil
+}
+
+func (d *apiCredentialTestDirectory) DeactivateServiceAccount(_ context.Context, subjectID string) error {
+	d.deactivatedSubjects = append(d.deactivatedSubjects, subjectID)
+	return nil
+}

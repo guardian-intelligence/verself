@@ -76,3 +76,58 @@ type IdentityOperation struct {
 	Action      string `json:"action"`
 	OrgScope    string `json:"org_scope"`
 }
+
+type IdentityAPICredential struct {
+	CredentialID         string     `json:"credential_id"`
+	OrgID                OrgID      `json:"org_id"`
+	SubjectID            string     `json:"subject_id"`
+	ClientID             string     `json:"client_id"`
+	DisplayName          string     `json:"display_name"`
+	Status               string     `json:"status"`
+	AuthMethod           string     `json:"auth_method"`
+	Fingerprint          string     `json:"fingerprint"`
+	Permissions          []string   `json:"permissions"`
+	PolicyVersionAtIssue int32      `json:"policy_version_at_issue" minimum:"0" maximum:"2147483647"`
+	CreatedAt            time.Time  `json:"created_at"`
+	CreatedBy            string     `json:"created_by"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	RevokedAt            *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy            string     `json:"revoked_by,omitempty"`
+	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
+}
+
+type IdentityAPICredentials struct {
+	Credentials []IdentityAPICredential `json:"credentials"`
+}
+
+type IdentityAPICredentialIssuedMaterial struct {
+	AuthMethod   string `json:"auth_method"`
+	ClientID     string `json:"client_id"`
+	TokenURL     string `json:"token_url"`
+	KeyID        string `json:"key_id,omitempty"`
+	KeyContent   string `json:"key_content,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty"`
+	Fingerprint  string `json:"fingerprint"`
+}
+
+type IdentityCreateAPICredentialRequest struct {
+	DisplayName string     `json:"display_name" required:"true" maxLength:"200"`
+	AuthMethod  string     `json:"auth_method,omitempty" enum:"private_key_jwt,client_secret"`
+	Permissions []string   `json:"permissions" required:"true" minItems:"1" maxItems:"256"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+}
+
+type IdentityCreateAPICredentialResponse struct {
+	Credential     IdentityAPICredential               `json:"credential"`
+	IssuedMaterial IdentityAPICredentialIssuedMaterial `json:"issued_material"`
+}
+
+type IdentityRollAPICredentialRequest struct {
+	AuthMethod string `json:"auth_method,omitempty" enum:"private_key_jwt,client_secret"`
+}
+
+type IdentityRollAPICredentialResponse struct {
+	Credential     IdentityAPICredential               `json:"credential"`
+	IssuedMaterial IdentityAPICredentialIssuedMaterial `json:"issued_material"`
+}
