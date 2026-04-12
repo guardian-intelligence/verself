@@ -383,6 +383,64 @@ describe("policyFormFromDocument / policyFormToRoles", () => {
   });
 });
 
+describe("policyReducer — invariant 11: clicking a mixed group fills the subtree", () => {
+  // PolicyMatrix maps a click on a tri-state checkbox to
+  // dispatch({ checked: true, permissions: descendantPermissions }). This
+  // property is the canary for that contract: any group, however partially
+  // populated, must end fully on after a single fill action.
+  it("set(group.descendants, true) ends with every descendant on", () => {
+    fc.assert(
+      fc.property(
+        arbInitialForm.chain((state) =>
+          fc.tuple(
+            fc.constant(state),
+            fc.integer({ min: 0, max: state.roles.length - 1 }),
+            arbPath,
+          ),
+        ),
+        ([state, roleIndex, path]) => {
+          const descendants = descendantPermissionsAt(path);
+          if (descendants.length === 0) return true;
+          const next = policyReducer(state, {
+            type: "set",
+            roleIndex,
+            permissions: descendants,
+            checked: true,
+          });
+          const role = next.roles[roleIndex]!;
+          return descendants.every((permission) => role.permissions.has(permission));
+        },
+      ),
+    );
+  });
+
+  it("set(group.descendants, false) ends with every descendant off", () => {
+    fc.assert(
+      fc.property(
+        arbInitialForm.chain((state) =>
+          fc.tuple(
+            fc.constant(state),
+            fc.integer({ min: 0, max: state.roles.length - 1 }),
+            arbPath,
+          ),
+        ),
+        ([state, roleIndex, path]) => {
+          const descendants = descendantPermissionsAt(path);
+          if (descendants.length === 0) return true;
+          const next = policyReducer(state, {
+            type: "set",
+            roleIndex,
+            permissions: descendants,
+            checked: false,
+          });
+          const role = next.roles[roleIndex]!;
+          return descendants.every((permission) => !role.permissions.has(permission));
+        },
+      ),
+    );
+  });
+});
+
 describe("policyReducer — return-state stability", () => {
   it("a no-op action returns the exact same state reference", () => {
     fc.assert(
