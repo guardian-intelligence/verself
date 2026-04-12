@@ -3,7 +3,9 @@ package vmorchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ type APIServer struct {
 
 	cfg    Config
 	logger *slog.Logger
+	state  *hostStateStore
 
 	mu            sync.RWMutex
 	jobs          map[string]*managedJob
@@ -67,7 +70,7 @@ type jobObserver struct {
 	job    *managedJob
 }
 
-func NewAPIServer(cfg Config, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	base := DefaultConfig()
 	if cfg.Pool != "" {
 		base = cfg
@@ -75,12 +78,26 @@ func NewAPIServer(cfg Config, logger *slog.Logger) *APIServer {
 	if logger == nil {
 		logger = slog.Default()
 	}
+
+	state, err := openHostStateStore(base.StateDBPath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("open durable host state ledger %s: %w", base.StateDBPath, err)
+	}
+
 	return &APIServer{
 		cfg:           base,
 		logger:        logger,
+		state:         state,
 		jobs:          make(map[string]*managedJob),
 		telemetrySubs: make(map[uint64]chan TelemetryEvent),
+	}, nil
+}
+
+func (s *APIServer) Close() error {
+	if s == nil || s.state == nil {
+		return nil
 	}
+	return s.state.close()
 }
 
 func (s *APIServer) CreateJob(ctx context.Context, req *vmrpc.CreateJobRequest) (*vmrpc.CreateJobResponse, error) {
@@ -113,20 +130,37 @@ func (s *APIServer) GetJobStatus(ctx context.Context, req *vmrpc.GetJobStatusReq
 	_, span := tracer.Start(ctx, "rpc.GetJobStatus")
 	defer span.End()
 
-	record, err := s.lookupJob(req.GetJobId())
-	if err != nil {
-		return nil, err
+	if live, ok := s.lookupLiveJob(req.GetJobId()); ok {
+		return live.protoStatus(req.GetIncludeOutput()), nil
 	}
-	return record.protoStatus(req.GetIncludeOutput()), nil
+
+	snapshot, err := s.state.getRunSnapshot(ctx, req.GetJobId())
+	if err != nil {
+		if errors.Is(err, errHostRunNotFound) {
+			return nil, status.Errorf(codes.NotFound, "job %s not found", req.GetJobId())
+		}
+		return nil, status.Errorf(codes.Internal, "load job %s from host state ledger: %v", req.GetJobId(), err)
+	}
+
+	resp := &vmrpc.GetJobStatusResponse{
+		JobId:        snapshot.RunID,
+		State:        jobStateToProto(snapshot.State),
+		Terminal:     snapshot.State.Terminal(),
+		ErrorMessage: snapshot.ErrorMessage,
+	}
+	if snapshot.Result != nil {
+		resp.Result = jobResultToProto(*snapshot.Result, req.GetIncludeOutput())
+	}
+	return resp, nil
 }
 
 func (s *APIServer) CancelJob(ctx context.Context, req *vmrpc.CancelJobRequest) (*vmrpc.CancelJobResponse, error) {
 	_, span := tracer.Start(ctx, "rpc.CancelJob")
 	defer span.End()
 
-	record, err := s.lookupJob(req.GetJobId())
-	if err != nil {
-		return nil, err
+	record, ok := s.lookupLiveJob(req.GetJobId())
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "job %s not found", req.GetJobId())
 	}
 	return &vmrpc.CancelJobResponse{Canceled: record.cancelJob()}, nil
 }
@@ -135,9 +169,9 @@ func (s *APIServer) StreamJobLogs(req *vmrpc.StreamJobLogsRequest, stream vmrpc.
 	ctx, span := tracer.Start(stream.Context(), "rpc.StreamJobLogs")
 	defer span.End()
 
-	record, err := s.lookupJob(req.GetJobId())
-	if err != nil {
-		return err
+	record, ok := s.lookupLiveJob(req.GetJobId())
+	if !ok {
+		return status.Errorf(codes.NotFound, "job %s not found", req.GetJobId())
 	}
 
 	var sent int
@@ -175,30 +209,42 @@ func (s *APIServer) StreamGuestEvents(req *vmrpc.StreamGuestEventsRequest, strea
 	ctx, span := tracer.Start(stream.Context(), "rpc.StreamGuestEvents")
 	defer span.End()
 
-	record, err := s.lookupJob(req.GetJobId())
-	if err != nil {
-		return err
+	if _, err := s.state.getRunSnapshot(ctx, req.GetJobId()); err != nil {
+		if errors.Is(err, errHostRunNotFound) {
+			return status.Errorf(codes.NotFound, "job %s not found", req.GetJobId())
+		}
+		return status.Errorf(codes.Internal, "load job %s from host state ledger: %v", req.GetJobId(), err)
 	}
 
-	var sent int
+	var sent uint64
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
-		events, terminal := record.guestEventSnapshot(sent)
+		events, err := s.state.listRunEvents(ctx, req.GetJobId(), sent, 256)
+		if err != nil {
+			return status.Errorf(codes.Internal, "list guest events for job %s: %v", req.GetJobId(), err)
+		}
 		for _, event := range events {
 			if err := stream.Send(&vmrpc.JobGuestEvent{
 				Seq:   event.Seq,
 				JobId: req.GetJobId(),
-				Kind:  event.Kind,
+				Kind:  event.EventType,
 				Attrs: cloneStringMap(event.Attrs),
 			}); err != nil {
 				return err
 			}
-			sent++
+			sent = event.Seq
 		}
 
-		if terminal {
+		snapshot, err := s.state.getRunSnapshot(ctx, req.GetJobId())
+		if err != nil {
+			if errors.Is(err, errHostRunNotFound) {
+				return status.Errorf(codes.NotFound, "job %s not found", req.GetJobId())
+			}
+			return status.Errorf(codes.Internal, "load terminal state for job %s: %v", req.GetJobId(), err)
+		}
+		if snapshot.State.Terminal() {
 			return stream.Send(&vmrpc.JobGuestEvent{
 				JobId:    req.GetJobId(),
 				Terminal: true,
@@ -281,7 +327,7 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 	_, span := tracer.Start(ctx, "rpc.GetCapacity")
 	defer span.End()
 
-	activeJobs := uint32(s.activeJobCount())
+	activeJobs := uint32(s.activeJobCount(ctx))
 	totalSlots := uint32(totalGuestSlots(s.cfg.GuestPoolCIDR))
 	available := uint32(0)
 	if totalSlots > activeJobs {
@@ -305,6 +351,27 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 }
 
 func (s *APIServer) createJobRecord(jobID string, billablePhases []string) (*managedJob, error) {
+	runAttrs := map[string]string{}
+	normalizedPhases := normalizeBillablePhaseSet(billablePhases)
+	if len(normalizedPhases) > 0 {
+		runAttrs["billable_phases"] = strings.Join(sortedPhaseNames(normalizedPhases), ",")
+	}
+	if err := s.state.createRun(context.Background(), jobID, JobStatePending, runAttrs); err != nil {
+		switch {
+		case errors.Is(err, errHostRunExists):
+			return nil, status.Errorf(codes.AlreadyExists, "job %s already exists", jobID)
+		default:
+			return nil, status.Errorf(codes.Internal, "persist job %s in host state ledger: %v", jobID, err)
+		}
+	}
+	s.logger.Info(
+		"host run state transition",
+		"run_id", jobID,
+		"from_state", "",
+		"to_state", jobStateName(JobStatePending),
+		"reason", "accepted",
+	)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -315,30 +382,82 @@ func (s *APIServer) createJobRecord(jobID string, billablePhases []string) (*man
 	record := &managedJob{
 		id:             jobID,
 		state:          JobStatePending,
-		billablePhases: normalizeBillablePhaseSet(billablePhases),
+		billablePhases: normalizedPhases,
 	}
 	s.jobs[jobID] = record
 	return record, nil
 }
 
-func (s *APIServer) lookupJob(jobID string) (*managedJob, error) {
+func (s *APIServer) lookupLiveJob(jobID string) (*managedJob, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	record, ok := s.jobs[jobID]
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "job %s not found", jobID)
-	}
-	return record, nil
+	return record, ok
 }
 
 func (s *APIServer) runManagedJob(record *managedJob, runner func(context.Context, RunObserver) (JobResult, error)) {
 	ctx, cancel := context.WithCancel(context.Background())
 	record.setRunning(cancel)
+	if err := s.state.transitionRunState(
+		context.Background(),
+		record.id,
+		[]JobState{JobStatePending},
+		JobStateRunning,
+		"run_started",
+		map[string]string{"run_id": record.id},
+		"",
+		nil,
+	); err != nil {
+		record.finish(JobStateFailed, nil, fmt.Errorf("transition run %s to running: %w", record.id, err))
+		return
+	}
+	s.logger.Info(
+		"host run state transition",
+		"run_id", record.id,
+		"from_state", jobStateName(JobStatePending),
+		"to_state", jobStateName(JobStateRunning),
+		"reason", "runner_started",
+	)
 
 	observer := &jobObserver{server: s, job: record}
 	result, err := runner(ctx, observer)
-	record.finish(finalJobState(err, result.ExitCode), &result, err)
+	finalState := finalJobState(err, result.ExitCode)
+	record.finish(finalState, &result, err)
+
+	terminalReason := errorString(err)
+	terminalAttrs := map[string]string{
+		"run_id":    record.id,
+		"to_state":  jobStateName(finalState),
+		"exit_code": strconv.Itoa(result.ExitCode),
+	}
+	if terminalReason != "" {
+		terminalAttrs["reason"] = terminalReason
+	}
+	if result.FailurePhase != "" {
+		terminalAttrs["failure_phase"] = result.FailurePhase
+	}
+
+	if stateErr := s.state.transitionRunState(
+		context.Background(),
+		record.id,
+		[]JobState{JobStatePending, JobStateRunning},
+		finalState,
+		"run_finished",
+		terminalAttrs,
+		terminalReason,
+		&result,
+	); stateErr != nil {
+		s.logger.Error("persist terminal host run state failed", "job_id", record.id, "err", stateErr)
+	} else {
+		s.logger.Info(
+			"host run state transition",
+			"run_id", record.id,
+			"from_state", jobStateName(JobStateRunning),
+			"to_state", jobStateName(finalState),
+			"reason", terminalReason,
+		)
+	}
 }
 
 func (s *APIServer) addTelemetrySubscriber() (uint64, chan TelemetryEvent) {
@@ -371,17 +490,31 @@ func (s *APIServer) broadcastTelemetry(event TelemetryEvent) {
 	}
 }
 
-func (s *APIServer) activeJobCount() int {
+func (s *APIServer) appendRunEvent(runID, eventType string, attrs map[string]string) {
+	if strings.TrimSpace(runID) == "" || strings.TrimSpace(eventType) == "" {
+		return
+	}
+	if err := s.state.appendRunEvent(context.Background(), runID, eventType, attrs); err != nil {
+		s.logger.Warn("append run event to host state ledger failed", "run_id", runID, "event_type", eventType, "err", err)
+	}
+}
+
+func (s *APIServer) activeJobCount(ctx context.Context) int {
+	count, err := s.state.countActiveRuns(ctx)
+	if err == nil {
+		return count
+	}
+	s.logger.Warn("active job count fell back to in-memory state", "err", err)
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	var count int
+	var inMemory int
 	for _, job := range s.jobs {
 		if state := job.currentState(); state == JobStatePending || state == JobStateRunning {
-			count++
+			inMemory++
 		}
 	}
-	return count
+	return inMemory
 }
 
 func (o *jobObserver) OnGuestLogChunk(_ string, chunk string) {
@@ -389,15 +522,35 @@ func (o *jobObserver) OnGuestLogChunk(_ string, chunk string) {
 }
 
 func (o *jobObserver) OnGuestPhaseStart(_ string, phase string) {
+	phase = strings.TrimSpace(phase)
+	if phase == "" {
+		return
+	}
 	o.job.appendPhaseEvent("phase_started", phase, nil)
+	attrs := map[string]string{
+		"phase":    phase,
+		"billable": strconv.FormatBool(o.job.isBillablePhase(phase)),
+	}
+	if o.server != nil {
+		o.server.appendRunEvent(o.job.id, "phase_started", attrs)
+	}
 }
 
 func (o *jobObserver) OnGuestPhaseEnd(_ string, result PhaseResult) {
+	result.Name = strings.TrimSpace(result.Name)
+	if result.Name == "" {
+		return
+	}
 	attrs := map[string]string{
 		"exit_code":   strconv.Itoa(result.ExitCode),
 		"duration_ms": strconv.FormatInt(result.DurationMS, 10),
+		"phase":       result.Name,
+		"billable":    strconv.FormatBool(o.job.isBillablePhase(result.Name)),
 	}
 	o.job.appendPhaseEvent("phase_ended", result.Name, attrs)
+	if o.server != nil {
+		o.server.appendRunEvent(o.job.id, "phase_ended", attrs)
+	}
 }
 
 func (o *jobObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
@@ -411,6 +564,9 @@ func (o *jobObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
 		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 	}
 	o.job.appendEvent("checkpoint_request", attrs)
+	if o.server != nil {
+		o.server.appendRunEvent(o.job.id, "checkpoint_request", attrs)
+	}
 }
 
 func (o *jobObserver) OnTelemetryEvent(event TelemetryEvent) {
@@ -645,6 +801,18 @@ func normalizeBillablePhaseSet(phases []string) map[string]struct{} {
 		}
 		out[phase] = struct{}{}
 	}
+	return out
+}
+
+func sortedPhaseNames(phases map[string]struct{}) []string {
+	if len(phases) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(phases))
+	for phase := range phases {
+		out = append(out, phase)
+	}
+	slices.Sort(out)
 	return out
 }
 

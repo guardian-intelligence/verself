@@ -5,10 +5,11 @@ package vmorchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 		}(job)
 	}
 
-	leases, err := waitForRunningJobLeases(ctx, cfg.NetworkLeaseDir, jobIDs, len(jobIDs))
+	leases, err := waitForRunningJobLeases(ctx, cfg.StateDBPath, jobIDs, len(jobIDs))
 	if err != nil {
 		cancel()
 		t.Fatalf("wait for concurrent running VMs: %v", err)
@@ -60,8 +61,8 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 			t.Fatalf("duplicate slot allocation detected: %d", lease.SlotIndex)
 		}
 		seenSlots[lease.SlotIndex] = struct{}{}
-		if lease.PID <= 0 || !processExists(lease.PID) {
-			t.Fatalf("expected live jailer PID for job %s, got %d", lease.JobID, lease.PID)
+		if lease.FirecrackerPID <= 0 || !processMatchesStartTicks(lease.FirecrackerPID, lease.FirecrackerStartTicks) {
+			t.Fatalf("expected live firecracker PID metadata for job %s, got pid=%d start_ticks=%d", lease.JobID, lease.FirecrackerPID, lease.FirecrackerStartTicks)
 		}
 		if !tapExists(lease.TapName) {
 			t.Fatalf("expected TAP %s for job %s to exist while VM is running", lease.TapName, lease.JobID)
@@ -78,7 +79,7 @@ func TestParallelFirecrackerVMs(t *testing.T) {
 		}
 	}
 
-	if err := waitForLeaseCleanup(ctx, cfg.NetworkLeaseDir, jobIDs); err != nil {
+	if err := waitForLeaseCleanup(ctx, cfg.StateDBPath, jobIDs); err != nil {
 		t.Fatalf("wait for lease cleanup: %v", err)
 	}
 
@@ -117,7 +118,7 @@ func requireFirecrackerIntegrationPrereqs(t *testing.T, cfg Config) {
 	}
 }
 
-func waitForRunningJobLeases(ctx context.Context, leaseDir string, jobIDs []string, want int) ([]NetworkLease, error) {
+func waitForRunningJobLeases(ctx context.Context, stateDBPath string, jobIDs []string, want int) ([]NetworkLease, error) {
 	jobSet := make(map[string]struct{}, len(jobIDs))
 	for _, jobID := range jobIDs {
 		jobSet[jobID] = struct{}{}
@@ -127,7 +128,7 @@ func waitForRunningJobLeases(ctx context.Context, leaseDir string, jobIDs []stri
 	defer ticker.Stop()
 
 	for {
-		leases, err := currentJobLeases(leaseDir, jobSet)
+		leases, err := currentJobLeases(stateDBPath, jobSet)
 		if err != nil {
 			return nil, err
 		}
@@ -147,7 +148,7 @@ func waitForRunningJobLeases(ctx context.Context, leaseDir string, jobIDs []stri
 func runningLeases(leases []NetworkLease) []NetworkLease {
 	live := make([]NetworkLease, 0, len(leases))
 	for _, lease := range leases {
-		if lease.PID <= 0 || !processExists(lease.PID) {
+		if lease.FirecrackerPID <= 0 || !processMatchesStartTicks(lease.FirecrackerPID, lease.FirecrackerStartTicks) {
 			continue
 		}
 		if !tapExists(lease.TapName) {
@@ -158,7 +159,7 @@ func runningLeases(leases []NetworkLease) []NetworkLease {
 	return live
 }
 
-func waitForLeaseCleanup(ctx context.Context, leaseDir string, jobIDs []string) error {
+func waitForLeaseCleanup(ctx context.Context, stateDBPath string, jobIDs []string) error {
 	jobSet := make(map[string]struct{}, len(jobIDs))
 	for _, jobID := range jobIDs {
 		jobSet[jobID] = struct{}{}
@@ -168,7 +169,7 @@ func waitForLeaseCleanup(ctx context.Context, leaseDir string, jobIDs []string) 
 	defer ticker.Stop()
 
 	for {
-		leases, err := currentJobLeases(leaseDir, jobSet)
+		leases, err := currentJobLeases(stateDBPath, jobSet)
 		if err != nil {
 			return err
 		}
@@ -184,28 +185,60 @@ func waitForLeaseCleanup(ctx context.Context, leaseDir string, jobIDs []string) 
 	}
 }
 
-func currentJobLeases(leaseDir string, jobSet map[string]struct{}) ([]NetworkLease, error) {
-	entries, err := os.ReadDir(leaseDir)
+func currentJobLeases(stateDBPath string, jobSet map[string]struct{}) ([]NetworkLease, error) {
+	db, err := openStateDB(stateDBPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("open state db %s: %w", stateDBPath, err)
 	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT run_id, slot_index, generation, subnet_cidr, tap_name, host_cidr, guest_ip, gateway_ip, mac,
+		       firecracker_pid, firecracker_start_ticks, created_at_unix_nano
+		FROM network_slots
+		WHERE state = 'allocated'`)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such table: network_slots") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query allocated network slots: %w", err)
+	}
+	defer rows.Close()
 
 	leases := make([]NetworkLease, 0, len(jobSet))
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
+	for rows.Next() {
+		var (
+			lease         NetworkLease
+			createdUnixNs int64
+		)
+		if err := rows.Scan(
+			&lease.JobID,
+			&lease.SlotIndex,
+			&lease.Generation,
+			&lease.SubnetCIDR,
+			&lease.TapName,
+			&lease.HostCIDR,
+			&lease.GuestIP,
+			&lease.GatewayIP,
+			&lease.MAC,
+			&lease.FirecrackerPID,
+			&lease.FirecrackerStartTicks,
+			&createdUnixNs,
+		); err != nil {
+			return nil, fmt.Errorf("scan network slot: %w", err)
 		}
-
-		lease, err := readLeaseFile(filepath.Join(leaseDir, entry.Name()))
-		if err != nil {
-			return nil, err
+		if createdUnixNs > 0 {
+			lease.CreatedAtUTC = time.Unix(0, createdUnixNs).UTC()
 		}
 		if _, ok := jobSet[lease.JobID]; ok {
 			leases = append(leases, lease)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate network slots: %w", err)
 	}
 	return leases, nil
 }

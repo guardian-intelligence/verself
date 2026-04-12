@@ -3,9 +3,10 @@
 Firecracker workload networking uses a host-managed allocator over a dedicated guest pool:
 
 - one configurable IPv4 guest pool, default `172.16.0.0/16`
-- one `/30` lease per VM
-- one TAP per lease
+- one `/30` network slot per VM
+- one TAP per slot
 - one persistent host-owned NAT and forwarding policy for the entire guest pool
+- one durable SQLite WAL ledger at `/var/lib/forge-metal/vm-orchestrator/state.db`
 - one host-only service address, default `10.255.0.1/32` on `fm-host0`
 - no DHCP, no CNI, no Linux bridge management, no network namespaces in this phase
 
@@ -25,9 +26,9 @@ Bare-Metal Host
 │   ├── Caddy: 10.255.0.1:18080 -> Forgejo 127.0.0.1:3000
 │   └── Verdaccio: 10.255.0.1:4873
 │
-├── lease dir: /var/lib/forge-metal/guest-artifacts/net/leases
-│   ├── 000000.json  -> 172.16.0.0/30
-│   ├── 000001.json  -> 172.16.0.4/30
+├── host runtime ledger: /var/lib/forge-metal/vm-orchestrator/state.db (WAL)
+│   ├── network_slots[0] -> 172.16.0.0/30
+│   ├── network_slots[1] -> 172.16.0.4/30
 │   └── ...
 │
 ├── TAP devices
@@ -48,9 +49,9 @@ Bare-Metal Host
 
 ## Operational Notes
 
-- The allocator is the source of truth for slot/IP uniqueness. Lease state is persisted on disk so concurrent allocator calls coordinate through a host lock file and daemon restarts can recover state.
+- The allocator is the source of truth for slot/IP uniqueness. Slot state is persisted in SQLite WAL so concurrent allocator calls and daemon restarts recover deterministically.
 - Per-job runtime only creates and deletes TAP devices. It does not mutate host-wide firewall state.
-- Recovery is best-effort. On startup, stale lease files are reconciled against live TAP devices and recorded PIDs.
+- Recovery is ledger-first and host-probe-second. On startup, allocated slots are reconciled against live TAP devices plus `(pid,start_ticks)` metadata to avoid PID reuse ambiguity.
 - Guest networking requests are never host authority signals; the host allocator and host firewall policy define the effective network state.
 - Guests still use static kernel boot args, so the guest image stays simple and unaware of host network orchestration.
 - Guests do not reach host loopback through DNAT. Host-local platform services are exposed through `fm-host0`, and host firewall rules match `fc-tap-*` plus destination `10.255.0.1`.

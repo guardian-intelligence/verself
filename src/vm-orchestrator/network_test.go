@@ -58,12 +58,24 @@ func TestAllocatorAcquireRelease(t *testing.T) {
 		t.Fatalf("unexpected slot index: %d", lease.SlotIndex)
 	}
 
+	state, runID, err := readSlotState(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotState: %v", err)
+	}
+	if state != "allocated" || runID != "job-1" {
+		t.Fatalf("slot state after acquire: state=%q run_id=%q", state, runID)
+	}
+
 	if err := allocator.Release(context.Background(), "job-1"); err != nil {
 		t.Fatalf("Release: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected lease file to be removed, got err=%v", err)
+	state, runID, err = readSlotState(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotState after release: %v", err)
+	}
+	if state != "free" || runID != "" {
+		t.Fatalf("slot state after release: state=%q run_id=%q", state, runID)
 	}
 }
 
@@ -81,6 +93,9 @@ func TestAllocatorReusesExistingLeaseForJob(t *testing.T) {
 	}
 	if first.SlotIndex != second.SlotIndex {
 		t.Fatalf("expected same slot, got %d and %d", first.SlotIndex, second.SlotIndex)
+	}
+	if first.Generation != second.Generation {
+		t.Fatalf("expected same generation, got %d and %d", first.Generation, second.Generation)
 	}
 }
 
@@ -139,21 +154,23 @@ func TestAllocatorRecoverRemovesStaleLease(t *testing.T) {
 	t.Parallel()
 
 	allocator := testAllocator(t, "172.16.0.0/29")
-	lease, err := allocator.Acquire(context.Background(), "job-1")
-	if err != nil {
+	if _, err := allocator.Acquire(context.Background(), "job-1"); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	lease.CreatedAtUTC = time.Now().UTC().Add(-pendingLeaseTTL - time.Minute)
-	if err := writeLeaseFile(filepath.Join(allocator.cfg.LeaseDir, "000000.json"), lease); err != nil {
-		t.Fatalf("writeLeaseFile: %v", err)
+	if err := forceSlotCreatedAt(allocator.cfg.StateDBPath, 0, time.Now().UTC().Add(-pendingLeaseTTL-time.Minute)); err != nil {
+		t.Fatalf("forceSlotCreatedAt: %v", err)
 	}
 
 	if err := allocator.Recover(context.Background(), nil); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected stale lease to be removed, got err=%v lease=%+v", err, lease)
+	state, runID, err := readSlotState(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotState: %v", err)
+	}
+	if state != "free" || runID != "" {
+		t.Fatalf("expected stale lease to be released, got state=%q run_id=%q", state, runID)
 	}
 }
 
@@ -169,8 +186,12 @@ func TestAllocatorRecoverKeepsRecentPendingLease(t *testing.T) {
 		t.Fatalf("Recover: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); err != nil {
-		t.Fatalf("expected recent pending lease to remain, got err=%v", err)
+	state, runID, err := readSlotState(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotState: %v", err)
+	}
+	if state != "allocated" || runID != "job-1" {
+		t.Fatalf("expected recent pending lease to remain, got state=%q run_id=%q", state, runID)
 	}
 }
 
@@ -189,8 +210,35 @@ func TestAllocatorRecoverKeepsLivePID(t *testing.T) {
 		t.Fatalf("Recover: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(allocator.cfg.LeaseDir, "000000.json")); err != nil {
-		t.Fatalf("expected live lease to remain, got err=%v", err)
+	state, runID, err := readSlotState(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotState: %v", err)
+	}
+	if state != "allocated" || runID != "job-1" {
+		t.Fatalf("expected live lease to remain, got state=%q run_id=%q", state, runID)
+	}
+}
+
+func TestAllocatorAttachPIDPersistsStartTicks(t *testing.T) {
+	t.Parallel()
+
+	allocator := testAllocator(t, "172.16.0.0/29")
+	if _, err := allocator.Acquire(context.Background(), "job-1"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := allocator.AttachPID(context.Background(), "job-1", os.Getpid()); err != nil {
+		t.Fatalf("AttachPID: %v", err)
+	}
+
+	pid, ticks, err := readSlotPIDMetadata(allocator.cfg.StateDBPath, 0)
+	if err != nil {
+		t.Fatalf("readSlotPIDMetadata: %v", err)
+	}
+	if pid != os.Getpid() {
+		t.Fatalf("persisted pid = %d, want %d", pid, os.Getpid())
+	}
+	if ticks == 0 {
+		t.Fatal("persisted process start ticks must be non-zero")
 	}
 }
 
@@ -224,8 +272,57 @@ func TestGuestNetworkConfig(t *testing.T) {
 
 func testAllocator(t *testing.T, cidr string) *Allocator {
 	t.Helper()
+	stateDir := t.TempDir()
 	return NewAllocator(NetworkPoolConfig{
-		PoolCIDR: cidr,
-		LeaseDir: t.TempDir(),
+		PoolCIDR:    cidr,
+		StateDBPath: filepath.Join(stateDir, "state.db"),
 	})
+}
+
+func readSlotState(stateDBPath string, slot int) (string, string, error) {
+	db, err := openStateDB(stateDBPath)
+	if err != nil {
+		return "", "", err
+	}
+	defer db.Close()
+
+	var state, runID string
+	if err := db.QueryRow(
+		`SELECT state, run_id FROM network_slots WHERE slot_index = ?`,
+		slot,
+	).Scan(&state, &runID); err != nil {
+		return "", "", err
+	}
+	return state, runID, nil
+}
+
+func readSlotPIDMetadata(stateDBPath string, slot int) (int, uint64, error) {
+	db, err := openStateDB(stateDBPath)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer db.Close()
+
+	var (
+		pid   int
+		ticks uint64
+	)
+	if err := db.QueryRow(
+		`SELECT firecracker_pid, firecracker_start_ticks FROM network_slots WHERE slot_index = ?`,
+		slot,
+	).Scan(&pid, &ticks); err != nil {
+		return 0, 0, err
+	}
+	return pid, ticks, nil
+}
+
+func forceSlotCreatedAt(stateDBPath string, slot int, when time.Time) error {
+	db, err := openStateDB(stateDBPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`UPDATE network_slots SET created_at_unix_nano = ?, updated_at_unix_nano = ? WHERE slot_index = ?`, when.UnixNano(), when.UnixNano(), slot)
+	return err
 }

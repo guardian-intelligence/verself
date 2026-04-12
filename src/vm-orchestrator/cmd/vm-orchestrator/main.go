@@ -53,7 +53,7 @@ func run() error {
 	flag.IntVar(&cfg.MemoryMiB, "memory-mib", cfg.MemoryMiB, "Default memory per VM in MiB")
 	flag.StringVar(&cfg.HostInterface, "host-interface", cfg.HostInterface, "Default uplink interface for guest egress")
 	flag.StringVar(&cfg.GuestPoolCIDR, "guest-pool-cidr", cfg.GuestPoolCIDR, "IPv4 pool reserved for Firecracker guests")
-	flag.StringVar(&cfg.NetworkLeaseDir, "network-lease-dir", cfg.NetworkLeaseDir, "Directory for persistent guest network leases")
+	flag.StringVar(&cfg.StateDBPath, "state-db-path", cfg.StateDBPath, "Path to durable host runtime SQLite WAL ledger")
 	flag.StringVar(&cfg.HostServiceIP, "host-service-ip", cfg.HostServiceIP, "Host-only service IP exposed to Firecracker guests")
 	flag.IntVar(&cfg.HostServicePort, "host-service-port", cfg.HostServicePort, "Host-only HTTP reverse proxy port exposed to Firecracker guests")
 	flag.Parse()
@@ -98,7 +98,11 @@ func run() error {
 		grpc.MaxRecvMsgSize(maxMessageSize),
 		grpc.MaxSendMsgSize(maxMessageSize),
 	)
-	vmService := vmorchestrator.NewAPIServer(cfg, logger)
+	vmService, err := vmorchestrator.NewAPIServer(cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer vmService.Close()
 	vmrpc.RegisterVMServiceServer(server, vmService)
 
 	startupCtx, startupSpan := otel.Tracer("vm-orchestrator").Start(ctx, "daemon.startup")

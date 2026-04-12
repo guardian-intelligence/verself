@@ -84,10 +84,10 @@ argument_specs:
         default: "172.16.0.0/16"
         description: "CIDR block for guest VM IP allocation."
 
-      firecracker_net_lease_dir:
+      firecracker_state_db_path:
         type: path
-        default: /var/lib/forge-metal/guest-artifacts/net/leases
-        description: "Directory for DHCP lease files for guest VMs."
+        default: /var/lib/forge-metal/vm-orchestrator/state.db
+        description: "SQLite WAL ledger path for vm-orchestrator host runs and network slots."
 
       firecracker_host_uplink_interface:
         type: str
