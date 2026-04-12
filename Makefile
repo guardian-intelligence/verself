@@ -2,7 +2,7 @@
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
        vm-guest-telemetry-build traces clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof
+       wipe-pg-db vm-orchestrator-proof sandbox-inner sandbox-middle sandbox-proof grafana-proof
 
 FM       := src/platform
 AW       := src/apiwire
@@ -132,6 +132,9 @@ sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admi
 
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
 	cd $(FM) && ./scripts/verify-sandbox-live.sh
+
+grafana-proof: inventory-check ## Verify Grafana health, datasource execution, PostgreSQL state, and ClickHouse evidence
+	cd $(FM) && ./scripts/verify-grafana-live.sh
 
 traces: inventory-check ## Pull recent traces+logs: make traces [SERVICE=billing-service] [MINUTES=5] [ERRORS=1]
 	cd $(FM) && ./scripts/traces.sh $(if $(SERVICE),-s $(SERVICE),) $(if $(MINUTES),-m $(MINUTES),) $(if $(ERRORS),-e,)

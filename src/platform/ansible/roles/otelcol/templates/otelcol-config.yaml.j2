@@ -296,6 +296,14 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
+  journald/grafana:
+    units: [grafana]
+    resource:
+      service.name: grafana
+    operators:
+      - type: move
+        from: body.MESSAGE
+        to: body
   postgresql:
     endpoint: "{{ services.postgresql.host }}:{{ services.postgresql.port }}"
     username: postgres
@@ -340,7 +348,7 @@ receivers:
       process:
         include:
           match_type: regexp
-          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "otelcol.*", "mongod", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "postgres"]
+          names: ["billing-service", "sandbox-rental.*", "caddy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "grafana.*", "otelcol.*", "node", "forge-metal", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "postgres"]
         mute_process_exe_error: true
         mute_process_io_error: true
       cpu: {}
@@ -379,7 +387,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/vm-orchestrator, journald/forgejo, filelog/postgresql]
+      receivers: [otlp, filelog/caddy, journald/caddy, journald/billing-service, journald/sandbox-rental, journald/rent-a-sandbox, journald/webmail, journald/letters, journald/zitadel, journald/vm-orchestrator, journald/forgejo, journald/grafana, filelog/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
