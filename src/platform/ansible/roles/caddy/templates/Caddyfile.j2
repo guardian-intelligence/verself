@@ -281,9 +281,27 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 {{ zitadel_domain }} {
 	import access_log
 	import waf_detection
-	reverse_proxy {{ services.zitadel.host }}:{{ services.zitadel.port }} {
-		transport http {
-			versions h2c
+
+	@identity_zitadel_action_api_credentials {
+		method POST
+		path /internal/zitadel/actions/api-credential-claims
+	}
+	handle @identity_zitadel_action_api_credentials {
+		request_body {
+			max_size 65536
+		}
+		import api_security_headers
+		reverse_proxy {{ services.identity_service.host }}:{{ services.identity_service.port }}
+	}
+	handle /internal/zitadel/actions/api-credential-claims {
+		respond 405
+	}
+
+	handle {
+		reverse_proxy {{ services.zitadel.host }}:{{ services.zitadel.port }} {
+			transport http {
+				versions h2c
+			}
 		}
 	}
 }

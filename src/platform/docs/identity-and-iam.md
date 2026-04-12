@@ -292,9 +292,11 @@ do not currently hold. Credential scopes are exact operation permissions such as
 `sandbox:execution:submit`, `sandbox:repo:write`, `sandbox:logs:read`,
 `billing:read`, and future CI operations such as `ci:workflow:dispatch`.
 
-Token minting uses a Zitadel pre-access-token Action. The Action appends
-`forge_metal:credential_id`, `org_id`, and an exact `permissions` claim from
-Forge Metal-owned credential metadata. It must not embed full Forge Metal policy
+Token minting uses a Zitadel pre-access-token Action. The signed Action
+callback is exposed through Caddy on `auth.<domain>` because Zitadel rejects
+loopback/private target URLs. The Action appends `forge_metal:credential_id`,
+`org_id`, and an exact `permissions` claim from Forge Metal-owned credential
+metadata. It must not embed full Forge Metal policy
 documents into the token. If the Action cannot resolve an active credential or
 exact permission set, the token must not receive Forge Metal direct-permission
 claims; services already fail closed because direct permission claims are only

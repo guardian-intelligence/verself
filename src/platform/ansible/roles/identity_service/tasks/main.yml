@@ -179,7 +179,7 @@
     body_format: json
     body:
       name: forge-metal-api-credential-claims
-      endpoint: "http://{{ services.identity_service.host }}:{{ services.identity_service.port }}/internal/zitadel/actions/api-credential-claims"
+      endpoint: "https://{{ zitadel_domain }}/internal/zitadel/actions/api-credential-claims"
       timeout: "1s"
       payloadType: PAYLOAD_TYPE_JSON
       restCall:
