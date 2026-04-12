@@ -229,6 +229,9 @@ func (s *agentSession) waitForRunRequest(controlCh <-chan vmproto.Envelope) (vmp
 		if err != nil {
 			return vmproto.RunRequest{}, err
 		}
+		if err := requireControlSeq("await_run_request", env); err != nil {
+			return vmproto.RunRequest{}, err
+		}
 
 		switch env.Type {
 		case vmproto.TypeRunRequest:
@@ -259,6 +262,9 @@ func (s *agentSession) waitForResultAck(controlCh <-chan vmproto.Envelope, resul
 		if err != nil {
 			return err
 		}
+		if err := requireControlSeq("await_result_ack", env); err != nil {
+			return err
+		}
 
 		switch env.Type {
 		case vmproto.TypeAck:
@@ -285,6 +291,9 @@ func (s *agentSession) waitForShutdown(controlCh <-chan vmproto.Envelope) error 
 	for {
 		env, err := s.waitForControl(controlCh)
 		if err != nil {
+			return err
+		}
+		if err := requireControlSeq("await_shutdown", env); err != nil {
 			return err
 		}
 
@@ -528,6 +537,9 @@ func (s *agentSession) runCommand(ctx context.Context, label string, spec comman
 func (s *agentSession) handleRunPhaseControl(env vmproto.Envelope) error {
 	switch env.Type {
 	case vmproto.TypeCancel:
+		if err := requireControlSeq("run_phase", env); err != nil {
+			return err
+		}
 		s.jobCancel()
 		return nil
 	default:
@@ -545,6 +557,13 @@ func unexpectedControlFrame(state string, got vmproto.MessageType, expected ...v
 
 func protocolStateError(state string, format string, args ...any) error {
 	return fmt.Errorf("control protocol violation in %s: %s", state, fmt.Sprintf(format, args...))
+}
+
+func requireControlSeq(state string, env vmproto.Envelope) error {
+	if env.Seq == 0 {
+		return protocolStateError(state, "invalid control envelope seq: got %d want > 0", env.Seq)
+	}
+	return nil
 }
 
 type agentLogWriter struct {
