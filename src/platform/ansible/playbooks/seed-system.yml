@@ -105,7 +105,14 @@
     seed_system_billing_model: metered
     seed_system_plan_id: sandbox-default
     seed_system_plan_display_name: Sandbox PAYG
-    seed_system_free_tier_buckets: {}
+    # Free-tier bucket allowances reconciled monthly for every org with the
+    # default plan. These are what populate the Sandbox card in the
+    # entitlements view; without them an org with only an account-scoped
+    # top-up renders a universal strip and no per-bucket tables.
+    seed_system_free_tier_buckets:
+      compute: 10000000
+      memory: 5000000
+      block_storage: 2000000
     seed_system_plan_entitlements: {}
     seed_system_quotas: {}
     seed_system_subscription_tiers:
