@@ -13,7 +13,13 @@ export function BalanceCard({ balance }: { balance: Balance }) {
         : "border-success/50 bg-success/5";
 
   return (
-    <div data-testid="balance-card" className={`border rounded-lg p-6 ${color}`}>
+    <div
+      data-testid="balance-card"
+      data-balance-total-units={total}
+      data-balance-free-tier-units={balance.free_tier_available}
+      data-balance-credit-units={balance.credit_available}
+      className={`border rounded-lg p-6 ${color}`}
+    >
       <div className="text-sm text-muted-foreground mb-1">Available Credit Value</div>
       <div data-testid="balance-total" className="text-4xl font-bold font-mono tabular-nums">
         {formatLedgerAmount(total)}
