@@ -265,10 +265,9 @@
             CLICKHOUSE_PASSWORD="$(sed -n 's/^password = "\(.*\)"$/\1/p' /etc/forge-metal/config.toml)"
             {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --query "
               SELECT count()
-              FROM default.otel_logs
-              WHERE ServiceName = 'vm-orchestrator'
-                AND Body = 'guest telemetry hello received'
-                AND LogAttributes['run_id'] = '{{ vm_run_id }}'
+              FROM forge_metal.vm_run_evidence
+              WHERE run_id = '{{ vm_run_id }}'
+                AND evidence_type = 'telemetry_hello'
             "
           args:
             executable: /bin/bash
@@ -284,11 +283,10 @@
             CLICKHOUSE_PASSWORD="$(sed -n 's/^password = "\(.*\)"$/\1/p' /etc/forge-metal/config.toml)"
             {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --query "
               SELECT count()
-              FROM default.otel_logs
-              WHERE ServiceName = 'vm-orchestrator'
-                AND Body = 'guest telemetry stream diagnostic'
-                AND LogAttributes['run_id'] = '{{ vm_run_id }}'
-                AND LogAttributes['kind'] = '{{ vm_guest_expected_telemetry_diagnostic_kind }}'
+              FROM forge_metal.vm_run_evidence
+              WHERE run_id = '{{ vm_run_id }}'
+                AND evidence_type = 'telemetry_diagnostic'
+                AND diagnostic_kind = '{{ vm_guest_expected_telemetry_diagnostic_kind }}'
             "
           args:
             executable: /bin/bash
@@ -305,11 +303,12 @@
             CLICKHOUSE_PASSWORD="$(sed -n 's/^password = "\(.*\)"$/\1/p' /etc/forge-metal/config.toml)"
             {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" --query "
               SELECT count()
-              FROM default.otel_logs
-              WHERE ServiceName = 'vm-orchestrator'
-                AND Body = 'host run state transition'
-                AND LogAttributes['run_id'] = '{{ vm_run_id }}'
-                AND positionCaseInsensitive(LogAttributes['reason'], 'guest control protocol violation in {{ vm_guest_expect_protocol_violation_state }}') > 0
+              FROM forge_metal.vm_run_evidence
+              WHERE run_id = '{{ vm_run_id }}'
+                AND evidence_type = 'run_state_transition'
+                AND to_state = 'failed'
+                AND reason_code = 'guest_protocol_violation'
+                AND protocol_state = '{{ vm_guest_expect_protocol_violation_state }}'
             "
           args:
             executable: /bin/bash
