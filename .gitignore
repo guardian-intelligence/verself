@@ -2,6 +2,7 @@
 /forge-metal
 src/platform/forge-metal
 src/billing-service/billing-service
+src/billing-service/billing-seed
 src/billing-service/tb-inspect
 src/mailbox-service/mailbox-service
 src/identity-service/identity-service
