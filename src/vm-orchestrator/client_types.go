@@ -99,10 +99,11 @@ type FleetVM struct {
 }
 
 type Capacity struct {
-	GuestPoolCIDR  string
-	TotalSlots     uint32
-	ActiveJobs     uint32
-	AvailableSlots uint32
-	VCPUsPerVM     uint32
-	MemoryMiBPerVM uint32
+	GuestPoolCIDR          string
+	TotalSlots             uint32
+	ActiveJobs             uint32
+	AvailableSlots         uint32
+	VCPUsPerVM             uint32
+	MemoryMiBPerVM         uint32
+	RootfsProvisionedBytes uint64
 }

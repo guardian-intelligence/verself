@@ -176,6 +176,7 @@ type BillingStatement struct {
 
 // BillingStatementBucketSummary defines model for BillingStatementBucketSummary.
 type BillingStatementBucketSummary struct {
+	BucketDisplayName string `json:"bucket_display_name"`
 	BucketId          string `json:"bucket_id"`
 	ChargeUnits       string `json:"charge_units"`
 	FreeTierUnits     string `json:"free_tier_units"`
@@ -200,15 +201,17 @@ type BillingStatementGrantSummary struct {
 
 // BillingStatementLineItem defines model for BillingStatementLineItem.
 type BillingStatementLineItem struct {
-	BucketId     string  `json:"bucket_id"`
-	ChargeUnits  string  `json:"charge_units"`
-	ComponentId  string  `json:"component_id"`
-	Description  string  `json:"description"`
-	PlanId       string  `json:"plan_id"`
-	PricingPhase string  `json:"pricing_phase"`
-	ProductId    string  `json:"product_id"`
-	Quantity     float64 `json:"quantity"`
-	UnitRate     string  `json:"unit_rate"`
+	BucketDisplayName string  `json:"bucket_display_name"`
+	BucketId          string  `json:"bucket_id"`
+	ChargeUnits       string  `json:"charge_units"`
+	PlanId            string  `json:"plan_id"`
+	PricingPhase      string  `json:"pricing_phase"`
+	ProductId         string  `json:"product_id"`
+	Quantity          float64 `json:"quantity"`
+	QuantityUnit      string  `json:"quantity_unit"`
+	SkuDisplayName    string  `json:"sku_display_name"`
+	SkuId             string  `json:"sku_id"`
+	UnitRate          string  `json:"unit_rate"`
 }
 
 // BillingStatementTotals defines model for BillingStatementTotals.
@@ -278,9 +281,9 @@ type BillingWindowReservation struct {
 	ReservationShape    string             `json:"reservation_shape"`
 	ReservedChargeUnits string             `json:"reserved_charge_units"`
 	ReservedQuantity    int32              `json:"reserved_quantity"`
+	SkuRates            map[string]string  `json:"sku_rates"`
 	SourceRef           string             `json:"source_ref"`
 	SourceType          string             `json:"source_type"`
-	UnitRates           map[string]string  `json:"unit_rates"`
 	WindowId            string             `json:"window_id"`
 	WindowSeq           int32              `json:"window_seq"`
 	WindowStart         time.Time          `json:"window_start"`

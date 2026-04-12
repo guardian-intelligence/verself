@@ -17,10 +17,10 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 		statementPeriod{Start: periodStart, End: periodEnd, Source: "subscription"},
 		[]GrantBalance{
 			{
-				GrantID:        stripeGrantID(42, GrantScopeBucket, "sandbox", "storage", "in_test"),
+				GrantID:        stripeGrantID(42, GrantScopeBucket, "sandbox", "block_storage", "in_test"),
 				ScopeType:      GrantScopeBucket,
 				ScopeProductID: "sandbox",
-				ScopeBucketID:  "storage",
+				ScopeBucketID:  "block_storage",
 				Source:         SourceSubscription,
 				Available:      6_000,
 				Pending:        300,
@@ -36,19 +36,19 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 		[]persistedWindow{
 			statementTestWindow("settled-storage", "settled", 100, []WindowFundingLeg{
 				{
-					GrantID:             stripeGrantID(42, GrantScopeBucket, "sandbox", "storage", "in_test"),
+					GrantID:             stripeGrantID(42, GrantScopeBucket, "sandbox", "block_storage", "in_test"),
 					ChargeProductID:     "sandbox",
-					ChargeBucketID:      "storage",
+					ChargeBucketID:      "block_storage",
 					Amount:              2_500,
 					Source:              SourceSubscription,
 					GrantScopeType:      GrantScopeBucket,
 					GrantScopeProductID: "sandbox",
-					GrantScopeBucketID:  "storage",
+					GrantScopeBucketID:  "block_storage",
 				},
 				{
 					GrantID:            grantID,
 					ChargeProductID:    "sandbox",
-					ChargeBucketID:     "storage",
+					ChargeBucketID:     "block_storage",
 					Amount:             1_500,
 					Source:             SourcePurchase,
 					GrantScopeType:     GrantScopeAccount,
@@ -59,7 +59,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 				{
 					GrantID:         grantID,
 					ChargeProductID: "sandbox",
-					ChargeBucketID:  "storage",
+					ChargeBucketID:  "block_storage",
 					Amount:          800,
 					Source:          SourcePurchase,
 					GrantScopeType:  GrantScopeAccount,
@@ -78,15 +78,19 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	assertEqual(t, len(statement.LineItems), 1, "line count")
 	line := statement.LineItems[0]
 	assertEqual(t, line.ProductID, "sandbox", "line product")
-	assertEqual(t, line.BucketID, "storage", "line bucket")
-	assertEqual(t, line.ComponentID, "premium_nvme_gib", "line component")
+	assertEqual(t, line.BucketID, "block_storage", "line bucket")
+	assertEqual(t, line.BucketDisplayName, "Block Storage", "line bucket display")
+	assertEqual(t, line.SKUID, testBlockStorageSKU, "line sku")
+	assertEqual(t, line.SKUDisplayName, "Premium NVMe", "line sku display")
+	assertEqual(t, line.QuantityUnit, "GiB-second", "line quantity unit")
 	assertEqual(t, line.Quantity, float64(100), "line quantity")
-	assertEqual(t, line.UnitRate, uint64(40), "line unit rate")
+	assertEqual(t, line.UnitRate, uint64(40), "line SKU rate")
 	assertEqual(t, line.ChargeUnits, uint64(4_000), "line charge")
 	assertEqual(t, line.PricingPhase, string(PricingPhaseIncluded), "line pricing phase")
 
 	assertEqual(t, len(statement.BucketSummaries), 1, "bucket count")
 	bucket := statement.BucketSummaries[0]
+	assertEqual(t, bucket.BucketDisplayName, "Block Storage", "bucket display")
 	assertEqual(t, bucket.ChargeUnits, uint64(4_000), "bucket charge")
 	assertEqual(t, bucket.SubscriptionUnits, uint64(2_500), "bucket subscription")
 	assertEqual(t, bucket.PurchaseUnits, uint64(1_500), "bucket purchase")
@@ -101,7 +105,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	accountGrant := findStatementGrantSummary(t, statement, GrantScopeAccount, "", "", SourcePurchase)
 	assertEqual(t, accountGrant.Available, uint64(50_000), "account available")
 	assertEqual(t, accountGrant.Pending, uint64(2_000), "account pending")
-	bucketGrant := findStatementGrantSummary(t, statement, GrantScopeBucket, "sandbox", "storage", SourceSubscription)
+	bucketGrant := findStatementGrantSummary(t, statement, GrantScopeBucket, "sandbox", "block_storage", SourceSubscription)
 	assertEqual(t, bucketGrant.Available, uint64(6_000), "bucket available")
 	assertEqual(t, bucketGrant.Pending, uint64(300), "bucket pending")
 }
@@ -124,13 +128,15 @@ func statementTestWindow(windowID string, state string, quantity uint32, legs []
 		ReservedChargeUnits: uint64(quantity) * 40,
 		BilledChargeUnits:   uint64(quantity) * 40,
 		PricingPhase:        PricingPhaseIncluded,
-		Allocation:          map[string]float64{"premium_nvme_gib": 1},
+		Allocation:          map[string]float64{testBlockStorageSKU: 1},
 		RateContext: windowRateContext{
 			PlanID:               "sandbox-pro",
-			UnitRates:            map[string]uint64{"premium_nvme_gib": 40},
-			RateBuckets:          map[string]string{"premium_nvme_gib": "storage"},
-			ComponentCostPerUnit: map[string]uint64{"premium_nvme_gib": 40},
-			BucketCostPerUnit:    map[string]uint64{"storage": 40},
+			SKURates:             map[string]uint64{testBlockStorageSKU: 40},
+			SKUBuckets:           map[string]string{testBlockStorageSKU: "block_storage"},
+			SKUDetails:           testSKURateContext(map[string]uint64{testBlockStorageSKU: 40}),
+			BucketDisplayNames:   testBucketDisplayNames(),
+			ComponentCostPerUnit: map[string]uint64{testBlockStorageSKU: 40},
+			BucketCostPerUnit:    map[string]uint64{"block_storage": 40},
 			CostPerUnit:          40,
 		},
 		FundingLegs: legs,

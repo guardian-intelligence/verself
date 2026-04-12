@@ -149,15 +149,16 @@ func run() error {
 	}
 
 	jobService := &jobs.Service{
-		PG:                 pg,
-		CH:                 chConn,
-		CHDatabase:         "forge_metal",
-		Orchestrator:       orchestrator,
-		Billing:            billingClient,
-		BillingVCPUs:       int(capacity.VCPUsPerVM),
-		BillingMemMiB:      int(capacity.MemoryMiBPerVM),
-		WebhookSecretCodec: webhookSecretCodec,
-		Logger:             logger,
+		PG:                            pg,
+		CH:                            chConn,
+		CHDatabase:                    "forge_metal",
+		Orchestrator:                  orchestrator,
+		Billing:                       billingClient,
+		BillingVCPUs:                  int(capacity.VCPUsPerVM),
+		BillingMemMiB:                 int(capacity.MemoryMiBPerVM),
+		BillingRootfsProvisionedBytes: capacity.RootfsProvisionedBytes,
+		WebhookSecretCodec:            webhookSecretCodec,
+		Logger:                        logger,
 	}
 
 	// --- Huma API ---

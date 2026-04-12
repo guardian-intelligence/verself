@@ -47,6 +47,19 @@ func zfsWritten(ctx context.Context, dataset string) (uint64, error) {
 	return strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
 }
 
+// zfsVolsize returns the provisioned size in bytes for a ZFS dataset.
+func zfsVolsize(ctx context.Context, dataset string) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, zfsTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "zfs", "get", "-H", "-p", "-o", "value", "volsize", dataset)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("zfs get volsize %s: %w", dataset, err)
+	}
+	return strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
+}
+
 // waitForDevice polls for a device node to appear (zvols take a moment
 // after clone for udev to create the node). Timeout via context.
 func waitForDevice(ctx context.Context, path string) error {

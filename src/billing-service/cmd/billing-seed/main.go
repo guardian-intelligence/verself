@@ -18,7 +18,14 @@ import (
 	"github.com/forge-metal/billing-service/internal/billing"
 )
 
-const seedStripeSecret = "seed-test-dummy"
+const (
+	seedStripeSecret = "seed-test-dummy"
+
+	sandboxProductID       = "sandbox"
+	sandboxComputeSKU      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
+	sandboxMemorySKU       = "sandbox_memory_standard_gib_second"
+	sandboxBlockStorageSKU = "sandbox_block_storage_premium_nvme_gib_second"
+)
 
 type config struct {
 	pgDSNFile           string
@@ -35,14 +42,9 @@ type config struct {
 	planID              string
 	planDisplayName     string
 	includedBucketsJSON string
-	unitRatesJSON       string
-	rateBucketsJSON     string
-	overageRatesJSON    string
 	quotasJSON          string
 	targetPrepaidUnits  uint64
 	prepaidSource       string
-	promotionName       string
-	promotionPercent    int
 	expiresAfter        time.Duration
 }
 
@@ -57,8 +59,22 @@ type seedResult struct {
 	PrepaidAfter        uint64 `json:"prepaid_after"`
 	TargetPrepaidUnits  uint64 `json:"target_prepaid_units"`
 	ProductUpserted     bool   `json:"product_upserted"`
+	CatalogUpserted     bool   `json:"catalog_upserted"`
 	DefaultPlanUpserted bool   `json:"default_plan_upserted"`
-	PromotionUpserted   bool   `json:"promotion_upserted"`
+}
+
+type bucketSeed struct {
+	BucketID    string
+	DisplayName string
+	SortOrder   int
+}
+
+type skuSeed struct {
+	SKUID        string
+	BucketID     string
+	DisplayName  string
+	QuantityUnit string
+	UnitRate     uint64
 }
 
 type noopMeteringWriter struct{}
@@ -118,6 +134,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	catalogUpserted, err := upsertCatalog(ctx, pg, cfg)
+	if err != nil {
+		return err
+	}
 	defaultPlanUpserted, err := upsertDefaultPlan(ctx, pg, cfg)
 	if err != nil {
 		return err
@@ -160,8 +180,8 @@ func run() error {
 		PrepaidAfter:        after,
 		TargetPrepaidUnits:  cfg.targetPrepaidUnits,
 		ProductUpserted:     productUpserted,
+		CatalogUpserted:     catalogUpserted,
 		DefaultPlanUpserted: defaultPlanUpserted,
-		PromotionUpserted:   false,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal seed result: %w", err)
@@ -184,19 +204,16 @@ func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint
 
 func parseFlags() (config, error) {
 	cfg := config{
-		productID:           "sandbox",
+		productID:           sandboxProductID,
 		productDisplayName:  "Sandbox",
-		meterUnit:           "vcpu_second",
+		meterUnit:           "sku_second",
 		billingModel:        "metered",
 		orgTrustTier:        "new",
 		planID:              "sandbox-default",
 		planDisplayName:     "Sandbox PAYG",
 		includedBucketsJSON: `{}`,
-		unitRatesJSON:       `{"vcpu":325,"gib":40}`,
-		rateBucketsJSON:     `{}`,
-		overageRatesJSON:    `{}`,
 		quotasJSON:          `{}`,
-		targetPrepaidUnits:  5_000_000,
+		targetPrepaidUnits:  500_000_000,
 		prepaidSource:       "purchase",
 		expiresAfter:        365 * 24 * time.Hour,
 	}
@@ -215,14 +232,9 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.planID, "plan-id", cfg.planID, "default plan ID")
 	flag.StringVar(&cfg.planDisplayName, "plan-display-name", cfg.planDisplayName, "default plan display name")
 	flag.StringVar(&cfg.includedBucketsJSON, "included-credit-buckets-json", cfg.includedBucketsJSON, "default plan included credit buckets JSON")
-	flag.StringVar(&cfg.unitRatesJSON, "unit-rates-json", cfg.unitRatesJSON, "default plan unit rates JSON")
-	flag.StringVar(&cfg.rateBucketsJSON, "rate-buckets-json", cfg.rateBucketsJSON, "default plan rate buckets JSON")
-	flag.StringVar(&cfg.overageRatesJSON, "overage-unit-rates-json", cfg.overageRatesJSON, "default plan overage unit rates JSON")
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
 	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
-	flag.StringVar(&cfg.promotionName, "promotion-name", "", "ignored by rewritten seed helper")
-	flag.IntVar(&cfg.promotionPercent, "promotion-percent", 0, "ignored by rewritten seed helper")
 	flag.DurationVar(&cfg.expiresAfter, "expires-after", cfg.expiresAfter, "duration until seeded credits expire")
 	flag.Parse()
 
@@ -233,6 +245,8 @@ func parseFlags() (config, error) {
 		return config{}, fmt.Errorf("--org-id is required")
 	case cfg.orgName == "":
 		cfg.orgName = fmt.Sprintf("org-%d", cfg.orgID)
+	case cfg.productID != sandboxProductID:
+		return config{}, fmt.Errorf("billing seed catalog currently owns product %q", sandboxProductID)
 	}
 	return cfg, nil
 }
@@ -282,27 +296,115 @@ func upsertProduct(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	return rows > 0, nil
 }
 
+func upsertCatalog(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
+	var changed bool
+	for _, bucket := range sandboxBuckets() {
+		result, err := pg.ExecContext(ctx, `
+			INSERT INTO credit_buckets (bucket_id, display_name, sort_order)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (bucket_id) DO UPDATE
+			SET display_name = EXCLUDED.display_name,
+			    sort_order = EXCLUDED.sort_order,
+			    updated_at = now()
+		`, bucket.BucketID, bucket.DisplayName, bucket.SortOrder)
+		if err != nil {
+			return false, fmt.Errorf("upsert bucket %s: %w", bucket.BucketID, err)
+		}
+		rows, _ := result.RowsAffected()
+		changed = changed || rows > 0
+	}
+	for _, sku := range sandboxSKUs() {
+		result, err := pg.ExecContext(ctx, `
+			INSERT INTO skus (sku_id, product_id, bucket_id, display_name, quantity_unit, active)
+			VALUES ($1, $2, $3, $4, $5, true)
+			ON CONFLICT (sku_id) DO UPDATE
+			SET product_id = EXCLUDED.product_id,
+			    bucket_id = EXCLUDED.bucket_id,
+			    display_name = EXCLUDED.display_name,
+			    quantity_unit = EXCLUDED.quantity_unit,
+			    active = EXCLUDED.active,
+			    updated_at = now()
+		`, sku.SKUID, cfg.productID, sku.BucketID, sku.DisplayName, sku.QuantityUnit)
+		if err != nil {
+			return false, fmt.Errorf("upsert sku %s: %w", sku.SKUID, err)
+		}
+		rows, _ := result.RowsAffected()
+		changed = changed || rows > 0
+	}
+	return changed, nil
+}
+
 func upsertDefaultPlan(ctx context.Context, pg *sql.DB, cfg config) (bool, error) {
 	result, err := pg.ExecContext(ctx, `
-		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credit_buckets, unit_rates, rate_buckets, overage_unit_rates, quotas, is_default, tier, active)
-		VALUES ($1, $2, $3, 'prepaid', $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, true, 'default', true)
+		INSERT INTO plans (plan_id, product_id, display_name, billing_mode, included_credit_buckets, quotas, is_default, tier, active)
+		VALUES ($1, $2, $3, 'prepaid', $4::jsonb, $5::jsonb, true, 'default', true)
 		ON CONFLICT (plan_id) DO UPDATE
 		SET product_id = EXCLUDED.product_id,
 		    display_name = EXCLUDED.display_name,
 		    billing_mode = EXCLUDED.billing_mode,
 		    included_credit_buckets = EXCLUDED.included_credit_buckets,
-		    unit_rates = EXCLUDED.unit_rates,
-		    rate_buckets = EXCLUDED.rate_buckets,
-		    overage_unit_rates = EXCLUDED.overage_unit_rates,
 		    quotas = EXCLUDED.quotas,
 		    is_default = EXCLUDED.is_default,
 		    tier = EXCLUDED.tier,
 		    active = EXCLUDED.active,
 		    updated_at = now()
-	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.includedBucketsJSON, cfg.unitRatesJSON, cfg.rateBucketsJSON, cfg.overageRatesJSON, cfg.quotasJSON)
+	`, cfg.planID, cfg.productID, cfg.planDisplayName, cfg.includedBucketsJSON, cfg.quotasJSON)
 	if err != nil {
 		return false, fmt.Errorf("upsert default plan %s: %w", cfg.planID, err)
 	}
 	rows, _ := result.RowsAffected()
-	return rows > 0, nil
+	changed := rows > 0
+	for _, sku := range sandboxSKUs() {
+		if sku.UnitRate > uint64(1<<63-1) {
+			return false, fmt.Errorf("sku %s unit rate exceeds postgres bigint", sku.SKUID)
+		}
+		result, err := pg.ExecContext(ctx, `
+			INSERT INTO plan_sku_rates (plan_id, sku_id, unit_rate, active)
+			VALUES ($1, $2, $3, true)
+			ON CONFLICT (plan_id, sku_id) DO UPDATE
+			SET unit_rate = EXCLUDED.unit_rate,
+			    active = EXCLUDED.active,
+			    updated_at = now()
+		`, cfg.planID, sku.SKUID, int64(sku.UnitRate))
+		if err != nil {
+			return false, fmt.Errorf("upsert plan sku rate %s/%s: %w", cfg.planID, sku.SKUID, err)
+		}
+		rows, _ := result.RowsAffected()
+		changed = changed || rows > 0
+	}
+	return changed, nil
+}
+
+func sandboxBuckets() []bucketSeed {
+	return []bucketSeed{
+		{BucketID: "compute", DisplayName: "Compute", SortOrder: 10},
+		{BucketID: "memory", DisplayName: "Memory", SortOrder: 20},
+		{BucketID: "block_storage", DisplayName: "Block Storage", SortOrder: 30},
+	}
+}
+
+func sandboxSKUs() []skuSeed {
+	return []skuSeed{
+		{
+			SKUID:        sandboxComputeSKU,
+			BucketID:     "compute",
+			DisplayName:  "AMD EPYC 4484PX @ 5.66GHz",
+			QuantityUnit: "vCPU-second",
+			UnitRate:     325_000,
+		},
+		{
+			SKUID:        sandboxMemorySKU,
+			BucketID:     "memory",
+			DisplayName:  "Standard Memory",
+			QuantityUnit: "GiB-second",
+			UnitRate:     40_000,
+		},
+		{
+			SKUID:        sandboxBlockStorageSKU,
+			BucketID:     "block_storage",
+			DisplayName:  "Premium NVMe",
+			QuantityUnit: "GiB-second",
+			UnitRate:     10_000,
+		},
+	}
 }

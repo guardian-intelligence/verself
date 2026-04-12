@@ -288,13 +288,19 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 		available = totalSlots - activeJobs
 	}
 
+	rootfsProvisionedBytes, err := zfsVolsize(ctx, s.cfg.Pool+"/"+s.cfg.GoldenZvol)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get golden zvol volsize: %v", err)
+	}
+
 	return &vmrpc.GetCapacityResponse{
-		GuestPoolCidr:  s.cfg.GuestPoolCIDR,
-		TotalSlots:     totalSlots,
-		ActiveJobs:     activeJobs,
-		AvailableSlots: available,
-		VcpusPerVm:     uint32(s.cfg.VCPUs),
-		MemoryMibPerVm: uint32(s.cfg.MemoryMiB),
+		GuestPoolCidr:          s.cfg.GuestPoolCIDR,
+		TotalSlots:             totalSlots,
+		ActiveJobs:             activeJobs,
+		AvailableSlots:         available,
+		VcpusPerVm:             uint32(s.cfg.VCPUs),
+		MemoryMibPerVm:         uint32(s.cfg.MemoryMiB),
+		RootfsProvisionedBytes: rootfsProvisionedBytes,
 	}, nil
 }
 

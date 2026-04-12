@@ -45,6 +45,10 @@ const (
 	defaultRunCommand   = "echo hello"
 	defaultLogStream    = "stdout"
 	executionSourceType = "execution_attempt"
+
+	billingSKUCompute      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
+	billingSKUMemory       = "sandbox_memory_standard_gib_second"
+	billingSKUBlockStorage = "sandbox_block_storage_premium_nvme_gib_second"
 )
 
 var (
@@ -58,6 +62,7 @@ var (
 
 // Runner abstracts VM execution. Production uses *vmorchestrator.Client.
 type Runner interface {
+	GetCapacity(ctx context.Context) (vmorchestrator.Capacity, error)
 	StartDirectJob(ctx context.Context, job vmorchestrator.JobConfig) (string, error)
 	StreamGuestEvents(ctx context.Context, jobID string, follow bool, handler func(vmorchestrator.JobGuestEvent) error) error
 	WaitJob(ctx context.Context, jobID string, includeOutput bool) (vmorchestrator.JobStatus, error)
@@ -193,16 +198,17 @@ type JobEventRow struct {
 
 // Service manages execution submission, billing, and state transitions.
 type Service struct {
-	PG                  *sql.DB
-	CH                  driver.Conn
-	CHDatabase          string
-	Orchestrator        Runner
-	Billing             BillingClient
-	BillingVCPUs        int
-	BillingMemMiB       int
-	WebhookSecretCodec  *SecretCodec
-	Logger              *slog.Logger
-	RepoScanConcurrency int
+	PG                            *sql.DB
+	CH                            driver.Conn
+	CHDatabase                    string
+	Orchestrator                  Runner
+	Billing                       BillingClient
+	BillingVCPUs                  int
+	BillingMemMiB                 int
+	BillingRootfsProvisionedBytes uint64
+	WebhookSecretCodec            *SecretCodec
+	Logger                        *slog.Logger
+	RepoScanConcurrency           int
 
 	repoScanMu  sync.Mutex
 	repoScanSem chan struct{}
@@ -215,17 +221,18 @@ type executionSnapshot struct {
 }
 
 type executionOutcome struct {
-	State         string
-	FailureReason string
-	ExitCode      int
-	DurationMs    int64
-	ZFSWritten    uint64
-	StdoutBytes   uint64
-	StderrBytes   uint64
-	Metrics       *vmorchestrator.VMMetrics
-	Logs          string
-	StartedAt     time.Time
-	CompletedAt   time.Time
+	State                  string
+	FailureReason          string
+	ExitCode               int
+	DurationMs             int64
+	ZFSWritten             uint64
+	RootfsProvisionedBytes uint64
+	StdoutBytes            uint64
+	StderrBytes            uint64
+	Metrics                *vmorchestrator.VMMetrics
+	Logs                   string
+	StartedAt              time.Time
+	CompletedAt            time.Time
 }
 
 type workloadResult struct {
@@ -303,9 +310,12 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		return uuid.Nil, uuid.Nil, fmt.Errorf("count active attempts: %w", err)
 	}
 
-	allocation := map[string]float64{
-		"vcpu": float64(s.BillingVCPUs),
-		"gib":  float64(s.BillingMemMiB) / 1024.0,
+	allocation, err := s.currentBillingAllocation(ctx)
+	if err != nil {
+		_ = s.failWithoutBilling(ctx, executionID, attemptID, "billing_capacity_unavailable", now)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return uuid.Nil, uuid.Nil, fmt.Errorf("build billing allocation: %w", err)
 	}
 	reservation, err := s.Billing.Reserve(
 		ctx,
@@ -733,14 +743,20 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	if waitErr == nil && streamErr != nil {
 		waitErr = streamErr
 	}
+	rootfsProvisionedBytes := result.RootfsProvisionedBytes
+	if rootfsProvisionedBytes == 0 {
+		// The reserve path already read the golden zvol size; reuse it if per-run evidence is unavailable.
+		rootfsProvisionedBytes = s.BillingRootfsProvisionedBytes
+	}
 	outcome := executionOutcome{
-		CompletedAt: time.Now().UTC(),
-		Logs:        result.Logs,
-		ExitCode:    result.ExitCode,
-		ZFSWritten:  result.ZFSWritten,
-		StdoutBytes: result.StdoutBytes,
-		StderrBytes: result.StderrBytes,
-		Metrics:     result.Metrics,
+		CompletedAt:            time.Now().UTC(),
+		Logs:                   result.Logs,
+		ExitCode:               result.ExitCode,
+		ZFSWritten:             result.ZFSWritten,
+		RootfsProvisionedBytes: rootfsProvisionedBytes,
+		StdoutBytes:            result.StdoutBytes,
+		StderrBytes:            result.StderrBytes,
+		Metrics:                result.Metrics,
 	}
 	if !startedAt.IsZero() {
 		outcome.StartedAt = startedAt
@@ -1617,6 +1633,38 @@ func chargeUnits(costPerSec int64, seconds int) uint64 {
 	return uint64(costPerSec) * uint64(seconds)
 }
 
+func buildBillingAllocation(vcpus int, memMiB int, rootfsProvisionedBytes uint64) map[string]float64 {
+	return map[string]float64{
+		billingSKUCompute:      float64(vcpus),
+		billingSKUMemory:       float64(memMiB) / 1024.0,
+		billingSKUBlockStorage: float64(rootfsProvisionedBytes) / (1024.0 * 1024.0 * 1024.0),
+	}
+}
+
+func (s *Service) currentBillingAllocation(ctx context.Context) (map[string]float64, error) {
+	capacityCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	capacity, err := s.Orchestrator.GetCapacity(capacityCtx)
+	if err != nil {
+		return nil, fmt.Errorf("query vm-orchestrator capacity: %w", err)
+	}
+	if capacity.VCPUsPerVM == 0 {
+		return nil, fmt.Errorf("vm-orchestrator capacity missing vcpus_per_vm")
+	}
+	if capacity.MemoryMiBPerVM == 0 {
+		return nil, fmt.Errorf("vm-orchestrator capacity missing memory_mib_per_vm")
+	}
+	if capacity.RootfsProvisionedBytes == 0 {
+		return nil, fmt.Errorf("vm-orchestrator capacity missing rootfs_provisioned_bytes")
+	}
+	return buildBillingAllocation(
+		int(capacity.VCPUsPerVM),
+		int(capacity.MemoryMiBPerVM),
+		capacity.RootfsProvisionedBytes,
+	), nil
+}
+
 func usageSummaryForOutcome(outcome executionOutcome) map[string]any {
 	summary := map[string]any{
 		"zfs_written_bytes": outcome.ZFSWritten,
@@ -1633,6 +1681,7 @@ func usageSummaryForOutcome(outcome executionOutcome) map[string]any {
 		summary["net_tx_bytes"] = outcome.Metrics.NetTxBytes
 		summary["vcpu_exit_count"] = outcome.Metrics.VCPUExitCount
 	}
+	summary["rootfs_provisioned_bytes"] = outcome.RootfsProvisionedBytes
 	return summary
 }
 

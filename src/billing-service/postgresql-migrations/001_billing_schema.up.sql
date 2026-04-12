@@ -18,15 +18,34 @@ CREATE TABLE products (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE credit_buckets (
+    bucket_id     TEXT        PRIMARY KEY,
+    display_name  TEXT        NOT NULL,
+    sort_order    INTEGER     NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE skus (
+    sku_id         TEXT        PRIMARY KEY,
+    product_id     TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    bucket_id      TEXT        NOT NULL REFERENCES credit_buckets(bucket_id),
+    display_name   TEXT        NOT NULL,
+    quantity_unit  TEXT        NOT NULL,
+    active         BOOLEAN     NOT NULL DEFAULT true,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_skus_product_active
+    ON skus (product_id, active, bucket_id, sku_id);
+
 CREATE TABLE plans (
     plan_id                  TEXT        PRIMARY KEY,
     product_id               TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     display_name             TEXT        NOT NULL,
     billing_mode             TEXT        NOT NULL CHECK (billing_mode IN ('prepaid', 'postpaid')),
     included_credit_buckets  JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    unit_rates               JSONB       NOT NULL,
-    rate_buckets             JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    overage_unit_rates       JSONB       NOT NULL DEFAULT '{}'::jsonb,
     quotas                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     is_default               BOOLEAN     NOT NULL DEFAULT false,
     tier                     TEXT        NOT NULL DEFAULT 'default',
@@ -40,6 +59,19 @@ CREATE TABLE plans (
 CREATE UNIQUE INDEX idx_plans_default_per_product
     ON plans (product_id)
     WHERE is_default AND active;
+
+CREATE TABLE plan_sku_rates (
+    plan_id       TEXT        NOT NULL REFERENCES plans(plan_id) ON DELETE CASCADE,
+    sku_id        TEXT        NOT NULL REFERENCES skus(sku_id),
+    unit_rate     BIGINT      NOT NULL CHECK (unit_rate >= 0),
+    active        BOOLEAN     NOT NULL DEFAULT true,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (plan_id, sku_id)
+);
+
+CREATE INDEX idx_plan_sku_rates_active
+    ON plan_sku_rates (plan_id, active, sku_id);
 
 CREATE TABLE subscriptions (
     subscription_id            BIGSERIAL    PRIMARY KEY,

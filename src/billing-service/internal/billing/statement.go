@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -22,7 +21,7 @@ type statementLineItemKey struct {
 	ProductID    string
 	PlanID       string
 	BucketID     string
-	ComponentID  string
+	SKUID        string
 	PricingPhase string
 	UnitRate     uint64
 }
@@ -189,48 +188,50 @@ func addSettledStatementRow(
 		return err
 	}
 
+	rateContext, err := completeRateContext(window)
+	if err != nil {
+		return err
+	}
 	for _, bucketID := range sortedUint64MapKeys(row.BucketChargeUnits) {
-		bucket := statementBucket(buckets, window.ProductID, bucketID)
+		bucket := statementBucket(buckets, window.ProductID, bucketID, rateContext.BucketDisplayNames[bucketID])
 		if err := addStatementBucketMetering(bucket, row, bucketID); err != nil {
 			return err
 		}
 	}
 
-	rateContext, err := completeRateContext(window)
-	if err != nil {
-		return err
-	}
 	quantities := row.ComponentQuantities
-	for _, componentID := range sortedUint64MapKeys(row.ComponentChargeUnits) {
-		unitRate := rateContext.UnitRates[componentID]
-		if unitRate == 0 {
-			unitRate = rateContext.ComponentCostPerUnit[componentID]
+	for _, skuID := range sortedUint64MapKeys(row.ComponentChargeUnits) {
+		sku, ok := rateContext.SKUDetails[skuID]
+		if !ok || sku.DisplayName == "" || sku.BucketID == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
+			return fmt.Errorf("sku metadata missing for %s", skuID)
 		}
-		bucketID := bucketForDimension(window.ProductID, componentID, rateContext.RateBuckets)
+		unitRate := rateContext.SKURates[skuID]
 		pricingPhase := string(window.PricingPhase)
 		key := statementLineItemKey{
 			ProductID:    window.ProductID,
 			PlanID:       window.PlanID,
-			BucketID:     bucketID,
-			ComponentID:  componentID,
+			BucketID:     sku.BucketID,
+			SKUID:        skuID,
 			PricingPhase: pricingPhase,
 			UnitRate:     unitRate,
 		}
 		item := lineItems[key]
 		if item == nil {
 			item = &StatementLineItem{
-				ProductID:    key.ProductID,
-				PlanID:       key.PlanID,
-				BucketID:     key.BucketID,
-				ComponentID:  key.ComponentID,
-				PricingPhase: key.PricingPhase,
-				Description:  statementLineDescription(componentID, bucketID),
-				UnitRate:     key.UnitRate,
+				ProductID:         key.ProductID,
+				PlanID:            key.PlanID,
+				BucketID:          key.BucketID,
+				BucketDisplayName: sku.BucketDisplayName,
+				SKUID:             key.SKUID,
+				SKUDisplayName:    sku.DisplayName,
+				QuantityUnit:      sku.QuantityUnit,
+				PricingPhase:      key.PricingPhase,
+				UnitRate:          key.UnitRate,
 			}
 			lineItems[key] = item
 		}
-		item.Quantity += quantities[componentID]
-		item.ChargeUnits, err = safeAddUint64(item.ChargeUnits, row.ComponentChargeUnits[componentID])
+		item.Quantity += quantities[skuID]
+		item.ChargeUnits, err = safeAddUint64(item.ChargeUnits, row.ComponentChargeUnits[skuID])
 		if err != nil {
 			return err
 		}
@@ -239,13 +240,16 @@ func addSettledStatementRow(
 }
 
 func addReservedStatementWindow(statement *Statement, buckets map[string]*StatementBucketSummary, window persistedWindow) error {
+	rateContext, err := completeRateContext(window)
+	if err != nil {
+		return err
+	}
 	for _, leg := range window.FundingLegs {
-		var err error
 		statement.Totals.ReservedUnits, err = safeAddUint64(statement.Totals.ReservedUnits, leg.Amount)
 		if err != nil {
 			return err
 		}
-		bucket := statementBucket(buckets, window.ProductID, leg.ChargeBucketID)
+		bucket := statementBucket(buckets, window.ProductID, leg.ChargeBucketID, rateContext.BucketDisplayNames[leg.ChargeBucketID])
 		bucket.ReservedUnits, err = safeAddUint64(bucket.ReservedUnits, leg.Amount)
 		if err != nil {
 			return err
@@ -340,25 +344,23 @@ func addStatementGrantSummary(summaries map[statementGrantSummaryKey]*StatementG
 	return err
 }
 
-func statementBucket(buckets map[string]*StatementBucketSummary, productID string, bucketID string) *StatementBucketSummary {
+func statementBucket(buckets map[string]*StatementBucketSummary, productID string, bucketID string, displayName string) *StatementBucketSummary {
+	if displayName == "" {
+		displayName = bucketID
+	}
 	bucket := buckets[bucketID]
 	if bucket == nil {
-		bucket = &StatementBucketSummary{ProductID: productID, BucketID: bucketID}
+		bucket = &StatementBucketSummary{ProductID: productID, BucketID: bucketID, BucketDisplayName: displayName}
 		buckets[bucketID] = bucket
+	}
+	if bucket.BucketDisplayName == "" {
+		bucket.BucketDisplayName = displayName
 	}
 	return bucket
 }
 
-func statementLineDescription(componentID string, bucketID string) string {
-	label := strings.ReplaceAll(componentID, "_", " ")
-	if bucketID == "" {
-		return label
-	}
-	return label + " (" + bucketID + ")"
-}
-
 func statementLineItemID(key statementLineItemKey) string {
-	return key.ProductID + ":" + key.PlanID + ":" + key.BucketID + ":" + key.ComponentID + ":" + key.PricingPhase + ":" + strconv.FormatUint(key.UnitRate, 10)
+	return key.ProductID + ":" + key.PlanID + ":" + key.BucketID + ":" + key.SKUID + ":" + key.PricingPhase + ":" + strconv.FormatUint(key.UnitRate, 10)
 }
 
 func sortedStatementLineItems(items map[statementLineItemKey]*StatementLineItem) []StatementLineItem {

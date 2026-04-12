@@ -50,7 +50,7 @@ type Reservation struct {
 	WindowSecs       int32
 	PricingPhase     string
 	Allocation       map[string]float64
-	UnitRates        map[string]int64
+	SKURates         map[string]int64
 	CostPerSec       int64
 	WindowStart      time.Time
 	ActivatedAt      *time.Time
@@ -220,7 +220,7 @@ func parseReservation(in BillingWindowReservation) (Reservation, error) {
 	if err != nil {
 		return Reservation{}, fmt.Errorf("billing-client: reservation org_id: %w", err)
 	}
-	unitRates, err := parseInt64UnitRates(in.UnitRates)
+	skuRates, err := parseInt64SKURates(in.SkuRates)
 	if err != nil {
 		return Reservation{}, err
 	}
@@ -250,7 +250,7 @@ func parseReservation(in BillingWindowReservation) (Reservation, error) {
 		WindowSecs:       in.ReservedQuantity,
 		PricingPhase:     in.PricingPhase,
 		Allocation:       in.Allocation,
-		UnitRates:        unitRates,
+		SKURates:         skuRates,
 		CostPerSec:       costPerUnit,
 		WindowStart:      in.WindowStart.UTC(),
 		ActivatedAt:      activatedAt,
@@ -340,15 +340,17 @@ func parseBillingStatement(in BillingStatement) (apiwire.BillingStatement, error
 				return apiwire.BillingStatement{}, err
 			}
 			lineItems = append(lineItems, apiwire.BillingStatementLineItem{
-				ProductID:    line.ProductId,
-				PlanID:       line.PlanId,
-				BucketID:     line.BucketId,
-				ComponentID:  line.ComponentId,
-				Description:  line.Description,
-				PricingPhase: line.PricingPhase,
-				Quantity:     line.Quantity,
-				UnitRate:     unitRate,
-				ChargeUnits:  chargeUnits,
+				ProductID:         line.ProductId,
+				PlanID:            line.PlanId,
+				BucketID:          line.BucketId,
+				BucketDisplayName: line.BucketDisplayName,
+				SKUID:             line.SkuId,
+				SKUDisplayName:    line.SkuDisplayName,
+				QuantityUnit:      line.QuantityUnit,
+				PricingPhase:      line.PricingPhase,
+				Quantity:          line.Quantity,
+				UnitRate:          unitRate,
+				ChargeUnits:       chargeUnits,
 			})
 		}
 	}
@@ -444,6 +446,7 @@ func parseBillingStatementBucketSummary(in BillingStatementBucketSummary) (apiwi
 	return apiwire.BillingStatementBucketSummary{
 		ProductID:         in.ProductId,
 		BucketID:          in.BucketId,
+		BucketDisplayName: in.BucketDisplayName,
 		ChargeUnits:       chargeUnits,
 		FreeTierUnits:     freeTierUnits,
 		SubscriptionUnits: subscriptionUnits,
@@ -544,13 +547,13 @@ func parseDecimalInt64(value string, field string) (apiwire.DecimalInt64, error)
 	return apiwire.Int64(parsed), nil
 }
 
-func parseInt64UnitRates(in map[string]string) (map[string]int64, error) {
+func parseInt64SKURates(in map[string]string) (map[string]int64, error) {
 	if len(in) == 0 {
 		return map[string]int64{}, nil
 	}
 	out := make(map[string]int64, len(in))
 	for unit, rate := range in {
-		parsed, err := parseUint64DecimalAsInt64(rate, "unit_rates."+unit)
+		parsed, err := parseUint64DecimalAsInt64(rate, "sku_rates."+unit)
 		if err != nil {
 			return nil, err
 		}

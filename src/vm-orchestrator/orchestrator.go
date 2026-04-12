@@ -85,25 +85,26 @@ type PhaseResult struct {
 
 // JobResult holds the outcome of a VM job execution.
 type JobResult struct {
-	ExitCode            int
-	Logs                string
-	SerialLogs          string
-	Duration            time.Duration
-	CloneTime           time.Duration
-	JailSetupTime       time.Duration
-	VMBootTime          time.Duration
-	BootToReadyDuration time.Duration
-	RunDuration         time.Duration
-	VMExitWaitDuration  time.Duration
-	CleanupTime         time.Duration
-	ZFSWritten          uint64
-	StdoutBytes         uint64
-	StderrBytes         uint64
-	DroppedLogBytes     uint64
-	ForcedShutdown      bool
-	PhaseResults        []PhaseResult
-	FailurePhase        string
-	Metrics             *VMMetrics
+	ExitCode               int
+	Logs                   string
+	SerialLogs             string
+	Duration               time.Duration
+	CloneTime              time.Duration
+	JailSetupTime          time.Duration
+	VMBootTime             time.Duration
+	BootToReadyDuration    time.Duration
+	RunDuration            time.Duration
+	VMExitWaitDuration     time.Duration
+	CleanupTime            time.Duration
+	ZFSWritten             uint64
+	RootfsProvisionedBytes uint64
+	StdoutBytes            uint64
+	StderrBytes            uint64
+	DroppedLogBytes        uint64
+	ForcedShutdown         bool
+	PhaseResults           []PhaseResult
+	FailurePhase           string
+	Metrics                *VMMetrics
 }
 
 const firecrackerAPIStepTimeout = 5 * time.Second
@@ -137,8 +138,12 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	return o
 }
 
+func (o *Orchestrator) goldenZvolDataset() string {
+	return fmt.Sprintf("%s/%s", o.cfg.Pool, o.cfg.GoldenZvol)
+}
+
 func (o *Orchestrator) goldenSnapshot() string {
-	return fmt.Sprintf("%s/%s@ready", o.cfg.Pool, o.cfg.GoldenZvol)
+	return o.goldenZvolDataset() + "@ready"
 }
 
 func (o *Orchestrator) cloneDataset(jobID string) string {
@@ -549,6 +554,13 @@ func (o *Orchestrator) runDataset(ctx context.Context, job JobConfig, dataset st
 	defer bgCancel()
 	if written, writtenErr := zfsWritten(bgCtx, dataset); writtenErr == nil {
 		result.ZFSWritten = written
+	} else {
+		logger.Warn("zfs written unavailable", "dataset", dataset, "error", writtenErr)
+	}
+	if provisioned, volsizeErr := zfsVolsize(bgCtx, dataset); volsizeErr == nil {
+		result.RootfsProvisionedBytes = provisioned
+	} else {
+		logger.Warn("zfs volsize unavailable", "dataset", dataset, "error", volsizeErr)
 	}
 
 	logger.Info("job complete",

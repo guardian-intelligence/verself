@@ -46,20 +46,23 @@ type BillingStatement struct {
 }
 
 type BillingStatementLineItem struct {
-	ProductID    string        `json:"product_id"`
-	PlanID       string        `json:"plan_id"`
-	BucketID     string        `json:"bucket_id"`
-	ComponentID  string        `json:"component_id"`
-	Description  string        `json:"description"`
-	PricingPhase string        `json:"pricing_phase"`
-	Quantity     float64       `json:"quantity"`
-	UnitRate     DecimalUint64 `json:"unit_rate"`
-	ChargeUnits  DecimalUint64 `json:"charge_units"`
+	ProductID         string        `json:"product_id"`
+	PlanID            string        `json:"plan_id"`
+	BucketID          string        `json:"bucket_id"`
+	BucketDisplayName string        `json:"bucket_display_name"`
+	SKUID             string        `json:"sku_id"`
+	SKUDisplayName    string        `json:"sku_display_name"`
+	QuantityUnit      string        `json:"quantity_unit"`
+	PricingPhase      string        `json:"pricing_phase"`
+	Quantity          float64       `json:"quantity"`
+	UnitRate          DecimalUint64 `json:"unit_rate"`
+	ChargeUnits       DecimalUint64 `json:"charge_units"`
 }
 
 type BillingStatementBucketSummary struct {
 	ProductID         string        `json:"product_id"`
 	BucketID          string        `json:"bucket_id"`
+	BucketDisplayName string        `json:"bucket_display_name"`
 	ChargeUnits       DecimalUint64 `json:"charge_units"`
 	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
 	SubscriptionUnits DecimalUint64 `json:"subscription_units"`
@@ -167,7 +170,7 @@ type BillingWindowReservation struct {
 	ReservedChargeUnits DecimalUint64            `json:"reserved_charge_units"`
 	PricingPhase        string                   `json:"pricing_phase"`
 	Allocation          map[string]float64       `json:"allocation"`
-	UnitRates           map[string]DecimalUint64 `json:"unit_rates"`
+	SKURates            map[string]DecimalUint64 `json:"sku_rates"`
 	CostPerUnit         DecimalUint64            `json:"cost_per_unit"`
 	WindowStart         time.Time                `json:"window_start"`
 	ActivatedAt         *time.Time               `json:"activated_at,omitempty"`
