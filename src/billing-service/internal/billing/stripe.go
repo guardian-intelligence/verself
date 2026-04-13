@@ -904,6 +904,7 @@ func (c *Client) ensureSubscriptionEntitlements(ctx context.Context, state strip
 		}
 		periodStart := period.PeriodStart
 		periodEnd := period.PeriodEnd
+		grantPeriod := &GrantPeriod{Start: periodStart, End: periodEnd}
 		if _, err := c.IssueCreditGrant(ctx, CreditGrant{
 			OrgID:               period.OrgID,
 			ScopeType:           period.ScopeType,
@@ -916,8 +917,7 @@ func (c *Client) ensureSubscriptionEntitlements(ctx context.Context, state strip
 			EntitlementPeriodID: period.PeriodID,
 			PolicyVersion:       period.PolicyVersion,
 			StartsAt:            &periodStart,
-			PeriodStart:         &periodStart,
-			PeriodEnd:           &periodEnd,
+			Period:              grantPeriod,
 			ExpiresAt:           &periodEnd,
 		}); err != nil {
 			return fmt.Errorf("issue subscription grant for policy %s: %w", policy.PolicyID, err)

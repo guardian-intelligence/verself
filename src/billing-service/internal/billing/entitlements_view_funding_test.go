@@ -441,14 +441,17 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 	// view.Universal directly. Within the universal slot we get one
 	// SourceTotal per source, so the per-source PeriodStart expectations
 	// can be checked precisely.
+	currentPeriod := &GrantPeriod{Start: periodStart, End: periodEnd}
+	stalePeriod := &GrantPeriod{Start: staleStart, End: staleEnd}
+	futurePeriod := &GrantPeriod{Start: futureStart, End: futureEnd}
+
 	grants := []GrantBalance{
 		{
 			GrantID:        sourceReferenceGrantID(42, SourceFreeTier, GrantScopeAccount, "", "", "", "in-period-1"),
 			ScopeType:      GrantScopeAccount,
 			Source:         SourceFreeTier,
 			StartsAt:       periodStart,
-			PeriodStart:    &periodStart,
-			PeriodEnd:      &periodEnd,
+			Period:         currentPeriod,
 			OriginalAmount: 100,
 			Available:      90,
 		},
@@ -457,8 +460,7 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 			ScopeType:      GrantScopeAccount,
 			Source:         SourceFreeTier,
 			StartsAt:       periodStart,
-			PeriodStart:    &periodStart,
-			PeriodEnd:      &periodEnd,
+			Period:         currentPeriod,
 			OriginalAmount: 50,
 			Available:      50,
 		},
@@ -469,8 +471,7 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 			ScopeType:      GrantScopeAccount,
 			Source:         SourceSubscription,
 			StartsAt:       staleStart,
-			PeriodStart:    &staleStart,
-			PeriodEnd:      &staleEnd,
+			Period:         stalePeriod,
 			OriginalAmount: 200,
 			Available:      0,
 		},
@@ -480,8 +481,7 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 			ScopeType:      GrantScopeAccount,
 			Source:         SourceSubscription,
 			StartsAt:       futureStart,
-			PeriodStart:    &futureStart,
-			PeriodEnd:      &futureEnd,
+			Period:         futurePeriod,
 			OriginalAmount: 75,
 			Available:      75,
 		},
@@ -523,6 +523,38 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 	}
 }
 
+// TestGrantPeriodContains is the boundary test for GrantPeriod.Contains
+// directly. The half-open contract is `[Start, End)`: Start is inclusive,
+// End is exclusive. The entitlements view-model relies on this exact
+// semantic; if a future maintainer "fixes" the asymmetry to make both ends
+// closed, this test fires before the bug reaches production.
+func TestGrantPeriodContains(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+	period := GrantPeriod{Start: start, End: end}
+
+	cases := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"before start", start.Add(-1 * time.Second), false},
+		{"exactly start (inclusive)", start, true},
+		{"middle", start.Add(15 * 24 * time.Hour), true},
+		{"just before end", end.Add(-1 * time.Second), true},
+		{"exactly end (exclusive)", end, false},
+		{"after end", end.Add(1 * time.Second), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := period.Contains(tc.now); got != tc.want {
+				t.Fatalf("Contains(%s) = %v, want %v", tc.now, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestEntitlementsViewPeriodStartHalfOpenInclusiveStart asserts that a grant
 // whose period_start is exactly equal to `now` IS counted (closed left side).
 // Sibling test to TestEntitlementsViewPeriodStartAggregation's open-right
@@ -538,8 +570,7 @@ func TestEntitlementsViewPeriodStartHalfOpenInclusiveStart(t *testing.T) {
 		ScopeType:      GrantScopeAccount,
 		Source:         SourceFreeTier,
 		StartsAt:       now,
-		PeriodStart:    &now,
-		PeriodEnd:      &end,
+		Period:         &GrantPeriod{Start: now, End: end},
 		OriginalAmount: 42,
 		Available:      42,
 	}}
@@ -593,8 +624,7 @@ func TestEntitlementsViewInlineExpiry(t *testing.T) {
 			ScopeType:      GrantScopeAccount,
 			Source:         SourceFreeTier,
 			StartsAt:       periodStart,
-			PeriodStart:    &periodStart,
-			PeriodEnd:      &periodEnd,
+			Period:         &GrantPeriod{Start: periodStart, End: periodEnd},
 			ExpiresAt:      &periodEnd,
 			OriginalAmount: 30,
 			Available:      30,

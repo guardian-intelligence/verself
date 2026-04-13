@@ -255,8 +255,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		PlanID          string
 		PlanDisplayName string
 		StartsAt        time.Time
-		PeriodStart     *time.Time
-		PeriodEnd       *time.Time
+		Period          *GrantPeriod
 		ExpiresAt       *time.Time
 	}
 	var grantRows []rowGrant
@@ -316,15 +315,16 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			value := expiresAt.Time.UTC()
 			expiresAtPtr = &value
 		}
-		var periodStartPtr *time.Time
-		if periodStart.Valid {
-			value := periodStart.Time.UTC()
-			periodStartPtr = &value
+		// Schema CHECKs guarantee period_start and period_end are either both
+		// NULL or both NOT NULL. Asymmetric data here would mean the database
+		// has rotted out from under us, so refuse the row rather than guess.
+		if periodStart.Valid != periodEnd.Valid {
+			return nil, fmt.Errorf("grant %s has half-set period (start=%v end=%v); schema invariant violated",
+				grantIDText, periodStart.Valid, periodEnd.Valid)
 		}
-		var periodEndPtr *time.Time
-		if periodEnd.Valid {
-			value := periodEnd.Time.UTC()
-			periodEndPtr = &value
+		var period *GrantPeriod
+		if periodStart.Valid {
+			period = &GrantPeriod{Start: periodStart.Time.UTC(), End: periodEnd.Time.UTC()}
 		}
 		grantRows = append(grantRows, rowGrant{
 			GrantID:         grantID,
@@ -339,8 +339,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			PlanID:          planID,
 			PlanDisplayName: planDisplayName,
 			StartsAt:        startsAt.UTC(),
-			PeriodStart:     periodStartPtr,
-			PeriodEnd:       periodEndPtr,
+			Period:          period,
 			ExpiresAt:       expiresAtPtr,
 		})
 		accountIDs = append(accountIDs, GrantAccountID(grantID).raw)
@@ -396,8 +395,7 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			PlanID:              rowGrant.PlanID,
 			PlanDisplayName:     rowGrant.PlanDisplayName,
 			StartsAt:            rowGrant.StartsAt,
-			PeriodStart:         rowGrant.PeriodStart,
-			PeriodEnd:           rowGrant.PeriodEnd,
+			Period:              rowGrant.Period,
 			ExpiresAt:           rowGrant.ExpiresAt,
 			OriginalAmount:      original,
 			Available:           available,
@@ -476,7 +474,7 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 		ON CONFLICT (grant_id) DO NOTHING
 	`, grantID.String(), strconv.FormatUint(uint64(grant.OrgID), 10), grant.ScopeType.String(), grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.Amount, grant.Source,
 		grant.SourceReferenceID, grant.EntitlementPeriodID, grant.PolicyVersion,
-		startsAt, grant.PeriodStart, grant.PeriodEnd, grant.ExpiresAt)
+		startsAt, grantPeriodStartParam(grant.Period), grantPeriodEndParam(grant.Period), grant.ExpiresAt)
 	if err != nil {
 		if grant.SourceReferenceID != "" && isUniqueViolation(err) {
 			return c.lookupGrantAfterSourceRefConflict(ctx, grant, sourceType)
@@ -509,11 +507,27 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 		EntitlementPeriodID: grant.EntitlementPeriodID,
 		PolicyVersion:       grant.PolicyVersion,
 		StartsAt:            startsAt,
-		PeriodStart:         grant.PeriodStart,
-		PeriodEnd:           grant.PeriodEnd,
+		Period:              grant.Period,
 		ExpiresAt:           grant.ExpiresAt,
 		Available:           grant.Amount,
 	}, nil
+}
+
+// grantPeriodStartParam returns the period.Start for SQL parameter binding,
+// or a typed sql.NullTime{} so a nil *GrantPeriod inserts NULL columns and
+// satisfies the schema's joint-nullability CHECK.
+func grantPeriodStartParam(p *GrantPeriod) any {
+	if p == nil {
+		return sql.NullTime{}
+	}
+	return p.Start
+}
+
+func grantPeriodEndParam(p *GrantPeriod) any {
+	if p == nil {
+		return sql.NullTime{}
+	}
+	return p.End
 }
 
 func (c *Client) lookupGrantAfterSourceRefConflict(ctx context.Context, grant CreditGrant, sourceType GrantSourceType) (GrantBalance, error) {
@@ -615,15 +629,13 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 		value := expiresAt.Time.UTC()
 		expiresAtPtr = &value
 	}
-	var periodStartPtr *time.Time
-	if periodStart.Valid {
-		value := periodStart.Time.UTC()
-		periodStartPtr = &value
+	if periodStart.Valid != periodEnd.Valid {
+		return nil, fmt.Errorf("grant %s has half-set period (start=%v end=%v); schema invariant violated",
+			grantIDText, periodStart.Valid, periodEnd.Valid)
 	}
-	var periodEndPtr *time.Time
-	if periodEnd.Valid {
-		value := periodEnd.Time.UTC()
-		periodEndPtr = &value
+	var period *GrantPeriod
+	if periodStart.Valid {
+		period = &GrantPeriod{Start: periodStart.Time.UTC(), End: periodEnd.Time.UTC()}
 	}
 	return &GrantBalance{
 		GrantID:             grantID,
@@ -636,8 +648,7 @@ func (c *Client) lookupGrantBySourceRef(ctx context.Context, orgID OrgID, source
 		EntitlementPeriodID: entitlementPeriodID,
 		PolicyVersion:       policyVersion,
 		StartsAt:            startsAt.UTC(),
-		PeriodStart:         periodStartPtr,
-		PeriodEnd:           periodEndPtr,
+		Period:              period,
 		ExpiresAt:           expiresAtPtr,
 		Available:           available,
 		Pending:             pending,

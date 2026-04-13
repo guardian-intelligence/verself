@@ -42,8 +42,8 @@ func grantIssuedEvent(grantID GrantID, grant CreditGrant, startsAt time.Time) bi
 		"scope_bucket_id":       grant.ScopeBucketID,
 		"amount_units":          strconv.FormatUint(grant.Amount, 10),
 		"starts_at":             startsAt.UTC().Format(time.RFC3339Nano),
-		"period_start":          timePtrString(grant.PeriodStart),
-		"period_end":            timePtrString(grant.PeriodEnd),
+		"period_start":          grantPeriodStartString(grant.Period),
+		"period_end":            grantPeriodEndString(grant.Period),
 		"expires_at":            timePtrString(grant.ExpiresAt),
 	})
 	eventID := deterministicTextID("billing-outbox-event", "grant_issued", grantID.String())
@@ -222,4 +222,22 @@ func timePtrString(value *time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+// grantPeriodStartString and grantPeriodEndString format the period boundaries
+// for outbox payloads. They keep the wire format identical to the prior
+// per-field serialization (two top-level period_start / period_end keys) so
+// downstream consumers don't need to learn a new shape.
+func grantPeriodStartString(p *GrantPeriod) string {
+	if p == nil {
+		return ""
+	}
+	return p.Start.UTC().Format(time.RFC3339Nano)
+}
+
+func grantPeriodEndString(p *GrantPeriod) string {
+	if p == nil {
+		return ""
+	}
+	return p.End.UTC().Format(time.RFC3339Nano)
 }
