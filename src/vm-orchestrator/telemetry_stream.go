@@ -142,11 +142,11 @@ func consumeGuestTelemetryStream(ctx context.Context, reader io.Reader, runID st
 			return err
 		}
 		if emitFrame {
-			logTelemetryFrame(logger, runID, event)
+			logTelemetryFrame(ctx, logger, runID, event)
 			observer.OnTelemetryEvent(event)
 		}
 		if diagnostic != nil {
-			logTelemetryDiagnostic(logger, runID, *diagnostic)
+			logTelemetryDiagnostic(ctx, logger, runID, *diagnostic)
 			observer.OnTelemetryEvent(TelemetryEvent{
 				RunID:          runID,
 				ReceivedAtUnix: event.ReceivedAtUnix,
@@ -213,23 +213,23 @@ func telemetryEventKind(event TelemetryEvent) string {
 	}
 }
 
-func logTelemetryFrame(logger *slog.Logger, runID string, event TelemetryEvent) {
+func logTelemetryFrame(ctx context.Context, logger *slog.Logger, runID string, event TelemetryEvent) {
 	if logger == nil {
 		return
 	}
 	switch {
 	case event.Hello != nil:
-		logger.Info("guest telemetry hello received", "run_id", runID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
+		logger.InfoContext(ctx, "guest telemetry hello received", "run_id", runID, "boot_id", event.Hello.BootID, "seq", event.Hello.Seq)
 	case event.Sample != nil:
-		logger.Debug("guest telemetry sample received", "run_id", runID, "seq", event.Sample.Seq)
+		logger.DebugContext(ctx, "guest telemetry sample received", "run_id", runID, "seq", event.Sample.Seq)
 	}
 }
 
-func logTelemetryDiagnostic(logger *slog.Logger, runID string, diagnostic TelemetryDiagnostic) {
+func logTelemetryDiagnostic(ctx context.Context, logger *slog.Logger, runID string, diagnostic TelemetryDiagnostic) {
 	if logger == nil {
 		return
 	}
-	logger.Warn(
+	logger.WarnContext(ctx,
 		"guest telemetry stream diagnostic",
 		"run_id", runID,
 		"kind", string(diagnostic.Kind),

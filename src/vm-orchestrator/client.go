@@ -8,6 +8,7 @@ import (
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -42,6 +43,7 @@ func NewClient(ctx context.Context, socketPath string) (*Client, error) {
 			grpc.MaxCallRecvMsgSize(defaultMaxMessageSize),
 			grpc.MaxCallSendMsgSize(defaultMaxMessageSize),
 		),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial vm-orchestrator socket %s: %w", socketPath, err)

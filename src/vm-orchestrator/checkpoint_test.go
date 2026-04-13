@@ -14,7 +14,7 @@ func TestCheckpointRequestRequiresAuthorizedRef(t *testing.T) {
 	ops := &checkpointTestPrivOps{}
 	orch := New(DefaultConfig(), nil, WithPrivOps(ops))
 
-	resp := orch.handleCheckpointRequest(RunSpec{RunID: "job-1"}, "pool/workloads/job-1", nil, vmproto.CheckpointRequest{
+	resp := orch.handleCheckpointRequest(context.Background(), RunSpec{RunID: "job-1"}, "pool/workloads/job-1", nil, vmproto.CheckpointRequest{
 		RequestID: "req-1",
 		Operation: vmproto.CheckpointOperationSave,
 		Ref:       "pg-demo",
@@ -37,7 +37,7 @@ func TestCheckpointRequestSnapshotsActiveDatasetOnly(t *testing.T) {
 	ops := &checkpointTestPrivOps{}
 	orch := New(DefaultConfig(), nil, WithPrivOps(ops))
 
-	resp := orch.handleCheckpointRequest(RunSpec{
+	resp := orch.handleCheckpointRequest(context.Background(), RunSpec{
 		RunID:              "job-1",
 		CheckpointSaveRefs: []string{"pg-demo"},
 	}, "pool/workloads/job-1", normalizeCheckpointRefSet([]string{"pg-demo"}), vmproto.CheckpointRequest{
