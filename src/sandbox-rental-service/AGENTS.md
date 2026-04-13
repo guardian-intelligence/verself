@@ -4,8 +4,7 @@ Public `/api/*` Huma routes must use the secured-operation registration pattern 
 
 
 
-Use River OSS as the worker/queue runtime for sandbox-rental-service control-plane work, keep the execution state machine explicit in Postgres, and delete/rewrite the current jobs code instead of refactoring it in place. vm-orchestrator remains the VM execution boundary. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in
-  our own PG capacity tables.
+Use River OSS as the worker/queue runtime for sandbox-rental-service control-plane work, keep the execution state machine explicit in Postgres, and treat the current execution jobs code as a rewrite target during the execution cutover. vm-orchestrator remains the VM execution boundary. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in our own PG capacity tables.
 
   What To Delete/Rewrite
   I would treat src/sandbox-rental-service/internal/jobs/jobs.go and src/sandbox-rental-service/internal/jobs/reconcile.go as top-down rewrites, not incremental refactors. The new shape should be smaller files by responsibility:
