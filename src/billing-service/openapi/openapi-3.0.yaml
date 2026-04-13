@@ -557,6 +557,11 @@ components:
           maxLength: 255
           minLength: 1
           type: string
+        window_seq:
+          format: int32
+          maximum: 2147483647
+          minimum: 0
+          type: integer
       required:
         - org_id
         - product_id
@@ -564,6 +569,7 @@ components:
         - concurrent_count
         - source_type
         - source_ref
+        - window_seq
         - allocation
       type: object
     BillingReserveWindowResult:
@@ -989,7 +995,7 @@ components:
           type: string
         window_seq:
           format: int32
-          maximum: 4294967295
+          maximum: 2147483647
           minimum: 0
           type: integer
         window_start:
@@ -1321,6 +1327,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingReserveWindowResult"
           description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
         "402":
           content:
             application/problem+json:

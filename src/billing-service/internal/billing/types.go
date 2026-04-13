@@ -223,6 +223,7 @@ type ReserveRequest struct {
 	ConcurrentCount uint64
 	SourceType      string
 	SourceRef       string
+	WindowSeq       uint32
 }
 
 type SettleResult struct {

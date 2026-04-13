@@ -256,11 +256,16 @@ func (c *ServiceClient) Reserve(
 	concurrentCount uint64,
 	sourceType string,
 	sourceRef string,
+	windowSeq uint32,
 	allocation map[string]float64,
 	reqEditors ...RequestEditorFn,
 ) (Reservation, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
 	concurrentCountWire, err := uint64ToInt64(concurrentCount, "concurrent_count")
+	if err != nil {
+		return Reservation{}, err
+	}
+	windowSeqWire, err := uint32ToInt32(windowSeq, "window_seq")
 	if err != nil {
 		return Reservation{}, err
 	}
@@ -271,6 +276,7 @@ func (c *ServiceClient) Reserve(
 		ConcurrentCount: concurrentCountWire,
 		SourceType:      sourceType,
 		SourceRef:       sourceRef,
+		WindowSeq:       windowSeqWire,
 		Allocation:      allocation,
 	}, reqEditors...)
 	if err != nil {
@@ -284,6 +290,8 @@ func (c *ServiceClient) Reserve(
 		return Reservation{}, fmt.Errorf("%w: %s", ErrPaymentRequired, detail(resp.ApplicationproblemJSON402, resp.HTTPResponse))
 	case http.StatusForbidden:
 		return Reservation{}, fmt.Errorf("%w: %s", ErrForbidden, detail(resp.ApplicationproblemJSON403, resp.HTTPResponse))
+	case http.StatusBadRequest:
+		return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSON400, resp.HTTPResponse))
 	case http.StatusUnprocessableEntity:
 		return Reservation{}, fmt.Errorf("billing-client: reserve bad request: %s", detail(resp.ApplicationproblemJSON422, resp.HTTPResponse))
 	default:

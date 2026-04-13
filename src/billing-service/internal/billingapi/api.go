@@ -189,7 +189,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
-	huma.Post(service, "/reserve", handler.reserveWindow, operation("reserve-window", "Reserve a billing window", http.StatusPaymentRequired, http.StatusForbidden, http.StatusInternalServerError))
+	huma.Post(service, "/reserve", handler.reserveWindow, operation("reserve-window", "Reserve a billing window", http.StatusPaymentRequired, http.StatusForbidden, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/activate", handler.activateWindow, operation("activate-window", "Activate a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
@@ -610,6 +610,7 @@ func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.Billing
 		ConcurrentCount: input.Body.ConcurrentCount,
 		SourceType:      input.Body.SourceType,
 		SourceRef:       input.Body.SourceRef,
+		WindowSeq:       input.Body.WindowSeq,
 	})
 	if err != nil {
 		return nil, h.reserveWindowError(ctx, err)
@@ -665,6 +666,8 @@ func (h *Handler) reserveWindowError(ctx context.Context, err error) error {
 		return huma.Error402PaymentRequired("reserve", err)
 	case errors.Is(err, billing.ErrOrgSuspended):
 		return huma.Error403Forbidden("reserve", err)
+	case errors.Is(err, billing.ErrWindowAlreadySettled), errors.Is(err, billing.ErrWindowAlreadyVoided), errors.Is(err, billing.ErrWindowNotReserved):
+		return huma.Error400BadRequest("reserve", err)
 	default:
 		return h.internalServerError(ctx, "reserve", err)
 	}

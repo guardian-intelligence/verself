@@ -393,6 +393,7 @@ type BillingReserveWindowRequest struct {
 	ProductId       string             `json:"product_id"`
 	SourceRef       string             `json:"source_ref"`
 	SourceType      string             `json:"source_type"`
+	WindowSeq       int32              `json:"window_seq"`
 }
 
 // BillingReserveWindowResult defines model for BillingReserveWindowResult.
@@ -1924,6 +1925,7 @@ type ReserveWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
 	JSON200                   *BillingReserveWindowResult
+	ApplicationproblemJSON400 *ErrorModel
 	ApplicationproblemJSON402 *ErrorModel
 	ApplicationproblemJSON403 *ErrorModel
 	ApplicationproblemJSON422 *ErrorModel
@@ -2582,6 +2584,13 @@ func ParseReserveWindowResponse(rsp *http.Response) (*ReserveWindowResponse, err
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 402:
 		var dest ErrorModel
