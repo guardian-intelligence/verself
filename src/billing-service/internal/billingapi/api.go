@@ -392,6 +392,7 @@ func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlo
 			Label:            src.Label,
 			PeriodStartUnits: apiwire.Uint64(src.PeriodStartUnits),
 			AvailableUnits:   apiwire.Uint64(src.AvailableUnits),
+			PendingUnits:     apiwire.Uint64(src.PendingUnits),
 			InlineExpiresAt:  src.InlineExpiresAt,
 		})
 	}

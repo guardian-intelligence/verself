@@ -193,6 +193,28 @@ func TestEntitlementsViewEmptyOrgRendersCatalog(t *testing.T) {
 	}
 }
 
+func TestEntitlementsViewSourceTotalsExposePendingHolds(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 12, 0, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog("sandbox")
+	purchase := viewFundingGrant("account-purchase", SourcePurchase, GrantScopeAccount, "", "", "", 75, 7)
+	purchase.Pending = 25
+	purchase.OriginalAmount = 100
+
+	view := buildEntitlementsView(42, now, catalog, []GrantBalance{purchase})
+	purchaseSource := findUniversalSource(t, view, SourcePurchase)
+	if purchaseSource.AvailableUnits != 75 {
+		t.Fatalf("purchase available = %d, want 75", purchaseSource.AvailableUnits)
+	}
+	if purchaseSource.PendingUnits != 25 {
+		t.Fatalf("purchase pending = %d, want 25", purchaseSource.PendingUnits)
+	}
+	if view.Universal.AvailableUnits != 75 || view.Universal.PendingUnits != 25 {
+		t.Fatalf("universal available/pending = %d/%d, want 75/25", view.Universal.AvailableUnits, view.Universal.PendingUnits)
+	}
+}
+
 // TestFundingPrecedenceConstantsAreStable pins the precedence ordering. Any
 // change to GrantScopeFundingOrder or GrantSourceFundingOrder must be a
 // deliberate edit to this test, since the view-model rendering and the funder

@@ -181,6 +181,7 @@ function parseEntitlementSourceTotal(input: RawEntitlementSourceTotal) {
       "sources.period_start_units",
     ),
     available_units: decimalStringToSafeNumber(input.available_units, "sources.available_units"),
+    pending_units: decimalStringToSafeNumber(input.pending_units, "sources.pending_units"),
     inline_expires_at: input.inline_expires_at ?? null,
   };
 }

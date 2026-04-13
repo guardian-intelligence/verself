@@ -1,8 +1,4 @@
-import type {
-  EntitlementSlot,
-  EntitlementSourceTotal,
-  EntitlementsView,
-} from "~/server-fns/api";
+import type { EntitlementSlot, EntitlementSourceTotal, EntitlementsView } from "~/server-fns/api";
 import { formatLedgerAmount } from "~/lib/format";
 
 // Display-only presentation of the honest slot model. The server returns
@@ -35,9 +31,15 @@ export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
     0,
   );
 
-  const accountBalanceUnits = (view.universal?.sources ?? [])
+  const accountBalance = (view.universal?.sources ?? [])
     .filter((source) => source.source === "purchase")
-    .reduce((acc, source) => acc + source.available_units, 0);
+    .reduce(
+      (acc, source) => ({
+        availableUnits: acc.availableUnits + source.available_units,
+        pendingUnits: acc.pendingUnits + source.pending_units,
+      }),
+      { availableUnits: 0, pendingUnits: 0 },
+    );
 
   return (
     <div
@@ -45,21 +47,41 @@ export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
       data-testid="entitlements-view"
       data-test-available-units={totalAvailableForTests}
     >
-      <AccountBalanceHeader units={accountBalanceUnits} />
+      <AccountBalanceHeader
+        availableUnits={accountBalance.availableUnits}
+        pendingUnits={accountBalance.pendingUnits}
+      />
     </div>
   );
 }
 
-function AccountBalanceHeader({ units }: { units: number }) {
+function AccountBalanceHeader({
+  availableUnits,
+  pendingUnits,
+}: {
+  availableUnits: number;
+  pendingUnits: number;
+}) {
+  const totalUnits = availableUnits + pendingUnits;
   return (
-    <section className="space-y-1" data-testid="entitlements-account-balance">
+    <section
+      className="space-y-1"
+      data-testid="entitlements-account-balance"
+      data-account-balance-units={totalUnits}
+      data-account-balance-pending-units={pendingUnits}
+    >
       <div className="text-xs uppercase tracking-wide text-muted-foreground">Account Balance</div>
       <div
         className="font-mono text-3xl font-semibold tabular-nums"
         data-testid="account-balance-value"
       >
-        {formatLedgerAmount(units)}
+        {formatLedgerAmount(totalUnits)}
       </div>
+      {pendingUnits > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {formatLedgerAmount(pendingUnits)} is reserved for running executions.
+        </p>
+      ) : null}
       <p className="text-sm text-muted-foreground max-w-xl">
         Account balance is only deducted after all other credit sources for a product have been
         used.

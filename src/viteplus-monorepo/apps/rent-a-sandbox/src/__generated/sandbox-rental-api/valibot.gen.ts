@@ -32,6 +32,7 @@ export const vBillingEntitlementSourceTotal = v.strictObject({
   available_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   inline_expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   label: v.string(),
+  pending_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   period_start_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   plan_id: v.string(),
   source: v.picklist(["free_tier", "contract", "purchase", "promo", "refund", "receivable"]),

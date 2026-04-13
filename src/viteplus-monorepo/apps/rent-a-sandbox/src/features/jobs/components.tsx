@@ -41,6 +41,14 @@ function ExecutionListPanelContent({ orgId }: { orgId: string }) {
 }
 
 export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
+  return (
+    <ClientOnly fallback={<ExecutionDetailLoading jobId={jobId} />}>
+      <ExecutionDetailPanelContent jobId={jobId} />
+    </ClientOnly>
+  );
+}
+
+function ExecutionDetailPanelContent({ jobId }: { jobId: string }) {
   const auth = useSignedInAuth();
   const execution = useSuspenseQuery(executionQuery(auth, jobId)).data;
 
@@ -92,6 +100,22 @@ export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
       <ClientOnly fallback={<ExecutionLogsLoading isRunning={isRunning} />}>
         <ExecutionLogsPanel attemptId={attempt.attempt_id} isRunning={isRunning} />
       </ClientOnly>
+    </div>
+  );
+}
+
+function ExecutionDetailLoading({ jobId }: { jobId: string }) {
+  const executionPrefix = jobId.slice(0, 8);
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
+          Executions
+        </Link>
+        <span className="text-muted-foreground">/</span>
+        <h1 className="font-mono text-xl font-bold">{executionPrefix}</h1>
+      </div>
+      <ExecutionLogsLoading isRunning />
     </div>
   );
 }
@@ -327,7 +351,7 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
           ref={scrollRef}
           className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-foreground/5 p-4 font-mono text-sm"
         >
-          <div ref={contentRef}>{logText}</div>
+          <code ref={contentRef}>{logText}</code>
         </pre>
         {!isAtBottom && logText ? (
           <button

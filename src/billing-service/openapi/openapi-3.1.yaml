@@ -388,6 +388,9 @@ components:
           type: string
         label:
           type: string
+        pending_units:
+          pattern: ^[0-9]+$
+          type: string
         period_start_units:
           pattern: ^[0-9]+$
           type: string
@@ -408,6 +411,7 @@ components:
         - label
         - period_start_units
         - available_units
+        - pending_units
       type: object
     BillingEntitlementsView:
       additionalProperties: false

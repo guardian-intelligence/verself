@@ -1,5 +1,5 @@
 import { env } from "./env";
-import { ensureTestUserExists, test } from "./harness";
+import { ensureTestUserExists, shortTimeoutMS, test, type SandboxHarness } from "./harness";
 import {
   assertExecutionDetailHydratesLogs,
   assertJobsIndexHydratesExecutionList,
@@ -104,6 +104,7 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
+      const startedAccountBalance = await readVisibleAccountBalanceUnits(app);
 
       const importedRepo = await importRepoFromURL(app, env.verificationRepoURL);
       Object.assign(run, importedRepo);
@@ -126,6 +127,10 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
         await app.goto("/");
         const currentBalance = await app.readBalance();
         return currentBalance < run.started_balance ? currentBalance : false;
+      });
+      await app.waitForCondition("account balance reservation released", 60_000, async () => {
+        const currentAccountBalance = await readVisibleAccountBalanceUnits(app);
+        return currentAccountBalance >= startedAccountBalance ? currentAccountBalance : false;
       });
 
       run.status = "succeeded";
@@ -211,3 +216,18 @@ test.describe("Rent-a-Sandbox Repo Journeys", () => {
     }
   });
 });
+
+async function readVisibleAccountBalanceUnits(app: SandboxHarness) {
+  await app.goto("/billing");
+  const accountBalance = app.page.getByTestId("entitlements-account-balance").first();
+  await accountBalance.waitFor({ state: "visible", timeout: shortTimeoutMS });
+  const raw = await accountBalance.getAttribute("data-account-balance-units");
+  if (raw === null) {
+    throw new Error("account balance missing data-account-balance-units");
+  }
+  const units = Number.parseInt(raw, 10);
+  if (!Number.isFinite(units)) {
+    throw new Error(`account balance units is not numeric: ${raw}`);
+  }
+  return units;
+}

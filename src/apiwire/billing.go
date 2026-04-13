@@ -183,6 +183,7 @@ type BillingEntitlementSourceTotal struct {
 	Label            string        `json:"label"`
 	PeriodStartUnits DecimalUint64 `json:"period_start_units"`
 	AvailableUnits   DecimalUint64 `json:"available_units"`
+	PendingUnits     DecimalUint64 `json:"pending_units"`
 	InlineExpiresAt  *time.Time    `json:"inline_expires_at,omitempty"`
 }
 
