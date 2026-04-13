@@ -37,10 +37,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.page.getByRole("button", { name: /^\$10\b/ }).click();
 
       await completeStripeCheckout(app);
-      await app.expectSSRHTML("/billing?purchased=true", [
-        "Credits purchased",
-        "Account Balance",
-      ]);
+      await app.expectSSRHTML("/billing?purchased=true", ["Credits purchased", "Account Balance"]);
 
       run.detail_url = "/billing?purchased=true";
       run.finished_balance = await app.waitForCondition("purchased balance", 90_000, async () => {
@@ -71,9 +68,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
     }
   });
 
-  test("subscription checkout activates Hobby and cancellation returns to free", async ({
-    app,
-  }) => {
+  test("contract checkout activates Hobby and schedules cancellation", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -81,31 +76,27 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
-      await cancelExistingHobbySubscription(app);
+      await cancelExistingHobbyContract(app);
 
-      await activateHobbySubscription(app);
+      await activateHobbyContract(app);
 
       await requestHobbyCancellation(app);
 
-      await app.waitForCondition("hobby subscription cancellation", 90_000, async () => {
+      await app.waitForCondition("hobby contract cancellation", 90_000, async () => {
         await app.goto("/billing");
         const rowTexts = await app.page
-          .getByTestId("subscription-row-sandbox-hobby")
+          .getByTestId("contract-row-sandbox-hobby")
           .allInnerTexts()
           .catch(() => []);
-        const canceledRowText = rowTexts.find(
-          (text) => text.includes("sandbox-hobby") && text.includes("canceled"),
-        );
-        const hasOpenHobbyRow = rowTexts.some(
-          (text) => text.includes("sandbox-hobby") && !text.includes("canceled"),
+        const scheduledRowText = rowTexts.find(
+          (text) => text.includes("sandbox-hobby") && text.includes("cancel_scheduled"),
         );
 
         if (
-          canceledRowText?.includes("closed") &&
-          !hasOpenHobbyRow &&
-          !(await hasAnyVisibleHobbySubscriptionEntitlement(app))
+          scheduledRowText?.includes("active") &&
+          (await hasVisibleHobbyContractEntitlements(app))
         ) {
-          return canceledRowText;
+          return scheduledRowText;
         }
 
         await app.page.waitForTimeout(2_000);
@@ -125,7 +116,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
     }
   });
 
-  test("subscription checkout activates Hobby and leaves it active", async ({ app }) => {
+  test("contract checkout activates Hobby and leaves it active", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -133,10 +124,10 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
-      await cancelExistingHobbySubscription(app);
-      await activateHobbySubscription(app);
+      await cancelExistingHobbyContract(app);
+      await activateHobbyContract(app);
 
-      run.detail_url = "/billing?subscribed=true";
+      run.detail_url = "/billing?contracted=true";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -150,7 +141,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
   });
 });
 
-async function activateHobbySubscription(app: SandboxHarness) {
+async function activateHobbyContract(app: SandboxHarness) {
   await app.expectSSRHTML("/billing/subscribe", ["Choose a Plan", "Hobby", "$5.00", "/mo"]);
   await app.assertStableRoute({
     path: "/billing/subscribe",
@@ -159,20 +150,20 @@ async function activateHobbySubscription(app: SandboxHarness) {
   });
 
   await beginHobbyCheckout(app);
-  await completeStripeCheckout(app, { returnURLIncludes: "/billing?subscribed=true" });
-  await app.expectSSRHTML("/billing?subscribed=true", ["Subscription activated", "Subscriptions"]);
+  await completeStripeCheckout(app, { returnURLIncludes: "/billing?contracted=true" });
+  await app.expectSSRHTML("/billing?contracted=true", ["Contract activated", "Contracts"]);
+  await app.goto("/billing?contracted=true");
 
-  return await app.waitForCondition("hobby subscription activation", 120_000, async () => {
-    await app.goto("/billing?subscribed=true");
+  return await app.waitForCondition("hobby contract activation", 120_000, async () => {
     const rowTexts = await app.page
-      .getByTestId("subscription-row-sandbox-hobby")
+      .getByTestId("contract-row-sandbox-hobby")
       .allInnerTexts()
       .catch(() => []);
     const activeRowText = rowTexts.find(
       (text) => text.includes("sandbox-hobby") && text.includes("active") && text.includes("paid"),
     );
 
-    if (activeRowText && (await hasVisibleHobbySubscriptionEntitlements(app))) {
+    if (activeRowText && (await hasVisibleHobbyContractEntitlements(app))) {
       return activeRowText;
     }
 
@@ -187,7 +178,7 @@ async function beginHobbyCheckout(app: SandboxHarness) {
       return true;
     }
 
-    const subscribeButton = app.page.getByTestId("subscribe-plan-sandbox-hobby");
+    const subscribeButton = app.page.getByTestId("start-contract-plan-sandbox-hobby");
     if (!(await subscribeButton.isVisible().catch(() => false))) {
       return false;
     }
@@ -199,17 +190,25 @@ async function beginHobbyCheckout(app: SandboxHarness) {
   });
 }
 
-async function cancelExistingHobbySubscription(app: SandboxHarness) {
+async function cancelExistingHobbyContract(app: SandboxHarness) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await app.goto("/billing");
-    const cancelButton = app.page.getByTestId("cancel-subscription-sandbox-hobby").first();
+    const cancelButton = app.page.getByTestId("cancel-contract-sandbox-hobby").first();
     if (await cancelButton.isVisible().catch(() => false)) {
       await requestHobbyCancellation(app);
-      await app.waitForCondition("existing hobby subscription cancellation", 90_000, async () => {
+      await app.waitForCondition("existing hobby contract cancellation", 90_000, async () => {
         await app.goto("/billing");
+        const rowText = await app.page
+          .getByTestId("contract-row-sandbox-hobby")
+          .first()
+          .innerText()
+          .catch(() => "");
+        if (rowText.includes("cancel_scheduled")) {
+          return true;
+        }
         if (
           await app.page
-            .getByTestId("cancel-subscription-sandbox-hobby")
+            .getByTestId("cancel-contract-sandbox-hobby")
             .first()
             .isVisible()
             .catch(() => false)
@@ -224,7 +223,7 @@ async function cancelExistingHobbySubscription(app: SandboxHarness) {
     return;
   }
 
-  throw new Error("existing hobby subscription cancellation did not converge");
+  throw new Error("existing hobby contract cancellation did not converge");
 }
 
 async function requestHobbyCancellation(app: SandboxHarness) {
@@ -234,7 +233,7 @@ async function requestHobbyCancellation(app: SandboxHarness) {
       return true;
     }
 
-    const cancelButton = app.page.getByTestId("cancel-subscription-sandbox-hobby").first();
+    const cancelButton = app.page.getByTestId("cancel-contract-sandbox-hobby").first();
     if (!(await cancelButton.isVisible().catch(() => false))) {
       return false;
     }
@@ -248,16 +247,16 @@ async function requestHobbyCancellation(app: SandboxHarness) {
 }
 
 // The entitlements view flattens bucket-scoped sources into each SKU row's
-// receipt cell. The subscription contribution shows up as a
-// `<dt data-source="subscription">` inside every SKU row under the bucket the
-// subscription funds. The Hobby plan has to fund every Sandbox bucket —
+// receipt cell. The contract contribution shows up as a
+// `<dt data-source="contract">` inside every SKU row under the bucket the
+// contract funds. The Hobby plan has to fund every Sandbox bucket —
 // compute, memory, block_storage — for the test to consider it visible.
-const hobbySubscriptionBuckets = ["compute", "memory", "block_storage"];
+const hobbyContractBuckets = ["compute", "memory", "block_storage"];
 
-async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
-  for (const bucket of hobbySubscriptionBuckets) {
+async function hasVisibleHobbyContractEntitlements(app: SandboxHarness) {
+  for (const bucket of hobbyContractBuckets) {
     const entry = app.page
-      .locator(`tr[data-bucket-id="${bucket}"] [data-source="subscription"]`)
+      .locator(`tr[data-bucket-id="${bucket}"] [data-source="contract"]`)
       .first();
     if (!(await entry.isVisible().catch(() => false))) {
       return false;
@@ -269,16 +268,4 @@ async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
     }
   }
   return true;
-}
-
-async function hasAnyVisibleHobbySubscriptionEntitlement(app: SandboxHarness) {
-  for (const bucket of hobbySubscriptionBuckets) {
-    const entry = app.page
-      .locator(`tr[data-bucket-id="${bucket}"] [data-source="subscription"]`)
-      .first();
-    if (await entry.isVisible().catch(() => false)) {
-      return true;
-    }
-  }
-  return false;
 }

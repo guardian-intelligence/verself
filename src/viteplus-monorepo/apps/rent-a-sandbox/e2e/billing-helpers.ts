@@ -1,4 +1,5 @@
 import type { SandboxHarness } from "./harness";
+import type { Locator } from "@playwright/test";
 import { env } from "./env";
 
 export async function completeStripeCheckout(
@@ -11,19 +12,6 @@ export async function completeStripeCheckout(
     return app.page.url().includes("checkout.stripe.com") ? true : false;
   });
 
-  await app.waitForCondition("stripe card form", 30_000, async () => {
-    const cardNumberVisible = await app.page
-      .locator("#cardNumber")
-      .isVisible()
-      .catch(() => false);
-    const payWithoutLinkVisible = await app.page
-      .getByText("Pay without Link")
-      .isVisible()
-      .catch(() => false);
-
-    return cardNumberVisible || payWithoutLinkVisible;
-  });
-
   if (
     await app.page
       .getByText("Pay without Link")
@@ -33,6 +21,8 @@ export async function completeStripeCheckout(
     await app.page.keyboard.type("000000", { delay: 80 });
     await app.page.getByText("Pay without Link").click();
   }
+
+  await revealStripeCardForm(app);
 
   const emailField = app.page.locator("#email");
   if (await emailField.isVisible().catch(() => false)) {
@@ -54,8 +44,75 @@ export async function completeStripeCheckout(
     await postalCode.fill("10001");
   }
 
-  await app.page.getByRole("button", { name: /^(Pay|Subscribe)/ }).click();
+  await clickStripeSubmit(app);
   await app.waitForCondition("billing return redirect", 60_000, async () => {
     return app.page.url().includes(returnURLIncludes) ? true : false;
+  });
+}
+
+async function revealStripeCardForm(app: SandboxHarness): Promise<void> {
+  await app.waitForCondition("stripe card form", 45_000, async () => {
+    if (await isStripeCardFormVisible(app)) {
+      return true;
+    }
+
+    for (const locator of [
+      app.page.locator('button[aria-label="Pay with card"]').first(),
+      app.page.locator('[data-testid="card-accordion-item-button"]').first(),
+      app.page.getByRole("button", { name: /pay with card/i }).first(),
+    ]) {
+      if (await clickStripeCardSelector(locator)) {
+        return (await isStripeCardFormVisible(app)) ? true : false;
+      }
+    }
+
+    const cardRadio = app.page.getByRole("radio", { name: /^card$/i }).first();
+    if (await clickStripeCardSelector(cardRadio, { force: true })) {
+      return (await isStripeCardFormVisible(app)) ? true : false;
+    }
+
+    return false;
+  });
+}
+
+async function clickStripeCardSelector(
+  locator: Locator,
+  options: { force?: boolean } = {},
+): Promise<boolean> {
+  if (!(await locator.isVisible().catch(() => false))) {
+    return false;
+  }
+
+  await locator.click({ force: options.force ?? false, timeout: 1_000 });
+  return true;
+}
+
+async function isStripeCardFormVisible(app: SandboxHarness): Promise<boolean> {
+  return await app.page
+    .locator("#cardNumber")
+    .isVisible()
+    .catch(() => false);
+}
+
+async function clickStripeSubmit(app: SandboxHarness): Promise<void> {
+  await app.waitForCondition("stripe checkout submit", 30_000, async () => {
+    const buttons = app.page.getByRole("button", { name: /^(Pay|Subscribe|Save)\b/i });
+    const buttonCount = await buttons.count();
+    for (let index = 0; index < buttonCount; index += 1) {
+      const button = buttons.nth(index);
+      if (!(await button.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      const text = await button.innerText().catch(() => "");
+      if (/pay with (card|link|amazon|cash app)/i.test(text)) {
+        continue;
+      }
+
+      await button.click();
+      return true;
+    }
+
+    return false;
   });
 }
