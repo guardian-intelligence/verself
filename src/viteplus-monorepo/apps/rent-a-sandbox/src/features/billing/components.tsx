@@ -25,10 +25,10 @@ export function BillingFlashNotice({ purchased, contracted }: BillingFlashSearch
   }
 
   return (
-    <Callout tone="success" title={purchased ? "Credits purchased" : "Contract activated"}>
+    <Callout tone="success" title={purchased ? "Credits purchased" : "Contract checkout complete"}>
       {purchased
         ? "Credits purchased successfully. Your account credit pool has been updated."
-        : "Contract activated. Monthly bucket allowances will be deposited automatically."}
+        : "Stripe checkout completed. Contract changes will appear after billing applies the provider event."}
     </Callout>
   );
 }
