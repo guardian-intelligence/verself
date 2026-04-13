@@ -67,20 +67,6 @@ export const vBillingPlans = v.strictObject({
   plans: v.nullable(v.array(vBillingPlan)),
 });
 
-export const vBillingStatementBucketSummary = v.strictObject({
-  bucket_display_name: v.string(),
-  bucket_id: v.string(),
-  charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  product_id: v.string(),
-  promo_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  purchase_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  receivable_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  refund_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-});
-
 export const vBillingStatementGrantSummary = v.strictObject({
   available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
@@ -94,13 +80,20 @@ export const vBillingStatementLineItem = v.strictObject({
   bucket_display_name: v.string(),
   bucket_id: v.string(),
   charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   plan_id: v.string(),
   pricing_phase: v.string(),
   product_id: v.string(),
+  promo_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  purchase_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   quantity: v.number(),
   quantity_unit: v.string(),
+  receivable_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  refund_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   sku_display_name: v.string(),
   sku_id: v.string(),
+  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   unit_rate: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
@@ -118,7 +111,6 @@ export const vBillingStatementTotals = v.strictObject({
 
 export const vBillingStatement = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  bucket_summaries: v.nullable(v.array(vBillingStatementBucketSummary)),
   currency: v.string(),
   generated_at: v.pipe(v.string(), v.isoTimestamp()),
   grant_summaries: v.nullable(v.array(vBillingStatementGrantSummary)),
@@ -477,7 +469,6 @@ export const vBillingPlansWritable = v.strictObject({
 });
 
 export const vBillingStatementWritable = v.strictObject({
-  bucket_summaries: v.nullable(v.array(vBillingStatementBucketSummary)),
   currency: v.string(),
   generated_at: v.pipe(v.string(), v.isoTimestamp()),
   grant_summaries: v.nullable(v.array(vBillingStatementGrantSummary)),

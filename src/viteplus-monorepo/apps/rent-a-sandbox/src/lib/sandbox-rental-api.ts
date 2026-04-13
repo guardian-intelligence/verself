@@ -275,7 +275,6 @@ export type SubscriptionsResponse = ReturnType<typeof parseSubscriptionsResponse
 
 type RawStatement = v.InferOutput<typeof vBillingStatement>;
 type RawStatementLineItem = NonNullable<RawStatement["line_items"]>[number];
-type RawStatementBucketSummary = NonNullable<RawStatement["bucket_summaries"]>[number];
 type RawStatementGrantSummary = NonNullable<RawStatement["grant_summaries"]>[number];
 
 function parseStatementLineItem(input: RawStatementLineItem) {
@@ -283,35 +282,22 @@ function parseStatementLineItem(input: RawStatementLineItem) {
     ...input,
     charge_units: decimalStringToSafeNumber(input.charge_units, "line_items.charge_units"),
     unit_rate: decimalStringToSafeNumber(input.unit_rate, "line_items.unit_rate"),
-  };
-}
-
-function parseStatementBucketSummary(input: RawStatementBucketSummary) {
-  return {
-    ...input,
-    charge_units: decimalStringToSafeNumber(input.charge_units, "bucket_summaries.charge_units"),
     free_tier_units: decimalStringToSafeNumber(
       input.free_tier_units,
-      "bucket_summaries.free_tier_units",
+      "line_items.free_tier_units",
     ),
     subscription_units: decimalStringToSafeNumber(
       input.subscription_units,
-      "bucket_summaries.subscription_units",
+      "line_items.subscription_units",
     ),
-    purchase_units: decimalStringToSafeNumber(
-      input.purchase_units,
-      "bucket_summaries.purchase_units",
-    ),
-    promo_units: decimalStringToSafeNumber(input.promo_units, "bucket_summaries.promo_units"),
-    refund_units: decimalStringToSafeNumber(input.refund_units, "bucket_summaries.refund_units"),
+    purchase_units: decimalStringToSafeNumber(input.purchase_units, "line_items.purchase_units"),
+    promo_units: decimalStringToSafeNumber(input.promo_units, "line_items.promo_units"),
+    refund_units: decimalStringToSafeNumber(input.refund_units, "line_items.refund_units"),
     receivable_units: decimalStringToSafeNumber(
       input.receivable_units,
-      "bucket_summaries.receivable_units",
+      "line_items.receivable_units",
     ),
-    reserved_units: decimalStringToSafeNumber(
-      input.reserved_units,
-      "bucket_summaries.reserved_units",
-    ),
+    reserved_units: decimalStringToSafeNumber(input.reserved_units, "line_items.reserved_units"),
   };
 }
 
@@ -343,7 +329,6 @@ function parseStatementTotals(input: RawStatement["totals"]) {
 function parseStatement(input: unknown) {
   const {
     $schema: _schema,
-    bucket_summaries,
     grant_summaries,
     line_items,
     totals,
@@ -351,7 +336,6 @@ function parseStatement(input: unknown) {
   } = v.parse(vBillingStatement, input);
   return {
     ...statement,
-    bucket_summaries: bucket_summaries?.map((bucket) => parseStatementBucketSummary(bucket)) ?? [],
     grant_summaries: grant_summaries?.map((grant) => parseStatementGrantSummary(grant)) ?? [],
     line_items: line_items?.map((lineItem) => parseStatementLineItem(lineItem)) ?? [],
     totals: parseStatementTotals(totals),

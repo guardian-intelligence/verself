@@ -88,7 +88,6 @@ export type BillingStatement = {
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  bucket_summaries: Array<BillingStatementBucketSummary> | null;
   currency: string;
   generated_at: string;
   grant_summaries: Array<BillingStatementGrantSummary> | null;
@@ -100,20 +99,6 @@ export type BillingStatement = {
   product_id: string;
   totals: BillingStatementTotals;
   unit_label: string;
-};
-
-export type BillingStatementBucketSummary = {
-  bucket_display_name: string;
-  bucket_id: string;
-  charge_units: string;
-  free_tier_units: string;
-  product_id: string;
-  promo_units: string;
-  purchase_units: string;
-  receivable_units: string;
-  refund_units: string;
-  reserved_units: string;
-  subscription_units: string;
 };
 
 export type BillingStatementGrantSummary = {
@@ -129,13 +114,20 @@ export type BillingStatementLineItem = {
   bucket_display_name: string;
   bucket_id: string;
   charge_units: string;
+  free_tier_units: string;
   plan_id: string;
   pricing_phase: string;
   product_id: string;
+  promo_units: string;
+  purchase_units: string;
   quantity: number;
   quantity_unit: string;
+  receivable_units: string;
+  refund_units: string;
+  reserved_units: string;
   sku_display_name: string;
   sku_id: string;
+  subscription_units: string;
   unit_rate: string;
 };
 
@@ -501,7 +493,6 @@ export type BillingPlansWritable = {
 };
 
 export type BillingStatementWritable = {
-  bucket_summaries: Array<BillingStatementBucketSummary> | null;
   currency: string;
   generated_at: string;
   grant_summaries: Array<BillingStatementGrantSummary> | null;

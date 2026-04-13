@@ -51,11 +51,70 @@ export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
       data-test-available-units={totalAvailableForTests}
     >
       <AccountBalanceHeader units={accountBalanceUnits} />
-      {products.map((section) => (
-        <ProductSection key={section.product_id} section={section} />
-      ))}
+      {products.length > 0 ? (
+        // Single-product invariant: render one flat "Credit Balances" section
+        // across every product. When a second product is introduced the header
+        // stays flat and the product becomes a per-row cell-level filter — see
+        // apps/rent-a-sandbox/AGENTS.md "Credit Balances single-product
+        // invariant" for the rationale.
+        <section className="space-y-3" data-testid="entitlements-credit-balances">
+          <h2 className="text-lg font-semibold">Credit Balances</h2>
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">SKU</th>
+                  <th className="text-right px-4 py-2 font-medium">Available</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {products.flatMap((section) => creditBalanceRows(section))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+type CreditBalanceRow = {
+  product: EntitlementProductSection;
+  bucket: EntitlementBucketSection;
+  sku: EntitlementSlot;
+  sources: EntitlementSourceTotal[];
+};
+
+function creditBalanceRows(section: EntitlementProductSection): React.ReactNode[] {
+  const productSources = section.product_slot?.sources ?? [];
+  const buckets = section.buckets ?? [];
+  const rows: CreditBalanceRow[] = buckets.flatMap((bucket) => {
+    const bucketSources = bucket.bucket_slot?.sources ?? [];
+    return bucket.sku_slots.map((sku) => ({
+      product: section,
+      bucket,
+      sku,
+      sources: combineSources([...sku.sources, ...bucketSources, ...productSources]),
+    }));
+  });
+  return rows.map((row) => (
+    <tr
+      key={`${row.product.product_id}:${row.bucket.bucket_id}:${row.sku.sku_id}`}
+      data-testid={`entitlements-sku-${row.product.product_id}:${row.bucket.bucket_id}:${row.sku.sku_id}`}
+      data-bucket-id={row.bucket.bucket_id}
+      data-sku-id={row.sku.sku_id}
+    >
+      <td className="px-4 py-3 align-top">
+        <div className="font-medium">{displaySKUName(row.sku)}</div>
+        <div className="text-xs uppercase tracking-wide text-muted-foreground mt-0.5">
+          {row.bucket.display_name}
+        </div>
+      </td>
+      <td className="px-4 py-3 align-top">
+        <ReceiptCell sources={row.sources} />
+      </td>
+    </tr>
+  ));
 }
 
 function AccountBalanceHeader({ units }: { units: number }) {
@@ -72,68 +131,6 @@ function AccountBalanceHeader({ units }: { units: number }) {
         Account balance is only deducted after all other credit sources for a product have been
         used.
       </p>
-    </section>
-  );
-}
-
-function ProductSection({ section }: { section: EntitlementProductSection }) {
-  const productSources = section.product_slot?.sources ?? [];
-  const buckets = section.buckets ?? [];
-  // Flatten bucket → sku into a single receipt table. Bucket and product
-  // sources are merged into each SKU row's receipt (see pooling note above).
-  const rows = buckets.flatMap((bucket) => {
-    const bucketSources = bucket.bucket_slot?.sources ?? [];
-    return bucket.sku_slots.map((sku) => ({
-      bucket,
-      sku,
-      sources: combineSources([...sku.sources, ...bucketSources, ...productSources]),
-    }));
-  });
-
-  return (
-    <section
-      className="space-y-3"
-      data-testid={`entitlements-product-${section.product_id}`}
-    >
-      <h2 className="text-lg font-semibold">{section.display_name}</h2>
-      <div className="border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">SKU</th>
-              <th className="text-right px-4 py-2 font-medium">Available</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.length === 0 ? (
-              <tr>
-                <td className="px-4 py-3 text-muted-foreground" colSpan={2}>
-                  No SKUs configured for this product.
-                </td>
-              </tr>
-            ) : (
-              rows.map(({ bucket, sku, sources }) => (
-                <tr
-                  key={`${bucket.bucket_id}:${sku.sku_id}`}
-                  data-testid={`entitlements-sku-${section.product_id}:${bucket.bucket_id}:${sku.sku_id}`}
-                  data-bucket-id={bucket.bucket_id}
-                  data-sku-id={sku.sku_id}
-                >
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-medium">{displaySKUName(sku)}</div>
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground mt-0.5">
-                      {bucket.display_name}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <ReceiptCell sources={sources} />
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </section>
   );
 }

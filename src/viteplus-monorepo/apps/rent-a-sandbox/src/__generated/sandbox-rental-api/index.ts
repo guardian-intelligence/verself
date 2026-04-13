@@ -36,7 +36,6 @@ export type {
   BillingPlans,
   BillingPlansWritable,
   BillingStatement,
-  BillingStatementBucketSummary,
   BillingStatementGrantSummary,
   BillingStatementLineItem,
   BillingStatementTotals,
