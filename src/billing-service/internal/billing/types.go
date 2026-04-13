@@ -305,6 +305,8 @@ type CreditGrant struct {
 	SourceReferenceID   string
 	EntitlementPeriodID string
 	PolicyVersion       string
+	ChangeID            string
+	CalculationKind     string
 	StartsAt            *time.Time
 	Period              *GrantPeriod
 	ExpiresAt           *time.Time
@@ -422,6 +424,10 @@ type EntitlementPeriod struct {
 	ContractID        string
 	PhaseID           string
 	LineID            string
+	ChangeID          string
+	CalculationKind   string
+	ProviderInvoiceID string
+	ProviderEventID   string
 	ScopeType         GrantScopeType
 	ScopeProductID    string
 	ScopeBucketID     string

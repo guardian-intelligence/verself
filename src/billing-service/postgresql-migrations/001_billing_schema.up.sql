@@ -197,6 +197,7 @@ CREATE TABLE billing_provider_events (
     org_id                    TEXT        NOT NULL DEFAULT '',
     product_id                TEXT        NOT NULL DEFAULT '',
     contract_id               TEXT        NOT NULL DEFAULT '',
+    change_id                 TEXT        NOT NULL DEFAULT '',
     invoice_id                TEXT        NOT NULL DEFAULT '',
     payment_method_id         TEXT        NOT NULL DEFAULT '',
     provider_customer_id      TEXT        NOT NULL DEFAULT '',
@@ -227,10 +228,21 @@ CREATE TABLE contract_changes (
     target_plan_id        TEXT        NOT NULL DEFAULT '',
     from_phase_id         TEXT        NOT NULL DEFAULT '',
     to_phase_id           TEXT        NOT NULL DEFAULT '',
+    provider              TEXT        NOT NULL DEFAULT '',
+    provider_request_id   TEXT        NOT NULL DEFAULT '',
+    idempotency_key       TEXT        NOT NULL DEFAULT '',
+    proration_basis_cycle_id TEXT     NOT NULL DEFAULT '',
+    price_delta_units     BIGINT      NOT NULL DEFAULT 0 CHECK (price_delta_units >= 0),
+    entitlement_delta_mode TEXT       NOT NULL DEFAULT '' CHECK (entitlement_delta_mode IN ('', 'positive_delta', 'full_period')),
+    proration_numerator   BIGINT      NOT NULL DEFAULT 0 CHECK (proration_numerator >= 0),
+    proration_denominator BIGINT      NOT NULL DEFAULT 0 CHECK (proration_denominator >= 0),
     provider_invoice_id   TEXT        NOT NULL DEFAULT '',
     invoice_id            TEXT        NOT NULL DEFAULT '',
     requested_effective_at TIMESTAMPTZ,
     actual_effective_at   TIMESTAMPTZ,
+    attempts              INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at       TIMESTAMPTZ,
+    state_version         BIGINT      NOT NULL DEFAULT 1 CHECK (state_version > 0),
     failure_reason        TEXT        NOT NULL DEFAULT '',
     payload               JSONB       NOT NULL DEFAULT '{}'::jsonb,
     requested_by          TEXT        NOT NULL DEFAULT '',
@@ -258,6 +270,7 @@ CREATE TABLE contract_phases (
     recurrence_anchor_at TIMESTAMPTZ NOT NULL,
     grace_until          TIMESTAMPTZ,
     overage_policy       TEXT        NOT NULL DEFAULT 'hard_cap' CHECK (overage_policy IN ('hard_cap', 'bill_overages')),
+    superseded_by_phase_id TEXT      NOT NULL DEFAULT '',
     rate_context         JSONB       NOT NULL DEFAULT '{}'::jsonb,
     metadata             JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -338,6 +351,10 @@ CREATE TABLE entitlement_periods (
     contract_id          TEXT        NOT NULL DEFAULT '',
     phase_id             TEXT        NOT NULL DEFAULT '',
     line_id              TEXT        NOT NULL DEFAULT '',
+    change_id            TEXT        NOT NULL DEFAULT '',
+    calculation_kind     TEXT        NOT NULL DEFAULT 'recurrence' CHECK (calculation_kind IN ('recurrence', 'activation', 'upgrade_delta', 'manual_adjustment')),
+    provider_invoice_id  TEXT        NOT NULL DEFAULT '',
+    provider_event_id    TEXT        NOT NULL DEFAULT '',
     scope_type           TEXT        NOT NULL CHECK (scope_type IN ('sku', 'bucket', 'product', 'account')),
     scope_product_id     TEXT        NOT NULL DEFAULT '',
     scope_bucket_id      TEXT        NOT NULL DEFAULT '',
@@ -464,8 +481,9 @@ CREATE TABLE billing_invoices (
     cycle_id                    TEXT        NOT NULL REFERENCES billing_cycles(cycle_id),
     org_id                      TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
     product_id                  TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    change_id                   TEXT        NOT NULL DEFAULT '',
     invoice_number              TEXT        NOT NULL,
-    invoice_kind                TEXT        NOT NULL CHECK (invoice_kind IN ('cycle', 'activation', 'adjustment', 'credit_note')),
+    invoice_kind                TEXT        NOT NULL CHECK (invoice_kind IN ('cycle', 'activation', 'contract_change', 'adjustment', 'credit_note')),
     status                      TEXT        NOT NULL CHECK (status IN ('draft', 'finalizing', 'issued', 'paid', 'payment_failed', 'voided', 'blocked')),
     payment_status              TEXT        NOT NULL DEFAULT 'n_a' CHECK (payment_status IN ('n_a', 'pending', 'paid', 'failed', 'uncollectible', 'refunded')),
     period_start                TIMESTAMPTZ NOT NULL,
@@ -496,7 +514,11 @@ CREATE TABLE billing_invoices (
 
 CREATE UNIQUE INDEX idx_billing_invoices_cycle_kind
     ON billing_invoices (cycle_id, invoice_kind)
-    WHERE status <> 'voided';
+    WHERE status <> 'voided' AND invoice_kind IN ('cycle', 'activation');
+
+CREATE UNIQUE INDEX idx_billing_invoices_contract_change
+    ON billing_invoices (change_id)
+    WHERE status <> 'voided' AND change_id <> '';
 
 CREATE TABLE invoice_line_items (
     line_item_id       TEXT        PRIMARY KEY,

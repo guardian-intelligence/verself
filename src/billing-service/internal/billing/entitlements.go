@@ -249,6 +249,7 @@ func entitlementPeriodForPolicy(
 		PolicyVersion:     policy.PolicyVersion,
 		PaymentState:      PaymentNotRequired,
 		EntitlementState:  EntitlementActive,
+		CalculationKind:   "recurrence",
 		SourceReferenceID: sourceRef,
 		CreatedReason:     reason,
 	}, true, nil
@@ -309,6 +310,7 @@ func contractEntitlementPeriod(
 		PolicyVersion:     policy.PolicyVersion,
 		PaymentState:      paymentState,
 		EntitlementState:  entitlementState,
+		CalculationKind:   "recurrence",
 		SourceReferenceID: sourceRef,
 		CreatedReason:     "contract_period_reconcile",
 	}, true
@@ -318,22 +320,28 @@ func (c *Client) ensureEntitlementPeriod(ctx context.Context, period Entitlement
 	if period.PeriodID == "" {
 		return fmt.Errorf("entitlement period id is required")
 	}
+	if period.CalculationKind == "" {
+		period.CalculationKind = "recurrence"
+	}
 	_, err := c.pg.ExecContext(ctx, `
 		INSERT INTO entitlement_periods (
 			period_id, cycle_id, org_id, product_id, source, policy_id, contract_id, phase_id, line_id,
+			change_id, calculation_kind, provider_invoice_id, provider_event_id,
 			scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount_units,
 			period_start, period_end, policy_version, payment_state, entitlement_state,
 			source_reference_id, created_reason
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-		        $10, $11, $12, $13, $14,
-		        $15, $16, $17, $18, $19,
-		        $20, $21)
+		        $10, $11, $12, $13,
+		        $14, $15, $16, $17, $18,
+		        $19, $20, $21, $22, $23,
+		        $24, $25)
 		ON CONFLICT (period_id) DO UPDATE
 		SET payment_state = EXCLUDED.payment_state,
 		    entitlement_state = EXCLUDED.entitlement_state,
 		    updated_at = now()
 	`, period.PeriodID, period.CycleID, strconv.FormatUint(uint64(period.OrgID), 10), period.ProductID, period.Source.String(), period.PolicyID, period.ContractID, period.PhaseID, period.LineID,
+		period.ChangeID, period.CalculationKind, period.ProviderInvoiceID, period.ProviderEventID,
 		period.ScopeType.String(), period.ScopeProductID, period.ScopeBucketID, period.ScopeSKUID, period.AmountUnits,
 		period.PeriodStart, period.PeriodEnd, period.PolicyVersion, string(period.PaymentState), string(period.EntitlementState),
 		period.SourceReferenceID, period.CreatedReason)
