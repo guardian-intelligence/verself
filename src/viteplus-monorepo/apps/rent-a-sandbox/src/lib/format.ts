@@ -37,6 +37,23 @@ export function formatDateTimeUTC(value: Date | number | string): string {
   )} UTC`;
 }
 
+export function formatDateTimeMillisUTC(value: Date | number | string): string {
+  return `${formatStableUTCDateTime(
+    value,
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      fractionalSecondDigits: 3,
+      hour12: false,
+    },
+    { invalid: "Invalid timestamp", locale: "sv-SE" },
+  )} UTC`;
+}
+
 export function formatInteger(value: number): string {
   return numberFormatter.format(value);
 }
