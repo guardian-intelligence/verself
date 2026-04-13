@@ -1297,6 +1297,8 @@ That keeps the preview structurally aligned with the final invoice rather than i
 
 ClickHouse stores the invoice read model, not the transaction ledger.
 
+Billing event projection is at-least-once. Projection tables that use `ReplacingMergeTree` deduplicate during background merges, so they can temporarily expose duplicate rows for the same deterministic key. Operator verification queries that require immediate uniqueness must query PostgreSQL truth, use ClickHouse `FINAL`, or explicitly group by deterministic identifiers such as `event_id` and the relevant version column. Production authorization, invoice issuance, ledger writes, queue deletion, and provider-event application must not depend on ClickHouse merge timing.
+
 The target metering projection contains row-level usage evidence and projected charge units, including:
 
 - `cycle_id`
@@ -1325,6 +1327,10 @@ Invoice projections include `billing_cycle_opened`, `billing_cycle_closed_for_us
 ClickHouse billing rows use contract projection names (`contract_units`, `pricing_contract_id`, `pricing_phase_id`, `pricing_plan_id`) rather than provider-specific subscription field names.
 
 For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. That gives the invoice preview a real storage signal instead of an inferred one.
+
+ClickHouse docs to keep near this design:
+
+- ReplacingMergeTree: <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>
 
 ## Fault injection and reconciliation
 
@@ -1445,7 +1451,7 @@ SELECT
   correlation_id,
   causation_event_id,
   recorded_at
-FROM forge_metal.billing_events
+FROM forge_metal.billing_events FINAL
 WHERE event_type = 'grant_issued'
 ORDER BY recorded_at DESC
 LIMIT 5
@@ -1469,7 +1475,7 @@ SELECT
   correlation_id,
   causation_event_id,
   recorded_at
-FROM forge_metal.billing_events
+FROM forge_metal.billing_events FINAL
 WHERE event_type IN (
   'contract_created',
   'contract_change_requested',
@@ -1590,7 +1596,7 @@ SELECT
   payload,
   payload_hash,
   recorded_at
-FROM forge_metal.billing_events
+FROM forge_metal.billing_events FINAL
 WHERE event_type IN ('invoice_adjustment_created', 'invoice_finalization_blocked')
 ORDER BY recorded_at DESC
 LIMIT 20
