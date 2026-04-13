@@ -84,8 +84,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
 
       await app.waitForCondition("hobby contract cancellation", 90_000, async () => {
         await app.goto("/billing");
-        const rowTexts = await app.page
-          .getByTestId("contract-row-sandbox-hobby")
+        const rowTexts = await hobbyContractRows(app)
           .allInnerTexts()
           .catch(() => []);
         const scheduledRowText = rowTexts.find(
@@ -155,8 +154,7 @@ async function activateHobbyContract(app: SandboxHarness) {
   await app.goto("/billing?contracted=true");
 
   return await app.waitForCondition("hobby contract activation", 120_000, async () => {
-    const rowTexts = await app.page
-      .getByTestId("contract-row-sandbox-hobby")
+    const rowTexts = await hobbyContractRows(app)
       .allInnerTexts()
       .catch(() => []);
     const activeRowText = rowTexts.find(
@@ -193,13 +191,12 @@ async function beginHobbyCheckout(app: SandboxHarness) {
 async function cancelExistingHobbyContract(app: SandboxHarness) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await app.goto("/billing");
-    const cancelButton = app.page.getByTestId("cancel-contract-sandbox-hobby").first();
+    const cancelButton = hobbyCancelButtons(app).first();
     if (await cancelButton.isVisible().catch(() => false)) {
       await requestHobbyCancellation(app);
       await app.waitForCondition("existing hobby contract cancellation", 90_000, async () => {
         await app.goto("/billing");
-        const rowText = await app.page
-          .getByTestId("contract-row-sandbox-hobby")
+        const rowText = await hobbyContractRows(app)
           .first()
           .innerText()
           .catch(() => "");
@@ -207,8 +204,7 @@ async function cancelExistingHobbyContract(app: SandboxHarness) {
           return true;
         }
         if (
-          await app.page
-            .getByTestId("cancel-contract-sandbox-hobby")
+          await hobbyCancelButtons(app)
             .first()
             .isVisible()
             .catch(() => false)
@@ -233,7 +229,7 @@ async function requestHobbyCancellation(app: SandboxHarness) {
       return true;
     }
 
-    const cancelButton = app.page.getByTestId("cancel-contract-sandbox-hobby").first();
+    const cancelButton = hobbyCancelButtons(app).first();
     if (!(await cancelButton.isVisible().catch(() => false))) {
       return false;
     }
@@ -244,6 +240,14 @@ async function requestHobbyCancellation(app: SandboxHarness) {
   });
 
   await app.page.getByRole("button", { name: "Confirm Cancellation" }).click();
+}
+
+function hobbyContractRows(app: SandboxHarness) {
+  return app.page.locator('[data-testid^="contract-row-"]').filter({ hasText: "sandbox-hobby" });
+}
+
+function hobbyCancelButtons(app: SandboxHarness) {
+  return hobbyContractRows(app).getByRole("button", { name: "Cancel" });
 }
 
 // The entitlements view flattens bucket-scoped sources into each SKU row's

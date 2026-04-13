@@ -126,6 +126,16 @@
           compute: 30000000
           memory: 15000000
           block_storage: 5000000
+      - plan_id: sandbox-pro
+        display_name: Pro
+        tier: pro
+        currency: usd
+        cadence: monthly
+        unit_amount_cents: 2000
+        entitlements:
+          compute: 120000000
+          memory: 60000000
+          block_storage: 20000000
     seed_system_platform_target_prepaid_units: 500000000
     seed_system_customer_target_prepaid_units: 500000000
     seed_system_expires_after: 8760h

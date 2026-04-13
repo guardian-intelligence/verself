@@ -140,7 +140,10 @@ function BillingPage() {
                   const isCancelTarget = cancelTarget === contract.contract_id;
 
                   return (
-                    <tr key={contract.contract_id} data-testid={`contract-row-${contract.plan_id}`}>
+                    <tr
+                      key={contract.contract_id}
+                      data-testid={`contract-row-${contract.contract_id}`}
+                    >
                       <td className="px-4 py-2 font-medium">{contract.plan_id}</td>
                       <td className="px-4 py-2">
                         <ContractStatusPill status={contract.status} />
@@ -179,7 +182,7 @@ function BillingPage() {
                           ) : (
                             <button
                               type="button"
-                              data-testid={`cancel-contract-${contract.plan_id}`}
+                              data-testid={`cancel-contract-${contract.contract_id}`}
                               onClick={() => setCancelTarget(contract.contract_id)}
                               disabled={cancelMutation.isPending}
                               className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-xs disabled:opacity-50"
