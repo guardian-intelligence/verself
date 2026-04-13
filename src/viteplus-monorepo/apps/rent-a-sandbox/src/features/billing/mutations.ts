@@ -3,6 +3,7 @@ import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import {
   cancelContract,
   createCheckoutSession,
+  createContractChangeSession,
   createContractSession,
   createPortalSession,
 } from "~/server-fns/api";
@@ -34,6 +35,23 @@ export function useCreateContractSessionMutation() {
         data: {
           plan_id: planId,
           cadence: "monthly",
+          success_url: `${window.location.origin}/billing?contracted=true`,
+          cancel_url: `${window.location.origin}/billing/subscribe`,
+        },
+      }),
+    onSuccess: (data) => {
+      window.location.assign(data.url);
+    },
+  });
+}
+
+export function useCreateContractChangeSessionMutation() {
+  return useMutation({
+    mutationFn: ({ contractId, targetPlanId }: { contractId: string; targetPlanId: string }) =>
+      createContractChangeSession({
+        data: {
+          contract_id: contractId,
+          target_plan_id: targetPlanId,
           success_url: `${window.location.origin}/billing?contracted=true`,
           cancel_url: `${window.location.origin}/billing/subscribe`,
         },

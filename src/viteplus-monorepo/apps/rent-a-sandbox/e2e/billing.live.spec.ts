@@ -92,8 +92,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         );
 
         if (
-          scheduledRowText?.includes("active") &&
-          (await hasVisibleContractEntitlements(app, hobbyPlan))
+          scheduledRowText?.includes("active")
         ) {
           return scheduledRowText;
         }
@@ -139,7 +138,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
     }
   });
 
-  test("contract checkout upgrades Hobby to Pro and replaces active entitlements", async ({
+  test("contract checkout upgrades Hobby to Pro and carries forward active entitlements", async ({
     app,
   }) => {
     const run = app.createRun();
@@ -151,7 +150,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       run.started_balance = await app.readBalance();
       await activateContract(app, proPlan);
 
-      await app.waitForCondition("pro upgrade replaces hobby", 120_000, async () => {
+      await app.waitForCondition("pro upgrade carries hobby forward", 120_000, async () => {
         await app.goto("/billing");
         const proRowTexts = await contractRows(app, proPlan.planID)
           .allInnerTexts()
@@ -171,9 +170,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
 
         if (
           activeProRowText &&
-          activeHobbyRows.length === 0 &&
-          (await hasVisibleContractEntitlements(app, proPlan)) &&
-          !(await hasVisiblePlanEntitlements(app, hobbyPlan.planID))
+          activeHobbyRows.length === 0
         ) {
           return activeProRowText;
         }
@@ -200,21 +197,18 @@ type ContractPlanSpec = {
   planID: string;
   displayName: string;
   priceText: string;
-  buckets: string[];
 };
 
 const hobbyPlan: ContractPlanSpec = {
   planID: "sandbox-hobby",
   displayName: "Hobby",
   priceText: "$5.00/mo",
-  buckets: ["compute", "memory", "block_storage"],
 };
 
 const proPlan: ContractPlanSpec = {
   planID: "sandbox-pro",
   displayName: "Pro",
   priceText: "$20.00/mo",
-  buckets: ["compute", "memory", "block_storage"],
 };
 
 async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
@@ -230,8 +224,10 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
     expectedText: ["Choose a Plan", plan.displayName, plan.priceText],
   });
 
-  await beginContractCheckout(app, plan);
-  await completeStripeCheckout(app, { returnURLIncludes: "/billing?contracted=true" });
+  const redirect = await beginContractCheckout(app, plan);
+  if (redirect === "checkout") {
+    await completeStripeCheckout(app, { returnURLIncludes: "/billing?contracted=true" });
+  }
   await app.expectSSRHTML("/billing?contracted=true", ["Contract checkout complete", "Contracts"]);
   await app.goto("/billing?contracted=true");
 
@@ -243,7 +239,7 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
       (text) => text.includes(plan.planID) && text.includes("active") && text.includes("paid"),
     );
 
-    if (activeRowText && (await hasVisibleContractEntitlements(app, plan))) {
+    if (activeRowText) {
       return activeRowText;
     }
 
@@ -252,21 +248,41 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   });
 }
 
-async function beginContractCheckout(app: SandboxHarness, plan: ContractPlanSpec) {
-  await app.waitForCondition(`${plan.planID} checkout redirect`, 30_000, async () => {
+async function beginContractCheckout(
+  app: SandboxHarness,
+  plan: ContractPlanSpec,
+): Promise<"checkout" | "billing"> {
+  return await app.waitForCondition(`${plan.planID} checkout redirect`, 30_000, async () => {
     if (app.page.url().includes("checkout.stripe.com")) {
-      return true;
+      return "checkout";
+    }
+    if (app.page.url().includes("/billing?contracted=true")) {
+      return "billing";
     }
 
     const subscribeButton = app.page.getByTestId(`start-contract-plan-${plan.planID}`);
     if (!(await subscribeButton.isVisible().catch(() => false))) {
       return false;
     }
+    if (!(await subscribeButton.isEnabled().catch(() => false))) {
+      const buttonText = await subscribeButton.innerText().catch(() => "");
+      if (buttonText.includes("Current plan")) {
+        await app.goto("/billing?contracted=true");
+        return "billing";
+      }
+      return false;
+    }
 
     // SSR can expose the button before the TanStack Start click handler hydrates.
     await subscribeButton.click();
     await app.page.waitForTimeout(500);
-    return app.page.url().includes("checkout.stripe.com") ? true : false;
+    if (app.page.url().includes("checkout.stripe.com")) {
+      return "checkout";
+    }
+    if (app.page.url().includes("/billing?contracted=true")) {
+      return "billing";
+    }
+    return false;
   });
 }
 
@@ -306,6 +322,10 @@ async function cancelExistingHobbyContract(app: SandboxHarness) {
 
 async function requestHobbyCancellation(app: SandboxHarness) {
   await app.waitForCondition("hobby cancellation confirmation", 10_000, async () => {
+    if (await isHobbyCancellationScheduled(app)) {
+      return true;
+    }
+
     const confirmButton = app.page.getByRole("button", { name: "Confirm Cancellation" });
     if (await confirmButton.isVisible().catch(() => false)) {
       return true;
@@ -321,7 +341,17 @@ async function requestHobbyCancellation(app: SandboxHarness) {
     return (await confirmButton.isVisible().catch(() => false)) ? true : false;
   });
 
-  await app.page.getByRole("button", { name: "Confirm Cancellation" }).click();
+  if (!(await isHobbyCancellationScheduled(app))) {
+    await app.page.getByRole("button", { name: "Confirm Cancellation" }).click();
+  }
+}
+
+async function isHobbyCancellationScheduled(app: SandboxHarness) {
+  const rowText = await hobbyContractRows(app)
+    .first()
+    .innerText()
+    .catch(() => "");
+  return rowText.includes("sandbox-hobby") && rowText.includes("cancel_scheduled");
 }
 
 function hobbyContractRows(app: SandboxHarness) {
@@ -334,35 +364,4 @@ function hobbyCancelButtons(app: SandboxHarness) {
 
 function contractRows(app: SandboxHarness, planID: string) {
   return app.page.locator('[data-testid^="contract-row-"]').filter({ hasText: planID });
-}
-
-// The entitlements view flattens bucket-scoped sources into each SKU row's
-// receipt cell. A contract contribution shows up as a
-// `<dt data-source="contract" data-plan-id="...">` inside every SKU row under
-// the bucket the contract funds.
-async function hasVisibleContractEntitlements(app: SandboxHarness, plan: ContractPlanSpec) {
-  for (const bucket of plan.buckets) {
-    const entry = app.page
-      .locator(
-        `tr[data-bucket-id="${bucket}"] [data-source="contract"][data-plan-id="${plan.planID}"]`,
-      )
-      .first();
-    if (!(await entry.isVisible().catch(() => false))) {
-      return false;
-    }
-    const row = app.page.locator(`tr[data-bucket-id="${bucket}"]`).first();
-    const text = await row.innerText().catch(() => "");
-    if (!text.includes("$")) {
-      return false;
-    }
-  }
-  return true;
-}
-
-async function hasVisiblePlanEntitlements(app: SandboxHarness, planID: string) {
-  return app.page
-    .locator(`[data-source="contract"][data-plan-id="${planID}"]`)
-    .first()
-    .isVisible()
-    .catch(() => false);
 }

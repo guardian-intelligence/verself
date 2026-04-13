@@ -3,8 +3,9 @@ import { createClient, type Client } from "../__generated/sandbox-rental-api/cli
 import {
   cancelBillingContract,
   createBillingCheckout,
-  createBillingPortal,
   createBillingContract,
+  createBillingContractChange,
+  createBillingPortal,
   getBillingEntitlements,
   getBillingStatement,
   getExecution as getGeneratedExecution,
@@ -29,6 +30,9 @@ import {
   vCancelBillingContractPath,
   vCreateBillingCheckoutBody,
   vCreateBillingCheckoutResponse,
+  vCreateBillingContractChangeBody,
+  vCreateBillingContractChangePath,
+  vCreateBillingContractChangeResponse,
   vCreateBillingPortalBody,
   vCreateBillingPortalResponse,
   vCreateBillingContractBody,
@@ -394,6 +398,15 @@ export const contractRequestSchema = vCreateBillingContractBody;
 
 export type ContractRequest = v.InferOutput<typeof contractRequestSchema>;
 
+export const contractChangeRequestSchema = v.strictObject({
+  cancel_url: v.string(),
+  contract_id: v.string(),
+  success_url: v.string(),
+  target_plan_id: v.string(),
+});
+
+export type ContractChangeRequest = v.InferOutput<typeof contractChangeRequestSchema>;
+
 export const portalRequestSchema = vCreateBillingPortalBody;
 
 export type PortalRequest = v.InferOutput<typeof portalRequestSchema>;
@@ -459,6 +472,7 @@ export type ImportRepoRequest = v.InferOutput<typeof importRepoRequestSchema>;
 export type SubmitExecutionResponse = v.InferOutput<typeof vSubmitExecutionResponse>;
 export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutResponse>;
 export type ContractSession = v.InferOutput<typeof vCreateBillingContractResponse>;
+export type ContractChangeSession = v.InferOutput<typeof vCreateBillingContractChangeResponse>;
 export type PortalSession = v.InferOutput<typeof vCreateBillingPortalResponse>;
 
 export async function getEntitlements(
@@ -579,6 +593,36 @@ export async function createContractSession(
   }
 
   return v.parse(vCreateBillingContractResponse, result.data);
+}
+
+export async function createContractChangeSession(
+  options: SandboxRentalClientOptions & { body: ContractChangeRequest },
+): Promise<ContractChangeSession> {
+  const client = createSandboxRentalClient(options);
+  const body = v.parse(contractChangeRequestSchema, options.body);
+  const requestBody = v.parse(vCreateBillingContractChangeBody, {
+    cancel_url: body.cancel_url,
+    success_url: body.success_url,
+    target_plan_id: body.target_plan_id,
+  });
+  const pathParams = v.parse(vCreateBillingContractChangePath, {
+    contract_id: body.contract_id,
+  });
+  const path = "/api/v1/billing/contracts/{contract_id}/changes";
+  const result = await createBillingContractChange({
+    body: requestBody,
+    client,
+    headers: idempotencyHeaders("billing-contract-change"),
+    path: pathParams,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return v.parse(vCreateBillingContractChangeResponse, result.data);
 }
 
 export async function createPortalSession(

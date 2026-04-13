@@ -28,6 +28,7 @@ import {
   cancelContract as cancelContractRequest,
   cancelContractRequestSchema,
   createCheckoutSession as createCheckoutSessionRequest,
+  createContractChangeSession as createContractChangeSessionRequest,
   createContractSession as createContractSessionRequest,
   createPortalSession as createPortalSessionRequest,
   executionIdInputSchema,
@@ -49,12 +50,14 @@ import {
   submitDirectExecution as submitDirectExecutionRequest,
   executionRequestSchema,
   portalRequestSchema,
+  contractChangeRequestSchema,
   contractRequestSchema,
   checkoutRequestSchema,
 } from "~/lib/sandbox-rental-api";
 import type {
   CheckoutRequest,
   CancelContractRequest,
+  ContractChangeRequest,
   EntitlementBucketSection,
   EntitlementProductSection,
   EntitlementSlot,
@@ -101,6 +104,7 @@ export type {
   Repo,
   RepoCompatibilitySummary,
   ContractRequest,
+  ContractChangeRequest,
   ContractsResponse,
 };
 export type {
@@ -253,6 +257,16 @@ export const createContractSession = createServerFn({ method: "POST" })
   .inputValidator(contractRequestSchema)
   .handler(async ({ context, data }) => {
     return createContractSessionRequest({
+      ...(await sandboxRentalClientOptions(context)),
+      body: data,
+    });
+  });
+
+export const createContractChangeSession = createServerFn({ method: "POST" })
+  .middleware([rentASandboxAuthMiddleware])
+  .inputValidator(contractChangeRequestSchema)
+  .handler(async ({ context, data }) => {
+    return createContractChangeSessionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });
