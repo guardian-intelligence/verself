@@ -390,6 +390,45 @@ Required trace order for one successful direct execution:
 4. `vm-orchestrator.WaitRun`
 5. `sandbox-rental.execution.finalize`
 
+The VM leg must also prove that the product trace reaches the privileged host
+daemon. `vm-orchestrator` uses the OpenTelemetry gRPC stats handler
+(`go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc`)
+on both the sandbox-rental client and the Unix-socket server, then detaches only
+the trace context when `EnsureRun` hands work to the asynchronous Firecracker
+lifecycle goroutine. The green gate for this phase must therefore assert that
+the `forge_metal.job_events.trace_id` for the execution also has
+`vm-orchestrator` spans named `rpc.EnsureRun`, `vmorchestrator.managed_run`,
+`vmorchestrator.Run`, `vmorchestrator.zfs.clone`,
+`vmorchestrator.jail.setup`, `vmorchestrator.network.setup`,
+`vmorchestrator.firecracker.instance_start`,
+`vmorchestrator.guest.hello`, `vmorchestrator.guest.phase_end`, and
+`vmorchestrator.vm.exit_wait`.
+
+The same trace ID must appear on the required `run_state_transition` evidence
+for the matching `execution_attempts.orchestrator_run_id`. Guest telemetry
+evidence is opportunistic for short runs; if `telemetry_hello` or
+`telemetry_diagnostic` rows exist for the run, they must carry the same trace
+ID.
+
+```sql
+SELECT evidence_type, to_state, trace_id, count() AS c
+FROM forge_metal.vm_run_evidence
+WHERE run_id = $1
+  AND trace_id = $2
+  AND evidence_type = 'run_state_transition'
+  AND to_state IN ('pending', 'running', 'succeeded')
+GROUP BY evidence_type, to_state, trace_id
+ORDER BY evidence_type, to_state;
+```
+
+```sql
+SELECT count()
+FROM forge_metal.vm_run_evidence
+WHERE run_id = $1
+  AND evidence_type IN ('telemetry_hello', 'telemetry_diagnostic')
+  AND trace_id != $2;
+```
+
 ## Phase 1: River Queue Runtime Online
 
 Primary anchors:
@@ -606,6 +645,12 @@ Required trace order:
 6. `vm-orchestrator.EnsureRun`
 7. `vm-orchestrator.WaitRun`
 8. `sandbox-rental.execution.finalize`
+
+The Phase 2 `vm-orchestrator` latency span and `vm_run_evidence.trace_id`
+assertions remain required after the River handoff. River is allowed to move
+the execution work into a durable worker, but it must not sever the trace that
+joins the user request, scheduler enqueue/dequeue, VM lifecycle, host state
+transitions, and finalization evidence.
 
 ## Phase 3: Reconciliation And Capacity Leases
 

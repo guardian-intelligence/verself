@@ -134,6 +134,18 @@ Required span names, in order:
 - `vm-bridge.workflow_runner.act_prepare`
 - `vm-bridge.workflow_runner.act_execute`
 
+The same `TraceId` must include the vm-orchestrator latency spine introduced
+for the direct execution path: at minimum `rpc.EnsureRun`,
+`vmorchestrator.managed_run`, `vmorchestrator.Run`,
+`vmorchestrator.zfs.clone`, `vmorchestrator.jail.setup`,
+`vmorchestrator.network.setup`, `vmorchestrator.firecracker.instance_start`,
+`vmorchestrator.guest.hello`, and `vmorchestrator.vm.exit_wait`. The matching
+`forge_metal.vm_run_evidence` rows for `execution_attempts.orchestrator_run_id`
+must carry that trace ID for the `run_state_transition` evidence through
+`pending`, `running`, and `succeeded`. Guest telemetry evidence is
+opportunistic for short runs; when `telemetry_hello` or `telemetry_diagnostic`
+rows exist for the run, they must carry the same trace ID.
+
 The matching billing assertion uses `execution_billing_windows.actual_quantity > 0` and terminal window state `settled`.
 
 ## River Handoff
