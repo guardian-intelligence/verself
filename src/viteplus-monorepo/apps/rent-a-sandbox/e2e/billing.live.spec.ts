@@ -263,10 +263,18 @@ async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
       return false;
     }
     const subscriptionEntry = slot.locator('li[data-source="subscription"]');
-    if (!(await subscriptionEntry.first().isVisible().catch(() => false))) {
+    if (
+      !(await subscriptionEntry
+        .first()
+        .isVisible()
+        .catch(() => false))
+    ) {
       return false;
     }
-    const text = await subscriptionEntry.first().innerText().catch(() => "");
+    const text = await subscriptionEntry
+      .first()
+      .innerText()
+      .catch(() => "");
     if (!text.includes("$")) {
       return false;
     }
