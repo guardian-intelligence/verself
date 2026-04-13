@@ -1124,6 +1124,27 @@ Zero-total cycles can still produce invoices when the operator wants a complete 
 
 ## Upgrade, downgrade, and cancellation semantics
 
+### Catalog tier ordering
+
+Self-serve catalog tiers must be monotonic for immediate upgrades. A target plan qualifies as an immediate upgrade only when:
+
+- its recurring base price is greater than the current plan's recurring base price for the same product and cadence;
+- for every paid entitlement scope shared with the current plan, the target amount is greater than or equal to the current amount;
+- any newly introduced entitlement scope is additive;
+- the change does not remove a product, bucket, SKU, priority lane, license class, or other commercial right during the current cycle.
+
+If a catalog change is not monotonic, treat it as a period-end downgrade/replacement or an explicit enterprise-style amendment with a previewed contract change. Do not force the general upgrade path to handle negative entitlement deltas. Mid-cycle customer-visible entitlement reduction is a downgrade even when the target plan has a higher headline price.
+
+Immediate upgrade calculations use the open billing cycle as the denominator:
+
+```text
+remaining_fraction = (cycle.ends_at - effective_at) / (cycle.ends_at - cycle.starts_at)
+price_delta_units = max(target_recurring_price_units - current_recurring_price_units, 0) * remaining_fraction
+entitlement_delta_units(scope) = max(target_line_units(scope) - current_line_units(scope), 0) * remaining_fraction
+```
+
+Money is calculated in Forge Metal ledger units and rounded to cents only when creating the Stripe collection artifact. Entitlement deltas are calculated per scope with deterministic integer rounding. Rounding must be applied once per applied change; multiple pending same-timestamp plan changes should coalesce to the final target before payment collection to avoid one-unit rounding arbitrage.
+
 ### Free tier to paid contract
 
 Free tier remains independent. Creating a paid contract does not close or decrement free-tier grants.
@@ -1139,22 +1160,53 @@ Default flow:
 7. Entitlement periods and credit grants are materialized for the new cycle after paid activation.
 8. Free-tier grants continue independently and must not be closed by the paid activation.
 
+Because free -> paid closes the free cycle for usage and opens a new paid cycle anchored at the paid activation time, the first paid Hobby cycle normally charges the full Hobby cycle price and issues the full Hobby contract grants for that new cycle. Free-tier grants from their own recurrence remain separate sources and continue to drain before contract grants.
+
 ### Immediate paid upgrade
 
 Default for Hobby -> Pro.
 
 1. Insert `contract_changes(change_type = 'upgrade', timing = 'immediate')` with the current phase and target plan.
-2. Keep the old phase active until payment succeeds or an explicitly accepted grace decision arrives.
-3. Create the target Pro phase in `pending_payment` or `grace` according to policy.
-4. Create a one-off Forge Metal invoice for the prorated delta when the business policy requires immediate collection.
-5. Provider API success moves the change to `awaiting_payment`; it does not activate new paid entitlements by itself.
-6. On `invoice.paid` or accepted grace, set the old phase `effective_end = actual_effective_at` and `state = 'superseded'`.
-7. Activate the new phase with `effective_start = actual_effective_at` and `effective_end` bounded by the current billing cycle unless the contract terms require a cycle change.
-8. Copy target plan policies into new phase entitlement lines.
-9. Materialize prorated entitlement periods for the remaining cycle.
-10. Issue new grants and close only the old phase's future-funding grants. Do not close free-tier grants and do not mutate old TigerBeetle history.
+2. Compute and store the proration basis from the locked current cycle, current phase, target plan, and effective timestamp.
+3. Keep the old phase active until payment succeeds or an explicitly accepted grace decision arrives.
+4. Create the target Pro phase in `pending_payment` or `grace` according to policy.
+5. Create a one-off Forge Metal invoice for the positive prorated price delta when the business policy requires immediate collection.
+6. Provider API success moves the change to `awaiting_payment`; it does not activate new paid entitlements by itself.
+7. On `invoice.paid` or accepted grace, set the old phase `effective_end = actual_effective_at` and `state = 'superseded'`.
+8. Activate the new phase with `effective_start = actual_effective_at`. The target phase carries full Pro entitlement lines because those terms apply to subsequent full cycles.
+9. Leave already-issued current-cycle grants from the superseded Hobby phase open until their own `expires_at`. They are paid allowance carryforward, not a mutable live phase lookup.
+10. Materialize only upgrade-delta entitlement periods and grants for the target Pro phase for the remaining part of the current cycle.
+11. From the next cycle onward, materialize normal full Pro entitlement periods and grants.
 
-The billing cycle usually does not change for a paid mid-cycle upgrade. Proration is not a live invoice-time lookup; it is encoded by phase boundaries plus prorated entitlement periods and captured rate context on subsequent billing windows.
+The billing cycle usually does not change for a paid mid-cycle upgrade. Proration is not a live invoice-time lookup; it is encoded by phase boundaries, change-linked upgrade-delta entitlement periods, carried-forward current-cycle grants, and captured rate context on subsequent billing windows.
+
+Example:
+
+```text
+Current plan: Hobby at $5/month with 30,000,000 compute units.
+Target plan: Pro at $20/month with 120,000,000 compute units.
+Upgrade time: 25% through the paid Hobby cycle, so remaining_fraction = 75%.
+Hobby usage so far: 90% of Hobby compute, so 27,000,000 used and 3,000,000 Hobby compute left.
+
+Upgrade price delta: ($20 - $5) * 75% = $11.25 before tax.
+Upgrade entitlement delta: (120,000,000 - 30,000,000) * 75% = 67,500,000 compute units.
+Post-upgrade paid compute available: 3,000,000 Hobby carryforward + 67,500,000 Pro delta = 70,500,000 units.
+```
+
+The customer does not get a full prorated Pro grant of `120,000,000 * 75% = 90,000,000` units on top of heavy Hobby usage, because that creates step-through-tier arbitrage. The customer also does not lose unused Hobby allowance when they upgrade early, because that makes upgrades feel punitive when usage is low. The path-independent total paid entitlement for the cycle is the original Hobby grant plus the prorated positive delta from Hobby to Pro.
+
+Pending reservations that already selected old Hobby funding before the upgrade settle or void against their original funding legs. The upgrade path must not snapshot TigerBeetle balances and re-mint "remaining Hobby" into a replacement grant; keeping the old current-cycle grant open until expiry avoids double-spend and lost-capacity races around pending reservations. New reservations after Pro activation can consume remaining Hobby carryforward plus the Pro delta grant, while their pricing context is captured from the active Pro phase.
+
+Paid overages accrued before the upgrade remain attached to the old phase/rate context captured in their billing windows. They are not netted against the upgrade charge or erased by the Pro activation. If usage leaked without overage consent, invoice finalization applies the automatic no-consent adjustment rules rather than charging the customer.
+
+Failure cases:
+
+- If payment fails and no grace transition is accepted, the target phase remains `pending_payment` or the change moves to `failed`; no Pro delta grant materializes.
+- If payment succeeds after a retry, use the stored proration basis from the accepted change, not a newly computed later timestamp, unless the customer explicitly accepts a new preview.
+- If the customer requests another upgrade while the first change is pending, coalesce or cancel the pending change and create a new preview. Do not apply two same-effective-time prorations independently.
+- If a plan change would reduce any current-cycle entitlement scope, schedule it for period end unless an explicit admin or enterprise amendment records the customer-visible consequence.
+
+The current implementation is not yet at this target state. The live self-serve Stripe flow currently uses payment-method setup and immediately supersedes the old phase with a prorated target-plan grant; the roadmap should replace that with the invoice-backed price delta, carryforward old grants, and target-phase delta grants described here.
 
 ### Period-end downgrade
 
@@ -1167,6 +1219,8 @@ Default for Pro -> Hobby.
 5. Issue Hobby grants for the new cycle after payment or grace rules allow.
 
 If the River boundary job is late, reserve uses PostgreSQL state and self-healing rules. Reconciliation repairs the missing boundary job. Downgrades must not take away paid capacity before the period the customer already paid for ends.
+
+Immediate downgrades are not a self-serve default. If an explicit admin or enterprise amendment allows an immediate downgrade, it must preview the customer-visible result, avoid negative entitlement grants, and represent any refund or account credit as an invoice adjustment or credit-note artifact rather than mutating prior grants.
 
 ### Cancellation
 
@@ -1518,11 +1572,53 @@ ORDER BY recorded_at DESC
 LIMIT 20
 ```
 
-6. **Reservation trace present**
+6. **Plan-change proration facts are auditable**
+
+Confirm immediate upgrades record their price and entitlement proration basis in PostgreSQL and project the applied change to ClickHouse.
+
+```sql
+SELECT
+  change_id,
+  change_type,
+  state,
+  timing,
+  requested_plan_id,
+  target_plan_id,
+  from_phase_id,
+  to_phase_id,
+  proration_basis_cycle_id,
+  price_delta_units,
+  entitlement_delta_mode,
+  proration_numerator,
+  proration_denominator,
+  actual_effective_at
+FROM contract_changes
+WHERE change_type = 'upgrade'
+ORDER BY updated_at DESC
+LIMIT 20
+```
+
+```sql
+SELECT
+  event_type,
+  JSONExtractString(payload, 'change_type') AS change_type,
+  JSONExtractString(payload, 'from_plan_id') AS from_plan_id,
+  JSONExtractString(payload, 'target_plan_id') AS target_plan_id,
+  pricing_plan_id,
+  count() AS events
+FROM forge_metal.billing_events FINAL
+WHERE event_type IN ('contract_change_applied', 'contract_phase_started', 'contract_phase_closed', 'grant_issued')
+GROUP BY event_type, change_type, from_plan_id, target_plan_id, pricing_plan_id
+ORDER BY event_type, pricing_plan_id, change_type
+```
+
+For a Hobby -> Pro upgrade in the target implementation, expect one applied upgrade change, one closed/superseded Hobby phase, one started Pro phase, carryforward Hobby grants still expiring at the current cycle end, and Pro `grant_issued` rows only for the positive prorated entitlement deltas in the current cycle.
+
+7. **Reservation trace present**
 
 Confirm a sandbox job or billed workload produced a reservation trace in `billing-service`; query for the matching `window_id` in `default.otel_logs` and the `forge_metal.metering` row.
 
-7. **SKU projection present**
+8. **SKU projection present**
 
 Confirm the metering row contains SKU-level charge maps, bucket totals, cycle id, and usage evidence.
 
@@ -1546,7 +1642,7 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-8. **Storage evidence present**
+9. **Storage evidence present**
 
 Confirm `usage_evidence['rootfs_provisioned_bytes']` is non-zero for a sandbox execution that used a real zvol.
 
@@ -1560,7 +1656,7 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-9. **Bucket totals reconcile**
+10. **Bucket totals reconcile**
 
 Confirm component charges sum into bucket charges, and bucket charges sum into the row charge units.
 
@@ -1576,7 +1672,7 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-10. **Invoice artifact is immutable and issued from stored snapshot**
+11. **Invoice artifact is immutable and issued from stored snapshot**
 
 ```sql
 SELECT
@@ -1596,7 +1692,7 @@ ORDER BY issued_at DESC
 LIMIT 20
 ```
 
-11. **No-consent adjustments enforce the cap**
+12. **No-consent adjustments enforce the cap**
 
 Confirm free-tier and paid hard-cap orgs do not produce collectible receivable units without overage consent. Automatic no-consent adjustments must stay within the USD $0.99 per-org finalization cap; cap overflow must create a blocked finalization event instead of a customer charge.
 
@@ -1629,7 +1725,7 @@ ORDER BY recorded_at DESC
 LIMIT 20
 ```
 
-12. **Stripe subscriptions are absent from target provider events**
+13. **Stripe subscriptions are absent from target provider events**
 
 ```sql
 SELECT provider_event_type, count(*)
