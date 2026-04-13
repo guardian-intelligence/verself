@@ -42,14 +42,14 @@ func TestEntitlementsViewMatchesFunderPrecedence(t *testing.T) {
 	// the assertions go silently weak. Document the change here if you
 	// touch the fixture.
 	grants := []GrantBalance{
-		// SKU-scope on (block_storage, premium_nvme): free_tier + subscription.
+		// SKU-scope on (block_storage, premium_nvme): free_tier + contract.
 		viewFundingGrant("sku-free-a", SourceFreeTier, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 7),
 		viewFundingGrant("sku-free-b", SourceFreeTier, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 30),
-		viewFundingGrant("sku-sub-a", SourceSubscription, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 14),
-		// Bucket-scope on (compute, *): free_tier + subscription.
+		viewFundingGrant("sku-sub-a", SourceContract, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 14),
+		// Bucket-scope on (compute, *): free_tier + contract.
 		viewFundingGrant("bkt-free-a", SourceFreeTier, GrantScopeBucket, productID, "compute", "", 50, 7),
 		viewFundingGrant("bkt-free-b", SourceFreeTier, GrantScopeBucket, productID, "compute", "", 50, 30),
-		viewFundingGrant("bkt-sub-a", SourceSubscription, GrantScopeBucket, productID, "compute", "", 50, 14),
+		viewFundingGrant("bkt-sub-a", SourceContract, GrantScopeBucket, productID, "compute", "", 50, 14),
 		// Product-scope on sandbox: promo only (no narrower same-source grant).
 		viewFundingGrant("prd-promo-a", SourcePromo, GrantScopeProduct, productID, "", "", 50, 14),
 		viewFundingGrant("prd-promo-b", SourcePromo, GrantScopeProduct, productID, "", "", 50, 30),
@@ -208,7 +208,7 @@ func TestFundingPrecedenceConstantsAreStable(t *testing.T) {
 			t.Fatalf("GrantScopeFundingOrder[%d] = %s, want %s", i, GrantScopeFundingOrder[i], wantScope[i])
 		}
 	}
-	wantSource := []GrantSourceType{SourceFreeTier, SourceSubscription, SourcePurchase, SourcePromo, SourceRefund}
+	wantSource := []GrantSourceType{SourceFreeTier, SourceContract, SourcePurchase, SourcePromo, SourceRefund, SourceReceivable}
 	if len(GrantSourceFundingOrder) != len(wantSource) {
 		t.Fatalf("GrantSourceFundingOrder len = %d, want %d", len(GrantSourceFundingOrder), len(wantSource))
 	}
@@ -467,9 +467,9 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 		{
 			// `now` falls exactly on the closed-side boundary of the prior
 			// period; the half-open predicate must EXCLUDE this grant.
-			GrantID:        sourceReferenceGrantID(42, SourceSubscription, GrantScopeAccount, "", "", "", "boundary-prior"),
+			GrantID:        sourceReferenceGrantID(42, SourceContract, GrantScopeAccount, "", "", "", "boundary-prior"),
 			ScopeType:      GrantScopeAccount,
-			Source:         SourceSubscription,
+			Source:         SourceContract,
 			StartsAt:       staleStart,
 			Period:         stalePeriod,
 			OriginalAmount: 200,
@@ -477,9 +477,9 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 		},
 		{
 			// future-period grant — should not contribute.
-			GrantID:        sourceReferenceGrantID(42, SourceSubscription, GrantScopeAccount, "", "", "", "future-period"),
+			GrantID:        sourceReferenceGrantID(42, SourceContract, GrantScopeAccount, "", "", "", "future-period"),
 			ScopeType:      GrantScopeAccount,
-			Source:         SourceSubscription,
+			Source:         SourceContract,
 			StartsAt:       futureStart,
 			Period:         futurePeriod,
 			OriginalAmount: 75,
@@ -510,9 +510,9 @@ func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
 	if got, want := freeTier.PeriodStartUnits, uint64(150); got != want {
 		t.Fatalf("free_tier.PeriodStartUnits = %d, want %d", got, want)
 	}
-	subscription := findUniversalSource(t, view, SourceSubscription)
-	if got, want := subscription.PeriodStartUnits, uint64(0); got != want {
-		t.Fatalf("subscription.PeriodStartUnits = %d, want %d (boundary-prior excluded by half-open, future-period excluded by start>now)", got, want)
+	contract := findUniversalSource(t, view, SourceContract)
+	if got, want := contract.PeriodStartUnits, uint64(0); got != want {
+		t.Fatalf("contract.PeriodStartUnits = %d, want %d (boundary-prior excluded by half-open, future-period excluded by start>now)", got, want)
 	}
 	purchase := findUniversalSource(t, view, SourcePurchase)
 	if got, want := purchase.PeriodStartUnits, uint64(0); got != want {

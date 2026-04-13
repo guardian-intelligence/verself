@@ -100,7 +100,7 @@
     - role: cloudflare_dns
       tags: [cloudflare_dns]
     - role: clickhouse
-      tags: [clickhouse]
+      tags: [clickhouse, billing_service, sandbox_rental_service]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql

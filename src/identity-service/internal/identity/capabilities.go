@@ -69,7 +69,7 @@ var defaultCapabilities = []Capability{
 	{
 		Key:            "view_billing",
 		Label:          "View billing",
-		Description:    "Read the organization's billing balance, statements, grants, and subscriptions.",
+		Description:    "Read the organization's billing entitlements, statements, grants, and contracts.",
 		DefaultEnabled: false,
 		Permissions: []string{
 			PermissionBillingRead,

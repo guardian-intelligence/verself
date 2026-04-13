@@ -17,108 +17,15 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for BillingApplySubscriptionProviderEventRequestCadence.
+// Defines values for BillingCreateContractRequestCadence.
 const (
-	BillingApplySubscriptionProviderEventRequestCadenceAnnual  BillingApplySubscriptionProviderEventRequestCadence = "annual"
-	BillingApplySubscriptionProviderEventRequestCadenceMonthly BillingApplySubscriptionProviderEventRequestCadence = "monthly"
+	Monthly BillingCreateContractRequestCadence = "monthly"
 )
 
-// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestCadence enum.
-func (e BillingApplySubscriptionProviderEventRequestCadence) Valid() bool {
+// Valid indicates whether the value is a known member of the BillingCreateContractRequestCadence enum.
+func (e BillingCreateContractRequestCadence) Valid() bool {
 	switch e {
-	case BillingApplySubscriptionProviderEventRequestCadenceAnnual:
-		return true
-	case BillingApplySubscriptionProviderEventRequestCadenceMonthly:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for BillingApplySubscriptionProviderEventRequestEntitlementState.
-const (
-	Active    BillingApplySubscriptionProviderEventRequestEntitlementState = "active"
-	Closed    BillingApplySubscriptionProviderEventRequestEntitlementState = "closed"
-	Grace     BillingApplySubscriptionProviderEventRequestEntitlementState = "grace"
-	Scheduled BillingApplySubscriptionProviderEventRequestEntitlementState = "scheduled"
-	Voided    BillingApplySubscriptionProviderEventRequestEntitlementState = "voided"
-)
-
-// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestEntitlementState enum.
-func (e BillingApplySubscriptionProviderEventRequestEntitlementState) Valid() bool {
-	switch e {
-	case Active:
-		return true
-	case Closed:
-		return true
-	case Grace:
-		return true
-	case Scheduled:
-		return true
-	case Voided:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for BillingApplySubscriptionProviderEventRequestPaymentState.
-const (
-	Failed        BillingApplySubscriptionProviderEventRequestPaymentState = "failed"
-	NotRequired   BillingApplySubscriptionProviderEventRequestPaymentState = "not_required"
-	Paid          BillingApplySubscriptionProviderEventRequestPaymentState = "paid"
-	Pending       BillingApplySubscriptionProviderEventRequestPaymentState = "pending"
-	Refunded      BillingApplySubscriptionProviderEventRequestPaymentState = "refunded"
-	Uncollectible BillingApplySubscriptionProviderEventRequestPaymentState = "uncollectible"
-)
-
-// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestPaymentState enum.
-func (e BillingApplySubscriptionProviderEventRequestPaymentState) Valid() bool {
-	switch e {
-	case Failed:
-		return true
-	case NotRequired:
-		return true
-	case Paid:
-		return true
-	case Pending:
-		return true
-	case Refunded:
-		return true
-	case Uncollectible:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for BillingApplySubscriptionProviderEventRequestProvider.
-const (
-	Stripe BillingApplySubscriptionProviderEventRequestProvider = "stripe"
-)
-
-// Valid indicates whether the value is a known member of the BillingApplySubscriptionProviderEventRequestProvider enum.
-func (e BillingApplySubscriptionProviderEventRequestProvider) Valid() bool {
-	switch e {
-	case Stripe:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for BillingCreateSubscriptionRequestCadence.
-const (
-	BillingCreateSubscriptionRequestCadenceAnnual  BillingCreateSubscriptionRequestCadence = "annual"
-	BillingCreateSubscriptionRequestCadenceMonthly BillingCreateSubscriptionRequestCadence = "monthly"
-)
-
-// Valid indicates whether the value is a known member of the BillingCreateSubscriptionRequestCadence enum.
-func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
-	switch e {
-	case BillingCreateSubscriptionRequestCadenceAnnual:
-		return true
-	case BillingCreateSubscriptionRequestCadenceMonthly:
+	case Monthly:
 		return true
 	default:
 		return false
@@ -151,25 +58,28 @@ func (e BillingEntitlementSlotScopeType) Valid() bool {
 
 // Defines values for BillingEntitlementSourceTotalSource.
 const (
-	FreeTier     BillingEntitlementSourceTotalSource = "free_tier"
-	Promo        BillingEntitlementSourceTotalSource = "promo"
-	Purchase     BillingEntitlementSourceTotalSource = "purchase"
-	Refund       BillingEntitlementSourceTotalSource = "refund"
-	Subscription BillingEntitlementSourceTotalSource = "subscription"
+	Contract   BillingEntitlementSourceTotalSource = "contract"
+	FreeTier   BillingEntitlementSourceTotalSource = "free_tier"
+	Promo      BillingEntitlementSourceTotalSource = "promo"
+	Purchase   BillingEntitlementSourceTotalSource = "purchase"
+	Receivable BillingEntitlementSourceTotalSource = "receivable"
+	Refund     BillingEntitlementSourceTotalSource = "refund"
 )
 
 // Valid indicates whether the value is a known member of the BillingEntitlementSourceTotalSource enum.
 func (e BillingEntitlementSourceTotalSource) Valid() bool {
 	switch e {
+	case Contract:
+		return true
 	case FreeTier:
 		return true
 	case Promo:
 		return true
 	case Purchase:
 		return true
-	case Refund:
+	case Receivable:
 		return true
-	case Subscription:
+	case Refund:
 		return true
 	default:
 		return false
@@ -191,57 +101,41 @@ type BillingActivateWindowResult struct {
 	Reservation BillingWindowReservation `json:"reservation"`
 }
 
-// BillingApplySubscriptionProviderEventRequest defines model for BillingApplySubscriptionProviderEventRequest.
-type BillingApplySubscriptionProviderEventRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema                    *string                                                       `json:"$schema,omitempty"`
-	Cadence                   *BillingApplySubscriptionProviderEventRequestCadence          `json:"cadence,omitempty"`
-	CurrentPeriodEnd          *time.Time                                                    `json:"current_period_end,omitempty"`
-	CurrentPeriodStart        *time.Time                                                    `json:"current_period_start,omitempty"`
-	EntitlementState          *BillingApplySubscriptionProviderEventRequestEntitlementState `json:"entitlement_state,omitempty"`
-	EventType                 string                                                        `json:"event_type"`
-	OrgId                     string                                                        `json:"org_id"`
-	PaymentState              *BillingApplySubscriptionProviderEventRequestPaymentState     `json:"payment_state,omitempty"`
-	PlanId                    string                                                        `json:"plan_id"`
-	ProductId                 string                                                        `json:"product_id"`
-	Provider                  BillingApplySubscriptionProviderEventRequestProvider          `json:"provider"`
-	ProviderCheckoutSessionId *string                                                       `json:"provider_checkout_session_id,omitempty"`
-	ProviderCustomerId        *string                                                       `json:"provider_customer_id,omitempty"`
-	ProviderSubscriptionId    string                                                        `json:"provider_subscription_id"`
-	Status                    *string                                                       `json:"status,omitempty"`
-}
-
-// BillingApplySubscriptionProviderEventRequestCadence defines model for BillingApplySubscriptionProviderEventRequest.Cadence.
-type BillingApplySubscriptionProviderEventRequestCadence string
-
-// BillingApplySubscriptionProviderEventRequestEntitlementState defines model for BillingApplySubscriptionProviderEventRequest.EntitlementState.
-type BillingApplySubscriptionProviderEventRequestEntitlementState string
-
-// BillingApplySubscriptionProviderEventRequestPaymentState defines model for BillingApplySubscriptionProviderEventRequest.PaymentState.
-type BillingApplySubscriptionProviderEventRequestPaymentState string
-
-// BillingApplySubscriptionProviderEventRequestProvider defines model for BillingApplySubscriptionProviderEventRequest.Provider.
-type BillingApplySubscriptionProviderEventRequestProvider string
-
-// BillingApplySubscriptionProviderEventResponse defines model for BillingApplySubscriptionProviderEventResponse.
-type BillingApplySubscriptionProviderEventResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema  *string `json:"$schema,omitempty"`
-	Applied bool    `json:"applied"`
-}
-
-// BillingCancelSubscriptionRequest defines model for BillingCancelSubscriptionRequest.
-type BillingCancelSubscriptionRequest struct {
+// BillingCancelContractRequest defines model for BillingCancelContractRequest.
+type BillingCancelContractRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	OrgId  string  `json:"org_id"`
 }
 
-// BillingCancelSubscriptionResponse defines model for BillingCancelSubscriptionResponse.
-type BillingCancelSubscriptionResponse struct {
+// BillingCancelContractResponse defines model for BillingCancelContractResponse.
+type BillingCancelContractResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema       *string             `json:"$schema,omitempty"`
-	Subscription BillingSubscription `json:"subscription"`
+	Schema   *string         `json:"$schema,omitempty"`
+	Contract BillingContract `json:"contract"`
+}
+
+// BillingContract defines model for BillingContract.
+type BillingContract struct {
+	CadenceKind      string     `json:"cadence_kind"`
+	ContractId       string     `json:"contract_id"`
+	EndsAt           *time.Time `json:"ends_at,omitempty"`
+	EntitlementState string     `json:"entitlement_state"`
+	PaymentState     string     `json:"payment_state"`
+	PhaseEnd         *time.Time `json:"phase_end,omitempty"`
+	PhaseId          string     `json:"phase_id"`
+	PhaseStart       *time.Time `json:"phase_start,omitempty"`
+	PlanId           string     `json:"plan_id"`
+	ProductId        string     `json:"product_id"`
+	StartsAt         time.Time  `json:"starts_at"`
+	Status           string     `json:"status"`
+}
+
+// BillingContracts defines model for BillingContracts.
+type BillingContracts struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string            `json:"$schema,omitempty"`
+	Contracts *[]BillingContract `json:"contracts"`
 }
 
 // BillingCreateCheckoutRequest defines model for BillingCreateCheckoutRequest.
@@ -255,6 +149,20 @@ type BillingCreateCheckoutRequest struct {
 	SuccessUrl  string  `json:"success_url"`
 }
 
+// BillingCreateContractRequest defines model for BillingCreateContractRequest.
+type BillingCreateContractRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                              `json:"$schema,omitempty"`
+	Cadence    *BillingCreateContractRequestCadence `json:"cadence,omitempty"`
+	CancelUrl  string                               `json:"cancel_url"`
+	OrgId      string                               `json:"org_id"`
+	PlanId     string                               `json:"plan_id"`
+	SuccessUrl string                               `json:"success_url"`
+}
+
+// BillingCreateContractRequestCadence defines model for BillingCreateContractRequest.Cadence.
+type BillingCreateContractRequestCadence string
+
 // BillingCreatePortalSessionRequest defines model for BillingCreatePortalSessionRequest.
 type BillingCreatePortalSessionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -262,20 +170,6 @@ type BillingCreatePortalSessionRequest struct {
 	OrgId     string  `json:"org_id"`
 	ReturnUrl string  `json:"return_url"`
 }
-
-// BillingCreateSubscriptionRequest defines model for BillingCreateSubscriptionRequest.
-type BillingCreateSubscriptionRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                                  `json:"$schema,omitempty"`
-	Cadence    *BillingCreateSubscriptionRequestCadence `json:"cadence,omitempty"`
-	CancelUrl  string                                   `json:"cancel_url"`
-	OrgId      string                                   `json:"org_id"`
-	PlanId     string                                   `json:"plan_id"`
-	SuccessUrl string                                   `json:"success_url"`
-}
-
-// BillingCreateSubscriptionRequestCadence defines model for BillingCreateSubscriptionRequest.Cadence.
-type BillingCreateSubscriptionRequestCadence string
 
 // BillingEntitlementBucketSection defines model for BillingEntitlementBucketSection.
 type BillingEntitlementBucketSection struct {
@@ -457,6 +351,7 @@ type BillingStatementLineItem struct {
 	BucketDisplayName string  `json:"bucket_display_name"`
 	BucketId          string  `json:"bucket_id"`
 	ChargeUnits       string  `json:"charge_units"`
+	ContractUnits     string  `json:"contract_units"`
 	FreeTierUnits     string  `json:"free_tier_units"`
 	PlanId            string  `json:"plan_id"`
 	PricingPhase      string  `json:"pricing_phase"`
@@ -470,42 +365,20 @@ type BillingStatementLineItem struct {
 	ReservedUnits     string  `json:"reserved_units"`
 	SkuDisplayName    string  `json:"sku_display_name"`
 	SkuId             string  `json:"sku_id"`
-	SubscriptionUnits string  `json:"subscription_units"`
 	UnitRate          string  `json:"unit_rate"`
 }
 
 // BillingStatementTotals defines model for BillingStatementTotals.
 type BillingStatementTotals struct {
-	ChargeUnits       string `json:"charge_units"`
-	FreeTierUnits     string `json:"free_tier_units"`
-	PromoUnits        string `json:"promo_units"`
-	PurchaseUnits     string `json:"purchase_units"`
-	ReceivableUnits   string `json:"receivable_units"`
-	RefundUnits       string `json:"refund_units"`
-	ReservedUnits     string `json:"reserved_units"`
-	SubscriptionUnits string `json:"subscription_units"`
-	TotalDueUnits     string `json:"total_due_units"`
-}
-
-// BillingSubscription defines model for BillingSubscription.
-type BillingSubscription struct {
-	Cadence            string     `json:"cadence"`
-	ContractId         string     `json:"contract_id"`
-	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
-	CurrentPeriodStart *time.Time `json:"current_period_start,omitempty"`
-	EntitlementState   string     `json:"entitlement_state"`
-	PaymentState       string     `json:"payment_state"`
-	PlanId             string     `json:"plan_id"`
-	ProductId          string     `json:"product_id"`
-	Status             string     `json:"status"`
-	SubscriptionId     string     `json:"subscription_id"`
-}
-
-// BillingSubscriptions defines model for BillingSubscriptions.
-type BillingSubscriptions struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                `json:"$schema,omitempty"`
-	Subscriptions *[]BillingSubscription `json:"subscriptions"`
+	ChargeUnits     string `json:"charge_units"`
+	ContractUnits   string `json:"contract_units"`
+	FreeTierUnits   string `json:"free_tier_units"`
+	PromoUnits      string `json:"promo_units"`
+	PurchaseUnits   string `json:"purchase_units"`
+	ReceivableUnits string `json:"receivable_units"`
+	RefundUnits     string `json:"refund_units"`
+	ReservedUnits   string `json:"reserved_units"`
+	TotalDueUnits   string `json:"total_due_units"`
 }
 
 // BillingURLResponse defines model for BillingURLResponse.
@@ -605,6 +478,12 @@ type ActivateWindowJSONRequestBody = BillingActivateWindowRequest
 // CreateCheckoutJSONRequestBody defines body for CreateCheckout for application/json ContentType.
 type CreateCheckoutJSONRequestBody = BillingCreateCheckoutRequest
 
+// CreateContractJSONRequestBody defines body for CreateContract for application/json ContentType.
+type CreateContractJSONRequestBody = BillingCreateContractRequest
+
+// CancelContractJSONRequestBody defines body for CancelContract for application/json ContentType.
+type CancelContractJSONRequestBody = BillingCancelContractRequest
+
 // CreatePortalJSONRequestBody defines body for CreatePortal for application/json ContentType.
 type CreatePortalJSONRequestBody = BillingCreatePortalSessionRequest
 
@@ -613,15 +492,6 @@ type ReserveWindowJSONRequestBody = BillingReserveWindowRequest
 
 // SettleWindowJSONRequestBody defines body for SettleWindow for application/json ContentType.
 type SettleWindowJSONRequestBody = BillingSettleWindowRequest
-
-// CreateSubscriptionJSONRequestBody defines body for CreateSubscription for application/json ContentType.
-type CreateSubscriptionJSONRequestBody = BillingCreateSubscriptionRequest
-
-// ApplySubscriptionProviderEventJSONRequestBody defines body for ApplySubscriptionProviderEvent for application/json ContentType.
-type ApplySubscriptionProviderEventJSONRequestBody = BillingApplySubscriptionProviderEventRequest
-
-// CancelSubscriptionJSONRequestBody defines body for CancelSubscription for application/json ContentType.
-type CancelSubscriptionJSONRequestBody = BillingCancelSubscriptionRequest
 
 // VoidWindowJSONRequestBody defines body for VoidWindow for application/json ContentType.
 type VoidWindowJSONRequestBody = BillingVoidWindowRequest
@@ -709,6 +579,19 @@ type ClientInterface interface {
 
 	CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateContractWithBody request with any body
+	CreateContractWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateContract(ctx context.Context, body CreateContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelContractWithBody request with any body
+	CancelContractWithBody(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CancelContract(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListContracts request
+	ListContracts(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetEntitlements request
 	GetEntitlements(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -717,9 +600,6 @@ type ClientInterface interface {
 
 	// GetStatement request
 	GetStatement(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListSubscriptions request
-	ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreatePortalWithBody request with any body
 	CreatePortalWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -738,21 +618,6 @@ type ClientInterface interface {
 	SettleWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	SettleWindow(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateSubscriptionWithBody request with any body
-	CreateSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateSubscription(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ApplySubscriptionProviderEventWithBody request with any body
-	ApplySubscriptionProviderEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CancelSubscriptionWithBody request with any body
-	CancelSubscriptionWithBody(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CancelSubscription(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// VoidWindowWithBody request with any body
 	VoidWindowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -808,6 +673,66 @@ func (c *Client) CreateCheckout(ctx context.Context, body CreateCheckoutJSONRequ
 	return c.Client.Do(req)
 }
 
+func (c *Client) CreateContractWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateContractRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateContract(ctx context.Context, body CreateContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateContractRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelContractWithBody(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelContractRequestWithBody(c.Server, contractId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelContract(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelContractRequest(c.Server, contractId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListContracts(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListContractsRequest(c.Server, orgId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetEntitlements(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetEntitlementsRequest(c.Server, orgId)
 	if err != nil {
@@ -834,18 +759,6 @@ func (c *Client) ListGrants(ctx context.Context, orgId string, params *ListGrant
 
 func (c *Client) GetStatement(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetStatementRequest(c.Server, orgId, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListSubscriptions(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListSubscriptionsRequest(c.Server, orgId)
 	if err != nil {
 		return nil, err
 	}
@@ -930,78 +843,6 @@ func (c *Client) SettleWindowWithBody(ctx context.Context, contentType string, b
 
 func (c *Client) SettleWindow(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSettleWindowRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateSubscriptionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateSubscriptionRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateSubscription(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateSubscriptionRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ApplySubscriptionProviderEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewApplySubscriptionProviderEventRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ApplySubscriptionProviderEvent(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewApplySubscriptionProviderEventRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CancelSubscriptionWithBody(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCancelSubscriptionRequestWithBody(c.Server, subscriptionId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CancelSubscription(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCancelSubscriptionRequest(c.Server, subscriptionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1112,6 +953,127 @@ func NewCreateCheckoutRequestWithBody(server string, contentType string, body io
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateContractRequest calls the generic CreateContract builder with application/json body
+func NewCreateContractRequest(server string, body CreateContractJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateContractRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateContractRequestWithBody generates requests for CreateContract with any type of body
+func NewCreateContractRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/contracts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCancelContractRequest calls the generic CancelContract builder with application/json body
+func NewCancelContractRequest(server string, contractId string, body CancelContractJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCancelContractRequestWithBody(server, contractId, "application/json", bodyReader)
+}
+
+// NewCancelContractRequestWithBody generates requests for CancelContract with any type of body
+func NewCancelContractRequestWithBody(server string, contractId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "contract_id", contractId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/contracts/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListContractsRequest generates requests for ListContracts
+func NewListContractsRequest(server string, orgId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/contracts", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -1264,40 +1226,6 @@ func NewGetStatementRequest(server string, orgId string, params *GetStatementPar
 		}
 
 		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListSubscriptionsRequest generates requests for ListSubscriptions
-func NewListSubscriptionsRequest(server string, orgId string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "org_id", orgId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/orgs/%s/subscriptions", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -1462,133 +1390,6 @@ func NewSettleWindowRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
-// NewCreateSubscriptionRequest calls the generic CreateSubscription builder with application/json body
-func NewCreateSubscriptionRequest(server string, body CreateSubscriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateSubscriptionRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCreateSubscriptionRequestWithBody generates requests for CreateSubscription with any type of body
-func NewCreateSubscriptionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/subscribe")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewApplySubscriptionProviderEventRequest calls the generic ApplySubscriptionProviderEvent builder with application/json body
-func NewApplySubscriptionProviderEventRequest(server string, body ApplySubscriptionProviderEventJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewApplySubscriptionProviderEventRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewApplySubscriptionProviderEventRequestWithBody generates requests for ApplySubscriptionProviderEvent with any type of body
-func NewApplySubscriptionProviderEventRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/subscription-provider-events")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewCancelSubscriptionRequest calls the generic CancelSubscription builder with application/json body
-func NewCancelSubscriptionRequest(server string, subscriptionId string, body CancelSubscriptionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCancelSubscriptionRequestWithBody(server, subscriptionId, "application/json", bodyReader)
-}
-
-// NewCancelSubscriptionRequestWithBody generates requests for CancelSubscription with any type of body
-func NewCancelSubscriptionRequestWithBody(server string, subscriptionId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "subscription_id", subscriptionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/internal/billing/v1/subscriptions/%s/cancel", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewVoidWindowRequest calls the generic VoidWindow builder with application/json body
 func NewVoidWindowRequest(server string, body VoidWindowJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1682,6 +1483,19 @@ type ClientWithResponsesInterface interface {
 
 	CreateCheckoutWithResponse(ctx context.Context, body CreateCheckoutJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateCheckoutResponse, error)
 
+	// CreateContractWithBodyWithResponse request with any body
+	CreateContractWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContractResponse, error)
+
+	CreateContractWithResponse(ctx context.Context, body CreateContractJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContractResponse, error)
+
+	// CancelContractWithBodyWithResponse request with any body
+	CancelContractWithBodyWithResponse(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelContractResponse, error)
+
+	CancelContractWithResponse(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelContractResponse, error)
+
+	// ListContractsWithResponse request
+	ListContractsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListContractsResponse, error)
+
 	// GetEntitlementsWithResponse request
 	GetEntitlementsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetEntitlementsResponse, error)
 
@@ -1690,9 +1504,6 @@ type ClientWithResponsesInterface interface {
 
 	// GetStatementWithResponse request
 	GetStatementWithResponse(ctx context.Context, orgId string, params *GetStatementParams, reqEditors ...RequestEditorFn) (*GetStatementResponse, error)
-
-	// ListSubscriptionsWithResponse request
-	ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error)
 
 	// CreatePortalWithBodyWithResponse request with any body
 	CreatePortalWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePortalResponse, error)
@@ -1711,21 +1522,6 @@ type ClientWithResponsesInterface interface {
 	SettleWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error)
 
 	SettleWindowWithResponse(ctx context.Context, body SettleWindowJSONRequestBody, reqEditors ...RequestEditorFn) (*SettleWindowResponse, error)
-
-	// CreateSubscriptionWithBodyWithResponse request with any body
-	CreateSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
-
-	CreateSubscriptionWithResponse(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error)
-
-	// ApplySubscriptionProviderEventWithBodyWithResponse request with any body
-	ApplySubscriptionProviderEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
-
-	ApplySubscriptionProviderEventWithResponse(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error)
-
-	// CancelSubscriptionWithBodyWithResponse request with any body
-	CancelSubscriptionWithBodyWithResponse(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error)
-
-	CancelSubscriptionWithResponse(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error)
 
 	// VoidWindowWithBodyWithResponse request with any body
 	VoidWindowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VoidWindowResponse, error)
@@ -1776,6 +1572,79 @@ func (r CreateCheckoutResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateCheckoutResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateContractResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingURLResponse
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateContractResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateContractResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CancelContractResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingCancelContractResponse
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelContractResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelContractResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListContractsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *BillingContracts
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListContractsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListContractsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1845,29 +1714,6 @@ func (r GetStatementResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetStatementResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ListSubscriptionsResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *BillingSubscriptions
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ListSubscriptionsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListSubscriptionsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1974,80 +1820,6 @@ func (r SettleWindowResponse) StatusCode() int {
 	return 0
 }
 
-type CreateSubscriptionResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *BillingURLResponse
-	ApplicationproblemJSON422 *ErrorModel
-	ApplicationproblemJSON500 *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ApplySubscriptionProviderEventResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *BillingApplySubscriptionProviderEventResponse
-	ApplicationproblemJSON400 *ErrorModel
-	ApplicationproblemJSON422 *ErrorModel
-	ApplicationproblemJSON500 *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r ApplySubscriptionProviderEventResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ApplySubscriptionProviderEventResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CancelSubscriptionResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *BillingCancelSubscriptionResponse
-	ApplicationproblemJSON404 *ErrorModel
-	ApplicationproblemJSON422 *ErrorModel
-	ApplicationproblemJSON500 *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CancelSubscriptionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CancelSubscriptionResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
 type VoidWindowResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
@@ -2108,6 +1880,49 @@ func (c *ClientWithResponses) CreateCheckoutWithResponse(ctx context.Context, bo
 	return ParseCreateCheckoutResponse(rsp)
 }
 
+// CreateContractWithBodyWithResponse request with arbitrary body returning *CreateContractResponse
+func (c *ClientWithResponses) CreateContractWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContractResponse, error) {
+	rsp, err := c.CreateContractWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateContractResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateContractWithResponse(ctx context.Context, body CreateContractJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContractResponse, error) {
+	rsp, err := c.CreateContract(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateContractResponse(rsp)
+}
+
+// CancelContractWithBodyWithResponse request with arbitrary body returning *CancelContractResponse
+func (c *ClientWithResponses) CancelContractWithBodyWithResponse(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelContractResponse, error) {
+	rsp, err := c.CancelContractWithBody(ctx, contractId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelContractResponse(rsp)
+}
+
+func (c *ClientWithResponses) CancelContractWithResponse(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelContractResponse, error) {
+	rsp, err := c.CancelContract(ctx, contractId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelContractResponse(rsp)
+}
+
+// ListContractsWithResponse request returning *ListContractsResponse
+func (c *ClientWithResponses) ListContractsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListContractsResponse, error) {
+	rsp, err := c.ListContracts(ctx, orgId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListContractsResponse(rsp)
+}
+
 // GetEntitlementsWithResponse request returning *GetEntitlementsResponse
 func (c *ClientWithResponses) GetEntitlementsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*GetEntitlementsResponse, error) {
 	rsp, err := c.GetEntitlements(ctx, orgId, reqEditors...)
@@ -2133,15 +1948,6 @@ func (c *ClientWithResponses) GetStatementWithResponse(ctx context.Context, orgI
 		return nil, err
 	}
 	return ParseGetStatementResponse(rsp)
-}
-
-// ListSubscriptionsWithResponse request returning *ListSubscriptionsResponse
-func (c *ClientWithResponses) ListSubscriptionsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListSubscriptionsResponse, error) {
-	rsp, err := c.ListSubscriptions(ctx, orgId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListSubscriptionsResponse(rsp)
 }
 
 // CreatePortalWithBodyWithResponse request with arbitrary body returning *CreatePortalResponse
@@ -2202,57 +2008,6 @@ func (c *ClientWithResponses) SettleWindowWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseSettleWindowResponse(rsp)
-}
-
-// CreateSubscriptionWithBodyWithResponse request with arbitrary body returning *CreateSubscriptionResponse
-func (c *ClientWithResponses) CreateSubscriptionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error) {
-	rsp, err := c.CreateSubscriptionWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateSubscriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateSubscriptionWithResponse(ctx context.Context, body CreateSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSubscriptionResponse, error) {
-	rsp, err := c.CreateSubscription(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateSubscriptionResponse(rsp)
-}
-
-// ApplySubscriptionProviderEventWithBodyWithResponse request with arbitrary body returning *ApplySubscriptionProviderEventResponse
-func (c *ClientWithResponses) ApplySubscriptionProviderEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error) {
-	rsp, err := c.ApplySubscriptionProviderEventWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseApplySubscriptionProviderEventResponse(rsp)
-}
-
-func (c *ClientWithResponses) ApplySubscriptionProviderEventWithResponse(ctx context.Context, body ApplySubscriptionProviderEventJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplySubscriptionProviderEventResponse, error) {
-	rsp, err := c.ApplySubscriptionProviderEvent(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseApplySubscriptionProviderEventResponse(rsp)
-}
-
-// CancelSubscriptionWithBodyWithResponse request with arbitrary body returning *CancelSubscriptionResponse
-func (c *ClientWithResponses) CancelSubscriptionWithBodyWithResponse(ctx context.Context, subscriptionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error) {
-	rsp, err := c.CancelSubscriptionWithBody(ctx, subscriptionId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCancelSubscriptionResponse(rsp)
-}
-
-func (c *ClientWithResponses) CancelSubscriptionWithResponse(ctx context.Context, subscriptionId string, body CancelSubscriptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelSubscriptionResponse, error) {
-	rsp, err := c.CancelSubscription(ctx, subscriptionId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCancelSubscriptionResponse(rsp)
 }
 
 // VoidWindowWithBodyWithResponse request with arbitrary body returning *VoidWindowResponse
@@ -2359,6 +2114,133 @@ func ParseCreateCheckoutResponse(rsp *http.Response) (*CreateCheckoutResponse, e
 	return response, nil
 }
 
+// ParseCreateContractResponse parses an HTTP response from a CreateContractWithResponse call
+func ParseCreateContractResponse(rsp *http.Response) (*CreateContractResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateContractResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingURLResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelContractResponse parses an HTTP response from a CancelContractWithResponse call
+func ParseCancelContractResponse(rsp *http.Response) (*CancelContractResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelContractResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingCancelContractResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListContractsResponse parses an HTTP response from a ListContractsWithResponse call
+func ParseListContractsResponse(rsp *http.Response) (*ListContractsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListContractsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingContracts
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetEntitlementsResponse parses an HTTP response from a GetEntitlementsWithResponse call
 func ParseGetEntitlementsResponse(rsp *http.Response) (*GetEntitlementsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2441,39 +2323,6 @@ func ParseGetStatementResponse(rsp *http.Response) (*GetStatementResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest BillingStatement
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListSubscriptionsResponse parses an HTTP response from a ListSubscriptionsWithResponse call
-func ParseListSubscriptionsResponse(rsp *http.Response) (*ListSubscriptionsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListSubscriptionsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BillingSubscriptions
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2652,140 +2501,6 @@ func ParseSettleWindowResponse(rsp *http.Response) (*SettleWindowResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON422 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCreateSubscriptionResponse parses an HTTP response from a CreateSubscriptionWithResponse call
-func ParseCreateSubscriptionResponse(rsp *http.Response) (*CreateSubscriptionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateSubscriptionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BillingURLResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON422 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseApplySubscriptionProviderEventResponse parses an HTTP response from a ApplySubscriptionProviderEventWithResponse call
-func ParseApplySubscriptionProviderEventResponse(rsp *http.Response) (*ApplySubscriptionProviderEventResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ApplySubscriptionProviderEventResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BillingApplySubscriptionProviderEventResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON422 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCancelSubscriptionResponse parses an HTTP response from a CancelSubscriptionWithResponse call
-func ParseCancelSubscriptionResponse(rsp *http.Response) (*CancelSubscriptionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CancelSubscriptionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest BillingCancelSubscriptionResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorModel

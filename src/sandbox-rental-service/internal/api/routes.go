@@ -225,24 +225,24 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), getBillingEntitlements(billing))
 
 	registerSecured(api, secured(huma.Operation{
-		OperationID: "list-billing-subscriptions",
+		OperationID: "list-billing-contracts",
 		Method:      http.MethodGet,
-		Path:        "/api/v1/billing/subscriptions",
-		Summary:     "List org subscriptions",
+		Path:        "/api/v1/billing/contracts",
+		Summary:     "List org billing contracts",
 	}, operationPolicy{
 		Permission:     permissionBillingRead,
-		Resource:       "billing_subscription",
+		Resource:       "billing_contract",
 		Action:         "list",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "read",
-		AuditEvent:     "billing.subscription.list",
-	}), listBillingSubscriptions(billing))
+		AuditEvent:     "billing.contract.list",
+	}), listBillingContracts(billing))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID: "list-billing-plans",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/billing/plans",
-		Summary:     "List subscription plans",
+		Summary:     "List contract plans",
 	}, operationPolicy{
 		Permission:     permissionBillingRead,
 		Resource:       "billing_plan",
@@ -284,38 +284,38 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), createBillingCheckout(billing, publicConfig.BillingReturnOrigins))
 
 	registerSecured(api, secured(huma.Operation{
-		OperationID:   "create-billing-subscription",
+		OperationID:   "create-billing-contract",
 		Method:        http.MethodPost,
-		Path:          "/api/v1/billing/subscribe",
-		Summary:       "Create Stripe subscription checkout",
+		Path:          "/api/v1/billing/contracts",
+		Summary:       "Create self-serve contract checkout",
 		DefaultStatus: 200,
 	}, operationPolicy{
 		Permission:     permissionBillingCheckout,
-		Resource:       "billing_subscription_checkout",
+		Resource:       "billing_contract_checkout",
 		Action:         "create",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "billing_mutation",
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "billing.subscription_checkout.create",
+		AuditEvent:     "billing.contract_checkout.create",
 		BodyLimitBytes: bodyLimitSmallJSON,
-	}), createBillingSubscription(billing, publicConfig.BillingReturnOrigins))
+	}), createBillingContract(billing, publicConfig.BillingReturnOrigins))
 
 	registerSecured(api, secured(huma.Operation{
-		OperationID:   "cancel-billing-subscription",
+		OperationID:   "cancel-billing-contract",
 		Method:        http.MethodPost,
-		Path:          "/api/v1/billing/subscriptions/{subscription_id}/cancel",
-		Summary:       "Cancel a Stripe subscription",
+		Path:          "/api/v1/billing/contracts/{contract_id}/cancel",
+		Summary:       "Schedule contract cancellation",
 		DefaultStatus: 200,
 	}, operationPolicy{
 		Permission:     permissionBillingCheckout,
-		Resource:       "billing_subscription",
+		Resource:       "billing_contract",
 		Action:         "cancel",
 		OrgScope:       "token_org_id",
 		RateLimitClass: "billing_mutation",
 		Idempotency:    idempotencyHeaderKey,
-		AuditEvent:     "billing.subscription.cancel",
+		AuditEvent:     "billing.contract.cancel",
 		BodyLimitBytes: bodyLimitNoBody,
-	}), cancelBillingSubscription(billing))
+	}), cancelBillingContract(billing))
 
 	registerSecured(api, secured(huma.Operation{
 		OperationID:   "create-billing-portal",
@@ -396,8 +396,8 @@ type EntitlementsOutput struct {
 	Body apiwire.BillingEntitlementsView
 }
 
-type SubscriptionsOutput struct {
-	Body apiwire.BillingSubscriptions
+type ContractsOutput struct {
+	Body apiwire.BillingContracts
 }
 
 type PlansOutput struct {
@@ -429,16 +429,16 @@ type URLOutput struct {
 	Body apiwire.BillingURLResponse
 }
 
-type SubscribeInput struct {
-	Body apiwire.SandboxBillingSubscriptionRequest
+type ContractInput struct {
+	Body apiwire.SandboxBillingContractRequest
 }
 
-type SubscriptionIDPath struct {
-	SubscriptionID string `path:"subscription_id" pattern:"^-?[0-9]+$"`
+type ContractIDPath struct {
+	ContractID string `path:"contract_id" minLength:"1" maxLength:"255"`
 }
 
-type CancelSubscriptionOutput struct {
-	Body apiwire.BillingCancelSubscriptionResponse
+type CancelContractOutput struct {
+	Body apiwire.BillingCancelContractResponse
 }
 
 type PortalInput struct {
@@ -672,17 +672,17 @@ func getBillingEntitlements(billing *billingclient.ServiceClient) func(context.C
 	}
 }
 
-func listBillingSubscriptions(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*SubscriptionsOutput, error) {
-	return func(ctx context.Context, _ *EmptyInput) (*SubscriptionsOutput, error) {
+func listBillingContracts(billing *billingclient.ServiceClient) func(context.Context, *EmptyInput) (*ContractsOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*ContractsOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		subscriptions, err := billing.ListSubscriptions(ctx, orgID)
+		contracts, err := billing.ListContracts(ctx, orgID)
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
-		return &SubscriptionsOutput{Body: subscriptions}, nil
+		return &ContractsOutput{Body: contracts}, nil
 	}
 }
 
@@ -735,8 +735,8 @@ func createBillingCheckout(billing *billingclient.ServiceClient, billingReturnOr
 	}
 }
 
-func createBillingSubscription(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *SubscribeInput) (*URLOutput, error) {
-	return func(ctx context.Context, input *SubscribeInput) (*URLOutput, error) {
+func createBillingContract(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *ContractInput) (*URLOutput, error) {
+	return func(ctx context.Context, input *ContractInput) (*URLOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
@@ -747,7 +747,7 @@ func createBillingSubscription(billing *billingclient.ServiceClient, billingRetu
 		); err != nil {
 			return nil, err
 		}
-		url, err := billing.CreateSubscription(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)
+		url, err := billing.CreateContract(ctx, orgID, input.Body.PlanID, input.Body.Cadence, input.Body.SuccessURL, input.Body.CancelURL)
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
@@ -757,21 +757,20 @@ func createBillingSubscription(billing *billingclient.ServiceClient, billingRetu
 	}
 }
 
-func cancelBillingSubscription(billing *billingclient.ServiceClient) func(context.Context, *SubscriptionIDPath) (*CancelSubscriptionOutput, error) {
-	return func(ctx context.Context, input *SubscriptionIDPath) (*CancelSubscriptionOutput, error) {
+func cancelBillingContract(billing *billingclient.ServiceClient) func(context.Context, *ContractIDPath) (*CancelContractOutput, error) {
+	return func(ctx context.Context, input *ContractIDPath) (*CancelContractOutput, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		subscriptionID, err := apiwire.ParseInt64(input.SubscriptionID)
-		if err != nil || subscriptionID <= 0 {
-			return nil, badRequest(ctx, "invalid-subscription-id", "subscription_id must be a positive integer", err)
+		if input.ContractID == "" {
+			return nil, badRequest(ctx, "invalid-contract-id", "contract_id is required", nil)
 		}
-		subscription, err := billing.CancelSubscription(ctx, orgID, subscriptionID)
+		contract, err := billing.CancelContract(ctx, orgID, input.ContractID)
 		if err != nil {
 			return nil, billingProxyError(ctx, err)
 		}
-		return &CancelSubscriptionOutput{Body: subscription}, nil
+		return &CancelContractOutput{Body: contract}, nil
 	}
 }
 
@@ -800,8 +799,8 @@ func billingProxyError(ctx context.Context, err error) error {
 	if errors.Is(err, billingclient.ErrNoStripeCustomer) {
 		return unprocessableEntity(ctx, "billing-no-stripe-customer", "billing portal requires an existing Stripe customer", err)
 	}
-	if errors.Is(err, billingclient.ErrSubscriptionNotFound) {
-		return notFound(ctx, "billing-subscription-not-found", "billing subscription not found")
+	if errors.Is(err, billingclient.ErrContractNotFound) {
+		return notFound(ctx, "billing-contract-not-found", "billing contract not found")
 	}
 	return upstreamFailure(ctx, "billing-service-unavailable", "billing service unavailable", err)
 }

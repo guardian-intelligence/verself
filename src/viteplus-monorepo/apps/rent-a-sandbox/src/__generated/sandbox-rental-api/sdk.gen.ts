@@ -4,18 +4,18 @@
 import { client } from "./client.gen.js";
 import type { Client, Options as Options2, TDataShape } from "./client/index.js";
 import type {
-  CancelBillingSubscriptionData,
-  CancelBillingSubscriptionErrors,
-  CancelBillingSubscriptionResponses,
+  CancelBillingContractData,
+  CancelBillingContractErrors,
+  CancelBillingContractResponses,
   CreateBillingCheckoutData,
   CreateBillingCheckoutErrors,
   CreateBillingCheckoutResponses,
+  CreateBillingContractData,
+  CreateBillingContractErrors,
+  CreateBillingContractResponses,
   CreateBillingPortalData,
   CreateBillingPortalErrors,
   CreateBillingPortalResponses,
-  CreateBillingSubscriptionData,
-  CreateBillingSubscriptionErrors,
-  CreateBillingSubscriptionResponses,
   CreateWebhookEndpointData,
   CreateWebhookEndpointErrors,
   CreateWebhookEndpointResponses,
@@ -40,12 +40,12 @@ import type {
   ImportRepoData,
   ImportRepoErrors,
   ImportRepoResponses,
+  ListBillingContractsData,
+  ListBillingContractsErrors,
+  ListBillingContractsResponses,
   ListBillingPlansData,
   ListBillingPlansErrors,
   ListBillingPlansResponses,
-  ListBillingSubscriptionsData,
-  ListBillingSubscriptionsErrors,
-  ListBillingSubscriptionsResponses,
   ListReposData,
   ListReposErrors,
   ListReposResponses,
@@ -102,6 +102,58 @@ export const createBillingCheckout = <ThrowOnError extends boolean = false>(
   });
 
 /**
+ * List org billing contracts
+ */
+export const listBillingContracts = <ThrowOnError extends boolean = false>(
+  options?: Options<ListBillingContractsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListBillingContractsResponses,
+    ListBillingContractsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/contracts",
+    ...options,
+  });
+
+/**
+ * Create self-serve contract checkout
+ */
+export const createBillingContract = <ThrowOnError extends boolean = false>(
+  options: Options<CreateBillingContractData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateBillingContractResponses,
+    CreateBillingContractErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/contracts",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Schedule contract cancellation
+ */
+export const cancelBillingContract = <ThrowOnError extends boolean = false>(
+  options: Options<CancelBillingContractData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CancelBillingContractResponses,
+    CancelBillingContractErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/contracts/{contract_id}/cancel",
+    ...options,
+  });
+
+/**
  * Get org entitlements view
  */
 export const getBillingEntitlements = <ThrowOnError extends boolean = false>(
@@ -118,7 +170,7 @@ export const getBillingEntitlements = <ThrowOnError extends boolean = false>(
   });
 
 /**
- * List subscription plans
+ * List contract plans
  */
 export const listBillingPlans = <ThrowOnError extends boolean = false>(
   options?: Options<ListBillingPlansData, ThrowOnError>,
@@ -162,58 +214,6 @@ export const getBillingStatement = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/statement",
-    ...options,
-  });
-
-/**
- * Create Stripe subscription checkout
- */
-export const createBillingSubscription = <ThrowOnError extends boolean = false>(
-  options: Options<CreateBillingSubscriptionData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<
-    CreateBillingSubscriptionResponses,
-    CreateBillingSubscriptionErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/billing/subscribe",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-/**
- * List org subscriptions
- */
-export const listBillingSubscriptions = <ThrowOnError extends boolean = false>(
-  options?: Options<ListBillingSubscriptionsData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<
-    ListBillingSubscriptionsResponses,
-    ListBillingSubscriptionsErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/billing/subscriptions",
-    ...options,
-  });
-
-/**
- * Cancel a Stripe subscription
- */
-export const cancelBillingSubscription = <ThrowOnError extends boolean = false>(
-  options: Options<CancelBillingSubscriptionData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<
-    CancelBillingSubscriptionResponses,
-    CancelBillingSubscriptionErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/billing/subscriptions/{subscription_id}/cancel",
     ...options,
   });
 

@@ -22,7 +22,7 @@
     - role: deploy_profile
       tags: [deploy_profile]
     - role: clickhouse
-      tags: [clickhouse]
+      tags: [clickhouse, billing_service, sandbox_rental_service]
     - role: tigerbeetle
       tags: [tigerbeetle]
     - role: postgresql

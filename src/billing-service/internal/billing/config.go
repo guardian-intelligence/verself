@@ -10,8 +10,8 @@ const (
 	defaultPendingTimeoutSecs   = 3600
 	defaultTigerBeetleAddress   = "127.0.0.1:3320"
 	defaultTigerBeetleClusterID = 0
-	defaultSubscriptionGrace    = 7 * 24 * time.Hour
-	defaultProjectorInterval    = 200 * time.Millisecond
+	defaultContractGrace        = 7 * 24 * time.Hour
+	defaultProjectorInterval    = time.Second
 	defaultReconcilerInterval   = time.Hour
 )
 
@@ -20,7 +20,7 @@ type Config struct {
 	StripeSecretKey           string
 	TigerBeetleAddresses      []string
 	TigerBeetleClusterID      uint64
-	SubscriptionGracePeriod   time.Duration
+	ContractGracePeriod       time.Duration
 	EntitlementReconcileEvery time.Duration
 	OutboxProjectEvery        time.Duration
 }
@@ -30,7 +30,7 @@ func DefaultConfig() Config {
 		PendingTimeoutSecs:        defaultPendingTimeoutSecs,
 		TigerBeetleAddresses:      []string{defaultTigerBeetleAddress},
 		TigerBeetleClusterID:      defaultTigerBeetleClusterID,
-		SubscriptionGracePeriod:   defaultSubscriptionGrace,
+		ContractGracePeriod:       defaultContractGrace,
 		EntitlementReconcileEvery: defaultReconcilerInterval,
 		OutboxProjectEvery:        defaultProjectorInterval,
 	}
@@ -48,8 +48,8 @@ func (c Config) Validate() error {
 	if len(c.TigerBeetleAddresses) == 0 {
 		problems = append(problems, errors.New("at least one tigerbeetle address is required"))
 	}
-	if c.SubscriptionGracePeriod < 0 {
-		problems = append(problems, errors.New("subscription_grace_period must be non-negative"))
+	if c.ContractGracePeriod < 0 {
+		problems = append(problems, errors.New("contract_grace_period must be non-negative"))
 	}
 	if c.EntitlementReconcileEvery <= 0 {
 		problems = append(problems, errors.New("entitlement_reconcile_every must be positive"))

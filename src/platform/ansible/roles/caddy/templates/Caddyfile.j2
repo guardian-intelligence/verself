@@ -165,7 +165,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 	@sandbox_api_small_json_mutation {
 		method POST
-		path /api/v1/billing/checkout /api/v1/billing/subscribe /api/v1/webhook-endpoints
+		path /api/v1/billing/checkout /api/v1/billing/contracts /api/v1/webhook-endpoints
 	}
 	handle @sandbox_api_small_json_mutation {
 		request_body {

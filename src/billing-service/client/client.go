@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	ErrPaymentRequired      = errors.New("billing-client: payment required")
-	ErrForbidden            = errors.New("billing-client: forbidden")
-	ErrNoStripeCustomer     = errors.New("billing-client: no stripe customer")
-	ErrSubscriptionNotFound = errors.New("billing-client: subscription not found")
-	ErrUnexpected           = errors.New("billing-client: unexpected response")
+	ErrPaymentRequired  = errors.New("billing-client: payment required")
+	ErrForbidden        = errors.New("billing-client: forbidden")
+	ErrNoStripeCustomer = errors.New("billing-client: no stripe customer")
+	ErrContractNotFound = errors.New("billing-client: contract not found")
+	ErrUnexpected       = errors.New("billing-client: unexpected response")
 )
 
 const problemTypeNoStripeCustomer = "urn:forge-metal:problem:billing:no-stripe-customer"
@@ -71,16 +71,16 @@ func (c *ServiceClient) GetEntitlements(ctx context.Context, orgID uint64, reqEd
 	return apiwire.BillingEntitlementsView{}, unexpected("get entitlements", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-func (c *ServiceClient) ListSubscriptions(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (apiwire.BillingSubscriptions, error) {
+func (c *ServiceClient) ListContracts(ctx context.Context, orgID uint64, reqEditors ...RequestEditorFn) (apiwire.BillingContracts, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
-	resp, err := c.inner.ListSubscriptionsWithResponse(ctx, orgIDWire, reqEditors...)
+	resp, err := c.inner.ListContractsWithResponse(ctx, orgIDWire, reqEditors...)
 	if err != nil {
-		return apiwire.BillingSubscriptions{}, err
+		return apiwire.BillingContracts{}, err
 	}
 	if resp.JSON200 != nil {
-		return parseBillingSubscriptions(*resp.JSON200)
+		return parseBillingContracts(*resp.JSON200)
 	}
-	return apiwire.BillingSubscriptions{}, unexpected("list subscriptions", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	return apiwire.BillingContracts{}, unexpected("list contracts", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 func (c *ServiceClient) ListPlans(ctx context.Context, productID string, reqEditors ...RequestEditorFn) (apiwire.BillingPlans, error) {
@@ -143,48 +143,47 @@ func (c *ServiceClient) CreateCheckout(ctx context.Context, orgID uint64, produc
 	return "", unexpected("create checkout", resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-func (c *ServiceClient) CreateSubscription(ctx context.Context, orgID uint64, planID string, cadence string, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (string, error) {
+func (c *ServiceClient) CreateContract(ctx context.Context, orgID uint64, planID string, cadence string, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (string, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
-	body := CreateSubscriptionJSONRequestBody{
+	body := CreateContractJSONRequestBody{
 		OrgId:      orgIDWire,
 		PlanId:     planID,
 		SuccessUrl: successURL,
 		CancelUrl:  cancelURL,
 	}
 	if cadence != "" {
-		wireCadence := BillingCreateSubscriptionRequestCadence(cadence)
+		wireCadence := BillingCreateContractRequestCadence(cadence)
 		body.Cadence = &wireCadence
 	}
-	resp, err := c.inner.CreateSubscriptionWithResponse(ctx, body, reqEditors...)
+	resp, err := c.inner.CreateContractWithResponse(ctx, body, reqEditors...)
 	if err != nil {
 		return "", err
 	}
 	if resp.JSON200 != nil {
 		return resp.JSON200.Url, nil
 	}
-	return "", unexpected("create subscription", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
+	return "", unexpected("create contract", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON400, resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 }
 
-func (c *ServiceClient) CancelSubscription(ctx context.Context, orgID uint64, subscriptionID int64, reqEditors ...RequestEditorFn) (apiwire.BillingCancelSubscriptionResponse, error) {
+func (c *ServiceClient) CancelContract(ctx context.Context, orgID uint64, contractID string, reqEditors ...RequestEditorFn) (apiwire.BillingCancelContractResponse, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
-	subscriptionIDWire := apiwire.Int64(subscriptionID).String()
-	resp, err := c.inner.CancelSubscriptionWithResponse(ctx, subscriptionIDWire, CancelSubscriptionJSONRequestBody{
+	resp, err := c.inner.CancelContractWithResponse(ctx, contractID, CancelContractJSONRequestBody{
 		OrgId: orgIDWire,
 	}, reqEditors...)
 	if err != nil {
-		return apiwire.BillingCancelSubscriptionResponse{}, err
+		return apiwire.BillingCancelContractResponse{}, err
 	}
 	if resp.JSON200 != nil {
-		subscription, err := parseBillingSubscription(resp.JSON200.Subscription)
+		contract, err := parseBillingContract(resp.JSON200.Contract)
 		if err != nil {
-			return apiwire.BillingCancelSubscriptionResponse{}, err
+			return apiwire.BillingCancelContractResponse{}, err
 		}
-		return apiwire.BillingCancelSubscriptionResponse{Subscription: subscription}, nil
+		return apiwire.BillingCancelContractResponse{Contract: contract}, nil
 	}
 	if statusCode(resp.HTTPResponse) == http.StatusNotFound {
-		return apiwire.BillingCancelSubscriptionResponse{}, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, detail(resp.ApplicationproblemJSON404, resp.HTTPResponse))
+		return apiwire.BillingCancelContractResponse{}, fmt.Errorf("%w: %s", ErrContractNotFound, detail(resp.ApplicationproblemJSON404, resp.HTTPResponse))
 	}
-	return apiwire.BillingCancelSubscriptionResponse{}, unexpected("cancel subscription", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
+	return apiwire.BillingCancelContractResponse{}, unexpected("cancel contract", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON422))
 }
 
 func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, returnURL string, reqEditors ...RequestEditorFn) (string, error) {
@@ -203,48 +202,6 @@ func (c *ServiceClient) CreatePortalSession(ctx context.Context, orgID uint64, r
 		return "", fmt.Errorf("%w: %s", ErrNoStripeCustomer, detail(resp.ApplicationproblemJSON422, resp.HTTPResponse))
 	}
 	return "", unexpected("create portal session", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
-}
-
-func (c *ServiceClient) ApplySubscriptionProviderEvent(ctx context.Context, request apiwire.BillingApplySubscriptionProviderEventRequest, reqEditors ...RequestEditorFn) error {
-	body := ApplySubscriptionProviderEventJSONRequestBody{
-		EventType:              request.EventType,
-		OrgId:                  request.OrgID.String(),
-		PlanId:                 request.PlanID,
-		ProductId:              request.ProductID,
-		Provider:               BillingApplySubscriptionProviderEventRequestProvider(request.Provider),
-		ProviderSubscriptionId: request.ProviderSubscriptionID,
-		CurrentPeriodStart:     request.CurrentPeriodStart,
-		CurrentPeriodEnd:       request.CurrentPeriodEnd,
-	}
-	if request.Cadence != "" {
-		value := BillingApplySubscriptionProviderEventRequestCadence(request.Cadence)
-		body.Cadence = &value
-	}
-	if request.Status != "" {
-		body.Status = &request.Status
-	}
-	if request.ProviderCheckoutSessionID != "" {
-		body.ProviderCheckoutSessionId = &request.ProviderCheckoutSessionID
-	}
-	if request.ProviderCustomerID != "" {
-		body.ProviderCustomerId = &request.ProviderCustomerID
-	}
-	if request.PaymentState != "" {
-		value := BillingApplySubscriptionProviderEventRequestPaymentState(request.PaymentState)
-		body.PaymentState = &value
-	}
-	if request.EntitlementState != "" {
-		value := BillingApplySubscriptionProviderEventRequestEntitlementState(request.EntitlementState)
-		body.EntitlementState = &value
-	}
-	resp, err := c.inner.ApplySubscriptionProviderEventWithResponse(ctx, body, reqEditors...)
-	if err != nil {
-		return err
-	}
-	if resp.JSON200 != nil && resp.JSON200.Applied {
-		return nil
-	}
-	return unexpected("apply subscription provider event", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON400))
 }
 
 func (c *ServiceClient) Reserve(
@@ -573,7 +530,7 @@ func parseBillingStatementLineItem(in BillingStatementLineItem) (apiwire.Billing
 	if err != nil {
 		return apiwire.BillingStatementLineItem{}, err
 	}
-	subscriptionUnits, err := parseDecimalUint64(in.SubscriptionUnits, "line_items.subscription_units")
+	contractUnits, err := parseDecimalUint64(in.ContractUnits, "line_items.contract_units")
 	if err != nil {
 		return apiwire.BillingStatementLineItem{}, err
 	}
@@ -610,7 +567,7 @@ func parseBillingStatementLineItem(in BillingStatementLineItem) (apiwire.Billing
 		UnitRate:          unitRate,
 		ChargeUnits:       chargeUnits,
 		FreeTierUnits:     freeTierUnits,
-		SubscriptionUnits: subscriptionUnits,
+		ContractUnits:     contractUnits,
 		PurchaseUnits:     purchaseUnits,
 		PromoUnits:        promoUnits,
 		RefundUnits:       refundUnits,
@@ -628,7 +585,7 @@ func parseBillingStatementTotals(in BillingStatementTotals) (apiwire.BillingStat
 	if err != nil {
 		return apiwire.BillingStatementTotals{}, err
 	}
-	subscriptionUnits, err := parseDecimalUint64(in.SubscriptionUnits, "totals.subscription_units")
+	contractUnits, err := parseDecimalUint64(in.ContractUnits, "totals.contract_units")
 	if err != nil {
 		return apiwire.BillingStatementTotals{}, err
 	}
@@ -657,49 +614,47 @@ func parseBillingStatementTotals(in BillingStatementTotals) (apiwire.BillingStat
 		return apiwire.BillingStatementTotals{}, err
 	}
 	return apiwire.BillingStatementTotals{
-		ChargeUnits:       chargeUnits,
-		FreeTierUnits:     freeTierUnits,
-		SubscriptionUnits: subscriptionUnits,
-		PurchaseUnits:     purchaseUnits,
-		PromoUnits:        promoUnits,
-		RefundUnits:       refundUnits,
-		ReceivableUnits:   receivableUnits,
-		ReservedUnits:     reservedUnits,
-		TotalDueUnits:     totalDueUnits,
+		ChargeUnits:     chargeUnits,
+		FreeTierUnits:   freeTierUnits,
+		ContractUnits:   contractUnits,
+		PurchaseUnits:   purchaseUnits,
+		PromoUnits:      promoUnits,
+		RefundUnits:     refundUnits,
+		ReceivableUnits: receivableUnits,
+		ReservedUnits:   reservedUnits,
+		TotalDueUnits:   totalDueUnits,
 	}, nil
 }
 
-func parseBillingSubscriptions(in BillingSubscriptions) (apiwire.BillingSubscriptions, error) {
-	if in.Subscriptions == nil {
-		return apiwire.BillingSubscriptions{}, nil
+func parseBillingContracts(in BillingContracts) (apiwire.BillingContracts, error) {
+	if in.Contracts == nil {
+		return apiwire.BillingContracts{}, nil
 	}
-	out := make([]apiwire.BillingSubscription, 0, len(*in.Subscriptions))
-	for _, subscription := range *in.Subscriptions {
-		parsed, err := parseBillingSubscription(subscription)
+	out := make([]apiwire.BillingContract, 0, len(*in.Contracts))
+	for _, contract := range *in.Contracts {
+		parsed, err := parseBillingContract(contract)
 		if err != nil {
-			return apiwire.BillingSubscriptions{}, err
+			return apiwire.BillingContracts{}, err
 		}
 		out = append(out, parsed)
 	}
-	return apiwire.BillingSubscriptions{Subscriptions: out}, nil
+	return apiwire.BillingContracts{Contracts: out}, nil
 }
 
-func parseBillingSubscription(subscription BillingSubscription) (apiwire.BillingSubscription, error) {
-	subscriptionID, err := parseDecimalInt64(subscription.SubscriptionId, "subscription_id")
-	if err != nil {
-		return apiwire.BillingSubscription{}, err
-	}
-	return apiwire.BillingSubscription{
-		SubscriptionID:     subscriptionID,
-		ContractID:         subscription.ContractId,
-		ProductID:          subscription.ProductId,
-		PlanID:             subscription.PlanId,
-		Cadence:            subscription.Cadence,
-		Status:             subscription.Status,
-		PaymentState:       subscription.PaymentState,
-		EntitlementState:   subscription.EntitlementState,
-		CurrentPeriodStart: subscription.CurrentPeriodStart,
-		CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
+func parseBillingContract(contract BillingContract) (apiwire.BillingContract, error) {
+	return apiwire.BillingContract{
+		ContractID:       contract.ContractId,
+		ProductID:        contract.ProductId,
+		PlanID:           contract.PlanId,
+		PhaseID:          contract.PhaseId,
+		CadenceKind:      contract.CadenceKind,
+		Status:           contract.Status,
+		PaymentState:     contract.PaymentState,
+		EntitlementState: contract.EntitlementState,
+		StartsAt:         contract.StartsAt.UTC(),
+		EndsAt:           contract.EndsAt,
+		PhaseStart:       contract.PhaseStart,
+		PhaseEnd:         contract.PhaseEnd,
 	}, nil
 }
 
@@ -739,14 +694,6 @@ func parseDecimalUint64(value string, field string) (apiwire.DecimalUint64, erro
 		return apiwire.Uint64(0), fmt.Errorf("billing-client: %s: %w", field, err)
 	}
 	return apiwire.Uint64(parsed), nil
-}
-
-func parseDecimalInt64(value string, field string) (apiwire.DecimalInt64, error) {
-	parsed, err := apiwire.ParseInt64(value)
-	if err != nil {
-		return apiwire.Int64(0), fmt.Errorf("billing-client: %s: %w", field, err)
-	}
-	return apiwire.Int64(parsed), nil
 }
 
 func parseInt64SKURates(in map[string]string) (map[string]int64, error) {

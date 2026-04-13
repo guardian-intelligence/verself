@@ -1,7 +1,7 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { trace } from "@opentelemetry/api";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { getEntitlements, getPlans, getStatement, getSubscriptions } from "~/server-fns/api";
+import { getContracts, getEntitlements, getPlans, getStatement } from "~/server-fns/api";
 
 function billingQueryKey<TParts extends readonly unknown[]>(
   auth: AuthenticatedAuth,
@@ -16,10 +16,10 @@ export const entitlementsQuery = (auth: AuthenticatedAuth) =>
     queryFn: () => getEntitlements(),
   });
 
-export const subscriptionsQuery = (auth: AuthenticatedAuth) =>
+export const contractsQuery = (auth: AuthenticatedAuth) =>
   queryOptions({
-    queryKey: billingQueryKey(auth, "subscriptions"),
-    queryFn: () => getSubscriptions(),
+    queryKey: billingQueryKey(auth, "contracts"),
+    queryFn: () => getContracts(),
   });
 
 export const plansQuery = (auth: AuthenticatedAuth) =>
@@ -52,15 +52,15 @@ function logBillingPageLoadError(error: unknown) {
 
 export async function loadBillingPage(queryClient: QueryClient, auth: AuthenticatedAuth) {
   try {
-    const [entitlements, subscriptions, statement] = await Promise.all([
+    const [entitlements, contracts, statement] = await Promise.all([
       queryClient.ensureQueryData(entitlementsQuery(auth)),
-      queryClient.ensureQueryData(subscriptionsQuery(auth)),
+      queryClient.ensureQueryData(contractsQuery(auth)),
       queryClient.ensureQueryData(statementQuery(auth, "sandbox")),
     ]);
 
     return {
       entitlements,
-      subscriptions,
+      contracts,
       statement,
     };
   } catch (error) {

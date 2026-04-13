@@ -11,18 +11,18 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	grantID := sourceReferenceGrantID(42, SourcePurchase, GrantScopeAccount, "", "", "", "pi_test")
-	subscriptionGrantID := sourceReferenceGrantID(42, SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", "in_test")
+	contractGrantID := sourceReferenceGrantID(42, SourceContract, GrantScopeBucket, "sandbox", "block_storage", "", "in_test")
 	statement, err := buildStatement(
 		42,
 		"sandbox",
-		statementPeriod{Start: periodStart, End: periodEnd, Source: "subscription"},
+		statementPeriod{Start: periodStart, End: periodEnd, Source: "contract"},
 		[]GrantBalance{
 			{
-				GrantID:        subscriptionGrantID,
+				GrantID:        contractGrantID,
 				ScopeType:      GrantScopeBucket,
 				ScopeProductID: "sandbox",
 				ScopeBucketID:  "block_storage",
-				Source:         SourceSubscription,
+				Source:         SourceContract,
 				Available:      6_000,
 				Pending:        300,
 			},
@@ -37,12 +37,12 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 		[]persistedWindow{
 			statementTestWindow("settled-storage", "settled", 100, []WindowFundingLeg{
 				{
-					GrantID:             subscriptionGrantID,
+					GrantID:             contractGrantID,
 					ChargeProductID:     "sandbox",
 					ChargeBucketID:      "block_storage",
 					ChargeSKUID:         testBlockStorageSKU,
 					Amount:              2_500,
-					Source:              SourceSubscription,
+					Source:              SourceContract,
 					GrantScopeType:      GrantScopeBucket,
 					GrantScopeProductID: "sandbox",
 					GrantScopeBucketID:  "block_storage",
@@ -78,7 +78,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 
 	assertEqual(t, statement.OrgID, OrgID(42), "org id")
 	assertEqual(t, statement.ProductID, "sandbox", "product id")
-	assertEqual(t, statement.PeriodSource, "subscription", "period source")
+	assertEqual(t, statement.PeriodSource, "contract", "period source")
 	assertEqual(t, len(statement.LineItems), 1, "line count")
 	line := statement.LineItems[0]
 	assertEqual(t, line.ProductID, "sandbox", "line product")
@@ -90,13 +90,13 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	assertEqual(t, line.Quantity, float64(100), "line quantity")
 	assertEqual(t, line.UnitRate, uint64(40), "line SKU rate")
 	assertEqual(t, line.ChargeUnits, uint64(4_000), "line charge")
-	assertEqual(t, line.SubscriptionUnits, uint64(2_500), "line subscription drain")
+	assertEqual(t, line.ContractUnits, uint64(2_500), "line contract drain")
 	assertEqual(t, line.PurchaseUnits, uint64(1_500), "line purchase drain")
 	assertEqual(t, line.ReservedUnits, uint64(800), "line reserved")
 	assertEqual(t, line.PricingPhase, string(PricingPhaseIncluded), "line pricing phase")
 
 	assertEqual(t, statement.Totals.ChargeUnits, uint64(4_000), "total charge")
-	assertEqual(t, statement.Totals.SubscriptionUnits, uint64(2_500), "total subscription")
+	assertEqual(t, statement.Totals.ContractUnits, uint64(2_500), "total contract")
 	assertEqual(t, statement.Totals.PurchaseUnits, uint64(1_500), "total purchase")
 	assertEqual(t, statement.Totals.ReservedUnits, uint64(800), "total reserved")
 	assertEqual(t, statement.Totals.TotalDueUnits, uint64(0), "total due")
@@ -105,7 +105,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	accountGrant := findStatementGrantSummary(t, statement, GrantScopeAccount, "", "", SourcePurchase)
 	assertEqual(t, accountGrant.Available, uint64(50_000), "account available")
 	assertEqual(t, accountGrant.Pending, uint64(2_000), "account pending")
-	bucketGrant := findStatementGrantSummary(t, statement, GrantScopeBucket, "sandbox", "block_storage", SourceSubscription)
+	bucketGrant := findStatementGrantSummary(t, statement, GrantScopeBucket, "sandbox", "block_storage", SourceContract)
 	assertEqual(t, bucketGrant.Available, uint64(6_000), "bucket available")
 	assertEqual(t, bucketGrant.Pending, uint64(300), "bucket pending")
 }

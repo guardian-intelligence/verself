@@ -4,17 +4,17 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
-import { BillingFlashNotice, SubscriptionStatusPill } from "~/features/billing/components";
+import { BillingFlashNotice, ContractStatusPill } from "~/features/billing/components";
 import { EntitlementsPanel } from "~/features/billing/entitlements";
 import {
-  useCancelSubscriptionMutation,
+  useCancelContractMutation,
   useCreatePortalSessionMutation,
 } from "~/features/billing/mutations";
 import {
+  contractsQuery,
   entitlementsQuery,
   loadBillingPage,
   statementQuery,
-  subscriptionsQuery,
 } from "~/features/billing/queries";
 import { parseBillingFlashSearch } from "~/features/billing/search";
 import {
@@ -28,14 +28,14 @@ import type { Statement } from "~/server-fns/api";
 type StatementLineItem = Statement["line_items"][number];
 type LineItemDrainKey =
   | "free_tier_units"
-  | "subscription_units"
+  | "contract_units"
   | "purchase_units"
   | "promo_units"
   | "refund_units";
 
 const drainSources: Array<{ key: LineItemDrainKey; label: string }> = [
   { key: "free_tier_units", label: "Free tier" },
-  { key: "subscription_units", label: "Subscription" },
+  { key: "contract_units", label: "Contract" },
   { key: "purchase_units", label: "Account balance" },
   { key: "promo_units", label: "Promo" },
   { key: "refund_units", label: "Refund" },
@@ -52,21 +52,31 @@ export const Route = createFileRoute("/_authenticated/billing/")({
 function BillingPage() {
   const auth = useSignedInAuth();
   const flash = Route.useSearch();
+  const initial = Route.useLoaderData();
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
-  const entitlements = useSuspenseQuery(entitlementsQuery(auth)).data;
-  const subscriptions = useSuspenseQuery(subscriptionsQuery(auth)).data;
-  const statement = useSuspenseQuery(statementQuery(auth, sandboxProductID)).data;
+  const entitlements = useSuspenseQuery({
+    ...entitlementsQuery(auth),
+    initialData: initial.entitlements,
+  }).data;
+  const contracts = useSuspenseQuery({
+    ...contractsQuery(auth),
+    initialData: initial.contracts,
+  }).data;
+  const statement = useSuspenseQuery({
+    ...statementQuery(auth, sandboxProductID),
+    initialData: initial.statement,
+  }).data;
   const portalMutation = useCreatePortalSessionMutation();
-  const cancelMutation = useCancelSubscriptionMutation();
+  const cancelMutation = useCancelContractMutation();
 
-  const subscriptionRows = subscriptions.subscriptions ?? [];
+  const contractRows = contracts.contracts ?? [];
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Billing</h1>
         <div className="flex flex-wrap gap-3">
-          {subscriptionRows.length > 0 ? (
+          {contractRows.length > 0 ? (
             <button
               type="button"
               onClick={() => portalMutation.mutate()}
@@ -80,7 +90,7 @@ function BillingPage() {
             to="/billing/subscribe"
             className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
           >
-            Subscribe
+            Choose Plan
           </Link>
           <Link
             to="/billing/credits"
@@ -98,7 +108,7 @@ function BillingPage() {
       ) : null}
 
       {cancelMutation.error ? (
-        <ErrorCallout error={cancelMutation.error} title="Subscription cancellation failed" />
+        <ErrorCallout error={cancelMutation.error} title="Contract cancellation failed" />
       ) : null}
 
       <EntitlementsPanel view={entitlements} />
@@ -106,7 +116,7 @@ function BillingPage() {
       <StatementPreview statement={statement} />
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold mb-3">Subscriptions</h2>
+        <h2 className="text-lg font-semibold mb-3">Contracts</h2>
         <div className="border border-border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
@@ -121,30 +131,25 @@ function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {subscriptionRows.length > 0 ? (
-                subscriptionRows.map((subscription) => {
+              {contractRows.length > 0 ? (
+                contractRows.map((contract) => {
                   const canCancel =
-                    subscription.status !== "canceled" &&
-                    subscription.entitlement_state !== "closed" &&
-                    subscription.entitlement_state !== "voided";
-                  const isCancelTarget = cancelTarget === subscription.subscription_id;
+                    contract.status === "active" &&
+                    contract.entitlement_state !== "closed" &&
+                    contract.entitlement_state !== "voided";
+                  const isCancelTarget = cancelTarget === contract.contract_id;
 
                   return (
-                    <tr
-                      key={subscription.subscription_id}
-                      data-testid={`subscription-row-${subscription.plan_id}`}
-                    >
-                      <td className="px-4 py-2 font-medium">{subscription.plan_id}</td>
+                    <tr key={contract.contract_id} data-testid={`contract-row-${contract.plan_id}`}>
+                      <td className="px-4 py-2 font-medium">{contract.plan_id}</td>
                       <td className="px-4 py-2">
-                        <SubscriptionStatusPill status={subscription.status} />
+                        <ContractStatusPill status={contract.status} />
                       </td>
-                      <td className="px-4 py-2">{subscription.payment_state}</td>
-                      <td className="px-4 py-2">{subscription.entitlement_state}</td>
-                      <td className="px-4 py-2">{subscription.cadence}</td>
+                      <td className="px-4 py-2">{contract.payment_state}</td>
+                      <td className="px-4 py-2">{contract.entitlement_state}</td>
+                      <td className="px-4 py-2">{contract.cadence_kind}</td>
                       <td className="px-4 py-2 text-muted-foreground">
-                        {subscription.current_period_end
-                          ? formatDateUTC(subscription.current_period_end)
-                          : "--"}
+                        {contract.ends_at ? formatDateUTC(contract.ends_at) : "--"}
                       </td>
                       <td className="px-4 py-2 text-right">
                         {canCancel ? (
@@ -153,7 +158,7 @@ function BillingPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  cancelMutation.mutate(subscription.subscription_id, {
+                                  cancelMutation.mutate(contract.contract_id, {
                                     onSuccess: () => setCancelTarget(null),
                                   });
                                 }}
@@ -168,14 +173,14 @@ function BillingPage() {
                                 disabled={cancelMutation.isPending}
                                 className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-xs disabled:opacity-50"
                               >
-                                Keep Subscription
+                                Keep Contract
                               </button>
                             </div>
                           ) : (
                             <button
                               type="button"
-                              data-testid={`cancel-subscription-${subscription.plan_id}`}
-                              onClick={() => setCancelTarget(subscription.subscription_id)}
+                              data-testid={`cancel-contract-${contract.plan_id}`}
+                              onClick={() => setCancelTarget(contract.contract_id)}
                               disabled={cancelMutation.isPending}
                               className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-xs disabled:opacity-50"
                             >
@@ -192,8 +197,8 @@ function BillingPage() {
               ) : (
                 <TableEmptyRow
                   colSpan={7}
-                  title="No active subscriptions"
-                  description="Subscribe to start receiving bucketed usage credits."
+                  title="No active contracts"
+                  description="Choose a plan to start receiving bucketed usage credits."
                 />
               )}
             </tbody>
@@ -213,7 +218,7 @@ function StatementPreview({ statement }: { statement: Statement }) {
       <div className="space-y-1">
         <h2 className="text-lg font-semibold">Usage</h2>
         <p className="text-sm text-muted-foreground">
-          Current billing period started at {formatDateUTC(statement.period_start)}
+          Current billing cycle started at {formatDateUTC(statement.period_start)}
         </p>
       </div>
 
@@ -292,10 +297,7 @@ function UsageLineRow({ line }: { line: StatementLineItem }) {
         const pb = idx === lastDrainIdx ? "pb-4" : "";
         return (
           <Fragment key={drain.key}>
-            <div
-              className={`pt-1 ${pb} text-muted-foreground`}
-              data-drain-source={drain.key}
-            >
+            <div className={`pt-1 ${pb} text-muted-foreground`} data-drain-source={drain.key}>
               {drain.label}
             </div>
             <div className={`pt-1 ${pb}`} />

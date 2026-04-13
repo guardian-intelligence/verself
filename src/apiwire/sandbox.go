@@ -137,19 +137,15 @@ type SandboxBillingCheckoutRequest struct {
 	CancelURL   string `json:"cancel_url" required:"true" maxLength:"2048"`
 }
 
-type SandboxBillingSubscriptionRequest struct {
-	PlanID     string `json:"plan_id" required:"true" maxLength:"255" doc:"Plan to subscribe to"`
-	Cadence    string `json:"cadence,omitempty" enum:"monthly,annual" doc:"Billing cadence (default monthly)"`
+type SandboxBillingContractRequest struct {
+	PlanID     string `json:"plan_id" required:"true" maxLength:"255" doc:"Plan to activate"`
+	Cadence    string `json:"cadence,omitempty" enum:"monthly" doc:"Billing cadence (default monthly)"`
 	SuccessURL string `json:"success_url" required:"true" maxLength:"2048"`
 	CancelURL  string `json:"cancel_url" required:"true" maxLength:"2048"`
 }
 
 type SandboxBillingPortalRequest struct {
 	ReturnURL string `json:"return_url" required:"true" maxLength:"2048"`
-}
-
-type SandboxBillingCancelSubscriptionRequest struct {
-	SubscriptionID DecimalInt64 `json:"subscription_id" required:"true"`
 }
 
 type SandboxAttemptRecord struct {

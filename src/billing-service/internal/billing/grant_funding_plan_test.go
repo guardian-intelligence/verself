@@ -18,7 +18,7 @@ func bucketCharges(charges map[string]uint64) []chargeLine {
 func TestPlanGrantFundingUsesBucketBeforeAccountCredit(t *testing.T) {
 	t.Parallel()
 
-	bucketGrant := testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "storage", "", 120)
+	bucketGrant := testScopedGrant("bucket-storage", SourceContract, GrantScopeBucket, "sandbox", "storage", "", 120)
 	accountGrant := testScopedGrant("account-purchase", SourcePurchase, GrantScopeAccount, "", "", "", 100)
 
 	legs, err := planGrantFunding("sandbox", bucketCharges(map[string]uint64{"storage": 100}), []scopedGrantBalance{
@@ -39,8 +39,8 @@ func TestPlanGrantFundingUsesBucketBeforeAccountCredit(t *testing.T) {
 func TestPlanGrantFundingUsesAccountCreditForSummedDeficits(t *testing.T) {
 	t.Parallel()
 
-	computeGrant := testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 75)
-	storageGrant := testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "storage", "", 75)
+	computeGrant := testScopedGrant("bucket-compute", SourceContract, GrantScopeBucket, "sandbox", "compute", "", 75)
+	storageGrant := testScopedGrant("bucket-storage", SourceContract, GrantScopeBucket, "sandbox", "storage", "", 75)
 	accountGrant := testScopedGrant("account-purchase", SourcePurchase, GrantScopeAccount, "", "", "", 50)
 
 	legs, err := planGrantFunding("sandbox", bucketCharges(map[string]uint64{
@@ -108,8 +108,8 @@ func TestPlanGrantFundingDoesNotDoubleCountAccountCreditAcrossBuckets(t *testing
 		"compute": 100,
 		"storage": 100,
 	}), []scopedGrantBalance{
-		testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 75),
-		testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "storage", "", 75),
+		testScopedGrant("bucket-compute", SourceContract, GrantScopeBucket, "sandbox", "compute", "", 75),
+		testScopedGrant("bucket-storage", SourceContract, GrantScopeBucket, "sandbox", "storage", "", 75),
 		testScopedGrant("account-purchase", SourcePurchase, GrantScopeAccount, "", "", "", 40),
 	})
 	if !errors.Is(err, ErrInsufficientBalance) {
@@ -195,8 +195,8 @@ func TestPlanGrantFundingUsesProductBeforeAccountCredit(t *testing.T) {
 func TestPlanGrantFundingUsesSKUBeforeBucketGrantWhenChargeNamesSKU(t *testing.T) {
 	t.Parallel()
 
-	skuGrant := testScopedGrant("sku-premium-nvme", SourceSubscription, GrantScopeSKU, "sandbox", "block_storage", "premium_nvme", 60)
-	bucketGrant := testScopedGrant("bucket-block-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 100)
+	skuGrant := testScopedGrant("sku-premium-nvme", SourceContract, GrantScopeSKU, "sandbox", "block_storage", "premium_nvme", 60)
+	bucketGrant := testScopedGrant("bucket-block-storage", SourceContract, GrantScopeBucket, "sandbox", "block_storage", "", 100)
 
 	legs, err := planGrantFunding("sandbox", []chargeLine{
 		{BucketID: "block_storage", SKUID: "premium_nvme", AmountUnits: 80},
@@ -218,7 +218,7 @@ func TestPlanGrantFundingSKUGrantSkippedForBucketOnlyChargeLine(t *testing.T) {
 
 	// A bucket-only charge line (no SKU named) cannot drain a SKU-scoped grant —
 	// the funder needs the SKU id to know the workload owns that SKU.
-	skuGrant := testScopedGrant("sku-premium-nvme", SourceSubscription, GrantScopeSKU, "sandbox", "block_storage", "premium_nvme", 100)
+	skuGrant := testScopedGrant("sku-premium-nvme", SourceContract, GrantScopeSKU, "sandbox", "block_storage", "premium_nvme", 100)
 
 	_, err := planGrantFunding("sandbox", bucketCharges(map[string]uint64{"block_storage": 50}), []scopedGrantBalance{skuGrant})
 	if !errors.Is(err, ErrInsufficientBalance) {

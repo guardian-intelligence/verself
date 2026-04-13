@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	"github.com/stripe/stripe-go/v85"
 	tb "github.com/tigerbeetle/tigerbeetle-go"
@@ -26,6 +27,7 @@ import (
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
+	"github.com/forge-metal/billing-service/internal/scheduler"
 	fmotel "github.com/forge-metal/otel"
 )
 
@@ -70,6 +72,12 @@ func run() error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
+	pgxPool, err := pgxpool.New(ctx, pgDSN)
+	if err != nil {
+		return fmt.Errorf("open postgres pgx pool: %w", err)
+	}
+	defer pgxPool.Close()
+
 	tbAddresses := strings.Split(tbAddress, ",")
 	tbClient, err := tb.NewClient(tbtypes.ToUint128(tbClusterID), tbAddresses)
 	if err != nil {
@@ -101,6 +109,28 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
+
+	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
+		Logger:         logger,
+		Client:         billingClient,
+		ProjectEvery:   cfg.OutboxProjectEvery,
+		ReconcileEvery: cfg.EntitlementReconcileEvery,
+		ProjectLimit:   100,
+		ReconcileLimit: 10000,
+	})
+	if err != nil {
+		return fmt.Errorf("create billing scheduler runtime: %w", err)
+	}
+	if err := schedulerRuntime.Start(ctx); err != nil {
+		return fmt.Errorf("start billing scheduler runtime: %w", err)
+	}
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := schedulerRuntime.Stop(stopCtx); err != nil {
+			logger.ErrorContext(context.Background(), "billing scheduler shutdown", "error", err)
+		}
+	}()
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -141,35 +171,6 @@ func run() error {
 	})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
-	projectorCtx, cancelProjector := context.WithCancel(ctx)
-	defer cancelProjector()
-	projectorDone := make(chan error, 1)
-	go func() {
-		ticker := time.NewTicker(cfg.OutboxProjectEvery)
-		defer ticker.Stop()
-		lastEntitlementReconcile := time.Time{}
-		for {
-			select {
-			case <-projectorCtx.Done():
-				projectorDone <- projectorCtx.Err()
-				return
-			case <-ticker.C:
-				if _, err := billingClient.ProjectPendingWindows(projectorCtx, 100); err != nil && !errors.Is(err, context.Canceled) {
-					logger.ErrorContext(projectorCtx, "billing projector", "error", err)
-				}
-				if _, err := billingClient.ProjectPendingOutboxEvents(projectorCtx, 100); err != nil && !errors.Is(err, context.Canceled) {
-					logger.ErrorContext(projectorCtx, "billing outbox projector", "error", err)
-				}
-				if lastEntitlementReconcile.IsZero() || time.Since(lastEntitlementReconcile) >= cfg.EntitlementReconcileEvery {
-					if _, err := billingClient.ReconcileEntitlements(projectorCtx, 10000); err != nil && !errors.Is(err, context.Canceled) {
-						logger.ErrorContext(projectorCtx, "billing entitlement reconciler", "error", err)
-					}
-					lastEntitlementReconcile = time.Now()
-				}
-			}
-		}
-	}()
-
 	rootHandler := fmotel.CorrelationMiddleware(rootMux)
 	srv := &http.Server{
 		Addr:              listenAddr,
@@ -188,14 +189,9 @@ func run() error {
 
 	logger.Info("billing: listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		cancelProjector()
 		return fmt.Errorf("billing listen: %w", err)
 	}
 
-	cancelProjector()
-	if err := <-projectorDone; err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("billing projector: %w", err)
-	}
 	return nil
 }
 
@@ -282,7 +278,7 @@ func isUnauthenticatedBillingPath(path string) bool {
 		return true
 	}
 	switch path {
-	case "/internal/billing/v1/checkout", "/internal/billing/v1/subscribe", "/internal/billing/v1/portal":
+	case "/internal/billing/v1/checkout", "/internal/billing/v1/contracts", "/internal/billing/v1/portal":
 		return true
 	default:
 		return false

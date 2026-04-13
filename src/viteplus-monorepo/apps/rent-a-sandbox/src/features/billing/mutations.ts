@@ -1,12 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import {
-  cancelSubscription,
+  cancelContract,
   createCheckoutSession,
+  createContractSession,
   createPortalSession,
-  createSubscriptionSession,
 } from "~/server-fns/api";
-import { entitlementsQuery, subscriptionsQuery } from "./queries";
+import { contractsQuery, entitlementsQuery } from "./queries";
 
 const sandboxProductID = "sandbox";
 
@@ -27,14 +27,14 @@ export function useCreateCheckoutSessionMutation() {
   });
 }
 
-export function useCreateSubscriptionSessionMutation() {
+export function useCreateContractSessionMutation() {
   return useMutation({
     mutationFn: (planId: string) =>
-      createSubscriptionSession({
+      createContractSession({
         data: {
           plan_id: planId,
           cadence: "monthly",
-          success_url: `${window.location.origin}/billing?subscribed=true`,
+          success_url: `${window.location.origin}/billing?contracted=true`,
           cancel_url: `${window.location.origin}/billing/subscribe`,
         },
       }),
@@ -58,27 +58,25 @@ export function useCreatePortalSessionMutation() {
   });
 }
 
-export function useCancelSubscriptionMutation() {
+export function useCancelContractMutation() {
   const auth = useSignedInAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (subscriptionId: string) =>
-      cancelSubscription({
+    mutationFn: (contractId: string) =>
+      cancelContract({
         data: {
-          subscriptionId,
+          contractId,
         },
       }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: entitlementsQuery(auth).queryKey }),
-        queryClient.invalidateQueries({ queryKey: subscriptionsQuery(auth).queryKey }),
+        queryClient.invalidateQueries({ queryKey: contractsQuery(auth).queryKey }),
       ]);
     },
   });
 }
 
 export { useCreateCheckoutSessionMutation as useCreditCheckoutMutation };
-export { useCreateSubscriptionSessionMutation as useSubscriptionCheckoutMutation };
 export { useCreatePortalSessionMutation as useBillingPortalMutation };
-export { useCancelSubscriptionMutation as useSubscriptionCancelMutation };

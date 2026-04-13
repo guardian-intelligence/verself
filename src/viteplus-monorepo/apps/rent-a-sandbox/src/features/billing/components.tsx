@@ -1,11 +1,13 @@
 import { Callout } from "~/components/callout";
 import type { BillingFlashSearch } from "./search";
 
-export function SubscriptionStatusPill({ status }: { status: string }) {
+export function ContractStatusPill({ status }: { status: string }) {
   const colors: Record<string, string> = {
     active: "bg-green-100 text-green-800",
-    canceled: "bg-red-100 text-red-800",
-    past_due: "bg-yellow-100 text-yellow-800",
+    cancel_scheduled: "bg-yellow-100 text-yellow-800",
+    suspended: "bg-yellow-100 text-yellow-800",
+    ended: "bg-red-100 text-red-800",
+    voided: "bg-red-100 text-red-800",
   };
 
   return (
@@ -17,16 +19,16 @@ export function SubscriptionStatusPill({ status }: { status: string }) {
   );
 }
 
-export function BillingFlashNotice({ purchased, subscribed }: BillingFlashSearch) {
-  if (!purchased && !subscribed) {
+export function BillingFlashNotice({ purchased, contracted }: BillingFlashSearch) {
+  if (!purchased && !contracted) {
     return null;
   }
 
   return (
-    <Callout tone="success" title={purchased ? "Credits purchased" : "Subscription activated"}>
+    <Callout tone="success" title={purchased ? "Credits purchased" : "Contract activated"}>
       {purchased
         ? "Credits purchased successfully. Your account credit pool has been updated."
-        : "Subscription activated. Monthly bucket allowances will be deposited automatically."}
+        : "Contract activated. Monthly bucket allowances will be deposited automatically."}
     </Callout>
   );
 }

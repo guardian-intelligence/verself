@@ -175,30 +175,32 @@
       DO $$
       DECLARE
         table_name text;
-        sequence_name text;
       BEGIN
         FOREACH table_name IN ARRAY ARRAY[
           'products',
           'plans',
           'orgs',
-          'subscriptions',
+          'contracts',
+          'contract_phases',
+          'contract_entitlement_lines',
+          'billing_cycles',
+          'entitlement_periods',
           'credit_grants',
-          'billing_windows'
+          'billing_windows',
+          'billing_invoices',
+          'invoice_line_items',
+          'invoice_adjustments',
+          'billing_outbox_events',
+          'billing_provider_events',
+          'payment_methods',
+          'provider_bindings',
+          'invoice_number_allocators',
+          'billing_account_registry'
         ]
         LOOP
           IF to_regclass('public.' || table_name) IS NOT NULL THEN
             EXECUTE format('ALTER TABLE public.%I OWNER TO billing', table_name);
             EXECUTE format('GRANT ALL PRIVILEGES ON TABLE public.%I TO billing', table_name);
-          END IF;
-        END LOOP;
-
-        FOREACH sequence_name IN ARRAY ARRAY[
-          'subscriptions_subscription_id_seq'
-        ]
-        LOOP
-          IF to_regclass('public.' || sequence_name) IS NOT NULL THEN
-            EXECUTE format('ALTER SEQUENCE public.%I OWNER TO billing', sequence_name);
-            EXECUTE format('GRANT ALL PRIVILEGES ON SEQUENCE public.%I TO billing', sequence_name);
           END IF;
         END LOOP;
       END

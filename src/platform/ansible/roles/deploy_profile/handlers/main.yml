@@ -1,4 +1,18 @@
 ---
+- name: Check if billing-service unit exists for deploy profile restart
+  listen: deploy-profile restart billing-service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/billing-service.service
+  register: deploy_profile_billing_service_unit_file
+
+- name: Restart billing-service from deploy profile
+  listen: deploy-profile restart billing-service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: billing-service
+    state: restarted
+  when: deploy_profile_billing_service_unit_file.stat.exists
+
 - name: Check if identity-service unit exists for deploy profile restart
   listen: deploy-profile restart identity-service
   ansible.builtin.stat:

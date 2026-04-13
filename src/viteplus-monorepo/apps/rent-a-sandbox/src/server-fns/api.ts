@@ -25,11 +25,11 @@ import type {
   UpdateMemberRolesRequest,
 } from "~/lib/identity-api";
 import {
-  cancelSubscription as cancelSubscriptionRequest,
-  cancelSubscriptionRequestSchema,
+  cancelContract as cancelContractRequest,
+  cancelContractRequestSchema,
   createCheckoutSession as createCheckoutSessionRequest,
+  createContractSession as createContractSessionRequest,
   createPortalSession as createPortalSessionRequest,
-  createSubscriptionSession as createSubscriptionSessionRequest,
   executionIdInputSchema,
   getEntitlements as getEntitlementsRequest,
   getExecution as getExecutionRequest,
@@ -37,7 +37,7 @@ import {
   getStatement as getStatementRequest,
   getRepo as getRepoRequest,
   getRepos as getReposRequest,
-  getSubscriptions as getSubscriptionsRequest,
+  getContracts as getContractsRequest,
   statementQuerySchema,
   importRepo as importRepoRequest,
   importRepoRequestSchema,
@@ -49,12 +49,12 @@ import {
   submitDirectExecution as submitDirectExecutionRequest,
   executionRequestSchema,
   portalRequestSchema,
-  subscribeRequestSchema,
+  contractRequestSchema,
   checkoutRequestSchema,
 } from "~/lib/sandbox-rental-api";
 import type {
   CheckoutRequest,
-  CancelSubscriptionRequest,
+  CancelContractRequest,
   EntitlementBucketSection,
   EntitlementProductSection,
   EntitlementSlot,
@@ -69,8 +69,8 @@ import type {
   Repo,
   RepoCompatibilitySummary,
   ExecutionRequest,
-  SubscribeRequest,
-  SubscriptionsResponse,
+  ContractRequest,
+  ContractsResponse,
 } from "~/lib/sandbox-rental-api";
 import type { AuthSession } from "@forge-metal/auth-web/server";
 import { getAccessTokenForAudience } from "@forge-metal/auth-web/server";
@@ -85,7 +85,7 @@ export { IdentityApiError, isIdentityApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
 export type {
   CheckoutRequest,
-  CancelSubscriptionRequest,
+  CancelContractRequest,
   EntitlementBucketSection,
   EntitlementProductSection,
   EntitlementSlot,
@@ -100,8 +100,8 @@ export type {
   PlansResponse,
   Repo,
   RepoCompatibilitySummary,
-  SubscribeRequest,
-  SubscriptionsResponse,
+  ContractRequest,
+  ContractsResponse,
 };
 export type {
   InviteMemberRequest,
@@ -216,10 +216,10 @@ export const getEntitlements = createServerFn({ method: "GET" })
     return getEntitlementsRequest(await sandboxRentalClientOptions(context));
   });
 
-export const getSubscriptions = createServerFn({ method: "GET" })
+export const getContracts = createServerFn({ method: "GET" })
   .middleware([rentASandboxAuthMiddleware])
   .handler(async ({ context }) => {
-    return getSubscriptionsRequest(await sandboxRentalClientOptions(context));
+    return getContractsRequest(await sandboxRentalClientOptions(context));
   });
 
 export const getPlans = createServerFn({ method: "GET" })
@@ -248,11 +248,11 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     });
   });
 
-export const createSubscriptionSession = createServerFn({ method: "POST" })
+export const createContractSession = createServerFn({ method: "POST" })
   .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(subscribeRequestSchema)
+  .inputValidator(contractRequestSchema)
   .handler(async ({ context, data }) => {
-    return createSubscriptionSessionRequest({
+    return createContractSessionRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });
@@ -268,11 +268,11 @@ export const createPortalSession = createServerFn({ method: "POST" })
     });
   });
 
-export const cancelSubscription = createServerFn({ method: "POST" })
+export const cancelContract = createServerFn({ method: "POST" })
   .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(cancelSubscriptionRequestSchema)
+  .inputValidator(cancelContractRequestSchema)
   .handler(async ({ context, data }) => {
-    return cancelSubscriptionRequest({
+    return cancelContractRequest({
       ...(await sandboxRentalClientOptions(context)),
       body: data,
     });

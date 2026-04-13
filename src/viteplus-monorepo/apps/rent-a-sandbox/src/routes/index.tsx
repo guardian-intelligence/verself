@@ -52,7 +52,7 @@ function GuestLanding() {
         >
           <h3 className="mb-1 font-semibold">Billing</h3>
           <p className="text-sm text-muted-foreground">
-            Manage subscriptions, credits, and entitlements.
+            Manage contracts, credits, and entitlements.
           </p>
         </Link>
       </div>
@@ -106,7 +106,7 @@ function MemberDashboard() {
       >
         <h3 className="mb-1 font-semibold">Billing</h3>
         <p className="text-sm text-muted-foreground">
-          Manage subscriptions, credits, and entitlements.
+          Manage contracts, credits, and entitlements.
         </p>
       </Link>
     </div>

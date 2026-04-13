@@ -53,8 +53,8 @@ type EntitlementSlot struct {
 }
 
 // EntitlementSourceTotal aggregates one (source, plan_id) inside a slot.
-// Multiple subscription plans contributing to the same slot fan out to one
-// SourceTotal per plan; non-subscription sources collapse to one entry per
+// Multiple contract plans contributing to the same slot fan out to one
+// SourceTotal per plan; non-contract sources collapse to one entry per
 // source. TopGrantID is the funder's next-to-drain grant for this cell — it
 // is the contract surface the funding-equivalence test pins, but the apiwire
 // mapping does not surface it because customers never need to read a raw

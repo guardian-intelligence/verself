@@ -83,55 +83,76 @@ func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string,
 	return c.EnsureCurrentEntitlements(ctx, orgID, "")
 }
 
-func (c *Client) ListSubscriptions(ctx context.Context, orgID OrgID) ([]SubscriptionRecord, error) {
+func (c *Client) ListContracts(ctx context.Context, orgID OrgID) ([]ContractRecord, error) {
+	now := c.clock().UTC()
 	rows, err := c.pg.QueryContext(ctx, `
-		SELECT subscription_id, contract_id, org_id, product_id, plan_id, cadence, status,
-		       payment_state, entitlement_state, current_period_start, current_period_end
-		FROM subscription_contracts
-		WHERE org_id = $1
-		ORDER BY subscription_id DESC
-	`, strconv.FormatUint(uint64(orgID), 10))
+		WITH current_phase AS (
+			SELECT DISTINCT ON (contract_id)
+			       contract_id, phase_id, plan_id, effective_start, effective_end
+			FROM contract_phases
+			WHERE org_id = $1
+			  AND state IN ('scheduled', 'pending_payment', 'active', 'grace')
+			  AND effective_start <= $2
+			  AND (effective_end IS NULL OR effective_end > $2)
+			ORDER BY contract_id, effective_start DESC, phase_id DESC
+		)
+		SELECT c.contract_id, c.org_id, c.product_id, COALESCE(cp.plan_id, ''), COALESCE(cp.phase_id, ''),
+		       c.cadence_kind, c.status, c.payment_state, c.entitlement_state,
+		       c.starts_at, c.ends_at, cp.effective_start, cp.effective_end
+		FROM contracts c
+		LEFT JOIN current_phase cp ON cp.contract_id = c.contract_id
+		WHERE c.org_id = $1
+		ORDER BY c.starts_at DESC, c.contract_id DESC
+	`, strconv.FormatUint(uint64(orgID), 10), now)
 	if err != nil {
-		return nil, fmt.Errorf("query subscriptions: %w", err)
+		return nil, fmt.Errorf("query contracts: %w", err)
 	}
 	defer rows.Close()
 
-	var out []SubscriptionRecord
+	var out []ContractRecord
 	for rows.Next() {
-		var record SubscriptionRecord
-		var start sql.NullTime
-		var end sql.NullTime
+		var record ContractRecord
+		var endsAt sql.NullTime
+		var phaseStart sql.NullTime
+		var phaseEnd sql.NullTime
 		var paymentState string
 		var entitlementState string
 		if err := rows.Scan(
-			&record.SubscriptionID,
 			&record.ContractID,
 			&record.OrgID,
 			&record.ProductID,
 			&record.PlanID,
-			&record.Cadence,
+			&record.PhaseID,
+			&record.CadenceKind,
 			&record.Status,
 			&paymentState,
 			&entitlementState,
-			&start,
-			&end,
+			&record.StartsAt,
+			&endsAt,
+			&phaseStart,
+			&phaseEnd,
 		); err != nil {
-			return nil, fmt.Errorf("scan subscription: %w", err)
+			return nil, fmt.Errorf("scan contract: %w", err)
 		}
 		record.PaymentState = EntitlementPaymentState(paymentState)
 		record.EntitlementState = EntitlementState(entitlementState)
-		if start.Valid {
-			value := start.Time.UTC()
-			record.CurrentPeriodStart = &value
+		record.StartsAt = record.StartsAt.UTC()
+		if endsAt.Valid {
+			value := endsAt.Time.UTC()
+			record.EndsAt = &value
 		}
-		if end.Valid {
-			value := end.Time.UTC()
-			record.CurrentPeriodEnd = &value
+		if phaseStart.Valid {
+			value := phaseStart.Time.UTC()
+			record.PhaseStart = &value
+		}
+		if phaseEnd.Valid {
+			value := phaseEnd.Time.UTC()
+			record.PhaseEnd = &value
 		}
 		out = append(out, record)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate subscriptions: %w", err)
+		return nil, fmt.Errorf("iterate contracts: %w", err)
 	}
 	return out, nil
 }
@@ -212,18 +233,18 @@ func (c *Client) listScopedGrantBalancesForFunding(ctx context.Context, orgID Or
 
 func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
 	now := c.clock().UTC()
-	// LEFT JOIN chain resolves subscription grants to a plan display name at
+	// LEFT JOIN chain resolves contract grants to a plan display name at
 	// read time so the entitlements view can label rows with the customer's
-	// actual plan name. Non-subscription grants land NULL on both joined cols.
+	// actual plan name. Non-contract grants land NULL on both joined cols.
 	query := `
 		SELECT g.grant_id, g.scope_type, g.scope_product_id, g.scope_bucket_id, g.scope_sku_id, g.source,
 		       g.source_reference_id, g.entitlement_period_id, g.policy_version,
 		       g.starts_at, g.period_start, g.period_end, g.expires_at,
-		       COALESCE(s.plan_id, ''), COALESCE(p.display_name, '')
+		       COALESCE(cp.plan_id, ''), COALESCE(p.display_name, '')
 		FROM credit_grants g
 		LEFT JOIN entitlement_periods ep ON ep.period_id = NULLIF(g.entitlement_period_id, '')
-		LEFT JOIN subscription_contracts s ON s.contract_id = NULLIF(ep.contract_id, '')
-		LEFT JOIN plans p ON p.plan_id = NULLIF(s.plan_id, '')
+		LEFT JOIN contract_phases cp ON cp.phase_id = NULLIF(ep.phase_id, '')
+		LEFT JOIN plans p ON p.plan_id = NULLIF(cp.plan_id, '')
 		WHERE g.org_id = $1
 		  AND g.closed_at IS NULL
 		  AND g.starts_at <= $2

@@ -34,125 +34,93 @@ components:
       required:
         - reservation
       type: object
-    BillingApplySubscriptionProviderEventRequest:
+    BillingCancelContractRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingApplySubscriptionProviderEventRequest.json
+          example: http://127.0.0.1:4242/schemas/BillingCancelContractRequest.json
           format: uri
           readOnly: true
           type: string
-        cadence:
-          enum:
-            - monthly
-            - annual
+        org_id:
+          pattern: ^[0-9]+$
           type: string
-        current_period_end:
-          format: date-time
+      required:
+        - org_id
+      type: object
+    BillingCancelContractResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingCancelContractResponse.json
+          format: uri
+          readOnly: true
           type: string
-        current_period_start:
+        contract:
+          $ref: "#/components/schemas/BillingContract"
+      required:
+        - contract
+      type: object
+    BillingContract:
+      additionalProperties: false
+      properties:
+        cadence_kind:
+          type: string
+        contract_id:
+          type: string
+        ends_at:
           format: date-time
           type: string
         entitlement_state:
-          enum:
-            - scheduled
-            - active
-            - grace
-            - closed
-            - voided
-          type: string
-        event_type:
-          maxLength: 255
-          minLength: 1
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
           type: string
         payment_state:
-          enum:
-            - not_required
-            - pending
-            - paid
-            - failed
-            - uncollectible
-            - refunded
+          type: string
+        phase_end:
+          format: date-time
+          type: string
+        phase_id:
+          type: string
+        phase_start:
+          format: date-time
           type: string
         plan_id:
-          maxLength: 255
-          minLength: 1
           type: string
         product_id:
-          maxLength: 255
-          minLength: 1
           type: string
-        provider:
-          enum:
-            - stripe
-          type: string
-        provider_checkout_session_id:
-          maxLength: 255
-          type: string
-        provider_customer_id:
-          maxLength: 255
-          type: string
-        provider_subscription_id:
-          maxLength: 255
-          minLength: 1
+        starts_at:
+          format: date-time
           type: string
         status:
-          maxLength: 255
           type: string
       required:
-        - provider
-        - event_type
-        - org_id
+        - contract_id
         - product_id
         - plan_id
-        - provider_subscription_id
+        - phase_id
+        - cadence_kind
+        - status
+        - payment_state
+        - entitlement_state
+        - starts_at
       type: object
-    BillingApplySubscriptionProviderEventResponse:
+    BillingContracts:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingApplySubscriptionProviderEventResponse.json
+          example: http://127.0.0.1:4242/schemas/BillingContracts.json
           format: uri
           readOnly: true
           type: string
-        applied:
-          type: boolean
+        contracts:
+          items:
+            $ref: "#/components/schemas/BillingContract"
+          nullable: true
+          type: array
       required:
-        - applied
-      type: object
-    BillingCancelSubscriptionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCancelSubscriptionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-      required:
-        - org_id
-      type: object
-    BillingCancelSubscriptionResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCancelSubscriptionResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        subscription:
-          $ref: "#/components/schemas/BillingSubscription"
-      required:
-        - subscription
+        - contracts
       type: object
     BillingCreateCheckoutRequest:
       additionalProperties: false
@@ -190,39 +158,18 @@ components:
         - success_url
         - cancel_url
       type: object
-    BillingCreatePortalSessionRequest:
+    BillingCreateContractRequest:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreatePortalSessionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        org_id:
-          pattern: ^[0-9]+$
-          type: string
-        return_url:
-          maxLength: 2048
-          minLength: 1
-          type: string
-      required:
-        - org_id
-        - return_url
-      type: object
-    BillingCreateSubscriptionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingCreateSubscriptionRequest.json
+          example: http://127.0.0.1:4242/schemas/BillingCreateContractRequest.json
           format: uri
           readOnly: true
           type: string
         cadence:
           enum:
             - monthly
-            - annual
           type: string
         cancel_url:
           maxLength: 2048
@@ -244,6 +191,26 @@ components:
         - plan_id
         - success_url
         - cancel_url
+      type: object
+    BillingCreatePortalSessionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4242/schemas/BillingCreatePortalSessionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        return_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - return_url
       type: object
     BillingEntitlementBucketSection:
       additionalProperties: false
@@ -358,10 +325,11 @@ components:
         source:
           enum:
             - free_tier
-            - subscription
+            - contract
             - purchase
             - promo
             - refund
+            - receivable
           type: string
       required:
         - source
@@ -744,6 +712,9 @@ components:
         charge_units:
           pattern: ^[0-9]+$
           type: string
+        contract_units:
+          pattern: ^[0-9]+$
+          type: string
         free_tier_units:
           pattern: ^[0-9]+$
           type: string
@@ -777,9 +748,6 @@ components:
           type: string
         sku_id:
           type: string
-        subscription_units:
-          pattern: ^[0-9]+$
-          type: string
         unit_rate:
           pattern: ^[0-9]+$
           type: string
@@ -796,7 +764,7 @@ components:
         - unit_rate
         - charge_units
         - free_tier_units
-        - subscription_units
+        - contract_units
         - purchase_units
         - promo_units
         - refund_units
@@ -807,6 +775,9 @@ components:
       additionalProperties: false
       properties:
         charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        contract_units:
           pattern: ^[0-9]+$
           type: string
         free_tier_units:
@@ -827,75 +798,19 @@ components:
         reserved_units:
           pattern: ^[0-9]+$
           type: string
-        subscription_units:
-          pattern: ^[0-9]+$
-          type: string
         total_due_units:
           pattern: ^[0-9]+$
           type: string
       required:
         - charge_units
         - free_tier_units
-        - subscription_units
+        - contract_units
         - purchase_units
         - promo_units
         - refund_units
         - receivable_units
         - reserved_units
         - total_due_units
-      type: object
-    BillingSubscription:
-      additionalProperties: false
-      properties:
-        cadence:
-          type: string
-        contract_id:
-          type: string
-        current_period_end:
-          format: date-time
-          type: string
-        current_period_start:
-          format: date-time
-          type: string
-        entitlement_state:
-          type: string
-        payment_state:
-          type: string
-        plan_id:
-          type: string
-        product_id:
-          type: string
-        status:
-          type: string
-        subscription_id:
-          pattern: ^-?[0-9]+$
-          type: string
-      required:
-        - subscription_id
-        - contract_id
-        - product_id
-        - plan_id
-        - cadence
-        - status
-        - payment_state
-        - entitlement_state
-      type: object
-    BillingSubscriptions:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: http://127.0.0.1:4242/schemas/BillingSubscriptions.json
-          format: uri
-          readOnly: true
-          type: string
-        subscriptions:
-          items:
-            $ref: "#/components/schemas/BillingSubscription"
-          nullable: true
-          type: array
-      required:
-        - subscriptions
       type: object
     BillingURLResponse:
       additionalProperties: false
@@ -1142,6 +1057,108 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Create a Stripe checkout session
+  /internal/billing/v1/contracts:
+    post:
+      operationId: create-contract
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCreateContractRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingURLResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Create a self-serve contract checkout
+  /internal/billing/v1/contracts/{contract_id}/cancel:
+    post:
+      operationId: cancel-contract
+      parameters:
+        - in: path
+          name: contract_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCancelContractRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingCancelContractResponse"
+          description: OK
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Schedule contract cancellation
+  /internal/billing/v1/orgs/{org_id}/contracts:
+    get:
+      operationId: list-contracts
+      parameters:
+        - in: path
+          name: org_id
+          required: true
+          schema:
+            pattern: ^[0-9]+$
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingContracts"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List contracts for an org
   /internal/billing/v1/orgs/{org_id}/entitlements:
     get:
       operationId: get-entitlements
@@ -1233,30 +1250,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get current billing statement for an org
-  /internal/billing/v1/orgs/{org_id}/subscriptions:
-    get:
-      operationId: list-subscriptions
-      parameters:
-        - in: path
-          name: org_id
-          required: true
-          schema:
-            pattern: ^[0-9]+$
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingSubscriptions"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List subscriptions for an org
   /internal/billing/v1/portal:
     post:
       operationId: create-portal
@@ -1310,7 +1303,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List active subscription plans for a product
+      summary: List active billing plans for a product
   /internal/billing/v1/reserve:
     post:
       operationId: reserve-window
@@ -1399,112 +1392,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Settle a reserved billing window
-  /internal/billing/v1/subscribe:
-    post:
-      operationId: create-subscription
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BillingCreateSubscriptionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingURLResponse"
-          description: OK
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Create a Stripe subscription checkout
-  /internal/billing/v1/subscription-provider-events:
-    post:
-      operationId: apply-subscription-provider-event
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BillingApplySubscriptionProviderEventRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingApplySubscriptionProviderEventResponse"
-          description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Apply a subscription provider event
-  /internal/billing/v1/subscriptions/{subscription_id}/cancel:
-    post:
-      operationId: cancel-subscription
-      parameters:
-        - in: path
-          name: subscription_id
-          required: true
-          schema:
-            pattern: ^[0-9]+$
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BillingCancelSubscriptionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingCancelSubscriptionResponse"
-          description: OK
-        "404":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Not Found
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Cancel a Stripe subscription
   /internal/billing/v1/void:
     post:
       operationId: void-window

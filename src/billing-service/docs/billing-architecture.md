@@ -92,6 +92,12 @@ Target billing job kinds:
 - `billing.outbox.project_event`: project one outbox fact into ClickHouse.
 - `billing.outbox.reconcile`: repair stuck or missing outbox projection jobs.
 
+The first implemented River cut keeps the existing bounded batch projectors and
+reconciler as `billing.metering.project_pending_windows`,
+`billing.outbox.project_pending_events`, and `billing.entitlements.reconcile`.
+Those jobs are repair scanners, not replacements for the target one-row domain
+transition jobs above.
+
 Job uniqueness must be derived from domain identity, not random worker identity:
 
 - Provider event jobs key by `(provider, provider_event_id)`.
@@ -175,7 +181,7 @@ The default invariant is one active commercial contract per org/product unless a
 
 ## PostgreSQL catalog and state
 
-This section describes the target schema. The current implementation may still use `subscription_contracts`, `subscription` source values, Stripe subscription IDs, and `/subscriptions` API names while the target model is being built. Those names are compatibility artifacts, not the desired domain shape.
+This section describes the billing schema. Recurring customer agreements are modeled as provider-neutral contracts; Stripe Subscriptions, `subscription_contracts`, `subscription` source values, and `/subscriptions` API names are not part of the implementation surface.
 
 ### `products`
 
@@ -437,7 +443,7 @@ Key fields:
 - `product_id`
 - `plan_id`
 - `provider_price_id`
-- `phase_kind` (`catalog_plan`, `bespoke`)
+- `phase_kind` (`catalog_plan`, `bespoke`, `internal`)
 - `state` (`scheduled`, `pending_payment`, `active`, `grace`, `superseded`, `closed`, `voided`)
 - `payment_state`
 - `entitlement_state`
@@ -597,7 +603,7 @@ GrantScopeFundingOrder  = []GrantScopeType{ GrantScopeSKU, GrantScopeBucket, Gra
 GrantSourceFundingOrder = []GrantSourceType{ SourceFreeTier, SourceContract, SourcePurchase, SourcePromo, SourceRefund, SourceReceivable }
 ```
 
-The legacy `subscription` source name must be migrated away from. The target domain source for any recurring paid agreement is `contract`. Stripe Hobby, Stripe Pro, and enterprise MSA credits all drain at the same priority because they are all recurring contract entitlements.
+The domain source for any recurring paid agreement is `contract`. Stripe Hobby, Stripe Pro, and enterprise MSA credits all drain at the same priority because they are all recurring contract entitlements.
 
 ### `billing_windows`
 
@@ -1240,7 +1246,7 @@ The per-source drain maps are keyed by SKU id, not bucket id. The funder attribu
 
 Invoice projections include `billing_cycle_opened`, `billing_cycle_closed_for_usage`, `invoice_issued`, `invoice_adjustment_created`, `invoice_finalization_blocked`, `stripe_invoice_collection_started`, `stripe_invoice_paid`, `stripe_invoice_payment_failed`, and `invoice_email_sent` events. These are proof/read-model facts; PostgreSQL remains authoritative.
 
-The current implementation may still use `subscription` field names in the ClickHouse row schema. The final target uses `contract` projection names. Any backwards-compatible `subscription` reads are temporary migration scaffolding, not target architecture.
+ClickHouse billing rows use contract projection names (`contract_units`, `pricing_contract_id`, `pricing_phase_id`, `pricing_plan_id`) rather than provider-specific subscription field names.
 
 For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. That gives the invoice preview a real storage signal instead of an inferred one.
 
@@ -1287,7 +1293,7 @@ Expected behavior is convergence, not exactly-once execution. PostgreSQL state, 
 
 ## API naming target
 
-The current API may still expose subscription-specific names while the implementation migrates. The target public/internal billing API is contract- and invoice-oriented:
+The public/internal billing API is contract- and invoice-oriented:
 
 - `/contracts` instead of `/subscriptions`
 - `/contracts/{contract_id}/changes` for upgrade, downgrade, cancel, renew, and amend requests
