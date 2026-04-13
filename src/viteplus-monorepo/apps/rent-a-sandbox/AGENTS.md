@@ -79,12 +79,28 @@ the panel together.
 ### Usage section receipt format
 
 The "Usage" section is the customer-facing invoice preview. Each line is one
-(plan, bucket, sku, pricing_phase, unit_rate) row. The Usage cell renders the
-formula `quantity @ rate = charge` followed by per-source subtractions that
-roll up to a per-line `Receivable` total. The grand total at the bottom is
-bold with a thick separator above it; do not introduce per-bucket rollup
-tables, gross/credit/due metric cards, or any other secondary aggregation
-table here. Bucket-level analytics belong in Grafana, not the customer UI.
+(plan, bucket, sku, pricing_phase, unit_rate) row, shown in bank-statement
+style:
+
+- The `SKU` cell renders `<bucket display> — <sku display>`. Do not append
+  the raw `sku_id`, the `plan_id`, or the `pricing_phase` — those are
+  engineer-facing identifiers and belong in logs/traces, not the invoice.
+- The `Usage` cell renders the formula `quantity @ rate = charge` followed
+  by per-source subtractions. Subtractions use bank-statement convention:
+  the source label is on the left as plain text (`Free tier`, `Subscription`,
+  `Account balance`, …) and the debit amount is on the right with the minus
+  sign adjacent to the `$` sign (`− $0.10`). The formula and subtraction
+  rows are the same font size and monospace family — no nested font
+  hierarchy.
+- There is no per-line receivable roll-up. The only aggregation is the
+  `Grand Total` row at the bottom of the table, drawn as a single full-width
+  `<td colSpan={2}>` with one thick separator above it, flex
+  `justify-between` layout (label on the left, amount on the right), and
+  bold same-size text on both sides.
+
+Do not reintroduce per-line roll-ups, per-bucket rollup tables,
+gross/credit/due metric cards, or any other secondary aggregation surface
+here. Bucket-level analytics belong in Grafana, not the customer UI.
 
 ## ShadCN/ui
 

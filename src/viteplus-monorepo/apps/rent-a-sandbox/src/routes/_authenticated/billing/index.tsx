@@ -261,20 +261,16 @@ function StatementPreview({ statement }: { statement: Statement }) {
               />
             )}
             {lineItems.length > 0 ? (
-              <tr className="bg-muted/30">
-                <td className="px-4 pt-4 pb-3 text-right align-bottom">
-                  <div className="border-t-2 border-foreground/80 pt-2 inline-block min-w-[12rem]">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground mr-3">
-                      Grand Total
+              <tr>
+                <td colSpan={2} className="px-4 pt-4 pb-3">
+                  <div
+                    className="border-t-2 border-foreground/80 pt-2 flex items-baseline justify-between text-base font-bold"
+                    data-testid="statement-grand-total"
+                  >
+                    <span>Grand Total</span>
+                    <span className="font-mono tabular-nums">
+                      {formatLedgerAmountPrecise(grandTotal)}
                     </span>
-                  </div>
-                </td>
-                <td
-                  className="px-4 pt-4 pb-3 text-right align-bottom"
-                  data-testid="statement-grand-total"
-                >
-                  <div className="border-t-2 border-foreground/80 pt-2 font-mono tabular-nums text-base font-bold">
-                    {formatLedgerAmountPrecise(grandTotal)}
                   </div>
                 </td>
               </tr>
@@ -291,8 +287,7 @@ function UsageLineRow({ line }: { line: StatementLineItem }) {
     .map((source) => ({ ...source, amount: line[source.key] }))
     .filter((row) => row.amount > 0);
   const hasReserved = line.reserved_units > 0;
-  const receivable = line.receivable_units;
-  const skuTitle = `${line.bucket_display_name} — ${line.sku_display_name} — ${line.sku_id}`;
+  const skuTitle = `${line.bucket_display_name} — ${line.sku_display_name}`;
   return (
     <tr
       data-testid={`usage-line-${line.bucket_id}:${line.sku_id}`}
@@ -301,50 +296,32 @@ function UsageLineRow({ line }: { line: StatementLineItem }) {
     >
       <td className="px-4 py-4 align-top">
         <div className="font-medium break-words">{skuTitle}</div>
-        <div className="text-xs text-muted-foreground mt-1">
-          Plan <span className="font-mono">{line.plan_id || "—"}</span> ·{" "}
-          <span className="font-mono">{line.pricing_phase}</span>
-        </div>
       </td>
       <td className="px-4 py-4 align-top">
         <div className="ml-auto w-max max-w-full font-mono tabular-nums text-sm">
           {formatUsageFormula(line)}
         </div>
         {drains.length > 0 || hasReserved ? (
-          <div className="ml-auto w-max max-w-full mt-3 min-w-[18rem]">
-            <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 text-xs">
-              {drains.map((drain) => (
-                <Fragment key={drain.key}>
-                  <dt
-                    className="text-muted-foreground"
-                    data-drain-source={drain.key}
-                  >
-                    − {drain.label}
-                  </dt>
-                  <dd className="font-mono tabular-nums text-right text-foreground">
-                    {formatLedgerAmountPrecise(drain.amount)}
-                  </dd>
-                </Fragment>
-              ))}
-              {hasReserved ? (
-                <Fragment>
-                  <dt className="text-muted-foreground italic">− Reserved (in-flight)</dt>
-                  <dd className="font-mono tabular-nums text-right text-muted-foreground italic">
-                    {formatLedgerAmountPrecise(line.reserved_units)}
-                  </dd>
-                </Fragment>
-              ) : null}
-            </dl>
-            <div className="mt-1 border-t border-foreground/40 pt-1 grid grid-cols-[1fr_auto] gap-x-6 text-xs font-semibold">
-              <div>Receivable</div>
-              <div
-                className="font-mono tabular-nums text-right"
-                data-testid={`usage-line-receivable-${line.sku_id}`}
-              >
-                {formatLedgerAmountPrecise(receivable)}
-              </div>
-            </div>
-          </div>
+          <dl className="ml-auto w-max max-w-full mt-3 min-w-[18rem] grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 text-sm">
+            {drains.map((drain) => (
+              <Fragment key={drain.key}>
+                <dt className="text-muted-foreground" data-drain-source={drain.key}>
+                  {drain.label}
+                </dt>
+                <dd className="font-mono tabular-nums text-right text-foreground">
+                  − {formatLedgerAmountPrecise(drain.amount)}
+                </dd>
+              </Fragment>
+            ))}
+            {hasReserved ? (
+              <Fragment>
+                <dt className="text-muted-foreground italic">Reserved (in-flight)</dt>
+                <dd className="font-mono tabular-nums text-right text-muted-foreground italic">
+                  − {formatLedgerAmountPrecise(line.reserved_units)}
+                </dd>
+              </Fragment>
+            ) : null}
+          </dl>
         ) : null}
       </td>
     </tr>
