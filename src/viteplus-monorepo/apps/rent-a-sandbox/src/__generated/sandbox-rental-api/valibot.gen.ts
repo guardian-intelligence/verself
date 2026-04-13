@@ -259,6 +259,13 @@ export const vSandboxBillingCheckoutRequest = v.strictObject({
   success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
+export const vSandboxBillingContractChangeRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
+  target_plan_id: v.pipe(v.string(), v.maxLength(255)),
+});
+
 export const vSandboxBillingContractRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   cadence: v.optional(v.picklist(["monthly"])),
@@ -523,6 +530,12 @@ export const vSandboxBillingCheckoutRequestWritable = v.strictObject({
   success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
+export const vSandboxBillingContractChangeRequestWritable = v.strictObject({
+  cancel_url: v.pipe(v.string(), v.maxLength(2048)),
+  success_url: v.pipe(v.string(), v.maxLength(2048)),
+  target_plan_id: v.pipe(v.string(), v.maxLength(255)),
+});
+
 export const vSandboxBillingContractRequestWritable = v.strictObject({
   cadence: v.optional(v.picklist(["monthly"])),
   cancel_url: v.pipe(v.string(), v.maxLength(2048)),
@@ -686,6 +699,21 @@ export const vCancelBillingContractPath = v.object({
  * OK
  */
 export const vCancelBillingContractResponse = vBillingCancelContractResponse;
+
+export const vCreateBillingContractChangeBody = vSandboxBillingContractChangeRequestWritable;
+
+export const vCreateBillingContractChangeHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vCreateBillingContractChangePath = v.object({
+  contract_id: v.pipe(v.string(), v.minLength(1), v.maxLength(255)),
+});
+
+/**
+ * OK
+ */
+export const vCreateBillingContractChangeResponse = vBillingUrlResponse;
 
 /**
  * OK

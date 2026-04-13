@@ -256,6 +256,19 @@ export type SandboxBillingCheckoutRequest = {
   success_url: string;
 };
 
+export type SandboxBillingContractChangeRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  cancel_url: string;
+  success_url: string;
+  /**
+   * Plan to upgrade into immediately
+   */
+  target_plan_id: string;
+};
+
 export type SandboxBillingContractRequest = {
   /**
    * A URL to the JSON Schema for this object.
@@ -556,6 +569,15 @@ export type SandboxBillingCheckoutRequestWritable = {
   success_url: string;
 };
 
+export type SandboxBillingContractChangeRequestWritable = {
+  cancel_url: string;
+  success_url: string;
+  /**
+   * Plan to upgrade into immediately
+   */
+  target_plan_id: string;
+};
+
 export type SandboxBillingContractRequestWritable = {
   /**
    * Billing cadence (default monthly)
@@ -817,6 +839,41 @@ export type CancelBillingContractResponses = {
 
 export type CancelBillingContractResponse =
   CancelBillingContractResponses[keyof CancelBillingContractResponses];
+
+export type CreateBillingContractChangeData = {
+  body: SandboxBillingContractChangeRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    contract_id: string;
+  };
+  query?: never;
+  url: "/api/v1/billing/contracts/{contract_id}/changes";
+};
+
+export type CreateBillingContractChangeErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateBillingContractChangeError =
+  CreateBillingContractChangeErrors[keyof CreateBillingContractChangeErrors];
+
+export type CreateBillingContractChangeResponses = {
+  /**
+   * OK
+   */
+  200: BillingUrlResponse;
+};
+
+export type CreateBillingContractChangeResponse =
+  CreateBillingContractChangeResponses[keyof CreateBillingContractChangeResponses];
 
 export type GetBillingEntitlementsData = {
   body?: never;

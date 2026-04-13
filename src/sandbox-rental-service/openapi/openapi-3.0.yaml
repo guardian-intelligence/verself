@@ -631,6 +631,30 @@ components:
         - success_url
         - cancel_url
       type: object
+    SandboxBillingContractChangeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxBillingContractChangeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cancel_url:
+          maxLength: 2048
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+        target_plan_id:
+          description: Plan to upgrade into immediately
+          maxLength: 255
+          type: string
+      required:
+        - target_plan_id
+        - success_url
+        - cancel_url
+      type: object
     SandboxBillingContractRequest:
       additionalProperties: false
       properties:
@@ -1294,6 +1318,56 @@ paths:
         rate_limit_class: billing_mutation
         request_body_max_bytes: 1024
         resource: billing_contract
+  /api/v1/billing/contracts/{contract_id}/changes:
+    post:
+      operationId: create-billing-contract-change
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: contract_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SandboxBillingContractChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create invoice-backed contract change
+      x-forge-metal-iam:
+        action: create
+        audit_event: billing.contract_change.create
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        request_body_max_bytes: 8192
+        resource: billing_contract_change
   /api/v1/billing/entitlements:
     get:
       operationId: get-billing-entitlements

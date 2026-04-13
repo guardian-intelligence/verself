@@ -165,6 +165,36 @@ func (c *ServiceClient) CreateContract(ctx context.Context, orgID uint64, planID
 	return "", unexpected("create contract", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON400, resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
 }
 
+func (c *ServiceClient) CreateContractChange(ctx context.Context, orgID uint64, contractID string, targetPlanID string, successURL string, cancelURL string, reqEditors ...RequestEditorFn) (apiwire.BillingContractChangeResponse, error) {
+	orgIDWire := apiwire.Uint64(orgID).String()
+	resp, err := c.inner.CreateContractChangeWithResponse(ctx, contractID, CreateContractChangeJSONRequestBody{
+		OrgId:        orgIDWire,
+		TargetPlanId: targetPlanID,
+		SuccessUrl:   successURL,
+		CancelUrl:    cancelURL,
+	}, reqEditors...)
+	if err != nil {
+		return apiwire.BillingContractChangeResponse{}, err
+	}
+	if resp.JSON200 != nil {
+		priceDelta, err := parseDecimalUint64(resp.JSON200.PriceDeltaUnits, "price_delta_units")
+		if err != nil {
+			return apiwire.BillingContractChangeResponse{}, err
+		}
+		return apiwire.BillingContractChangeResponse{
+			URL:        resp.JSON200.Url,
+			ChangeID:   resp.JSON200.ChangeId,
+			InvoiceID:  resp.JSON200.InvoiceId,
+			Status:     resp.JSON200.Status,
+			PriceDelta: priceDelta,
+		}, nil
+	}
+	if statusCode(resp.HTTPResponse) == http.StatusNotFound {
+		return apiwire.BillingContractChangeResponse{}, fmt.Errorf("%w: %s", ErrContractNotFound, detail(resp.ApplicationproblemJSON404, resp.HTTPResponse))
+	}
+	return apiwire.BillingContractChangeResponse{}, unexpected("create contract change", resp.HTTPResponse, firstProblem(resp.ApplicationproblemJSON400, resp.ApplicationproblemJSON404, resp.ApplicationproblemJSON500, resp.ApplicationproblemJSON422))
+}
+
 func (c *ServiceClient) CancelContract(ctx context.Context, orgID uint64, contractID string, reqEditors ...RequestEditorFn) (apiwire.BillingCancelContractResponse, error) {
 	orgIDWire := apiwire.Uint64(orgID).String()
 	resp, err := c.inner.CancelContractWithResponse(ctx, contractID, CancelContractJSONRequestBody{

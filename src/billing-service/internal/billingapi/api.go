@@ -91,6 +91,11 @@ type CancelContractInput struct {
 	Body apiwire.BillingCancelContractRequest `required:"true"`
 }
 
+type CreateContractChangeInput struct {
+	ContractPath
+	Body apiwire.BillingCreateContractChangeRequest `required:"true"`
+}
+
 type (
 	GrantResponse          = apiwire.BillingGrant
 	GrantsResponse         = apiwire.BillingGrants
@@ -184,6 +189,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Get(public, "/products/{product_id}/plans", handler.listPlans, operation("list-plans", "List active billing plans for a product"))
 	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
 	huma.Post(public, "/contracts", handler.createContract, operation("create-contract", "Create a self-serve contract checkout", http.StatusBadRequest, http.StatusInternalServerError))
+	huma.Post(public, "/contracts/{contract_id}/changes", handler.createContractChange, operation("create-contract-change", "Create an invoice-backed contract change", http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError))
 	huma.Post(public, "/portal", handler.createPortal, operation("create-portal", "Create a Stripe customer portal session", http.StatusUnprocessableEntity, http.StatusInternalServerError))
 	huma.Post(public, "/contracts/{contract_id}/cancel", handler.cancelContract, operation("cancel-contract", "Schedule contract cancellation", http.StatusNotFound, http.StatusInternalServerError))
 
@@ -506,6 +512,38 @@ func (h *Handler) createContract(ctx context.Context, input *body[apiwire.Billin
 		return nil, h.internalServerError(ctx, "create contract checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[apiwire.BillingContractChangeResponse], error) {
+	client, err := h.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := client.CreateContractChange(ctx, orgID, input.ContractID, billing.ContractChangeRequest{
+		TargetPlanID: input.Body.TargetPlanID,
+		SuccessURL:   input.Body.SuccessURL,
+		CancelURL:    input.Body.CancelURL,
+	})
+	if err != nil {
+		if errors.Is(err, billing.ErrUnsupportedContractChange) {
+			return nil, huma.Error400BadRequest("unsupported contract change", err)
+		}
+		if errors.Is(err, billing.ErrContractNotFound) {
+			return nil, huma.Error404NotFound("contract not found", err)
+		}
+		return nil, h.internalServerError(ctx, "create contract change", err, "org_id", uint64(orgID), "contract_id", input.ContractID, "target_plan_id", input.Body.TargetPlanID)
+	}
+	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{
+		URL:        result.URL,
+		ChangeID:   result.ChangeID,
+		InvoiceID:  result.InvoiceID,
+		Status:     result.Status,
+		PriceDelta: apiwire.Uint64(result.PriceDeltaUnits),
+	}}, nil
 }
 
 func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[CancelContractResponse], error) {

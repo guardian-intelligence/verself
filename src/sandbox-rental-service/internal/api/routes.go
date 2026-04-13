@@ -301,6 +301,23 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), createBillingContract(billing, publicConfig.BillingReturnOrigins))
 
 	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-billing-contract-change",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/billing/contracts/{contract_id}/changes",
+		Summary:       "Create invoice-backed contract change",
+		DefaultStatus: 200,
+	}, operationPolicy{
+		Permission:     permissionBillingCheckout,
+		Resource:       "billing_contract_change",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "billing_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "billing.contract_change.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createBillingContractChange(billing, publicConfig.BillingReturnOrigins))
+
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "cancel-billing-contract",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/billing/contracts/{contract_id}/cancel",
@@ -431,6 +448,11 @@ type URLOutput struct {
 
 type ContractInput struct {
 	Body apiwire.SandboxBillingContractRequest
+}
+
+type ContractChangeInput struct {
+	ContractID string `path:"contract_id" minLength:"1" maxLength:"255"`
+	Body       apiwire.SandboxBillingContractChangeRequest
 }
 
 type ContractIDPath struct {
@@ -753,6 +775,31 @@ func createBillingContract(billing *billingclient.ServiceClient, billingReturnOr
 		}
 		out := &URLOutput{}
 		out.Body = apiwire.BillingURLResponse{URL: url}
+		return out, nil
+	}
+}
+
+func createBillingContractChange(billing *billingclient.ServiceClient, billingReturnOrigins []string) func(context.Context, *ContractChangeInput) (*URLOutput, error) {
+	return func(ctx context.Context, input *ContractChangeInput) (*URLOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if input.ContractID == "" {
+			return nil, badRequest(ctx, "invalid-contract-id", "contract_id is required", nil)
+		}
+		if err := validateBillingReturnURLs(ctx, billingReturnOrigins,
+			billingReturnURLField{Name: "success_url", URL: input.Body.SuccessURL},
+			billingReturnURLField{Name: "cancel_url", URL: input.Body.CancelURL},
+		); err != nil {
+			return nil, err
+		}
+		result, err := billing.CreateContractChange(ctx, orgID, input.ContractID, input.Body.TargetPlanID, input.Body.SuccessURL, input.Body.CancelURL)
+		if err != nil {
+			return nil, billingProxyError(ctx, err)
+		}
+		out := &URLOutput{}
+		out.Body = apiwire.BillingURLResponse{URL: result.URL}
 		return out, nil
 	}
 }
