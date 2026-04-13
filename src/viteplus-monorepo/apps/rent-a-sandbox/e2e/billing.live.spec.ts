@@ -17,11 +17,14 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
-      await app.expectSSRHTML("/billing/credits", ["Purchase Credits", "Available Credit Value"]);
+      await app.expectSSRHTML("/billing/credits", [
+        "Purchase Credits",
+        "Add prepaid account balance",
+      ]);
       await app.assertStableRoute({
         path: "/billing/credits",
         ready: app.page.getByRole("heading", { name: "Purchase Credits" }),
-        expectedText: ["Purchase Credits", "Available Credit Value", "$10"],
+        expectedText: ["Purchase Credits", "Add prepaid account balance", "$10"],
       });
 
       run.started_balance = await app.readBalance();
@@ -36,7 +39,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await completeStripeCheckout(app);
       await app.expectSSRHTML("/billing?purchased=true", [
         "Credits purchased",
-        "Active Credit Grants",
+        "Account Balance",
       ]);
 
       run.detail_url = "/billing?purchased=true";
@@ -44,7 +47,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         await app.goto("/billing?purchased=true");
         const currentBalance = await app.readBalance();
         const flashVisible = await app.page
-          .getByText("Credits purchased successfully. Your balance has been updated.")
+          .getByText("Credits purchased successfully. Your account credit pool has been updated.")
           .isVisible()
           .catch(() => false);
 
@@ -55,8 +58,8 @@ test.describe("Rent-a-Sandbox Billing", () => {
         return false;
       });
 
-      await expect(app.page.getByRole("heading", { name: "Active Credit Grants" })).toBeVisible();
-      await expect(app.page.getByText("purchase").first()).toBeVisible();
+      await expect(app.page.getByTestId("entitlements-account-balance")).toBeVisible();
+      await expect(app.page.getByTestId("account-balance-value")).toBeVisible();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
     } catch (error) {

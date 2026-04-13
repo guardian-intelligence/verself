@@ -46,11 +46,11 @@ test.describe("Rent-a-Sandbox Shell", () => {
       run.detail_url = "/";
       run.started_balance = await app.readBalance();
 
-      await app.expectSSRHTML("/", ["Dashboard", "Available Credit Value"]);
+      await app.expectSSRHTML("/", ["Dashboard", "View Entitlements"]);
       await app.assertStableRoute({
         path: "/",
         ready: app.page.getByRole("heading", { name: "Dashboard" }),
-        expectedText: ["Dashboard", "Available Credit Value", "Repos", "Executions"],
+        expectedText: ["Dashboard", "View Entitlements", "Repos", "Executions"],
         exactText: true,
       });
 
