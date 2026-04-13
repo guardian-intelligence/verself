@@ -15,15 +15,6 @@ Bootstrapping: single command to go from their laptop -> bare metal instance -> 
 Git Hosting + Fast CI through ZFS
 Billing figured out for you, layered on top of Stripe to make it easy to go from "Product Idea" -> Revenue without having to reinvent metering, transactin processing, tax, accounts receivable, dunning, invoicing, etc. 
 
-## Current status
-
-1. Tearing out old forge-metal CLI tech-debt, moving everything to services and secure vm-orchestrator implementation [Done]
-2. Move GitHub/Forgejo CI integration behind explicit service APIs
-3. Create identity-service + React components so users can be parts of orgs for real and manage their identity
-4. "Manage My Payment Methods"
-5. Billing Debug/Simulator Page
-6. First product, Subscriptions
-
 ## Direction
 
 * vm-orchestrator (Go daemon) is the single privileged host process that manages Firecracker VMs: ZFS clones/checkpoints, TAP networking, jailer lifecycle, vm-bridge control, and guest telemetry aggregation. It exposes a gRPC API over a Unix socket for service callers. vm-guest-telemetry (Zig) is the minimal guest agent streaming 60Hz health samples over vsock. sandbox-rental-service is the product control plane layered on that substrate.
