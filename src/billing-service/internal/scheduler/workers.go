@@ -15,6 +15,10 @@ type BillingWorkClient interface {
 	ProjectPendingBillingEventDeliveries(ctx context.Context, limit int) (int, error)
 	ProjectBillingEventDelivery(ctx context.Context, eventID string, sink string, generation int) (bool, error)
 	ReconcileEntitlements(ctx context.Context, limit int) (int, error)
+	ApplyPendingProviderEvents(ctx context.Context, limit int) (int, error)
+	ApplyProviderEvent(ctx context.Context, eventID string) (bool, error)
+	RolloverDueBillingCycles(ctx context.Context, limit int) (int, error)
+	FinalizeDueBillingCycles(ctx context.Context, limit int) (int, error)
 }
 
 type meteringProjectPendingWorker struct {
@@ -37,6 +41,30 @@ type eventDeliveryProjectWorker struct {
 
 type entitlementsReconcileWorker struct {
 	river.WorkerDefaults[EntitlementsReconcileArgs]
+	client BillingWorkClient
+	logger *slog.Logger
+}
+
+type providerEventApplyPendingWorker struct {
+	river.WorkerDefaults[ProviderEventApplyPendingArgs]
+	client BillingWorkClient
+	logger *slog.Logger
+}
+
+type providerEventApplyWorker struct {
+	river.WorkerDefaults[ProviderEventApplyArgs]
+	client BillingWorkClient
+	logger *slog.Logger
+}
+
+type cycleRolloverPendingWorker struct {
+	river.WorkerDefaults[CycleRolloverPendingArgs]
+	client BillingWorkClient
+	logger *slog.Logger
+}
+
+type invoiceFinalizePendingWorker struct {
+	river.WorkerDefaults[InvoiceFinalizePendingArgs]
 	client BillingWorkClient
 	logger *slog.Logger
 }
@@ -134,6 +162,97 @@ func (w *entitlementsReconcileWorker) Work(ctx context.Context, job *river.Job[E
 	return nil
 }
 
+func (w *providerEventApplyPendingWorker) Work(ctx context.Context, job *river.Job[ProviderEventApplyPendingArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.provider_event_apply_pending")
+	defer span.End()
+
+	limit := normalizedLimit(job.Args.Limit, defaultProjectLimit)
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", KindProviderEventApplyPending),
+		attribute.String("river.queue", QueueProvider),
+		attribute.Int("billing.provider_event.limit", limit),
+	)
+
+	count, err := w.client.ApplyPendingProviderEvents(ctx, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.Int("billing.provider_event.applied_count", count))
+	w.logger.InfoContext(ctx, "billing provider events applied", "river_job_id", job.ID, "limit", limit, "count", count)
+	return nil
+}
+
+func (w *providerEventApplyWorker) Work(ctx context.Context, job *river.Job[ProviderEventApplyArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.provider_event_apply")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", KindProviderEventApply),
+		attribute.String("river.queue", QueueProvider),
+		attribute.String("billing.provider_event.event_id", job.Args.EventID),
+	)
+
+	applied, err := w.client.ApplyProviderEvent(ctx, job.Args.EventID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.Bool("billing.provider_event.applied", applied))
+	w.logger.InfoContext(ctx, "billing provider event applied", "river_job_id", job.ID, "event_id", job.Args.EventID, "applied", applied)
+	return nil
+}
+
+func (w *cycleRolloverPendingWorker) Work(ctx context.Context, job *river.Job[CycleRolloverPendingArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.cycle_rollover_pending")
+	defer span.End()
+
+	limit := normalizedLimit(job.Args.Limit, defaultProjectLimit)
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", KindCycleRolloverPending),
+		attribute.String("river.queue", QueueBilling),
+		attribute.Int("billing.cycle.limit", limit),
+	)
+
+	count, err := w.client.RolloverDueBillingCycles(ctx, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.Int("billing.cycle.rolled_over_count", count))
+	w.logger.InfoContext(ctx, "billing cycles rolled over", "river_job_id", job.ID, "limit", limit, "count", count)
+	return nil
+}
+
+func (w *invoiceFinalizePendingWorker) Work(ctx context.Context, job *river.Job[InvoiceFinalizePendingArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.invoice_finalize_pending")
+	defer span.End()
+
+	limit := normalizedLimit(job.Args.Limit, defaultProjectLimit)
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", KindInvoiceFinalizePending),
+		attribute.String("river.queue", QueueBilling),
+		attribute.Int("billing.invoice.limit", limit),
+	)
+
+	count, err := w.client.FinalizeDueBillingCycles(ctx, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.Int("billing.invoice.finalized_count", count))
+	w.logger.InfoContext(ctx, "billing invoices finalized", "river_job_id", job.ID, "limit", limit, "count", count)
+	return nil
+}
+
 func registerWorkers(workers *river.Workers, logger *slog.Logger, client BillingWorkClient) error {
 	if client == nil {
 		return fmt.Errorf("register billing scheduler workers: nil billing work client")
@@ -142,6 +261,10 @@ func registerWorkers(workers *river.Workers, logger *slog.Logger, client Billing
 	river.AddWorker(workers, &eventDeliveryProjectPendingWorker{client: client, logger: logger})
 	river.AddWorker(workers, &eventDeliveryProjectWorker{client: client, logger: logger})
 	river.AddWorker(workers, &entitlementsReconcileWorker{client: client, logger: logger})
+	river.AddWorker(workers, &providerEventApplyPendingWorker{client: client, logger: logger})
+	river.AddWorker(workers, &providerEventApplyWorker{client: client, logger: logger})
+	river.AddWorker(workers, &cycleRolloverPendingWorker{client: client, logger: logger})
+	river.AddWorker(workers, &invoiceFinalizePendingWorker{client: client, logger: logger})
 	return nil
 }
 

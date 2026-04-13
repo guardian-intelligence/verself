@@ -22,14 +22,23 @@ const (
 	QueueMetering      = "metering"
 	QueueEventDelivery = "event_delivery"
 	QueueReconcile     = "reconcile"
+	QueueProvider      = "provider"
+	QueueBilling       = "billing"
 
 	KindMeteringProjectPending       = "billing.metering.project_pending_windows"
 	KindEventDeliveryProjectPending  = "billing.event_delivery.project_pending"
 	KindEventDeliveryProject         = "billing.event_delivery.project"
 	KindEntitlementsReconcile        = "billing.entitlements.reconcile"
+	KindProviderEventApplyPending    = "billing.provider_event.apply_pending"
+	KindProviderEventApply           = "billing.provider_event.apply"
+	KindCycleRolloverPending         = "billing.cycle.rollover_pending"
+	KindInvoiceFinalizePending       = "billing.invoice.finalize_pending"
 	periodicMeteringProjectorID      = "billing-metering-projector"
 	periodicEventDeliveryProjectorID = "billing-event-delivery-projector"
 	periodicEntitlementsID           = "billing-entitlements-reconcile"
+	periodicProviderEventApplyID     = "billing-provider-event-apply"
+	periodicCycleRolloverID          = "billing-cycle-rollover"
+	periodicInvoiceFinalizeID        = "billing-invoice-finalize"
 
 	defaultProjectLimit    = 100
 	defaultReconcileLimit  = 10000
@@ -94,6 +103,8 @@ func queueConfig() map[string]river.QueueConfig {
 		QueueMetering:      {MaxWorkers: 2},
 		QueueEventDelivery: {MaxWorkers: 1},
 		QueueReconcile:     {MaxWorkers: 1},
+		QueueProvider:      {MaxWorkers: 1},
+		QueueBilling:       {MaxWorkers: 1},
 	}
 }
 
@@ -102,6 +113,8 @@ func queueNames() []string {
 		QueueMetering,
 		QueueEventDelivery,
 		QueueReconcile,
+		QueueProvider,
+		QueueBilling,
 	}
 }
 
@@ -151,6 +164,27 @@ func periodicJobs(cfg Config) []*river.PeriodicJob {
 				return EntitlementsReconcileArgs{Limit: cfg.ReconcileLimit, SubmittedAt: newSubmittedAt()}, nil
 			},
 			&river.PeriodicJobOpts{ID: periodicEntitlementsID, RunOnStart: true},
+		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(cfg.ProjectEvery),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return ProviderEventApplyPendingArgs{Limit: cfg.ProjectLimit, SubmittedAt: newSubmittedAt()}, nil
+			},
+			&river.PeriodicJobOpts{ID: periodicProviderEventApplyID, RunOnStart: true},
+		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(cfg.ProjectEvery),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return CycleRolloverPendingArgs{Limit: cfg.ProjectLimit, SubmittedAt: newSubmittedAt()}, nil
+			},
+			&river.PeriodicJobOpts{ID: periodicCycleRolloverID, RunOnStart: true},
+		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(cfg.ProjectEvery),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return InvoiceFinalizePendingArgs{Limit: cfg.ProjectLimit, SubmittedAt: newSubmittedAt()}, nil
+			},
+			&river.PeriodicJobOpts{ID: periodicInvoiceFinalizeID, RunOnStart: true},
 		),
 	}
 }

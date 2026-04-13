@@ -51,6 +51,46 @@ func TestStripeSetupIntentDecodeUsesProviderNeutralMetadata(t *testing.T) {
 	assertEqual(t, intent.PaymentMethod.Card.Last4, "4242", "card last4")
 }
 
+func TestStripeRawProviderEventAnnotationExtractsProviderNeutralMetadata(t *testing.T) {
+	t.Parallel()
+
+	event := stripe.Event{
+		ID:   "evt_test",
+		Type: "invoice.paid",
+		Data: &stripe.EventData{Raw: []byte(`{
+			"id": "in_test",
+			"customer": "cus_test",
+			"payment_intent": "pi_test",
+			"metadata": {
+				"org_id": "42",
+				"product_id": "sandbox",
+				"contract_id": "contract_test",
+				"invoice_id": "invoice_test"
+			}
+		}`)},
+	}
+
+	annotation := stripeRawProviderEventAnnotation(event)
+	assertEqual(t, annotation.OrgID, "42", "org id")
+	assertEqual(t, annotation.ProductID, "sandbox", "product id")
+	assertEqual(t, annotation.ContractID, "contract_test", "contract id")
+	assertEqual(t, annotation.InvoiceID, "invoice_test", "invoice id")
+	assertEqual(t, annotation.ProviderInvoiceID, "in_test", "provider invoice id")
+	assertEqual(t, annotation.ProviderPaymentIntentID, "pi_test", "provider payment intent id")
+	assertEqual(t, annotation.ObjectType, "invoice", "provider object type")
+}
+
+func TestStripeProviderEventRetryDelayCaps(t *testing.T) {
+	t.Parallel()
+
+	if got := stripeProviderEventRetryDelay(1); got != stripeProviderEventBaseBackoff {
+		t.Fatalf("attempt 1 delay = %s, want %s", got, stripeProviderEventBaseBackoff)
+	}
+	if got := stripeProviderEventRetryDelay(20); got != stripeProviderEventMaxBackoff {
+		t.Fatalf("attempt 20 delay = %s, want cap %s", got, stripeProviderEventMaxBackoff)
+	}
+}
+
 func TestSourceReferenceGrantIDIsDeterministicAndScoped(t *testing.T) {
 	t.Parallel()
 

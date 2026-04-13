@@ -143,6 +143,143 @@ func contractPhaseStartedEvent(orgID OrgID, productID string, contractID string,
 	}
 }
 
+func billingCycleClosedForUsageEvent(cycle BillingCycle, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":      strconv.FormatUint(uint64(cycle.OrgID), 10),
+		"product_id":  cycle.ProductID,
+		"cycle_id":    cycle.CycleID,
+		"anchor_at":   cycle.AnchorAt.UTC().Format(time.RFC3339Nano),
+		"cycle_seq":   strconv.FormatInt(cycle.CycleSeq, 10),
+		"starts_at":   cycle.StartsAt.UTC().Format(time.RFC3339Nano),
+		"ends_at":     cycle.EndsAt.UTC().Format(time.RFC3339Nano),
+		"occurred_at": occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "billing_cycle_closed_for_usage", cycle.CycleID),
+		EventType:     "billing_cycle_closed_for_usage",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "billing_cycle",
+		AggregateID:   cycle.CycleID,
+		OrgID:         strconv.FormatUint(uint64(cycle.OrgID), 10),
+		ProductID:     cycle.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func billingCycleOpenedEvent(cycle BillingCycle, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":               strconv.FormatUint(uint64(cycle.OrgID), 10),
+		"product_id":           cycle.ProductID,
+		"cycle_id":             cycle.CycleID,
+		"predecessor_cycle_id": cycle.PredecessorCycleID,
+		"anchor_at":            cycle.AnchorAt.UTC().Format(time.RFC3339Nano),
+		"cycle_seq":            strconv.FormatInt(cycle.CycleSeq, 10),
+		"starts_at":            cycle.StartsAt.UTC().Format(time.RFC3339Nano),
+		"ends_at":              cycle.EndsAt.UTC().Format(time.RFC3339Nano),
+		"occurred_at":          occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "billing_cycle_opened", cycle.CycleID),
+		EventType:     "billing_cycle_opened",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "billing_cycle",
+		AggregateID:   cycle.CycleID,
+		OrgID:         strconv.FormatUint(uint64(cycle.OrgID), 10),
+		ProductID:     cycle.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func invoiceIssuedEvent(invoice invoiceArtifact, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":           strconv.FormatUint(uint64(invoice.OrgID), 10),
+		"product_id":       invoice.ProductID,
+		"cycle_id":         invoice.CycleID,
+		"invoice_id":       invoice.InvoiceID,
+		"invoice_number":   invoice.InvoiceNumber,
+		"total_due_units":  strconv.FormatUint(invoice.TotalDueUnits, 10),
+		"subtotal_units":   strconv.FormatUint(invoice.SubtotalUnits, 10),
+		"tax_units":        strconv.FormatUint(invoice.TaxUnits, 10),
+		"adjustment_units": strconv.FormatUint(invoice.AdjustmentUnits, 10),
+		"invoice_status":   invoice.Status,
+		"payment_status":   invoice.PaymentStatus,
+		"period_start":     invoice.PeriodStart.UTC().Format(time.RFC3339Nano),
+		"period_end":       invoice.PeriodEnd.UTC().Format(time.RFC3339Nano),
+		"occurred_at":      occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "invoice_issued", invoice.InvoiceID),
+		EventType:     "invoice_issued",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "invoice",
+		AggregateID:   invoice.InvoiceID,
+		OrgID:         strconv.FormatUint(uint64(invoice.OrgID), 10),
+		ProductID:     invoice.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func invoiceAdjustmentCreatedEvent(adjustment invoiceAdjustmentArtifact, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"adjustment_id":            adjustment.AdjustmentID,
+		"invoice_id":               adjustment.InvoiceID,
+		"invoice_finalization_id":  adjustment.InvoiceFinalizationID,
+		"org_id":                   strconv.FormatUint(uint64(adjustment.OrgID), 10),
+		"product_id":               adjustment.ProductID,
+		"window_id":                adjustment.WindowID,
+		"sku_id":                   adjustment.SKUID,
+		"amount_units":             strconv.FormatUint(adjustment.AmountUnits, 10),
+		"adjustment_type":          adjustment.AdjustmentType,
+		"adjustment_source":        adjustment.AdjustmentSource,
+		"reason_code":              adjustment.ReasonCode,
+		"policy_version":           adjustment.PolicyVersion,
+		"customer_visible":         strconv.FormatBool(adjustment.CustomerVisible),
+		"recoverable":              strconv.FormatBool(adjustment.Recoverable),
+		"affects_customer_balance": strconv.FormatBool(adjustment.AffectsCustomerBalance),
+		"occurred_at":              occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "invoice_adjustment_created", adjustment.AdjustmentID),
+		EventType:     "invoice_adjustment_created",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "invoice_adjustment",
+		AggregateID:   adjustment.AdjustmentID,
+		OrgID:         strconv.FormatUint(uint64(adjustment.OrgID), 10),
+		ProductID:     adjustment.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func invoiceFinalizationBlockedEvent(cycle BillingCycle, reason string, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":       strconv.FormatUint(uint64(cycle.OrgID), 10),
+		"product_id":   cycle.ProductID,
+		"cycle_id":     cycle.CycleID,
+		"block_reason": reason,
+		"occurred_at":  occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "invoice_finalization_blocked", cycle.CycleID, reason),
+		EventType:     "invoice_finalization_blocked",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "billing_cycle",
+		AggregateID:   cycle.CycleID,
+		OrgID:         strconv.FormatUint(uint64(cycle.OrgID), 10),
+		ProductID:     cycle.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
 func insertBillingEventTx(ctx context.Context, tx *sql.Tx, event billingEventFact) error {
 	prepared, err := prepareBillingEvent(event)
 	if err != nil {
