@@ -57,6 +57,26 @@ Reference points in this repo:
 | Stripe | SetupIntents, PaymentMethods, Customer Portal, one-off invoice collection, payment intents, refunds, disputes, optional Stripe Tax, and hosted payment artifacts. Stripe Subscriptions are not part of the target domain model. |
 | Mailbox service | Transactional delivery of Forge Metal invoice emails from the stored invoice artifact. Stripe invoice emailing is disabled in the target Forge Metal canonical-invoice path. |
 
+## Design commitments and reversible choices
+
+The load-bearing commitments are:
+
+- Forge Metal owns cadence, contract shape, phases, entitlements, invoice artifacts, invoice numbering, overage consent, and finalization policy. Stripe Subscriptions must not become the self-serve contract state machine.
+- PostgreSQL owns every schedule-defining timestamp and every durable state-machine row. A River job may be missing, duplicated, canceled, delayed, or reconstructed without changing billing truth.
+- Cycle rollover and invoice finalization are separate workflows. Rollover opens the successor cycle before Stripe collection, invoice email, or payment completion so valid usage is not blocked by a slow external rail.
+- Forge Metal's issued invoice artifact is canonical. Stripe invoice PDFs, hosted invoice pages, and payment intents are provider artifacts that must reconcile back to the Forge Metal row.
+- A payment method on file is not overage consent. Free-tier and hard-cap customers must not receive customer receivables for leaked no-consent usage.
+- Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, invoice, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
+- ClickHouse is proof/read-model infrastructure. It must not perform billing transitions, authorize usage, issue invoices, or decide ledger correctness.
+
+The reversible implementation choices are:
+
+- Exact River job names, queue names, and job granularity, as long as jobs remain deterministic over domain identity.
+- Whether a first implementation relies on bounded repair scanners or transactionally enqueues every one-row River job with its domain row.
+- Whether Stripe automatic collection is delegated to Stripe initially or replaced later by Forge Metal-owned dunning through `billing.payment.retry`.
+- Whether dormant zero-usage zero-total cycles produce customer-facing invoice artifacts or only internal cycle records.
+- ClickHouse projection table layout, as long as PostgreSQL remains authoritative and projections remain idempotent by deterministic identifiers.
+
 ## Scheduling and queuing model
 
 Scheduling and queuing are first-class billing verbs.
@@ -64,6 +84,22 @@ Scheduling and queuing are first-class billing verbs.
 Scheduling is the act of declaring that work is due at or after a domain time. Billing schedules are encoded in PostgreSQL rows, not hidden inside River. Examples include `requested_effective_at`, `actual_effective_at`, `effective_start`, `effective_end`, `period_start`, `period_end`, `cycle.starts_at`, `cycle.ends_at`, `finalization_due_at`, `grace_until`, `next_materialize_at`, and `billing_event_delivery_queue.next_attempt_at`.
 
 Queuing is the act of inserting a durable River job to execute one bounded transition derived from PostgreSQL state. River gives us retry, backoff, concurrency limits, delayed execution, periodic scans, OpenTelemetry spans, and transactional enqueueing. It does not replace the domain state machine.
+
+A transition belongs in River when it has at least one of these properties:
+
+- It is due at a future domain timestamp.
+- It can be retried without making the caller wait.
+- It performs an external side effect such as Stripe collection, mailbox delivery, or ClickHouse projection.
+- It repairs or reconciles missing deterministic work from PostgreSQL state.
+- It should be observable as a durable background transition with retry history.
+
+A transition should stay in the request path or a single PostgreSQL transaction when it has one of these properties:
+
+- It decides whether a customer request may start, continue, settle, or safely fail.
+- It is required to preserve a financial lock or prevent a TigerBeetle reservation leak.
+- It can be expressed as a PostgreSQL constraint, row lock, compare-and-swap update, deterministic upsert, or stored domain row without delayed execution.
+- It would create a customer-visible outage if a queue worker were late.
+- It would be incorrect if ClickHouse projection lagged.
 
 Workers are thin executors. A worker must:
 
