@@ -63,7 +63,7 @@ The load-bearing commitments are:
 
 - Forge Metal owns cadence, contract shape, phases, entitlements, invoice artifacts, invoice numbering, overage consent, and finalization policy. Stripe Subscriptions must not become the self-serve contract state machine.
 - PostgreSQL owns every schedule-defining timestamp and every durable state-machine row. A River job may be missing, duplicated, canceled, delayed, or reconstructed without changing billing truth.
-- Cycle rollover and invoice finalization are separate workflows. Rollover opens the successor cycle before Stripe collection, invoice email, or payment completion so valid usage is not blocked by a slow external rail.
+- Cycle rollover and invoice finalization are separate transition paths. Rollover opens the successor cycle before Stripe collection, invoice email, or payment completion so valid usage is not blocked by a slow external rail.
 - Forge Metal's issued invoice artifact is canonical. Stripe invoice PDFs, hosted invoice pages, and payment intents are provider artifacts that must reconcile back to the Forge Metal row.
 - A payment method on file is not overage consent. Free-tier and hard-cap customers must not receive customer receivables for leaked no-consent usage.
 - Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, invoice, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
@@ -1073,7 +1073,7 @@ Recurring grants are materialized from durable rows; they are not computed from 
 
 ## Cycle rollover and invoice finalization
 
-Cycle rollover and invoice finalization are separate workflows.
+Cycle rollover and invoice finalization are separate transition paths.
 
 `billing.cycle.rollover` runs at `billing_cycles.ends_at` or at an immediate commercial boundary such as free -> paid or cadence change. It must:
 
@@ -1387,7 +1387,7 @@ The public/internal billing API is contract- and invoice-oriented:
 - `/contracts/{contract_id}/changes` for upgrade, downgrade, cancel, renew, and amend requests
 - `/billing-cycles` for cycle inspection and operator repair
 - `/invoices` and `/invoices/{invoice_id}` for issued invoice artifacts
-- `/invoices/{invoice_id}/adjustments` for manual/admin adjustments and credit-note workflows
+- `/invoices/{invoice_id}/adjustments` for manual/admin adjustments and credit-note flows
 - `/payment-methods` for setup-intent-backed payment method management state
 - `/provider-events` instead of `/subscription-provider-events`
 - `contract_id`, `phase_id`, `cycle_id`, `invoice_id`, and `change_id` in responses instead of a single mutable subscription plan field
