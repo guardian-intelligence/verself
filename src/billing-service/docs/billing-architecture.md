@@ -24,6 +24,14 @@ Reference points in this repo:
 - `src/sandbox-rental-service/docs/vm-execution-control-plane.md` for the reserve/settle split used by sandbox jobs and the existing River control-plane pattern.
 - `src/apiwire/docs/wire-contracts.md` for wire-shape and generated-client conventions.
 
+Provider reference points:
+
+- Stripe subscription updates support prorations and can invoice prorations immediately with `proration_behavior = always_invoice`: <https://docs.stripe.com/billing/subscriptions/prorations> and <https://docs.stripe.com/api/subscriptions/update>.
+- Paddle subscription updates require an explicit `proration_billing_mode` when replacing subscription items: <https://developer.paddle.com/build/subscriptions/replace-products-prices-upgrade-downgrade>.
+- Recurly and Chargebee expose proration and timing as subscription-change policy knobs rather than one universal behavior: <https://docs.recurly.com/recurly-subscriptions/docs/change-subscription> and <https://www.chargebee.com/docs/billing/2.0/subscriptions/proration>.
+
+Forge Metal follows the industry-standard price-side shape: immediate upgrades can charge the prorated positive price delta now; downgrades default to the next renewal unless explicitly overridden. Forge Metal must additionally define entitlement-side proration because Stripe, Paddle, Recurly, and Chargebee do not model our credit-bucket grant semantics.
+
 ## Non-negotiable invariants
 
 - Every commercial entitlement must be derivable from PostgreSQL state.
@@ -41,6 +49,7 @@ Reference points in this repo:
 - Stripe never owns cadence, billing cycles, contract shape, SKU rates, grant scope, entitlement precedence, billing-window funding, invoice numbering, or metering.
 - The free tier is universal and independent from paid contracts. Paid contract creation, upgrade, downgrade, cancellation, or payment failure must not close or decrement free-tier grants.
 - Premium usage must not drain non-premium bucket grants, and non-premium usage must not drain premium bucket grants. Cross-bucket funding must be represented by product-level or account-level grants.
+- Paid plan changes must be path-independent for a given effective time: a customer must not receive more total paid entitlement by stepping through intermediate self-serve plans than by moving directly from the current plan to the target plan. Immediate upgrades grant only the remaining positive entitlement delta between the target plan and the current plan; already-issued current-cycle paid grants remain available until their own period end instead of being replaced by a full prorated target-plan grant.
 - A payment method on file is not overage consent. Free-tier orgs and paid orgs that enabled hard caps must not receive receivable funding legs for usage beyond authorized grants and prepaid balances.
 - If usage without overage consent leaks through reservation or settlement, billing finalization must apply a deterministic automatic invoice adjustment before any customer charge is finalized. Automatic no-consent adjustments are capped at USD $0.99 per org per invoice finalization run; exceeding that cap blocks finalization and forces operator review instead of billing the customer.
 - Invoices are immutable after issue. Corrections are explicit adjustment invoices or credit-note invoices linked to the original artifact.
@@ -67,6 +76,7 @@ The load-bearing commitments are:
 - Forge Metal's issued invoice artifact is canonical. Stripe invoice PDFs, hosted invoice pages, and payment intents are provider artifacts that must reconcile back to the Forge Metal row.
 - A payment method on file is not overage consent. Free-tier and hard-cap customers must not receive customer receivables for leaked no-consent usage.
 - Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, invoice, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
+- Self-serve catalog upgrades must be anti-arbitrage and path-independent at the same effective timestamp: charge the prorated positive price delta, preserve already-issued current-cycle paid grants until their own expiry, and issue only the prorated positive entitlement delta for the target phase.
 - ClickHouse is proof/read-model infrastructure. It must not perform billing transitions, authorize usage, issue invoices, or decide ledger correctness.
 
 The reversible implementation choices are:
