@@ -167,6 +167,8 @@ export type {
   SandboxSubmitRequest,
   SandboxSubmitRequestWritable,
   SandboxWebhookEndpointRecord,
+  SchedulerProbeRequest,
+  SchedulerProbeResponse,
   SubmitExecutionData,
   SubmitExecutionError,
   SubmitExecutionErrors,

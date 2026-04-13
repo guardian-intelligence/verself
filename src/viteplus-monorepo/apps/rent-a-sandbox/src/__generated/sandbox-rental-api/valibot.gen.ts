@@ -451,6 +451,17 @@ export const vSandboxWebhookEndpointRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
+export const vSchedulerProbeRequest = v.strictObject({
+  message: v.optional(v.pipe(v.string(), v.maxLength(512))),
+});
+
+export const vSchedulerProbeResponse = v.strictObject({
+  job_id: v.string(),
+  kind: v.string(),
+  queue: v.string(),
+  status: v.string(),
+});
+
 export const vBillingCancelSubscriptionResponseWritable = v.strictObject({
   subscription: vBillingSubscription,
 });

@@ -395,6 +395,7 @@ var apiOperationRateLimiter = newFixedWindowOperationRateLimiter(map[string]rate
 	"repo_mutation":             {Limit: 120, Window: time.Minute},
 	"execution_submit":          {Limit: 120, Window: time.Minute},
 	"billing_mutation":          {Limit: 60, Window: time.Minute},
+	"scheduler_probe":           {Limit: 30, Window: time.Minute},
 	"webhook_endpoint_mutation": {Limit: 30, Window: time.Minute},
 })
 

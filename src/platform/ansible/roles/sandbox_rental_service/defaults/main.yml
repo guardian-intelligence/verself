@@ -11,3 +11,11 @@ sandbox_rental_service_billing_token_url: "http://{{ services.zitadel.host }}:{{
 sandbox_rental_service_vm_orchestrator_socket: "{{ firecracker_vm_orchestrator_api_socket | default('/run/vm-orchestrator/api.sock', true) }}"
 sandbox_rental_service_vm_orchestrator_socket_group: "{{ firecracker_vm_orchestrator_socket_group | default('vm-clients', true) }}"
 sandbox_rental_service_force_schema_reset: false
+sandbox_rental_service_pg_max_open_conns: 16
+sandbox_rental_service_pg_max_idle_conns: 8
+sandbox_rental_service_pg_conn_max_lifetime_seconds: 1800
+sandbox_rental_service_pg_conn_max_idle_seconds: 300
+sandbox_rental_service_river_pg_max_conns: 8
+sandbox_rental_service_river_pg_min_conns: 1
+sandbox_rental_service_river_pg_conn_max_lifetime_seconds: 1800
+sandbox_rental_service_river_pg_conn_max_idle_seconds: 300

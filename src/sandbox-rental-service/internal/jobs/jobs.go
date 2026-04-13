@@ -17,6 +17,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	billingclient "github.com/forge-metal/billing-service/client"
+	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -85,6 +86,10 @@ type BillingClient interface {
 	Activate(ctx context.Context, reservation billingclient.Reservation, activatedAt time.Time, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
 	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, usageSummary map[string]any, reqEditors ...billingclient.RequestEditorFn) error
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
+}
+
+type SchedulerRuntime interface {
+	EnqueueProbe(ctx context.Context, req scheduler.ProbeRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {
@@ -201,6 +206,7 @@ type Service struct {
 	PG                            *sql.DB
 	CH                            driver.Conn
 	CHDatabase                    string
+	Scheduler                     SchedulerRuntime
 	Orchestrator                  Runner
 	Billing                       BillingClient
 	BillingVCPUs                  int
