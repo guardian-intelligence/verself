@@ -5,6 +5,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const (
@@ -29,13 +31,15 @@ const (
 	QueueReconcile    = "reconcile"
 	QueueWebhook      = "webhook"
 
-	ProbeKind = "scheduler.probe"
+	ProbeKind            = "scheduler.probe"
+	ExecutionAdvanceKind = "execution.advance"
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/scheduler")
 
 type Config struct {
-	Logger *slog.Logger
+	Logger          *slog.Logger
+	RegisterWorkers func(*river.Workers) error
 }
 
 type Runtime struct {
@@ -58,6 +62,23 @@ type ProbeResult struct {
 	Status string
 }
 
+type ExecutionAdvanceRequest struct {
+	ExecutionID       string
+	AttemptID         string
+	OrgID             uint64
+	ActorID           string
+	VerificationRunID string
+	CorrelationID     string
+	TraceParent       string
+}
+
+type ExecutionAdvanceResult struct {
+	JobID  int64
+	Kind   string
+	Queue  string
+	Status string
+}
+
 type ProbeArgs struct {
 	Message           string `json:"message,omitempty"`
 	OrgID             uint64 `json:"org_id,omitempty"`
@@ -74,6 +95,27 @@ func (ProbeArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 3,
 		Queue:       QueueScheduler,
 		Tags:        []string{"scheduler-probe"},
+	}
+}
+
+type ExecutionAdvanceArgs struct {
+	ExecutionID       string `json:"execution_id"`
+	AttemptID         string `json:"attempt_id"`
+	OrgID             uint64 `json:"org_id,omitempty"`
+	ActorID           string `json:"actor_id,omitempty"`
+	VerificationRunID string `json:"verification_run_id,omitempty"`
+	CorrelationID     string `json:"correlation_id,omitempty"`
+	TraceParent       string `json:"trace_parent,omitempty"`
+	SubmittedAt       string `json:"submitted_at"`
+}
+
+func (ExecutionAdvanceArgs) Kind() string { return ExecutionAdvanceKind }
+
+func (ExecutionAdvanceArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 3,
+		Queue:       QueueExecution,
+		Tags:        []string{"execution"},
 	}
 }
 
@@ -114,10 +156,16 @@ func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &ProbeWorker{logger: logger})
+	if cfg.RegisterWorkers != nil {
+		if err := cfg.RegisterWorkers(workers); err != nil {
+			return nil, fmt.Errorf("register scheduler workers: %w", err)
+		}
+	}
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger: logger,
 		Middleware: []rivertype.Middleware{
+			executionTraceContextMiddleware(),
 			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
 				DurationUnit:                "ms",
 				EnableSemanticMetrics:       true,
@@ -132,6 +180,46 @@ func NewRuntime(pool *pgxpool.Pool, cfg Config) (*Runtime, error) {
 	}
 
 	return &Runtime{client: client, logger: logger}, nil
+}
+
+func executionTraceContextMiddleware() rivertype.Middleware {
+	return river.WorkerMiddlewareFunc(func(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
+		var args struct {
+			TraceParent string `json:"trace_parent"`
+		}
+		if err := json.Unmarshal(job.EncodedArgs, &args); err == nil {
+			if traceParent := strings.TrimSpace(args.TraceParent); traceParent != "" {
+				ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{
+					"traceparent": traceParent,
+				})
+			}
+		}
+		return doInner(ctx)
+	})
+}
+
+func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req ExecutionAdvanceRequest) (ExecutionAdvanceResult, error) {
+	args := ExecutionAdvanceArgs{
+		ExecutionID:       strings.TrimSpace(req.ExecutionID),
+		AttemptID:         strings.TrimSpace(req.AttemptID),
+		OrgID:             req.OrgID,
+		ActorID:           strings.TrimSpace(req.ActorID),
+		VerificationRunID: strings.TrimSpace(req.VerificationRunID),
+		CorrelationID:     strings.TrimSpace(req.CorrelationID),
+		TraceParent:       strings.TrimSpace(req.TraceParent),
+		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ExecutionAdvanceResult{}, fmt.Errorf("enqueue execution advance: %w", err)
+	}
+	job := result.Job
+	return ExecutionAdvanceResult{
+		JobID:  job.ID,
+		Kind:   job.Kind,
+		Queue:  job.Queue,
+		Status: string(job.State),
+	}, nil
 }
 
 func (r *Runtime) Start(ctx context.Context) error {

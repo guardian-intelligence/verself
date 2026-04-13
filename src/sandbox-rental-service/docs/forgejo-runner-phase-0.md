@@ -6,12 +6,16 @@ Last Updated: 2026-04-13
 
 ## Scope
 
-Phase 0 exists to close the runner-engine decision before adding River-backed
-queueing/scheduling or the Forgejo runner north face. It proves that a Forgejo
-Actions task can be reduced to a deterministic workflow run using the Forgejo
-`act` fork and the existing vm-orchestrator/Firecracker execution path.
+Phase 0 exists to close the runner-engine decision before adding the Forgejo
+runner north face. It proves that a Forgejo Actions task can be reduced to a
+deterministic workflow run using the Forgejo `act` fork and the existing
+vm-orchestrator/Firecracker execution path.
 
-Phase 0 does not implement runner registration, `FetchTask`, live `UpdateLog`, customer-facing workflow submissions, per-org runners, cache, artifacts, or River. River is the next cutover after this tracer bullet is green.
+Phase 0 does not implement runner registration, `FetchTask`, live `UpdateLog`,
+customer-facing workflow submissions, per-org runners, cache, or artifacts. The
+River scheduler runtime is now part of `sandbox-rental-service`; production
+runner work must attach to `execution.advance` instead of adding a private
+runner scheduler.
 
 ## Locked Amendments
 
@@ -134,21 +138,17 @@ The matching billing assertion uses `execution_billing_windows.actual_quantity >
 
 ## River Handoff
 
-After Phase 0 is green, stand up River in `sandbox-rental-service` before runner registration or `FetchTask` work:
+The River runtime tracer bullet is already landed in `sandbox-rental-service`:
+`scheduler.probe` proves `riverpgxv5`, queue registration, and OTel middleware.
+The next handoff is the execution state-machine cutover that runner work will
+reuse:
 
-1. Add River OSS migrations to the sandbox database through the service-owned
-   migration path, and use `riverpgxv5` with `pgxpool` for the scheduler-owned
-   transaction path.
-2. Replace API-launched goroutines with transactional enqueue of
+1. Replace API-launched goroutines with transactional enqueue of
    `execution.advance`.
-3. Move execution state changes into compare-and-swap transition helpers.
-4. Store submit/fetch trace context on the execution/attempt and link worker
+2. Move execution state changes into compare-and-swap transition helpers.
+3. Store submit/fetch trace context on the execution/attempt and link worker
    traces back to it.
-5. Register the queue taxonomy from `durable-execution-workflow-plan.md` even
-   if only `execution.advance` is active at first, so Forgejo/GitHub runner
-   adapters, VM session renewal, and recurring schedule materialization attach
-   to the same queue/scheduler runtime.
-6. Re-run the Phase 0 tracer queued through River instead of the private direct
+4. Re-run the Phase 0 tracer queued through River instead of the private direct
    harness.
 
 Only after the same tracer produces identical ClickHouse evidence when queued

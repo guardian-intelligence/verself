@@ -1,6 +1,6 @@
 # Durable Execution Workflow: Phased Implementation Plan
 
-Status: Proposed  
+Status: In progress
 Owner: `sandbox-rental-service`  
 Last Updated: 2026-04-13
 
@@ -244,8 +244,9 @@ execution contract:
   `vm_session`, or future explicit variants.
 - external identity fields: provider task/run/job IDs, repo, ref, SHA, runner
   label, request key/idempotency key, and log ack cursor.
-- trace context from the fetch/registration path linked into
-  `execution.advance` worker spans.
+- trace context from the fetch/registration path extracted before River's OTel
+  middleware starts `execution.advance` worker spans, or explicitly linked if
+  parent/child semantics become misleading.
 
 The adapter may own provider-specific tables, but it may not own lifecycle
 terminalization. Terminal execution state, billing settlement, log storage, and
@@ -262,16 +263,21 @@ execution rewrite:
 2. Add service-owned migrations for River tables, `execution_events`, source and
    workload projection columns, capacity leases, and schedule occurrence tables.
 3. Register the River queues and typed job args for the taxonomy above. The
-   first cut should activate only `scheduler.probe` to prove schema, pgx-backed
-   runtime startup, queue registration, and OTel spans. `execution.advance`
-   becomes the first domain worker in Phase 2, when `execution_events` and the
-   transactional admission contract exist.
+   first cut activated `scheduler.probe` to prove schema, pgx-backed runtime
+   startup, queue registration, and OTel spans. The second cut activates
+   `execution.advance` as the first domain worker once `execution_events` and
+   the transactional admission contract exist.
 4. Replace `Submit` with a pgx transaction that writes execution + attempt +
    initial `execution_events` row + River `execution.advance` job. Stop launching
    `go s.execute(...)` from the request handler in the same cut.
 5. Move billing reserve, orchestrator launch, wait/finalize, and cancellation
    into transition helpers one state at a time. Every helper must be retryable by
    inspecting stored state before attempting side effects.
+   Billing reserve uses `(source_type, source_ref, window_seq)` as the
+   idempotency key, with direct executions using `source_ref=attempt_id` and an
+   explicit window sequence. Existing billing windows are replayable only while
+   still reserved; terminal billing windows must fail the repeated reserve
+   instead of being handed back to the execution worker.
 6. Re-run the Forgejo `act` Phase 0 tracer through `execution.advance` before
    adding Forgejo `Register`/`Declare`/`FetchTask`. If the tracer cannot produce
    the same ClickHouse evidence when queued through River, runner integration
@@ -514,7 +520,7 @@ Green protocol:
 - Implement `execution.advance` for the direct workload path; vm-orchestrator
   remains the VM executor.
 - Keep side-effect IDs deterministic:
-  - billing job/window IDs from attempt/window sequence;
+  - billing reserve identity from attempt/window sequence;
   - orchestrator run ID from attempt ID.
 - Terminalize billing `402` as `insufficient_balance`, not a transport error.
 
@@ -549,7 +555,7 @@ ORDER BY event_seq ASC;
 
 Expected event sequence:
 
-`NULL -> queued -> reserving -> reserved -> launching -> running -> finalizing -> succeeded`
+`NULL -> queued -> reserved -> launching -> running -> finalizing -> succeeded`
 
 ```sql
 SELECT source_kind, workload_kind, count(*) AS c
@@ -558,6 +564,20 @@ WHERE execution_id IN ($1, $2)
 GROUP BY source_kind, workload_kind
 ORDER BY source_kind, workload_kind;
 ```
+
+```sql
+SELECT count(*) AS sandbox_windows
+FROM execution_billing_windows
+WHERE attempt_id = $1;
+
+SELECT count(*) AS billing_windows
+FROM billing_windows
+WHERE source_type = 'execution_attempt'
+  AND source_ref = $1;
+```
+
+The two counts must match; a mismatch means the scheduler handoff can duplicate
+billing windows across a River retry or crash boundary.
 
 ClickHouse:
 
@@ -581,7 +601,7 @@ Required trace order:
 1. `sandbox-rental.execution.submit`
 2. `river.insert_many`
 3. `river.work/execution.advance`
-4. `sandbox-rental.execution.transition` (`queued -> reserving`)
+4. `sandbox-rental.execution.transition` (`queued -> reserved`)
 5. `sandbox-rental.execution.transition` (`reserved -> launching`)
 6. `vm-orchestrator.EnsureRun`
 7. `vm-orchestrator.WaitRun`
@@ -641,7 +661,7 @@ PostgreSQL:
 ```sql
 SELECT count(*) AS stale_nonterminal
 FROM execution_attempts
-WHERE state IN ('queued','reserving','reserved','launching','running','finalizing')
+WHERE state IN ('queued','reserved','launching','running','finalizing')
   AND updated_at < (now() - interval '5 minutes');
 ```
 

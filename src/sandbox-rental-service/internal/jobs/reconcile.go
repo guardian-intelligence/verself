@@ -380,6 +380,10 @@ func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2, failure_reason = $3, updated_at = $4
@@ -392,6 +396,9 @@ func (s *Service) markLost(ctx context.Context, executionID, attemptID uuid.UUID
 		SET status = $2, updated_at = $3
 		WHERE execution_id = $1
 	`, executionID, StateLost, now); err != nil {
+		return err
+	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateLost, strings.TrimSpace(reason), now); err != nil {
 		return err
 	}
 	return tx.Commit()

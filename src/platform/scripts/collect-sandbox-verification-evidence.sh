@@ -18,6 +18,7 @@ verification_context_init "${BASH_SOURCE[0]}"
 output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
 
 mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres" "${output_dir}/tigerbeetle"
+: >"${output_dir}/clickhouse/execution_scheduler_span_sequence.tsv"
 
 mapfile -t run_meta < <(python3 - "${run_json_path}" <<'PY'
 import json
@@ -272,6 +273,7 @@ if [[ -n "${attempt_id}" ]]; then
       reserved_quantity,
       actual_quantity,
       pricing_phase,
+      reservation_jsonb <> '{}'::jsonb AS has_reservation_payload,
       state,
       window_start,
       activated_at,
@@ -282,6 +284,42 @@ if [[ -n "${attempt_id}" ]]; then
     ORDER BY window_seq
   ) TO STDOUT WITH (FORMAT csv, HEADER true);
   " >"${output_dir}/postgres/execution_billing_windows.csv"
+
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      event_seq,
+      from_state,
+      to_state,
+      reason,
+      trace_id,
+      created_at
+    FROM execution_events
+    WHERE attempt_id = '${attempt_id}'
+    ORDER BY event_seq
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/execution_events.csv"
+
+  remote_psql sandbox_rental "
+  COPY (
+    SELECT
+      id,
+      kind,
+      queue,
+      state::text,
+      attempt,
+      max_attempts,
+      args->>'execution_id' AS execution_id,
+      args->>'attempt_id' AS attempt_id,
+      created_at,
+      finalized_at
+    FROM river_job
+    WHERE kind = 'execution.advance'
+      AND queue = 'execution'
+      AND args->>'execution_id' = '${execution_id}'
+    ORDER BY created_at
+  ) TO STDOUT WITH (FORMAT csv, HEADER true);
+  " >"${output_dir}/postgres/river_execution_jobs.csv"
 
   remote_psql sandbox "
   COPY (
@@ -328,8 +366,177 @@ if [[ -n "${attempt_id}" ]]; then
   " >"${output_dir}/postgres/billing_window_funding_legs.jsonl"
 else
   printf 'attempt_id,missing\n,true\n' >"${output_dir}/postgres/execution_billing_windows.csv"
+  printf 'attempt_id,missing\n,true\n' >"${output_dir}/postgres/execution_events.csv"
+  printf 'attempt_id,missing\n,true\n' >"${output_dir}/postgres/river_execution_jobs.csv"
   printf 'window_id,missing\n,true\n' >"${output_dir}/postgres/billing_windows.csv"
   : >"${output_dir}/postgres/billing_window_funding_legs.jsonl"
+fi
+
+if [[ "${run_status}" == "succeeded" && -n "${execution_id}" && -n "${attempt_id}" ]]; then
+  event_sequence="$(
+    remote_psql_tsv sandbox_rental "
+      SELECT string_agg(to_state, '>' ORDER BY event_seq)
+      FROM execution_events
+      WHERE attempt_id = '${attempt_id}';
+    " | tr -d '[:space:]'
+  )"
+  expected_event_sequence="queued>reserved>launching>running>finalizing>succeeded"
+  if [[ "${event_sequence}" != "${expected_event_sequence}" ]]; then
+    echo "unexpected execution_events sequence for ${attempt_id}: got '${event_sequence}', want '${expected_event_sequence}'" >&2
+    exit 1
+  fi
+
+  river_completed_count="$(
+    remote_psql_tsv sandbox_rental "
+      SELECT count(*)
+      FROM river_job
+      WHERE kind = 'execution.advance'
+        AND queue = 'execution'
+        AND state::text = 'completed'
+        AND args->>'execution_id' = '${execution_id}'
+        AND args->>'attempt_id' = '${attempt_id}';
+    " | tr -d '[:space:]'
+  )"
+  if [[ ! "${river_completed_count}" =~ ^[0-9]+$ || "${river_completed_count}" -lt 1 ]]; then
+    echo "completed execution.advance River job not found for execution ${execution_id} attempt ${attempt_id}" >&2
+    exit 1
+  fi
+
+  sandbox_window_count="$(
+    remote_psql_tsv sandbox_rental "
+      SELECT count(*)
+      FROM execution_billing_windows
+      WHERE attempt_id = '${attempt_id}';
+    " | tr -d '[:space:]'
+  )"
+  billing_window_count="$(
+    remote_psql_tsv sandbox "
+      SELECT count(*)
+      FROM billing_windows
+      WHERE source_type = 'execution_attempt'
+        AND source_ref = '${attempt_id}';
+    " | tr -d '[:space:]'
+  )"
+  if [[ ! "${sandbox_window_count}" =~ ^[0-9]+$ || ! "${billing_window_count}" =~ ^[0-9]+$ || "${sandbox_window_count}" != "${billing_window_count}" ]]; then
+    echo "billing window handoff mismatch for attempt ${attempt_id}: sandbox_rental=${sandbox_window_count} billing=${billing_window_count}" >&2
+    exit 1
+  fi
+  sandbox_reservation_payload_count="$(
+    remote_psql_tsv sandbox_rental "
+      SELECT count(*)
+      FROM execution_billing_windows
+      WHERE attempt_id = '${attempt_id}'
+        AND reservation_jsonb <> '{}'::jsonb;
+    " | tr -d '[:space:]'
+  )"
+  if [[ ! "${sandbox_reservation_payload_count}" =~ ^[0-9]+$ || "${sandbox_reservation_payload_count}" != "${sandbox_window_count}" ]]; then
+    echo "billing reservation payload mismatch for attempt ${attempt_id}: payloads=${sandbox_reservation_payload_count} windows=${sandbox_window_count}" >&2
+    exit 1
+  fi
+
+  ch_projection_count="$(
+    ch_query "
+      SELECT count()
+      FROM forge_metal.job_events
+      WHERE toString(execution_id) = '${execution_id}'
+        AND toString(attempt_id) = '${attempt_id}'
+        AND source_kind = 'api'
+        AND workload_kind = 'direct'
+        AND external_provider = ''
+        AND external_task_id = ''
+      FORMAT TSVRaw
+    " | tr -d '[:space:]'
+  )"
+  if [[ ! "${ch_projection_count}" =~ ^[0-9]+$ || "${ch_projection_count}" -lt 1 ]]; then
+    echo "job_events source/workload projection missing for execution ${execution_id} attempt ${attempt_id}" >&2
+    exit 1
+  fi
+
+  execution_trace_id="$(
+    ch_query "
+      SELECT trace_id
+      FROM forge_metal.job_events
+      WHERE toString(execution_id) = '${execution_id}'
+        AND toString(attempt_id) = '${attempt_id}'
+      ORDER BY created_at DESC
+      LIMIT 1
+      FORMAT TSVRaw
+    " | tr -d '[:space:]'
+  )"
+  if [[ -z "${execution_trace_id}" ]]; then
+    echo "job_events trace_id missing for execution ${execution_id} attempt ${attempt_id}" >&2
+    exit 1
+  fi
+
+  scheduler_span_sequence_path="${output_dir}/clickhouse/execution_scheduler_span_sequence.tsv"
+  scheduler_span_sequence_ready=0
+  for _ in $(seq 1 30); do
+    ch_query "
+      SELECT SpanName
+      FROM default.otel_traces
+      WHERE TraceId = '${execution_trace_id}'
+        AND SpanName IN (
+          'sandbox-rental.execution.submit',
+          'river.insert_many',
+          'river.work/execution.advance',
+          'sandbox-rental.execution.transition',
+          'sandbox-rental.execution.run',
+          'vm-orchestrator.EnsureRun',
+          'vm-orchestrator.WaitRun',
+          'sandbox-rental.execution.finalize'
+        )
+      ORDER BY Timestamp
+      FORMAT TSVRaw
+    " >"${scheduler_span_sequence_path}"
+
+    if python3 - "${scheduler_span_sequence_path}" <<'PY'
+import sys
+
+observed = [line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+expected = [
+    "sandbox-rental.execution.submit",
+    "river.insert_many",
+    "river.work/execution.advance",
+    "sandbox-rental.execution.transition",
+    "sandbox-rental.execution.run",
+    "vm-orchestrator.EnsureRun",
+    "vm-orchestrator.WaitRun",
+    "sandbox-rental.execution.finalize",
+]
+cursor = 0
+for span in observed:
+    if cursor < len(expected) and span == expected[cursor]:
+        cursor += 1
+raise SystemExit(0 if cursor == len(expected) else 1)
+PY
+    then
+      scheduler_span_sequence_ready=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "${scheduler_span_sequence_ready}" != "1" ]]; then
+    python3 - "${scheduler_span_sequence_path}" <<'PY'
+import sys
+
+observed = [line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
+expected = [
+    "sandbox-rental.execution.submit",
+    "river.insert_many",
+    "river.work/execution.advance",
+    "sandbox-rental.execution.transition",
+    "sandbox-rental.execution.run",
+    "vm-orchestrator.EnsureRun",
+    "vm-orchestrator.WaitRun",
+    "sandbox-rental.execution.finalize",
+]
+raise SystemExit(
+    "execution scheduler span sequence missing ordered spans; "
+    f"observed={observed!r} expected={expected!r}"
+)
+PY
+  fi
 fi
 
 mapfile -t grant_ids < <(python3 - "${output_dir}/postgres/billing_window_funding_legs.jsonl" <<'PY'
@@ -384,9 +591,12 @@ Collected files:
 - clickhouse/metering.tsv
 - clickhouse/otel_logs.tsv
 - clickhouse/otel_traces.tsv
+- clickhouse/execution_scheduler_span_sequence.tsv
 - clickhouse/billing_events.tsv
 - postgres/execution.csv
 - postgres/execution_billing_windows.csv
+- postgres/execution_events.csv
+- postgres/river_execution_jobs.csv
 - postgres/billing_windows.csv
 - postgres/billing_window_funding_legs.jsonl
 - tigerbeetle/grant-*.txt
