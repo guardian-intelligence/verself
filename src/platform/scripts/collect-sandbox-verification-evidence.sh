@@ -13,6 +13,7 @@ if [[ ! -f "${run_json_path}" ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
@@ -268,10 +269,16 @@ if [[ -n "${execution_id}" ]]; then
       e.org_id,
       e.actor_id,
       e.kind,
-	      e.status,
-	      e.repo_url,
-	      e.ref,
-	      e.created_at,
+      e.source_kind,
+      e.workload_kind,
+      e.source_ref,
+      e.runner_class,
+      e.external_provider,
+      e.external_task_id,
+      e.status,
+      e.repo_url,
+      e.ref,
+      e.created_at,
       e.updated_at,
       a.attempt_id,
       a.state,
@@ -500,13 +507,14 @@ if [[ "${run_status}" == "succeeded" && -n "${execution_id}" && -n "${attempt_id
         AND toString(attempt_id) = '${attempt_id}'
         AND source_kind = 'api'
         AND workload_kind = 'direct'
+        AND runner_class = 'metal-4vcpu-ubuntu-2404'
         AND external_provider = ''
         AND external_task_id = ''
       FORMAT TSVRaw
     " | tr -d '[:space:]'
   )"
   if [[ ! "${ch_projection_count}" =~ ^[0-9]+$ || "${ch_projection_count}" -lt 1 ]]; then
-    echo "job_events source/workload projection missing for execution ${execution_id} attempt ${attempt_id}" >&2
+    echo "job_events source/workload/runner projection missing for execution ${execution_id} attempt ${attempt_id}" >&2
     exit 1
   fi
 

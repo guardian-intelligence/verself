@@ -2,11 +2,16 @@
 -- Database: sandbox_rental (one database per service).
 
 DROP TABLE IF EXISTS execution_logs;
+DROP TABLE IF EXISTS github_workflow_job_executions;
+DROP TABLE IF EXISTS github_app_installation_states;
+DROP TABLE IF EXISTS github_app_installations;
+DROP TABLE IF EXISTS execution_workload_secrets;
 DROP TABLE IF EXISTS execution_billing_windows;
 DROP TABLE IF EXISTS execution_events;
 DROP TABLE IF EXISTS execution_workload_specs;
 DROP TABLE IF EXISTS execution_attempts;
 DROP TABLE IF EXISTS executions;
+DROP TABLE IF EXISTS runner_classes;
 DROP TABLE IF EXISTS webhook_deliveries;
 DROP TABLE IF EXISTS webhook_endpoint_secrets;
 DROP TABLE IF EXISTS webhook_endpoints;

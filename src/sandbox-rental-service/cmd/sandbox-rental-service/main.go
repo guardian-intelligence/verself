@@ -63,7 +63,10 @@ func run() error {
 	pgDSN := requireCredential("pg-dsn")
 	chPassword := credentialOr("ch-password", "")
 	billingClientSecret := requireCredential("billing-client-secret")
-	webhookSecretKEK := requireCredential("webhook-secret-kek")
+	serviceSecretKEK := requireCredential("webhook-secret-kek")
+	githubAppPrivateKey := credentialOr("github-app-private-key", "")
+	githubAppWebhookSecret := credentialOr("github-app-webhook-secret", "")
+	githubAppClientSecret := credentialOr("github-app-client-secret", "")
 
 	// Non-secret config via Environment=.
 	listenAddr := envOr("SANDBOX_LISTEN_ADDR", "127.0.0.1:4243")
@@ -84,6 +87,12 @@ func run() error {
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
+	githubAppID := envInt64("SANDBOX_GITHUB_APP_ID", 0)
+	githubAppSlug := envOr("SANDBOX_GITHUB_APP_SLUG", "")
+	githubAppClientID := envOr("SANDBOX_GITHUB_APP_CLIENT_ID", "")
+	githubAPIBaseURL := envOr("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
+	githubWebBaseURL := envOr("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
+	githubRunnerGroupID := envInt64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
 
 	// --- open connections ---
 
@@ -172,9 +181,9 @@ func run() error {
 
 	// --- job service ---
 
-	webhookSecretCodec, err := jobs.NewSecretCodec(webhookSecretKEK)
+	secretCodec, err := jobs.NewSecretCodec(serviceSecretKEK)
 	if err != nil {
-		return fmt.Errorf("create webhook secret codec: %w", err)
+		return fmt.Errorf("create service secret codec: %w", err)
 	}
 
 	jobService := &jobs.Service{
@@ -187,9 +196,27 @@ func run() error {
 		BillingVCPUs:                  int(capacity.VCPUsPerVM),
 		BillingMemMiB:                 int(capacity.MemoryMiBPerVM),
 		BillingRootfsProvisionedBytes: capacity.RootfsProvisionedBytes,
-		WebhookSecretCodec:            webhookSecretCodec,
+		SecretCodec:                   secretCodec,
 		Logger:                        logger,
 	}
+	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
+		AppID:         githubAppID,
+		AppSlug:       githubAppSlug,
+		ClientID:      githubAppClientID,
+		ClientSecret:  githubAppClientSecret,
+		PrivateKeyPEM: githubAppPrivateKey,
+		WebhookSecret: githubAppWebhookSecret,
+		APIBaseURL:    githubAPIBaseURL,
+		WebBaseURL:    githubWebBaseURL,
+		RunnerGroupID: githubRunnerGroupID,
+	}, &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   10 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("create github runner adapter: %w", err)
+	}
+	jobService.GitHubRunner = githubRunner
 
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger: logger,
@@ -357,6 +384,19 @@ func envInt(key string, fallback int) int {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value <= 0 {
 		fmt.Fprintf(os.Stderr, "env %s must be a positive integer\n", key)
+		os.Exit(1)
+	}
+	return value
+}
+
+func envInt64(key string, fallback int64) int64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		fmt.Fprintf(os.Stderr, "env %s must be a non-negative integer\n", key)
 		os.Exit(1)
 	}
 	return value

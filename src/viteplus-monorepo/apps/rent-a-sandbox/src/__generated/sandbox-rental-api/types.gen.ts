@@ -368,6 +368,8 @@ export type SandboxExecutionRecord = {
   created_at: string;
   default_branch?: string;
   execution_id: string;
+  external_provider?: string;
+  external_task_id?: string;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -379,7 +381,43 @@ export type SandboxExecutionRecord = {
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
+  runner_class?: string;
+  source_kind?: string;
+  source_ref?: string;
   status: string;
+  updated_at: string;
+  workload_kind?: string;
+};
+
+export type SandboxGitHubInstallationConnectResponse = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  /**
+   * Time after which the setup URL state is no longer accepted.
+   */
+  expires_at: string;
+  /**
+   * GitHub App installation URL for the current Forge Metal organization.
+   */
+  setup_url: string;
+  /**
+   * Opaque installation state token embedded in the GitHub App setup URL.
+   */
+  state: string;
+};
+
+export type SandboxGitHubInstallationRecord = {
+  account_login: string;
+  account_type: string;
+  active: boolean;
+  created_at: string;
+  /**
+   * GitHub App installation ID encoded as a string for JavaScript-safe transport.
+   */
+  installation_id: string;
+  org_id: string;
   updated_at: string;
 };
 
@@ -460,6 +498,10 @@ export type SandboxSubmitRequest = {
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
+  /**
+   * Runner class label, for example metal-4vcpu-ubuntu-2404.
+   */
+  runner_class?: string;
 };
 
 export type SandboxWebhookEndpointRecord = {
@@ -639,6 +681,8 @@ export type SandboxExecutionRecordWritable = {
   created_at: string;
   default_branch?: string;
   execution_id: string;
+  external_provider?: string;
+  external_task_id?: string;
   idempotency_key?: string;
   kind: string;
   latest_attempt: SandboxAttemptRecord;
@@ -650,8 +694,27 @@ export type SandboxExecutionRecordWritable = {
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
+  runner_class?: string;
+  source_kind?: string;
+  source_ref?: string;
   status: string;
   updated_at: string;
+  workload_kind?: string;
+};
+
+export type SandboxGitHubInstallationConnectResponseWritable = {
+  /**
+   * Time after which the setup URL state is no longer accepted.
+   */
+  expires_at: string;
+  /**
+   * GitHub App installation URL for the current Forge Metal organization.
+   */
+  setup_url: string;
+  /**
+   * Opaque installation state token embedded in the GitHub App setup URL.
+   */
+  state: string;
 };
 
 export type SandboxImportRepoRequestWritable = {
@@ -711,6 +774,10 @@ export type SandboxSubmitRequestWritable = {
   repo_id?: string;
   repo_url?: string;
   run_command?: string;
+  /**
+   * Runner class label, for example metal-4vcpu-ubuntu-2404.
+   */
+  runner_class?: string;
 };
 
 export type CreateBillingCheckoutData = {
@@ -1075,6 +1142,66 @@ export type GetExecutionLogsResponses = {
 };
 
 export type GetExecutionLogsResponse = GetExecutionLogsResponses[keyof GetExecutionLogsResponses];
+
+export type ListGithubInstallationsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/github/installations";
+};
+
+export type ListGithubInstallationsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListGithubInstallationsError =
+  ListGithubInstallationsErrors[keyof ListGithubInstallationsErrors];
+
+export type ListGithubInstallationsResponses = {
+  /**
+   * OK
+   */
+  200: Array<SandboxGitHubInstallationRecord> | null;
+};
+
+export type ListGithubInstallationsResponse =
+  ListGithubInstallationsResponses[keyof ListGithubInstallationsResponses];
+
+export type BeginGithubInstallationData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/github/installations/connect";
+};
+
+export type BeginGithubInstallationErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type BeginGithubInstallationError =
+  BeginGithubInstallationErrors[keyof BeginGithubInstallationErrors];
+
+export type BeginGithubInstallationResponses = {
+  /**
+   * Created
+   */
+  201: SandboxGitHubInstallationConnectResponse;
+};
+
+export type BeginGithubInstallationResponse =
+  BeginGithubInstallationResponses[keyof BeginGithubInstallationResponses];
 
 export type ListReposData = {
   body?: never;

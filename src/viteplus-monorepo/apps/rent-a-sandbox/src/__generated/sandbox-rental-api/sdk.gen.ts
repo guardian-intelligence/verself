@@ -4,6 +4,9 @@
 import { client } from "./client.gen.js";
 import type { Client, Options as Options2, TDataShape } from "./client/index.js";
 import type {
+  BeginGithubInstallationData,
+  BeginGithubInstallationErrors,
+  BeginGithubInstallationResponses,
   CancelBillingContractData,
   CancelBillingContractErrors,
   CancelBillingContractResponses,
@@ -49,6 +52,9 @@ import type {
   ListBillingPlansData,
   ListBillingPlansErrors,
   ListBillingPlansResponses,
+  ListGithubInstallationsData,
+  ListGithubInstallationsErrors,
+  ListGithubInstallationsResponses,
   ListReposData,
   ListReposErrors,
   ListReposResponses,
@@ -277,6 +283,38 @@ export const getExecutionLogs = <ThrowOnError extends boolean = false>(
   (options.client ?? client).get<GetExecutionLogsResponses, GetExecutionLogsErrors, ThrowOnError>({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/executions/{execution_id}/logs",
+    ...options,
+  });
+
+/**
+ * List GitHub App installations for the current org
+ */
+export const listGithubInstallations = <ThrowOnError extends boolean = false>(
+  options?: Options<ListGithubInstallationsData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListGithubInstallationsResponses,
+    ListGithubInstallationsErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/github/installations",
+    ...options,
+  });
+
+/**
+ * Start GitHub App installation for the current org
+ */
+export const beginGithubInstallation = <ThrowOnError extends boolean = false>(
+  options: Options<BeginGithubInstallationData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    BeginGithubInstallationResponses,
+    BeginGithubInstallationErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/github/installations/connect",
     ...options,
   });
 

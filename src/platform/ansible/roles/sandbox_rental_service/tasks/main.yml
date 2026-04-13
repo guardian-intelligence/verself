@@ -293,6 +293,9 @@
       LoadCredential=ch-password:/etc/credstore/sandbox-rental/ch-password
       LoadCredential=billing-client-secret:/etc/credstore/sandbox-rental/billing-client-secret
       LoadCredential=webhook-secret-kek:/etc/credstore/sandbox-rental/webhook-secret-kek
+      LoadCredential=github-app-private-key:/etc/credstore/sandbox-rental/github-app-private-key
+      LoadCredential=github-app-webhook-secret:/etc/credstore/sandbox-rental/github-app-webhook-secret
+      LoadCredential=github-app-client-secret:/etc/credstore/sandbox-rental/github-app-client-secret
       Environment=SANDBOX_LISTEN_ADDR={{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }}
       Environment=SANDBOX_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
       Environment=SANDBOX_BILLING_URL=http://{{ services.billing.host }}:{{ services.billing.port }}
@@ -313,6 +316,12 @@
       Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
+      Environment=SANDBOX_GITHUB_APP_ID={{ sandbox_rental_service_github_app_id }}
+      Environment=SANDBOX_GITHUB_APP_SLUG={{ sandbox_rental_service_github_app_slug }}
+      Environment=SANDBOX_GITHUB_APP_CLIENT_ID={{ sandbox_rental_service_github_app_client_id }}
+      Environment=SANDBOX_GITHUB_API_BASE_URL={{ sandbox_rental_service_github_api_base_url }}
+      Environment=SANDBOX_GITHUB_WEB_BASE_URL={{ sandbox_rental_service_github_web_base_url }}
+      Environment=SANDBOX_GITHUB_RUNNER_GROUP_ID={{ sandbox_rental_service_github_runner_group_id }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5

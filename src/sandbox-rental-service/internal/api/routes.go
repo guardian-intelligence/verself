@@ -147,6 +147,37 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 	}), deleteWebhookEndpoint(svc))
 
 	registerSecured(api, secured(huma.Operation{
+		OperationID:   "begin-github-installation",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/github/installations/connect",
+		Summary:       "Start GitHub App installation for the current org",
+		DefaultStatus: 201,
+	}, operationPolicy{
+		Permission:     permissionGitHubWrite,
+		Resource:       "github_installation",
+		Action:         "connect",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "github_installation_mutation",
+		Idempotency:    idempotencyHeaderKey,
+		AuditEvent:     "sandbox.github_installation.connect",
+		BodyLimitBytes: bodyLimitNoBody,
+	}), beginGitHubInstallation(svc))
+
+	registerSecured(api, secured(huma.Operation{
+		OperationID: "list-github-installations",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/github/installations",
+		Summary:     "List GitHub App installations for the current org",
+	}, operationPolicy{
+		Permission:     permissionGitHubRead,
+		Resource:       "github_installation",
+		Action:         "list",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "read",
+		AuditEvent:     "sandbox.github_installation.list",
+	}), listGitHubInstallations(svc))
+
+	registerSecured(api, secured(huma.Operation{
 		OperationID:   "submit-execution",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/executions",
@@ -376,6 +407,14 @@ type SubmitExecutionOutput struct {
 	Body apiwire.SandboxSubmitExecutionResult
 }
 
+type GitHubInstallationConnectOutput struct {
+	Body apiwire.SandboxGitHubInstallationConnectResponse
+}
+
+type ListGitHubInstallationsOutput struct {
+	Body []apiwire.SandboxGitHubInstallationRecord
+}
+
 type ExecutionIDPath struct {
 	ExecutionID string `path:"execution_id" doc:"Execution UUID"`
 }
@@ -582,6 +621,8 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 				return nil, tooManyRequests(ctx, "quota-exceeded", "quota exceeded")
 			case errors.Is(err, jobs.ErrRepoNotReady):
 				return nil, conflict(ctx, "repo-not-ready", "repo is not ready")
+			case errors.Is(err, jobs.ErrRunnerClassMissing):
+				return nil, badRequest(ctx, "runner-class-unavailable", "runner class is not available", err)
 			case errors.Is(err, billingclient.ErrPaymentRequired):
 				return nil, paymentRequired(ctx, "insufficient balance")
 			default:
@@ -596,6 +637,50 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			Status:      jobs.StateQueued,
 		}
 		return out, nil
+	}
+}
+
+func beginGitHubInstallation(svc *jobs.Service) func(context.Context, *EmptyInput) (*GitHubInstallationConnectOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*GitHubInstallationConnectOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
+			return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", jobs.ErrGitHubRunnerNotConfigured)
+		}
+		connect, err := svc.GitHubRunner.BeginInstallation(ctx, orgID, identity.Subject)
+		if err != nil {
+			switch {
+			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
+				return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", err)
+			case errors.Is(err, jobs.ErrGitHubInstallationInvalid):
+				return nil, badRequest(ctx, "github-installation-invalid", "github installation must be an active organization installation", err)
+			case errors.Is(err, jobs.ErrGitHubInstallationStateInvalid):
+				return nil, badRequest(ctx, "github-installation-state-invalid", "github installation state is invalid", err)
+			default:
+				return nil, internalFailure(ctx, "github-installation-connect-failed", "start github installation failed", err)
+			}
+		}
+		return &GitHubInstallationConnectOutput{Body: githubInstallationConnect(connect)}, nil
+	}
+}
+
+func listGitHubInstallations(svc *jobs.Service) func(context.Context, *EmptyInput) (*ListGitHubInstallationsOutput, error) {
+	return func(ctx context.Context, _ *EmptyInput) (*ListGitHubInstallationsOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		records, err := svc.ListGitHubInstallations(ctx, orgID)
+		if err != nil {
+			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
+		}
+		return &ListGitHubInstallationsOutput{Body: githubInstallationRecords(records)}, nil
 	}
 }
 

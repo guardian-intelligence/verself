@@ -25,6 +25,8 @@ const (
 	permissionRepoWrite       permission = "sandbox:repo:write"
 	permissionWebhookRead     permission = "sandbox:webhook_endpoint:read"
 	permissionWebhookWrite    permission = "sandbox:webhook_endpoint:write"
+	permissionGitHubRead      permission = "sandbox:github_installation:read"
+	permissionGitHubWrite     permission = "sandbox:github_installation:write"
 	permissionExecutionSubmit permission = "sandbox:execution:submit"
 	permissionExecutionRead   permission = "sandbox:execution:read"
 	permissionLogsRead        permission = "sandbox:logs:read"
@@ -71,6 +73,8 @@ var rolePermissionBundles = map[string][]permission{
 		permissionRepoWrite,
 		permissionWebhookRead,
 		permissionWebhookWrite,
+		permissionGitHubRead,
+		permissionGitHubWrite,
 		permissionExecutionSubmit,
 		permissionExecutionRead,
 		permissionLogsRead,

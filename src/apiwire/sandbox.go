@@ -9,6 +9,7 @@ import (
 
 type SandboxSubmitRequest struct {
 	Kind           string `json:"kind"`
+	RunnerClass    string `json:"runner_class,omitempty" doc:"Runner class label, for example metal-4vcpu-ubuntu-2404."`
 	ProductID      string `json:"product_id,omitempty"`
 	Provider       string `json:"provider,omitempty"`
 	IdempotencyKey string `json:"idempotency_key" required:"true" maxLength:"128"`
@@ -88,6 +89,22 @@ type SandboxCreateWebhookEndpointResponse struct {
 	SecretFingerprint string    `json:"secret_fingerprint,omitempty"`
 }
 
+type SandboxGitHubInstallationConnectResponse struct {
+	State     string    `json:"state" doc:"Opaque installation state token embedded in the GitHub App setup URL."`
+	SetupURL  string    `json:"setup_url" doc:"GitHub App installation URL for the current Forge Metal organization."`
+	ExpiresAt time.Time `json:"expires_at" doc:"Time after which the setup URL state is no longer accepted."`
+}
+
+type SandboxGitHubInstallationRecord struct {
+	InstallationID string    `json:"installation_id" doc:"GitHub App installation ID encoded as a string for JavaScript-safe transport."`
+	OrgID          OrgID     `json:"org_id"`
+	AccountLogin   string    `json:"account_login"`
+	AccountType    string    `json:"account_type"`
+	Active         bool      `json:"active"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
 type SandboxRotateWebhookEndpointSecretResponse struct {
 	EndpointID         uuid.UUID `json:"endpoint_id"`
 	Secret             string    `json:"secret"`
@@ -103,25 +120,31 @@ type SandboxSubmitExecutionResult struct {
 }
 
 type SandboxExecutionRecord struct {
-	ExecutionID    uuid.UUID              `json:"execution_id"`
-	OrgID          OrgID                  `json:"org_id"`
-	ActorID        string                 `json:"actor_id"`
-	Kind           string                 `json:"kind"`
-	Provider       string                 `json:"provider,omitempty"`
-	ProductID      string                 `json:"product_id"`
-	Status         string                 `json:"status"`
-	CorrelationID  string                 `json:"correlation_id,omitempty"`
-	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
-	RepoID         string                 `json:"repo_id,omitempty"`
-	Repo           string                 `json:"repo,omitempty"`
-	RepoURL        string                 `json:"repo_url,omitempty"`
-	Ref            string                 `json:"ref,omitempty"`
-	DefaultBranch  string                 `json:"default_branch,omitempty"`
-	RunCommand     string                 `json:"run_command,omitempty"`
-	LatestAttempt  SandboxAttemptRecord   `json:"latest_attempt"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	BillingWindows []SandboxBillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID      uuid.UUID              `json:"execution_id"`
+	OrgID            OrgID                  `json:"org_id"`
+	ActorID          string                 `json:"actor_id"`
+	Kind             string                 `json:"kind"`
+	SourceKind       string                 `json:"source_kind,omitempty"`
+	WorkloadKind     string                 `json:"workload_kind,omitempty"`
+	SourceRef        string                 `json:"source_ref,omitempty"`
+	RunnerClass      string                 `json:"runner_class,omitempty"`
+	ExternalProvider string                 `json:"external_provider,omitempty"`
+	ExternalTaskID   string                 `json:"external_task_id,omitempty"`
+	Provider         string                 `json:"provider,omitempty"`
+	ProductID        string                 `json:"product_id"`
+	Status           string                 `json:"status"`
+	CorrelationID    string                 `json:"correlation_id,omitempty"`
+	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
+	RepoID           string                 `json:"repo_id,omitempty"`
+	Repo             string                 `json:"repo,omitempty"`
+	RepoURL          string                 `json:"repo_url,omitempty"`
+	Ref              string                 `json:"ref,omitempty"`
+	DefaultBranch    string                 `json:"default_branch,omitempty"`
+	RunCommand       string                 `json:"run_command,omitempty"`
+	LatestAttempt    SandboxAttemptRecord   `json:"latest_attempt"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	BillingWindows   []SandboxBillingWindow `json:"billing_windows,omitempty"`
 }
 
 type SandboxExecutionLogs struct {
