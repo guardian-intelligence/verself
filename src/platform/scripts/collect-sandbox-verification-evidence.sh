@@ -19,6 +19,9 @@ output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
 
 mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres" "${output_dir}/tigerbeetle"
 : >"${output_dir}/clickhouse/execution_scheduler_span_sequence.tsv"
+: >"${output_dir}/clickhouse/vm_run_evidence.tsv"
+: >"${output_dir}/clickhouse/vm_trace_span_names.tsv"
+: >"${output_dir}/clickhouse/vm_trace_spans.tsv"
 
 mapfile -t run_meta < <(python3 - "${run_json_path}" <<'PY'
 import json
@@ -164,9 +167,9 @@ WHERE (
     OR Body LIKE '%${attempt_id}%'
     OR toString(LogAttributes) LIKE '%${attempt_id}%'
   )
-  OR (
+    OR (
     Timestamp BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
-    AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service')
+    AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
   )
 ORDER BY Timestamp
 FORMAT TSVWithNames
@@ -184,7 +187,7 @@ SELECT
   SpanAttributes['http.status_code'] AS http_status_code
 FROM default.otel_traces
 WHERE Timestamp BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
-  AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service')
+  AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
 ORDER BY Timestamp
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/otel_traces.tsv"
@@ -468,6 +471,219 @@ if [[ "${run_status}" == "succeeded" && -n "${execution_id}" && -n "${attempt_id
     exit 1
   fi
 
+  orchestrator_run_id="$(
+    remote_psql_tsv sandbox_rental "
+      SELECT COALESCE(orchestrator_run_id::text, '')
+      FROM execution_attempts
+      WHERE attempt_id = '${attempt_id}';
+    " | tr -d '[:space:]'
+  )"
+  if [[ -z "${orchestrator_run_id}" ]]; then
+    orchestrator_run_id="${attempt_id}"
+  fi
+
+  vm_trace_span_names_path="${output_dir}/clickhouse/vm_trace_span_names.tsv"
+  vm_trace_spans_ready=0
+  for _ in $(seq 1 30); do
+    ch_query "
+      SELECT SpanName
+      FROM default.otel_traces
+      WHERE TraceId = '${execution_trace_id}'
+        AND ServiceName = 'vm-orchestrator'
+        AND SpanName IN (
+          'rpc.EnsureRun',
+          'vmorchestrator.managed_run',
+          'vmorchestrator.Run',
+          'vmorchestrator.zfs.snapshot_check',
+          'vmorchestrator.zfs.clone',
+          'vmorchestrator.runDataset',
+          'vmorchestrator.zvol.wait_device',
+          'vmorchestrator.jail.setup',
+          'vmorchestrator.network.setup',
+          'vmorchestrator.jailer.start',
+          'vmorchestrator.firecracker.api_socket_wait',
+          'vmorchestrator.firecracker.configure',
+          'vmorchestrator.firecracker.instance_start',
+          'vmorchestrator.guest.control_socket_wait',
+          'vmorchestrator.guest.control_connect',
+          'vmorchestrator.guest.hello',
+          'vmorchestrator.guest.run_request',
+          'vmorchestrator.guest.phase_start',
+          'vmorchestrator.guest.phase_end',
+          'vmorchestrator.vm.exit_wait',
+          'vmorchestrator.zfs.written',
+          'vmorchestrator.zfs.volsize'
+        )
+      GROUP BY SpanName
+      FORMAT TSVRaw
+    " >"${vm_trace_span_names_path}"
+
+    if python3 - "${vm_trace_span_names_path}" <<'PY'
+import sys
+
+observed = {line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()}
+expected = {
+    "rpc.EnsureRun",
+    "vmorchestrator.managed_run",
+    "vmorchestrator.Run",
+    "vmorchestrator.zfs.snapshot_check",
+    "vmorchestrator.zfs.clone",
+    "vmorchestrator.runDataset",
+    "vmorchestrator.zvol.wait_device",
+    "vmorchestrator.jail.setup",
+    "vmorchestrator.network.setup",
+    "vmorchestrator.jailer.start",
+    "vmorchestrator.firecracker.api_socket_wait",
+    "vmorchestrator.firecracker.configure",
+    "vmorchestrator.firecracker.instance_start",
+    "vmorchestrator.guest.control_socket_wait",
+    "vmorchestrator.guest.control_connect",
+    "vmorchestrator.guest.hello",
+    "vmorchestrator.guest.run_request",
+    "vmorchestrator.guest.phase_start",
+    "vmorchestrator.guest.phase_end",
+    "vmorchestrator.vm.exit_wait",
+    "vmorchestrator.zfs.written",
+    "vmorchestrator.zfs.volsize",
+}
+missing = sorted(expected - observed)
+if missing:
+    raise SystemExit(1)
+PY
+    then
+      vm_trace_spans_ready=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "${vm_trace_spans_ready}" != "1" ]]; then
+    python3 - "${vm_trace_span_names_path}" <<'PY'
+import sys
+
+observed = {line.strip() for line in open(sys.argv[1], encoding="utf-8") if line.strip()}
+expected = {
+    "rpc.EnsureRun",
+    "vmorchestrator.managed_run",
+    "vmorchestrator.Run",
+    "vmorchestrator.zfs.snapshot_check",
+    "vmorchestrator.zfs.clone",
+    "vmorchestrator.runDataset",
+    "vmorchestrator.zvol.wait_device",
+    "vmorchestrator.jail.setup",
+    "vmorchestrator.network.setup",
+    "vmorchestrator.jailer.start",
+    "vmorchestrator.firecracker.api_socket_wait",
+    "vmorchestrator.firecracker.configure",
+    "vmorchestrator.firecracker.instance_start",
+    "vmorchestrator.guest.control_socket_wait",
+    "vmorchestrator.guest.control_connect",
+    "vmorchestrator.guest.hello",
+    "vmorchestrator.guest.run_request",
+    "vmorchestrator.guest.phase_start",
+    "vmorchestrator.guest.phase_end",
+    "vmorchestrator.vm.exit_wait",
+    "vmorchestrator.zfs.written",
+    "vmorchestrator.zfs.volsize",
+}
+raise SystemExit(
+    "vm-orchestrator trace is missing latency spans on the execution trace; "
+    f"missing={sorted(expected - observed)!r} observed={sorted(observed)!r}"
+)
+PY
+  fi
+
+  ch_query "
+    SELECT
+      ServiceName,
+      SpanName,
+      count() AS span_count,
+      min(Timestamp) AS first_seen,
+      max(Timestamp) AS last_seen
+    FROM default.otel_traces
+    WHERE TraceId = '${execution_trace_id}'
+      AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
+    GROUP BY ServiceName, SpanName
+    ORDER BY ServiceName, first_seen, SpanName
+    FORMAT TSVWithNames
+  " >"${output_dir}/clickhouse/vm_trace_spans.tsv"
+
+  vm_evidence_ready=0
+  for _ in $(seq 1 30); do
+    ch_query "
+      SELECT
+        evidence_time,
+        service_name,
+        run_id,
+        evidence_type,
+        diagnostic_kind,
+        from_state,
+        to_state,
+        reason_code,
+        reason,
+        trace_id,
+        span_id
+      FROM forge_metal.vm_run_evidence
+      WHERE run_id = '${orchestrator_run_id}'
+      ORDER BY evidence_time
+      FORMAT TSVWithNames
+    " >"${output_dir}/clickhouse/vm_run_evidence.tsv"
+
+    vm_evidence_transition_state_count="$(
+      ch_query "
+        SELECT uniqExact(to_state)
+        FROM forge_metal.vm_run_evidence
+        WHERE run_id = '${orchestrator_run_id}'
+          AND trace_id = '${execution_trace_id}'
+          AND evidence_type = 'run_state_transition'
+          AND to_state IN ('pending', 'running', 'succeeded')
+        FORMAT TSVRaw
+      " | tr -d '[:space:]'
+    )"
+    vm_evidence_succeeded_count="$(
+      ch_query "
+        SELECT count()
+        FROM forge_metal.vm_run_evidence
+        WHERE run_id = '${orchestrator_run_id}'
+          AND trace_id = '${execution_trace_id}'
+          AND evidence_type = 'run_state_transition'
+          AND to_state = 'succeeded'
+        FORMAT TSVRaw
+      " | tr -d '[:space:]'
+    )"
+    vm_evidence_wrong_transition_trace_count="$(
+      ch_query "
+        SELECT count()
+        FROM forge_metal.vm_run_evidence
+        WHERE run_id = '${orchestrator_run_id}'
+          AND evidence_type = 'run_state_transition'
+          AND to_state IN ('pending', 'running', 'succeeded')
+          AND trace_id != '${execution_trace_id}'
+        FORMAT TSVRaw
+      " | tr -d '[:space:]'
+    )"
+    vm_evidence_wrong_telemetry_trace_count="$(
+      ch_query "
+        SELECT count()
+        FROM forge_metal.vm_run_evidence
+        WHERE run_id = '${orchestrator_run_id}'
+          AND evidence_type IN ('telemetry_hello', 'telemetry_diagnostic')
+          AND trace_id != '${execution_trace_id}'
+        FORMAT TSVRaw
+      " | tr -d '[:space:]'
+    )"
+    if [[ "${vm_evidence_transition_state_count}" =~ ^[0-9]+$ && "${vm_evidence_transition_state_count}" -eq 3 && "${vm_evidence_succeeded_count}" =~ ^[0-9]+$ && "${vm_evidence_succeeded_count}" -ge 1 && "${vm_evidence_wrong_transition_trace_count}" =~ ^[0-9]+$ && "${vm_evidence_wrong_transition_trace_count}" -eq 0 && "${vm_evidence_wrong_telemetry_trace_count}" =~ ^[0-9]+$ && "${vm_evidence_wrong_telemetry_trace_count}" -eq 0 ]]; then
+      vm_evidence_ready=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "${vm_evidence_ready}" != "1" ]]; then
+    echo "vm_run_evidence rows for orchestrator run ${orchestrator_run_id} did not prove the expected trace_id ${execution_trace_id}" >&2
+    exit 1
+  fi
+
   scheduler_span_sequence_path="${output_dir}/clickhouse/execution_scheduler_span_sequence.tsv"
   scheduler_span_sequence_ready=0
   for _ in $(seq 1 30); do
@@ -592,6 +808,9 @@ Collected files:
 - clickhouse/otel_logs.tsv
 - clickhouse/otel_traces.tsv
 - clickhouse/execution_scheduler_span_sequence.tsv
+- clickhouse/vm_run_evidence.tsv
+- clickhouse/vm_trace_span_names.tsv
+- clickhouse/vm_trace_spans.tsv
 - clickhouse/billing_events.tsv
 - postgres/execution.csv
 - postgres/execution_billing_windows.csv
