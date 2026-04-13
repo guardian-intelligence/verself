@@ -12,7 +12,8 @@ import (
 
 type BillingWorkClient interface {
 	ProjectPendingWindows(ctx context.Context, limit int) (int, error)
-	ProjectPendingOutboxEvents(ctx context.Context, limit int) (int, error)
+	ProjectPendingBillingEventDeliveries(ctx context.Context, limit int) (int, error)
+	ProjectBillingEventDelivery(ctx context.Context, eventID string, sink string, generation int) (bool, error)
 	ReconcileEntitlements(ctx context.Context, limit int) (int, error)
 }
 
@@ -22,8 +23,14 @@ type meteringProjectPendingWorker struct {
 	logger *slog.Logger
 }
 
-type outboxProjectPendingWorker struct {
-	river.WorkerDefaults[OutboxProjectPendingArgs]
+type eventDeliveryProjectPendingWorker struct {
+	river.WorkerDefaults[EventDeliveryProjectPendingArgs]
+	client BillingWorkClient
+	logger *slog.Logger
+}
+
+type eventDeliveryProjectWorker struct {
+	river.WorkerDefaults[EventDeliveryProjectArgs]
 	client BillingWorkClient
 	logger *slog.Logger
 }
@@ -57,26 +64,50 @@ func (w *meteringProjectPendingWorker) Work(ctx context.Context, job *river.Job[
 	return nil
 }
 
-func (w *outboxProjectPendingWorker) Work(ctx context.Context, job *river.Job[OutboxProjectPendingArgs]) error {
-	ctx, span := tracer.Start(ctx, "billing.scheduler.outbox_project_pending")
+func (w *eventDeliveryProjectPendingWorker) Work(ctx context.Context, job *river.Job[EventDeliveryProjectPendingArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.event_delivery_project_pending")
 	defer span.End()
 
 	limit := normalizedLimit(job.Args.Limit, defaultProjectLimit)
 	span.SetAttributes(
 		attribute.Int64("river.job_id", job.ID),
-		attribute.String("river.job_kind", KindOutboxProjectPending),
-		attribute.String("river.queue", QueueOutbox),
+		attribute.String("river.job_kind", KindEventDeliveryProjectPending),
+		attribute.String("river.queue", QueueEventDelivery),
 		attribute.Int("billing.project.limit", limit),
 	)
 
-	count, err := w.client.ProjectPendingOutboxEvents(ctx, limit)
+	count, err := w.client.ProjectPendingBillingEventDeliveries(ctx, limit)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	span.SetAttributes(attribute.Int("billing.projected_outbox_event_count", count))
-	w.logger.InfoContext(ctx, "billing outbox events projected", "river_job_id", job.ID, "limit", limit, "count", count)
+	span.SetAttributes(attribute.Int("billing.projected_billing_event_delivery_count", count))
+	w.logger.InfoContext(ctx, "billing event deliveries projected", "river_job_id", job.ID, "limit", limit, "count", count)
+	return nil
+}
+
+func (w *eventDeliveryProjectWorker) Work(ctx context.Context, job *river.Job[EventDeliveryProjectArgs]) error {
+	ctx, span := tracer.Start(ctx, "billing.scheduler.event_delivery_project")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", KindEventDeliveryProject),
+		attribute.String("river.queue", QueueEventDelivery),
+		attribute.String("billing.event_id", job.Args.EventID),
+		attribute.String("billing.event_sink", job.Args.Sink),
+		attribute.Int("billing.event_generation", job.Args.Generation),
+	)
+
+	projected, err := w.client.ProjectBillingEventDelivery(ctx, job.Args.EventID, job.Args.Sink, job.Args.Generation)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.Bool("billing.event_projected", projected))
+	w.logger.InfoContext(ctx, "billing event delivery projected", "river_job_id", job.ID, "event_id", job.Args.EventID, "sink", job.Args.Sink, "generation", job.Args.Generation, "projected", projected)
 	return nil
 }
 
@@ -108,7 +139,8 @@ func registerWorkers(workers *river.Workers, logger *slog.Logger, client Billing
 		return fmt.Errorf("register billing scheduler workers: nil billing work client")
 	}
 	river.AddWorker(workers, &meteringProjectPendingWorker{client: client, logger: logger})
-	river.AddWorker(workers, &outboxProjectPendingWorker{client: client, logger: logger})
+	river.AddWorker(workers, &eventDeliveryProjectPendingWorker{client: client, logger: logger})
+	river.AddWorker(workers, &eventDeliveryProjectWorker{client: client, logger: logger})
 	river.AddWorker(workers, &entitlementsReconcileWorker{client: client, logger: logger})
 	return nil
 }

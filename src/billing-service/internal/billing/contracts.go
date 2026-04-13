@@ -129,7 +129,12 @@ func (c *Client) activateCatalogContract(
 			return fmt.Errorf("copy contract entitlement line %s: %w", policy.PolicyID, err)
 		}
 	}
-	if err := insertOutboxEventTx(ctx, tx, contractActivatedEvent(orgID, productID, contractID, phaseID, planID, cycle, effectiveAt)); err != nil {
+	if newContract {
+		if err := insertBillingEventTx(ctx, tx, contractCreatedEvent(orgID, productID, contractID, planID, effectiveAt)); err != nil {
+			return err
+		}
+	}
+	if err := insertBillingEventTx(ctx, tx, contractPhaseStartedEvent(orgID, productID, contractID, phaseID, planID, cycle, effectiveAt)); err != nil {
 		return err
 	}
 

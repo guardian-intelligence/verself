@@ -25,21 +25,50 @@ func (MeteringProjectPendingArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 5, Queue: QueueMetering, Tags: []string{"billing-metering"}}
 }
 
-type OutboxProjectPendingRequest struct {
+type EventDeliveryProjectPendingRequest struct {
 	Limit       int
 	TraceParent string
 }
 
-type OutboxProjectPendingArgs struct {
+type EventDeliveryProjectPendingArgs struct {
 	Limit       int    `json:"limit"`
 	TraceParent string `json:"trace_parent,omitempty"`
 	SubmittedAt string `json:"submitted_at"`
 }
 
-func (OutboxProjectPendingArgs) Kind() string { return KindOutboxProjectPending }
+func (EventDeliveryProjectPendingArgs) Kind() string { return KindEventDeliveryProjectPending }
 
-func (OutboxProjectPendingArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 5, Queue: QueueOutbox, Tags: []string{"billing-outbox"}}
+func (EventDeliveryProjectPendingArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 5, Queue: QueueEventDelivery, Tags: []string{"billing-event-delivery"}}
+}
+
+type EventDeliveryProjectRequest struct {
+	EventID     string
+	Sink        string
+	Generation  int
+	TraceParent string
+}
+
+type EventDeliveryProjectArgs struct {
+	EventID     string `json:"event_id" river:"unique"`
+	Sink        string `json:"sink" river:"unique"`
+	Generation  int    `json:"generation" river:"unique"`
+	TraceParent string `json:"trace_parent,omitempty"`
+	SubmittedAt string `json:"submitted_at"`
+}
+
+func (EventDeliveryProjectArgs) Kind() string { return KindEventDeliveryProject }
+
+func (EventDeliveryProjectArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueEventDelivery,
+		Tags:        []string{"billing-event-delivery"},
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
+	}
 }
 
 type EntitlementsReconcileRequest struct {
@@ -67,9 +96,19 @@ func (r *Runtime) EnqueueMeteringProjectPendingTx(ctx context.Context, tx pgx.Tx
 	})
 }
 
-func (r *Runtime) EnqueueOutboxProjectPendingTx(ctx context.Context, tx pgx.Tx, req OutboxProjectPendingRequest) (JobResult, error) {
-	return enqueueTx(ctx, r.client, tx, OutboxProjectPendingArgs{
+func (r *Runtime) EnqueueEventDeliveryProjectPendingTx(ctx context.Context, tx pgx.Tx, req EventDeliveryProjectPendingRequest) (JobResult, error) {
+	return enqueueTx(ctx, r.client, tx, EventDeliveryProjectPendingArgs{
 		Limit:       req.Limit,
+		TraceParent: strings.TrimSpace(req.TraceParent),
+		SubmittedAt: newSubmittedAt(),
+	})
+}
+
+func (r *Runtime) EnqueueEventDeliveryProjectTx(ctx context.Context, tx pgx.Tx, req EventDeliveryProjectRequest) (JobResult, error) {
+	return enqueueTx(ctx, r.client, tx, EventDeliveryProjectArgs{
+		EventID:     strings.TrimSpace(req.EventID),
+		Sink:        strings.TrimSpace(req.Sink),
+		Generation:  req.Generation,
 		TraceParent: strings.TrimSpace(req.TraceParent),
 		SubmittedAt: newSubmittedAt(),
 	})

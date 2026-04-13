@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS forge_metal.billing_events;
 CREATE TABLE forge_metal.billing_events (
     event_id           String                 CODEC(ZSTD(3)),
     event_type         LowCardinality(String) CODEC(ZSTD(3)),
+    event_version      UInt16                 DEFAULT 1 CODEC(T64, ZSTD(3)),
     aggregate_type     LowCardinality(String) CODEC(ZSTD(3)),
     aggregate_id       String                 CODEC(ZSTD(3)),
     contract_id        LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
@@ -16,6 +17,9 @@ CREATE TABLE forge_metal.billing_events (
     product_id         LowCardinality(String) CODEC(ZSTD(3)),
     occurred_at        DateTime64(6, 'UTC')  CODEC(DoubleDelta, ZSTD(3)),
     payload            String                 CODEC(ZSTD(3)),
+    payload_hash       String                 DEFAULT '' CODEC(ZSTD(3)),
+    correlation_id     String                 DEFAULT '' CODEC(ZSTD(3)),
+    causation_event_id String                 DEFAULT '' CODEC(ZSTD(3)),
     recorded_at        DateTime64(6, 'UTC')  CODEC(DoubleDelta, ZSTD(3))
 )
 ENGINE = ReplacingMergeTree(recorded_at)

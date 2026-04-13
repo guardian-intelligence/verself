@@ -564,31 +564,59 @@ CREATE TABLE billing_account_registry (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE billing_outbox_events (
-    event_id        TEXT        PRIMARY KEY,
-    event_type      TEXT        NOT NULL,
-    aggregate_type  TEXT        NOT NULL,
-    aggregate_id    TEXT        NOT NULL,
-    contract_id     TEXT        NOT NULL DEFAULT '',
-    cycle_id        TEXT        NOT NULL DEFAULT '',
-    pricing_contract_id TEXT    NOT NULL DEFAULT '',
-    pricing_phase_id TEXT       NOT NULL DEFAULT '',
-    pricing_plan_id TEXT        NOT NULL DEFAULT '',
-    invoice_id      TEXT        NOT NULL DEFAULT '',
-    provider_event_id TEXT      NOT NULL DEFAULT '',
-    org_id          TEXT        NOT NULL,
-    product_id      TEXT        NOT NULL DEFAULT '',
-    state           TEXT        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'projecting', 'delivered', 'failed', 'dead_letter')),
-    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    payload         JSONB       NOT NULL,
-    delivered_at    TIMESTAMPTZ,
-    next_attempt_at TIMESTAMPTZ,
-    delivery_error  TEXT        NOT NULL DEFAULT '',
-    attempts        INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE billing_events (
+    event_id             TEXT        PRIMARY KEY CHECK (event_id <> ''),
+    event_type           TEXT        NOT NULL CHECK (event_type <> ''),
+    event_version        INTEGER     NOT NULL DEFAULT 1 CHECK (event_version > 0),
+    aggregate_type       TEXT        NOT NULL CHECK (aggregate_type <> ''),
+    aggregate_id         TEXT        NOT NULL CHECK (aggregate_id <> ''),
+    org_id               TEXT        NOT NULL,
+    product_id           TEXT        NOT NULL DEFAULT '',
+    occurred_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    payload              JSONB       NOT NULL,
+    payload_hash         TEXT        NOT NULL CHECK (payload_hash <> ''),
+    correlation_id       TEXT        NOT NULL DEFAULT '',
+    causation_event_id   TEXT        NOT NULL DEFAULT '',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_billing_outbox_pending
-    ON billing_outbox_events (state, next_attempt_at, occurred_at, event_id)
-    WHERE state IN ('pending', 'failed');
+CREATE INDEX idx_billing_events_occurred
+    ON billing_events (occurred_at, event_id);
+
+CREATE INDEX idx_billing_events_aggregate
+    ON billing_events (aggregate_type, aggregate_id, occurred_at, event_id);
+
+CREATE INDEX idx_billing_events_org_product
+    ON billing_events (org_id, product_id, occurred_at, event_id);
+
+CREATE TABLE billing_event_delivery_queue (
+    event_id             TEXT        NOT NULL REFERENCES billing_events(event_id) ON DELETE RESTRICT,
+    sink                 TEXT        NOT NULL CHECK (sink <> ''),
+    generation           INTEGER     NOT NULL DEFAULT 1 CHECK (generation > 0),
+    state                TEXT        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'in_progress', 'retryable_failed', 'dead_letter')),
+    attempts             INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_attempt_at      TIMESTAMPTZ,
+    lease_expires_at     TIMESTAMPTZ,
+    leased_by            TEXT        NOT NULL DEFAULT '',
+    last_attempt_id      TEXT        NOT NULL DEFAULT '',
+    delivery_error       TEXT        NOT NULL DEFAULT '',
+    dead_lettered_at     TIMESTAMPTZ,
+    dead_letter_reason   TEXT        NOT NULL DEFAULT '',
+    operator_note        TEXT        NOT NULL DEFAULT '',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (event_id, sink)
+);
+
+CREATE INDEX idx_billing_event_delivery_due
+    ON billing_event_delivery_queue (sink, state, next_attempt_at, event_id)
+    WHERE state IN ('pending', 'retryable_failed');
+
+CREATE INDEX idx_billing_event_delivery_leased_expired
+    ON billing_event_delivery_queue (sink, lease_expires_at, event_id)
+    WHERE state = 'in_progress';
+
+CREATE INDEX idx_billing_event_delivery_dead_letter
+    ON billing_event_delivery_queue (sink, dead_lettered_at, event_id)
+    WHERE state = 'dead_letter';

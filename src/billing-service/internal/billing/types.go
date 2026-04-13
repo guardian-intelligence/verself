@@ -439,6 +439,7 @@ type EntitlementPeriod struct {
 type BillingEvent struct {
 	EventID           string    `ch:"event_id"`
 	EventType         string    `ch:"event_type"`
+	EventVersion      uint16    `ch:"event_version"`
 	AggregateType     string    `ch:"aggregate_type"`
 	AggregateID       string    `ch:"aggregate_id"`
 	ContractID        string    `ch:"contract_id"`
@@ -452,6 +453,9 @@ type BillingEvent struct {
 	ProductID         string    `ch:"product_id"`
 	OccurredAt        time.Time `ch:"occurred_at"`
 	Payload           string    `ch:"payload"`
+	PayloadHash       string    `ch:"payload_hash"`
+	CorrelationID     string    `ch:"correlation_id"`
+	CausationEventID  string    `ch:"causation_event_id"`
 	RecordedAt        time.Time `ch:"recorded_at"`
 }
 

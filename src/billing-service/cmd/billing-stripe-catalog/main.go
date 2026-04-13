@@ -438,16 +438,50 @@ func recordCatalogEvent(ctx context.Context, pg *sql.DB, reconciliationID string
 	if err != nil {
 		return fmt.Errorf("marshal catalog event payload: %w", err)
 	}
-	eventID := deterministicID("billing-outbox-event", "contract_catalog_reconciled", reconciliationID, cfg.productID, tier.PlanID, stripePriceID)
-	_, err = pg.ExecContext(ctx, `
-		INSERT INTO billing_outbox_events (
-			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
-		)
-		VALUES ($1, 'contract_catalog_reconciled', 'plan', $2, '', $3, now(), $4::jsonb)
-		ON CONFLICT (event_id) DO NOTHING
-	`, eventID, tier.PlanID, cfg.productID, string(payload))
+	eventID := deterministicID("billing-event", "contract_catalog_reconciled", reconciliationID, cfg.productID, tier.PlanID, stripePriceID)
+	payloadHash := sha256.Sum256(payload)
+	payloadHashHex := hex.EncodeToString(payloadHash[:])
+	tx, err := pg.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("insert catalog outbox event %s: %w", eventID, err)
+		return fmt.Errorf("begin catalog event %s: %w", eventID, err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO billing_events (
+			event_id, event_type, event_version, aggregate_type, aggregate_id,
+			org_id, product_id, occurred_at, payload, payload_hash
+		)
+		VALUES ($1, 'contract_catalog_reconciled', 1, 'plan', $2,
+		        '', $3, now(), $4::jsonb, $5)
+		ON CONFLICT (event_id) DO NOTHING
+	`, eventID, tier.PlanID, cfg.productID, string(payload), payloadHashHex)
+	if err != nil {
+		return fmt.Errorf("insert catalog event %s: %w", eventID, err)
+	}
+	inserted, _ := result.RowsAffected()
+	var existingHash string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT payload_hash
+		FROM billing_events
+		WHERE event_id = $1
+	`, eventID).Scan(&existingHash); err != nil {
+		return fmt.Errorf("verify catalog event %s payload hash: %w", eventID, err)
+	}
+	if existingHash != payloadHashHex {
+		return fmt.Errorf("catalog event %s payload hash mismatch: existing %s new %s", eventID, existingHash, payloadHashHex)
+	}
+	if inserted > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO billing_event_delivery_queue (event_id, sink, generation, state, next_attempt_at)
+			VALUES ($1, 'clickhouse_billing_events', 1, 'pending', now())
+			ON CONFLICT (event_id, sink) DO NOTHING
+		`, eventID); err != nil {
+			return fmt.Errorf("insert catalog event delivery %s: %w", eventID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit catalog event %s: %w", eventID, err)
 	}
 	return nil
 }
