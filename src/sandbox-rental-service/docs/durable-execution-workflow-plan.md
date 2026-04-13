@@ -46,7 +46,7 @@ Last Updated: 2026-04-13
 - Billing reserve/settle/void architecture: [billing-architecture.md](../../billing-service/docs/billing-architecture.md)
 - Current sandbox schema: [001_sandbox_schema.up.sql](../migrations/001_sandbox_schema.up.sql)
 - Current evidence tables: [007_sandbox_job_logs.up.sql](../../platform/migrations/007_sandbox_job_logs.up.sql), [002_otel_tables.up.sql](../../platform/migrations/002_otel_tables.up.sql)
-- Live verification flow and evidence harvesting: [verify-sandbox-live.sh](../../platform/scripts/verify-sandbox-live.sh), [collect-sandbox-verification-evidence.sh](../../platform/scripts/collect-sandbox-verification-evidence.sh)
+- Live verification flow and evidence harvesting: [verify-sandbox-live.sh](../../platform/scripts/verify-sandbox-live.sh), [verify-scheduler-runtime.sh](../../platform/scripts/verify-scheduler-runtime.sh), [collect-sandbox-verification-evidence.sh](../../platform/scripts/collect-sandbox-verification-evidence.sh)
 - Forgejo runner engine tracer bullet before River integration: [forgejo-runner-phase-0.md](./forgejo-runner-phase-0.md)
 
 ### Primary Sources
@@ -261,10 +261,11 @@ execution rewrite:
    `database/sql` path alive only for code not yet owned by the scheduler cut.
 2. Add service-owned migrations for River tables, `execution_events`, source and
    workload projection columns, capacity leases, and schedule occurrence tables.
-3. Register the River queues and typed job args for the taxonomy above. The only
-   active worker in the first cut should be a minimal `execution.advance` worker
-   that can load state and prove trace linkage; runner/scheduler/session workers
-   are registered only when their database contracts exist.
+3. Register the River queues and typed job args for the taxonomy above. The
+   first cut should activate only `scheduler.probe` to prove schema, pgx-backed
+   runtime startup, queue registration, and OTel spans. `execution.advance`
+   becomes the first domain worker in Phase 2, when `execution_events` and the
+   transactional admission contract exist.
 4. Replace `Submit` with a pgx transaction that writes execution + attempt +
    initial `execution_events` row + River `execution.advance` job. Stop launching
    `go s.execute(...)` from the request handler in the same cut.
@@ -404,7 +405,8 @@ Fail-first protocol:
 Green protocol:
 
 1. Deploy via `dev-single-node.yml --tags sandbox_rental_service`.
-2. Harness enqueues one `scheduler.probe` job through `sandbox-rental-service`.
+2. `make scheduler-proof` enqueues one `scheduler.probe` job through
+   `sandbox-rental-service`.
 3. Probe worker completes through `riverpgxv5`/`pgxpool`, not
    `riverdatabasesql`.
 4. `default.otel_traces` shows River insert and work spans.
@@ -414,6 +416,7 @@ Green protocol:
 
 - Add `pgxpool`, `riverpgxv5`, and `otelriver`.
 - Apply River OSS migrations through `src/sandbox-rental-service/migrations/`.
+- Add `make scheduler-proof` as the live deployed proof entrypoint.
 - Start one River client with queues:
   - `execution`
   - `orchestrator`
