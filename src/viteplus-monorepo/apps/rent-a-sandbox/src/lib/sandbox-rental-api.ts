@@ -19,9 +19,9 @@ import {
 import {
   vBillingCancelSubscriptionResponse,
   vBillingEntitlementBucketSection,
-  vBillingEntitlementGrantEntry,
-  vBillingEntitlementPool,
   vBillingEntitlementProductSection,
+  vBillingEntitlementSlot,
+  vBillingEntitlementSourceTotal,
   vBillingEntitlementsView,
   vBillingPlan,
   vBillingStatement,
@@ -162,57 +162,75 @@ function normalizeBillingWindow(input: v.InferOutput<typeof vSandboxBillingWindo
 
 export type BillingWindow = ReturnType<typeof normalizeBillingWindow>;
 
-type RawEntitlementProductSection = v.InferOutput<typeof vBillingEntitlementProductSection>;
+type RawEntitlementSlot = v.InferOutput<typeof vBillingEntitlementSlot>;
+type RawEntitlementSourceTotal = v.InferOutput<typeof vBillingEntitlementSourceTotal>;
 type RawEntitlementBucketSection = v.InferOutput<typeof vBillingEntitlementBucketSection>;
-type RawEntitlementPool = v.InferOutput<typeof vBillingEntitlementPool>;
-type RawEntitlementGrantEntry = v.InferOutput<typeof vBillingEntitlementGrantEntry>;
+type RawEntitlementProductSection = v.InferOutput<typeof vBillingEntitlementProductSection>;
 
-function parseEntitlementGrantEntry(input: RawEntitlementGrantEntry) {
+function parseEntitlementSourceTotal(input: RawEntitlementSourceTotal) {
   return {
-    ...input,
-    available: decimalStringToSafeNumber(input.available, "entries.available"),
-    pending: decimalStringToSafeNumber(input.pending, "entries.pending"),
+    source: input.source,
+    plan_id: input.plan_id,
+    label: input.label,
+    period_start_units: decimalStringToSafeNumber(
+      input.period_start_units,
+      "sources.period_start_units",
+    ),
+    available_units: decimalStringToSafeNumber(input.available_units, "sources.available_units"),
+    inline_expires_at: input.inline_expires_at ?? null,
   };
 }
 
-function parseEntitlementPool(input: RawEntitlementPool) {
+function parseEntitlementSlot(input: RawEntitlementSlot) {
   return {
-    ...input,
-    entries: input.entries?.map((entry) => parseEntitlementGrantEntry(entry)) ?? [],
+    scope_type: input.scope_type,
+    product_id: input.product_id,
+    product_display: input.product_display,
+    bucket_id: input.bucket_id,
+    bucket_display: input.bucket_display,
+    sku_id: input.sku_id,
+    sku_display: input.sku_display,
+    coverage_label: input.coverage_label,
+    period_start_units: decimalStringToSafeNumber(
+      input.period_start_units,
+      "slot.period_start_units",
+    ),
+    spent_units: decimalStringToSafeNumber(input.spent_units, "slot.spent_units"),
+    pending_units: decimalStringToSafeNumber(input.pending_units, "slot.pending_units"),
+    available_units: decimalStringToSafeNumber(input.available_units, "slot.available_units"),
+    sources: input.sources?.map((source) => parseEntitlementSourceTotal(source)) ?? [],
   };
 }
 
 function parseEntitlementBucketSection(input: RawEntitlementBucketSection) {
   return {
-    ...input,
-    pools: input.pools?.map((pool) => parseEntitlementPool(pool)) ?? [],
+    bucket_id: input.bucket_id,
+    display_name: input.display_name,
+    bucket_slot: input.bucket_slot ? parseEntitlementSlot(input.bucket_slot) : null,
+    sku_slots: input.sku_slots?.map((slot) => parseEntitlementSlot(slot)) ?? [],
   };
 }
 
 function parseEntitlementProductSection(input: RawEntitlementProductSection) {
   return {
-    ...input,
-    product_pools: input.product_pools?.map((pool) => parseEntitlementPool(pool)) ?? [],
+    product_id: input.product_id,
+    display_name: input.display_name,
+    product_slot: input.product_slot ? parseEntitlementSlot(input.product_slot) : null,
     buckets: input.buckets?.map((bucket) => parseEntitlementBucketSection(bucket)) ?? [],
   };
 }
 
 function parseEntitlementsView(input: unknown) {
-  const {
-    $schema: _schema,
-    products,
-    universal,
-    ...rest
-  } = v.parse(vBillingEntitlementsView, input);
+  const parsed = v.parse(vBillingEntitlementsView, input);
   return {
-    ...rest,
-    universal: universal?.map((pool) => parseEntitlementPool(pool)) ?? [],
-    products: products?.map((product) => parseEntitlementProductSection(product)) ?? [],
+    org_id: parsed.org_id,
+    universal: parseEntitlementSlot(parsed.universal),
+    products: parsed.products?.map((product) => parseEntitlementProductSection(product)) ?? [],
   };
 }
 
-export type EntitlementGrantEntry = ReturnType<typeof parseEntitlementGrantEntry>;
-export type EntitlementPool = ReturnType<typeof parseEntitlementPool>;
+export type EntitlementSourceTotal = ReturnType<typeof parseEntitlementSourceTotal>;
+export type EntitlementSlot = ReturnType<typeof parseEntitlementSlot>;
 export type EntitlementBucketSection = ReturnType<typeof parseEntitlementBucketSection>;
 export type EntitlementProductSection = ReturnType<typeof parseEntitlementProductSection>;
 export type EntitlementsView = ReturnType<typeof parseEntitlementsView>;

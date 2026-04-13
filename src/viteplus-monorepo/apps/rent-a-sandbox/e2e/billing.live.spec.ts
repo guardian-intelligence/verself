@@ -244,19 +244,30 @@ async function requestHobbyCancellation(app: SandboxHarness) {
   await app.page.getByRole("button", { name: "Confirm Cancellation" }).click();
 }
 
-const hobbySubscriptionEntitlementPoolIDs = [
-  "entitlements-pool-bucket:sandbox:compute:_:subscription",
-  "entitlements-pool-bucket:sandbox:memory:_:subscription",
-  "entitlements-pool-bucket:sandbox:block_storage:_:subscription",
+// In the slot model the bucket slot is one row per (scope, target). Each row
+// is `entitlements-slot-bucket:<product>:<bucket>:_` and the subscription
+// contribution shows up as a `<li data-source="subscription">` inside the
+// row's source-tuple list. The subscription has to be present in every Hobby
+// bucket — compute, memory, block_storage — for the test to consider it
+// visible.
+const hobbySubscriptionBucketSlotIDs = [
+  "entitlements-slot-bucket:sandbox:compute:_",
+  "entitlements-slot-bucket:sandbox:memory:_",
+  "entitlements-slot-bucket:sandbox:block_storage:_",
 ];
 
 async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
-  for (const testID of hobbySubscriptionEntitlementPoolIDs) {
-    const text = await app.page
-      .getByTestId(testID)
-      .innerText()
-      .catch(() => "");
-    if (!text.includes("Plan") || !text.includes("$")) {
+  for (const testID of hobbySubscriptionBucketSlotIDs) {
+    const slot = app.page.getByTestId(testID);
+    if (!(await slot.isVisible().catch(() => false))) {
+      return false;
+    }
+    const subscriptionEntry = slot.locator('li[data-source="subscription"]');
+    if (!(await subscriptionEntry.first().isVisible().catch(() => false))) {
+      return false;
+    }
+    const text = await subscriptionEntry.first().innerText().catch(() => "");
+    if (!text.includes("$")) {
       return false;
     }
   }
@@ -264,10 +275,15 @@ async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
 }
 
 async function hasAnyVisibleHobbySubscriptionEntitlement(app: SandboxHarness) {
-  for (const testID of hobbySubscriptionEntitlementPoolIDs) {
+  for (const testID of hobbySubscriptionBucketSlotIDs) {
+    const slot = app.page.getByTestId(testID);
+    if (!(await slot.isVisible().catch(() => false))) {
+      continue;
+    }
     if (
-      await app.page
-        .getByTestId(testID)
+      await slot
+        .locator('li[data-source="subscription"]')
+        .first()
         .isVisible()
         .catch(() => false)
     ) {

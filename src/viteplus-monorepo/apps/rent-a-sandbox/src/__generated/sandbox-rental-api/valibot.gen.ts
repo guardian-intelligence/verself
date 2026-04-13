@@ -3,48 +3,50 @@
 
 import * as v from "valibot";
 
-export const vBillingEntitlementGrantEntry = v.strictObject({
-  available: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  grant_id: v.string(),
-  pending: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  starts_at: v.pipe(v.string(), v.isoTimestamp()),
+export const vBillingEntitlementSourceTotal = v.strictObject({
+  available_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  inline_expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  label: v.string(),
+  period_start_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  plan_id: v.string(),
+  source: v.picklist(["free_tier", "subscription", "purchase", "promo", "refund"]),
 });
 
-export const vBillingEntitlementPool = v.strictObject({
+export const vBillingEntitlementSlot = v.strictObject({
+  available_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   bucket_display: v.string(),
   bucket_id: v.string(),
   coverage_label: v.string(),
-  entries: v.nullable(v.array(vBillingEntitlementGrantEntry)),
+  pending_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  period_start_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_display: v.string(),
   product_id: v.string(),
   scope_type: v.picklist(["account", "product", "bucket", "sku"]),
   sku_display: v.string(),
   sku_id: v.string(),
-  source: v.picklist(["free_tier", "subscription", "purchase", "promo", "refund"]),
-  source_label: v.string(),
+  sources: v.nullable(v.array(vBillingEntitlementSourceTotal)),
+  spent_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
 export const vBillingEntitlementBucketSection = v.strictObject({
   bucket_id: v.string(),
+  bucket_slot: v.optional(vBillingEntitlementSlot),
   display_name: v.string(),
-  pools: v.nullable(v.array(vBillingEntitlementPool)),
+  sku_slots: v.nullable(v.array(vBillingEntitlementSlot)),
 });
 
 export const vBillingEntitlementProductSection = v.strictObject({
   buckets: v.nullable(v.array(vBillingEntitlementBucketSection)),
   display_name: v.string(),
   product_id: v.string(),
-  product_pools: v.nullable(v.array(vBillingEntitlementPool)),
+  product_slot: v.optional(vBillingEntitlementSlot),
 });
 
 export const vBillingEntitlementsView = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   products: v.nullable(v.array(vBillingEntitlementProductSection)),
-  universal: v.nullable(v.array(vBillingEntitlementPool)),
+  universal: vBillingEntitlementSlot,
 });
 
 export const vBillingPlan = v.strictObject({
@@ -456,7 +458,7 @@ export const vBillingCancelSubscriptionResponseWritable = v.strictObject({
 export const vBillingEntitlementsViewWritable = v.strictObject({
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   products: v.nullable(v.array(vBillingEntitlementProductSection)),
-  universal: v.nullable(v.array(vBillingEntitlementPool)),
+  universal: vBillingEntitlementSlot,
 });
 
 export const vBillingPlansWritable = v.strictObject({

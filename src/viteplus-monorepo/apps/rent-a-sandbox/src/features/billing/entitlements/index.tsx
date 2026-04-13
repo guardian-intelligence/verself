@@ -5,7 +5,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@forge-metal/ui/components/ui/card";
-import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Separator } from "@forge-metal/ui/components/ui/separator";
 import {
   Table,
@@ -15,92 +14,74 @@ import {
   TableHeader,
   TableRow,
 } from "@forge-metal/ui/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@forge-metal/ui/components/ui/tooltip";
 import type {
   EntitlementBucketSection,
-  EntitlementGrantEntry,
-  EntitlementPool,
   EntitlementProductSection,
+  EntitlementSlot,
+  EntitlementSourceTotal,
   EntitlementsView,
 } from "~/server-fns/api";
 import { formatDateUTC, formatLedgerAmount } from "~/lib/format";
 
-const combinedCaption = "Balances can't be combined — each line is only usable for what it covers.";
+const combinedCaption =
+  "Each row only covers what its label says. Balances on different rows can't be combined.";
 
 export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
-  const universalPools = view.universal ?? [];
   const productSections = view.products ?? [];
-  const isEmpty = universalPools.length === 0 && productSections.length === 0;
-  // Hidden numeric anchor for e2e relative comparisons (started vs finished).
-  // It is intentionally not displayed — the visible UI never sums across cells.
-  const allEntries = [
-    ...universalPools.flatMap((pool) => pool.entries),
-    ...productSections.flatMap((section) => [
-      ...(section.product_pools ?? []).flatMap((pool) => pool.entries),
-      ...(section.buckets ?? []).flatMap((bucket) =>
-        (bucket.pools ?? []).flatMap((pool) => pool.entries),
-      ),
-    ]),
-  ];
-  const totalAvailableForTests = allEntries.reduce((acc, entry) => acc + entry.available, 0);
-
-  if (isEmpty) {
-    return (
-      <Card
-        data-testid="entitlements-view"
-        data-entitlements-empty="true"
-        data-test-available-units={0}
-      >
-        <CardHeader>
-          <CardTitle>No active credits</CardTitle>
-          <CardDescription>
-            Subscribe or purchase credits to see what's available where.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  const visibleSlots = collectVisibleSlots(view);
+  const totalAvailableForTests = visibleSlots.reduce((acc, slot) => acc + slot.available_units, 0);
 
   return (
-    <TooltipProvider delayDuration={150}>
-      <div
-        className="space-y-8"
-        data-testid="entitlements-view"
-        data-test-available-units={totalAvailableForTests}
-      >
-        {universalPools.length > 0 ? <UniversalStrip pools={universalPools} /> : null}
-
-        {productSections.length > 0 ? (
-          <div className="space-y-6">
-            {productSections.map((section) => (
-              <ProductSection key={section.product_id} section={section} />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </TooltipProvider>
+    <div
+      className="space-y-8"
+      data-testid="entitlements-view"
+      data-test-available-units={totalAvailableForTests}
+    >
+      <UniversalCard slot={view.universal} />
+      {productSections.length > 0 ? (
+        <div className="space-y-6">
+          {productSections.map((section) => (
+            <ProductCard key={section.product_id} section={section} />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function UniversalStrip({ pools }: { pools: EntitlementPool[] }) {
+function collectVisibleSlots(view: EntitlementsView): EntitlementSlot[] {
+  const slots: EntitlementSlot[] = [view.universal];
+  for (const product of view.products ?? []) {
+    if (product.product_slot) slots.push(product.product_slot);
+    for (const bucket of product.buckets ?? []) {
+      if (bucket.bucket_slot) slots.push(bucket.bucket_slot);
+      for (const sku of bucket.sku_slots ?? []) slots.push(sku);
+    }
+  }
+  return slots;
+}
+
+function UniversalCard({ slot }: { slot: EntitlementSlot }) {
   return (
     <Card data-testid="entitlements-universal">
       <CardHeader>
         <CardTitle>Usable anywhere</CardTitle>
         <CardDescription>
-          Account-scoped credit. Each line is only usable for what it covers — never combine cells.
+          Account-scoped credit. This row covers any product, bucket, or SKU.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {pools.map((pool) => (
-            <PoolCell key={poolKey(pool)} pool={pool} />
-          ))}
+        <div className="border border-border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SlotColumnHeads />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <SlotRow slot={slot} />
+            </TableBody>
+          </Table>
         </div>
         <Separator />
         <p className="text-xs text-muted-foreground" data-testid="entitlements-caption">
@@ -111,177 +92,156 @@ function UniversalStrip({ pools }: { pools: EntitlementPool[] }) {
   );
 }
 
-function ProductSection({ section }: { section: EntitlementProductSection }) {
-  const productPools = section.product_pools ?? [];
-  const buckets = (section.buckets ?? []).filter((b) => (b.pools ?? []).length > 0);
-  if (productPools.length === 0 && buckets.length === 0) return null;
+function ProductCard({ section }: { section: EntitlementProductSection }) {
+  const buckets = section.buckets ?? [];
   return (
     <Card data-testid={`entitlements-product-${section.product_id}`}>
       <CardHeader>
         <CardTitle>{section.display_name}</CardTitle>
+        <CardDescription>
+          Coverage rows for {section.display_name}. Rows never combine — each line is a standalone
+          coverage statement.
+        </CardDescription>
       </CardHeader>
-        <div className="border-t border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Covers</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead className="text-right">Available</TableHead>
-                <TableHead className="text-right">Pending</TableHead>
-                <TableHead className="text-right">Next expiry</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {productPools.length > 0 ? (
-                <>
-                  <SectionHeaderRow label={`Anywhere in ${section.display_name}`} />
-                  {productPools.map((pool) => (
-                    <PoolRow key={poolKey(pool)} pool={pool} />
-                  ))}
-                </>
-              ) : null}
-              {buckets.map((bucket) => (
-                <BucketRows key={bucket.bucket_id} bucket={bucket} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      <div className="border-t border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <SlotColumnHeads />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {section.product_slot ? <SlotRow slot={section.product_slot} /> : null}
+            {buckets.map((bucket) => (
+              <BucketRows key={bucket.bucket_id} bucket={bucket} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </Card>
   );
 }
 
-function BucketRows({ bucket }: { bucket: EntitlementBucketSection }) {
-  const pools = bucket.pools ?? [];
-  if (pools.length === 0) return null;
+function SlotColumnHeads() {
   return (
     <>
-      <SectionHeaderRow
-        label={bucket.display_name}
-        testid={`entitlements-bucket-${bucket.bucket_id}`}
-      />
-      {pools.map((pool) => (
-        <PoolRow key={poolKey(pool)} pool={pool} />
+      <TableHead>Covers</TableHead>
+      <TableHead>Period started with</TableHead>
+      <TableHead className="text-right">Spent</TableHead>
+      <TableHead className="text-right">Available</TableHead>
+    </>
+  );
+}
+
+function BucketRows({ bucket }: { bucket: EntitlementBucketSection }) {
+  return (
+    <>
+      <TableRow
+        data-testid={`entitlements-bucket-${bucket.bucket_id}`}
+        className="bg-muted/40 hover:bg-muted/40"
+      >
+        <TableCell
+          colSpan={4}
+          className="py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+        >
+          {bucket.display_name}
+        </TableCell>
+      </TableRow>
+      {bucket.bucket_slot ? <SlotRow slot={bucket.bucket_slot} /> : null}
+      {bucket.sku_slots.map((slot) => (
+        <SlotRow key={slot.sku_id} slot={slot} />
       ))}
     </>
   );
 }
 
-function SectionHeaderRow({ label, testid }: { label: string; testid?: string }) {
+function SlotRow({ slot }: { slot: EntitlementSlot }) {
   return (
-    <TableRow data-testid={testid} className="bg-muted/40 hover:bg-muted/40">
-      <TableCell
-        colSpan={5}
-        className="py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-      >
-        {label}
+    <TableRow data-testid={`entitlements-slot-${slotKey(slot)}`}>
+      <TableCell className="font-medium align-top">{slot.coverage_label}</TableCell>
+      <TableCell className="align-top">
+        <PeriodStartCell slot={slot} />
+      </TableCell>
+      <TableCell className="text-right font-mono tabular-nums align-top">
+        <span data-testid="slot-spent">{formatLedgerAmount(slot.spent_units)}</span>
+      </TableCell>
+      <TableCell className="text-right align-top">
+        <AvailableCell slot={slot} />
       </TableCell>
     </TableRow>
   );
 }
 
-function PoolRow({ pool }: { pool: EntitlementPool }) {
-  const totals = poolTotals(pool);
-  const next = pool.entries[0];
+function PeriodStartCell({ slot }: { slot: EntitlementSlot }) {
+  if (slot.period_start_units === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const periodSources = slot.sources.filter((source) => source.period_start_units > 0);
   return (
-    <TableRow data-testid={`entitlements-pool-${poolKey(pool)}`}>
-      <TableCell className="font-medium">{pool.coverage_label}</TableCell>
-      <TableCell>
-        <SourceBadge label={pool.source_label} source={pool.source} />
-      </TableCell>
-      <TableCell className="text-right font-mono tabular-nums">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span data-testid="pool-available">{formatLedgerAmount(totals.available)}</span>
-          </TooltipTrigger>
-          <PoolEntriesTooltip entries={pool.entries} />
-        </Tooltip>
-      </TableCell>
-      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-        {formatLedgerAmount(totals.pending)}
-      </TableCell>
-      <TableCell className="text-right text-muted-foreground">
-        {next?.expires_at ? formatDateUTC(next.expires_at) : "Never"}
-      </TableCell>
-    </TableRow>
-  );
-}
-
-function PoolCell({ pool }: { pool: EntitlementPool }) {
-  const totals = poolTotals(pool);
-  const next = pool.entries[0];
-  return (
-    <div
-      className="rounded-lg border border-border p-4 space-y-2"
-      data-testid={`entitlements-pool-${poolKey(pool)}`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-muted-foreground">{pool.coverage_label}</span>
-        <SourceBadge label={pool.source_label} source={pool.source} />
+    <div className="space-y-1">
+      <div className="font-mono tabular-nums text-sm font-medium" data-testid="slot-period-start">
+        {formatLedgerAmount(slot.period_start_units)}
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            className="text-2xl font-mono tabular-nums font-semibold"
-            data-testid="pool-available"
-          >
-            {formatLedgerAmount(totals.available)}
-          </div>
-        </TooltipTrigger>
-        <PoolEntriesTooltip entries={pool.entries} />
-      </Tooltip>
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {totals.pending > 0 ? `${formatLedgerAmount(totals.pending)} pending` : "\u00a0"}
-        </span>
-        <span>{next?.expires_at ? `Expires ${formatDateUTC(next.expires_at)}` : "No expiry"}</span>
-      </div>
+      <SourceTuple sources={periodSources} field="period_start_units" />
     </div>
   );
 }
 
-function PoolEntriesTooltip({ entries }: { entries: EntitlementGrantEntry[] }) {
-  if (entries.length === 0) return <TooltipContent>No active grants</TooltipContent>;
-  return (
-    <TooltipContent className="max-w-xs space-y-1 text-xs">
-      <div className="font-semibold">Grants in this cell, next-to-spend first</div>
-      <ul className="space-y-1">
-        {entries.map((entry) => (
-          <li key={entry.grant_id} className="flex items-baseline justify-between gap-3">
-            <span className="font-mono">{formatLedgerAmount(entry.available)}</span>
-            <span className="text-muted-foreground">
-              {entry.expires_at ? formatDateUTC(entry.expires_at) : "no expiry"}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </TooltipContent>
-  );
-}
-
-function SourceBadge({ label, source }: { label: string; source: string }) {
-  return (
-    <Badge variant="secondary" data-source={source}>
-      {label}
-    </Badge>
-  );
-}
-
-function poolTotals(pool: EntitlementPool) {
-  let available = 0;
-  let pending = 0;
-  for (const entry of pool.entries) {
-    available += entry.available;
-    pending += entry.pending;
+function AvailableCell({ slot }: { slot: EntitlementSlot }) {
+  if (slot.available_units === 0 && slot.pending_units === 0) {
+    return <span className="font-mono tabular-nums text-muted-foreground">$0.00</span>;
   }
-  return { available, pending };
+  return (
+    <div className="space-y-1">
+      <div className="font-mono tabular-nums text-sm font-medium" data-testid="slot-available">
+        {formatLedgerAmount(slot.available_units)}
+        {slot.pending_units > 0 ? (
+          <span className="ml-1 text-xs text-muted-foreground font-normal">
+            (+ {formatLedgerAmount(slot.pending_units)} pending)
+          </span>
+        ) : null}
+      </div>
+      <SourceTuple sources={slot.sources} field="available_units" />
+    </div>
+  );
 }
 
-function poolKey(pool: EntitlementPool) {
-  return [
-    pool.scope_type,
-    pool.product_id || "_",
-    pool.bucket_id || "_",
-    pool.sku_id || "_",
-    pool.source,
-  ].join(":");
+function SourceTuple({
+  sources,
+  field,
+}: {
+  sources: EntitlementSourceTotal[];
+  field: "available_units" | "period_start_units";
+}) {
+  const visible = sources.filter((source) => source[field] > 0);
+  if (visible.length === 0) return null;
+  return (
+    <ul className="text-xs text-muted-foreground space-y-0.5">
+      {visible.map((source) => (
+        <li
+          key={`${source.source}:${source.plan_id || "_"}`}
+          data-source={source.source}
+          data-plan-id={source.plan_id || undefined}
+        >
+          <span className="font-mono tabular-nums text-foreground">
+            {formatLedgerAmount(source[field])}
+          </span>
+          <span className="ml-1">[{sourceLabel(source)}]</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function sourceLabel(source: EntitlementSourceTotal): string {
+  if (source.inline_expires_at) {
+    return `${source.label}, expires ${formatDateUTC(source.inline_expires_at)}`;
+  }
+  return source.label;
+}
+
+function slotKey(slot: EntitlementSlot): string {
+  return [slot.scope_type, slot.product_id || "_", slot.bucket_id || "_", slot.sku_id || "_"].join(
+    ":",
+  );
 }

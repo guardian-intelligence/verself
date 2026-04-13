@@ -15,39 +15,41 @@ export type BillingCancelSubscriptionResponse = {
 
 export type BillingEntitlementBucketSection = {
   bucket_id: string;
+  bucket_slot?: BillingEntitlementSlot;
   display_name: string;
-  pools: Array<BillingEntitlementPool> | null;
-};
-
-export type BillingEntitlementGrantEntry = {
-  available: string;
-  expires_at?: string;
-  grant_id: string;
-  pending: string;
-  period_end?: string;
-  period_start?: string;
-  starts_at: string;
-};
-
-export type BillingEntitlementPool = {
-  bucket_display: string;
-  bucket_id: string;
-  coverage_label: string;
-  entries: Array<BillingEntitlementGrantEntry> | null;
-  product_display: string;
-  product_id: string;
-  scope_type: "account" | "product" | "bucket" | "sku";
-  sku_display: string;
-  sku_id: string;
-  source: "free_tier" | "subscription" | "purchase" | "promo" | "refund";
-  source_label: string;
+  sku_slots: Array<BillingEntitlementSlot> | null;
 };
 
 export type BillingEntitlementProductSection = {
   buckets: Array<BillingEntitlementBucketSection> | null;
   display_name: string;
   product_id: string;
-  product_pools: Array<BillingEntitlementPool> | null;
+  product_slot?: BillingEntitlementSlot;
+};
+
+export type BillingEntitlementSlot = {
+  available_units: string;
+  bucket_display: string;
+  bucket_id: string;
+  coverage_label: string;
+  pending_units: string;
+  period_start_units: string;
+  product_display: string;
+  product_id: string;
+  scope_type: "account" | "product" | "bucket" | "sku";
+  sku_display: string;
+  sku_id: string;
+  sources: Array<BillingEntitlementSourceTotal> | null;
+  spent_units: string;
+};
+
+export type BillingEntitlementSourceTotal = {
+  available_units: string;
+  inline_expires_at?: string;
+  label: string;
+  period_start_units: string;
+  plan_id: string;
+  source: "free_tier" | "subscription" | "purchase" | "promo" | "refund";
 };
 
 export type BillingEntitlementsView = {
@@ -57,7 +59,7 @@ export type BillingEntitlementsView = {
   readonly $schema?: string;
   org_id: string;
   products: Array<BillingEntitlementProductSection> | null;
-  universal: Array<BillingEntitlementPool> | null;
+  universal: BillingEntitlementSlot;
 };
 
 export type BillingPlan = {
@@ -474,7 +476,7 @@ export type BillingCancelSubscriptionResponseWritable = {
 export type BillingEntitlementsViewWritable = {
   org_id: string;
   products: Array<BillingEntitlementProductSection> | null;
-  universal: Array<BillingEntitlementPool> | null;
+  universal: BillingEntitlementSlot;
 };
 
 export type BillingPlansWritable = {
