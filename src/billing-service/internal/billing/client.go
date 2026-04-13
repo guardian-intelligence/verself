@@ -80,7 +80,40 @@ func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string,
 	if err != nil {
 		return fmt.Errorf("upsert org: %w", err)
 	}
-	return c.EnsureCurrentEntitlements(ctx, orgID, "")
+	if err := c.EnsureCurrentEntitlements(ctx, orgID, ""); err != nil {
+		return err
+	}
+	return c.EnsureCurrentBillingCycles(ctx, orgID)
+}
+
+func (c *Client) EnsureCurrentBillingCycles(ctx context.Context, orgID OrgID) error {
+	rows, err := c.pg.QueryContext(ctx, `
+		SELECT product_id
+		FROM products
+		ORDER BY product_id
+	`)
+	if err != nil {
+		return fmt.Errorf("query products for billing cycle materialization: %w", err)
+	}
+	defer rows.Close()
+
+	var productIDs []string
+	for rows.Next() {
+		var productID string
+		if err := rows.Scan(&productID); err != nil {
+			return fmt.Errorf("scan product for billing cycle materialization: %w", err)
+		}
+		productIDs = append(productIDs, productID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate products for billing cycle materialization: %w", err)
+	}
+	for _, productID := range productIDs {
+		if _, err := c.EnsureOpenBillingCycle(ctx, orgID, productID); err != nil {
+			return fmt.Errorf("ensure billing cycle for product %s: %w", productID, err)
+		}
+	}
+	return nil
 }
 
 func (c *Client) ListContracts(ctx context.Context, orgID OrgID) ([]ContractRecord, error) {

@@ -6,11 +6,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
+
+const (
+	stripeProviderEventMaxAttempts = 5
+	stripeProviderEventBaseBackoff = 30 * time.Second
+	stripeProviderEventMaxBackoff  = 15 * time.Minute
+)
+
+var stripeProviderEventTracer = otel.Tracer("billing-service/billing/provider-events")
+
+type stripeProviderEventClaim struct {
+	EventID   string
+	EventType string
+	Payload   []byte
+	Attempts  int
+}
 
 func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, productID string, params CheckoutParams) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -200,23 +219,119 @@ func (c *Client) CreatePortalSession(ctx context.Context, orgID OrgID, returnURL
 }
 
 func (c *Client) HandleStripeWebhook(ctx context.Context, payload []byte, signatureHeader string, webhookSecret string) error {
+	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.stripe.webhook.receive")
+	defer span.End()
+
 	event, err := webhook.ConstructEvent(payload, signatureHeader, webhookSecret)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("construct stripe webhook event: %w", err)
 	}
+	span.SetAttributes(
+		attribute.String("stripe.event_id", event.ID),
+		attribute.String("stripe.event_type", string(event.Type)),
+	)
 
-	providerEventID, err := c.recordStripeProviderEvent(ctx, event, payload)
+	_, err = c.recordStripeProviderEvent(ctx, event, payload)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	return nil
+}
+
+func (c *Client) ApplyPendingProviderEvents(ctx context.Context, limit int) (int, error) {
+	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.provider_event.apply_pending")
+	defer span.End()
+
+	if limit <= 0 {
+		limit = 100
+	}
+	span.SetAttributes(attribute.Int("billing.provider_event.limit", limit))
+
+	rows, err := c.pg.QueryContext(ctx, `
+		SELECT event_id
+		FROM billing_provider_events
+		WHERE provider = 'stripe'
+		  AND state IN ('received', 'queued', 'failed')
+		  AND COALESCE(next_attempt_at, received_at) <= now()
+		ORDER BY COALESCE(next_attempt_at, received_at), event_id
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return 0, fmt.Errorf("query pending stripe provider events: %w", err)
+	}
+	defer rows.Close()
+
+	var eventIDs []string
+	for rows.Next() {
+		var eventID string
+		if err := rows.Scan(&eventID); err != nil {
+			return 0, fmt.Errorf("scan pending stripe provider event: %w", err)
+		}
+		eventIDs = append(eventIDs, eventID)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate pending stripe provider events: %w", err)
+	}
+
+	applied := 0
+	for _, eventID := range eventIDs {
+		didApply, err := c.ApplyProviderEvent(ctx, eventID)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return applied, err
+		}
+		if didApply {
+			applied++
+		}
+	}
+	span.SetAttributes(attribute.Int("billing.provider_event.applied_count", applied))
+	return applied, nil
+}
+
+func (c *Client) ApplyProviderEvent(ctx context.Context, eventID string) (bool, error) {
+	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.provider_event.apply")
+	defer span.End()
+	span.SetAttributes(attribute.String("billing.provider_event.event_id", eventID))
+
+	claim, ok, err := c.claimStripeProviderEvent(ctx, eventID)
+	if err != nil || !ok {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.SetAttributes(attribute.Bool("billing.provider_event.applied", false))
+		return false, err
+	}
+	span.SetAttributes(
+		attribute.String("billing.provider_event.event_type", claim.EventType),
+		attribute.Int("billing.provider_event.attempts", claim.Attempts),
+	)
+
+	var event stripe.Event
+	if err := json.Unmarshal(claim.Payload, &event); err != nil {
+		if markErr := c.failStripeProviderEvent(ctx, claim, fmt.Errorf("decode stripe provider event: %w", err)); markErr != nil {
+			span.RecordError(markErr)
+			span.SetStatus(codes.Error, markErr.Error())
+			return true, markErr
+		}
+		span.RecordError(err)
+		return true, nil
 	}
 
 	var handleErr error
 	finalState := "applied"
 	switch event.Type {
 	case "checkout.session.completed":
-		handleErr = c.handleCheckoutSessionCompleted(ctx, providerEventID, event)
+		handleErr = c.handleCheckoutSessionCompleted(ctx, claim.EventID, event)
 	case "setup_intent.succeeded":
-		handleErr = c.handleSetupIntentSucceeded(ctx, providerEventID, event)
+		handleErr = c.handleSetupIntentSucceeded(ctx, claim.EventID, event)
 	case "payment_intent.succeeded":
 		handleErr = c.handlePaymentIntentSucceeded(ctx, event)
 	case "invoice.paid":
@@ -227,10 +342,25 @@ func (c *Client) HandleStripeWebhook(ctx context.Context, payload []byte, signat
 		finalState = "ignored"
 	}
 	if handleErr != nil {
-		_ = c.markStripeProviderEvent(ctx, providerEventID, "failed", handleErr.Error())
-		return handleErr
+		if markErr := c.failStripeProviderEvent(ctx, claim, handleErr); markErr != nil {
+			span.RecordError(markErr)
+			span.SetStatus(codes.Error, markErr.Error())
+			return true, fmt.Errorf("apply stripe provider event %s: %w; mark failure: %v", claim.EventID, handleErr, markErr)
+		}
+		span.RecordError(handleErr)
+		span.SetAttributes(attribute.String("billing.provider_event.state", "failed"))
+		return true, nil
 	}
-	return c.markStripeProviderEvent(ctx, providerEventID, finalState, "")
+	if err := c.markStripeProviderEventFinal(ctx, claim.EventID, finalState); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return true, err
+	}
+	span.SetAttributes(
+		attribute.Bool("billing.provider_event.applied", finalState == "applied"),
+		attribute.String("billing.provider_event.state", finalState),
+	)
+	return true, nil
 }
 
 func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Event, payload []byte) (string, error) {
@@ -238,42 +368,345 @@ func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Eve
 		return "", fmt.Errorf("stripe event id is required")
 	}
 	eventID := deterministicTextID("stripe-provider-event", event.ID)
-	_, err := c.pg.ExecContext(ctx, `
+	annotation := stripeRawProviderEventAnnotation(event)
+	tx, err := c.pg.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin stripe provider event record: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO billing_provider_events (
 			event_id, provider, provider_event_id, event_type, state, livemode,
-			provider_created_at, payload
+			provider_created_at, next_attempt_at, org_id, product_id, contract_id,
+			invoice_id, provider_customer_id, provider_invoice_id, provider_payment_intent_id,
+			provider_object_type, provider_object_id, payload
 		)
-		VALUES ($1, 'stripe', $2, $3, 'received', $4, $5, $6::jsonb)
+		VALUES ($1, 'stripe', $2, $3, 'queued', $4, $5, $6,
+		        $7, $8, $9,
+		        $10, $11, $12, $13,
+		        $14, $15, $16::jsonb)
 		ON CONFLICT (provider, provider_event_id) DO UPDATE
 		SET event_type = EXCLUDED.event_type,
 		    livemode = EXCLUDED.livemode,
 		    provider_created_at = EXCLUDED.provider_created_at,
 		    payload = EXCLUDED.payload,
+		    state = CASE
+		        WHEN billing_provider_events.state IN ('applying', 'applied', 'ignored', 'dead_letter')
+		            THEN billing_provider_events.state
+		        ELSE 'queued'
+		    END,
+		    next_attempt_at = CASE
+		        WHEN billing_provider_events.state IN ('applying', 'applied', 'ignored', 'dead_letter')
+		            THEN billing_provider_events.next_attempt_at
+		        ELSE EXCLUDED.next_attempt_at
+		    END,
+		    org_id = CASE WHEN billing_provider_events.org_id = '' THEN EXCLUDED.org_id ELSE billing_provider_events.org_id END,
+		    product_id = CASE WHEN billing_provider_events.product_id = '' THEN EXCLUDED.product_id ELSE billing_provider_events.product_id END,
+		    contract_id = CASE WHEN billing_provider_events.contract_id = '' THEN EXCLUDED.contract_id ELSE billing_provider_events.contract_id END,
+		    invoice_id = CASE WHEN billing_provider_events.invoice_id = '' THEN EXCLUDED.invoice_id ELSE billing_provider_events.invoice_id END,
+		    provider_customer_id = CASE WHEN billing_provider_events.provider_customer_id = '' THEN EXCLUDED.provider_customer_id ELSE billing_provider_events.provider_customer_id END,
+		    provider_invoice_id = CASE WHEN billing_provider_events.provider_invoice_id = '' THEN EXCLUDED.provider_invoice_id ELSE billing_provider_events.provider_invoice_id END,
+		    provider_payment_intent_id = CASE WHEN billing_provider_events.provider_payment_intent_id = '' THEN EXCLUDED.provider_payment_intent_id ELSE billing_provider_events.provider_payment_intent_id END,
+		    provider_object_type = CASE WHEN billing_provider_events.provider_object_type = '' THEN EXCLUDED.provider_object_type ELSE billing_provider_events.provider_object_type END,
+		    provider_object_id = CASE WHEN billing_provider_events.provider_object_id = '' THEN EXCLUDED.provider_object_id ELSE billing_provider_events.provider_object_id END,
 		    updated_at = now()
-	`, eventID, event.ID, string(event.Type), event.Livemode, time.Unix(event.Created, 0).UTC(), string(payload))
+	`, eventID, event.ID, string(event.Type), event.Livemode, time.Unix(event.Created, 0).UTC(), c.clock().UTC(),
+		annotation.OrgID, annotation.ProductID, annotation.ContractID,
+		annotation.InvoiceID, annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
+		annotation.ObjectType, annotation.ObjectID, string(payload))
 	if err != nil {
 		return "", fmt.Errorf("record stripe provider event %s: %w", event.ID, err)
+	}
+	if annotation.OrgID != "" {
+		if err := insertBillingEventTx(ctx, tx, providerEventReceivedEvent(eventID, event, annotation)); err != nil {
+			return "", err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit stripe provider event record: %w", err)
 	}
 	return eventID, nil
 }
 
-func (c *Client) markStripeProviderEvent(ctx context.Context, eventID string, state string, failure string) error {
+func stripeRawProviderEventAnnotation(event stripe.Event) providerEventAnnotation {
+	object := map[string]any{}
+	if event.Data != nil && len(event.Data.Raw) > 0 {
+		_ = json.Unmarshal(event.Data.Raw, &object)
+	}
+	metadata := stringMapFromAny(object["metadata"])
+	annotation := providerEventAnnotation{
+		OrgID:            metadata["org_id"],
+		ProductID:        metadata["product_id"],
+		ContractID:       metadata["contract_id"],
+		InvoiceID:        metadata["invoice_id"],
+		ProviderCustomer: stringValue(object["customer"]),
+		ObjectType:       providerObjectTypeFromStripeEventType(string(event.Type)),
+		ObjectID:         stringValue(object["id"]),
+		Normalized: map[string]string{
+			"stripe_event_id":   event.ID,
+			"stripe_event_type": string(event.Type),
+			"object_id":         stringValue(object["id"]),
+		},
+	}
+	switch string(event.Type) {
+	case "invoice.finalized", "invoice.paid", "invoice.payment_failed":
+		annotation.ProviderInvoiceID = stringValue(object["id"])
+		annotation.ProviderPaymentIntentID = stringValue(object["payment_intent"])
+	case "payment_intent.succeeded", "payment_intent.payment_failed":
+		annotation.ProviderPaymentIntentID = stringValue(object["id"])
+	case "checkout.session.completed":
+		annotation.ProviderPaymentIntentID = stringValue(object["payment_intent"])
+	}
+	return annotation
+}
+
+func providerObjectTypeFromStripeEventType(eventType string) string {
+	if eventType == "" {
+		return ""
+	}
+	parts := strings.Split(eventType, ".")
+	if len(parts) <= 1 {
+		return eventType
+	}
+	return strings.Join(parts[:len(parts)-1], ".")
+}
+
+func stringMapFromAny(value any) map[string]string {
+	out := map[string]string{}
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, raw := range typed {
+			if str := stringValue(raw); str != "" {
+				out[key] = str
+			}
+		}
+	case map[string]string:
+		for key, str := range typed {
+			if str != "" {
+				out[key] = str
+			}
+		}
+	}
+	return out
+}
+
+func stringValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case json.Number:
+		return typed.String()
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(typed)
+	case map[string]any:
+		return stringValue(typed["id"])
+	default:
+		return ""
+	}
+}
+
+func providerEventReceivedEvent(eventID string, event stripe.Event, annotation providerEventAnnotation) billingEventFact {
+	occurredAt := time.Now().UTC()
+	if event.Created > 0 {
+		occurredAt = time.Unix(event.Created, 0).UTC()
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"provider":                   "stripe",
+		"event_id":                   eventID,
+		"provider_event_id":          event.ID,
+		"provider_event_type":        string(event.Type),
+		"org_id":                     annotation.OrgID,
+		"product_id":                 annotation.ProductID,
+		"contract_id":                annotation.ContractID,
+		"invoice_id":                 annotation.InvoiceID,
+		"provider_customer_id":       annotation.ProviderCustomer,
+		"provider_invoice_id":        annotation.ProviderInvoiceID,
+		"provider_payment_intent_id": annotation.ProviderPaymentIntentID,
+		"provider_object_type":       annotation.ObjectType,
+		"provider_object_id":         annotation.ObjectID,
+		"occurred_at":                occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "provider_event_received", eventID),
+		EventType:     "provider_event_received",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "provider_event",
+		AggregateID:   eventID,
+		OrgID:         annotation.OrgID,
+		ProductID:     annotation.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func providerEventAppliedEvent(eventID string, providerEventID string, providerEventType string, state string, annotation providerEventAnnotation, occurredAt time.Time) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	eventType := "provider_event_applied"
+	payload, _ := json.Marshal(map[string]string{
+		"provider":                   "stripe",
+		"event_id":                   eventID,
+		"provider_event_id":          providerEventID,
+		"provider_event_type":        providerEventType,
+		"provider_event_state":       state,
+		"org_id":                     annotation.OrgID,
+		"product_id":                 annotation.ProductID,
+		"contract_id":                annotation.ContractID,
+		"invoice_id":                 annotation.InvoiceID,
+		"provider_customer_id":       annotation.ProviderCustomer,
+		"provider_invoice_id":        annotation.ProviderInvoiceID,
+		"provider_payment_intent_id": annotation.ProviderPaymentIntentID,
+		"provider_object_type":       annotation.ObjectType,
+		"provider_object_id":         annotation.ObjectID,
+		"occurred_at":                occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", eventType, eventID, state),
+		EventType:     eventType,
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "provider_event",
+		AggregateID:   eventID,
+		OrgID:         annotation.OrgID,
+		ProductID:     annotation.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func (c *Client) claimStripeProviderEvent(ctx context.Context, eventID string) (stripeProviderEventClaim, bool, error) {
+	if strings.TrimSpace(eventID) == "" {
+		return stripeProviderEventClaim{}, false, fmt.Errorf("provider event id is required")
+	}
+	now := c.clock().UTC()
+	var claim stripeProviderEventClaim
+	var payload string
+	err := c.pg.QueryRowContext(ctx, `
+		UPDATE billing_provider_events
+		SET state = 'applying',
+		    attempts = attempts + 1,
+		    next_attempt_at = NULL,
+		    last_error = '',
+		    updated_at = $2
+		WHERE event_id = $1
+		  AND provider = 'stripe'
+		  AND state IN ('received', 'queued', 'failed')
+		  AND COALESCE(next_attempt_at, received_at) <= $2
+		RETURNING event_id, event_type, payload::text, attempts
+	`, eventID, now).Scan(&claim.EventID, &claim.EventType, &payload, &claim.Attempts)
+	if err == sql.ErrNoRows {
+		return stripeProviderEventClaim{}, false, nil
+	}
+	if err != nil {
+		return stripeProviderEventClaim{}, false, fmt.Errorf("claim stripe provider event %s: %w", eventID, err)
+	}
+	claim.Payload = []byte(payload)
+	return claim, true, nil
+}
+
+func (c *Client) markStripeProviderEventFinal(ctx context.Context, eventID string, state string) error {
 	if eventID == "" {
 		return nil
+	}
+	if state != "applied" && state != "ignored" {
+		return fmt.Errorf("invalid final stripe provider event state %q", state)
+	}
+	now := c.clock().UTC()
+	tx, err := c.pg.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin stripe provider event final mark: %w", err)
+	}
+	defer tx.Rollback()
+
+	var annotation providerEventAnnotation
+	var providerEventID string
+	var eventType string
+	err = tx.QueryRowContext(ctx, `
+		UPDATE billing_provider_events
+		SET state = $2,
+		    applied_at = $3,
+		    last_error = '',
+		    next_attempt_at = NULL,
+		    updated_at = $3
+		WHERE event_id = $1
+		  AND state = 'applying'
+		RETURNING provider_event_id, event_type, org_id, product_id, contract_id, invoice_id,
+		          provider_customer_id, provider_invoice_id, provider_payment_intent_id,
+		          provider_object_type, provider_object_id
+	`, eventID, state, now).Scan(
+		&providerEventID,
+		&eventType,
+		&annotation.OrgID,
+		&annotation.ProductID,
+		&annotation.ContractID,
+		&annotation.InvoiceID,
+		&annotation.ProviderCustomer,
+		&annotation.ProviderInvoiceID,
+		&annotation.ProviderPaymentIntentID,
+		&annotation.ObjectType,
+		&annotation.ObjectID,
+	)
+	if err == sql.ErrNoRows {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit skipped stripe provider event final mark: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("mark stripe provider event %s final: %w", eventID, err)
+	}
+	if annotation.OrgID != "" {
+		if err := insertBillingEventTx(ctx, tx, providerEventAppliedEvent(eventID, providerEventID, eventType, state, annotation, now)); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit stripe provider event final mark: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) failStripeProviderEvent(ctx context.Context, claim stripeProviderEventClaim, cause error) error {
+	if claim.EventID == "" {
+		return nil
+	}
+	now := c.clock().UTC()
+	state := "failed"
+	var nextAttemptAt any = now.Add(stripeProviderEventRetryDelay(claim.Attempts))
+	if claim.Attempts >= stripeProviderEventMaxAttempts {
+		state = "dead_letter"
+		nextAttemptAt = nil
 	}
 	_, err := c.pg.ExecContext(ctx, `
 		UPDATE billing_provider_events
 		SET state = $2,
-		    applied_at = CASE WHEN $2 IN ('applied', 'ignored') THEN now() ELSE applied_at END,
-		    attempts = attempts + CASE WHEN $2 = 'failed' THEN 1 ELSE 0 END,
-		    last_error = $3,
-		    updated_at = now()
+		    next_attempt_at = $3,
+		    last_error = $4,
+		    updated_at = $5
 		WHERE event_id = $1
-	`, eventID, state, failure)
+		  AND state = 'applying'
+	`, claim.EventID, state, nextAttemptAt, cause.Error(), now)
 	if err != nil {
-		return fmt.Errorf("mark stripe provider event %s: %w", eventID, err)
+		return fmt.Errorf("mark stripe provider event %s failed: %w", claim.EventID, err)
 	}
 	return nil
+}
+
+func stripeProviderEventRetryDelay(attempts int) time.Duration {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	delay := stripeProviderEventBaseBackoff
+	for i := 1; i < attempts; i++ {
+		delay *= 2
+		if delay >= stripeProviderEventMaxBackoff {
+			return stripeProviderEventMaxBackoff
+		}
+	}
+	return delay
 }
 
 func (c *Client) handleCheckoutSessionCompleted(ctx context.Context, providerEventID string, event stripe.Event) error {
@@ -384,13 +817,16 @@ func (c *Client) annotateSetupIntentProviderEvent(ctx context.Context, eventID s
 }
 
 type providerEventAnnotation struct {
-	OrgID            string
-	ProductID        string
-	ContractID       string
-	ProviderCustomer string
-	ObjectType       string
-	ObjectID         string
-	Normalized       map[string]string
+	OrgID                   string
+	ProductID               string
+	ContractID              string
+	InvoiceID               string
+	ProviderCustomer        string
+	ProviderInvoiceID       string
+	ProviderPaymentIntentID string
+	ObjectType              string
+	ObjectID                string
+	Normalized              map[string]string
 }
 
 func (c *Client) annotateStripeProviderEvent(ctx context.Context, eventID string, annotation providerEventAnnotation) error {
@@ -406,14 +842,18 @@ func (c *Client) annotateStripeProviderEvent(ctx context.Context, eventID string
 		SET org_id = $2,
 		    product_id = $3,
 		    contract_id = $4,
-		    provider_customer_id = $5,
-		    provider_object_type = $6,
-		    provider_object_id = $7,
-		    normalized_payload = $8::jsonb,
+		    invoice_id = $5,
+		    provider_customer_id = $6,
+		    provider_invoice_id = $7,
+		    provider_payment_intent_id = $8,
+		    provider_object_type = $9,
+		    provider_object_id = $10,
+		    normalized_payload = $11::jsonb,
 		    updated_at = now()
 		WHERE event_id = $1
-	`, eventID, annotation.OrgID, annotation.ProductID, annotation.ContractID,
-		annotation.ProviderCustomer, annotation.ObjectType, annotation.ObjectID, string(normalized))
+	`, eventID, annotation.OrgID, annotation.ProductID, annotation.ContractID, annotation.InvoiceID,
+		annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
+		annotation.ObjectType, annotation.ObjectID, string(normalized))
 	if err != nil {
 		return fmt.Errorf("annotate stripe provider event %s: %w", eventID, err)
 	}
