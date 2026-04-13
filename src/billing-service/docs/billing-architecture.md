@@ -427,13 +427,12 @@ Key fields:
 
 - `provider_event_id`
 - `provider`
-- `provider_event_type`
+- `event_type`
 - `provider_object_type`
 - `provider_object_id`
 - `provider_customer_id`
 - `provider_invoice_id`
 - `provider_payment_intent_id`
-- `provider_setup_intent_id`
 - `contract_id`
 - `invoice_id`
 - `binding_id`
@@ -447,7 +446,7 @@ Key fields:
 - `attempts`
 - `next_attempt_at`
 - `applied_at`
-- `failure_reason`
+- `last_error`
 - `idempotency_key`
 
 There must be a unique key on `(provider, provider_event_id)`. Webhook ingress writes this row before applying the event and transactionally enqueues `billing.provider_event.apply`. Duplicate provider deliveries converge on the same row and same River job identity. Out-of-order events are not applied by arrival order; the worker translates each event into a provider-neutral mutation and lets the payment/invoice/contract/phase state machines decide whether it is still relevant.
@@ -1503,12 +1502,12 @@ ORDER BY org_id, product_id, status
 SELECT
   provider,
   provider_event_id,
-  provider_event_type,
+  event_type,
   state,
   attempts,
   received_at,
   applied_at,
-  failure_reason
+  last_error
 FROM billing_provider_events
 ORDER BY received_at DESC
 LIMIT 20
@@ -1728,11 +1727,11 @@ LIMIT 20
 13. **Stripe subscriptions are absent from target provider events**
 
 ```sql
-SELECT provider_event_type, count(*)
+SELECT event_type, count(*)
 FROM billing_provider_events
 WHERE provider = 'stripe'
-GROUP BY provider_event_type
-ORDER BY provider_event_type
+GROUP BY event_type
+ORDER BY event_type
 ```
 
 The expected target event set contains setup-intent, invoice, payment-intent, charge, refund, and dispute events. It must not require `customer.subscription.*` events.
