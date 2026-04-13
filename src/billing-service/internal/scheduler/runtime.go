@@ -19,16 +19,17 @@ import (
 )
 
 const (
-	QueueMetering  = "metering"
-	QueueOutbox    = "outbox"
-	QueueReconcile = "reconcile"
+	QueueMetering      = "metering"
+	QueueEventDelivery = "event_delivery"
+	QueueReconcile     = "reconcile"
 
-	KindMeteringProjectPending  = "billing.metering.project_pending_windows"
-	KindOutboxProjectPending    = "billing.outbox.project_pending_events"
-	KindEntitlementsReconcile   = "billing.entitlements.reconcile"
-	periodicMeteringProjectorID = "billing-metering-projector"
-	periodicOutboxProjectorID   = "billing-outbox-projector"
-	periodicEntitlementsID      = "billing-entitlements-reconcile"
+	KindMeteringProjectPending       = "billing.metering.project_pending_windows"
+	KindEventDeliveryProjectPending  = "billing.event_delivery.project_pending"
+	KindEventDeliveryProject         = "billing.event_delivery.project"
+	KindEntitlementsReconcile        = "billing.entitlements.reconcile"
+	periodicMeteringProjectorID      = "billing-metering-projector"
+	periodicEventDeliveryProjectorID = "billing-event-delivery-projector"
+	periodicEntitlementsID           = "billing-entitlements-reconcile"
 
 	defaultProjectLimit    = 100
 	defaultReconcileLimit  = 10000
@@ -90,16 +91,16 @@ func traceContextMiddleware() rivertype.Middleware {
 
 func queueConfig() map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
-		QueueMetering:  {MaxWorkers: 2},
-		QueueOutbox:    {MaxWorkers: 1},
-		QueueReconcile: {MaxWorkers: 1},
+		QueueMetering:      {MaxWorkers: 2},
+		QueueEventDelivery: {MaxWorkers: 1},
+		QueueReconcile:     {MaxWorkers: 1},
 	}
 }
 
 func queueNames() []string {
 	return []string{
 		QueueMetering,
-		QueueOutbox,
+		QueueEventDelivery,
 		QueueReconcile,
 	}
 }
@@ -140,9 +141,9 @@ func periodicJobs(cfg Config) []*river.PeriodicJob {
 		river.NewPeriodicJob(
 			river.PeriodicInterval(cfg.ProjectEvery),
 			func() (river.JobArgs, *river.InsertOpts) {
-				return OutboxProjectPendingArgs{Limit: cfg.ProjectLimit, SubmittedAt: newSubmittedAt()}, nil
+				return EventDeliveryProjectPendingArgs{Limit: cfg.ProjectLimit, SubmittedAt: newSubmittedAt()}, nil
 			},
-			&river.PeriodicJobOpts{ID: periodicOutboxProjectorID, RunOnStart: true},
+			&river.PeriodicJobOpts{ID: periodicEventDeliveryProjectorID, RunOnStart: true},
 		),
 		river.NewPeriodicJob(
 			river.PeriodicInterval(cfg.ReconcileEvery),

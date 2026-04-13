@@ -510,7 +510,7 @@ func (c *Client) IssueCreditGrant(ctx context.Context, grant CreditGrant) (Grant
 		return GrantBalance{}, fmt.Errorf("grant %s already exists", grantID.String())
 	}
 
-	if err := insertOutboxEventTx(ctx, tx, grantIssuedEvent(grantID, grant, startsAt)); err != nil {
+	if err := insertBillingEventTx(ctx, tx, grantIssuedEvent(grantID, grant, startsAt)); err != nil {
 		return GrantBalance{}, err
 	}
 	if err := tx.Commit(); err != nil {

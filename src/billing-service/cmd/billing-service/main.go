@@ -113,7 +113,7 @@ func run() error {
 	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
 		Logger:         logger,
 		Client:         billingClient,
-		ProjectEvery:   cfg.OutboxProjectEvery,
+		ProjectEvery:   cfg.EventDeliveryProjectEvery,
 		ReconcileEvery: cfg.EntitlementReconcileEvery,
 		ProjectLimit:   100,
 		ReconcileLimit: 10000,

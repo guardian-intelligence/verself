@@ -22,7 +22,7 @@ type Config struct {
 	TigerBeetleClusterID      uint64
 	ContractGracePeriod       time.Duration
 	EntitlementReconcileEvery time.Duration
-	OutboxProjectEvery        time.Duration
+	EventDeliveryProjectEvery time.Duration
 }
 
 func DefaultConfig() Config {
@@ -32,7 +32,7 @@ func DefaultConfig() Config {
 		TigerBeetleClusterID:      defaultTigerBeetleClusterID,
 		ContractGracePeriod:       defaultContractGrace,
 		EntitlementReconcileEvery: defaultReconcilerInterval,
-		OutboxProjectEvery:        defaultProjectorInterval,
+		EventDeliveryProjectEvery: defaultProjectorInterval,
 	}
 }
 
@@ -54,8 +54,8 @@ func (c Config) Validate() error {
 	if c.EntitlementReconcileEvery <= 0 {
 		problems = append(problems, errors.New("entitlement_reconcile_every must be positive"))
 	}
-	if c.OutboxProjectEvery <= 0 {
-		problems = append(problems, errors.New("outbox_project_every must be positive"))
+	if c.EventDeliveryProjectEvery <= 0 {
+		problems = append(problems, errors.New("event_delivery_project_every must be positive"))
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%w: %w", ErrInvalidConfig, errors.Join(problems...))
