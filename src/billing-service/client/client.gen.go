@@ -131,6 +131,17 @@ type BillingContract struct {
 	Status           string     `json:"status"`
 }
 
+// BillingContractChangeResponse defines model for BillingContractChangeResponse.
+type BillingContractChangeResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string `json:"$schema,omitempty"`
+	ChangeId        string  `json:"change_id"`
+	InvoiceId       string  `json:"invoice_id"`
+	PriceDeltaUnits string  `json:"price_delta_units"`
+	Status          string  `json:"status"`
+	Url             string  `json:"url"`
+}
+
 // BillingContracts defines model for BillingContracts.
 type BillingContracts struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -147,6 +158,16 @@ type BillingCreateCheckoutRequest struct {
 	OrgId       string  `json:"org_id"`
 	ProductId   string  `json:"product_id"`
 	SuccessUrl  string  `json:"success_url"`
+}
+
+// BillingCreateContractChangeRequest defines model for BillingCreateContractChangeRequest.
+type BillingCreateContractChangeRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string `json:"$schema,omitempty"`
+	CancelUrl    string  `json:"cancel_url"`
+	OrgId        string  `json:"org_id"`
+	SuccessUrl   string  `json:"success_url"`
+	TargetPlanId string  `json:"target_plan_id"`
 }
 
 // BillingCreateContractRequest defines model for BillingCreateContractRequest.
@@ -484,6 +505,9 @@ type CreateContractJSONRequestBody = BillingCreateContractRequest
 // CancelContractJSONRequestBody defines body for CancelContract for application/json ContentType.
 type CancelContractJSONRequestBody = BillingCancelContractRequest
 
+// CreateContractChangeJSONRequestBody defines body for CreateContractChange for application/json ContentType.
+type CreateContractChangeJSONRequestBody = BillingCreateContractChangeRequest
+
 // CreatePortalJSONRequestBody defines body for CreatePortal for application/json ContentType.
 type CreatePortalJSONRequestBody = BillingCreatePortalSessionRequest
 
@@ -588,6 +612,11 @@ type ClientInterface interface {
 	CancelContractWithBody(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CancelContract(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateContractChangeWithBody request with any body
+	CreateContractChangeWithBody(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateContractChange(ctx context.Context, contractId string, body CreateContractChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListContracts request
 	ListContracts(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -711,6 +740,30 @@ func (c *Client) CancelContractWithBody(ctx context.Context, contractId string, 
 
 func (c *Client) CancelContract(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCancelContractRequest(c.Server, contractId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateContractChangeWithBody(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateContractChangeRequestWithBody(c.Server, contractId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateContractChange(ctx context.Context, contractId string, body CreateContractChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateContractChangeRequest(c.Server, contractId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,6 +1078,53 @@ func NewCancelContractRequestWithBody(server string, contractId string, contentT
 	}
 
 	operationPath := fmt.Sprintf("/internal/billing/v1/contracts/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateContractChangeRequest calls the generic CreateContractChange builder with application/json body
+func NewCreateContractChangeRequest(server string, contractId string, body CreateContractChangeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateContractChangeRequestWithBody(server, contractId, "application/json", bodyReader)
+}
+
+// NewCreateContractChangeRequestWithBody generates requests for CreateContractChange with any type of body
+func NewCreateContractChangeRequestWithBody(server string, contractId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "contract_id", contractId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/internal/billing/v1/contracts/%s/changes", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1493,6 +1593,11 @@ type ClientWithResponsesInterface interface {
 
 	CancelContractWithResponse(ctx context.Context, contractId string, body CancelContractJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelContractResponse, error)
 
+	// CreateContractChangeWithBodyWithResponse request with any body
+	CreateContractChangeWithBodyWithResponse(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContractChangeResponse, error)
+
+	CreateContractChangeWithResponse(ctx context.Context, contractId string, body CreateContractChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContractChangeResponse, error)
+
 	// ListContractsWithResponse request
 	ListContractsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListContractsResponse, error)
 
@@ -1622,6 +1727,32 @@ func (r CancelContractResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CancelContractResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateContractChangeResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *BillingContractChangeResponse
+	ApplicationproblemJSON400 *ErrorModel
+	ApplicationproblemJSON404 *ErrorModel
+	ApplicationproblemJSON422 *ErrorModel
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateContractChangeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateContractChangeResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1914,6 +2045,23 @@ func (c *ClientWithResponses) CancelContractWithResponse(ctx context.Context, co
 	return ParseCancelContractResponse(rsp)
 }
 
+// CreateContractChangeWithBodyWithResponse request with arbitrary body returning *CreateContractChangeResponse
+func (c *ClientWithResponses) CreateContractChangeWithBodyWithResponse(ctx context.Context, contractId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContractChangeResponse, error) {
+	rsp, err := c.CreateContractChangeWithBody(ctx, contractId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateContractChangeResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateContractChangeWithResponse(ctx context.Context, contractId string, body CreateContractChangeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContractChangeResponse, error) {
+	rsp, err := c.CreateContractChange(ctx, contractId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateContractChangeResponse(rsp)
+}
+
 // ListContractsWithResponse request returning *ListContractsResponse
 func (c *ClientWithResponses) ListContractsWithResponse(ctx context.Context, orgId string, reqEditors ...RequestEditorFn) (*ListContractsResponse, error) {
 	rsp, err := c.ListContracts(ctx, orgId, reqEditors...)
@@ -2181,6 +2329,60 @@ func ParseCancelContractResponse(rsp *http.Response) (*CancelContractResponse, e
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateContractChangeResponse parses an HTTP response from a CreateContractChangeWithResponse call
+func ParseCreateContractChangeResponse(rsp *http.Response) (*CreateContractChangeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateContractChangeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BillingContractChangeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorModel

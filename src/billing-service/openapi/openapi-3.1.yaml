@@ -109,6 +109,34 @@ components:
         - entitlement_state
         - starts_at
       type: object
+    BillingContractChangeResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingContractChangeResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        change_id:
+          type: string
+        invoice_id:
+          type: string
+        price_delta_units:
+          pattern: ^[0-9]+$
+          type: string
+        status:
+          type: string
+        url:
+          type: string
+      required:
+        - url
+        - change_id
+        - invoice_id
+        - status
+        - price_delta_units
+      type: object
     BillingContracts:
       additionalProperties: false
       properties:
@@ -162,6 +190,37 @@ components:
         - org_id
         - product_id
         - amount_cents
+        - success_url
+        - cancel_url
+      type: object
+    BillingCreateContractChangeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4242/schemas/BillingCreateContractChangeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cancel_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        success_url:
+          maxLength: 2048
+          minLength: 1
+          type: string
+        target_plan_id:
+          maxLength: 255
+          minLength: 1
+          type: string
+      required:
+        - org_id
+        - target_plan_id
         - success_url
         - cancel_url
       type: object
@@ -1170,6 +1229,55 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
       summary: Schedule contract cancellation
+  /internal/billing/v1/contracts/{contract_id}/changes:
+    post:
+      operationId: create-contract-change
+      parameters:
+        - in: path
+          name: contract_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingCreateContractChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingContractChangeResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Create an invoice-backed contract change
   /internal/billing/v1/orgs/{org_id}/contracts:
     get:
       operationId: list-contracts

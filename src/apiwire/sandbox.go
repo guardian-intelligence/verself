@@ -144,6 +144,12 @@ type SandboxBillingContractRequest struct {
 	CancelURL  string `json:"cancel_url" required:"true" maxLength:"2048"`
 }
 
+type SandboxBillingContractChangeRequest struct {
+	TargetPlanID string `json:"target_plan_id" required:"true" maxLength:"255" doc:"Plan to upgrade into immediately"`
+	SuccessURL   string `json:"success_url" required:"true" maxLength:"2048"`
+	CancelURL    string `json:"cancel_url" required:"true" maxLength:"2048"`
+}
+
 type SandboxBillingPortalRequest struct {
 	ReturnURL string `json:"return_url" required:"true" maxLength:"2048"`
 }

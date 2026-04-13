@@ -10,6 +10,9 @@ import type {
   CreateBillingCheckoutData,
   CreateBillingCheckoutErrors,
   CreateBillingCheckoutResponses,
+  CreateBillingContractChangeData,
+  CreateBillingContractChangeErrors,
+  CreateBillingContractChangeResponses,
   CreateBillingContractData,
   CreateBillingContractErrors,
   CreateBillingContractResponses,
@@ -151,6 +154,26 @@ export const cancelBillingContract = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/billing/contracts/{contract_id}/cancel",
     ...options,
+  });
+
+/**
+ * Create invoice-backed contract change
+ */
+export const createBillingContractChange = <ThrowOnError extends boolean = false>(
+  options: Options<CreateBillingContractChangeData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    CreateBillingContractChangeResponses,
+    CreateBillingContractChangeErrors,
+    ThrowOnError
+  >({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/api/v1/billing/contracts/{contract_id}/changes",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
 /**
