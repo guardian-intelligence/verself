@@ -65,6 +65,7 @@ type EntitlementSourceTotal struct {
 	Label            string
 	PeriodStartUnits uint64
 	AvailableUnits   uint64
+	PendingUnits     uint64
 	InlineExpiresAt  *time.Time
 	TopGrantID       string
 }
@@ -269,6 +270,7 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 		label           string
 		periodStart     uint64
 		available       uint64
+		pending         uint64
 		inlineExpiresAt *time.Time
 		topGrantID      string
 	}
@@ -312,6 +314,7 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 			acc.sourceOrder = append(acc.sourceOrder, sk)
 		}
 		src.available += grant.Available
+		src.pending += grant.Pending
 		if periodCovered {
 			src.periodStart += grant.OriginalAmount
 		}
@@ -425,6 +428,7 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 				Label:            src.label,
 				PeriodStartUnits: src.periodStart,
 				AvailableUnits:   src.available,
+				PendingUnits:     src.pending,
 				InlineExpiresAt:  src.inlineExpiresAt,
 				TopGrantID:       src.topGrantID,
 			})

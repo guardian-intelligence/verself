@@ -70,6 +70,7 @@ export type BillingEntitlementSourceTotal = {
   available_units: string;
   inline_expires_at?: string;
   label: string;
+  pending_units: string;
   period_start_units: string;
   plan_id: string;
   source: "free_tier" | "contract" | "purchase" | "promo" | "refund" | "receivable";
