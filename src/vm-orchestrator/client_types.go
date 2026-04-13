@@ -28,9 +28,17 @@ func (s RunState) Terminal() bool {
 
 type HostRunSpec struct {
 	RunID              string
+	WorkloadKind       string
+	RunnerClass        string
 	RunCommand         []string
 	RunWorkDir         string
 	Env                map[string]string
+	WorkflowYAML       string
+	WorkflowEnv        map[string]string
+	WorkflowSecrets    map[string]string
+	WorkflowEventName  string
+	WorkflowInputs     map[string]string
+	GitHubJITConfig    string
 	BillablePhases     []string
 	CheckpointSaveRefs []string
 	AttemptID          string
