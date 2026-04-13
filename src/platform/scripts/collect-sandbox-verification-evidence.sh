@@ -236,6 +236,7 @@ ch_query "
 SELECT
   event_id,
   event_type,
+  event_version,
   aggregate_type,
   aggregate_id,
   contract_id,
@@ -249,6 +250,9 @@ SELECT
   product_id,
   occurred_at,
   payload,
+  payload_hash,
+  correlation_id,
+  causation_event_id,
   recorded_at
 FROM forge_metal.billing_events
 WHERE occurred_at BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
