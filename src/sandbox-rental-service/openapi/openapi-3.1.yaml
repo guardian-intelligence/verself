@@ -1155,6 +1155,32 @@ components:
         - updated_at
         - delivery_count
       type: object
+    SchedulerProbeRequest:
+      additionalProperties: false
+      properties:
+        message:
+          description: Optional probe marker for verification runs.
+          maxLength: 512
+          type: string
+      type: object
+    SchedulerProbeResponse:
+      additionalProperties: false
+      properties:
+        job_id:
+          description: River job ID encoded as a decimal string for JavaScript-safe transport.
+          type: string
+        kind:
+          type: string
+        queue:
+          type: string
+        status:
+          type: string
+      required:
+        - job_id
+        - kind
+        - queue
+        - status
+      type: object
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT

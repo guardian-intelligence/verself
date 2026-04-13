@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -25,6 +27,7 @@ import (
 
 	sandboxapi "github.com/forge-metal/sandbox-rental-service/internal/api"
 	"github.com/forge-metal/sandbox-rental-service/internal/jobs"
+	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	"github.com/forge-metal/sandbox-rental-service/internal/serviceauth"
 )
 
@@ -88,8 +91,33 @@ func run() error {
 		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pg.Close()
-	if err := pg.Ping(); err != nil {
+	pg.SetMaxOpenConns(envInt("SANDBOX_PG_MAX_OPEN_CONNS", 16))
+	pg.SetMaxIdleConns(envInt("SANDBOX_PG_MAX_IDLE_CONNS", 8))
+	pg.SetConnMaxLifetime(time.Duration(envInt("SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second)
+	pg.SetConnMaxIdleTime(time.Duration(envInt("SANDBOX_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second)
+	pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelPing()
+	if err := pg.PingContext(pingCtx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
+	}
+
+	pgxConfig, err := pgxpool.ParseConfig(pgDSN)
+	if err != nil {
+		return fmt.Errorf("parse scheduler postgres dsn: %w", err)
+	}
+	pgxConfig.MaxConns = int32(envInt("SANDBOX_RIVER_PG_MAX_CONNS", 8))
+	pgxConfig.MinConns = int32(envInt("SANDBOX_RIVER_PG_MIN_CONNS", 1))
+	pgxConfig.MaxConnLifetime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS", 1800)) * time.Second
+	pgxConfig.MaxConnIdleTime = time.Duration(envInt("SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS", 300)) * time.Second
+	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
+	if err != nil {
+		return fmt.Errorf("open scheduler postgres pool: %w", err)
+	}
+	defer pgxPool.Close()
+	pgxPingCtx, cancelPGXPing := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelPGXPing()
+	if err := pgxPool.Ping(pgxPingCtx); err != nil {
+		return fmt.Errorf("ping scheduler postgres pool: %w", err)
 	}
 
 	chConn, err := clickhouse.Open(&clickhouse.Options{
@@ -148,10 +176,16 @@ func run() error {
 		return fmt.Errorf("create webhook secret codec: %w", err)
 	}
 
+	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{Logger: logger})
+	if err != nil {
+		return fmt.Errorf("create scheduler runtime: %w", err)
+	}
+
 	jobService := &jobs.Service{
 		PG:                            pg,
 		CH:                            chConn,
 		CHDatabase:                    "forge_metal",
+		Scheduler:                     schedulerRuntime,
 		Orchestrator:                  orchestrator,
 		Billing:                       billingClient,
 		BillingVCPUs:                  int(capacity.VCPUsPerVM),
@@ -160,6 +194,17 @@ func run() error {
 		WebhookSecretCodec:            webhookSecretCodec,
 		Logger:                        logger,
 	}
+
+	if err := schedulerRuntime.Start(ctx); err != nil {
+		return fmt.Errorf("start scheduler runtime: %w", err)
+	}
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := schedulerRuntime.Stop(stopCtx); err != nil {
+			logger.ErrorContext(context.Background(), "sandbox-rental: stop scheduler runtime", "error", err)
+		}
+	}()
 
 	// --- Huma API ---
 
@@ -295,6 +340,19 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		fmt.Fprintf(os.Stderr, "env %s must be a positive integer\n", key)
+		os.Exit(1)
+	}
+	return value
 }
 
 func validatePublicBaseURL(raw string) error {

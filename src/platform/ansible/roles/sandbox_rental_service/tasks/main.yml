@@ -305,6 +305,14 @@
       Environment=SANDBOX_AUTH_JWKS_URL={{ sandbox_rental_service_auth_jwks_url }}
       Environment=SANDBOX_AUTH_AUDIENCE={{ sandbox_rental_service_auth_audience }}
       Environment=SANDBOX_VM_ORCHESTRATOR_SOCKET={{ sandbox_rental_service_vm_orchestrator_socket }}
+      Environment=SANDBOX_PG_MAX_OPEN_CONNS={{ sandbox_rental_service_pg_max_open_conns }}
+      Environment=SANDBOX_PG_MAX_IDLE_CONNS={{ sandbox_rental_service_pg_max_idle_conns }}
+      Environment=SANDBOX_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_pg_conn_max_lifetime_seconds }}
+      Environment=SANDBOX_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_pg_conn_max_idle_seconds }}
+      Environment=SANDBOX_RIVER_PG_MAX_CONNS={{ sandbox_rental_service_river_pg_max_conns }}
+      Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
+      Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
+      Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
       ExecStart={{ fm_bin }}/sandbox-rental-service
       Restart=on-failure
       RestartSec=5

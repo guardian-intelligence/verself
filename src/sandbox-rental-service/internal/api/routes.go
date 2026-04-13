@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -190,6 +191,23 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, billing *billingclient.Serv
 		AuditEvent:     "sandbox.execution.logs.read",
 	}), getExecutionLogs(svc))
 
+	registerSecured(api, secured(huma.Operation{
+		OperationID:   "create-scheduler-probe",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/scheduler/probes",
+		Summary:       "Enqueue a scheduler runtime probe",
+		DefaultStatus: 202,
+		Hidden:        true,
+	}, operationPolicy{
+		Permission:     permissionExecutionSubmit,
+		Resource:       "scheduler_probe",
+		Action:         "create",
+		OrgScope:       "token_org_id",
+		RateLimitClass: "scheduler_probe",
+		AuditEvent:     "sandbox.scheduler.probe.create",
+		BodyLimitBytes: bodyLimitSmallJSON,
+	}), createSchedulerProbe(svc))
+
 	// Billing proxy — frontend calls these; we enforce org_id from JWT
 	// and forward to the billing-service on loopback.
 	registerSecured(api, secured(huma.Operation{
@@ -354,6 +372,25 @@ type GetExecutionLogsOutput struct {
 }
 
 type EmptyInput struct{}
+
+type SchedulerProbeInput struct {
+	Body SchedulerProbeRequest
+}
+
+type SchedulerProbeRequest struct {
+	Message string `json:"message,omitempty" maxLength:"512" doc:"Optional probe marker for verification runs."`
+}
+
+type SchedulerProbeOutput struct {
+	Body SchedulerProbeResponse
+}
+
+type SchedulerProbeResponse struct {
+	JobID  string `json:"job_id" doc:"River job ID encoded as a decimal string for JavaScript-safe transport."`
+	Kind   string `json:"kind"`
+	Queue  string `json:"queue"`
+	Status string `json:"status"`
+}
 
 type EntitlementsOutput struct {
 	Body apiwire.BillingEntitlementsView
@@ -537,6 +574,33 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 			Status:      jobs.StateReserved,
 		}
 		return out, nil
+	}
+}
+
+func createSchedulerProbe(svc *jobs.Service) func(context.Context, *SchedulerProbeInput) (*SchedulerProbeOutput, error) {
+	return func(ctx context.Context, input *SchedulerProbeInput) (*SchedulerProbeOutput, error) {
+		identity, err := requireIdentity(ctx)
+		if err != nil {
+			return nil, err
+		}
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, err := svc.EnqueueSchedulerProbe(ctx, jobs.SchedulerProbeRequest{
+			Message: input.Body.Message,
+			OrgID:   orgID,
+			ActorID: identity.Subject,
+		})
+		if err != nil {
+			return nil, internalFailure(ctx, "scheduler-probe-enqueue-failed", "scheduler probe enqueue failed", err)
+		}
+		return &SchedulerProbeOutput{Body: SchedulerProbeResponse{
+			JobID:  strconv.FormatInt(result.JobID, 10),
+			Kind:   result.Kind,
+			Queue:  result.Queue,
+			Status: result.Status,
+		}}, nil
 	}
 }
 

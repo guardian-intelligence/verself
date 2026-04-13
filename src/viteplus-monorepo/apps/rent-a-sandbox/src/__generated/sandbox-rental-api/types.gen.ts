@@ -469,6 +469,23 @@ export type SandboxWebhookEndpointRecord = {
   updated_at: string;
 };
 
+export type SchedulerProbeRequest = {
+  /**
+   * Optional probe marker for verification runs.
+   */
+  message?: string;
+};
+
+export type SchedulerProbeResponse = {
+  /**
+   * River job ID encoded as a decimal string for JavaScript-safe transport.
+   */
+  job_id: string;
+  kind: string;
+  queue: string;
+  status: string;
+};
+
 export type BillingCancelSubscriptionResponseWritable = {
   subscription: BillingSubscription;
 };
