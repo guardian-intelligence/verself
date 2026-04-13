@@ -123,8 +123,9 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 		currency = "usd"
 	}
 
+	requestedAt := c.clock().UTC()
 	contractID := deterministicTextID("self-serve-contract", strconv.FormatUint(uint64(orgID), 10), productID)
-	phaseID := deterministicTextID("self-serve-contract-phase", contractID, planID)
+	phaseID := newSelfServeContractPhaseID(contractID, planID, requestedAt)
 
 	customerID, err := c.ensureStripeCustomer(ctx, orgID)
 	if err != nil {

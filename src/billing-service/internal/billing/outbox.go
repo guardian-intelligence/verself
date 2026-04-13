@@ -143,6 +143,84 @@ func contractPhaseStartedEvent(orgID OrgID, productID string, contractID string,
 	}
 }
 
+func contractPhaseClosedEvent(
+	orgID OrgID,
+	productID string,
+	contractID string,
+	phaseID string,
+	planID string,
+	successorPhaseID string,
+	reason string,
+	occurredAt time.Time,
+) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":              strconv.FormatUint(uint64(orgID), 10),
+		"product_id":          productID,
+		"contract_id":         contractID,
+		"phase_id":            phaseID,
+		"plan_id":             planID,
+		"successor_phase_id":  successorPhaseID,
+		"reason":              reason,
+		"pricing_contract_id": contractID,
+		"pricing_phase_id":    phaseID,
+		"pricing_plan_id":     planID,
+		"occurred_at":         occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "contract_phase_closed", contractID, phaseID, successorPhaseID, reason),
+		EventType:     "contract_phase_closed",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "contract_phase",
+		AggregateID:   phaseID,
+		OrgID:         strconv.FormatUint(uint64(orgID), 10),
+		ProductID:     productID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func contractChangeAppliedEvent(
+	orgID OrgID,
+	productID string,
+	contractID string,
+	changeID string,
+	changeType string,
+	fromPlanID string,
+	targetPlanID string,
+	fromPhaseID string,
+	toPhaseID string,
+	occurredAt time.Time,
+) billingEventFact {
+	occurredAt = occurredAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":              strconv.FormatUint(uint64(orgID), 10),
+		"product_id":          productID,
+		"contract_id":         contractID,
+		"change_id":           changeID,
+		"change_type":         changeType,
+		"from_plan_id":        fromPlanID,
+		"target_plan_id":      targetPlanID,
+		"from_phase_id":       fromPhaseID,
+		"to_phase_id":         toPhaseID,
+		"pricing_contract_id": contractID,
+		"pricing_phase_id":    toPhaseID,
+		"pricing_plan_id":     targetPlanID,
+		"occurred_at":         occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "contract_change_applied", changeID),
+		EventType:     "contract_change_applied",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "contract_change",
+		AggregateID:   changeID,
+		OrgID:         strconv.FormatUint(uint64(orgID), 10),
+		ProductID:     productID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
 func billingCycleClosedForUsageEvent(cycle BillingCycle, occurredAt time.Time) billingEventFact {
 	occurredAt = occurredAt.UTC()
 	payload, _ := json.Marshal(map[string]string{
