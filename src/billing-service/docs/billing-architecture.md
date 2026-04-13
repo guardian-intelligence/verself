@@ -481,10 +481,17 @@ Key fields:
 - `next_attempt_at`
 - `attempts`
 - `state_version`
+- `proration_basis_cycle_id`
+- `price_delta_units`
+- `entitlement_delta_mode` (`none`, `positive_delta`)
+- `proration_numerator`
+- `proration_denominator`
 
 This table is the seam for fault injection and for unifying self-serve and enterprise behavior. Stripe-backed self-serve changes move through payment states when an activation, upgrade, renewal, or one-off charge requires successful collection. Enterprise amendments can often move from `requested` to `scheduled` or `applied` without provider state.
 
 A change row is both a state-machine request and a schedule source. If `timing = 'period_end'`, the due time is the active billing cycle's `ends_at` or the explicitly recorded phase `effective_end`. If `timing = 'specific_time'`, the due time is `requested_effective_at`. River executes the change when due, but the worker re-checks cycle state, phase state, provider state, and payment/grace state before applying it.
+
+For immediate paid upgrades, the change row stores the proration basis instead of recomputing it from mutable plan state later. `price_delta_units` is the positive prorated recurring-charge delta in Forge Metal ledger units before tax. `entitlement_delta_mode = 'positive_delta'` means the first target-phase entitlement period issues only `max(target_line_amount - current_line_amount, 0) * proration_fraction`, while already-issued current-cycle grants from the prior paid phase remain spendable until their own `expires_at`. This prevents a customer from receiving more entitlement by walking through intermediate plans at the same effective timestamp.
 
 Do not model deferred downgrades or cancellations as nullable hint fields like `next_cycle_plan_id`. A scheduled commercial change needs idempotency, audit history, actor identity, cancellation/reversal state, and failure handling.
 
@@ -512,7 +519,7 @@ Key fields:
 - `created_reason`
 - `state_version`
 
-A phase is the unit that upgrades and downgrades operate on. Hobby -> Pro does not mutate one plan field in place; it closes or supersedes the Hobby phase and creates a Pro phase. Pro -> Hobby at period end keeps the Pro phase active until the current billing cycle ends and records a scheduled `contract_changes` row for the successor phase. `phase_kind = 'catalog_plan'` requires a plan. `phase_kind = 'bespoke'` can omit `plan_id` and carry directly authored entitlement lines.
+A phase is the unit that upgrades and downgrades operate on. Hobby -> Pro does not mutate one plan field in place; it supersedes the Hobby phase and creates a Pro phase. Superseding a phase stops it from materializing new paid recurrence periods, but it does not require closing already-issued current-cycle grants; those grants are paid allowance and may remain spendable carryforward until their own `expires_at`. Pro -> Hobby at period end keeps the Pro phase active until the current billing cycle ends and records a scheduled `contract_changes` row for the successor phase. `phase_kind = 'catalog_plan'` requires a plan. `phase_kind = 'bespoke'` can omit `plan_id` and carry directly authored entitlement lines.
 
 Phase activation and closure are scheduled transitions. River enqueues boundary jobs when phases are created or amended. Reconciliation scans for due phases and repairs missing jobs. Scheduled future phases can overlap in planning time only if their effective intervals and line scopes do not overlap when activated.
 
@@ -548,6 +555,8 @@ Key fields:
 For self-serve catalog phases, lines normally use `recurrence_anchor_kind = 'billing_cycle'`, meaning the Forge Metal billing cycle defines the entitlement window. Enterprise phases normally use `calendar_month_day` and a timezone so the contract can renew on a fixed calendar day regardless of signup anniversary. `anniversary` anchors are available for non-cycle contract terms that renew from service start.
 
 Lines are copied from plan policies for catalog-plan phases and authored directly for bespoke phases. This keeps upgrades/downgrades and enterprise amendments on the same state machine.
+
+Catalog-plan lines carry the full target-plan entitlement amount. They are not rewritten to a prorated amount when an upgrade happens mid-cycle. The first target-phase entitlement period can be computed as an upgrade delta by the associated `contract_changes` row; subsequent periods materialize the full line amount.
 
 Recurring entitlement scheduling is not a timer hidden in River. The recurrence config and cursor live in PostgreSQL. River jobs are generated from that state and can be reconstructed by reconciliation.
 
@@ -613,6 +622,8 @@ Key fields:
 - `entitlement_state`
 - `provider_invoice_id`
 - `provider_event_id`
+- `change_id`
+- `calculation_kind` (`regular`, `upgrade_delta`, `carryforward_correction`)
 - `source_reference_id`
 - `created_reason`
 
@@ -651,7 +662,7 @@ Key fields:
 - `closed_at`
 - `closed_reason`
 
-Source-funded grants are deterministic over `org_id`, `source`, scope, and `source_reference_id` so retries are idempotent without making Stripe the only reference namespace. Free-tier and contract grants carry `entitlement_period_id`, `policy_version`, `period_start`, `period_end`, `starts_at`, and `expires_at`. Terminal or superseding phase events close the local grant rows for the affected phase so remaining units stop funding future reservations even though TigerBeetle retains immutable financial history.
+Source-funded grants are deterministic over `org_id`, `source`, scope, and `source_reference_id` so retries are idempotent without making Stripe the only reference namespace. Free-tier and contract grants carry `entitlement_period_id`, `policy_version`, `period_start`, `period_end`, `starts_at`, and `expires_at`. A paid phase transition must distinguish unearned future grants from already-earned current-cycle carryforward. Terminal or superseding phase events close future-period, voided, fraudulent, or otherwise unearned grant rows for the affected phase, but a normal immediate upgrade leaves already-issued current-cycle grants open until their own expiry and issues only a target-phase delta grant for the rest of the cycle.
 
 Grant consumption is two-level precedence: scope tightness first, source priority second. The constants live in `internal/billing/grant_funding_plan.go` and are also baked into the entitlements view's row sort:
 
