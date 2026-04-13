@@ -5,12 +5,35 @@ export type ClientOptions = {
   baseUrl: "http://127.0.0.1:4243" | (string & {});
 };
 
-export type BillingCancelSubscriptionResponse = {
+export type BillingCancelContractResponse = {
   /**
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  subscription: BillingSubscription;
+  contract: BillingContract;
+};
+
+export type BillingContract = {
+  cadence_kind: string;
+  contract_id: string;
+  ends_at?: string;
+  entitlement_state: string;
+  payment_state: string;
+  phase_end?: string;
+  phase_id: string;
+  phase_start?: string;
+  plan_id: string;
+  product_id: string;
+  starts_at: string;
+  status: string;
+};
+
+export type BillingContracts = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  contracts: Array<BillingContract> | null;
 };
 
 export type BillingEntitlementBucketSection = {
@@ -49,7 +72,7 @@ export type BillingEntitlementSourceTotal = {
   label: string;
   period_start_units: string;
   plan_id: string;
-  source: "free_tier" | "subscription" | "purchase" | "promo" | "refund";
+  source: "free_tier" | "contract" | "purchase" | "promo" | "refund" | "receivable";
 };
 
 export type BillingEntitlementsView = {
@@ -114,6 +137,7 @@ export type BillingStatementLineItem = {
   bucket_display_name: string;
   bucket_id: string;
   charge_units: string;
+  contract_units: string;
   free_tier_units: string;
   plan_id: string;
   pricing_phase: string;
@@ -127,41 +151,19 @@ export type BillingStatementLineItem = {
   reserved_units: string;
   sku_display_name: string;
   sku_id: string;
-  subscription_units: string;
   unit_rate: string;
 };
 
 export type BillingStatementTotals = {
   charge_units: string;
+  contract_units: string;
   free_tier_units: string;
   promo_units: string;
   purchase_units: string;
   receivable_units: string;
   refund_units: string;
   reserved_units: string;
-  subscription_units: string;
   total_due_units: string;
-};
-
-export type BillingSubscription = {
-  cadence: string;
-  contract_id: string;
-  current_period_end?: string;
-  current_period_start?: string;
-  entitlement_state: string;
-  payment_state: string;
-  plan_id: string;
-  product_id: string;
-  status: string;
-  subscription_id: string;
-};
-
-export type BillingSubscriptions = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  subscriptions: Array<BillingSubscription> | null;
 };
 
 export type BillingUrlResponse = {
@@ -254,15 +256,7 @@ export type SandboxBillingCheckoutRequest = {
   success_url: string;
 };
 
-export type SandboxBillingPortalRequest = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  return_url: string;
-};
-
-export type SandboxBillingSubscriptionRequest = {
+export type SandboxBillingContractRequest = {
   /**
    * A URL to the JSON Schema for this object.
    */
@@ -270,13 +264,21 @@ export type SandboxBillingSubscriptionRequest = {
   /**
    * Billing cadence (default monthly)
    */
-  cadence?: "monthly" | "annual";
+  cadence?: "monthly";
   cancel_url: string;
   /**
-   * Plan to subscribe to
+   * Plan to activate
    */
   plan_id: string;
   success_url: string;
+};
+
+export type SandboxBillingPortalRequest = {
+  /**
+   * A URL to the JSON Schema for this object.
+   */
+  readonly $schema?: string;
+  return_url: string;
 };
 
 export type SandboxBillingWindow = {
@@ -478,8 +480,12 @@ export type SchedulerProbeResponse = {
   status: string;
 };
 
-export type BillingCancelSubscriptionResponseWritable = {
-  subscription: BillingSubscription;
+export type BillingCancelContractResponseWritable = {
+  contract: BillingContract;
+};
+
+export type BillingContractsWritable = {
+  contracts: Array<BillingContract> | null;
 };
 
 export type BillingEntitlementsViewWritable = {
@@ -504,10 +510,6 @@ export type BillingStatementWritable = {
   product_id: string;
   totals: BillingStatementTotals;
   unit_label: string;
-};
-
-export type BillingSubscriptionsWritable = {
-  subscriptions: Array<BillingSubscription> | null;
 };
 
 export type BillingUrlResponseWritable = {
@@ -554,21 +556,21 @@ export type SandboxBillingCheckoutRequestWritable = {
   success_url: string;
 };
 
-export type SandboxBillingPortalRequestWritable = {
-  return_url: string;
-};
-
-export type SandboxBillingSubscriptionRequestWritable = {
+export type SandboxBillingContractRequestWritable = {
   /**
    * Billing cadence (default monthly)
    */
-  cadence?: "monthly" | "annual";
+  cadence?: "monthly";
   cancel_url: string;
   /**
-   * Plan to subscribe to
+   * Plan to activate
    */
   plan_id: string;
   success_url: string;
+};
+
+export type SandboxBillingPortalRequestWritable = {
+  return_url: string;
 };
 
 export type SandboxCreateWebhookEndpointRequestWritable = {
@@ -721,6 +723,101 @@ export type CreateBillingCheckoutResponses = {
 export type CreateBillingCheckoutResponse =
   CreateBillingCheckoutResponses[keyof CreateBillingCheckoutResponses];
 
+export type ListBillingContractsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/v1/billing/contracts";
+};
+
+export type ListBillingContractsErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type ListBillingContractsError =
+  ListBillingContractsErrors[keyof ListBillingContractsErrors];
+
+export type ListBillingContractsResponses = {
+  /**
+   * OK
+   */
+  200: BillingContracts;
+};
+
+export type ListBillingContractsResponse =
+  ListBillingContractsResponses[keyof ListBillingContractsResponses];
+
+export type CreateBillingContractData = {
+  body: SandboxBillingContractRequestWritable;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/v1/billing/contracts";
+};
+
+export type CreateBillingContractErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CreateBillingContractError =
+  CreateBillingContractErrors[keyof CreateBillingContractErrors];
+
+export type CreateBillingContractResponses = {
+  /**
+   * OK
+   */
+  200: BillingUrlResponse;
+};
+
+export type CreateBillingContractResponse =
+  CreateBillingContractResponses[keyof CreateBillingContractResponses];
+
+export type CancelBillingContractData = {
+  body?: never;
+  headers: {
+    /**
+     * Stable caller-provided key used to make this mutation retry-safe.
+     */
+    "Idempotency-Key": string;
+  };
+  path: {
+    contract_id: string;
+  };
+  query?: never;
+  url: "/api/v1/billing/contracts/{contract_id}/cancel";
+};
+
+export type CancelBillingContractErrors = {
+  /**
+   * Error
+   */
+  default: ErrorModel;
+};
+
+export type CancelBillingContractError =
+  CancelBillingContractErrors[keyof CancelBillingContractErrors];
+
+export type CancelBillingContractResponses = {
+  /**
+   * OK
+   */
+  200: BillingCancelContractResponse;
+};
+
+export type CancelBillingContractResponse =
+  CancelBillingContractResponses[keyof CancelBillingContractResponses];
+
 export type GetBillingEntitlementsData = {
   body?: never;
   path?: never;
@@ -835,101 +932,6 @@ export type GetBillingStatementResponses = {
 
 export type GetBillingStatementResponse =
   GetBillingStatementResponses[keyof GetBillingStatementResponses];
-
-export type CreateBillingSubscriptionData = {
-  body: SandboxBillingSubscriptionRequestWritable;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path?: never;
-  query?: never;
-  url: "/api/v1/billing/subscribe";
-};
-
-export type CreateBillingSubscriptionErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type CreateBillingSubscriptionError =
-  CreateBillingSubscriptionErrors[keyof CreateBillingSubscriptionErrors];
-
-export type CreateBillingSubscriptionResponses = {
-  /**
-   * OK
-   */
-  200: BillingUrlResponse;
-};
-
-export type CreateBillingSubscriptionResponse =
-  CreateBillingSubscriptionResponses[keyof CreateBillingSubscriptionResponses];
-
-export type ListBillingSubscriptionsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/api/v1/billing/subscriptions";
-};
-
-export type ListBillingSubscriptionsErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListBillingSubscriptionsError =
-  ListBillingSubscriptionsErrors[keyof ListBillingSubscriptionsErrors];
-
-export type ListBillingSubscriptionsResponses = {
-  /**
-   * OK
-   */
-  200: BillingSubscriptions;
-};
-
-export type ListBillingSubscriptionsResponse =
-  ListBillingSubscriptionsResponses[keyof ListBillingSubscriptionsResponses];
-
-export type CancelBillingSubscriptionData = {
-  body?: never;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path: {
-    subscription_id: string;
-  };
-  query?: never;
-  url: "/api/v1/billing/subscriptions/{subscription_id}/cancel";
-};
-
-export type CancelBillingSubscriptionErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type CancelBillingSubscriptionError =
-  CancelBillingSubscriptionErrors[keyof CancelBillingSubscriptionErrors];
-
-export type CancelBillingSubscriptionResponses = {
-  /**
-   * OK
-   */
-  200: BillingCancelSubscriptionResponse;
-};
-
-export type CancelBillingSubscriptionResponse =
-  CancelBillingSubscriptionResponses[keyof CancelBillingSubscriptionResponses];
 
 export type SubmitExecutionData = {
   body: SandboxSubmitRequestWritable;

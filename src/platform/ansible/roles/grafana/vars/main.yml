@@ -364,8 +364,9 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT created_at, window_id, org_id, product_id, source_type, source_ref, window_seq, state, reserved_quantity, actual_quantity,
-            billed_charge_units, metering_projected_at FROM forge_metal.billing_windows_pg ORDER BY created_at DESC LIMIT 20
+            SELECT created_at, window_id, org_id, product_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, source_type,
+            source_ref, window_seq, state, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity, billed_charge_units,
+            writeoff_reason, metering_projected_at FROM forge_metal.billing_windows_pg ORDER BY created_at DESC LIMIT 20
       - id: 9
         uid: "worker-task-queue-depth"
         title: "Worker Task Queue Depth"
@@ -389,7 +390,7 @@ grafana_dashboards:
     panels:
       - id: 1
         uid: "credit-burn-rate-by-phase"
-        title: "Credit Burn Rate by Phase"
+        title: "Credit Burn Rate by Pricing Phase"
         type: "timeseries"
         x: 0
         y: 0
@@ -400,8 +401,9 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(started_at) AS time, pricing_phase AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering
-            WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+            SELECT toStartOfHour(started_at) AS time, if(empty(pricing_phase_id), pricing_phase, pricing_phase_id) AS series,
+            toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            series ORDER BY time
       - id: 2
         uid: "metering-volume"
         title: "Metering Volume"
@@ -419,7 +421,7 @@ grafana_dashboards:
             started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
       - id: 3
         uid: "per-source-unit-breakdown"
-        title: "Per-Source Unit Breakdown"
+        title: "Per-Funding Source Unit Breakdown"
         type: "timeseries"
         x: 16
         y: 0
@@ -432,13 +434,14 @@ grafana_dashboards:
           >-
             SELECT time, series, units FROM (SELECT toStartOfHour(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
             units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at)
-            AS time, 'subscription' AS series, toFloat64(sum(subscription_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
             INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'purchase' AS series,
             toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
             SELECT toStartOfHour(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
             started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL SELECT toStartOfHour(started_at) AS time, 'refund' AS series,
-            toFloat64(sum(refund_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY
-            time
+            toFloat64(sum(refund_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time UNION ALL
+            SELECT toStartOfHour(started_at) AS time, 'receivable' AS series, toFloat64(sum(receivable_units)) AS units FROM
+            forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time) ORDER BY time
       - id: 4
         uid: "billing-windows-by-state"
         title: "Billing Windows by State"
@@ -456,7 +459,7 @@ grafana_dashboards:
             created_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
       - id: 5
         uid: "operator-writeoffs"
-        title: "Operator Writeoffs"
+        title: "Adjustment Units"
         type: "timeseries"
         x: 8
         y: 9
@@ -467,8 +470,9 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(started_at) AS time, 'writeoff_units' AS series, toFloat64(sum(writeoff_charge_units)) AS units FROM
-            forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time ORDER BY time
+            SELECT toStartOfHour(started_at) AS time, if(empty(adjustment_reason), 'unspecified', adjustment_reason) AS series,
+            toFloat64(sum(adjustment_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            series ORDER BY time
       - id: 6
         uid: "projection-lag"
         title: "Projection Lag"
@@ -503,8 +507,9 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT toStartOfHour(started_at) AS time, pricing_phase AS series, toFloat64(sum(charge_units)) AS units FROM forge_metal.metering
-            WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time, series ORDER BY time
+            SELECT toStartOfHour(started_at) AS time, if(empty(pricing_phase_id), pricing_phase, pricing_phase_id) AS series,
+            toFloat64(sum(charge_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 7 DAY GROUP BY time,
+            series ORDER BY time
       - id: 2
         uid: "overage-units-current-period"
         title: "Overage Units (Current Period)"
@@ -519,7 +524,8 @@ grafana_dashboards:
         raw_sql:
           >-
             SELECT toStartOfHour(started_at) AS time, org_id AS series, toFloat64(sum(charge_units)) AS overage_units FROM forge_metal.metering
-            WHERE pricing_phase = 'overage' AND started_at >= now() - INTERVAL 30 DAY GROUP BY time, series ORDER BY time
+            WHERE (pricing_phase_id = 'overage' OR pricing_phase = 'overage') AND started_at >= now() - INTERVAL 30 DAY GROUP BY time,
+            series ORDER BY time
       - id: 3
         uid: "metering-rows-per-day"
         title: "Metering Rows per Day"
@@ -565,11 +571,13 @@ grafana_dashboards:
           >-
             SELECT time, series, units FROM (SELECT toStartOfDay(started_at) AS time, 'free_tier' AS series, toFloat64(sum(free_tier_units)) AS
             units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at)
-            AS time, 'subscription' AS series, toFloat64(sum(subscription_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
+            AS time, 'contract' AS series, toFloat64(sum(contract_units)) AS units FROM forge_metal.metering WHERE started_at >= now() -
             INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at) AS time, 'purchase' AS series,
             toFloat64(sum(purchase_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION
             ALL SELECT toStartOfDay(started_at) AS time, 'promo' AS series, toFloat64(sum(promo_units)) AS units FROM forge_metal.metering WHERE
-            started_at >= now() - INTERVAL 30 DAY GROUP BY time) ORDER BY time
+            started_at >= now() - INTERVAL 30 DAY GROUP BY time UNION ALL SELECT toStartOfDay(started_at) AS time, 'receivable' AS series,
+            toFloat64(sum(receivable_units)) AS units FROM forge_metal.metering WHERE started_at >= now() - INTERVAL 30 DAY GROUP BY time) ORDER BY
+            time
       - id: 6
         uid: "recent-metering-activity"
         title: "Recent Metering Activity"
@@ -583,7 +591,8 @@ grafana_dashboards:
         unit: "short"
         raw_sql:
           >-
-            SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, plan_id, pricing_phase, charge_units,
+            SELECT formatDateTime(started_at, '%Y-%m-%d %H:%i:%S') AS time, org_id, product_id, cycle_id, pricing_contract_id,
+            pricing_phase_id, pricing_plan_id, pricing_phase, charge_units, contract_units, adjustment_units, adjustment_reason,
             billable_quantity, cost_per_unit, actor_id, source_type, source_ref FROM forge_metal.metering ORDER BY started_at DESC LIMIT 25
   - uid: "forge-metal-postgresql"
     title: "PostgreSQL"

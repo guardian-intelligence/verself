@@ -18,6 +18,9 @@ import (
 )
 
 type windowRateContext struct {
+	CycleID              string                    `json:"cycle_id,omitempty"`
+	PricingContractID    string                    `json:"pricing_contract_id,omitempty"`
+	PricingPhaseID       string                    `json:"pricing_phase_id,omitempty"`
 	PlanID               string                    `json:"plan_id"`
 	SKURates             map[string]uint64         `json:"sku_rates"`
 	SKUBuckets           map[string]string         `json:"sku_buckets"`
@@ -33,6 +36,9 @@ type persistedWindow struct {
 	OrgID               OrgID
 	ActorID             string
 	ProductID           string
+	CycleID             string
+	PricingContractID   string
+	PricingPhaseID      string
 	PlanID              string
 	SourceType          string
 	SourceRef           string
@@ -58,6 +64,7 @@ type persistedWindow struct {
 	SettledAt           *time.Time
 	MeteringProjectedAt *time.Time
 	LastProjectionError string
+	WriteoffReason      string
 }
 
 type windowRowQueryer interface {
@@ -66,6 +73,8 @@ type windowRowQueryer interface {
 
 type productPlanConfig struct {
 	PlanID        string
+	ContractID    string
+	PhaseID       string
 	BillingMode   string
 	SKURates      map[string]uint64
 	SKUBuckets    map[string]string
@@ -111,6 +120,11 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		return WindowReservation{}, err
 	}
 
+	cycle, err := c.EnsureOpenBillingCycle(ctx, req.OrgID, req.ProductID)
+	if err != nil {
+		return WindowReservation{}, err
+	}
+
 	config, err := c.loadPlanConfig(ctx, req.OrgID, req.ProductID)
 	if err != nil {
 		return WindowReservation{}, err
@@ -129,6 +143,9 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	if err != nil {
 		return WindowReservation{}, err
 	}
+	rateContext.CycleID = cycle.CycleID
+	rateContext.PricingContractID = config.ContractID
+	rateContext.PricingPhaseID = config.PhaseID
 	rateContext.PlanID = config.PlanID
 	plan, err := c.pickReservationQuantityByFunding(ctx, req.OrgID, req.ProductID, config.ReservePolicy, rateContext)
 	if err != nil {
@@ -165,14 +182,14 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 
 	_, err = c.pg.ExecContext(ctx, `
 		INSERT INTO billing_windows (
-			window_id, org_id, actor_id, product_id, plan_id, source_type, source_ref, window_seq,
+			window_id, cycle_id, org_id, actor_id, product_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, source_type, source_ref, window_seq,
 			state, reservation_shape, reserved_quantity, reserved_charge_units, pricing_phase,
 			allocation, rate_context, funding_legs, window_start, expires_at, renew_by
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-		        'reserved', $9, $10, $11, $12,
-		        $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18)
-	`, windowID, strconv.FormatUint(uint64(req.OrgID), 10), req.ActorID, req.ProductID, config.PlanID, req.SourceType, req.SourceRef, windowSeq,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		        'reserved', $12, $13, $14, $15,
+		        $16::jsonb, $17::jsonb, $18::jsonb, $19, $20, $21)
+	`, windowID, cycle.CycleID, strconv.FormatUint(uint64(req.OrgID), 10), req.ActorID, req.ProductID, config.ContractID, config.PhaseID, config.PlanID, req.SourceType, req.SourceRef, windowSeq,
 		string(config.ReservePolicy.Shape), quantity, chargeUnits, string(PricingPhaseIncluded),
 		string(allocationJSON), string(rateContextJSON), string(fundingJSON), windowStart, expiresAt, renewBy)
 	if err != nil {
@@ -497,37 +514,41 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 	}
 
 	row := MeteringRow{
-		WindowID:                   window.WindowID,
-		OrgID:                      strconv.FormatUint(uint64(window.OrgID), 10),
-		ActorID:                    window.ActorID,
-		ProductID:                  window.ProductID,
-		SourceType:                 window.SourceType,
-		SourceRef:                  window.SourceRef,
-		WindowSeq:                  window.WindowSeq,
-		ReservationShape:           string(window.ReservationShape),
-		StartedAt:                  startedAt,
-		EndedAt:                    endedAt,
-		ReservedQuantity:           uint64(window.ReservedQuantity),
-		ActualQuantity:             uint64(window.ActualQuantity),
-		BillableQuantity:           uint64(window.BillableQuantity),
-		WriteoffQuantity:           uint64(window.WriteoffQuantity),
-		PricingPhase:               string(window.PricingPhase),
-		Dimensions:                 cloneFloat64Map(window.Allocation),
-		ComponentQuantities:        componentQuantitiesForQuantity(window.Allocation, window.BillableQuantity),
-		ComponentChargeUnits:       map[string]uint64{},
-		BucketChargeUnits:          map[string]uint64{},
-		ChargeUnits:                window.BilledChargeUnits,
-		WriteoffChargeUnits:        window.WriteoffChargeUnits,
-		ComponentFreeTierUnits:     map[string]uint64{},
-		ComponentSubscriptionUnits: map[string]uint64{},
-		ComponentPurchaseUnits:     map[string]uint64{},
-		ComponentPromoUnits:        map[string]uint64{},
-		ComponentRefundUnits:       map[string]uint64{},
-		ComponentReceivableUnits:   map[string]uint64{},
-		UsageEvidence:              map[string]uint64{},
-		PlanID:                     window.PlanID,
-		CostPerUnit:                rateContext.CostPerUnit,
-		RecordedAt:                 time.Now().UTC(),
+		WindowID:                 window.WindowID,
+		OrgID:                    strconv.FormatUint(uint64(window.OrgID), 10),
+		ActorID:                  window.ActorID,
+		ProductID:                window.ProductID,
+		SourceType:               window.SourceType,
+		SourceRef:                window.SourceRef,
+		WindowSeq:                window.WindowSeq,
+		ReservationShape:         string(window.ReservationShape),
+		StartedAt:                startedAt,
+		EndedAt:                  endedAt,
+		ReservedQuantity:         uint64(window.ReservedQuantity),
+		ActualQuantity:           uint64(window.ActualQuantity),
+		BillableQuantity:         uint64(window.BillableQuantity),
+		WriteoffQuantity:         uint64(window.WriteoffQuantity),
+		CycleID:                  window.CycleID,
+		PricingContractID:        window.PricingContractID,
+		PricingPhaseID:           window.PricingPhaseID,
+		PricingPlanID:            window.PlanID,
+		PricingPhase:             string(window.PricingPhase),
+		Dimensions:               cloneFloat64Map(window.Allocation),
+		ComponentQuantities:      componentQuantitiesForQuantity(window.Allocation, window.BillableQuantity),
+		ComponentChargeUnits:     map[string]uint64{},
+		BucketChargeUnits:        map[string]uint64{},
+		ChargeUnits:              window.BilledChargeUnits,
+		WriteoffChargeUnits:      window.WriteoffChargeUnits,
+		ComponentFreeTierUnits:   map[string]uint64{},
+		ComponentContractUnits:   map[string]uint64{},
+		ComponentPurchaseUnits:   map[string]uint64{},
+		ComponentPromoUnits:      map[string]uint64{},
+		ComponentRefundUnits:     map[string]uint64{},
+		ComponentReceivableUnits: map[string]uint64{},
+		ComponentAdjustmentUnits: map[string]uint64{},
+		UsageEvidence:            map[string]uint64{},
+		CostPerUnit:              rateContext.CostPerUnit,
+		RecordedAt:               time.Now().UTC(),
 	}
 	usageEvidence, err := usageEvidenceFromSummary(window.UsageSummary)
 	if err != nil {
@@ -559,9 +580,9 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 			if err := addMapUint64(row.ComponentFreeTierUnits, leg.ChargeSKUID, amount); err != nil {
 				return MeteringRow{}, err
 			}
-		case SourceSubscription:
-			row.SubscriptionUnits += amount
-			if err := addMapUint64(row.ComponentSubscriptionUnits, leg.ChargeSKUID, amount); err != nil {
+		case SourceContract:
+			row.ContractUnits += amount
+			if err := addMapUint64(row.ComponentContractUnits, leg.ChargeSKUID, amount); err != nil {
 				return MeteringRow{}, err
 			}
 		case SourcePurchase:
@@ -579,6 +600,11 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 			if err := addMapUint64(row.ComponentRefundUnits, leg.ChargeSKUID, amount); err != nil {
 				return MeteringRow{}, err
 			}
+		case SourceReceivable:
+			row.ReceivableUnits += amount
+			if err := addMapUint64(row.ComponentReceivableUnits, leg.ChargeSKUID, amount); err != nil {
+				return MeteringRow{}, err
+			}
 		}
 	}
 	return row, nil
@@ -586,35 +612,42 @@ func buildMeteringRow(window persistedWindow) (MeteringRow, error) {
 
 func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID string) (productPlanConfig, error) {
 	var (
+		contractID        string
+		phaseID           string
 		planID            string
 		billingMode       string
 		reservePolicyJSON []byte
 	)
 
 	err := c.pg.QueryRowContext(ctx, `
-		WITH active_subscription AS (
-			SELECT plan_id
-			FROM subscription_contracts
-			WHERE org_id = $1
-			  AND product_id = $2
-			  AND status NOT IN ('canceled', 'suspended')
-			  AND entitlement_state IN ('active', 'grace')
-			ORDER BY current_period_end DESC NULLS LAST, subscription_id DESC
+		WITH active_phase AS (
+			SELECT cp.contract_id, cp.phase_id, cp.plan_id
+			FROM contract_phases cp
+			JOIN contracts c ON c.contract_id = cp.contract_id
+			WHERE cp.org_id = $1
+			  AND cp.product_id = $2
+			  AND cp.plan_id <> ''
+			  AND cp.state IN ('active', 'grace')
+			  AND cp.entitlement_state IN ('active', 'grace')
+			  AND c.status IN ('active', 'cancel_scheduled')
+			  AND cp.effective_start <= $3
+			  AND (cp.effective_end IS NULL OR cp.effective_end > $3)
+			ORDER BY cp.effective_start DESC, cp.phase_id DESC
 			LIMIT 1
 		)
-		SELECT p.plan_id, p.billing_mode, pr.reserve_policy::text
+		SELECT COALESCE(ap.contract_id, ''), COALESCE(ap.phase_id, ''), p.plan_id, p.billing_mode, pr.reserve_policy::text
 		FROM plans p
 		JOIN products pr ON pr.product_id = p.product_id
-		LEFT JOIN active_subscription s ON s.plan_id = p.plan_id
+		LEFT JOIN active_phase ap ON ap.plan_id = p.plan_id
 		WHERE p.product_id = $2
 		  AND p.active
 		  AND (
-			s.plan_id IS NOT NULL
-			OR (NOT EXISTS (SELECT 1 FROM active_subscription) AND p.is_default)
+			ap.plan_id IS NOT NULL
+			OR (NOT EXISTS (SELECT 1 FROM active_phase) AND p.is_default)
 		  )
-		ORDER BY (s.plan_id IS NOT NULL) DESC
+		ORDER BY (ap.plan_id IS NOT NULL) DESC
 		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&planID, &billingMode, &reservePolicyJSON)
+	`, strconv.FormatUint(uint64(orgID), 10), productID, c.clock().UTC()).Scan(&contractID, &phaseID, &planID, &billingMode, &reservePolicyJSON)
 	if err == sql.ErrNoRows {
 		return productPlanConfig{}, ErrNoDefaultPlan
 	}
@@ -644,6 +677,8 @@ func (c *Client) loadPlanConfig(ctx context.Context, orgID OrgID, productID stri
 	}
 	return productPlanConfig{
 		PlanID:        planID,
+		ContractID:    contractID,
+		PhaseID:       phaseID,
 		BillingMode:   billingMode,
 		SKURates:      skuRatesFromSKUConfig(skus),
 		SKUBuckets:    skuBucketsFromSKUConfig(skus),
@@ -907,18 +942,21 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 	var row persistedWindow
 	err := q.QueryRowContext(ctx, `
 		SELECT
-			window_id, org_id, actor_id, product_id, plan_id, source_type, source_ref, window_seq,
+			window_id, cycle_id, org_id, actor_id, product_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, source_type, source_ref, window_seq,
 			state, reservation_shape, reserved_quantity, actual_quantity, billable_quantity, writeoff_quantity,
-			reserved_charge_units, billed_charge_units, writeoff_charge_units, pricing_phase,
+			reserved_charge_units, billed_charge_units, writeoff_charge_units, pricing_phase, writeoff_reason,
 			allocation::text, rate_context::text, usage_summary::text, funding_legs::text,
 			window_start, activated_at, expires_at, renew_by, settled_at, metering_projected_at, last_projection_error
 		FROM billing_windows
 		WHERE window_id = $1
 	`, windowID).Scan(
 		&row.WindowID,
+		&row.CycleID,
 		&orgIDText,
 		&row.ActorID,
 		&row.ProductID,
+		&row.PricingContractID,
+		&row.PricingPhaseID,
 		&row.PlanID,
 		&row.SourceType,
 		&row.SourceRef,
@@ -933,6 +971,7 @@ func (c *Client) loadPersistedWindowFrom(ctx context.Context, q windowRowQueryer
 		&row.BilledChargeUnits,
 		&row.WriteoffChargeUnits,
 		&pricingPhaseText,
+		&row.WriteoffReason,
 		&allocationJSON,
 		&rateContextJSON,
 		&usageSummaryJSON,
@@ -1081,7 +1120,7 @@ func (c *Client) ensureOrgNotSuspended(ctx context.Context, orgID OrgID) error {
 	var suspended bool
 	if err := c.pg.QueryRowContext(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM subscription_contracts WHERE org_id = $1 AND status = 'suspended'
+			SELECT 1 FROM contracts WHERE org_id = $1 AND status = 'suspended'
 		)
 	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&suspended); err != nil {
 		return fmt.Errorf("check org suspension: %w", err)

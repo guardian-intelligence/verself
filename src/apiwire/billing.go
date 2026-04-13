@@ -60,7 +60,7 @@ type BillingStatementLineItem struct {
 	UnitRate          DecimalUint64 `json:"unit_rate"`
 	ChargeUnits       DecimalUint64 `json:"charge_units"`
 	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
-	SubscriptionUnits DecimalUint64 `json:"subscription_units"`
+	ContractUnits     DecimalUint64 `json:"contract_units"`
 	PurchaseUnits     DecimalUint64 `json:"purchase_units"`
 	PromoUnits        DecimalUint64 `json:"promo_units"`
 	RefundUnits       DecimalUint64 `json:"refund_units"`
@@ -78,32 +78,34 @@ type BillingStatementGrantSummary struct {
 }
 
 type BillingStatementTotals struct {
-	ChargeUnits       DecimalUint64 `json:"charge_units"`
-	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
-	SubscriptionUnits DecimalUint64 `json:"subscription_units"`
-	PurchaseUnits     DecimalUint64 `json:"purchase_units"`
-	PromoUnits        DecimalUint64 `json:"promo_units"`
-	RefundUnits       DecimalUint64 `json:"refund_units"`
-	ReceivableUnits   DecimalUint64 `json:"receivable_units"`
-	ReservedUnits     DecimalUint64 `json:"reserved_units"`
-	TotalDueUnits     DecimalUint64 `json:"total_due_units"`
+	ChargeUnits     DecimalUint64 `json:"charge_units"`
+	FreeTierUnits   DecimalUint64 `json:"free_tier_units"`
+	ContractUnits   DecimalUint64 `json:"contract_units"`
+	PurchaseUnits   DecimalUint64 `json:"purchase_units"`
+	PromoUnits      DecimalUint64 `json:"promo_units"`
+	RefundUnits     DecimalUint64 `json:"refund_units"`
+	ReceivableUnits DecimalUint64 `json:"receivable_units"`
+	ReservedUnits   DecimalUint64 `json:"reserved_units"`
+	TotalDueUnits   DecimalUint64 `json:"total_due_units"`
 }
 
-type BillingSubscription struct {
-	SubscriptionID     DecimalInt64 `json:"subscription_id"`
-	ContractID         string       `json:"contract_id"`
-	ProductID          string       `json:"product_id"`
-	PlanID             string       `json:"plan_id"`
-	Cadence            string       `json:"cadence"`
-	Status             string       `json:"status"`
-	PaymentState       string       `json:"payment_state"`
-	EntitlementState   string       `json:"entitlement_state"`
-	CurrentPeriodStart *time.Time   `json:"current_period_start,omitempty"`
-	CurrentPeriodEnd   *time.Time   `json:"current_period_end,omitempty"`
+type BillingContract struct {
+	ContractID       string     `json:"contract_id"`
+	ProductID        string     `json:"product_id"`
+	PlanID           string     `json:"plan_id"`
+	PhaseID          string     `json:"phase_id"`
+	CadenceKind      string     `json:"cadence_kind"`
+	Status           string     `json:"status"`
+	PaymentState     string     `json:"payment_state"`
+	EntitlementState string     `json:"entitlement_state"`
+	StartsAt         time.Time  `json:"starts_at"`
+	EndsAt           *time.Time `json:"ends_at,omitempty"`
+	PhaseStart       *time.Time `json:"phase_start,omitempty"`
+	PhaseEnd         *time.Time `json:"phase_end,omitempty"`
 }
 
-type BillingSubscriptions struct {
-	Subscriptions []BillingSubscription `json:"subscriptions"`
+type BillingContracts struct {
+	Contracts []BillingContract `json:"contracts"`
 }
 
 type BillingPlan struct {
@@ -169,14 +171,14 @@ type BillingEntitlementSlot struct {
 }
 
 // BillingEntitlementSourceTotal is one entry in a slot's Sources slice, keyed
-// by (source, plan_id). For non-subscription sources plan_id is empty, so they
+// by (source, plan_id). For non-contract sources plan_id is empty, so they
 // collapse to one entry per source. Multi-plan customers get one entry per
 // active plan. PeriodStartUnits is non-zero only for grants that have a period
 // containing now; ad-hoc top-ups and promos contribute zero there. Inline
 // expiry is surfaced only when at least one grant inside this entry is
 // non-period (period-bound expiries are implicit in the period boundary).
 type BillingEntitlementSourceTotal struct {
-	Source           string        `json:"source" enum:"free_tier,subscription,purchase,promo,refund"`
+	Source           string        `json:"source" enum:"free_tier,contract,purchase,promo,refund,receivable"`
 	PlanID           string        `json:"plan_id"`
 	Label            string        `json:"label"`
 	PeriodStartUnits DecimalUint64 `json:"period_start_units"`
@@ -192,10 +194,10 @@ type BillingCreateCheckoutRequest struct {
 	CancelURL   string `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
 
-type BillingCreateSubscriptionRequest struct {
+type BillingCreateContractRequest struct {
 	OrgID      OrgID  `json:"org_id"`
 	PlanID     string `json:"plan_id" minLength:"1" maxLength:"255"`
-	Cadence    string `json:"cadence,omitempty" enum:"monthly,annual"`
+	Cadence    string `json:"cadence,omitempty" enum:"monthly"`
 	SuccessURL string `json:"success_url" minLength:"1" maxLength:"2048"`
 	CancelURL  string `json:"cancel_url" minLength:"1" maxLength:"2048"`
 }
@@ -205,33 +207,12 @@ type BillingCreatePortalSessionRequest struct {
 	ReturnURL string `json:"return_url" minLength:"1" maxLength:"2048"`
 }
 
-type BillingCancelSubscriptionRequest struct {
+type BillingCancelContractRequest struct {
 	OrgID OrgID `json:"org_id"`
 }
 
-type BillingCancelSubscriptionResponse struct {
-	Subscription BillingSubscription `json:"subscription"`
-}
-
-type BillingApplySubscriptionProviderEventRequest struct {
-	Provider                  string     `json:"provider" enum:"stripe"`
-	EventType                 string     `json:"event_type" minLength:"1" maxLength:"255"`
-	OrgID                     OrgID      `json:"org_id"`
-	ProductID                 string     `json:"product_id" minLength:"1" maxLength:"255"`
-	PlanID                    string     `json:"plan_id" minLength:"1" maxLength:"255"`
-	Cadence                   string     `json:"cadence,omitempty" enum:"monthly,annual"`
-	Status                    string     `json:"status,omitempty" maxLength:"255"`
-	ProviderSubscriptionID    string     `json:"provider_subscription_id" minLength:"1" maxLength:"255"`
-	ProviderCheckoutSessionID string     `json:"provider_checkout_session_id,omitempty" maxLength:"255"`
-	ProviderCustomerID        string     `json:"provider_customer_id,omitempty" maxLength:"255"`
-	CurrentPeriodStart        *time.Time `json:"current_period_start,omitempty"`
-	CurrentPeriodEnd          *time.Time `json:"current_period_end,omitempty"`
-	PaymentState              string     `json:"payment_state,omitempty" enum:"not_required,pending,paid,failed,uncollectible,refunded"`
-	EntitlementState          string     `json:"entitlement_state,omitempty" enum:"scheduled,active,grace,closed,voided"`
-}
-
-type BillingApplySubscriptionProviderEventResponse struct {
-	Applied bool `json:"applied"`
+type BillingCancelContractResponse struct {
+	Contract BillingContract `json:"contract"`
 }
 
 type BillingURLResponse struct {

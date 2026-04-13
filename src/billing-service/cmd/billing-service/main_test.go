@@ -15,7 +15,7 @@ func TestIsUnauthenticatedBillingPath(t *testing.T) {
 		{path: "/webhooks/stripe", want: true},
 		{path: "/internal/billing/v1/orgs/123/entitlements", want: true},
 		{path: "/internal/billing/v1/checkout", want: true},
-		{path: "/internal/billing/v1/subscribe", want: true},
+		{path: "/internal/billing/v1/contracts", want: true},
 		{path: "/internal/billing/v1/portal", want: true},
 		{path: "/internal/billing/v1/reserve", want: false},
 		{path: "/internal/billing/v1/settle", want: false},

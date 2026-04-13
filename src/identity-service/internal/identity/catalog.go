@@ -1,25 +1,25 @@
 package identity
 
 const (
-	PermissionOrganizationRead          = "identity:organization:read"
-	PermissionMemberRead                = "identity:member:read"
-	PermissionMemberInvite              = "identity:member:invite"
-	PermissionMemberRolesWrite          = "identity:member:roles:write"
-	PermissionMemberCapabilitiesRead    = "identity:member_capabilities:read"
-	PermissionMemberCapabilitiesWrite   = "identity:member_capabilities:write"
-	PermissionAPICredentialsRead        = "identity:api_credentials:read"
-	PermissionAPICredentialsCreate      = "identity:api_credentials:create"
-	PermissionAPICredentialsRoll        = "identity:api_credentials:roll"
-	PermissionAPICredentialsRevoke      = "identity:api_credentials:revoke"
-	PermissionSandboxRepoRead           = "sandbox:repo:read"
-	PermissionSandboxRepoWrite          = "sandbox:repo:write"
-	PermissionSandboxWebhookRead        = "sandbox:webhook_endpoint:read"
-	PermissionSandboxWebhookWrite       = "sandbox:webhook_endpoint:write"
-	PermissionSandboxExecutionSubmit    = "sandbox:execution:submit"
-	PermissionSandboxExecutionRead      = "sandbox:execution:read"
-	PermissionSandboxLogsRead           = "sandbox:logs:read"
-	PermissionBillingRead               = "billing:read"
-	PermissionBillingCheckout           = "billing:checkout"
+	PermissionOrganizationRead        = "identity:organization:read"
+	PermissionMemberRead              = "identity:member:read"
+	PermissionMemberInvite            = "identity:member:invite"
+	PermissionMemberRolesWrite        = "identity:member:roles:write"
+	PermissionMemberCapabilitiesRead  = "identity:member_capabilities:read"
+	PermissionMemberCapabilitiesWrite = "identity:member_capabilities:write"
+	PermissionAPICredentialsRead      = "identity:api_credentials:read"
+	PermissionAPICredentialsCreate    = "identity:api_credentials:create"
+	PermissionAPICredentialsRoll      = "identity:api_credentials:roll"
+	PermissionAPICredentialsRevoke    = "identity:api_credentials:revoke"
+	PermissionSandboxRepoRead         = "sandbox:repo:read"
+	PermissionSandboxRepoWrite        = "sandbox:repo:write"
+	PermissionSandboxWebhookRead      = "sandbox:webhook_endpoint:read"
+	PermissionSandboxWebhookWrite     = "sandbox:webhook_endpoint:write"
+	PermissionSandboxExecutionSubmit  = "sandbox:execution:submit"
+	PermissionSandboxExecutionRead    = "sandbox:execution:read"
+	PermissionSandboxLogsRead         = "sandbox:logs:read"
+	PermissionBillingRead             = "billing:read"
+	PermissionBillingCheckout         = "billing:checkout"
 )
 
 // member_eligible: true marks a permission as one that can ever appear in a
@@ -58,12 +58,13 @@ var defaultOperations = Operations{
 				{OperationID: "submit-execution", Permission: PermissionSandboxExecutionSubmit, Resource: "execution", Action: "submit", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-billing-balance", Permission: PermissionBillingRead, Resource: "billing_balance", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-subscriptions", Permission: PermissionBillingRead, Resource: "billing_subscription", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-grants", Permission: PermissionBillingRead, Resource: "billing_grant", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-billing-entitlements", Permission: PermissionBillingRead, Resource: "billing_entitlements", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-billing-contracts", Permission: PermissionBillingRead, Resource: "billing_contract", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-billing-plans", Permission: PermissionBillingRead, Resource: "billing_plan", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "get-billing-statement", Permission: PermissionBillingRead, Resource: "billing_statement", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
 				{OperationID: "create-billing-checkout", Permission: PermissionBillingCheckout, Resource: "billing_checkout", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "create-billing-subscription", Permission: PermissionBillingCheckout, Resource: "billing_subscription_checkout", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "create-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract_checkout", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "cancel-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract", Action: "cancel", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-portal", Permission: PermissionBillingCheckout, Resource: "billing_portal", Action: "create", OrgScope: "token_org_id"},
 			},
 		},

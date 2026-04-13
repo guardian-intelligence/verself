@@ -315,7 +315,7 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.planID, "plan-id", cfg.planID, "default plan ID")
 	flag.StringVar(&cfg.planDisplayName, "plan-display-name", cfg.planDisplayName, "default plan display name")
 	flag.StringVar(&cfg.freeTierBucketsJSON, "free-tier-buckets-json", cfg.freeTierBucketsJSON, "free-tier bucket grants JSON")
-	flag.StringVar(&cfg.planEntitlementsJSON, "plan-entitlements-json", cfg.planEntitlementsJSON, "subscription bucket grants JSON for the default plan")
+	flag.StringVar(&cfg.planEntitlementsJSON, "plan-entitlements-json", cfg.planEntitlementsJSON, "contract bucket grants JSON for the default plan")
 	flag.StringVar(&cfg.quotasJSON, "quotas-json", cfg.quotasJSON, "default plan quotas JSON")
 	flag.Uint64Var(&cfg.targetPrepaidUnits, "target-prepaid-units", cfg.targetPrepaidUnits, "minimum prepaid units to ensure after seeding")
 	flag.StringVar(&cfg.prepaidSource, "prepaid-source", cfg.prepaidSource, "credit grant source for seeded prepaid units")
@@ -479,8 +479,8 @@ func upsertEntitlementPolicies(ctx context.Context, pg *sql.DB, cfg config) (boo
 		changed = changed || upserted
 	}
 	for _, bucketID := range sortedMapKeys(planEntitlements) {
-		policyID := fmt.Sprintf("subscription:%s:%s:%s:v1", cfg.planID, cfg.productID, bucketID)
-		upserted, err := upsertEntitlementPolicy(ctx, pg, policyID, "subscription", cfg.productID, bucketID, planEntitlements[bucketID], "subscription_period")
+		policyID := fmt.Sprintf("contract:%s:%s:%s:v1", cfg.planID, cfg.productID, bucketID)
+		upserted, err := upsertEntitlementPolicy(ctx, pg, policyID, "contract", cfg.productID, bucketID, planEntitlements[bucketID], "contract_phase")
 		if err != nil {
 			return false, err
 		}

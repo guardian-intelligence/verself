@@ -65,8 +65,8 @@ func TestPickReservationShrinksToTightestFundedBucket(t *testing.T) {
 		},
 		rateContext,
 		[]scopedGrantBalance{
-			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
-			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
+			testScopedGrant("bucket-compute", SourceContract, GrantScopeBucket, "sandbox", "compute", "", 10_000),
+			testScopedGrant("bucket-storage", SourceContract, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != nil {
@@ -105,8 +105,8 @@ func TestPickReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
 		},
 		rateContext,
 		[]scopedGrantBalance{
-			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
-			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
+			testScopedGrant("bucket-compute", SourceContract, GrantScopeBucket, "sandbox", "compute", "", 10_000),
+			testScopedGrant("bucket-storage", SourceContract, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != ErrInsufficientBalance {
@@ -185,8 +185,8 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 			},
 		},
 		FundingLegs: []WindowFundingLeg{
-			{ChargeProductID: "sandbox", ChargeBucketID: "compute", ChargeSKUID: testComputeSKU, Amount: 140, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "compute"},
-			{ChargeProductID: "sandbox", ChargeBucketID: "block_storage", ChargeSKUID: testBlockStorageSKU, Amount: 3_500, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "block_storage"},
+			{ChargeProductID: "sandbox", ChargeBucketID: "compute", ChargeSKUID: testComputeSKU, Amount: 140, Source: SourceContract, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "compute"},
+			{ChargeProductID: "sandbox", ChargeBucketID: "block_storage", ChargeSKUID: testBlockStorageSKU, Amount: 3_500, Source: SourceContract, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "block_storage"},
 		},
 		UsageSummary: map[string]any{"rootfs_provisioned_bytes": uint64(1_073_741_824)},
 		WindowStart:  start,
@@ -206,9 +206,9 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 	assertEqual(t, row.ComponentChargeUnits[testComputeSKU], uint64(100), "vCPU component charge")
 	assertEqual(t, row.BucketChargeUnits["block_storage"], uint64(2_500), "storage bucket charge")
 	assertEqual(t, row.BucketChargeUnits["compute"], uint64(100), "compute bucket charge")
-	assertEqual(t, row.ComponentSubscriptionUnits[testBlockStorageSKU], uint64(2_500), "storage subscription funding")
-	assertEqual(t, row.ComponentSubscriptionUnits[testComputeSKU], uint64(100), "compute subscription funding")
-	assertEqual(t, row.SubscriptionUnits, uint64(2_600), "total subscription funding")
+	assertEqual(t, row.ComponentContractUnits[testBlockStorageSKU], uint64(2_500), "storage contract funding")
+	assertEqual(t, row.ComponentContractUnits[testComputeSKU], uint64(100), "compute contract funding")
+	assertEqual(t, row.ContractUnits, uint64(2_600), "total contract funding")
 	assertEqual(t, row.UsageEvidence["rootfs_provisioned_bytes"], uint64(1_073_741_824), "rootfs evidence")
 }
 

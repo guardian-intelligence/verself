@@ -26,10 +26,11 @@ var GrantScopeFundingOrder = []GrantScopeType{
 // Free-tier always burns first so paid balances last as long as possible.
 var GrantSourceFundingOrder = []GrantSourceType{
 	SourceFreeTier,
-	SourceSubscription,
+	SourceContract,
 	SourcePurchase,
 	SourcePromo,
 	SourceRefund,
+	SourceReceivable,
 }
 
 func ParseGrantScopeType(scope string) (GrantScopeType, error) {

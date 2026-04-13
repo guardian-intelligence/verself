@@ -3,13 +3,38 @@
 
 import * as v from "valibot";
 
+export const vBillingContract = v.strictObject({
+  cadence_kind: v.string(),
+  contract_id: v.string(),
+  ends_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  entitlement_state: v.string(),
+  payment_state: v.string(),
+  phase_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  phase_id: v.string(),
+  phase_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+  plan_id: v.string(),
+  product_id: v.string(),
+  starts_at: v.pipe(v.string(), v.isoTimestamp()),
+  status: v.string(),
+});
+
+export const vBillingCancelContractResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  contract: vBillingContract,
+});
+
+export const vBillingContracts = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  contracts: v.nullable(v.array(vBillingContract)),
+});
+
 export const vBillingEntitlementSourceTotal = v.strictObject({
   available_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   inline_expires_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   label: v.string(),
   period_start_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   plan_id: v.string(),
-  source: v.picklist(["free_tier", "subscription", "purchase", "promo", "refund"]),
+  source: v.picklist(["free_tier", "contract", "purchase", "promo", "refund", "receivable"]),
 });
 
 export const vBillingEntitlementSlot = v.strictObject({
@@ -80,6 +105,7 @@ export const vBillingStatementLineItem = v.strictObject({
   bucket_display_name: v.string(),
   bucket_id: v.string(),
   charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  contract_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   plan_id: v.string(),
   pricing_phase: v.string(),
@@ -93,19 +119,18 @@ export const vBillingStatementLineItem = v.strictObject({
   reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   sku_display_name: v.string(),
   sku_id: v.string(),
-  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   unit_rate: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
 export const vBillingStatementTotals = v.strictObject({
   charge_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
+  contract_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   free_tier_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   promo_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   purchase_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   receivable_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   refund_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   reserved_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  subscription_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   total_due_units: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
 });
 
@@ -122,29 +147,6 @@ export const vBillingStatement = v.strictObject({
   product_id: v.string(),
   totals: vBillingStatementTotals,
   unit_label: v.string(),
-});
-
-export const vBillingSubscription = v.strictObject({
-  cadence: v.string(),
-  contract_id: v.string(),
-  current_period_end: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  current_period_start: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  entitlement_state: v.string(),
-  payment_state: v.string(),
-  plan_id: v.string(),
-  product_id: v.string(),
-  status: v.string(),
-  subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
-});
-
-export const vBillingCancelSubscriptionResponse = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  subscription: vBillingSubscription,
-});
-
-export const vBillingSubscriptions = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  subscriptions: v.nullable(v.array(vBillingSubscription)),
 });
 
 export const vBillingUrlResponse = v.strictObject({
@@ -257,17 +259,17 @@ export const vSandboxBillingCheckoutRequest = v.strictObject({
   success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
-export const vSandboxBillingPortalRequest = v.strictObject({
+export const vSandboxBillingContractRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  return_url: v.pipe(v.string(), v.maxLength(2048)),
-});
-
-export const vSandboxBillingSubscriptionRequest = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  cadence: v.optional(v.picklist(["monthly", "annual"])),
+  cadence: v.optional(v.picklist(["monthly"])),
   cancel_url: v.pipe(v.string(), v.maxLength(2048)),
   plan_id: v.pipe(v.string(), v.maxLength(255)),
   success_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
+export const vSandboxBillingPortalRequest = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  return_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
 export const vSandboxBillingWindow = v.strictObject({
@@ -454,8 +456,12 @@ export const vSchedulerProbeResponse = v.strictObject({
   status: v.string(),
 });
 
-export const vBillingCancelSubscriptionResponseWritable = v.strictObject({
-  subscription: vBillingSubscription,
+export const vBillingCancelContractResponseWritable = v.strictObject({
+  contract: vBillingContract,
+});
+
+export const vBillingContractsWritable = v.strictObject({
+  contracts: v.nullable(v.array(vBillingContract)),
 });
 
 export const vBillingEntitlementsViewWritable = v.strictObject({
@@ -480,10 +486,6 @@ export const vBillingStatementWritable = v.strictObject({
   product_id: v.string(),
   totals: vBillingStatementTotals,
   unit_label: v.string(),
-});
-
-export const vBillingSubscriptionsWritable = v.strictObject({
-  subscriptions: v.nullable(v.array(vBillingSubscription)),
 });
 
 export const vBillingUrlResponseWritable = v.strictObject({
@@ -521,15 +523,15 @@ export const vSandboxBillingCheckoutRequestWritable = v.strictObject({
   success_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
-export const vSandboxBillingPortalRequestWritable = v.strictObject({
-  return_url: v.pipe(v.string(), v.maxLength(2048)),
-});
-
-export const vSandboxBillingSubscriptionRequestWritable = v.strictObject({
-  cadence: v.optional(v.picklist(["monthly", "annual"])),
+export const vSandboxBillingContractRequestWritable = v.strictObject({
+  cadence: v.optional(v.picklist(["monthly"])),
   cancel_url: v.pipe(v.string(), v.maxLength(2048)),
   plan_id: v.pipe(v.string(), v.maxLength(255)),
   success_url: v.pipe(v.string(), v.maxLength(2048)),
+});
+
+export const vSandboxBillingPortalRequestWritable = v.strictObject({
+  return_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
 export const vSandboxCreateWebhookEndpointRequestWritable = v.strictObject({
@@ -659,6 +661,35 @@ export const vCreateBillingCheckoutResponse = vBillingUrlResponse;
 /**
  * OK
  */
+export const vListBillingContractsResponse = vBillingContracts;
+
+export const vCreateBillingContractBody = vSandboxBillingContractRequestWritable;
+
+export const vCreateBillingContractHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * OK
+ */
+export const vCreateBillingContractResponse = vBillingUrlResponse;
+
+export const vCancelBillingContractHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+export const vCancelBillingContractPath = v.object({
+  contract_id: v.pipe(v.string(), v.minLength(1), v.maxLength(255)),
+});
+
+/**
+ * OK
+ */
+export const vCancelBillingContractResponse = vBillingCancelContractResponse;
+
+/**
+ * OK
+ */
 export const vGetBillingEntitlementsResponse = vBillingEntitlementsView;
 
 /**
@@ -685,35 +716,6 @@ export const vGetBillingStatementQuery = v.object({
  * OK
  */
 export const vGetBillingStatementResponse = vBillingStatement;
-
-export const vCreateBillingSubscriptionBody = vSandboxBillingSubscriptionRequestWritable;
-
-export const vCreateBillingSubscriptionHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-/**
- * OK
- */
-export const vCreateBillingSubscriptionResponse = vBillingUrlResponse;
-
-/**
- * OK
- */
-export const vListBillingSubscriptionsResponse = vBillingSubscriptions;
-
-export const vCancelBillingSubscriptionHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-export const vCancelBillingSubscriptionPath = v.object({
-  subscription_id: v.pipe(v.string(), v.regex(/^-?[0-9]+$/)),
-});
-
-/**
- * OK
- */
-export const vCancelBillingSubscriptionResponse = vBillingCancelSubscriptionResponse;
 
 export const vSubmitExecutionBody = vSandboxSubmitRequestWritable;
 

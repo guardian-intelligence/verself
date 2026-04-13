@@ -115,7 +115,7 @@
       block_storage: 2000000
     seed_system_plan_entitlements: {}
     seed_system_quotas: {}
-    seed_system_subscription_tiers:
+    seed_system_contract_tiers:
       - plan_id: sandbox-hobby
         display_name: Hobby
         tier: hobby
@@ -813,7 +813,7 @@
         mode: "0755"
       tags: [billing]
 
-    - name: Ensure Stripe subscription catalog is reconciled
+    - name: Ensure Stripe contract catalog is reconciled
       ansible.builtin.command:
         argv:
           - "{{ seed_system_stripe_catalog_helper_remote_path }}"
@@ -828,17 +828,17 @@
           - --rate-source-plan-id
           - "{{ seed_system_plan_id }}"
           - --tiers-json
-          - "{{ seed_system_subscription_tiers | to_json }}"
+          - "{{ seed_system_contract_tiers | to_json }}"
       register: seed_system_stripe_catalog_raw
       changed_when: false
       tags: [billing]
 
-    - name: Parse Stripe subscription catalog result
+    - name: Parse Stripe contract catalog result
       ansible.builtin.set_fact:
         seed_system_stripe_catalog_result: "{{ seed_system_stripe_catalog_raw.stdout | from_json }}"
       tags: [billing]
 
-    - name: Print Stripe subscription catalog summary
+    - name: Print Stripe contract catalog summary
       ansible.builtin.debug:
         msg:
           - "Stripe catalog ready for {{ seed_system_stripe_catalog_result.product_id }} ({{ seed_system_stripe_catalog_result.stripe_product_id }})"

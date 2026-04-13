@@ -106,8 +106,9 @@
   ansible.builtin.shell: >
     {{ fm_bin }}/clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD"
     --query "SELECT count() FROM system.tables
-             WHERE database = 'default' AND name = 'otel_metrics_sum'"
-  register: clickhouse_otel_table_probe
+             WHERE (database = 'default' AND name = 'otel_metrics_sum')
+                OR (database = 'forge_metal' AND name IN ('metering', 'billing_windows_pg', 'billing_events'))"
+  register: clickhouse_expected_table_probe
   changed_when: false
   environment:
     CLICKHOUSE_PASSWORD: "{{ clickhouse_password }}"
@@ -120,7 +121,7 @@
         or (clickhouse_migrations_remote_hash is failed)
         or ((clickhouse_migrations_remote_hash.content | default('') | b64decode | trim)
            != (clickhouse_migrations_local_hash.stdout.split()[0] | trim))
-        or ((clickhouse_otel_table_probe.stdout | trim) == '0')
+        or ((clickhouse_expected_table_probe.stdout | trim) != '4')
       }}
 
 - name: Apply ClickHouse migrations

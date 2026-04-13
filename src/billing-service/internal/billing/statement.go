@@ -2,14 +2,11 @@ package billing
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
 	"time"
 )
-
-const fallbackStatementPeriodDays = 30
 
 type statementPeriod struct {
 	Start  time.Time
@@ -57,26 +54,14 @@ func (c *Client) PreviewStatement(ctx context.Context, orgID OrgID, productID st
 }
 
 func (c *Client) currentStatementPeriod(ctx context.Context, orgID OrgID, productID string) (statementPeriod, error) {
-	var start sql.NullTime
-	var end sql.NullTime
-	err := c.pg.QueryRowContext(ctx, `
-		SELECT current_period_start, current_period_end
-		FROM subscription_contracts
-		WHERE org_id = $1
-		  AND product_id = $2
-		  AND status <> 'canceled'
-		ORDER BY current_period_end DESC NULLS LAST, subscription_id DESC
-		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10), productID).Scan(&start, &end)
-	if err != nil && err != sql.ErrNoRows {
-		return statementPeriod{}, fmt.Errorf("load statement period: %w", err)
+	cycle, err := c.EnsureOpenBillingCycle(ctx, orgID, productID)
+	if err != nil {
+		return statementPeriod{}, err
 	}
-	if start.Valid && end.Valid && end.Time.After(start.Time) {
-		return statementPeriod{Start: start.Time.UTC(), End: end.Time.UTC(), Source: "subscription"}, nil
+	if cycle.EndsAt.After(cycle.StartsAt) {
+		return statementPeriod{Start: cycle.StartsAt.UTC(), End: cycle.EndsAt.UTC(), Source: "billing_cycle"}, nil
 	}
-
-	now := c.clock().UTC()
-	return statementPeriod{Start: now.AddDate(0, 0, -fallbackStatementPeriodDays), End: now, Source: "rolling_30d"}, nil
+	return statementPeriod{}, fmt.Errorf("open billing cycle %s has invalid interval", cycle.CycleID)
 }
 
 func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID string, period statementPeriod) ([]persistedWindow, error) {
@@ -230,7 +215,7 @@ func addSettledStatementRow(
 		if err != nil {
 			return err
 		}
-		item.SubscriptionUnits, err = safeAddUint64(item.SubscriptionUnits, row.ComponentSubscriptionUnits[skuID])
+		item.ContractUnits, err = safeAddUint64(item.ContractUnits, row.ComponentContractUnits[skuID])
 		if err != nil {
 			return err
 		}
@@ -318,7 +303,7 @@ func addStatementAppliedTotals(totals *StatementTotals, row MeteringRow) error {
 	if err != nil {
 		return err
 	}
-	totals.SubscriptionUnits, err = safeAddUint64(totals.SubscriptionUnits, row.SubscriptionUnits)
+	totals.ContractUnits, err = safeAddUint64(totals.ContractUnits, row.ContractUnits)
 	if err != nil {
 		return err
 	}

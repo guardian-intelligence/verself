@@ -82,25 +82,25 @@ type ProductPath struct {
 	ProductID string `path:"product_id" minLength:"1" maxLength:"255"`
 }
 
-type SubscriptionPath struct {
-	SubscriptionID string `path:"subscription_id" pattern:"^[0-9]+$"`
+type ContractPath struct {
+	ContractID string `path:"contract_id" minLength:"1" maxLength:"255"`
 }
 
-type CancelSubscriptionInput struct {
-	SubscriptionPath
-	Body apiwire.BillingCancelSubscriptionRequest `required:"true"`
+type CancelContractInput struct {
+	ContractPath
+	Body apiwire.BillingCancelContractRequest `required:"true"`
 }
 
 type (
-	GrantResponse              = apiwire.BillingGrant
-	GrantsResponse             = apiwire.BillingGrants
-	StatementResponse          = apiwire.BillingStatement
-	SubscriptionsResponse      = apiwire.BillingSubscriptions
-	SubscriptionResponse       = apiwire.BillingSubscription
-	PlansResponse              = apiwire.BillingPlans
-	PlanResponse               = apiwire.BillingPlan
-	CancelSubscriptionResponse = apiwire.BillingCancelSubscriptionResponse
-	EntitlementsResponse       = apiwire.BillingEntitlementsView
+	GrantResponse          = apiwire.BillingGrant
+	GrantsResponse         = apiwire.BillingGrants
+	StatementResponse      = apiwire.BillingStatement
+	ContractsResponse      = apiwire.BillingContracts
+	ContractResponse       = apiwire.BillingContract
+	PlansResponse          = apiwire.BillingPlans
+	PlanResponse           = apiwire.BillingPlan
+	CancelContractResponse = apiwire.BillingCancelContractResponse
+	EntitlementsResponse   = apiwire.BillingEntitlementsView
 )
 
 func billingOrgID(id string) (billing.OrgID, error) {
@@ -180,12 +180,12 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Get(public, "/orgs/{org_id}/entitlements", handler.getEntitlements, operation("get-entitlements", "Get the entitlements view for an org"))
 	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
 	huma.Get(public, "/orgs/{org_id}/statement", handler.getStatement, operation("get-statement", "Get current billing statement for an org"))
-	huma.Get(public, "/orgs/{org_id}/subscriptions", handler.listSubscriptions, operation("list-subscriptions", "List subscriptions for an org"))
-	huma.Get(public, "/products/{product_id}/plans", handler.listPlans, operation("list-plans", "List active subscription plans for a product"))
+	huma.Get(public, "/orgs/{org_id}/contracts", handler.listContracts, operation("list-contracts", "List contracts for an org"))
+	huma.Get(public, "/products/{product_id}/plans", handler.listPlans, operation("list-plans", "List active billing plans for a product"))
 	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
-	huma.Post(public, "/subscribe", handler.createSubscription, operation("create-subscription", "Create a Stripe subscription checkout", http.StatusInternalServerError))
+	huma.Post(public, "/contracts", handler.createContract, operation("create-contract", "Create a self-serve contract checkout", http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(public, "/portal", handler.createPortal, operation("create-portal", "Create a Stripe customer portal session", http.StatusUnprocessableEntity, http.StatusInternalServerError))
-	huma.Post(public, "/subscriptions/{subscription_id}/cancel", handler.cancelSubscription, operation("cancel-subscription", "Cancel a Stripe subscription", http.StatusNotFound, http.StatusInternalServerError))
+	huma.Post(public, "/contracts/{contract_id}/cancel", handler.cancelContract, operation("cancel-contract", "Schedule contract cancellation", http.StatusNotFound, http.StatusInternalServerError))
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
 	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
@@ -193,7 +193,6 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	huma.Post(service, "/activate", handler.activateWindow, operation("activate-window", "Activate a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
 	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
-	huma.Post(service, "/subscription-provider-events", handler.applySubscriptionProviderEvent, operation("apply-subscription-provider-event", "Apply a subscription provider event", http.StatusBadRequest, http.StatusInternalServerError))
 }
 
 func operation(id, summary string, errors ...int) func(*huma.Operation) {
@@ -288,7 +287,7 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 			UnitRate:          apiwire.Uint64(line.UnitRate),
 			ChargeUnits:       apiwire.Uint64(line.ChargeUnits),
 			FreeTierUnits:     apiwire.Uint64(line.FreeTierUnits),
-			SubscriptionUnits: apiwire.Uint64(line.SubscriptionUnits),
+			ContractUnits:     apiwire.Uint64(line.ContractUnits),
 			PurchaseUnits:     apiwire.Uint64(line.PurchaseUnits),
 			PromoUnits:        apiwire.Uint64(line.PromoUnits),
 			RefundUnits:       apiwire.Uint64(line.RefundUnits),
@@ -319,15 +318,15 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 		LineItems:      lineItems,
 		GrantSummaries: grantSummaries,
 		Totals: apiwire.BillingStatementTotals{
-			ChargeUnits:       apiwire.Uint64(statement.Totals.ChargeUnits),
-			FreeTierUnits:     apiwire.Uint64(statement.Totals.FreeTierUnits),
-			SubscriptionUnits: apiwire.Uint64(statement.Totals.SubscriptionUnits),
-			PurchaseUnits:     apiwire.Uint64(statement.Totals.PurchaseUnits),
-			PromoUnits:        apiwire.Uint64(statement.Totals.PromoUnits),
-			RefundUnits:       apiwire.Uint64(statement.Totals.RefundUnits),
-			ReceivableUnits:   apiwire.Uint64(statement.Totals.ReceivableUnits),
-			ReservedUnits:     apiwire.Uint64(statement.Totals.ReservedUnits),
-			TotalDueUnits:     apiwire.Uint64(statement.Totals.TotalDueUnits),
+			ChargeUnits:     apiwire.Uint64(statement.Totals.ChargeUnits),
+			FreeTierUnits:   apiwire.Uint64(statement.Totals.FreeTierUnits),
+			ContractUnits:   apiwire.Uint64(statement.Totals.ContractUnits),
+			PurchaseUnits:   apiwire.Uint64(statement.Totals.PurchaseUnits),
+			PromoUnits:      apiwire.Uint64(statement.Totals.PromoUnits),
+			RefundUnits:     apiwire.Uint64(statement.Totals.RefundUnits),
+			ReceivableUnits: apiwire.Uint64(statement.Totals.ReceivableUnits),
+			ReservedUnits:   apiwire.Uint64(statement.Totals.ReservedUnits),
+			TotalDueUnits:   apiwire.Uint64(statement.Totals.TotalDueUnits),
 		},
 	}
 }
@@ -407,7 +406,7 @@ func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlo
 	}
 }
 
-func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[SubscriptionsResponse], error) {
+func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[ContractsResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -416,26 +415,28 @@ func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[
 	if err != nil {
 		return nil, err
 	}
-	subscriptions, err := client.ListSubscriptions(ctx, orgID)
+	contracts, err := client.ListContracts(ctx, orgID)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "list subscriptions", err, "org_id", uint64(orgID))
+		return nil, h.internalServerError(ctx, "list contracts", err, "org_id", uint64(orgID))
 	}
-	out := make([]SubscriptionResponse, 0, len(subscriptions))
-	for _, subscription := range subscriptions {
-		out = append(out, SubscriptionResponse{
-			SubscriptionID:     apiwire.Int64(subscription.SubscriptionID),
-			ContractID:         subscription.ContractID,
-			ProductID:          subscription.ProductID,
-			PlanID:             subscription.PlanID,
-			Cadence:            subscription.Cadence,
-			Status:             subscription.Status,
-			PaymentState:       string(subscription.PaymentState),
-			EntitlementState:   string(subscription.EntitlementState),
-			CurrentPeriodStart: subscription.CurrentPeriodStart,
-			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
+	out := make([]ContractResponse, 0, len(contracts))
+	for _, contract := range contracts {
+		out = append(out, ContractResponse{
+			ContractID:       contract.ContractID,
+			ProductID:        contract.ProductID,
+			PlanID:           contract.PlanID,
+			PhaseID:          contract.PhaseID,
+			CadenceKind:      contract.CadenceKind,
+			Status:           contract.Status,
+			PaymentState:     string(contract.PaymentState),
+			EntitlementState: string(contract.EntitlementState),
+			StartsAt:         contract.StartsAt,
+			EndsAt:           contract.EndsAt,
+			PhaseStart:       contract.PhaseStart,
+			PhaseEnd:         contract.PhaseEnd,
 		})
 	}
-	return &body[SubscriptionsResponse]{Body: SubscriptionsResponse{Subscriptions: out}}, nil
+	return &body[ContractsResponse]{Body: ContractsResponse{Contracts: out}}, nil
 }
 
 func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[PlansResponse], error) {
@@ -485,7 +486,7 @@ func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.Billin
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.BillingCreateSubscriptionRequest]) (*body[apiwire.BillingURLResponse], error) {
+func (h *Handler) createContract(ctx context.Context, input *body[apiwire.BillingCreateContractRequest]) (*body[apiwire.BillingURLResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -494,14 +495,20 @@ func (h *Handler) createSubscription(ctx context.Context, input *body[apiwire.Bi
 	if err != nil {
 		return nil, err
 	}
-	url, err := client.CreateSubscription(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
+	url, err := client.CreateContract(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "create subscription checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
+		if errors.Is(err, billing.ErrUnsupportedCadence) {
+			return nil, huma.Error400BadRequest("unsupported contract cadence", err)
+		}
+		if errors.Is(err, billing.ErrUnsupportedContractChange) {
+			return nil, huma.Error400BadRequest("unsupported contract change", err)
+		}
+		return nil, h.internalServerError(ctx, "create contract checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
 }
 
-func (h *Handler) cancelSubscription(ctx context.Context, input *CancelSubscriptionInput) (*body[CancelSubscriptionResponse], error) {
+func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[CancelContractResponse], error) {
 	client, err := h.requireClient()
 	if err != nil {
 		return nil, err
@@ -510,32 +517,27 @@ func (h *Handler) cancelSubscription(ctx context.Context, input *CancelSubscript
 	if err != nil {
 		return nil, err
 	}
-	subscriptionID, err := apiwire.ParseInt64(input.SubscriptionID)
+	contract, err := client.CancelContract(ctx, orgID, input.ContractID)
 	if err != nil {
-		return nil, huma.Error400BadRequest("subscription_id must be positive", err)
-	}
-	if subscriptionID <= 0 {
-		return nil, huma.Error400BadRequest("subscription_id must be positive")
-	}
-	subscription, err := client.CancelSubscription(ctx, orgID, subscriptionID)
-	if err != nil {
-		if errors.Is(err, billing.ErrSubscriptionNotFound) {
-			return nil, huma.Error404NotFound("subscription not found", err)
+		if errors.Is(err, billing.ErrContractNotFound) {
+			return nil, huma.Error404NotFound("contract not found", err)
 		}
-		return nil, h.internalServerError(ctx, "cancel subscription", err, "org_id", uint64(orgID), "subscription_id", subscriptionID)
+		return nil, h.internalServerError(ctx, "cancel contract", err, "org_id", uint64(orgID), "contract_id", input.ContractID)
 	}
-	return &body[CancelSubscriptionResponse]{Body: CancelSubscriptionResponse{
-		Subscription: SubscriptionResponse{
-			SubscriptionID:     apiwire.Int64(subscription.SubscriptionID),
-			ContractID:         subscription.ContractID,
-			ProductID:          subscription.ProductID,
-			PlanID:             subscription.PlanID,
-			Cadence:            subscription.Cadence,
-			Status:             subscription.Status,
-			PaymentState:       string(subscription.PaymentState),
-			EntitlementState:   string(subscription.EntitlementState),
-			CurrentPeriodStart: subscription.CurrentPeriodStart,
-			CurrentPeriodEnd:   subscription.CurrentPeriodEnd,
+	return &body[CancelContractResponse]{Body: CancelContractResponse{
+		Contract: ContractResponse{
+			ContractID:       contract.ContractID,
+			ProductID:        contract.ProductID,
+			PlanID:           contract.PlanID,
+			PhaseID:          contract.PhaseID,
+			CadenceKind:      contract.CadenceKind,
+			Status:           contract.Status,
+			PaymentState:     string(contract.PaymentState),
+			EntitlementState: string(contract.EntitlementState),
+			StartsAt:         contract.StartsAt,
+			EndsAt:           contract.EndsAt,
+			PhaseStart:       contract.PhaseStart,
+			PhaseEnd:         contract.PhaseEnd,
 		},
 	}}, nil
 }
@@ -561,36 +563,6 @@ func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingC
 		return nil, h.internalServerError(ctx, "create portal session", err, "org_id", uint64(orgID))
 	}
 	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
-}
-
-func (h *Handler) applySubscriptionProviderEvent(ctx context.Context, input *body[apiwire.BillingApplySubscriptionProviderEventRequest]) (*body[apiwire.BillingApplySubscriptionProviderEventResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.ApplySubscriptionProviderEvent(ctx, billing.SubscriptionProviderEvent{
-		Provider:                  input.Body.Provider,
-		EventType:                 input.Body.EventType,
-		OrgID:                     orgID,
-		ProductID:                 input.Body.ProductID,
-		PlanID:                    input.Body.PlanID,
-		Cadence:                   input.Body.Cadence,
-		Status:                    input.Body.Status,
-		ProviderSubscriptionID:    input.Body.ProviderSubscriptionID,
-		ProviderCheckoutSessionID: input.Body.ProviderCheckoutSessionID,
-		ProviderCustomerID:        input.Body.ProviderCustomerID,
-		CurrentPeriodStart:        input.Body.CurrentPeriodStart,
-		CurrentPeriodEnd:          input.Body.CurrentPeriodEnd,
-		PaymentState:              billing.EntitlementPaymentState(input.Body.PaymentState),
-		EntitlementState:          billing.EntitlementState(input.Body.EntitlementState),
-	}); err != nil {
-		return nil, huma.Error400BadRequest("apply subscription provider event", err)
-	}
-	return &body[apiwire.BillingApplySubscriptionProviderEventResponse]{Body: apiwire.BillingApplySubscriptionProviderEventResponse{Applied: true}}, nil
 }
 
 func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {

@@ -1,12 +1,12 @@
 # billing-service
 
-Credit-based subscription billing with entitlements — prepaid + metered hybrid. Stripe + TigerBeetle + PostgreSQL tri-store. Includes `tb-inspect/` debugger.
+Credit-based recurring contract billing with entitlements — prepaid + metered hybrid. Stripe + TigerBeetle + PostgreSQL tri-store. Includes `tb-inspect/` debugger.
 
 Architecture detail: `docs/billing-architecture.md`.
 
 ## Key use cases
 
-- Monthly subscriptions granting entitlements: credits, access to digital goods, software licenses, priority lanes.
+- Monthly contracts granting entitlements: credits, access to digital goods, software licenses, priority lanes.
 - Credits consumed via metering events published by services (token inference, vCPU / RAM / Disk / Network usage, build minutes, etc).
 
 ## Dual-write pattern

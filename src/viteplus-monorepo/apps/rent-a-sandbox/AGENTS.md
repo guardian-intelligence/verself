@@ -87,7 +87,7 @@ style:
   engineer-facing identifiers and belong in logs/traces, not the invoice.
 - The `Usage` cell renders the formula `quantity @ rate = charge` followed
   by per-source subtractions. Subtractions use bank-statement convention:
-  the source label is on the left as plain text (`Free tier`, `Subscription`,
+  the source label is on the left as plain text (`Free tier`, `Contract`,
   `Account balance`, …) and the debit amount is on the right with the minus
   sign adjacent to the `$` sign (`− $0.10`). The formula and subtraction
   rows are the same font size and monospace family — no nested font

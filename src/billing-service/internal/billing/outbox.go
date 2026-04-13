@@ -10,14 +10,21 @@ import (
 )
 
 type billingOutboxEvent struct {
-	EventID       string
-	EventType     string
-	AggregateType string
-	AggregateID   string
-	OrgID         string
-	ProductID     string
-	OccurredAt    time.Time
-	Payload       []byte
+	EventID           string
+	EventType         string
+	AggregateType     string
+	AggregateID       string
+	ContractID        string
+	CycleID           string
+	PricingContractID string
+	PricingPhaseID    string
+	PricingPlanID     string
+	InvoiceID         string
+	ProviderEventID   string
+	OrgID             string
+	ProductID         string
+	OccurredAt        time.Time
+	Payload           []byte
 }
 
 type BillingEventWriter interface {
@@ -59,43 +66,31 @@ func grantIssuedEvent(grantID GrantID, grant CreditGrant, startsAt time.Time) bi
 	}
 }
 
-func subscriptionProviderEventOutbox(event SubscriptionProviderEvent, state stripeSubscriptionState, occurredAt time.Time) billingOutboxEvent {
-	contractID := stripeContractID(state.StripeSubscriptionID)
+func contractActivatedEvent(orgID OrgID, productID string, contractID string, phaseID string, planID string, cycle BillingCycle, occurredAt time.Time) billingOutboxEvent {
+	occurredAt = occurredAt.UTC()
 	payload, _ := json.Marshal(map[string]string{
-		"provider":                     event.Provider,
-		"provider_event_type":          event.EventType,
-		"provider_subscription_id":     state.StripeSubscriptionID,
-		"provider_checkout_session_id": state.StripeCheckoutSessionID,
-		"org_id":                       state.OrgIDText,
-		"product_id":                   state.ProductID,
-		"plan_id":                      state.PlanID,
-		"cadence":                      state.Cadence,
-		"status":                       state.Status,
-		"payment_state":                string(event.PaymentState),
-		"entitlement_state":            string(event.EntitlementState),
-		"current_period_start":         timePtrString(state.CurrentPeriodStart),
-		"current_period_end":           timePtrString(state.CurrentPeriodEnd),
+		"org_id":      strconv.FormatUint(uint64(orgID), 10),
+		"product_id":  productID,
+		"contract_id": contractID,
+		"phase_id":    phaseID,
+		"plan_id":     planID,
+		"cycle_id":    cycle.CycleID,
+		"occurred_at": occurredAt.Format(time.RFC3339Nano),
 	})
-	eventID := deterministicTextID(
-		"billing-outbox-event",
-		"subscription_provider_event",
-		event.Provider,
-		event.EventType,
-		state.StripeSubscriptionID,
-		string(event.PaymentState),
-		string(event.EntitlementState),
-		timePtrString(state.CurrentPeriodStart),
-		timePtrString(state.CurrentPeriodEnd),
-	)
 	return billingOutboxEvent{
-		EventID:       eventID,
-		EventType:     "subscription_provider_event",
-		AggregateType: "subscription_contract",
-		AggregateID:   contractID,
-		OrgID:         state.OrgIDText,
-		ProductID:     state.ProductID,
-		OccurredAt:    occurredAt.UTC(),
-		Payload:       payload,
+		EventID:           deterministicTextID("billing-outbox-event", "contract_activated", contractID, phaseID, cycle.CycleID, occurredAt.Format(time.RFC3339Nano)),
+		EventType:         "contract_activated",
+		AggregateType:     "contract",
+		AggregateID:       contractID,
+		ContractID:        contractID,
+		CycleID:           cycle.CycleID,
+		PricingContractID: contractID,
+		PricingPhaseID:    phaseID,
+		PricingPlanID:     planID,
+		OrgID:             strconv.FormatUint(uint64(orgID), 10),
+		ProductID:         productID,
+		OccurredAt:        occurredAt,
+		Payload:           payload,
 	}
 }
 
@@ -105,11 +100,17 @@ func insertOutboxEventTx(ctx context.Context, tx *sql.Tx, event billingOutboxEve
 	}
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO billing_outbox_events (
-			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
+			event_id, event_type, aggregate_type, aggregate_id,
+			contract_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, invoice_id, provider_event_id,
+			org_id, product_id, occurred_at, payload
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		VALUES ($1, $2, $3, $4,
+		        $5, $6, $7, $8, $9, $10, $11,
+		        $12, $13, $14, $15::jsonb)
 		ON CONFLICT (event_id) DO NOTHING
-	`, event.EventID, event.EventType, event.AggregateType, event.AggregateID, event.OrgID, event.ProductID, event.OccurredAt, string(event.Payload))
+	`, event.EventID, event.EventType, event.AggregateType, event.AggregateID,
+		event.ContractID, event.CycleID, event.PricingContractID, event.PricingPhaseID, event.PricingPlanID, event.InvoiceID, event.ProviderEventID,
+		event.OrgID, event.ProductID, event.OccurredAt, string(event.Payload))
 	if err != nil {
 		return fmt.Errorf("insert billing outbox event %s: %w", event.EventID, err)
 	}
@@ -122,11 +123,17 @@ func insertOutboxEvent(ctx context.Context, pg *sql.DB, event billingOutboxEvent
 	}
 	_, err := pg.ExecContext(ctx, `
 		INSERT INTO billing_outbox_events (
-			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
+			event_id, event_type, aggregate_type, aggregate_id,
+			contract_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, invoice_id, provider_event_id,
+			org_id, product_id, occurred_at, payload
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+		VALUES ($1, $2, $3, $4,
+		        $5, $6, $7, $8, $9, $10, $11,
+		        $12, $13, $14, $15::jsonb)
 		ON CONFLICT (event_id) DO NOTHING
-	`, event.EventID, event.EventType, event.AggregateType, event.AggregateID, event.OrgID, event.ProductID, event.OccurredAt, string(event.Payload))
+	`, event.EventID, event.EventType, event.AggregateType, event.AggregateID,
+		event.ContractID, event.CycleID, event.PricingContractID, event.PricingPhaseID, event.PricingPlanID, event.InvoiceID, event.ProviderEventID,
+		event.OrgID, event.ProductID, event.OccurredAt, string(event.Payload))
 	if err != nil {
 		return fmt.Errorf("insert billing outbox event %s: %w", event.EventID, err)
 	}
@@ -144,9 +151,12 @@ func (c *Client) ProjectPendingOutboxEvents(ctx context.Context, limit int) (int
 	defer tx.Rollback()
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload::text
+		SELECT event_id, event_type, aggregate_type, aggregate_id,
+		       contract_id, cycle_id, pricing_contract_id, pricing_phase_id, pricing_plan_id, invoice_id, provider_event_id,
+		       org_id, product_id, occurred_at, payload::text
 		FROM billing_outbox_events
-		WHERE delivered_at IS NULL
+		WHERE state IN ('pending', 'failed')
+		  AND (next_attempt_at IS NULL OR next_attempt_at <= now())
 		ORDER BY occurred_at, event_id
 		LIMIT $1
 		FOR UPDATE SKIP LOCKED
@@ -164,6 +174,13 @@ func (c *Client) ProjectPendingOutboxEvents(ctx context.Context, limit int) (int
 			&event.EventType,
 			&event.AggregateType,
 			&event.AggregateID,
+			&event.ContractID,
+			&event.CycleID,
+			&event.PricingContractID,
+			&event.PricingPhaseID,
+			&event.PricingPlanID,
+			&event.InvoiceID,
+			&event.ProviderEventID,
 			&event.OrgID,
 			&event.ProductID,
 			&event.OccurredAt,
@@ -189,7 +206,9 @@ func (c *Client) ProjectPendingOutboxEvents(ctx context.Context, limit int) (int
 		for _, event := range events {
 			_, _ = tx.ExecContext(ctx, `
 				UPDATE billing_outbox_events
-				SET attempts = attempts + 1,
+				SET state = 'failed',
+				    attempts = attempts + 1,
+				    next_attempt_at = now() + interval '30 seconds',
 				    delivery_error = $2
 				WHERE event_id = $1
 			`, event.EventID, err.Error())
@@ -204,7 +223,9 @@ func (c *Client) ProjectPendingOutboxEvents(ctx context.Context, limit int) (int
 	for _, event := range events {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE billing_outbox_events
-			SET delivered_at = $2,
+			SET state = 'delivered',
+			    delivered_at = $2,
+			    next_attempt_at = NULL,
 			    delivery_error = ''
 			WHERE event_id = $1
 		`, event.EventID, deliveredAt); err != nil {

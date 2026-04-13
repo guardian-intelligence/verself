@@ -254,9 +254,11 @@ func entitlementPeriodForPolicy(
 	}, true, nil
 }
 
-func subscriptionEntitlementPeriod(
+func contractEntitlementPeriod(
 	orgID OrgID,
 	contractID string,
+	phaseID string,
+	lineID string,
 	policy EntitlementPolicy,
 	periodStart time.Time,
 	periodEnd time.Time,
@@ -270,7 +272,7 @@ func subscriptionEntitlementPeriod(
 	if policy.ActiveUntil != nil && policy.ActiveUntil.Before(effectiveEnd) {
 		effectiveEnd = policy.ActiveUntil.UTC()
 	}
-	if policy.AmountUnits == 0 || contractID == "" || !effectiveEnd.After(effectiveStart) {
+	if policy.AmountUnits == 0 || contractID == "" || phaseID == "" || lineID == "" || !effectiveEnd.After(effectiveStart) {
 		return EntitlementPeriod{}, false
 	}
 	amount := policy.AmountUnits
@@ -287,14 +289,16 @@ func subscriptionEntitlementPeriod(
 	if amount == 0 {
 		return EntitlementPeriod{}, false
 	}
-	sourceRef := subscriptionEntitlementSourceReference(contractID, policy, effectiveStart, effectiveEnd)
+	sourceRef := contractEntitlementSourceReference(contractID, phaseID, lineID, policy, effectiveStart, effectiveEnd)
 	return EntitlementPeriod{
-		PeriodID:          subscriptionEntitlementPeriodID(orgID, contractID, policy, effectiveStart, effectiveEnd),
+		PeriodID:          contractEntitlementPeriodID(orgID, contractID, phaseID, lineID, policy, effectiveStart, effectiveEnd),
 		OrgID:             orgID,
 		ProductID:         policy.ProductID,
 		Source:            policy.Source,
 		PolicyID:          policy.PolicyID,
 		ContractID:        contractID,
+		PhaseID:           phaseID,
+		LineID:            lineID,
 		ScopeType:         policy.ScopeType,
 		ScopeProductID:    policy.ScopeProductID,
 		ScopeBucketID:     policy.ScopeBucketID,
@@ -306,7 +310,7 @@ func subscriptionEntitlementPeriod(
 		PaymentState:      paymentState,
 		EntitlementState:  entitlementState,
 		SourceReferenceID: sourceRef,
-		CreatedReason:     "subscription_period_reconcile",
+		CreatedReason:     "contract_period_reconcile",
 	}, true
 }
 
@@ -316,20 +320,20 @@ func (c *Client) ensureEntitlementPeriod(ctx context.Context, period Entitlement
 	}
 	_, err := c.pg.ExecContext(ctx, `
 		INSERT INTO entitlement_periods (
-			period_id, org_id, product_id, source, policy_id, contract_id,
+			period_id, cycle_id, org_id, product_id, source, policy_id, contract_id, phase_id, line_id,
 			scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount_units,
 			period_start, period_end, policy_version, payment_state, entitlement_state,
 			source_reference_id, created_reason
 		)
-		VALUES ($1, $2, $3, $4, $5, $6,
-		        $7, $8, $9, $10, $11,
-		        $12, $13, $14, $15, $16,
-		        $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+		        $10, $11, $12, $13, $14,
+		        $15, $16, $17, $18, $19,
+		        $20, $21)
 		ON CONFLICT (period_id) DO UPDATE
 		SET payment_state = EXCLUDED.payment_state,
 		    entitlement_state = EXCLUDED.entitlement_state,
 		    updated_at = now()
-	`, period.PeriodID, strconv.FormatUint(uint64(period.OrgID), 10), period.ProductID, period.Source.String(), period.PolicyID, period.ContractID,
+	`, period.PeriodID, period.CycleID, strconv.FormatUint(uint64(period.OrgID), 10), period.ProductID, period.Source.String(), period.PolicyID, period.ContractID, period.PhaseID, period.LineID,
 		period.ScopeType.String(), period.ScopeProductID, period.ScopeBucketID, period.ScopeSKUID, period.AmountUnits,
 		period.PeriodStart, period.PeriodEnd, period.PolicyVersion, string(period.PaymentState), string(period.EntitlementState),
 		period.SourceReferenceID, period.CreatedReason)
@@ -355,11 +359,13 @@ func entitlementPeriodID(orgID OrgID, policy EntitlementPolicy, periodStart time
 	)
 }
 
-func subscriptionEntitlementPeriodID(orgID OrgID, contractID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
+func contractEntitlementPeriodID(orgID OrgID, contractID string, phaseID string, lineID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
 	return deterministicTextID(
-		"subscription-entitlement-period",
+		"contract-entitlement-period",
 		strconv.FormatUint(uint64(orgID), 10),
 		contractID,
+		phaseID,
+		lineID,
 		policy.Source.String(),
 		policy.PolicyID,
 		policy.PolicyVersion,
@@ -377,8 +383,8 @@ func entitlementSourceReference(policy EntitlementPolicy, periodStart time.Time,
 		periodStart.UTC().Format(time.RFC3339Nano) + ":" + periodEnd.UTC().Format(time.RFC3339Nano)
 }
 
-func subscriptionEntitlementSourceReference(contractID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
-	return policy.Source.String() + ":" + contractID + ":" + policy.PolicyID + ":" + policy.PolicyVersion + ":" +
+func contractEntitlementSourceReference(contractID string, phaseID string, lineID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
+	return policy.Source.String() + ":" + contractID + ":" + phaseID + ":" + lineID + ":" + policy.PolicyID + ":" + policy.PolicyVersion + ":" +
 		periodStart.UTC().Format(time.RFC3339Nano) + ":" + periodEnd.UTC().Format(time.RFC3339Nano)
 }
 
@@ -395,13 +401,6 @@ func periodEndForCadence(start time.Time, cadence EntitlementCadence) time.Time 
 	default:
 		return start.UTC().AddDate(0, 1, 0)
 	}
-}
-
-func stripeContractID(stripeSubscriptionID string) string {
-	if stripeSubscriptionID == "" {
-		return ""
-	}
-	return deterministicTextID("stripe-subscription-contract", stripeSubscriptionID)
 }
 
 func graceUntil(periodEnd *time.Time, grace time.Duration) *time.Time {

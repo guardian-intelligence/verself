@@ -67,9 +67,7 @@ export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
                   <th className="text-right px-4 py-2 font-medium">Available</th>
                 </tr>
               </thead>
-              <tbody>
-                {products.flatMap((section) => creditBalanceRows(section))}
-              </tbody>
+              <tbody>{products.flatMap((section) => creditBalanceRows(section))}</tbody>
             </table>
           </div>
         </section>
@@ -138,9 +136,7 @@ function AccountBalanceHeader({ units }: { units: number }) {
 function ReceiptCell({ sources }: { sources: EntitlementSourceTotal[] }) {
   const total = sources.reduce((acc, source) => acc + source.available_units, 0);
   if (sources.length === 0 || total === 0) {
-    return (
-      <div className="text-right font-mono tabular-nums text-muted-foreground">$0.00</div>
-    );
+    return <div className="text-right font-mono tabular-nums text-muted-foreground">$0.00</div>;
   }
   return (
     <div className="ml-auto w-max min-w-[14rem]">
@@ -162,10 +158,7 @@ function ReceiptCell({ sources }: { sources: EntitlementSourceTotal[] }) {
       </dl>
       <div className="mt-2 border-t-2 border-foreground/70 pt-1.5 grid grid-cols-[1fr_auto] gap-x-6 text-sm font-bold">
         <div>Total</div>
-        <div
-          className="font-mono tabular-nums text-right"
-          data-testid="slot-available"
-        >
+        <div className="font-mono tabular-nums text-right" data-testid="slot-available">
           {formatLedgerAmount(total)}
         </div>
       </div>
@@ -176,7 +169,7 @@ function ReceiptCell({ sources }: { sources: EntitlementSourceTotal[] }) {
 function combineSources(sources: EntitlementSourceTotal[]): EntitlementSourceTotal[] {
   const rank: Record<string, number> = {
     free_tier: 0,
-    subscription: 1,
+    contract: 1,
     promo: 2,
     refund: 3,
     purchase: 4,
@@ -195,9 +188,7 @@ function combineSources(sources: EntitlementSourceTotal[]): EntitlementSourceTot
       byKey.set(key, { ...source });
     }
   }
-  return Array.from(byKey.values()).sort(
-    (a, b) => (rank[a.source] ?? 99) - (rank[b.source] ?? 99),
-  );
+  return Array.from(byKey.values()).sort((a, b) => (rank[a.source] ?? 99) - (rank[b.source] ?? 99));
 }
 
 function collectVisibleSlots(view: EntitlementsView): EntitlementSlot[] {

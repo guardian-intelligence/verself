@@ -1,19 +1,80 @@
 components:
   schemas:
-    BillingCancelSubscriptionResponse:
+    BillingCancelContractResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - http://127.0.0.1:4243/schemas/BillingCancelSubscriptionResponse.json
+            - http://127.0.0.1:4243/schemas/BillingCancelContractResponse.json
           format: uri
           readOnly: true
           type: string
-        subscription:
-          $ref: "#/components/schemas/BillingSubscription"
+        contract:
+          $ref: "#/components/schemas/BillingContract"
       required:
-        - subscription
+        - contract
+      type: object
+    BillingContract:
+      additionalProperties: false
+      properties:
+        cadence_kind:
+          type: string
+        contract_id:
+          type: string
+        ends_at:
+          format: date-time
+          type: string
+        entitlement_state:
+          type: string
+        payment_state:
+          type: string
+        phase_end:
+          format: date-time
+          type: string
+        phase_id:
+          type: string
+        phase_start:
+          format: date-time
+          type: string
+        plan_id:
+          type: string
+        product_id:
+          type: string
+        starts_at:
+          format: date-time
+          type: string
+        status:
+          type: string
+      required:
+        - contract_id
+        - product_id
+        - plan_id
+        - phase_id
+        - cadence_kind
+        - status
+        - payment_state
+        - entitlement_state
+        - starts_at
+      type: object
+    BillingContracts:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/BillingContracts.json
+          format: uri
+          readOnly: true
+          type: string
+        contracts:
+          items:
+            $ref: "#/components/schemas/BillingContract"
+          type:
+            - array
+            - "null"
+      required:
+        - contracts
       type: object
     BillingEntitlementBucketSection:
       additionalProperties: false
@@ -131,10 +192,11 @@ components:
         source:
           enum:
             - free_tier
-            - subscription
+            - contract
             - purchase
             - promo
             - refund
+            - receivable
           type: string
       required:
         - source
@@ -317,6 +379,9 @@ components:
         charge_units:
           pattern: ^[0-9]+$
           type: string
+        contract_units:
+          pattern: ^[0-9]+$
+          type: string
         free_tier_units:
           pattern: ^[0-9]+$
           type: string
@@ -350,9 +415,6 @@ components:
           type: string
         sku_id:
           type: string
-        subscription_units:
-          pattern: ^[0-9]+$
-          type: string
         unit_rate:
           pattern: ^[0-9]+$
           type: string
@@ -369,7 +431,7 @@ components:
         - unit_rate
         - charge_units
         - free_tier_units
-        - subscription_units
+        - contract_units
         - purchase_units
         - promo_units
         - refund_units
@@ -380,6 +442,9 @@ components:
       additionalProperties: false
       properties:
         charge_units:
+          pattern: ^[0-9]+$
+          type: string
+        contract_units:
           pattern: ^[0-9]+$
           type: string
         free_tier_units:
@@ -400,77 +465,19 @@ components:
         reserved_units:
           pattern: ^[0-9]+$
           type: string
-        subscription_units:
-          pattern: ^[0-9]+$
-          type: string
         total_due_units:
           pattern: ^[0-9]+$
           type: string
       required:
         - charge_units
         - free_tier_units
-        - subscription_units
+        - contract_units
         - purchase_units
         - promo_units
         - refund_units
         - receivable_units
         - reserved_units
         - total_due_units
-      type: object
-    BillingSubscription:
-      additionalProperties: false
-      properties:
-        cadence:
-          type: string
-        contract_id:
-          type: string
-        current_period_end:
-          format: date-time
-          type: string
-        current_period_start:
-          format: date-time
-          type: string
-        entitlement_state:
-          type: string
-        payment_state:
-          type: string
-        plan_id:
-          type: string
-        product_id:
-          type: string
-        status:
-          type: string
-        subscription_id:
-          pattern: ^-?[0-9]+$
-          type: string
-      required:
-        - subscription_id
-        - contract_id
-        - product_id
-        - plan_id
-        - cadence
-        - status
-        - payment_state
-        - entitlement_state
-      type: object
-    BillingSubscriptions:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4243/schemas/BillingSubscriptions.json
-          format: uri
-          readOnly: true
-          type: string
-        subscriptions:
-          items:
-            $ref: "#/components/schemas/BillingSubscription"
-          type:
-            - array
-            - "null"
-      required:
-        - subscriptions
       type: object
     BillingURLResponse:
       additionalProperties: false
@@ -646,6 +653,36 @@ components:
         - success_url
         - cancel_url
       type: object
+    SandboxBillingContractRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://127.0.0.1:4243/schemas/SandboxBillingContractRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        cadence:
+          description: Billing cadence (default monthly)
+          enum:
+            - monthly
+          type: string
+        cancel_url:
+          maxLength: 2048
+          type: string
+        plan_id:
+          description: Plan to activate
+          maxLength: 255
+          type: string
+        success_url:
+          maxLength: 2048
+          type: string
+      required:
+        - plan_id
+        - success_url
+        - cancel_url
+      type: object
     SandboxBillingPortalRequest:
       additionalProperties: false
       properties:
@@ -661,37 +698,6 @@ components:
           type: string
       required:
         - return_url
-      type: object
-    SandboxBillingSubscriptionRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://127.0.0.1:4243/schemas/SandboxBillingSubscriptionRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        cadence:
-          description: Billing cadence (default monthly)
-          enum:
-            - monthly
-            - annual
-          type: string
-        cancel_url:
-          maxLength: 2048
-          type: string
-        plan_id:
-          description: Plan to subscribe to
-          maxLength: 255
-          type: string
-        success_url:
-          maxLength: 2048
-          type: string
-      required:
-        - plan_id
-        - success_url
-        - cancel_url
       type: object
     SandboxBillingWindow:
       additionalProperties: false
@@ -1210,6 +1216,118 @@ paths:
         rate_limit_class: billing_mutation
         request_body_max_bytes: 8192
         resource: billing_checkout
+  /api/v1/billing/contracts:
+    get:
+      operationId: list-billing-contracts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingContracts"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List org billing contracts
+      x-forge-metal-iam:
+        action: list
+        audit_event: billing.contract.list
+        org_scope: token_org_id
+        permission: billing:read
+        rate_limit_class: read
+        resource: billing_contract
+    post:
+      operationId: create-billing-contract
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SandboxBillingContractRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Create self-serve contract checkout
+      x-forge-metal-iam:
+        action: create
+        audit_event: billing.contract_checkout.create
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        request_body_max_bytes: 8192
+        resource: billing_contract_checkout
+  /api/v1/billing/contracts/{contract_id}/cancel:
+    post:
+      operationId: cancel-billing-contract
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+        - in: path
+          name: contract_id
+          required: true
+          schema:
+            maxLength: 255
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingCancelContractResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Schedule contract cancellation
+      x-forge-metal-iam:
+        action: cancel
+        audit_event: billing.contract.cancel
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: billing:checkout
+        rate_limit_class: billing_mutation
+        request_body_max_bytes: 1024
+        resource: billing_contract
   /api/v1/billing/entitlements:
     get:
       operationId: get-billing-entitlements
@@ -1254,7 +1372,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: List subscription plans
+      summary: List contract plans
       x-forge-metal-iam:
         action: list
         audit_event: billing.plan.list
@@ -1342,118 +1460,6 @@ paths:
         permission: billing:read
         rate_limit_class: read
         resource: billing_statement
-  /api/v1/billing/subscribe:
-    post:
-      operationId: create-billing-subscription
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SandboxBillingSubscriptionRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingURLResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Create Stripe subscription checkout
-      x-forge-metal-iam:
-        action: create
-        audit_event: billing.subscription_checkout.create
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: billing:checkout
-        rate_limit_class: billing_mutation
-        request_body_max_bytes: 8192
-        resource: billing_subscription_checkout
-  /api/v1/billing/subscriptions:
-    get:
-      operationId: list-billing-subscriptions
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingSubscriptions"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: List org subscriptions
-      x-forge-metal-iam:
-        action: list
-        audit_event: billing.subscription.list
-        org_scope: token_org_id
-        permission: billing:read
-        rate_limit_class: read
-        resource: billing_subscription
-  /api/v1/billing/subscriptions/{subscription_id}/cancel:
-    post:
-      operationId: cancel-billing-subscription
-      parameters:
-        - description: Stable caller-provided key used to make this mutation retry-safe.
-          in: header
-          name: Idempotency-Key
-          required: true
-          schema:
-            maxLength: 128
-            minLength: 1
-            type: string
-        - in: path
-          name: subscription_id
-          required: true
-          schema:
-            pattern: ^-?[0-9]+$
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BillingCancelSubscriptionResponse"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      security:
-        - bearerAuth: []
-      summary: Cancel a Stripe subscription
-      x-forge-metal-iam:
-        action: cancel
-        audit_event: billing.subscription.cancel
-        idempotency: idempotency_key_header
-        org_scope: token_org_id
-        permission: billing:checkout
-        rate_limit_class: billing_mutation
-        request_body_max_bytes: 1024
-        resource: billing_subscription
   /api/v1/executions:
     post:
       operationId: submit-execution

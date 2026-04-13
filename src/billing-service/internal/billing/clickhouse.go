@@ -47,7 +47,7 @@ func (w *ClickHouseMeteringWriter) InsertMeteringRows(ctx context.Context, rows 
 	return nil
 }
 
-// InsertBillingEvents inserts grant/subscription lifecycle events into ClickHouse.
+// InsertBillingEvents inserts billing lifecycle events into ClickHouse.
 func (w *ClickHouseMeteringWriter) InsertBillingEvents(ctx context.Context, events []BillingEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -101,12 +101,13 @@ func (q *ClickHouseReconcileQuerier) SumChargeUnitsByOrg(ctx context.Context, or
 // SumChargeUnitsByGrantSource returns charge_units grouped by grant source type.
 func (q *ClickHouseReconcileQuerier) SumChargeUnitsByGrantSource(ctx context.Context, orgID string, productID string, since time.Time) (map[string]uint64, error) {
 	rows, err := q.conn.Query(ctx, fmt.Sprintf(`
-		SELECT
+			SELECT
 			sum(free_tier_units) AS free_tier,
-			sum(subscription_units) AS subscription,
+			sum(contract_units) AS contract,
 			sum(purchase_units) AS purchase,
 			sum(promo_units) AS promo,
-			sum(refund_units) AS refund
+			sum(refund_units) AS refund,
+			sum(receivable_units) AS receivable
 		FROM %s.metering
 		WHERE org_id = $1
 		  AND product_id = $2
@@ -119,15 +120,16 @@ func (q *ClickHouseReconcileQuerier) SumChargeUnitsByGrantSource(ctx context.Con
 
 	result := make(map[string]uint64)
 	if rows.Next() {
-		var freeTier, subscription, purchase, promo, refund uint64
-		if err := rows.Scan(&freeTier, &subscription, &purchase, &promo, &refund); err != nil {
+		var freeTier, contract, purchase, promo, refund, receivable uint64
+		if err := rows.Scan(&freeTier, &contract, &purchase, &promo, &refund, &receivable); err != nil {
 			return nil, fmt.Errorf("scan grant source sums: %w", err)
 		}
 		result["free_tier"] = freeTier
-		result["subscription"] = subscription
+		result["contract"] = contract
 		result["purchase"] = purchase
 		result["promo"] = promo
 		result["refund"] = refund
+		result["receivable"] = receivable
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate grant source rows: %w", err)

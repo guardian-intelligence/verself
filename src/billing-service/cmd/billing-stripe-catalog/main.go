@@ -170,7 +170,7 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "Forge Metal product ID")
 	flag.StringVar(&cfg.productDisplayName, "product-display-name", cfg.productDisplayName, "Stripe product display name")
 	flag.StringVar(&cfg.rateSourcePlanID, "rate-source-plan-id", cfg.rateSourcePlanID, "existing plan whose SKU rates should be copied")
-	flag.StringVar(&cfg.tiersJSON, "tiers-json", "", "subscription tier catalog JSON")
+	flag.StringVar(&cfg.tiersJSON, "tiers-json", "", "contract tier catalog JSON")
 	flag.Parse()
 
 	switch {
@@ -385,14 +385,14 @@ func upsertPlanRates(ctx context.Context, pg *sql.DB, sourcePlanID string, planI
 
 func upsertPlanEntitlements(ctx context.Context, pg *sql.DB, productID string, tier tierConfig) error {
 	for _, bucketID := range sortedEntitlementBuckets(tier.Entitlements) {
-		policyID := fmt.Sprintf("subscription:%s:%s:%s:v1", tier.PlanID, productID, bucketID)
+		policyID := fmt.Sprintf("contract:%s:%s:%s:v1", tier.PlanID, productID, bucketID)
 		_, err := pg.ExecContext(ctx, `
 			INSERT INTO entitlement_policies (
 				policy_id, source, product_id, scope_type, scope_product_id, scope_bucket_id,
 				amount_units, cadence, anchor_kind, proration_mode, policy_version
 			)
-			VALUES ($1, 'subscription', $2, 'bucket', $2, $3,
-			        $4, 'monthly', 'subscription_period', 'prorate_by_time_left', 'v1')
+			VALUES ($1, 'contract', $2, 'bucket', $2, $3,
+			        $4, 'monthly', 'contract_phase', 'prorate_by_time_left', 'v1')
 			ON CONFLICT (policy_id) DO UPDATE
 			SET source = EXCLUDED.source,
 			    product_id = EXCLUDED.product_id,
@@ -438,12 +438,12 @@ func recordCatalogEvent(ctx context.Context, pg *sql.DB, reconciliationID string
 	if err != nil {
 		return fmt.Errorf("marshal catalog event payload: %w", err)
 	}
-	eventID := deterministicID("billing-outbox-event", "subscription_catalog_reconciled", reconciliationID, cfg.productID, tier.PlanID, stripePriceID)
+	eventID := deterministicID("billing-outbox-event", "contract_catalog_reconciled", reconciliationID, cfg.productID, tier.PlanID, stripePriceID)
 	_, err = pg.ExecContext(ctx, `
 		INSERT INTO billing_outbox_events (
 			event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, payload
 		)
-		VALUES ($1, 'subscription_catalog_reconciled', 'plan', $2, '', $3, now(), $4::jsonb)
+		VALUES ($1, 'contract_catalog_reconciled', 'plan', $2, '', $3, now(), $4::jsonb)
 		ON CONFLICT (event_id) DO NOTHING
 	`, eventID, tier.PlanID, cfg.productID, string(payload))
 	if err != nil {
