@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
@@ -25,6 +25,22 @@ import {
   formatLedgerRate,
 } from "~/lib/format";
 import type { Statement } from "~/server-fns/api";
+
+type StatementLineItem = Statement["line_items"][number];
+type LineItemDrainKey =
+  | "free_tier_units"
+  | "subscription_units"
+  | "purchase_units"
+  | "promo_units"
+  | "refund_units";
+
+const drainSources: Array<{ key: LineItemDrainKey; label: string }> = [
+  { key: "free_tier_units", label: "Free tier" },
+  { key: "subscription_units", label: "Subscription" },
+  { key: "purchase_units", label: "Account balance" },
+  { key: "promo_units", label: "Promo" },
+  { key: "refund_units", label: "Refund" },
+];
 
 const sandboxProductID = "sandbox";
 
@@ -60,7 +76,7 @@ function BillingPage() {
             onClick={() => setShowStatement((visible) => !visible)}
             className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
           >
-            {showStatement ? "Hide Invoice Preview" : "Preview Invoice"}
+            {showStatement ? "Hide Usage" : "Show Usage"}
           </button>
           {subscriptionRows.length > 0 ? (
             <button
@@ -210,142 +226,155 @@ function BillingPage() {
 
 function StatementPreview({ statement }: { statement: Statement }) {
   const lineItems = statement.line_items ?? [];
-  const bucketRows = statement.bucket_summaries ?? [];
+  const grandTotal = statement.totals.total_due_units;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3" data-testid="statement-usage">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Invoice Preview</h2>
+        <h2 className="text-lg font-semibold">Usage</h2>
         <p className="text-sm text-muted-foreground">
           {formatDateUTC(statement.period_start)} through {formatDateUTC(statement.period_end)}
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <StatementMetric label="Gross usage" value={statement.totals.charge_units} />
-        <StatementMetric label="Subscription credits" value={statement.totals.subscription_units} />
-        <StatementMetric label="Purchased credits" value={statement.totals.purchase_units} />
-        <StatementMetric label="Estimated due" value={statement.totals.total_due_units} />
-      </div>
-
-      <div className="text-sm text-muted-foreground">
-        Reserved for ongoing executions:{" "}
-        {formatLedgerAmountPrecise(statement.totals.reserved_units)}
-      </div>
-
       <div className="border border-border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Line item</th>
-              <th className="text-left px-4 py-2 font-medium">Bucket</th>
-              <th className="text-left px-4 py-2 font-medium">Quantity</th>
-              <th className="text-left px-4 py-2 font-medium">Rate</th>
-              <th className="text-left px-4 py-2 font-medium">Charge</th>
+              <th className="text-left px-4 py-2 font-medium">SKU</th>
+              <th className="text-right px-4 py-2 font-medium">Usage</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {lineItems.length > 0 ? (
               lineItems.map((line) => (
-                <tr
+                <UsageLineRow
                   key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
-                >
-                  <td className="px-4 py-2">{line.sku_display_name}</td>
-                  <td className="px-4 py-2">{line.bucket_display_name}</td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatQuantity(line.quantity, line.quantity_unit)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerRate(line.unit_rate, line.quantity_unit)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(line.charge_units)}
-                  </td>
-                </tr>
+                  line={line}
+                />
               ))
             ) : (
               <TableEmptyRow
-                colSpan={5}
+                colSpan={2}
                 title="No usage yet"
                 description="Usage will appear after windows settle."
               />
             )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">Bucket</th>
-              <th className="text-left px-4 py-2 font-medium">Usage</th>
-              <th className="text-left px-4 py-2 font-medium">Subscription</th>
-              <th className="text-left px-4 py-2 font-medium">Purchased</th>
-              <th className="text-left px-4 py-2 font-medium">Promo</th>
-              <th className="text-left px-4 py-2 font-medium">Reserved</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {bucketRows.length > 0 ? (
-              bucketRows.map((bucket) => (
-                <tr key={`${bucket.product_id}:${bucket.bucket_id}`}>
-                  <td className="px-4 py-2">{bucket.bucket_display_name}</td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(bucket.charge_units)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(bucket.subscription_units)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(bucket.purchase_units)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(bucket.promo_units)}
-                  </td>
-                  <td className="px-4 py-2 font-mono">
-                    {formatLedgerAmountPrecise(bucket.reserved_units)}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <TableEmptyRow
-                colSpan={6}
-                title="No bucket activity"
-                description="Bucket deductions will appear here."
-              />
-            )}
+            {lineItems.length > 0 ? (
+              <tr className="bg-muted/30">
+                <td className="px-4 pt-4 pb-3 text-right align-bottom">
+                  <div className="border-t-2 border-foreground/80 pt-2 inline-block min-w-[12rem]">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground mr-3">
+                      Grand Total
+                    </span>
+                  </div>
+                </td>
+                <td
+                  className="px-4 pt-4 pb-3 text-right align-bottom"
+                  data-testid="statement-grand-total"
+                >
+                  <div className="border-t-2 border-foreground/80 pt-2 font-mono tabular-nums text-base font-bold">
+                    {formatLedgerAmountPrecise(grandTotal)}
+                  </div>
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
     </section>
+  );
+}
+
+function UsageLineRow({ line }: { line: StatementLineItem }) {
+  const drains = drainSources
+    .map((source) => ({ ...source, amount: line[source.key] }))
+    .filter((row) => row.amount > 0);
+  const hasReserved = line.reserved_units > 0;
+  const receivable = line.receivable_units;
+  const skuTitle = `${line.bucket_display_name} — ${line.sku_display_name} — ${line.sku_id}`;
+  return (
+    <tr
+      data-testid={`usage-line-${line.bucket_id}:${line.sku_id}`}
+      data-bucket-id={line.bucket_id}
+      data-sku-id={line.sku_id}
+    >
+      <td className="px-4 py-4 align-top">
+        <div className="font-medium break-words">{skuTitle}</div>
+        <div className="text-xs text-muted-foreground mt-1">
+          Plan <span className="font-mono">{line.plan_id || "—"}</span> ·{" "}
+          <span className="font-mono">{line.pricing_phase}</span>
+        </div>
+      </td>
+      <td className="px-4 py-4 align-top">
+        <div className="ml-auto w-max max-w-full font-mono tabular-nums text-sm">
+          {formatUsageFormula(line)}
+        </div>
+        {drains.length > 0 || hasReserved ? (
+          <div className="ml-auto w-max max-w-full mt-3 min-w-[18rem]">
+            <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-0.5 text-xs">
+              {drains.map((drain) => (
+                <Fragment key={drain.key}>
+                  <dt
+                    className="text-muted-foreground"
+                    data-drain-source={drain.key}
+                  >
+                    − {drain.label}
+                  </dt>
+                  <dd className="font-mono tabular-nums text-right text-foreground">
+                    {formatLedgerAmountPrecise(drain.amount)}
+                  </dd>
+                </Fragment>
+              ))}
+              {hasReserved ? (
+                <Fragment>
+                  <dt className="text-muted-foreground italic">− Reserved (in-flight)</dt>
+                  <dd className="font-mono tabular-nums text-right text-muted-foreground italic">
+                    {formatLedgerAmountPrecise(line.reserved_units)}
+                  </dd>
+                </Fragment>
+              ) : null}
+            </dl>
+            <div className="mt-1 border-t border-foreground/40 pt-1 grid grid-cols-[1fr_auto] gap-x-6 text-xs font-semibold">
+              <div>Receivable</div>
+              <div
+                className="font-mono tabular-nums text-right"
+                data-testid={`usage-line-receivable-${line.sku_id}`}
+              >
+                {formatLedgerAmountPrecise(receivable)}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+function formatUsageFormula(line: StatementLineItem) {
+  const quantityText = formatQuantity(line.quantity, line.quantity_unit);
+  const rateText = formatLedgerRate(line.unit_rate, line.quantity_unit);
+  const chargeText = formatLedgerAmountPrecise(line.charge_units);
+  return (
+    <>
+      <span>{quantityText}</span>
+      <span className="mx-1 text-muted-foreground">@</span>
+      <span>{rateText}</span>
+      <span className="mx-1 text-muted-foreground">=</span>
+      <span className="font-semibold">{chargeText}</span>
+    </>
   );
 }
 
 function StatementPreviewSkeleton() {
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="space-y-1">
-        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-6 w-24" />
         <Skeleton className="h-4 w-56" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
-        <Skeleton className="h-20" />
       </div>
       <Skeleton className="h-48 w-full" />
     </section>
-  );
-}
-
-function StatementMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-border rounded-md px-4 py-3">
-      <div className="text-xs uppercase text-muted-foreground">{label}</div>
-      <div className="font-mono text-lg">{formatLedgerAmountPrecise(value)}</div>
-    </div>
   );
 }
 

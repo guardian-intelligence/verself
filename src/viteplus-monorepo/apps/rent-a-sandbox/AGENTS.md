@@ -48,6 +48,44 @@ Auth state is server-owned (`@forge-metal/auth-web/server` + HTTP-only session c
 - Keep mutation invalidation and navigation glue in `src/features/*/mutations.ts` when possible so route files stay declarative.
 - Do not add a shared `query-keys.ts` layer. Feature-local `queryOptions(...)` factories are the source of truth for keys, stale policies, and polling.
 
+## Billing UI Invariants
+
+### Credit Balances single-product invariant
+
+The billing page renders a single flat "Credit Balances" table that pools every
+product's SKU rows under one header. This is correct **only while the platform
+sells a single billable product** (sandbox today). The `EntitlementsPanel`
+component in `src/features/billing/entitlements/index.tsx` is intentionally
+written to render one section per `EntitlementsView`, not one section per
+product, even though the underlying API returns a `products[]` array.
+
+When a second billable product is added:
+
+- Do **not** reintroduce per-product section headers — the customer reads the
+  page as "where can I spend my money" and a header per product breaks that
+  scan.
+- Replace the flat `Credit Balances` header with a per-row product selector
+  (the SKU rows keep their current shape; the product becomes a cell-level
+  filter, e.g. an inline pill or a dropdown above the table).
+- The Account Balance header at the top of the page stays product-agnostic and
+  does not need to change.
+
+Why this lives here: the entitlements DTO has supported multiple products
+since the slot-tree refactor. We are not encoding the single-product assumption
+into the DTO; we are encoding it into the UI shell with a comment that points
+at this AGENTS.md entry. When you add a second product, edit this entry and
+the panel together.
+
+### Usage section receipt format
+
+The "Usage" section is the customer-facing invoice preview. Each line is one
+(plan, bucket, sku, pricing_phase, unit_rate) row. The Usage cell renders the
+formula `quantity @ rate = charge` followed by per-source subtractions that
+roll up to a per-line `Receivable` total. The grand total at the bottom is
+bold with a thick separator above it; do not introduce per-bucket rollup
+tables, gross/credit/due metric cards, or any other secondary aggregation
+table here. Bucket-level analytics belong in Grafana, not the customer UI.
+
 ## ShadCN/ui
 
 Use the /shadcn skill when working in this repo. All components are installed. Blocks are not installed.
