@@ -218,7 +218,3 @@ function displaySKUName(slot: EntitlementSlot): string {
   }
   return slot.coverage_label || slot.sku_id;
 }
-
-// Re-export so tests can import bucket identifiers symbolically if needed;
-// intentionally retained as a side-effect-free hook.
-export type { EntitlementBucketSection };
