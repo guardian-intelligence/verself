@@ -2,7 +2,7 @@
 
 Status: Proposed  
 Owner: `sandbox-rental-service`  
-Last Updated: 2026-04-12
+Last Updated: 2026-04-13
 
 ## Scope
 
@@ -11,12 +11,25 @@ Last Updated: 2026-04-12
 - Add queue/backpressure controls independent of HTTP rate limiting.
 - Add first-class reconciliation for every nonterminal execution state.
 - Make pagination a service invariant for execution and evidence surfaces.
+- Make River the shared durable scheduler substrate for every execution producer:
+  direct API submissions, Forgejo/GitHub runner adapters, long-running VM
+  sessions, recurring schedules, and infrastructure canaries.
+- Define the scheduler/queue taxonomy before rewriting code so runner dispatch,
+  VM lifecycle supervision, and cron materialization share one execution state
+  machine instead of growing separate schedulers.
 - Prove completion with deployed end-to-end rehearsals and ClickHouse evidence.
 
 ## Non-Scope
 
 - JetStream/Kafka fanout and outbox CDC cutover.
 - Temporal/DBOS orchestration adoption in this rewrite.
+- River Pro features as foundational dependencies. In particular, do not depend
+  on Pro global concurrency, Pro workflows, Pro sequences, or Pro durable
+  periodic jobs for customer-visible correctness.
+- Per-org runner pools, autoscaling across multiple hosts, cache/artifact
+  protocols, and multi-tenant runner management UI. This plan includes the
+  first single-runner Forgejo adapter and the future GitHub adapter attachment
+  point because those decisions affect the scheduler kernel.
 - Changing the `execution_submit=120/min` per-API rate-limit policy.
 - Treating billing `402` reserve denial as an exception instead of terminal business outcome.
 
@@ -25,6 +38,7 @@ Last Updated: 2026-04-12
 ### In-Repo References
 
 - VM execution boundary and ownership: [vm-execution-control-plane.md](./vm-execution-control-plane.md)
+- Sandbox scheduler rewrite guidance: [AGENTS.md](../AGENTS.md)
 - System deployment and runtime graph: [docs/architecture/service-architecture.md](../../../docs/architecture/service-architecture.md)
 - Identity/authz boundary and secured Huma operation model: [identity-and-iam.md](../../platform/docs/identity-and-iam.md)
 - Shared wire-language and OpenAPI contract rules: [wire-contracts.md](../../apiwire/docs/wire-contracts.md)
@@ -32,17 +46,32 @@ Last Updated: 2026-04-12
 - Current sandbox schema: [001_sandbox_schema.up.sql](../migrations/001_sandbox_schema.up.sql)
 - Current evidence tables: [007_sandbox_job_logs.up.sql](../../platform/migrations/007_sandbox_job_logs.up.sql), [002_otel_tables.up.sql](../../platform/migrations/002_otel_tables.up.sql)
 - Live verification flow and evidence harvesting: [verify-sandbox-live.sh](../../platform/scripts/verify-sandbox-live.sh), [collect-sandbox-verification-evidence.sh](../../platform/scripts/collect-sandbox-verification-evidence.sh)
+- Forgejo runner engine tracer bullet before River integration: [forgejo-runner-phase-0.md](./forgejo-runner-phase-0.md)
 
 ### Primary Sources
 
 - River transactional enqueueing: https://riverqueue.com/docs/transactional-enqueueing
 - River retries: https://riverqueue.com/docs/job-retries
+- River database drivers: https://riverqueue.com/docs/database-drivers
+- River multiple queues: https://riverqueue.com/docs/multiple-queues
+- River scheduled jobs: https://riverqueue.com/docs/scheduled-jobs
+- River periodic and cron jobs: https://riverqueue.com/docs/periodic-jobs
+- River leader election: https://riverqueue.com/docs/leader-election
 - River OpenTelemetry: https://riverqueue.com/docs/open-telemetry
 - PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED`: https://www.postgresql.org/docs/current/sql-select.html
+- PostgreSQL `LISTEN`: https://www.postgresql.org/docs/current/sql-listen.html
+- PostgreSQL `NOTIFY`: https://www.postgresql.org/docs/current/sql-notify.html
 - PostgreSQL connection settings: https://www.postgresql.org/docs/current/runtime-config-connection.html
 - Go `database/sql` connection pool defaults and `SetMaxOpenConns`: https://pkg.go.dev/database/sql#DB.SetMaxOpenConns
 - OpenTelemetry trace API (events/links/status): https://opentelemetry.io/docs/specs/otel/trace/api/
 - TigerBeetle transfer model: https://docs.tigerbeetle.com/reference/transfer/
+- Forgejo `act` fork source and README: https://code.forgejo.org/forgejo/act
+- Forgejo runner source: https://code.forgejo.org/forgejo/runner
+- Forgejo runner protocol package: https://pkg.go.dev/code.forgejo.org/forgejo/actions-proto/runner/v1
+- Forgejo runner ConnectRPC package: https://pkg.go.dev/code.forgejo.org/forgejo/actions-proto/runner/v1/runnerv1connect
+- GitHub self-hosted runners: https://docs.github.com/en/actions/reference/runners/self-hosted-runners
+- GitHub self-hosted runner REST API: https://docs.github.com/en/rest/actions/self-hosted-runners
+- GitHub `workflow_job` webhook: https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
 
 ## Rollout Contract (Applies To Every Phase)
 
@@ -57,62 +86,260 @@ Each phase is a deployable vertical slice and must satisfy all of the following 
 
 Proof source of truth is ClickHouse traces/logs/events, not unit tests alone.
 
+## Scheduler Substrate Requirements
+
+River is the queue mechanic, not the domain scheduler. The durable truth remains
+in service-owned PostgreSQL tables:
+
+- `executions`, `execution_attempts`, and `execution_events` own one-shot
+  execution lifecycle state for direct commands, Forgejo/GitHub CI jobs,
+  arbitrary workload invocations, canaries, and long-running VM lifecycle
+  actions.
+- Runner integration tables such as `forgejo_task_executions` map external CI
+  task identity, log ack cursors, cancellation state, and finalization state to
+  Forge Metal execution IDs.
+- Schedule definition tables own recurring customer cron semantics: schedule
+  expression, timezone, next fire time, misfire policy, overlap policy, pause
+  state, and policy/billing owner. River only runs the scanner/materializer and
+  the resulting execution jobs.
+- Capacity/lease tables own host/resource concurrency. River worker concurrency
+  protects a single process; it is not the global source of truth for VM slots,
+  org quotas, runner labels, or future multi-node pools.
+
+Use `riverpgxv5` with a `pgxpool.Pool` for the production client. River's
+`database/sql` driver exists, but it falls back to poll-only behavior because
+`database/sql` cannot expose PostgreSQL `LISTEN`/`NOTIFY`. The rewrite should
+therefore move the scheduler-owned transaction path to pgx instead of bolting
+River onto the current `lib/pq` monolith.
+
+River OSS periodic jobs are acceptable for internal scanner ticks only. Their
+schedules are in-memory and can skip edge runtimes across leader changes. Durable
+customer schedules must be modeled in Forge Metal tables and materialized by an
+idempotent `schedule.fire` worker. River scheduled jobs are acceptable for
+specific future `run_at` work items when the execution row already exists and the
+domain schedule table remains authoritative.
+
+## Queue And Job Taxonomy
+
+Initial queues:
+
+- `execution`: normal state-machine advancement.
+- `orchestrator`: VM launch/cancel/status calls, bounded by host capacity.
+- `runner`: Forgejo/GitHub fetch, task update, cancellation, and log-ack IO.
+- `scheduler`: recurring schedule scanners and execution materializers.
+- `reconcile`: low-priority repair of nonterminal attempts and orphaned side
+  effects.
+- `webhook`: current webhook delivery work, moved off the bespoke worker after
+  the execution path is stable.
+
+Initial job kinds:
+
+- `execution.advance`: load an attempt by ID, inspect state, perform at most one
+  durable transition, append `execution_events`, and enqueue itself or a
+  follow-up job only when another transition is ready.
+- `execution.cancel`: record cancellation intent and advance cleanup through the
+  same transition machinery.
+- `execution.reconcile`: re-evaluate one nonterminal attempt or a bounded stale
+  state shard. Reconciliation never bypasses transition helpers.
+- `runner.forgejo.fetch`: long-poll Forgejo with a capacity snapshot/lease,
+  translate an accepted task into execution admission, and persist
+  `forgejo_task_executions` before acknowledging task state.
+- `runner.forgejo.update_log`: flush execution log chunks to Forgejo using the
+  persisted ack cursor. Persist the acknowledged index, not merely the attempted
+  flush index.
+- `runner.forgejo.update_task`: finalize external task state after the execution
+  reaches terminal state. Cancellation responses enqueue `execution.cancel`.
+- `runner.github.fetch`: same queue contract as Forgejo, provider-specific
+  protocol only. It must reuse execution admission and log/finalizer semantics.
+- `schedule.scan`: scan due customer schedule definitions and enqueue bounded
+  `schedule.fire` jobs.
+- `schedule.fire`: claim one schedule occurrence, materialize an execution via
+  the same admission path as API/runner work, and advance `next_fire_at`
+  according to the stored misfire/overlap policy.
+- `vm.session.renew`: renew billing/capacity leases and checkpoint policy for
+  long-running VM sessions.
+- `vm.session.expire`: terminalize sessions whose TTL, entitlement, or policy
+  window expired.
+
+The taxonomy intentionally makes external queues thin adapters. Forgejo and
+GitHub own CI task availability; River owns durable local work and recovery once
+we decide to accept a task. Customer-visible execution state is always projected
+from Forge Metal execution tables.
+
+## Capacity Model
+
+Do not use River Pro global concurrency as an invariant. Model host and product
+capacity in PostgreSQL with short TTL leases, deterministic lease IDs, and
+compare-and-swap release/renewal:
+
+- VM slot lease key: resource class + host/node + attempt ID.
+- Runner task lease key: provider + runner label + external task ID.
+- Schedule fire lease key: schedule ID + scheduled fire timestamp.
+- Session lease key: session ID + lease sequence.
+
+The `runner.forgejo.fetch`/`runner.github.fetch` workers must acquire or observe
+capacity before long-polling so they do not claim CI tasks that cannot launch.
+The external runner protocol remains the upstream queue; River is not a
+pre-buffer for unbounded CI work.
+
+## Recurring Schedule Model
+
+Recurring workloads need product semantics that River OSS periodic jobs do not
+own:
+
+- tenant/org and actor/policy context;
+- billing product and entitlement checks at fire time;
+- timezone-aware cron parsing;
+- overlap policy (`skip`, `queue_one`, `allow`);
+- misfire policy (`skip_missed`, `fire_once`, `catch_up_bounded`);
+- maximum catch-up window and per-schedule concurrency;
+- immutable occurrence IDs for idempotency and evidence.
+
+The durable table shape should be explicit, roughly:
+
+```sql
+workload_schedules(
+  schedule_id uuid primary key,
+  org_id text not null,
+  actor_id text not null,
+  workload_kind text not null,
+  schedule_expr text not null,
+  timezone text not null,
+  next_fire_at timestamptz not null,
+  paused_at timestamptz,
+  overlap_policy text not null,
+  misfire_policy text not null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null
+)
+
+workload_schedule_occurrences(
+  occurrence_id uuid primary key,
+  schedule_id uuid not null references workload_schedules(schedule_id),
+  scheduled_for timestamptz not null,
+  execution_id uuid references executions(execution_id),
+  state text not null,
+  created_at timestamptz not null,
+  unique(schedule_id, scheduled_for)
+)
+```
+
+`schedule.fire` claims an occurrence, inserts the execution + attempt +
+`execution_events` + River `execution.advance` job in one transaction, then
+projects evidence into ClickHouse like any other admission source.
+
+## Runner Adapter Contract
+
+Forgejo and GitHub adapters must translate provider work into the same internal
+execution contract:
+
+- `source_kind`: `api`, `forgejo_actions`, `github_actions`, `cron`, `canary`,
+  `vm_session`.
+- `workload_kind`: `direct`, `forgejo_workflow`, `github_workflow`,
+  `vm_session`, or future explicit variants.
+- external identity fields: provider task/run/job IDs, repo, ref, SHA, runner
+  label, request key/idempotency key, and log ack cursor.
+- trace context from the fetch/registration path linked into
+  `execution.advance` worker spans.
+
+The adapter may own provider-specific tables, but it may not own lifecycle
+terminalization. Terminal execution state, billing settlement, log storage, and
+orchestrator cleanup stay in the shared state machine. This is what makes the
+eventual GitHub runner a protocol adapter instead of a second scheduler.
+
+## Handoff Implementation Sequence
+
+The first River code cut should be a substrate cut, not a partial lifecycle
+rewrite:
+
+1. Add `pgxpool`, `riverpgxv5`, and `otelriver` dependencies; keep the existing
+   `database/sql` path alive only for code not yet owned by the scheduler cut.
+2. Add service-owned migrations for River tables, `execution_events`, source and
+   workload projection columns, capacity leases, and schedule occurrence tables.
+3. Register the River queues and typed job args for the taxonomy above. The only
+   active worker in the first cut should be a minimal `execution.advance` worker
+   that can load state and prove trace linkage; runner/scheduler/session workers
+   are registered only when their database contracts exist.
+4. Replace `Submit` with a pgx transaction that writes execution + attempt +
+   initial `execution_events` row + River `execution.advance` job. Stop launching
+   `go s.execute(...)` from the request handler in the same cut.
+5. Move billing reserve, orchestrator launch, wait/finalize, and cancellation
+   into transition helpers one state at a time. Every helper must be retryable by
+   inspecting stored state before attempting side effects.
+6. Re-run the Forgejo `act` Phase 0 tracer through `execution.advance` before
+   adding Forgejo `Register`/`Declare`/`FetchTask`. If the tracer cannot produce
+   the same ClickHouse evidence through River, runner integration stays blocked.
+
+Do not use the River `database/sql` driver as a temporary production bridge. It
+would make the first cut easier, but it bakes in polling behavior and leaves the
+transactional enqueue path split from the pgx path we need for the final
+scheduler.
+
 ## Phase Gates Up Front
 
 | Phase | Vertical Slice | Must-Pass Gate Summary |
 |---|---|---|
-| 1 | Stabilize current path | 1000-submit burst produces `429`/`402` as expected, zero `500`, zero PG-slot exhaustion evidence, zero stale `queued`/`launching` beyond TTL |
-| 2 | Durable admission + River worker | Submit API returns after durable enqueue, worker owns state progression to terminal, append-only `execution_events` present and ordered |
-| 3 | Reconciliation + machine backpressure | Crash/restart and external dependency faults reconcile to terminal outcomes, no orphaned reserved windows, queue admission caps enforce `503 Retry-After` |
-| 4 | Cursor pagination contract | All touched list endpoints are cursor-based with deterministic ordering and cursor/filter hash checks; no offset pagination on mutable execution tables |
-| 5 | Reservation sizing + renewal | Short jobs release liability quickly, long jobs renew deterministically, billing windows reconcile to final usage with no stranded holds |
+| 0 | Baseline proof and guardrails | Existing direct execution path survives burst/fault rehearsal without `500`, PG slot exhaustion, or stale nonterminal attempts |
+| 1 | River substrate online | `riverpgxv5` client, River schema, queue taxonomy, and OTel middleware are deployed and proven by a real River probe job |
+| 2 | Direct execution on River | `POST /api/v1/executions` transactionally writes execution + attempt + event + River job; worker reaches terminal state with no request goroutine |
+| 3 | Reconciliation and capacity leases | Crash/restart and injected dependency faults reconcile; VM/runner/schedule capacity is enforced by service-owned PG leases |
+| 4 | Recurring schedules and VM sessions | Due cron occurrence and VM session renewal/expiry materialize through the same execution kernel |
+| 5 | Forgejo workflow workload | Forgejo `act` tracer runs through River and Firecracker with live ClickHouse proof, without Forgejo runner protocol yet |
+| 6 | Forgejo runner adapter | Register/declare/fetch/log/finalize/cancel protocol attaches to the shared scheduler and drives a real Forgejo Actions job |
+| 7 | GitHub runner adapter | GitHub workflow-job/JIT runner integration uses the same scheduler kernel and does not introduce a second CI scheduler |
+| 8 | Product read contract | Execution, event, log, schedule, runner, and session lists are cursor-paginated and observable |
 
-## Phase 1: Stabilize Current Runner Path
+## Phase 0: Baseline Proof And Guardrails
+
+Primary anchors:
+
+- In-repo: `vm-execution-control-plane.md`, `billing-architecture.md`,
+  `verify-sandbox-live.sh`, `collect-sandbox-verification-evidence.sh`.
+- Primary sources: Go `database/sql` pool controls and PostgreSQL connection
+  settings.
 
 ### Verification Gate (Declared First)
 
-Fail-first protocol (must fail on current baseline before code changes):
+Fail-first protocol:
 
-1. Deploy baseline service builds.
-2. Run a 1000-submit burst rehearsal as platform admin (`direct` trivial command).
-3. Confirm known failures appear:
-   - Non-zero HTTP `500` for `POST /api/v1/executions`.
-   - Stale attempts in nonterminal states (`queued`/`launching`).
-   - PG slot exhaustion evidence in `default.otel_logs`.
+1. Deploy current baseline on the single-node path.
+2. Run a 1000-submit burst using a trivial `direct` command.
+3. Run one crash/fault rehearsal that interrupts `sandbox-rental-service` after
+   execution insertion but before terminalization.
+4. Confirm baseline evidence includes at least one of:
+   - HTTP `500` on submit,
+   - PG slot exhaustion in `default.otel_logs`,
+   - stale `queued`/`launching` attempts after TTL,
+   - reserved billing window attached to an unreconcilable attempt.
 
-Green protocol (required to close phase):
+Green protocol:
 
-1. Re-run the same burst rehearsal.
-2. Assert:
-   - `500` count is exactly zero.
-   - `429` remains for rate-limit protection and `402` remains for insufficient balance.
-   - No PG slot exhaustion messages in logs/traces.
-   - No attempts older than TTL in `queued` or `launching`.
-3. Run full browser lifecycle proof and evidence collection.
+1. Re-run the burst and crash/fault rehearsals after the guardrails land.
+2. Assert exactly zero submit `500`s and zero PG slot exhaustion messages.
+3. Assert stale `queued`/`launching` attempts are reconciled or terminalized.
+4. Assert billing windows end `settled` or `voided`.
+5. Persist evidence under `artifacts/sandbox-live/<run-id>/evidence/`.
 
 ### Implementation Slice
 
-- Set explicit PG pool budgets in both `sandbox-rental-service` and `billing-service` (`MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime`, `ConnMaxIdleTime`).
-- Fix `markLaunching` failure path to avoid stranded admitted executions.
-- Add stale `queued` and stale `launching` reconciler handling in current job path.
-- Emit explicit structured OTel/log reasons for billing reserve failures and reconciliation actions.
+- Set explicit PG pool limits for sandbox and billing service callers.
+- Fix current `markLaunching`/reserve failure paths that can strand an attempt.
+- Add stale `queued` and stale `launching` reconciliation to the current path.
+- Add explicit OTel/log reason tags for reserve denial, reserve failure, and
+  reconciler action.
 
 ### Expected Database Changes
 
-- Minimal schema/index changes only for reconciliation scan efficiency.
-- No new orchestration subsystem yet.
-- Existing execution tables remain source of truth:
-  - `executions`
-  - `execution_attempts`
-  - `execution_billing_windows`
-  - `execution_logs`
+- Minimal indices only:
+  - `execution_attempts(state, updated_at)`
+  - `execution_billing_windows(state, attempt_id)`
+- No River schema yet.
 
 ### Required E2E + Evidence Assertions
 
-Postgres assertions:
+PostgreSQL:
 
 ```sql
--- No stale queued/launching attempts beyond phase TTL (example: 60s).
 SELECT count(*) AS stale_nonterminal
 FROM execution_attempts
 WHERE state IN ('queued', 'launching')
@@ -120,33 +347,19 @@ WHERE state IN ('queued', 'launching')
 ```
 
 ```sql
--- No reserved billing window without an active attempt.
-SELECT count(*) AS orphaned_reserved
+SELECT count(*) AS invalid_reserved_windows
 FROM execution_billing_windows w
 JOIN execution_attempts a ON a.attempt_id = w.attempt_id
 WHERE w.state = 'reserved'
-  AND a.state NOT IN ('launching', 'running', 'finalizing');
+  AND a.state NOT IN ('reserved', 'launching', 'running', 'finalizing');
 ```
 
-ClickHouse assertions:
+ClickHouse:
 
 ```sql
--- No connection slot exhaustion signal in sandbox/billing logs during run window.
-SELECT count(*) AS pg_slot_exhaustion_hits
-FROM default.otel_logs
-WHERE Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-  AND ServiceName IN ('sandbox-rental-service', 'billing-service')
-  AND (
-    Body ILIKE '%remaining connection slots%'
-    OR Body ILIKE '%too many clients%'
-  );
-```
-
-```sql
--- Submit HTTP evidence: 500 must be zero in run window.
 SELECT
   toUInt16OrZero(SpanAttributes['http.status_code']) AS status,
-  count(*) AS c
+  count() AS c
 FROM default.otel_traces
 WHERE Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
   AND ServiceName = 'sandbox-rental-service'
@@ -156,128 +369,265 @@ GROUP BY status
 ORDER BY status;
 ```
 
-## Phase 2: Durable Admission + River Worker State Machine
+Required trace order for one successful direct execution:
+
+1. `sandbox-rental.execution.submit`
+2. `sandbox-rental.execution.run`
+3. `vm-orchestrator.EnsureRun`
+4. `vm-orchestrator.WaitRun`
+5. `sandbox-rental.execution.finalize`
+
+## Phase 1: River Substrate Online
+
+Primary anchors:
+
+- In-repo: `AGENTS.md` in `sandbox-rental-service`, Ansible
+  `sandbox_rental_service` migration role, `wire-contracts.md`.
+- Primary sources: River database drivers, transactional enqueueing, multiple
+  queues, OpenTelemetry middleware, PostgreSQL `LISTEN`/`NOTIFY`.
 
 ### Verification Gate (Declared First)
 
 Fail-first protocol:
 
-1. Add phase-specific test that submits the same idempotency key concurrently.
-2. Confirm baseline can duplicate side effects or lacks durable queue/event lineage.
+1. Add a harness that tries to enqueue a `scheduler.probe` River job against
+   baseline.
+2. Confirm baseline fails because no River schema, client, queues, or worker
+   spans exist.
 
 Green protocol:
 
-1. Submit returns `201/202` only after transactionally writing execution + attempt + initial event + River job.
-2. Replayed idempotency key returns same execution identity and does not duplicate billing/orchestrator side effects.
-3. Worker executes durable state transitions to terminal (`succeeded|failed|canceled`) with ordered append-only events.
-4. API trace ends at durable enqueue, not at launch/finalize.
+1. Deploy via `dev-single-node.yml --tags sandbox_rental_service`.
+2. Harness enqueues one `scheduler.probe` job through `sandbox-rental-service`.
+3. Probe worker completes through `riverpgxv5`/`pgxpool`, not
+   `riverdatabasesql`.
+4. `default.otel_traces` shows River insert and work spans.
+5. River queue tables show the job reached `completed`.
 
 ### Implementation Slice
 
-- Replace request-spawned execution goroutine path with River OSS worker path.
-- Add `execution_events` append-only table with deterministic sequence and transition metadata.
-- Move state change logic into compare-and-swap transition functions.
-- Keep external side effects deterministic:
-  - billing IDs from `attempt_id` + `window_seq`
-  - orchestrator run ID from `attempt_id`
-- Ensure `402` reserve denial terminalizes as business outcome (`insufficient_balance`) instead of transport error.
+- Add `pgxpool`, `riverpgxv5`, and `otelriver`.
+- Apply River OSS migrations through `src/sandbox-rental-service/migrations/`.
+- Start one River client with queues:
+  - `execution`
+  - `orchestrator`
+  - `runner`
+  - `scheduler`
+  - `reconcile`
+  - `webhook`
+- Enable `otelriver` with `EnableWorkSpanJobKindSuffix`.
+- Register `scheduler.probe` only; do not cut over execution behavior yet.
 
 ### Expected Database Changes
 
-- New table: `execution_events` (append-only transition/event log).
-- River migration tables in `sandbox_rental` database (queue substrate).
-- Optional attempt projection fields to link submit trace context and worker correlation.
+- River tables in the `sandbox_rental` database, including `river_job`,
+  `river_queue`, and `river_migration`.
+- No execution lifecycle mutation path changes.
 
 ### Required E2E + Evidence Assertions
 
-Postgres assertions:
+PostgreSQL:
 
 ```sql
--- Exactly one execution per org+idempotency key.
+SELECT name, paused_at
+FROM river_queue
+WHERE name IN ('execution','orchestrator','runner','scheduler','reconcile','webhook')
+ORDER BY name;
+```
+
+```sql
+SELECT kind, queue, state, count(*) AS c
+FROM river_job
+WHERE kind = 'scheduler.probe'
+GROUP BY kind, queue, state;
+```
+
+ClickHouse:
+
+```sql
+SELECT Timestamp, SpanName, SpanAttributes['messaging.destination.name'] AS queue
+FROM default.otel_traces
+WHERE ServiceName = 'sandbox-rental-service'
+  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
+  AND SpanName IN ('river.insert_many', 'river.work/scheduler.probe')
+ORDER BY Timestamp;
+```
+
+Required trace order:
+
+1. `sandbox-rental.scheduler.probe.submit`
+2. `river.insert_many`
+3. `river.work/scheduler.probe`
+4. `sandbox-rental.scheduler.probe.complete`
+
+## Phase 2: Direct Execution On River
+
+Primary anchors:
+
+- In-repo: `vm-execution-control-plane.md`, `billing-architecture.md`,
+  `wire-contracts.md`, `007_sandbox_job_logs.up.sql`.
+- Primary sources: River transactional enqueueing, River retries, OTel trace API,
+  TigerBeetle transfer model.
+
+### Verification Gate (Declared First)
+
+Fail-first protocol:
+
+1. Add an e2e test that submits the same idempotency key concurrently and then
+   kills `sandbox-rental-service` after commit but before work starts.
+2. Confirm baseline either duplicates side effects, launches from a request
+   goroutine, or lacks ordered `execution_events` lineage.
+
+Green protocol:
+
+1. `POST /api/v1/executions` returns after a single pgx transaction writes
+   execution + attempt + workload spec + initial event + `execution.advance`.
+2. No request handler starts `go s.execute(...)`.
+3. `execution.advance` reaches terminal state for a direct command.
+4. Replayed idempotency key returns the same execution and attempt.
+5. Worker spans are linked to the submit trace context.
+6. The same admission helper accepts a synthetic `source_kind='forgejo_actions'`
+   fixture without contacting Forgejo.
+
+### Implementation Slice
+
+- Add `execution_events`.
+- Add source/workload projection:
+  - `executions.source_kind`
+  - `executions.workload_kind`
+  - `executions.source_ref`
+  - `execution_attempts.submit_trace_id`
+  - `execution_attempts.submit_trace_context`
+- Add `execution_workload_specs` for structured workload payloads and secret
+  references.
+- Replace `Submit` with pgx transactional enqueue.
+- Implement `execution.advance` for the direct workload path.
+- Keep side-effect IDs deterministic:
+  - billing job/window IDs from attempt/window sequence;
+  - orchestrator run ID from attempt ID.
+- Terminalize billing `402` as `insufficient_balance`, not a transport error.
+
+### Expected Database Changes
+
+- `execution_events(event_seq, execution_id, attempt_id, from_state, to_state,
+  reason, trace_id, created_at)`.
+- `execution_workload_specs(execution_id, workload_kind, spec_jsonb,
+  secret_refs_jsonb, created_at)`.
+- ClickHouse `forge_metal.job_events` gains empty-default columns:
+  - `source_kind LowCardinality(String) DEFAULT ''`
+  - `workload_kind LowCardinality(String) DEFAULT ''`
+  - `external_provider LowCardinality(String) DEFAULT ''`
+  - `external_task_id String DEFAULT ''`
+
+### Required E2E + Evidence Assertions
+
+PostgreSQL:
+
+```sql
 SELECT count(*) AS executions_for_key
 FROM executions
 WHERE org_id = $1 AND idempotency_key = $2;
 ```
 
 ```sql
--- Transition sequence is complete and monotonic for terminal attempts.
 SELECT event_seq, from_state, to_state, reason
 FROM execution_events
 WHERE attempt_id = $1
 ORDER BY event_seq ASC;
 ```
 
-Expected ordered state path for success:
+Expected event sequence:
 
-`queued -> reserving -> reserved -> launching -> running -> finalizing -> succeeded`
-
-ClickHouse assertions:
+`NULL -> queued -> reserving -> reserved -> launching -> running -> finalizing -> succeeded`
 
 ```sql
--- API submit span should be short and should not include launch/finalize child work.
-SELECT
-  intDiv(Duration, 1000000) AS duration_ms,
-  SpanAttributes['http.status_code'] AS status
-FROM default.otel_traces
-WHERE ServiceName = 'sandbox-rental-service'
-  AND SpanAttributes['http.method'] = 'POST'
-  AND SpanAttributes['http.target'] = '/api/v1/executions'
-  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-ORDER BY Timestamp DESC
-LIMIT 50;
+SELECT source_kind, workload_kind, count(*) AS c
+FROM executions
+WHERE execution_id IN ($1, $2)
+GROUP BY source_kind, workload_kind
+ORDER BY source_kind, workload_kind;
 ```
 
+ClickHouse:
+
 ```sql
--- Worker transition span events exist and are ordered.
-SELECT
-  Timestamp,
-  SpanName,
-  Events.Name,
-  Events.Attributes
+SELECT Timestamp, SpanName, SpanAttributes['execution.state'] AS state
 FROM default.otel_traces
 WHERE ServiceName = 'sandbox-rental-service'
   AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-  AND has(Events.Name, 'execution.transition')
+  AND SpanName IN (
+    'sandbox-rental.execution.submit',
+    'river.insert_many',
+    'river.work/execution.advance',
+    'sandbox-rental.execution.transition',
+    'sandbox-rental.execution.finalize'
+  )
 ORDER BY Timestamp;
 ```
 
-## Phase 3: First-Class Reconciliation + Backpressure Controls
+Required trace order:
+
+1. `sandbox-rental.execution.submit`
+2. `river.insert_many`
+3. `river.work/execution.advance`
+4. `sandbox-rental.execution.transition` (`queued -> reserving`)
+5. `sandbox-rental.execution.transition` (`reserved -> launching`)
+6. `vm-orchestrator.EnsureRun`
+7. `vm-orchestrator.WaitRun`
+8. `sandbox-rental.execution.finalize`
+
+## Phase 3: Reconciliation And Capacity Leases
+
+Primary anchors:
+
+- In-repo: `firecracker-vm-networking.md`, `vm-execution-control-plane.md`,
+  `billing-architecture.md`.
+- Primary sources: River retries, River leader election, PostgreSQL
+  `SELECT ... FOR UPDATE SKIP LOCKED`, PostgreSQL `LISTEN`/`NOTIFY`.
 
 ### Verification Gate (Declared First)
 
 Fail-first protocol:
 
-1. Inject process crash/restart mid-attempt (after reserve, before terminalization).
-2. Inject orchestrator/billing transient failures.
-3. Confirm baseline can strand states or reservations.
+1. Kill `sandbox-rental-service` after billing reserve but before launch.
+2. Kill it after launch but before finalization.
+3. Inject one transient orchestrator failure and one billing settlement failure.
+4. Over-submit synthetic runner admissions beyond
+   `vm-orchestrator.GetCapacity().total_slots`.
+5. Confirm baseline can strand attempts or over-accept work.
 
 Green protocol:
 
-1. Every nonterminal state has a reconciler path triggered via queue jobs.
-2. Crash/restart leaves no indefinitely stuck attempt.
-3. No reserved billing window remains unless execution is running/finalizing/reconciling.
-4. Queue admission saturation returns `503` with `Retry-After` (distinct from per-tenant `429`).
+1. Every nonterminal state has an explicit `execution.reconcile` path.
+2. No nonterminal state remains stale after reconcile SLA.
+3. Capacity leases prevent over-accepting VM-backed work.
+4. Queue saturation returns `503 Retry-After`; policy rate limit remains `429`.
+5. Reserved billing windows are settled or voided.
 
 ### Implementation Slice
 
-- Add reconciliation jobs for each nonterminal state:
-  - `queued`, `reserving`, `reserved`, `launching`, `running`, `finalizing`.
-- Add queue admission controls by org/trust tier and global depth.
-- Bound worker concurrency by stage (`reserve`, `launch`, `run`, `finalize`).
-- Add explicit cancellation precedence and deterministic cleanup semantics.
+- Add PG capacity leases with deterministic IDs and TTL:
+  - VM slot lease,
+  - runner task lease,
+  - schedule occurrence lease,
+  - VM session lease.
+- Add `execution.cancel` and `execution.reconcile`.
+- Add admission queue-depth and capacity checks distinct from HTTP rate limits.
+- Ensure reconciler never bypasses transition helpers.
 
 ### Expected Database Changes
 
-- Reconciliation scheduling metadata (either explicit table or state fields).
-- Admission/capacity state (if modeled in PG tables).
-- Additional indices for stale-state sweeps and reconciliation claims.
+- `scheduler_capacity_leases(lease_id, lease_kind, resource_key, owner_ref,
+  expires_at, released_at, created_at, updated_at)`.
+- Indices for stale-state sweeps:
+  - `execution_attempts(state, updated_at)`
+  - `scheduler_capacity_leases(lease_kind, resource_key, expires_at)`
 
 ### Required E2E + Evidence Assertions
 
-Postgres assertions:
+PostgreSQL:
 
 ```sql
--- No stale nonterminal attempts past reconcile SLA (example 5m).
 SELECT count(*) AS stale_nonterminal
 FROM execution_attempts
 WHERE state IN ('queued','reserving','reserved','launching','running','finalizing')
@@ -285,86 +635,408 @@ WHERE state IN ('queued','reserving','reserved','launching','running','finalizin
 ```
 
 ```sql
--- Invariant: reserved billing windows only with active/reconcilable attempts.
-SELECT count(*) AS invalid_reserved_windows
-FROM execution_billing_windows w
-JOIN execution_attempts a ON a.attempt_id = w.attempt_id
-WHERE w.state = 'reserved'
-  AND a.state NOT IN ('launching','running','finalizing','reserving','reserved');
+SELECT lease_kind, resource_key, count(*) AS active
+FROM scheduler_capacity_leases
+WHERE released_at IS NULL AND expires_at > now()
+GROUP BY lease_kind, resource_key
+ORDER BY lease_kind, resource_key;
 ```
 
-ClickHouse assertions:
+ClickHouse:
 
 ```sql
--- Reconciliation transition evidence appears with reason tags.
-SELECT
-  Timestamp,
-  ServiceName,
-  Body,
-  toString(LogAttributes) AS attrs
-FROM default.otel_logs
-WHERE Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-  AND ServiceName = 'sandbox-rental-service'
-  AND (Body ILIKE '%reconcile%' OR toString(LogAttributes) ILIKE '%reconcile%')
+SELECT Timestamp, SpanName, SpanAttributes['capacity.lease_kind'] AS lease_kind,
+       SpanAttributes['capacity.lease_result'] AS lease_result
+FROM default.otel_traces
+WHERE ServiceName = 'sandbox-rental-service'
+  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
+  AND SpanAttributes['capacity.lease_kind'] != ''
 ORDER BY Timestamp;
 ```
 
-```sql
--- Admission behavior separation: 429 (policy) vs 503 (capacity).
-SELECT
-  SpanAttributes['http.status_code'] AS status,
-  count(*) AS c
-FROM default.otel_traces
-WHERE ServiceName = 'sandbox-rental-service'
-  AND SpanAttributes['http.method'] = 'POST'
-  AND SpanAttributes['http.target'] = '/api/v1/executions'
-  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-GROUP BY status
-ORDER BY status;
-```
+Required trace order for a crash-recovered execution:
 
-## Phase 4: Cursor Pagination As A Service Invariant
+1. `river.work/execution.reconcile`
+2. `sandbox-rental.execution.transition` (`reserved -> launching` or terminal cleanup)
+3. `sandbox-rental.capacity.acquire` or `sandbox-rental.capacity.release`
+4. `vm-orchestrator.EnsureRun` or `vm-orchestrator.WaitRun`
+5. `sandbox-rental.execution.finalize`
+
+## Phase 4: Recurring Schedules And VM Sessions
+
+Primary anchors:
+
+- In-repo: `identity-and-iam.md`, `billing-architecture.md`,
+  `vm-execution-control-plane.md`.
+- Primary sources: River periodic jobs, River scheduled jobs, River
+  transactional enqueueing.
 
 ### Verification Gate (Declared First)
 
 Fail-first protocol:
 
-1. Add API tests that intentionally use offset/unstable ordering assumptions.
-2. Confirm they fail against cursor-only contract changes.
+1. Add a private harness that creates one due schedule occurrence and one
+   long-running VM session renewal target.
+2. Confirm baseline has no durable customer schedule table, no idempotent
+   occurrence materialization, and no session renewal job.
 
 Green protocol:
 
-1. All touched execution list surfaces are cursor-based.
-2. Bad/mismatched cursor returns `400`.
-3. Ordering is deterministic with unique tie-breakers.
-4. Browser e2e proves jobs list remains stable during concurrent inserts.
+1. `schedule.scan` finds a due schedule and enqueues one `schedule.fire`.
+2. `schedule.fire` creates exactly one occurrence and one execution on retry.
+3. `vm.session.renew` extends billing/capacity leases through the same lease
+   model as one-shot executions.
+4. `vm.session.expire` terminalizes a session through execution transitions.
+5. All rows carry org/actor/billing context.
 
 ### Implementation Slice
 
-- Add pagination helpers (`pagination.go`) with opaque base64url JSON cursor:
-  - `version`
-  - `direction`
-  - `sort keys`
-  - `filter hash`
-- Add/upgrade list endpoints for executions, attempts/events/logs, billing windows, and usage history as needed.
-- Use `limit + 1` fetch strategy and hard max limits.
-- Remove offset pagination on mutable execution data.
+- Add schedule definition and occurrence tables.
+- Use River periodic jobs only for internal scanner ticks.
+- Implement idempotent `schedule.scan` and `schedule.fire`.
+- Add VM session renewal/expiry jobs behind private harnesses.
+- Keep customer-facing schedule APIs out until the substrate is proven.
 
 ### Expected Database Changes
 
-- Indexes to support stable orders:
-  - Executions: `(created_at DESC, execution_id DESC)`
-  - Attempts: `(attempt_seq ASC, attempt_id ASC)`
-  - Events: `(event_seq ASC)`
-  - Logs: `(created_at ASC, seq ASC)`
-  - Billing windows: `(window_seq ASC, billing_window_id ASC)`
+- `workload_schedules`.
+- `workload_schedule_occurrences`.
+- `vm_sessions` or session projection fields owned by the execution model.
+- Capacity leases for schedule occurrence and VM session renewal.
 
 ### Required E2E + Evidence Assertions
 
-Postgres assertions:
+PostgreSQL:
 
 ```sql
--- Example deterministic execution order check.
+SELECT schedule_id, scheduled_for, count(*) AS occurrences, count(execution_id) AS executions
+FROM workload_schedule_occurrences
+WHERE schedule_id = $1 AND scheduled_for = $2
+GROUP BY schedule_id, scheduled_for;
+```
+
+```sql
+SELECT lease_kind, owner_ref, expires_at, released_at
+FROM scheduler_capacity_leases
+WHERE owner_ref IN ($1, $2)
+ORDER BY created_at;
+```
+
+ClickHouse:
+
+```sql
+SELECT Timestamp, SpanName, SpanAttributes['schedule.id'] AS schedule_id,
+       SpanAttributes['execution.source_kind'] AS source_kind
+FROM default.otel_traces
+WHERE ServiceName = 'sandbox-rental-service'
+  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
+  AND SpanName IN ('river.work/schedule.scan','river.work/schedule.fire','river.work/vm.session.renew','river.work/vm.session.expire')
+ORDER BY Timestamp;
+```
+
+Required trace order for a scheduled execution:
+
+1. `river.work/schedule.scan`
+2. `river.insert_many`
+3. `river.work/schedule.fire`
+4. `sandbox-rental.execution.submit`
+5. `river.work/execution.advance`
+6. `sandbox-rental.execution.finalize`
+
+## Phase 5: Forgejo Workflow Workload Through River
+
+Primary anchors:
+
+- In-repo: `forgejo-runner-phase-0.md`, `vm-execution-control-plane.md`,
+  `firecracker-vm-networking.md`, `wire-contracts.md`.
+- Primary sources: Forgejo `act` fork, Forgejo runner source/protocol,
+  River transactional enqueueing.
+
+### Verification Gate (Declared First)
+
+Fail-first protocol:
+
+1. Submit a synthetic `forgejo_workflow` execution through the River admission
+   helper.
+2. Confirm baseline fails because no Forgejo workflow workload kind, no
+   Forgejo `act` integration, and no `vm-bridge.workflow_runner.*` spans exist.
+
+Green protocol:
+
+1. Workflow spec is admitted as `source_kind='forgejo_actions'` and
+   `workload_kind='forgejo_workflow'`.
+2. Forgejo `act` library executes in Firecracker via the existing
+   vm-orchestrator/vm-bridge protocol.
+3. Workflow includes `actions/checkout@v4`, one Node-backed step, and marker
+   `phase-0-forgejo-act`.
+4. Billing settles and ClickHouse row/span proof is reproduced after
+   `guest-rootfs.yml` and `dev-single-node.yml`.
+
+### Implementation Slice
+
+- Add `forgejo_workflow` workload spec validation.
+- Add vmproto/vm-orchestrator fields needed to pass workflow spec into the VM.
+- Add `vm-bridge` workflow runner using the Forgejo `act` library pin recorded
+  in `forgejo-runner-phase-0.md`.
+- Preserve the existing host service/vsock protocol; no new host service.
+
+### Expected Database Changes
+
+- `execution_workload_specs` stores workflow spec metadata and secret refs.
+- `forge_metal.job_events` rows are populated with:
+  - `source_kind='forgejo_actions'`
+  - `workload_kind='forgejo_workflow'`
+  - `exit_code=0`
+- `forge_metal.job_logs` includes `phase-0-forgejo-act`.
+
+### Required E2E + Evidence Assertions
+
+PostgreSQL:
+
+```sql
+SELECT e.source_kind, e.workload_kind, a.state
+FROM executions e
+JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
+WHERE e.execution_id = $1;
+```
+
+ClickHouse:
+
+```sql
+SELECT count()
+FROM forge_metal.job_events
+WHERE execution_id = $1
+  AND source_kind = 'forgejo_actions'
+  AND workload_kind = 'forgejo_workflow'
+  AND status = 'succeeded'
+  AND exit_code = 0;
+```
+
+```sql
+SELECT count()
+FROM forge_metal.job_logs
+WHERE attempt_id = $1
+  AND positionCaseInsensitive(toString(chunk), 'phase-0-forgejo-act') > 0;
+```
+
+Required trace order:
+
+1. `sandbox-rental.execution.submit`
+2. `river.insert_many`
+3. `river.work/execution.advance`
+4. `vm-orchestrator.EnsureRun`
+5. `vm-orchestrator.WaitRun`
+6. `vm-bridge.run_phase`
+7. `vm-bridge.workflow_runner.act_prepare`
+8. `vm-bridge.workflow_runner.act_execute`
+9. `sandbox-rental.execution.finalize`
+
+## Phase 6: Forgejo Runner Adapter
+
+Primary anchors:
+
+- In-repo: `forgejo-runner-phase-0.md`, `wire-contracts.md`,
+  `identity-and-iam.md`, Ansible `sandbox_rental_service` role.
+- Primary sources: Forgejo Actions protocol package, Forgejo runner ConnectRPC
+  client, River transactional enqueueing.
+
+### Verification Gate (Declared First)
+
+Fail-first protocol:
+
+1. Enable Forgejo Actions in the local Forgejo deployment and push a workflow
+   targeting `forge-metal-2vcpu-4gb`.
+2. Confirm baseline has no runner registration/declare/fetch/log/finalize
+   spans and Forgejo leaves the task queued.
+
+Green protocol:
+
+1. `sandbox-rental-service` registers once and persists runner UUID + secret.
+2. `Declare` keeps the runner online across service restart.
+3. `runner.forgejo.fetch` long-polls only when capacity is available.
+4. Accepted task creates a normal execution through the Phase 2 admission path.
+5. Live logs reach Forgejo through `runner.forgejo.update_log` with persisted ack
+   cursor.
+6. Final task state is posted through `runner.forgejo.update_task`.
+7. Cancellation response enqueues `execution.cancel` and settles billing.
+
+### Implementation Slice
+
+- Vendor/pin Forgejo Actions protocol clients.
+- Add registration/secret table and credstore integration.
+- Add `forgejo_task_executions`.
+- Add `runner.forgejo.fetch`, `runner.forgejo.update_log`,
+  `runner.forgejo.update_task`.
+- Add cancel watcher behavior from `UpdateTask` responses.
+
+### Expected Database Changes
+
+- `forgejo_runner_registrations`.
+- `forgejo_task_executions(forgejo_task_id, execution_id, last_log_index,
+  finalized_at, cancel_requested_at)`.
+- `forge_metal.job_events.external_provider='forgejo'`.
+- `forge_metal.job_events.external_task_id` equals the Forgejo task ID.
+
+### Required E2E + Evidence Assertions
+
+PostgreSQL:
+
+```sql
+SELECT runner_uuid, labels, last_declare_at
+FROM forgejo_runner_registrations
+WHERE tenant_id = 'platform';
+```
+
+```sql
+SELECT forgejo_task_id, execution_id, last_log_index, finalized_at
+FROM forgejo_task_executions
+WHERE forgejo_task_id = $1;
+```
+
+ClickHouse:
+
+```sql
+SELECT external_task_id, exit_code, workload_kind
+FROM forge_metal.job_events
+WHERE external_provider = 'forgejo'
+ORDER BY completed_at DESC
+LIMIT 1;
+```
+
+Required trace order:
+
+1. `sandbox-rental.forgejo_runner.register`
+2. `sandbox-rental.forgejo_runner.declare`
+3. `river.work/runner.forgejo.fetch`
+4. `sandbox-rental.forgejo_runner.task_to_execution`
+5. `river.work/execution.advance`
+6. `vm-bridge.workflow_runner.act_execute`
+7. `river.work/runner.forgejo.update_log`
+8. `river.work/runner.forgejo.update_task`
+
+## Phase 7: GitHub Runner Adapter
+
+Primary anchors:
+
+- In-repo: `identity-and-iam.md`, `wire-contracts.md`,
+  `vm-execution-control-plane.md`.
+- Primary sources: GitHub self-hosted runner docs, GitHub REST self-hosted runner
+  APIs, GitHub `workflow_job` webhook docs.
+
+### Verification Gate (Declared First)
+
+Fail-first protocol:
+
+1. Install a GitHub App against a disposable test repo and subscribe to
+   `workflow_job`.
+2. Push a workflow targeting a Forge Metal label.
+3. Confirm no GitHub adapter rows/spans exist and no Forge Metal execution is
+   admitted.
+
+Green protocol:
+
+1. `workflow_job` queued webhook is accepted, verified, and mapped to a runner
+   lease.
+2. GitHub JIT/ephemeral runner registration is created through official GitHub
+   APIs, or the phase is blocked with an explicit protocol finding if GitHub's
+   current runner model cannot be implemented without their runner binary.
+3. GitHub job work uses the same execution/capacity/billing/log model as
+   Forgejo.
+4. Completion/cancellation updates release the runner lease and settle billing.
+
+### Implementation Slice
+
+- Add GitHub provider tables and webhook verification.
+- Add `runner.github.provision`, `runner.github.finalize`, and
+  `runner.github.cleanup` workers.
+- Reuse `execution.advance`, `execution.cancel`, capacity leases, and log
+  forwarding.
+- Do not model GitHub as a Forgejo-style `FetchTask`; GitHub's public surface is
+  runner registration/JIT configuration plus webhooks, not an open task-fetch
+  protocol.
+
+### Expected Database Changes
+
+- `github_runner_registrations`.
+- `github_workflow_job_executions`.
+- `forge_metal.job_events.external_provider='github'`.
+- No second scheduler table outside the shared execution/capacity model.
+
+### Required E2E + Evidence Assertions
+
+PostgreSQL:
+
+```sql
+SELECT github_job_id, execution_id, state, finalized_at
+FROM github_workflow_job_executions
+WHERE github_job_id = $1;
+```
+
+ClickHouse:
+
+```sql
+SELECT Timestamp, SpanName, SpanAttributes['external.provider'] AS provider
+FROM default.otel_traces
+WHERE ServiceName = 'sandbox-rental-service'
+  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
+  AND SpanAttributes['external.provider'] = 'github'
+ORDER BY Timestamp;
+```
+
+Required trace order:
+
+1. `sandbox-rental.github_runner.workflow_job`
+2. `river.work/runner.github.provision`
+3. `sandbox-rental.github_runner.create_jit_config`
+4. `river.work/execution.advance`
+5. `river.work/runner.github.finalize`
+6. `river.work/runner.github.cleanup`
+
+## Phase 8: Product Read Contract
+
+Primary anchors:
+
+- In-repo: `wire-contracts.md`, `identity-and-iam.md`,
+  generated OpenAPI specs, rent-a-sandbox frontend generated client.
+- Primary sources: PostgreSQL `SELECT` ordering/locking documentation and OTel
+  trace API.
+
+### Verification Gate (Declared First)
+
+Fail-first protocol:
+
+1. Add tests that attempt offset pagination or unstable ordering on mutable
+   execution/schedule/runner/session lists.
+2. Confirm baseline accepts or emits unstable results.
+
+Green protocol:
+
+1. All touched list APIs use opaque cursor pagination.
+2. Cursors include version, direction, sort keys, and filter hash.
+3. Invalid/mismatched cursors return `400`.
+4. Browser e2e proves lists remain stable during concurrent inserts.
+
+### Implementation Slice
+
+- Add shared cursor helpers.
+- Apply cursor pagination to executions, attempts/events/logs, schedule
+  occurrences, runner task mappings, and VM sessions.
+- Add stable ordering indices.
+
+### Expected Database Changes
+
+- Stable ordering indices:
+  - executions: `(org_id, created_at DESC, execution_id DESC)`
+  - events: `(attempt_id, event_seq ASC)`
+  - logs: `(attempt_id, created_at ASC, seq ASC)`
+  - schedule occurrences: `(schedule_id, scheduled_for DESC, occurrence_id DESC)`
+  - runner mappings: `(org_id, created_at DESC, execution_id DESC)`
+
+### Required E2E + Evidence Assertions
+
+PostgreSQL:
+
+```sql
 SELECT execution_id, created_at
 FROM executions
 WHERE org_id = $1
@@ -372,25 +1044,11 @@ ORDER BY created_at DESC, execution_id DESC
 LIMIT 101;
 ```
 
-ClickHouse assertions:
+ClickHouse:
 
 ```sql
--- Invalid cursor requests surface as 400 in traces.
-SELECT count(*) AS bad_cursor_400s
-FROM default.otel_traces
-WHERE ServiceName = 'sandbox-rental-service'
-  AND SpanAttributes['http.status_code'] = '400'
-  AND SpanAttributes['http.target'] ILIKE '%cursor=%'
-  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2);
-```
-
-```sql
--- Pagination attributes are present for read spans.
-SELECT
-  SpanName,
-  SpanAttributes['pagination.limit'] AS limit,
-  SpanAttributes['pagination.direction'] AS direction,
-  SpanAttributes['pagination.has_more'] AS has_more
+SELECT SpanName, SpanAttributes['pagination.limit'] AS limit,
+       SpanAttributes['pagination.has_more'] AS has_more
 FROM default.otel_traces
 WHERE ServiceName = 'sandbox-rental-service'
   AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
@@ -399,94 +1057,34 @@ ORDER BY Timestamp DESC
 LIMIT 100;
 ```
 
-## Phase 5: Reservation Sizing + Renewal
-
-### Verification Gate (Declared First)
-
-Fail-first protocol:
-
-1. Run short-job and long-job rehearsal with current coarse reservation.
-2. Confirm short jobs over-reserve liability horizon (coarse hold behavior).
-
-Green protocol:
-
-1. Short jobs settle/void quickly with minimal pending hold.
-2. Long jobs renew reservations deterministically without billing gaps.
-3. Final billed quantity equals observed usage quantity.
-4. No pending reservation remains after terminal execution + reconciliation SLA.
-
-### Implementation Slice
-
-- Move from coarse fixed reservation to smaller initial reservation + renewal windows.
-- Keep deterministic billing window IDs and window sequence semantics.
-- Add renewal transition semantics in worker/reconciler (`reserved -> running -> renewed ... -> finalizing`).
-- Ensure final settlement and remainder void are deterministic and idempotent.
-
-### Expected Database Changes
-
-- `execution_billing_windows` usage of multiple `window_seq` rows per attempt becomes normal.
-- Optional schema additions for renewal bookkeeping (`expires_at`, `renew_by`) if needed for deterministic renewal cadence.
-
-### Required E2E + Evidence Assertions
-
-Postgres assertions:
-
-```sql
--- Short job should usually have one settled/voided window quickly.
-SELECT attempt_id, window_seq, state, reserved_quantity, actual_quantity, created_at, settled_at
-FROM execution_billing_windows
-WHERE attempt_id = $1
-ORDER BY window_seq ASC;
-```
-
-```sql
--- Long job should show renewal windows (window_seq > 0) and terminal settlement.
-SELECT count(*) FILTER (WHERE window_seq > 0) AS renewal_windows,
-       count(*) FILTER (WHERE state IN ('settled','voided')) AS terminal_windows
-FROM execution_billing_windows
-WHERE attempt_id = $1;
-```
-
-ClickHouse assertions:
-
-```sql
--- Metering rows reconcile with billing window sequence for the attempt.
-SELECT source_ref, window_seq, pricing_phase, charge_units, usage_evidence
-FROM forge_metal.metering
-WHERE source_ref = $1
-ORDER BY recorded_at ASC, event_id ASC;
-```
-
-```sql
--- Transition traces include billing window IDs and renewal reasons.
-SELECT
-  Timestamp,
-  SpanName,
-  Events.Name,
-  Events.Attributes
-FROM default.otel_traces
-WHERE ServiceName = 'sandbox-rental-service'
-  AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-  AND has(Events.Name, 'execution.transition')
-ORDER BY Timestamp;
-```
-
 ## Test Harness Deliverables Across Phases
 
-- Keep `verify-sandbox-live.sh` as the full-stack top contour rehearsal.
-- Add phase-targeted harnesses under `src/platform/scripts/`:
-  - burst reliability harness (`1000` concurrent submits),
-  - crash/restart reconciliation harness,
-  - pagination contract harness,
-  - reservation-renewal harness.
-- Keep evidence collection centralized in `collect-sandbox-verification-evidence.sh` and extend outputs rather than creating disconnected scripts.
+- Extend `verify-sandbox-live.sh` instead of creating disconnected proof flows.
+- Add `make verify-scheduler` for Phases 0-4.
+- Add `make verify-forgejo-runner` for Phases 5-6.
+- Add `make verify-github-runner` only when Phase 7 becomes active.
+- Keep evidence collection centralized in
+  `collect-sandbox-verification-evidence.sh`.
+- Each harness prints:
+  - execution ID,
+  - attempt ID,
+  - River job IDs,
+  - capacity lease IDs,
+  - external provider task IDs when present,
+  - ClickHouse trace ID,
+  - one-line ordered span chain.
 
 ## Cutover Criteria
 
-The rewrite is complete only when:
+The scheduler cutover is complete only when:
 
-1. Request handlers no longer launch/advance workload lifecycle directly.
-2. Worker transitions are the sole mutation path for execution lifecycle state.
-3. `execution_events` is append-only and complete for every attempt.
-4. Reconciliation is explicit for every nonterminal state.
-5. Phase gates above are green in deployed rehearsal with ClickHouse evidence attached.
+1. Request handlers no longer advance workload lifecycle directly.
+2. All execution producers use the shared admission transaction.
+3. River workers are the only lifecycle advancement path.
+4. `execution_events` is complete for every attempt.
+5. Capacity is enforced by PG leases, not in-memory counters or River Pro.
+6. Recurring schedules and VM sessions use the same execution/capacity/billing
+   kernel.
+7. Forgejo and GitHub are protocol adapters, not separate schedulers.
+8. Every phase gate above is green on the bare-metal single-node deploy with
+   ClickHouse evidence attached.

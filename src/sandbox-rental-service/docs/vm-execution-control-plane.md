@@ -12,6 +12,8 @@ Code pointers:
   checkpoint versions, save requests, logs, and billing windows.
 - `docs/durable-execution-workflow-plan.md` - phased rewrite plan for durable
   River-backed execution workflow, reconciliation, pagination, and evidence gates.
+- `docs/forgejo-runner-phase-0.md` - Forgejo Actions runner-engine tracer
+  bullet using the Forgejo `act` library before the River cutover.
 - `../../vm-orchestrator/proto/v1/` - host daemon gRPC API consumed by this service.
 - `../../apiwire/sandbox.go` - frontend/service wire DTOs.
 - `../openapi/` - generated OpenAPI contracts.
