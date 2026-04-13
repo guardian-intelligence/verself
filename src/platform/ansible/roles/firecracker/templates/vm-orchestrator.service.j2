@@ -18,8 +18,8 @@ ExecStart={{ firecracker_vm_orchestrator_binary_path }} \
   --jailer-root {{ firecracker_jailer_root }} \
   --jailer-uid {{ firecracker_jailer_uid }} \
   --jailer-gid {{ firecracker_jailer_gid }} \
-  --vcpus 2 \
-  --memory-mib 2048 \
+  --vcpus {{ firecracker_vcpus_per_vm }} \
+  --memory-mib {{ firecracker_memory_mib_per_vm }} \
 {% if firecracker_host_uplink_interface | default('', true) | length > 0 %}
   --host-interface {{ firecracker_host_uplink_interface }} \
 {% endif %}

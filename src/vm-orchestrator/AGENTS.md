@@ -62,10 +62,10 @@ Each proof is expected to leave ClickHouse evidence behind: traces for run lifec
 
 ## Shell Scripting Inside Guests
 
-The guest rootfs is Alpine with BusyBox. When constructing shell scripts to run inside VMs:
+The guest rootfs is Ubuntu 24.04. Use normal Debian-family userland
+assumptions and keep scripts explicit about paths when PID 1 is involved:
 
-- `/bin/sh` is BusyBox ash. It supports `${var//pattern/replacement}` parameter expansion.
+- `/bin/sh` is dash. Use `bash` explicitly for bash-only expansions.
 - Use full paths for system utilities (`/sbin/ip`, not `ip`) when the PATH may not include `/sbin`.
-- BusyBox `awk` supports `/pattern/{action;exit}` which is the reliable way to extract a single field.
-- Avoid `sed` with dynamic substitution values that may contain shell metacharacters. Prefer ash parameter expansion (`${var//old/new}`) over `sed` for in-script string replacement.
-- The `set -eu` flag is recommended. BusyBox ash handles it correctly.
+- Avoid `sed` with dynamic substitution values that may contain shell metacharacters. Prefer structured inputs or purpose-built helper code.
+- The `set -eu` flag is recommended for POSIX shell scripts.

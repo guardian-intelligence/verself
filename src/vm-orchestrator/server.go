@@ -12,6 +12,7 @@ import (
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"github.com/forge-metal/vm-orchestrator/vmproto"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -87,10 +88,15 @@ func (s *APIServer) EnsureRun(ctx context.Context, req *vmrpc.EnsureRunRequest) 
 
 	runSpec := hostRunSpecFromProto(spec)
 	runSpec.RunID = ensureRunID(runSpec.RunID)
-	if len(runSpec.RunCommand) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "run_command is required")
+	runSpec.WorkloadKind = vmproto.NormalizeWorkloadKind(runSpec.WorkloadKind)
+	if err := validateRunSpec(runSpecFromHostRunSpec(runSpec)); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	span.SetAttributes(attribute.String("run.id", runSpec.RunID))
+	span.SetAttributes(
+		attribute.String("run.id", runSpec.RunID),
+		attribute.String("run.workload_kind", runSpec.WorkloadKind),
+		attribute.String("run.runner_class", runSpec.RunnerClass),
+	)
 
 	record, created, existingState, err := s.ensureRunRecord(ctx, runSpec)
 	if err != nil {
@@ -298,6 +304,12 @@ func (s *APIServer) ensureRunRecord(ctx context.Context, spec HostRunSpec) (*man
 	}
 	if spec.SegmentID != "" {
 		runAttrs["segment_id"] = spec.SegmentID
+	}
+	if spec.WorkloadKind != "" {
+		runAttrs["workload_kind"] = spec.WorkloadKind
+	}
+	if spec.RunnerClass != "" {
+		runAttrs["runner_class"] = spec.RunnerClass
 	}
 
 	if err := s.state.createRun(ctx, spec.RunID, RunStatePending, runAttrs); err != nil {

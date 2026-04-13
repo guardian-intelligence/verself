@@ -37,8 +37,8 @@ type Config struct {
 	JailerRoot      string // chroot base dir, e.g. "/srv/jailer"
 	JailerUID       int    // unprivileged UID for jailer
 	JailerGID       int    // unprivileged GID for jailer
-	VCPUs           int    // vCPU count per VM (default 2)
-	MemoryMiB       int    // memory per VM in MiB (default 512)
+	VCPUs           int    // vCPU count per VM (default 4)
+	MemoryMiB       int    // memory per VM in MiB (default 4096)
 	HostInterface   string // outbound interface for guest egress (auto-detected if empty)
 	GuestPoolCIDR   string // guest IPv4 pool subdivided into /30s
 	StateDBPath     string // durable host runtime ledger (SQLite WAL)
@@ -58,8 +58,8 @@ func DefaultConfig() Config {
 		JailerRoot:      "/srv/jailer",
 		JailerUID:       10000,
 		JailerGID:       10000,
-		VCPUs:           2,
-		MemoryMiB:       2048,
+		VCPUs:           4,
+		MemoryMiB:       4096,
 		GuestPoolCIDR:   defaultGuestPoolCIDR,
 		StateDBPath:     defaultStateDBPath,
 		HostServiceIP:   defaultHostServiceIP,
@@ -70,9 +70,17 @@ func DefaultConfig() Config {
 // RunSpec describes the command to run inside the VM.
 type RunSpec struct {
 	RunID              string            `json:"run_id"`
+	WorkloadKind       string            `json:"workload_kind,omitempty"`
+	RunnerClass        string            `json:"runner_class,omitempty"`
 	RunCommand         []string          `json:"run_command"`
 	RunWorkDir         string            `json:"run_work_dir,omitempty"`
 	Env                map[string]string `json:"env"`
+	WorkflowYAML       string            `json:"workflow_yaml,omitempty"`
+	WorkflowEnv        map[string]string `json:"workflow_env,omitempty"`
+	WorkflowSecrets    map[string]string `json:"workflow_secrets,omitempty"`
+	WorkflowEventName  string            `json:"workflow_event_name,omitempty"`
+	WorkflowInputs     map[string]string `json:"workflow_inputs,omitempty"`
+	GitHubJITConfig    string            `json:"github_jit_config,omitempty"`
 	BillablePhases     []string          `json:"billable_phases,omitempty"`
 	CheckpointSaveRefs []string          `json:"checkpoint_save_refs,omitempty"`
 }
@@ -109,6 +117,27 @@ type RunResult struct {
 
 const firecrackerAPIStepTimeout = 5 * time.Second
 
+func validateRunSpec(run RunSpec) error {
+	if err := vmproto.ValidateWorkloadKind(run.WorkloadKind); err != nil {
+		return err
+	}
+	switch vmproto.NormalizeWorkloadKind(run.WorkloadKind) {
+	case vmproto.WorkloadKindDirect:
+		if len(run.RunCommand) == 0 {
+			return fmt.Errorf("run command is required")
+		}
+	case vmproto.WorkloadKindForgejoWorkflow:
+		if strings.TrimSpace(run.WorkflowYAML) == "" {
+			return fmt.Errorf("workflow_yaml is required for workload_kind %q", vmproto.WorkloadKindForgejoWorkflow)
+		}
+	case vmproto.WorkloadKindGitHubRunner:
+		if strings.TrimSpace(run.GitHubJITConfig) == "" {
+			return fmt.Errorf("github_jit_config is required for workload_kind %q", vmproto.WorkloadKindGitHubRunner)
+		}
+	}
+	return nil
+}
+
 // Orchestrator manages the full lifecycle of a Firecracker VM run.
 type Orchestrator struct {
 	cfg    Config
@@ -120,10 +149,10 @@ type Orchestrator struct {
 // without WithPrivOps, DirectPrivOps{} is used (requires root).
 func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if cfg.VCPUs == 0 {
-		cfg.VCPUs = 2
+		cfg.VCPUs = 4
 	}
 	if cfg.MemoryMiB == 0 {
-		cfg.MemoryMiB = 2048
+		cfg.MemoryMiB = 4096
 	}
 	if cfg.HostServiceIP == "" {
 		cfg.HostServiceIP = defaultHostServiceIP
@@ -180,14 +209,17 @@ func (o *Orchestrator) RunObserved(ctx context.Context, run RunSpec, observer Ru
 		err = fmt.Errorf("invalid run ID (must be UUID): %w", parseErr)
 		return
 	}
-	if len(run.RunCommand) == 0 {
-		err = fmt.Errorf("run command is required")
+	run.WorkloadKind = vmproto.NormalizeWorkloadKind(run.WorkloadKind)
+	if validateErr := validateRunSpec(run); validateErr != nil {
+		err = validateErr
 		return
 	}
 
 	ctx, span := tracer.Start(ctx, "vmorchestrator.Run",
 		trace.WithAttributes(
 			attribute.String("run.id", run.RunID),
+			attribute.String("run.workload_kind", run.WorkloadKind),
+			attribute.String("run.runner_class", run.RunnerClass),
 		),
 	)
 	defer func() {

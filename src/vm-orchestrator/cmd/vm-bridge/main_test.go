@@ -112,6 +112,24 @@ func TestNormalizeWorkDirFallsBackToWorkspace(t *testing.T) {
 	}
 }
 
+func TestValidateActKeyValueRequiresPortableEnvironmentKey(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"SECRET", "ACTIONS_RUNTIME_TOKEN", "_LEADING_UNDERSCORE", "secret_123"} {
+		if err := validateActKeyValue(key, "value"); err != nil {
+			t.Fatalf("validateActKeyValue(%q): %v", key, err)
+		}
+	}
+	for _, key := range []string{"1SECRET", "SECRET-NAME", "SECRET.NAME", "SECRET\nNAME", ""} {
+		if err := validateActKeyValue(key, "value"); err == nil {
+			t.Fatalf("validateActKeyValue(%q) accepted invalid key", key)
+		}
+	}
+	if err := validateActKeyValue("SECRET", "line one\nline two"); err == nil {
+		t.Fatal("validateActKeyValue accepted newline in value")
+	}
+}
+
 func TestRunCLIHelp(t *testing.T) {
 	t.Parallel()
 

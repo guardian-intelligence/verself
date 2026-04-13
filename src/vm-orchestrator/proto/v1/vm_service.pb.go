@@ -89,6 +89,14 @@ type HostRunSpec struct {
 	CheckpointSaveRefs []string               `protobuf:"bytes,6,rep,name=checkpoint_save_refs,json=checkpointSaveRefs,proto3" json:"checkpoint_save_refs,omitempty"`
 	AttemptId          string                 `protobuf:"bytes,7,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
 	SegmentId          string                 `protobuf:"bytes,8,opt,name=segment_id,json=segmentId,proto3" json:"segment_id,omitempty"`
+	WorkloadKind       string                 `protobuf:"bytes,9,opt,name=workload_kind,json=workloadKind,proto3" json:"workload_kind,omitempty"`
+	RunnerClass        string                 `protobuf:"bytes,10,opt,name=runner_class,json=runnerClass,proto3" json:"runner_class,omitempty"`
+	WorkflowYaml       string                 `protobuf:"bytes,11,opt,name=workflow_yaml,json=workflowYaml,proto3" json:"workflow_yaml,omitempty"`
+	WorkflowEnv        map[string]string      `protobuf:"bytes,12,rep,name=workflow_env,json=workflowEnv,proto3" json:"workflow_env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WorkflowSecrets    map[string]string      `protobuf:"bytes,13,rep,name=workflow_secrets,json=workflowSecrets,proto3" json:"workflow_secrets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WorkflowEventName  string                 `protobuf:"bytes,14,opt,name=workflow_event_name,json=workflowEventName,proto3" json:"workflow_event_name,omitempty"`
+	WorkflowInputs     map[string]string      `protobuf:"bytes,15,rep,name=workflow_inputs,json=workflowInputs,proto3" json:"workflow_inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	GithubJitConfig    string                 `protobuf:"bytes,16,opt,name=github_jit_config,json=githubJitConfig,proto3" json:"github_jit_config,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -175,6 +183,62 @@ func (x *HostRunSpec) GetAttemptId() string {
 func (x *HostRunSpec) GetSegmentId() string {
 	if x != nil {
 		return x.SegmentId
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetWorkloadKind() string {
+	if x != nil {
+		return x.WorkloadKind
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetRunnerClass() string {
+	if x != nil {
+		return x.RunnerClass
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetWorkflowYaml() string {
+	if x != nil {
+		return x.WorkflowYaml
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetWorkflowEnv() map[string]string {
+	if x != nil {
+		return x.WorkflowEnv
+	}
+	return nil
+}
+
+func (x *HostRunSpec) GetWorkflowSecrets() map[string]string {
+	if x != nil {
+		return x.WorkflowSecrets
+	}
+	return nil
+}
+
+func (x *HostRunSpec) GetWorkflowEventName() string {
+	if x != nil {
+		return x.WorkflowEventName
+	}
+	return ""
+}
+
+func (x *HostRunSpec) GetWorkflowInputs() map[string]string {
+	if x != nil {
+		return x.WorkflowInputs
+	}
+	return nil
+}
+
+func (x *HostRunSpec) GetGithubJitConfig() string {
+	if x != nil {
+		return x.GithubJitConfig
 	}
 	return ""
 }
@@ -1147,7 +1211,7 @@ var File_proto_v1_vm_service_proto protoreflect.FileDescriptor
 
 const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
-	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\x80\x03\n" +
+	"\x19proto/v1/vm_service.proto\x12\x1eforge_metal.vm_orchestrator.v1\"\xc8\b\n" +
 	"\vHostRunSpec\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
 	"\vrun_command\x18\x02 \x03(\tR\n" +
@@ -1160,8 +1224,26 @@ const file_proto_v1_vm_service_proto_rawDesc = "" +
 	"\n" +
 	"attempt_id\x18\a \x01(\tR\tattemptId\x12\x1d\n" +
 	"\n" +
-	"segment_id\x18\b \x01(\tR\tsegmentId\x1a6\n" +
+	"segment_id\x18\b \x01(\tR\tsegmentId\x12#\n" +
+	"\rworkload_kind\x18\t \x01(\tR\fworkloadKind\x12!\n" +
+	"\frunner_class\x18\n" +
+	" \x01(\tR\vrunnerClass\x12#\n" +
+	"\rworkflow_yaml\x18\v \x01(\tR\fworkflowYaml\x12_\n" +
+	"\fworkflow_env\x18\f \x03(\v2<.forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowEnvEntryR\vworkflowEnv\x12k\n" +
+	"\x10workflow_secrets\x18\r \x03(\v2@.forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowSecretsEntryR\x0fworkflowSecrets\x12.\n" +
+	"\x13workflow_event_name\x18\x0e \x01(\tR\x11workflowEventName\x12h\n" +
+	"\x0fworkflow_inputs\x18\x0f \x03(\v2?.forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowInputsEntryR\x0eworkflowInputs\x12*\n" +
+	"\x11github_jit_config\x18\x10 \x01(\tR\x0fgithubJitConfig\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
+	"\x10WorkflowEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aB\n" +
+	"\x14WorkflowSecretsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aA\n" +
+	"\x13WorkflowInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"_\n" +
 	"\vPhaseResult\x12\x12\n" +
@@ -1283,7 +1365,7 @@ func file_proto_v1_vm_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_v1_vm_service_proto_goTypes = []any{
 	(RunState)(0),                  // 0: forge_metal.vm_orchestrator.v1.RunState
 	(*HostRunSpec)(nil),            // 1: forge_metal.vm_orchestrator.v1.HostRunSpec
@@ -1301,32 +1383,38 @@ var file_proto_v1_vm_service_proto_goTypes = []any{
 	(*GetCapacityRequest)(nil),     // 13: forge_metal.vm_orchestrator.v1.GetCapacityRequest
 	(*GetCapacityResponse)(nil),    // 14: forge_metal.vm_orchestrator.v1.GetCapacityResponse
 	nil,                            // 15: forge_metal.vm_orchestrator.v1.HostRunSpec.EnvEntry
-	nil,                            // 16: forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
+	nil,                            // 16: forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowEnvEntry
+	nil,                            // 17: forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowSecretsEntry
+	nil,                            // 18: forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowInputsEntry
+	nil,                            // 19: forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
 }
 var file_proto_v1_vm_service_proto_depIdxs = []int32{
 	15, // 0: forge_metal.vm_orchestrator.v1.HostRunSpec.env:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec.EnvEntry
-	2,  // 1: forge_metal.vm_orchestrator.v1.HostRunResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
-	3,  // 2: forge_metal.vm_orchestrator.v1.HostRunResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
-	1,  // 3: forge_metal.vm_orchestrator.v1.EnsureRunRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec
-	0,  // 4: forge_metal.vm_orchestrator.v1.EnsureRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
-	0,  // 5: forge_metal.vm_orchestrator.v1.GetRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
-	4,  // 6: forge_metal.vm_orchestrator.v1.GetRunResponse.result:type_name -> forge_metal.vm_orchestrator.v1.HostRunResult
-	16, // 7: forge_metal.vm_orchestrator.v1.HostRunEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
-	5,  // 8: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:input_type -> forge_metal.vm_orchestrator.v1.EnsureRunRequest
-	7,  // 9: forge_metal.vm_orchestrator.v1.VMService.GetRun:input_type -> forge_metal.vm_orchestrator.v1.GetRunRequest
-	9,  // 10: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamRunEventsRequest
-	11, // 11: forge_metal.vm_orchestrator.v1.VMService.CancelRun:input_type -> forge_metal.vm_orchestrator.v1.CancelRunRequest
-	13, // 12: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
-	6,  // 13: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:output_type -> forge_metal.vm_orchestrator.v1.EnsureRunResponse
-	8,  // 14: forge_metal.vm_orchestrator.v1.VMService.GetRun:output_type -> forge_metal.vm_orchestrator.v1.GetRunResponse
-	10, // 15: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:output_type -> forge_metal.vm_orchestrator.v1.HostRunEvent
-	12, // 16: forge_metal.vm_orchestrator.v1.VMService.CancelRun:output_type -> forge_metal.vm_orchestrator.v1.CancelRunResponse
-	14, // 17: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
-	13, // [13:18] is the sub-list for method output_type
-	8,  // [8:13] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	16, // 1: forge_metal.vm_orchestrator.v1.HostRunSpec.workflow_env:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowEnvEntry
+	17, // 2: forge_metal.vm_orchestrator.v1.HostRunSpec.workflow_secrets:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowSecretsEntry
+	18, // 3: forge_metal.vm_orchestrator.v1.HostRunSpec.workflow_inputs:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec.WorkflowInputsEntry
+	2,  // 4: forge_metal.vm_orchestrator.v1.HostRunResult.phase_results:type_name -> forge_metal.vm_orchestrator.v1.PhaseResult
+	3,  // 5: forge_metal.vm_orchestrator.v1.HostRunResult.metrics:type_name -> forge_metal.vm_orchestrator.v1.VMMetrics
+	1,  // 6: forge_metal.vm_orchestrator.v1.EnsureRunRequest.spec:type_name -> forge_metal.vm_orchestrator.v1.HostRunSpec
+	0,  // 7: forge_metal.vm_orchestrator.v1.EnsureRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
+	0,  // 8: forge_metal.vm_orchestrator.v1.GetRunResponse.state:type_name -> forge_metal.vm_orchestrator.v1.RunState
+	4,  // 9: forge_metal.vm_orchestrator.v1.GetRunResponse.result:type_name -> forge_metal.vm_orchestrator.v1.HostRunResult
+	19, // 10: forge_metal.vm_orchestrator.v1.HostRunEvent.attrs:type_name -> forge_metal.vm_orchestrator.v1.HostRunEvent.AttrsEntry
+	5,  // 11: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:input_type -> forge_metal.vm_orchestrator.v1.EnsureRunRequest
+	7,  // 12: forge_metal.vm_orchestrator.v1.VMService.GetRun:input_type -> forge_metal.vm_orchestrator.v1.GetRunRequest
+	9,  // 13: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:input_type -> forge_metal.vm_orchestrator.v1.StreamRunEventsRequest
+	11, // 14: forge_metal.vm_orchestrator.v1.VMService.CancelRun:input_type -> forge_metal.vm_orchestrator.v1.CancelRunRequest
+	13, // 15: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:input_type -> forge_metal.vm_orchestrator.v1.GetCapacityRequest
+	6,  // 16: forge_metal.vm_orchestrator.v1.VMService.EnsureRun:output_type -> forge_metal.vm_orchestrator.v1.EnsureRunResponse
+	8,  // 17: forge_metal.vm_orchestrator.v1.VMService.GetRun:output_type -> forge_metal.vm_orchestrator.v1.GetRunResponse
+	10, // 18: forge_metal.vm_orchestrator.v1.VMService.StreamRunEvents:output_type -> forge_metal.vm_orchestrator.v1.HostRunEvent
+	12, // 19: forge_metal.vm_orchestrator.v1.VMService.CancelRun:output_type -> forge_metal.vm_orchestrator.v1.CancelRunResponse
+	14, // 20: forge_metal.vm_orchestrator.v1.VMService.GetCapacity:output_type -> forge_metal.vm_orchestrator.v1.GetCapacityResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_vm_service_proto_init() }
@@ -1340,7 +1428,7 @@ func file_proto_v1_vm_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_vm_service_proto_rawDesc), len(file_proto_v1_vm_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

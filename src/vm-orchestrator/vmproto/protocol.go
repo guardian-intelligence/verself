@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	ProtocolVersion = 1
+	ProtocolVersion = 2
 	GuestPort       = 10789
 	GuestCID        = 52
 
@@ -75,12 +75,43 @@ type NetworkConfig struct {
 
 type RunRequest struct {
 	RunID               string            `json:"run_id"`
+	WorkloadKind        string            `json:"workload_kind,omitempty"`
+	RunnerClass         string            `json:"runner_class,omitempty"`
 	RunCommand          []string          `json:"run_command"`
 	RunWorkDir          string            `json:"run_work_dir,omitempty"`
 	Env                 map[string]string `json:"env,omitempty"`
+	WorkflowYAML        string            `json:"workflow_yaml,omitempty"`
+	WorkflowEnv         map[string]string `json:"workflow_env,omitempty"`
+	WorkflowSecrets     map[string]string `json:"workflow_secrets,omitempty"`
+	WorkflowEventName   string            `json:"workflow_event_name,omitempty"`
+	WorkflowInputs      map[string]string `json:"workflow_inputs,omitempty"`
+	GitHubJITConfig     string            `json:"github_jit_config,omitempty"`
 	Network             NetworkConfig     `json:"network"`
 	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
 	ProtocolVersion     int               `json:"protocol_version"`
+}
+
+const (
+	WorkloadKindDirect          = "direct"
+	WorkloadKindForgejoWorkflow = "forgejo_workflow"
+	WorkloadKindGitHubRunner    = "github_runner"
+)
+
+func NormalizeWorkloadKind(kind string) string {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return WorkloadKindDirect
+	}
+	return kind
+}
+
+func ValidateWorkloadKind(kind string) error {
+	switch NormalizeWorkloadKind(kind) {
+	case WorkloadKindDirect, WorkloadKindForgejoWorkflow, WorkloadKindGitHubRunner:
+		return nil
+	default:
+		return fmt.Errorf("unsupported workload_kind %q", strings.TrimSpace(kind))
+	}
 }
 
 type PhaseStart struct {

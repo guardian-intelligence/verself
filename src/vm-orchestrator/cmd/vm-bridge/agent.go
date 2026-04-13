@@ -114,7 +114,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		runDuration time.Duration
 		exitCode    int
 	)
-	runDuration, exitCode, err = session.runPhase(jobCtx, controlCh, "run", runReq.RunCommand, normalizeWorkDir(runReq.RunWorkDir), env)
+	runDuration, exitCode, err = session.runWorkload(jobCtx, controlCh, runReq, env)
 	if err != nil {
 		return session.fail(err)
 	}
@@ -248,6 +248,10 @@ func (s *agentSession) waitForRunRequest(controlCh <-chan vmproto.Envelope) (vmp
 					req.ProtocolVersion,
 					vmproto.ProtocolVersion,
 				)
+			}
+			req.WorkloadKind = vmproto.NormalizeWorkloadKind(req.WorkloadKind)
+			if err := vmproto.ValidateWorkloadKind(req.WorkloadKind); err != nil {
+				return vmproto.RunRequest{}, protocolStateError("await_run_request", "invalid run_request workload_kind: %v", err)
 			}
 			if rawMode, ok := req.Env[bridgeFaultEnvVar]; ok {
 				mode, err := parseBridgeFaultMode(rawMode)
