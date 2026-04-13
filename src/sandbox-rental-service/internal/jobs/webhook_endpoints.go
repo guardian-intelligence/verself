@@ -382,10 +382,10 @@ func (s *Service) findOrCreateWebhookIntegration(ctx context.Context, tx *sql.Tx
 }
 
 func (s *Service) encryptWebhookSecret(secret string) (string, string, error) {
-	if s == nil || s.WebhookSecretCodec == nil {
+	if s == nil || s.SecretCodec == nil {
 		return "", "", fmt.Errorf("webhook secret codec is not configured")
 	}
-	ciphertext, err := s.WebhookSecretCodec.Encrypt(secret)
+	ciphertext, err := s.SecretCodec.Encrypt(secret)
 	if err != nil {
 		return "", "", err
 	}
@@ -393,10 +393,10 @@ func (s *Service) encryptWebhookSecret(secret string) (string, string, error) {
 }
 
 func (s *Service) decryptWebhookSecret(ciphertext string) (string, error) {
-	if s == nil || s.WebhookSecretCodec == nil {
+	if s == nil || s.SecretCodec == nil {
 		return "", fmt.Errorf("webhook secret codec is not configured")
 	}
-	return s.WebhookSecretCodec.Decrypt(ciphertext)
+	return s.SecretCodec.Decrypt(ciphertext)
 }
 
 func normalizeCreateWebhookEndpointRequest(req CreateWebhookEndpointRequest) (CreateWebhookEndpointRequest, error) {

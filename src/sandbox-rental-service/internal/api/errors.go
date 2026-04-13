@@ -61,6 +61,10 @@ func tooManyRequests(ctx context.Context, code, detail string) error {
 	return problem(ctx, http.StatusTooManyRequests, code, detail, nil)
 }
 
+func serviceUnavailable(ctx context.Context, code, detail string, cause error) error {
+	return problem(ctx, http.StatusServiceUnavailable, code, detail, cause)
+}
+
 func internalFailure(ctx context.Context, code, detail string, cause error) error {
 	return problem(ctx, http.StatusInternalServerError, code, detail, cause)
 }

@@ -354,6 +354,8 @@ export const vSandboxExecutionRecord = v.strictObject({
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.optional(v.string()),
   execution_id: v.string(),
+  external_provider: v.optional(v.string()),
+  external_task_id: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
   latest_attempt: vSandboxAttemptRecord,
@@ -365,7 +367,28 @@ export const vSandboxExecutionRecord = v.strictObject({
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  source_kind: v.optional(v.string()),
+  source_ref: v.optional(v.string()),
   status: v.string(),
+  updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workload_kind: v.optional(v.string()),
+});
+
+export const vSandboxGitHubInstallationConnectResponse = v.strictObject({
+  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
+  expires_at: v.pipe(v.string(), v.isoTimestamp()),
+  setup_url: v.string(),
+  state: v.string(),
+});
+
+export const vSandboxGitHubInstallationRecord = v.strictObject({
+  account_login: v.string(),
+  account_type: v.string(),
+  active: v.boolean(),
+  created_at: v.pipe(v.string(), v.isoTimestamp()),
+  installation_id: v.string(),
+  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
@@ -431,6 +454,7 @@ export const vSandboxSubmitRequest = v.strictObject({
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
 });
 
 export const vSandboxWebhookEndpointRecord = v.strictObject({
@@ -587,6 +611,8 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   created_at: v.pipe(v.string(), v.isoTimestamp()),
   default_branch: v.optional(v.string()),
   execution_id: v.string(),
+  external_provider: v.optional(v.string()),
+  external_task_id: v.optional(v.string()),
   idempotency_key: v.optional(v.string()),
   kind: v.string(),
   latest_attempt: vSandboxAttemptRecord,
@@ -598,8 +624,18 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
+  source_kind: v.optional(v.string()),
+  source_ref: v.optional(v.string()),
   status: v.string(),
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
+  workload_kind: v.optional(v.string()),
+});
+
+export const vSandboxGitHubInstallationConnectResponseWritable = v.strictObject({
+  expires_at: v.pipe(v.string(), v.isoTimestamp()),
+  setup_url: v.string(),
+  state: v.string(),
 });
 
 export const vSandboxImportRepoRequestWritable = v.strictObject({
@@ -659,6 +695,7 @@ export const vSandboxSubmitRequestWritable = v.strictObject({
   repo_id: v.optional(v.string()),
   repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
+  runner_class: v.optional(v.string()),
 });
 
 export const vCreateBillingCheckoutBody = vSandboxBillingCheckoutRequestWritable;
@@ -770,6 +807,22 @@ export const vGetExecutionLogsPath = v.object({
  * OK
  */
 export const vGetExecutionLogsResponse = vSandboxExecutionLogs;
+
+/**
+ * OK
+ */
+export const vListGithubInstallationsResponse = v.nullable(
+  v.array(vSandboxGitHubInstallationRecord),
+);
+
+export const vBeginGithubInstallationHeaders = v.object({
+  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+});
+
+/**
+ * Created
+ */
+export const vBeginGithubInstallationResponse = vSandboxGitHubInstallationConnectResponse;
 
 /**
  * OK

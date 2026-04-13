@@ -146,6 +146,39 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 		respond 405
 	}
 
+	@sandbox_rental_github_actions_webhook {
+		method POST
+		path /webhooks/github/actions
+	}
+	handle @sandbox_rental_github_actions_webhook {
+		import waf_detection
+		request_body {
+			max_size 1048576
+		}
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle /webhooks/github/actions {
+		respond 405
+	}
+
+	@sandbox_rental_github_installation_callback {
+		method GET
+		path /github/installations/callback
+	}
+	handle @sandbox_rental_github_installation_callback {
+		import waf_detection
+		import api_security_headers
+		reverse_proxy {{ services.sandbox_rental.host }}:{{ services.sandbox_rental.port }} {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle /github/installations/callback {
+		respond 405
+	}
+
 	@api_preflight {
 		method OPTIONS
 		path /api/*

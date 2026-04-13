@@ -19,3 +19,9 @@ sandbox_rental_service_river_pg_max_conns: 8
 sandbox_rental_service_river_pg_min_conns: 1
 sandbox_rental_service_river_pg_conn_max_lifetime_seconds: 1800
 sandbox_rental_service_river_pg_conn_max_idle_seconds: 300
+sandbox_rental_service_github_app_id: 0
+sandbox_rental_service_github_app_slug: ""
+sandbox_rental_service_github_app_client_id: ""
+sandbox_rental_service_github_api_base_url: "https://api.github.com"
+sandbox_rental_service_github_web_base_url: "https://github.com"
+sandbox_rental_service_github_runner_group_id: 1

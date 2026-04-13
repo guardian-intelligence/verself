@@ -34,6 +34,19 @@ var tracer = otel.Tracer("sandbox-rental-service")
 const (
 	KindDirect = "direct"
 
+	SourceKindAPI           = "api"
+	SourceKindForgejoAction = "forgejo_actions"
+	SourceKindGitHubAction  = "github_actions"
+	SourceKindCron          = "cron"
+	SourceKindCanary        = "canary"
+	SourceKindVMSession     = "vm_session"
+
+	WorkloadKindDirect          = "direct"
+	WorkloadKindForgejoWorkflow = "forgejo_workflow"
+	WorkloadKindGitHubRunner    = "github_runner"
+
+	DefaultRunnerClassLabel = "metal-4vcpu-ubuntu-2404"
+
 	StateQueued     = "queued"
 	StateReserved   = "reserved"
 	StateLaunching  = "launching"
@@ -49,11 +62,13 @@ const (
 	defaultRunCommand   = "echo hello"
 	defaultLogStream    = "stdout"
 	executionSourceType = "execution_attempt"
-	SourceKindAPI       = "api"
 
 	billingSKUCompute      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
 	billingSKUMemory       = "sandbox_memory_standard_gib_second"
 	billingSKUBlockStorage = "sandbox_block_storage_premium_nvme_gib_second"
+
+	workloadSecretGitHubJITConfig = "github_jit_config"
+	workloadSecretWorkflowPrefix  = "workflow_secret:"
 )
 
 var (
@@ -62,6 +77,7 @@ var (
 	ErrRepoNotReady       = errors.New("sandbox-rental: repo not ready")
 	ErrRepoScanCapacity   = errors.New("sandbox-rental: repo scan capacity exceeded")
 	ErrRunnerUnavailable  = errors.New("sandbox-rental: runner unavailable")
+	ErrRunnerClassMissing = errors.New("sandbox-rental: runner class missing")
 	ErrBillingUnavailable = errors.New("sandbox-rental: billing unavailable")
 )
 
@@ -99,41 +115,56 @@ type SchedulerRuntime interface {
 }
 
 type SubmitRequest struct {
-	Kind           string `json:"kind"`
-	ProductID      string `json:"product_id,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-	RepoID         string `json:"repo_id,omitempty"`
-	Repo           string `json:"repo,omitempty"`
-	RepoURL        string `json:"repo_url,omitempty"`
-	Ref            string `json:"ref,omitempty"`
-	DefaultBranch  string `json:"default_branch,omitempty"`
-	RunCommand     string `json:"run_command,omitempty"`
+	Kind             string `json:"kind"`
+	SourceKind       string `json:"source_kind,omitempty"`
+	WorkloadKind     string `json:"workload_kind,omitempty"`
+	SourceRef        string `json:"source_ref,omitempty"`
+	RunnerClass      string `json:"runner_class,omitempty"`
+	ExternalProvider string `json:"external_provider,omitempty"`
+	ExternalTaskID   string `json:"external_task_id,omitempty"`
+	ProductID        string `json:"product_id,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	IdempotencyKey   string `json:"idempotency_key,omitempty"`
+	RepoID           string `json:"repo_id,omitempty"`
+	Repo             string `json:"repo,omitempty"`
+	RepoURL          string `json:"repo_url,omitempty"`
+	Ref              string `json:"ref,omitempty"`
+	DefaultBranch    string `json:"default_branch,omitempty"`
+	RunCommand       string `json:"run_command,omitempty"`
+	WorkflowYAML     string `json:"workflow_yaml,omitempty"`
+	WorkflowEvent    string `json:"workflow_event,omitempty"`
+	GitHubJITConfig  string `json:"-"`
+	WorkflowEnv      map[string]string
+	WorkflowInputs   map[string]string
+	WorkflowSecrets  map[string]string
 }
 
 type ExecutionRecord struct {
-	ExecutionID    uuid.UUID       `json:"execution_id"`
-	OrgID          uint64          `json:"org_id"`
-	ActorID        string          `json:"actor_id"`
-	Kind           string          `json:"kind"`
-	SourceKind     string          `json:"source_kind,omitempty"`
-	WorkloadKind   string          `json:"workload_kind,omitempty"`
-	SourceRef      string          `json:"source_ref,omitempty"`
-	Provider       string          `json:"provider,omitempty"`
-	ProductID      string          `json:"product_id"`
-	Status         string          `json:"status"`
-	CorrelationID  string          `json:"correlation_id,omitempty"`
-	IdempotencyKey string          `json:"idempotency_key,omitempty"`
-	RepoID         string          `json:"repo_id,omitempty"`
-	Repo           string          `json:"repo,omitempty"`
-	RepoURL        string          `json:"repo_url,omitempty"`
-	Ref            string          `json:"ref,omitempty"`
-	DefaultBranch  string          `json:"default_branch,omitempty"`
-	RunCommand     string          `json:"run_command,omitempty"`
-	LatestAttempt  AttemptRecord   `json:"latest_attempt"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
-	BillingWindows []BillingWindow `json:"billing_windows,omitempty"`
+	ExecutionID      uuid.UUID       `json:"execution_id"`
+	OrgID            uint64          `json:"org_id"`
+	ActorID          string          `json:"actor_id"`
+	Kind             string          `json:"kind"`
+	SourceKind       string          `json:"source_kind,omitempty"`
+	WorkloadKind     string          `json:"workload_kind,omitempty"`
+	SourceRef        string          `json:"source_ref,omitempty"`
+	RunnerClass      string          `json:"runner_class,omitempty"`
+	ExternalProvider string          `json:"external_provider,omitempty"`
+	ExternalTaskID   string          `json:"external_task_id,omitempty"`
+	Provider         string          `json:"provider,omitempty"`
+	ProductID        string          `json:"product_id"`
+	Status           string          `json:"status"`
+	CorrelationID    string          `json:"correlation_id,omitempty"`
+	IdempotencyKey   string          `json:"idempotency_key,omitempty"`
+	RepoID           string          `json:"repo_id,omitempty"`
+	Repo             string          `json:"repo,omitempty"`
+	RepoURL          string          `json:"repo_url,omitempty"`
+	Ref              string          `json:"ref,omitempty"`
+	DefaultBranch    string          `json:"default_branch,omitempty"`
+	RunCommand       string          `json:"run_command,omitempty"`
+	LatestAttempt    AttemptRecord   `json:"latest_attempt"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+	BillingWindows   []BillingWindow `json:"billing_windows,omitempty"`
 }
 
 type AttemptRecord struct {
@@ -189,6 +220,7 @@ type JobEventRow struct {
 	Kind              string    `ch:"kind"`
 	SourceKind        string    `ch:"source_kind"`
 	WorkloadKind      string    `ch:"workload_kind"`
+	RunnerClass       string    `ch:"runner_class"`
 	ExternalProvider  string    `ch:"external_provider"`
 	ExternalTaskID    string    `ch:"external_task_id"`
 	Provider          string    `ch:"provider"`
@@ -225,10 +257,11 @@ type Service struct {
 	Scheduler                     SchedulerRuntime
 	Orchestrator                  Runner
 	Billing                       BillingClient
+	GitHubRunner                  *GitHubRunner
 	BillingVCPUs                  int
 	BillingMemMiB                 int
 	BillingRootfsProvisionedBytes uint64
-	WebhookSecretCodec            *SecretCodec
+	SecretCodec                   *SecretCodec
 	Logger                        *slog.Logger
 	RepoScanConcurrency           int
 
@@ -242,6 +275,14 @@ type executionSnapshot struct {
 	Status          string
 }
 
+type runnerClassRecord struct {
+	RunnerClass string
+	ProductID   string
+	VCPUs       int
+	MemoryMiB   int
+	RootfsGiB   int
+}
+
 type executionWorkItem struct {
 	ExecutionID        uuid.UUID
 	AttemptID          uuid.UUID
@@ -251,6 +292,9 @@ type executionWorkItem struct {
 	SourceKind         string
 	WorkloadKind       string
 	SourceRef          string
+	RunnerClass        string
+	ExternalProvider   string
+	ExternalTaskID     string
 	Provider           string
 	ProductID          string
 	RepoID             string
@@ -259,6 +303,12 @@ type executionWorkItem struct {
 	Ref                string
 	DefaultBranch      string
 	RunCommand         string
+	WorkflowYAML       string
+	WorkflowEvent      string
+	GitHubJITConfig    string
+	WorkflowEnv        map[string]string
+	WorkflowInputs     map[string]string
+	WorkflowSecrets    map[string]string
 	VerificationRunID  string
 	CorrelationID      string
 	AttemptSeq         int
@@ -336,6 +386,13 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 			return snapshot.ExecutionID, snapshot.LatestAttemptID, nil
 		}
 	}
+	runnerClass, err := s.resolveRunnerClass(ctx, req.RunnerClass)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+	if runnerClass.ProductID != "" && runnerClass.ProductID != req.ProductID {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("runner_class %q belongs to product %q, not %q", req.RunnerClass, runnerClass.ProductID, req.ProductID)
+	}
 
 	executionID := uuid.New()
 	attemptID := uuid.New()
@@ -349,8 +406,9 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 			attribute.String("attempt.id", attemptID.String()),
 			attribute.Int64("execution.org_id", int64(orgID)),
 			attribute.String("execution.kind", req.Kind),
-			attribute.String("execution.source_kind", SourceKindAPI),
-			attribute.String("execution.workload_kind", req.Kind),
+			attribute.String("execution.source_kind", req.SourceKind),
+			attribute.String("execution.workload_kind", req.WorkloadKind),
+			attribute.String("execution.runner_class", req.RunnerClass),
 			attribute.String("execution.repo", req.Repo),
 			attribute.String("verification.run_id", verificationRunID),
 		))
@@ -485,8 +543,9 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			attribute.String("execution.id", executionID.String()),
 			attribute.String("attempt.id", attemptID.String()),
 			attribute.String("execution.kind", req.Kind),
-			attribute.String("execution.source_kind", SourceKindAPI),
-			attribute.String("execution.workload_kind", req.Kind),
+			attribute.String("execution.source_kind", req.SourceKind),
+			attribute.String("execution.workload_kind", req.WorkloadKind),
+			attribute.String("execution.runner_class", req.RunnerClass),
 		))
 	defer span.End()
 
@@ -497,7 +556,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 		s.Logger.ErrorContext(ctx, "mark launching", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 		return fmt.Errorf("mark launching: %w", err)
 	}
-	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_run_id=%s", req.Kind, orchestratorRunID)
+	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_run_id=%s", req.WorkloadKind, orchestratorRunID)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -760,11 +819,15 @@ func (s *Service) handleSettleFailure(
 }
 
 func (s *Service) runAttemptWorkload(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation) (executionOutcome, error) {
-	switch req.Kind {
-	case KindDirect:
+	switch req.WorkloadKind {
+	case WorkloadKindDirect:
 		return s.runDirect(ctx, executionID, attemptID, req, reservation, activationCh)
+	case WorkloadKindForgejoWorkflow:
+		return s.runForgejoWorkflow(ctx, executionID, attemptID, req, reservation, activationCh)
+	case WorkloadKindGitHubRunner:
+		return s.runGitHubRunner(ctx, executionID, attemptID, req, reservation, activationCh)
 	default:
-		return executionOutcome{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
+		return executionOutcome{}, fmt.Errorf("unsupported execution workload_kind %q", req.WorkloadKind)
 	}
 }
 
@@ -790,13 +853,49 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 	}
 
 	runSpec := vmorchestrator.HostRunSpec{
-		RunID:          attemptID.String(),
-		RunCommand:     []string{"sh", "-c", command},
-		BillablePhases: []string{"run"},
-		Env: map[string]string{
-			"REPO_URL": req.RepoURL,
-		},
+		RunCommand: []string{"sh", "-c", command},
 	}
+	return s.runVMWorkload(ctx, executionID, attemptID, req, reservation, activationCh, runSpec, "direct execution")
+}
+
+func (s *Service) runForgejoWorkflow(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation) (executionOutcome, error) {
+	if strings.TrimSpace(req.WorkflowYAML) == "" {
+		err := fmt.Errorf("workflow_yaml is required for workload_kind %q", WorkloadKindForgejoWorkflow)
+		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
+	}
+	runSpec := vmorchestrator.HostRunSpec{
+		WorkflowYAML:      req.WorkflowYAML,
+		WorkflowEnv:       cloneStringMap(req.WorkflowEnv),
+		WorkflowSecrets:   cloneStringMap(req.WorkflowSecrets),
+		WorkflowEventName: req.WorkflowEvent,
+		WorkflowInputs:    cloneStringMap(req.WorkflowInputs),
+	}
+	return s.runVMWorkload(ctx, executionID, attemptID, req, reservation, activationCh, runSpec, "forgejo workflow")
+}
+
+func (s *Service) runGitHubRunner(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation) (executionOutcome, error) {
+	if strings.TrimSpace(req.GitHubJITConfig) == "" {
+		err := fmt.Errorf("github_jit_config is required for workload_kind %q", WorkloadKindGitHubRunner)
+		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
+	}
+	runSpec := vmorchestrator.HostRunSpec{
+		GitHubJITConfig: strings.TrimSpace(req.GitHubJITConfig),
+	}
+	return s.runVMWorkload(ctx, executionID, attemptID, req, reservation, activationCh, runSpec, "github runner")
+}
+
+func (s *Service) runVMWorkload(ctx context.Context, executionID, attemptID uuid.UUID, req SubmitRequest, reservation billingclient.Reservation, activationCh chan<- workloadActivation, runSpec vmorchestrator.HostRunSpec, launchLabel string) (executionOutcome, error) {
+	runSpec.RunID = attemptID.String()
+	runSpec.WorkloadKind = req.WorkloadKind
+	runSpec.RunnerClass = req.RunnerClass
+	runSpec.BillablePhases = []string{"run"}
+	runSpec.AttemptID = attemptID.String()
+	runSpec.Env = mergeStringMaps(map[string]string{
+		"REPO_URL":                 req.RepoURL,
+		"FORGE_METAL_EXECUTION_ID": executionID.String(),
+		"FORGE_METAL_ATTEMPT_ID":   attemptID.String(),
+		"FORGE_METAL_RUNNER_CLASS": req.RunnerClass,
+	}, runSpec.Env)
 
 	runID, _, err := s.Orchestrator.EnsureRun(ctx, runSpec)
 	if err != nil {
@@ -807,7 +906,7 @@ func (s *Service) runDirect(ctx context.Context, executionID, attemptID uuid.UUI
 		_, _ = s.Orchestrator.CancelRun(context.Background(), runID, "run_id_mismatch")
 		return executionOutcome{CompletedAt: time.Now().UTC(), FailureReason: failureReasonFromError(err)}, err
 	}
-	s.writeSystemLog(ctx, executionID, attemptID, "launched direct execution")
+	s.writeSystemLog(ctx, executionID, attemptID, "launched %s", launchLabel)
 
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
@@ -934,6 +1033,9 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.source_kind,
 			e.workload_kind,
 			e.source_ref,
+			e.runner_class,
+			e.external_provider,
+			e.external_task_id,
 			e.provider,
 			e.product_id,
 			e.status,
@@ -987,6 +1089,9 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.SourceKind,
 		&record.WorkloadKind,
 		&record.SourceRef,
+		&record.RunnerClass,
+		&record.ExternalProvider,
+		&record.ExternalTaskID,
 		&record.Provider,
 		&record.ProductID,
 		&record.Status,
@@ -1149,6 +1254,9 @@ func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemp
 			e.source_kind,
 			e.workload_kind,
 			e.source_ref,
+			e.runner_class,
+			e.external_provider,
+			e.external_task_id,
 			e.provider,
 			e.product_id,
 			COALESCE(e.repo_id::text, ''),
@@ -1208,6 +1316,9 @@ func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemp
 		&item.SourceKind,
 		&item.WorkloadKind,
 		&item.SourceRef,
+		&item.RunnerClass,
+		&item.ExternalProvider,
+		&item.ExternalTaskID,
 		&item.Provider,
 		&item.ProductID,
 		&item.RepoID,
@@ -1253,20 +1364,35 @@ func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemp
 			ReservationJSON:  json.RawMessage(reservationJSON.String),
 		}
 	}
+	if err := s.hydrateExecutionWorkloadPayload(ctx, &item); err != nil {
+		return executionWorkItem{}, err
+	}
 	return item, nil
 }
 
 func (item executionWorkItem) submitRequest() SubmitRequest {
 	return SubmitRequest{
-		Kind:          item.Kind,
-		ProductID:     item.ProductID,
-		Provider:      item.Provider,
-		RepoID:        item.RepoID,
-		Repo:          item.Repo,
-		RepoURL:       item.RepoURL,
-		Ref:           item.Ref,
-		DefaultBranch: item.DefaultBranch,
-		RunCommand:    item.RunCommand,
+		Kind:             item.Kind,
+		SourceKind:       item.SourceKind,
+		WorkloadKind:     item.WorkloadKind,
+		SourceRef:        item.SourceRef,
+		RunnerClass:      item.RunnerClass,
+		ExternalProvider: item.ExternalProvider,
+		ExternalTaskID:   item.ExternalTaskID,
+		ProductID:        item.ProductID,
+		Provider:         item.Provider,
+		RepoID:           item.RepoID,
+		Repo:             item.Repo,
+		RepoURL:          item.RepoURL,
+		Ref:              item.Ref,
+		DefaultBranch:    item.DefaultBranch,
+		RunCommand:       item.RunCommand,
+		WorkflowYAML:     item.WorkflowYAML,
+		WorkflowEvent:    item.WorkflowEvent,
+		WorkflowEnv:      cloneStringMap(item.WorkflowEnv),
+		WorkflowInputs:   cloneStringMap(item.WorkflowInputs),
+		WorkflowSecrets:  cloneStringMap(item.WorkflowSecrets),
+		GitHubJITConfig:  item.GitHubJITConfig,
 	}
 }
 
@@ -1327,23 +1453,29 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 		}
 		repoID = parsedRepoID
 	}
-	sourceKind := SourceKindAPI
-	workloadKind := req.Kind
-	sourceRef := ""
+	sourceKind := req.SourceKind
+	workloadKind := req.WorkloadKind
+	sourceRef := req.SourceRef
 
 	if _, err := tx.Exec(ctx, `
 			INSERT INTO executions (
-				execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref, provider,
+				execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref,
+				runner_class, external_provider, external_task_id, provider,
 				product_id, status, correlation_id, verification_run_id,
 				idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
 				latest_attempt_id, created_at, updated_at
 			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8,
-				$9, $10, $11, $12,
-				NULLIF($13, ''), $14, $15, $16, $17, $18, $19,
-				$20, $21, $21
+				$1, $2, $3, $4, $5, $6, $7,
+				$8, $9, $10, $11,
+				$12, $13, $14, $15,
+				NULLIF($16, ''), $17, $18, $19, $20, $21, $22,
+				$23, $24, $24
 			)
-		`, executionID, int64(orgID), actorID, req.Kind, sourceKind, workloadKind, sourceRef, req.Provider, req.ProductID, StateQueued, correlationID, verificationRunID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, attemptID, now); err != nil {
+		`, executionID, int64(orgID), actorID, req.Kind, sourceKind, workloadKind, sourceRef,
+		req.RunnerClass, req.ExternalProvider, req.ExternalTaskID, req.Provider,
+		req.ProductID, StateQueued, correlationID, verificationRunID,
+		req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand,
+		attemptID, now); err != nil {
 		return scheduler.ExecutionAdvanceResult{}, err
 	}
 
@@ -1356,15 +1488,25 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 	}
 
 	specJSON, err := json.Marshal(map[string]any{
-		"kind":           req.Kind,
-		"provider":       req.Provider,
-		"product_id":     req.ProductID,
-		"repo_id":        req.RepoID,
-		"repo":           req.Repo,
-		"repo_url":       req.RepoURL,
-		"ref":            req.Ref,
-		"default_branch": req.DefaultBranch,
-		"run_command":    req.RunCommand,
+		"kind":              req.Kind,
+		"source_kind":       sourceKind,
+		"workload_kind":     workloadKind,
+		"source_ref":        sourceRef,
+		"runner_class":      req.RunnerClass,
+		"external_provider": req.ExternalProvider,
+		"external_task_id":  req.ExternalTaskID,
+		"provider":          req.Provider,
+		"product_id":        req.ProductID,
+		"repo_id":           req.RepoID,
+		"repo":              req.Repo,
+		"repo_url":          req.RepoURL,
+		"ref":               req.Ref,
+		"default_branch":    req.DefaultBranch,
+		"run_command":       req.RunCommand,
+		"workflow_yaml":     req.WorkflowYAML,
+		"workflow_event":    req.WorkflowEvent,
+		"workflow_env":      req.WorkflowEnv,
+		"workflow_inputs":   req.WorkflowInputs,
 	})
 	if err != nil {
 		return scheduler.ExecutionAdvanceResult{}, fmt.Errorf("marshal workload spec: %w", err)
@@ -1374,6 +1516,9 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 			execution_id, workload_kind, spec_jsonb, secret_refs_jsonb, created_at
 		) VALUES ($1, $2, $3::jsonb, '{}'::jsonb, $4)
 	`, executionID, workloadKind, string(specJSON), now); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+	if err := s.insertExecutionWorkloadSecrets(ctx, tx, executionID, req, now); err != nil {
 		return scheduler.ExecutionAdvanceResult{}, err
 	}
 
@@ -1398,6 +1543,108 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 		return scheduler.ExecutionAdvanceResult{}, err
 	}
 	return job, nil
+}
+
+func (s *Service) insertExecutionWorkloadSecrets(ctx context.Context, tx pgx.Tx, executionID uuid.UUID, req SubmitRequest, now time.Time) error {
+	secrets := make(map[string]string)
+	if strings.TrimSpace(req.GitHubJITConfig) != "" {
+		secrets[workloadSecretGitHubJITConfig] = strings.TrimSpace(req.GitHubJITConfig)
+	}
+	for key, value := range req.WorkflowSecrets {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("workflow secret key is required")
+		}
+		secrets[workloadSecretWorkflowPrefix+key] = value
+	}
+	if len(secrets) == 0 {
+		return nil
+	}
+	if s.SecretCodec == nil {
+		return fmt.Errorf("service secret codec is required for workload secrets")
+	}
+	for key, plaintext := range secrets {
+		ciphertext, err := s.SecretCodec.Encrypt(plaintext)
+		if err != nil {
+			return fmt.Errorf("encrypt workload secret %q: %w", key, err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO execution_workload_secrets (
+				execution_id, secret_key, ciphertext, created_at
+			) VALUES ($1, $2, $3, $4)
+		`, executionID, key, ciphertext, now); err != nil {
+			return fmt.Errorf("insert workload secret %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) hydrateExecutionWorkloadPayload(ctx context.Context, item *executionWorkItem) error {
+	if item == nil {
+		return nil
+	}
+	var rawSpec string
+	if err := s.PG.QueryRowContext(ctx, `
+		SELECT spec_jsonb::text
+		FROM execution_workload_specs
+		WHERE execution_id = $1
+	`, item.ExecutionID).Scan(&rawSpec); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("load execution workload spec: %w", err)
+	}
+	var spec struct {
+		WorkflowYAML   string            `json:"workflow_yaml"`
+		WorkflowEvent  string            `json:"workflow_event"`
+		WorkflowEnv    map[string]string `json:"workflow_env"`
+		WorkflowInputs map[string]string `json:"workflow_inputs"`
+	}
+	if err := json.Unmarshal([]byte(rawSpec), &spec); err != nil {
+		return fmt.Errorf("decode execution workload spec: %w", err)
+	}
+	item.WorkflowYAML = spec.WorkflowYAML
+	item.WorkflowEvent = spec.WorkflowEvent
+	item.WorkflowEnv = cloneStringMap(spec.WorkflowEnv)
+	item.WorkflowInputs = cloneStringMap(spec.WorkflowInputs)
+
+	rows, err := s.PG.QueryContext(ctx, `
+		SELECT secret_key, ciphertext
+		FROM execution_workload_secrets
+		WHERE execution_id = $1
+	`, item.ExecutionID)
+	if err != nil {
+		return fmt.Errorf("query execution workload secrets: %w", err)
+	}
+	defer rows.Close()
+
+	workflowSecrets := make(map[string]string)
+	for rows.Next() {
+		var key, ciphertext string
+		if err := rows.Scan(&key, &ciphertext); err != nil {
+			return fmt.Errorf("scan execution workload secret: %w", err)
+		}
+		if s.SecretCodec == nil {
+			return fmt.Errorf("service secret codec is required for workload secret %q", key)
+		}
+		plaintext, err := s.SecretCodec.Decrypt(ciphertext)
+		if err != nil {
+			return fmt.Errorf("decrypt workload secret %q: %w", key, err)
+		}
+		switch {
+		case key == workloadSecretGitHubJITConfig:
+			item.GitHubJITConfig = plaintext
+		case strings.HasPrefix(key, workloadSecretWorkflowPrefix):
+			workflowSecrets[strings.TrimPrefix(key, workloadSecretWorkflowPrefix)] = plaintext
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate execution workload secrets: %w", err)
+	}
+	if len(workflowSecrets) > 0 {
+		item.WorkflowSecrets = workflowSecrets
+	}
+	return nil
 }
 
 func appendExecutionEventPGX(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, fromState, toState, reason, traceID string, createdAt time.Time) error {
@@ -1762,6 +2009,42 @@ func (s *Service) findByIdempotencyKey(ctx context.Context, orgID uint64, key st
 	return snapshot, true, nil
 }
 
+func (s *Service) resolveRunnerClass(ctx context.Context, runnerClass string) (runnerClassRecord, error) {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.runner_class.resolve",
+		trace.WithAttributes(attribute.String("runner_class", strings.TrimSpace(runnerClass))))
+	defer span.End()
+
+	var record runnerClassRecord
+	err := s.PG.QueryRowContext(ctx, `
+		SELECT runner_class, product_id, vcpus, memory_mib, rootfs_gib
+		FROM runner_classes
+		WHERE runner_class = $1
+		  AND active
+	`, strings.TrimSpace(runnerClass)).Scan(
+		&record.RunnerClass,
+		&record.ProductID,
+		&record.VCPUs,
+		&record.MemoryMiB,
+		&record.RootfsGiB,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			err = fmt.Errorf("%w: runner_class %q is not active", ErrRunnerClassMissing, strings.TrimSpace(runnerClass))
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return runnerClassRecord{}, err
+	}
+	span.SetAttributes(
+		attribute.String("runner_class", record.RunnerClass),
+		attribute.String("product.id", record.ProductID),
+		attribute.Int("runner_class.vcpus", record.VCPUs),
+		attribute.Int("runner_class.memory_mib", record.MemoryMiB),
+		attribute.Int("runner_class.rootfs_gib", record.RootfsGiB),
+	)
+	return record, nil
+}
+
 func (s *Service) writeLogChunks(ctx context.Context, executionID, attemptID uuid.UUID, logs string, createdAt time.Time) {
 	s.writeLogChunksWithStream(ctx, executionID, attemptID, defaultLogStream, logs, createdAt)
 }
@@ -1879,10 +2162,11 @@ func (s *Service) recordExecutionCompletion(
 		OrgID:             orgID,
 		ActorID:           actorID,
 		Kind:              req.Kind,
-		SourceKind:        SourceKindAPI,
-		WorkloadKind:      req.Kind,
-		ExternalProvider:  "",
-		ExternalTaskID:    "",
+		SourceKind:        req.SourceKind,
+		WorkloadKind:      req.WorkloadKind,
+		RunnerClass:       req.RunnerClass,
+		ExternalProvider:  req.ExternalProvider,
+		ExternalTaskID:    req.ExternalTaskID,
 		Provider:          req.Provider,
 		ProductID:         req.ProductID,
 		RepoID:            req.RepoID,
@@ -1943,6 +2227,12 @@ func (s *Service) countActiveAttempts(ctx context.Context, orgID uint64) (int64,
 
 func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	req.Kind = strings.TrimSpace(req.Kind)
+	req.SourceKind = strings.TrimSpace(req.SourceKind)
+	req.WorkloadKind = strings.TrimSpace(req.WorkloadKind)
+	req.SourceRef = strings.TrimSpace(req.SourceRef)
+	req.RunnerClass = strings.TrimSpace(req.RunnerClass)
+	req.ExternalProvider = strings.TrimSpace(req.ExternalProvider)
+	req.ExternalTaskID = strings.TrimSpace(req.ExternalTaskID)
 	req.ProductID = strings.TrimSpace(req.ProductID)
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
@@ -1952,9 +2242,23 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	req.Ref = strings.TrimSpace(req.Ref)
 	req.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
 	req.RunCommand = strings.TrimSpace(req.RunCommand)
+	req.WorkflowEvent = strings.TrimSpace(req.WorkflowEvent)
+	req.GitHubJITConfig = strings.TrimSpace(req.GitHubJITConfig)
 
+	if req.Kind == "" && req.WorkloadKind != "" {
+		req.Kind = req.WorkloadKind
+	}
 	if req.Kind == "" {
 		req.Kind = KindDirect
+	}
+	if req.SourceKind == "" {
+		req.SourceKind = SourceKindAPI
+	}
+	if req.WorkloadKind == "" {
+		req.WorkloadKind = req.Kind
+	}
+	if req.RunnerClass == "" {
+		req.RunnerClass = DefaultRunnerClassLabel
 	}
 	if req.ProductID == "" {
 		req.ProductID = defaultProductID
@@ -1970,16 +2274,90 @@ func normalizeSubmitRequest(req SubmitRequest) (SubmitRequest, error) {
 	if req.DefaultBranch == "" {
 		req.DefaultBranch = defaultBranchName
 	}
-	if req.Kind == KindDirect && req.RunCommand == "" {
+	if req.WorkloadKind == WorkloadKindDirect && req.RunCommand == "" {
 		req.RunCommand = defaultRunCommand
 	}
 
-	switch req.Kind {
-	case KindDirect:
+	if !knownSourceKind(req.SourceKind) {
+		return SubmitRequest{}, fmt.Errorf("unsupported execution source_kind %q", req.SourceKind)
+	}
+	if !knownWorkloadKind(req.WorkloadKind) {
+		return SubmitRequest{}, fmt.Errorf("unsupported execution workload_kind %q", req.WorkloadKind)
+	}
+	if req.ExternalProvider != "" && req.ExternalProvider != "github" && req.ExternalProvider != "forgejo" {
+		return SubmitRequest{}, fmt.Errorf("unsupported execution external_provider %q", req.ExternalProvider)
+	}
+	switch {
+	case req.Kind == KindDirect && req.WorkloadKind == WorkloadKindDirect:
+		if req.SourceKind == SourceKindAPI && (req.ExternalProvider != "" || req.ExternalTaskID != "") {
+			return SubmitRequest{}, fmt.Errorf("api submissions cannot set external provider task identity")
+		}
+		return req, nil
+	case req.WorkloadKind == WorkloadKindForgejoWorkflow:
+		if req.SourceKind == SourceKindAPI {
+			return SubmitRequest{}, fmt.Errorf("api submissions cannot set forgejo workflow workloads")
+		}
+		if strings.TrimSpace(req.WorkflowYAML) == "" {
+			return SubmitRequest{}, fmt.Errorf("workflow_yaml is required")
+		}
+		if req.ExternalProvider == "" {
+			req.ExternalProvider = "forgejo"
+		}
+		return req, nil
+	case req.WorkloadKind == WorkloadKindGitHubRunner:
+		if req.SourceKind == SourceKindAPI {
+			return SubmitRequest{}, fmt.Errorf("api submissions cannot set github runner workloads")
+		}
+		if strings.TrimSpace(req.GitHubJITConfig) == "" {
+			return SubmitRequest{}, fmt.Errorf("github_jit_config is required")
+		}
+		if req.ExternalProvider == "" {
+			req.ExternalProvider = "github"
+		}
 		return req, nil
 	default:
-		return SubmitRequest{}, fmt.Errorf("unsupported execution kind %q", req.Kind)
+		return SubmitRequest{}, fmt.Errorf("unsupported execution kind/workload_kind %q/%q", req.Kind, req.WorkloadKind)
 	}
+}
+
+func knownSourceKind(kind string) bool {
+	switch kind {
+	case SourceKindAPI, SourceKindForgejoAction, SourceKindGitHubAction, SourceKindCron, SourceKindCanary, SourceKindVMSession:
+		return true
+	default:
+		return false
+	}
+}
+
+func knownWorkloadKind(kind string) bool {
+	switch kind {
+	case WorkloadKindDirect, WorkloadKindForgejoWorkflow, WorkloadKindGitHubRunner:
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeStringMaps(base map[string]string, override map[string]string) map[string]string {
+	out := cloneStringMap(base)
+	if out == nil {
+		out = make(map[string]string, len(override))
+	}
+	for key, value := range override {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Service) hydrateImportedRepoRequest(ctx context.Context, orgID uint64, req SubmitRequest) (SubmitRequest, error) {

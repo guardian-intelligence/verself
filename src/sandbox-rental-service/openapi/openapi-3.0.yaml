@@ -871,6 +871,10 @@ components:
           type: string
         execution_id:
           type: string
+        external_provider:
+          type: string
+        external_task_id:
+          type: string
         idempotency_key:
           type: string
         kind:
@@ -894,10 +898,18 @@ components:
           type: string
         run_command:
           type: string
+        runner_class:
+          type: string
+        source_kind:
+          type: string
+        source_ref:
+          type: string
         status:
           type: string
         updated_at:
           format: date-time
+          type: string
+        workload_kind:
           type: string
       required:
         - execution_id
@@ -907,6 +919,60 @@ components:
         - product_id
         - status
         - latest_attempt
+        - created_at
+        - updated_at
+      type: object
+    SandboxGitHubInstallationConnectResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: http://127.0.0.1:4243/schemas/SandboxGitHubInstallationConnectResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          description: Time after which the setup URL state is no longer accepted.
+          format: date-time
+          type: string
+        setup_url:
+          description: GitHub App installation URL for the current Forge Metal organization.
+          type: string
+        state:
+          description: Opaque installation state token embedded in the GitHub App setup URL.
+          type: string
+      required:
+        - state
+        - setup_url
+        - expires_at
+      type: object
+    SandboxGitHubInstallationRecord:
+      additionalProperties: false
+      properties:
+        account_login:
+          type: string
+        account_type:
+          type: string
+        active:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        installation_id:
+          description: GitHub App installation ID encoded as a string for JavaScript-safe transport.
+          type: string
+        org_id:
+          pattern: ^[0-9]+$
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - installation_id
+        - org_id
+        - account_login
+        - account_type
+        - active
         - created_at
         - updated_at
       type: object
@@ -1079,6 +1145,9 @@ components:
         repo_url:
           type: string
         run_command:
+          type: string
+        runner_class:
+          description: Runner class label, for example metal-4vcpu-ubuntu-2404.
           type: string
       required:
         - kind
@@ -1606,6 +1675,72 @@ paths:
         permission: sandbox:logs:read
         rate_limit_class: logs_read
         resource: execution_logs
+  /api/v1/github/installations:
+    get:
+      operationId: list-github-installations
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/SandboxGitHubInstallationRecord"
+                nullable: true
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: List GitHub App installations for the current org
+      x-forge-metal-iam:
+        action: list
+        audit_event: sandbox.github_installation.list
+        org_scope: token_org_id
+        permission: sandbox:github_installation:read
+        rate_limit_class: read
+        resource: github_installation
+  /api/v1/github/installations/connect:
+    post:
+      operationId: begin-github-installation
+      parameters:
+        - description: Stable caller-provided key used to make this mutation retry-safe.
+          in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            maxLength: 128
+            minLength: 1
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxGitHubInstallationConnectResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Start GitHub App installation for the current org
+      x-forge-metal-iam:
+        action: connect
+        audit_event: sandbox.github_installation.connect
+        idempotency: idempotency_key_header
+        org_scope: token_org_id
+        permission: sandbox:github_installation:write
+        rate_limit_class: github_installation_mutation
+        request_body_max_bytes: 1024
+        resource: github_installation
   /api/v1/repos:
     get:
       operationId: list-repos
