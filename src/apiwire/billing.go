@@ -126,47 +126,65 @@ type BillingPlans struct {
 	Plans []BillingPlan `json:"plans"`
 }
 
+// BillingEntitlementsView is the slot-keyed customer-facing view of an org's
+// open credit. The customer reads this top-to-bottom (account → product →
+// bucket → sku), which is the inverse of the funder's most-specific-first
+// consumption order. That inversion is intentional: rows answer "what coverage
+// do I have," not "what drains first." See billing-service entitlements_view.go.
 type BillingEntitlementsView struct {
 	OrgID     OrgID                              `json:"org_id"`
-	Universal []BillingEntitlementPool           `json:"universal"`
+	Universal BillingEntitlementSlot             `json:"universal"`
 	Products  []BillingEntitlementProductSection `json:"products"`
 }
 
 type BillingEntitlementProductSection struct {
-	ProductID    string                            `json:"product_id"`
-	DisplayName  string                            `json:"display_name"`
-	ProductPools []BillingEntitlementPool          `json:"product_pools"`
-	Buckets      []BillingEntitlementBucketSection `json:"buckets"`
+	ProductID   string                            `json:"product_id"`
+	DisplayName string                            `json:"display_name"`
+	ProductSlot *BillingEntitlementSlot           `json:"product_slot,omitempty"`
+	Buckets     []BillingEntitlementBucketSection `json:"buckets"`
 }
 
 type BillingEntitlementBucketSection struct {
 	BucketID    string                   `json:"bucket_id"`
 	DisplayName string                   `json:"display_name"`
-	Pools       []BillingEntitlementPool `json:"pools"`
+	BucketSlot  *BillingEntitlementSlot  `json:"bucket_slot,omitempty"`
+	SKUSlots    []BillingEntitlementSlot `json:"sku_slots"`
 }
 
-type BillingEntitlementPool struct {
-	ScopeType      string                          `json:"scope_type" enum:"account,product,bucket,sku"`
-	ProductID      string                          `json:"product_id"`
-	ProductDisplay string                          `json:"product_display"`
-	BucketID       string                          `json:"bucket_id"`
-	BucketDisplay  string                          `json:"bucket_display"`
-	SKUID          string                          `json:"sku_id"`
-	SKUDisplay     string                          `json:"sku_display"`
-	CoverageLabel  string                          `json:"coverage_label"`
-	Source         string                          `json:"source" enum:"free_tier,subscription,purchase,promo,refund"`
-	SourceLabel    string                          `json:"source_label"`
-	Entries        []BillingEntitlementGrantEntry  `json:"entries"`
+// BillingEntitlementSlot is one row in the customer's entitlements table. The
+// row totals never sum across slots — every slot answers a different coverage
+// question. The Sources slice is the breakdown that lives inside the
+// Period-started-with and Available cells.
+type BillingEntitlementSlot struct {
+	ScopeType        string                          `json:"scope_type" enum:"account,product,bucket,sku"`
+	ProductID        string                          `json:"product_id"`
+	ProductDisplay   string                          `json:"product_display"`
+	BucketID         string                          `json:"bucket_id"`
+	BucketDisplay    string                          `json:"bucket_display"`
+	SKUID            string                          `json:"sku_id"`
+	SKUDisplay       string                          `json:"sku_display"`
+	CoverageLabel    string                          `json:"coverage_label"`
+	PeriodStartUnits DecimalUint64                   `json:"period_start_units"`
+	SpentUnits       DecimalUint64                   `json:"spent_units"`
+	PendingUnits     DecimalUint64                   `json:"pending_units"`
+	AvailableUnits   DecimalUint64                   `json:"available_units"`
+	Sources          []BillingEntitlementSourceTotal `json:"sources"`
 }
 
-type BillingEntitlementGrantEntry struct {
-	GrantID     string        `json:"grant_id"`
-	Available   DecimalUint64 `json:"available"`
-	Pending     DecimalUint64 `json:"pending"`
-	StartsAt    time.Time     `json:"starts_at"`
-	PeriodStart *time.Time    `json:"period_start,omitempty"`
-	PeriodEnd   *time.Time    `json:"period_end,omitempty"`
-	ExpiresAt   *time.Time    `json:"expires_at,omitempty"`
+// BillingEntitlementSourceTotal is one entry in a slot's Sources slice, keyed
+// by (source, plan_id). For non-subscription sources plan_id is empty, so they
+// collapse to one entry per source. Multi-plan customers get one entry per
+// active plan. PeriodStartUnits is non-zero only for grants that have a period
+// containing now; ad-hoc top-ups and promos contribute zero there. Inline
+// expiry is surfaced only when at least one grant inside this entry is
+// non-period (period-bound expiries are implicit in the period boundary).
+type BillingEntitlementSourceTotal struct {
+	Source           string        `json:"source" enum:"free_tier,subscription,purchase,promo,refund"`
+	PlanID           string        `json:"plan_id"`
+	Label            string        `json:"label"`
+	PeriodStartUnits DecimalUint64 `json:"period_start_units"`
+	AvailableUnits   DecimalUint64 `json:"available_units"`
+	InlineExpiresAt  *time.Time    `json:"inline_expires_at,omitempty"`
 }
 
 type BillingCreateCheckoutRequest struct {

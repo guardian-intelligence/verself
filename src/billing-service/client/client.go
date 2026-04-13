@@ -340,11 +340,7 @@ func parseBillingEntitlements(in BillingEntitlementsView) (apiwire.BillingEntitl
 	if err != nil {
 		return apiwire.BillingEntitlementsView{}, err
 	}
-	var universalIn []BillingEntitlementPool
-	if in.Universal != nil {
-		universalIn = *in.Universal
-	}
-	universal, err := parseEntitlementPools(universalIn, "universal")
+	universal, err := parseEntitlementSlot(in.Universal, "universal")
 	if err != nil {
 		return apiwire.BillingEntitlementsView{}, err
 	}
@@ -354,11 +350,7 @@ func parseBillingEntitlements(in BillingEntitlementsView) (apiwire.BillingEntitl
 	}
 	products := make([]apiwire.BillingEntitlementProductSection, 0, len(productsIn))
 	for i, section := range productsIn {
-		var productPoolsIn []BillingEntitlementPool
-		if section.ProductPools != nil {
-			productPoolsIn = *section.ProductPools
-		}
-		productPools, err := parseEntitlementPools(productPoolsIn, fmt.Sprintf("products[%d].product_pools", i))
+		productSlot, err := parseEntitlementSlotPtr(section.ProductSlot, fmt.Sprintf("products[%d].product_slot", i))
 		if err != nil {
 			return apiwire.BillingEntitlementsView{}, err
 		}
@@ -368,25 +360,34 @@ func parseBillingEntitlements(in BillingEntitlementsView) (apiwire.BillingEntitl
 		}
 		buckets := make([]apiwire.BillingEntitlementBucketSection, 0, len(bucketsIn))
 		for j, bucket := range bucketsIn {
-			var poolsIn []BillingEntitlementPool
-			if bucket.Pools != nil {
-				poolsIn = *bucket.Pools
-			}
-			pools, err := parseEntitlementPools(poolsIn, fmt.Sprintf("products[%d].buckets[%d].pools", i, j))
+			bucketSlot, err := parseEntitlementSlotPtr(bucket.BucketSlot, fmt.Sprintf("products[%d].buckets[%d].bucket_slot", i, j))
 			if err != nil {
 				return apiwire.BillingEntitlementsView{}, err
+			}
+			var skuSlotsIn []BillingEntitlementSlot
+			if bucket.SkuSlots != nil {
+				skuSlotsIn = *bucket.SkuSlots
+			}
+			skuSlots := make([]apiwire.BillingEntitlementSlot, 0, len(skuSlotsIn))
+			for k, slot := range skuSlotsIn {
+				parsed, err := parseEntitlementSlot(slot, fmt.Sprintf("products[%d].buckets[%d].sku_slots[%d]", i, j, k))
+				if err != nil {
+					return apiwire.BillingEntitlementsView{}, err
+				}
+				skuSlots = append(skuSlots, parsed)
 			}
 			buckets = append(buckets, apiwire.BillingEntitlementBucketSection{
 				BucketID:    bucket.BucketId,
 				DisplayName: bucket.DisplayName,
-				Pools:       pools,
+				BucketSlot:  bucketSlot,
+				SKUSlots:    skuSlots,
 			})
 		}
 		products = append(products, apiwire.BillingEntitlementProductSection{
-			ProductID:    section.ProductId,
-			DisplayName:  section.DisplayName,
-			ProductPools: productPools,
-			Buckets:      buckets,
+			ProductID:   section.ProductId,
+			DisplayName: section.DisplayName,
+			ProductSlot: productSlot,
+			Buckets:     buckets,
 		})
 	}
 	return apiwire.BillingEntitlementsView{
@@ -396,48 +397,72 @@ func parseBillingEntitlements(in BillingEntitlementsView) (apiwire.BillingEntitl
 	}, nil
 }
 
-func parseEntitlementPools(in []BillingEntitlementPool, label string) ([]apiwire.BillingEntitlementPool, error) {
-	out := make([]apiwire.BillingEntitlementPool, 0, len(in))
-	for i, pool := range in {
-		var entriesIn []BillingEntitlementGrantEntry
-		if pool.Entries != nil {
-			entriesIn = *pool.Entries
+func parseEntitlementSlotPtr(in *BillingEntitlementSlot, label string) (*apiwire.BillingEntitlementSlot, error) {
+	if in == nil {
+		return nil, nil
+	}
+	parsed, err := parseEntitlementSlot(*in, label)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func parseEntitlementSlot(in BillingEntitlementSlot, label string) (apiwire.BillingEntitlementSlot, error) {
+	periodStart, err := parseDecimalUint64(in.PeriodStartUnits, label+".period_start_units")
+	if err != nil {
+		return apiwire.BillingEntitlementSlot{}, err
+	}
+	spent, err := parseDecimalUint64(in.SpentUnits, label+".spent_units")
+	if err != nil {
+		return apiwire.BillingEntitlementSlot{}, err
+	}
+	pending, err := parseDecimalUint64(in.PendingUnits, label+".pending_units")
+	if err != nil {
+		return apiwire.BillingEntitlementSlot{}, err
+	}
+	available, err := parseDecimalUint64(in.AvailableUnits, label+".available_units")
+	if err != nil {
+		return apiwire.BillingEntitlementSlot{}, err
+	}
+	var sourcesIn []BillingEntitlementSourceTotal
+	if in.Sources != nil {
+		sourcesIn = *in.Sources
+	}
+	sources := make([]apiwire.BillingEntitlementSourceTotal, 0, len(sourcesIn))
+	for i, src := range sourcesIn {
+		srcPeriodStart, err := parseDecimalUint64(src.PeriodStartUnits, fmt.Sprintf("%s.sources[%d].period_start_units", label, i))
+		if err != nil {
+			return apiwire.BillingEntitlementSlot{}, err
 		}
-		entries := make([]apiwire.BillingEntitlementGrantEntry, 0, len(entriesIn))
-		for k, entry := range entriesIn {
-			available, err := parseDecimalUint64(entry.Available, fmt.Sprintf("%s[%d].entries[%d].available", label, i, k))
-			if err != nil {
-				return nil, err
-			}
-			pending, err := parseDecimalUint64(entry.Pending, fmt.Sprintf("%s[%d].entries[%d].pending", label, i, k))
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, apiwire.BillingEntitlementGrantEntry{
-				GrantID:     entry.GrantId,
-				Available:   available,
-				Pending:     pending,
-				StartsAt:    entry.StartsAt,
-				PeriodStart: entry.PeriodStart,
-				PeriodEnd:   entry.PeriodEnd,
-				ExpiresAt:   entry.ExpiresAt,
-			})
+		srcAvailable, err := parseDecimalUint64(src.AvailableUnits, fmt.Sprintf("%s.sources[%d].available_units", label, i))
+		if err != nil {
+			return apiwire.BillingEntitlementSlot{}, err
 		}
-		out = append(out, apiwire.BillingEntitlementPool{
-			ScopeType:      string(pool.ScopeType),
-			ProductID:      pool.ProductId,
-			ProductDisplay: pool.ProductDisplay,
-			BucketID:       pool.BucketId,
-			BucketDisplay:  pool.BucketDisplay,
-			SKUID:          pool.SkuId,
-			SKUDisplay:     pool.SkuDisplay,
-			CoverageLabel:  pool.CoverageLabel,
-			Source:         string(pool.Source),
-			SourceLabel:    pool.SourceLabel,
-			Entries:        entries,
+		sources = append(sources, apiwire.BillingEntitlementSourceTotal{
+			Source:           string(src.Source),
+			PlanID:           src.PlanId,
+			Label:            src.Label,
+			PeriodStartUnits: srcPeriodStart,
+			AvailableUnits:   srcAvailable,
+			InlineExpiresAt:  src.InlineExpiresAt,
 		})
 	}
-	return out, nil
+	return apiwire.BillingEntitlementSlot{
+		ScopeType:        string(in.ScopeType),
+		ProductID:        in.ProductId,
+		ProductDisplay:   in.ProductDisplay,
+		BucketID:         in.BucketId,
+		BucketDisplay:    in.BucketDisplay,
+		SKUID:            in.SkuId,
+		SKUDisplay:       in.SkuDisplay,
+		CoverageLabel:    in.CoverageLabel,
+		PeriodStartUnits: periodStart,
+		SpentUnits:       spent,
+		PendingUnits:     pending,
+		AvailableUnits:   available,
+		Sources:          sources,
+	}, nil
 }
 
 func parseBillingGrants(in BillingGrants) (apiwire.BillingGrants, error) {

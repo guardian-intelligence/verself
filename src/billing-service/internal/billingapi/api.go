@@ -344,7 +344,7 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 func entitlementsResponse(orgID billing.OrgID, view billing.EntitlementsView) apiwire.BillingEntitlementsView {
 	return apiwire.BillingEntitlementsView{
 		OrgID:     apiwire.Uint64(uint64(orgID)),
-		Universal: entitlementPoolList(view.Universal),
+		Universal: entitlementSlot(view.Universal),
 		Products:  entitlementProductSections(view.Products),
 	}
 }
@@ -353,10 +353,10 @@ func entitlementProductSections(in []billing.EntitlementProductSection) []apiwir
 	out := make([]apiwire.BillingEntitlementProductSection, 0, len(in))
 	for _, section := range in {
 		out = append(out, apiwire.BillingEntitlementProductSection{
-			ProductID:    section.ProductID,
-			DisplayName:  section.DisplayName,
-			ProductPools: entitlementPoolList(section.ProductPools),
-			Buckets:      entitlementBucketSections(section.Buckets),
+			ProductID:   section.ProductID,
+			DisplayName: section.DisplayName,
+			ProductSlot: entitlementSlotPtr(section.ProductSlot),
+			Buckets:     entitlementBucketSections(section.Buckets),
 		})
 	}
 	return out
@@ -365,45 +365,55 @@ func entitlementProductSections(in []billing.EntitlementProductSection) []apiwir
 func entitlementBucketSections(in []billing.EntitlementBucketSection) []apiwire.BillingEntitlementBucketSection {
 	out := make([]apiwire.BillingEntitlementBucketSection, 0, len(in))
 	for _, section := range in {
+		skuSlots := make([]apiwire.BillingEntitlementSlot, 0, len(section.SKUSlots))
+		for _, slot := range section.SKUSlots {
+			skuSlots = append(skuSlots, entitlementSlot(slot))
+		}
 		out = append(out, apiwire.BillingEntitlementBucketSection{
 			BucketID:    section.BucketID,
 			DisplayName: section.DisplayName,
-			Pools:       entitlementPoolList(section.Pools),
+			BucketSlot:  entitlementSlotPtr(section.BucketSlot),
+			SKUSlots:    skuSlots,
 		})
 	}
 	return out
 }
 
-func entitlementPoolList(in []billing.EntitlementPool) []apiwire.BillingEntitlementPool {
-	out := make([]apiwire.BillingEntitlementPool, 0, len(in))
-	for _, pool := range in {
-		entries := make([]apiwire.BillingEntitlementGrantEntry, 0, len(pool.Entries))
-		for _, entry := range pool.Entries {
-			entries = append(entries, apiwire.BillingEntitlementGrantEntry{
-				GrantID:     entry.GrantID,
-				Available:   apiwire.Uint64(entry.Available),
-				Pending:     apiwire.Uint64(entry.Pending),
-				StartsAt:    entry.StartsAt,
-				PeriodStart: entry.PeriodStart,
-				PeriodEnd:   entry.PeriodEnd,
-				ExpiresAt:   entry.ExpiresAt,
-			})
-		}
-		out = append(out, apiwire.BillingEntitlementPool{
-			ScopeType:      pool.ScopeType.String(),
-			ProductID:      pool.ProductID,
-			ProductDisplay: pool.ProductDisplay,
-			BucketID:       pool.BucketID,
-			BucketDisplay:  pool.BucketDisplay,
-			SKUID:          pool.SKUID,
-			SKUDisplay:     pool.SKUDisplay,
-			CoverageLabel:  pool.CoverageLabel,
-			Source:         pool.Source.String(),
-			SourceLabel:    billing.GrantSourceLabel(pool.Source),
-			Entries:        entries,
+func entitlementSlotPtr(slot *billing.EntitlementSlot) *apiwire.BillingEntitlementSlot {
+	if slot == nil {
+		return nil
+	}
+	out := entitlementSlot(*slot)
+	return &out
+}
+
+func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlot {
+	sources := make([]apiwire.BillingEntitlementSourceTotal, 0, len(slot.Sources))
+	for _, src := range slot.Sources {
+		sources = append(sources, apiwire.BillingEntitlementSourceTotal{
+			Source:           src.Source.String(),
+			PlanID:           src.PlanID,
+			Label:            src.Label,
+			PeriodStartUnits: apiwire.Uint64(src.PeriodStartUnits),
+			AvailableUnits:   apiwire.Uint64(src.AvailableUnits),
+			InlineExpiresAt:  src.InlineExpiresAt,
 		})
 	}
-	return out
+	return apiwire.BillingEntitlementSlot{
+		ScopeType:        slot.ScopeType.String(),
+		ProductID:        slot.ProductID,
+		ProductDisplay:   slot.ProductDisplay,
+		BucketID:         slot.BucketID,
+		BucketDisplay:    slot.BucketDisplay,
+		SKUID:            slot.SKUID,
+		SKUDisplay:       slot.SKUDisplay,
+		CoverageLabel:    slot.CoverageLabel,
+		PeriodStartUnits: apiwire.Uint64(slot.PeriodStartUnits),
+		SpentUnits:       apiwire.Uint64(slot.SpentUnits),
+		PendingUnits:     apiwire.Uint64(slot.PendingUnits),
+		AvailableUnits:   apiwire.Uint64(slot.AvailableUnits),
+		Sources:          sources,
+	}
 }
 
 func (h *Handler) listSubscriptions(ctx context.Context, input *OrgPath) (*body[SubscriptionsResponse], error) {

@@ -212,22 +212,29 @@ func (c *Client) listScopedGrantBalancesForFunding(ctx context.Context, orgID Or
 
 func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID string) ([]GrantBalance, error) {
 	now := c.clock().UTC()
+	// LEFT JOIN chain resolves subscription grants to a plan display name at
+	// read time so the entitlements view can label rows with the customer's
+	// actual plan name. Non-subscription grants land NULL on both joined cols.
 	query := `
-		SELECT grant_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source,
-		       source_reference_id, entitlement_period_id, policy_version,
-		       starts_at, period_start, period_end, expires_at
-		FROM credit_grants
-		WHERE org_id = $1
-		  AND closed_at IS NULL
-		  AND starts_at <= $2
-		  AND (expires_at IS NULL OR expires_at > $2)
+		SELECT g.grant_id, g.scope_type, g.scope_product_id, g.scope_bucket_id, g.scope_sku_id, g.source,
+		       g.source_reference_id, g.entitlement_period_id, g.policy_version,
+		       g.starts_at, g.period_start, g.period_end, g.expires_at,
+		       COALESCE(s.plan_id, ''), COALESCE(p.display_name, '')
+		FROM credit_grants g
+		LEFT JOIN entitlement_periods ep ON ep.period_id = NULLIF(g.entitlement_period_id, '')
+		LEFT JOIN subscription_contracts s ON s.contract_id = NULLIF(ep.contract_id, '')
+		LEFT JOIN plans p ON p.plan_id = NULLIF(s.plan_id, '')
+		WHERE g.org_id = $1
+		  AND g.closed_at IS NULL
+		  AND g.starts_at <= $2
+		  AND (g.expires_at IS NULL OR g.expires_at > $2)
 	`
 	args := []any{strconv.FormatUint(uint64(orgID), 10), now}
 	if productID != "" {
-		query += " AND (scope_type = 'account' OR scope_product_id = $3)"
+		query += " AND (g.scope_type = 'account' OR g.scope_product_id = $3)"
 		args = append(args, productID)
 	}
-	query += " ORDER BY expires_at ASC NULLS LAST, grant_id ASC"
+	query += " ORDER BY g.expires_at ASC NULLS LAST, g.grant_id ASC"
 
 	rows, err := c.pg.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -236,19 +243,21 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 	defer rows.Close()
 
 	type rowGrant struct {
-		GrantID        GrantID
-		ScopeType      GrantScopeType
-		ScopeProductID string
-		ScopeBucketID  string
-		ScopeSKUID     string
-		Source         GrantSourceType
-		SourceRef      string
-		PeriodID       string
-		PolicyVersion  string
-		StartsAt       time.Time
-		PeriodStart    *time.Time
-		PeriodEnd      *time.Time
-		ExpiresAt      *time.Time
+		GrantID         GrantID
+		ScopeType       GrantScopeType
+		ScopeProductID  string
+		ScopeBucketID   string
+		ScopeSKUID      string
+		Source          GrantSourceType
+		SourceRef       string
+		PeriodID        string
+		PolicyVersion   string
+		PlanID          string
+		PlanDisplayName string
+		StartsAt        time.Time
+		PeriodStart     *time.Time
+		PeriodEnd       *time.Time
+		ExpiresAt       *time.Time
 	}
 	var grantRows []rowGrant
 	accountIDs := make([]types.Uint128, 0, 8)
@@ -262,6 +271,8 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		var sourceRef string
 		var periodID string
 		var policyVersion string
+		var planID string
+		var planDisplayName string
 		var startsAt time.Time
 		var periodStart sql.NullTime
 		var periodEnd sql.NullTime
@@ -280,6 +291,8 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			&periodStart,
 			&periodEnd,
 			&expiresAt,
+			&planID,
+			&planDisplayName,
 		); err != nil {
 			return nil, fmt.Errorf("scan grant: %w", err)
 		}
@@ -314,19 +327,21 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			periodEndPtr = &value
 		}
 		grantRows = append(grantRows, rowGrant{
-			GrantID:        grantID,
-			ScopeType:      scopeType,
-			ScopeProductID: scopeProductID,
-			ScopeBucketID:  scopeBucketID,
-			ScopeSKUID:     scopeSKUID,
-			Source:         source,
-			SourceRef:      sourceRef,
-			PeriodID:       periodID,
-			PolicyVersion:  policyVersion,
-			StartsAt:       startsAt.UTC(),
-			PeriodStart:    periodStartPtr,
-			PeriodEnd:      periodEndPtr,
-			ExpiresAt:      expiresAtPtr,
+			GrantID:         grantID,
+			ScopeType:       scopeType,
+			ScopeProductID:  scopeProductID,
+			ScopeBucketID:   scopeBucketID,
+			ScopeSKUID:      scopeSKUID,
+			Source:          source,
+			SourceRef:       sourceRef,
+			PeriodID:        periodID,
+			PolicyVersion:   policyVersion,
+			PlanID:          planID,
+			PlanDisplayName: planDisplayName,
+			StartsAt:        startsAt.UTC(),
+			PeriodStart:     periodStartPtr,
+			PeriodEnd:       periodEndPtr,
+			ExpiresAt:       expiresAtPtr,
 		})
 		accountIDs = append(accountIDs, GrantAccountID(grantID).raw)
 	}
@@ -360,6 +375,14 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 		if err != nil {
 			return nil, fmt.Errorf("pending balance %s: %w", rowGrant.GrantID.String(), err)
 		}
+		spent, err := consumedFromAccount(account)
+		if err != nil {
+			return nil, fmt.Errorf("spent balance %s: %w", rowGrant.GrantID.String(), err)
+		}
+		original, err := uint128ToUint64(account.CreditsPosted)
+		if err != nil {
+			return nil, fmt.Errorf("original balance %s: %w", rowGrant.GrantID.String(), err)
+		}
 		out = append(out, GrantBalance{
 			GrantID:             rowGrant.GrantID,
 			ScopeType:           rowGrant.ScopeType,
@@ -370,12 +393,16 @@ func (c *Client) listGrantBalances(ctx context.Context, orgID OrgID, productID s
 			SourceReferenceID:   rowGrant.SourceRef,
 			EntitlementPeriodID: rowGrant.PeriodID,
 			PolicyVersion:       rowGrant.PolicyVersion,
+			PlanID:              rowGrant.PlanID,
+			PlanDisplayName:     rowGrant.PlanDisplayName,
 			StartsAt:            rowGrant.StartsAt,
 			PeriodStart:         rowGrant.PeriodStart,
 			PeriodEnd:           rowGrant.PeriodEnd,
 			ExpiresAt:           rowGrant.ExpiresAt,
+			OriginalAmount:      original,
 			Available:           available,
 			Pending:             pending,
+			Spent:               spent,
 		})
 	}
 	return out, nil

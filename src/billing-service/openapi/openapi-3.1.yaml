@@ -259,63 +259,59 @@ components:
       properties:
         bucket_id:
           type: string
+        bucket_slot:
+          $ref: "#/components/schemas/BillingEntitlementSlot"
         display_name:
           type: string
-        pools:
+        sku_slots:
           items:
-            $ref: "#/components/schemas/BillingEntitlementPool"
+            $ref: "#/components/schemas/BillingEntitlementSlot"
           type:
             - array
             - "null"
       required:
         - bucket_id
         - display_name
-        - pools
+        - sku_slots
       type: object
-    BillingEntitlementGrantEntry:
+    BillingEntitlementProductSection:
       additionalProperties: false
       properties:
-        available:
-          pattern: ^[0-9]+$
+        buckets:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementBucketSection"
+          type:
+            - array
+            - "null"
+        display_name:
           type: string
-        expires_at:
-          format: date-time
+        product_id:
           type: string
-        grant_id:
-          type: string
-        pending:
-          pattern: ^[0-9]+$
-          type: string
-        period_end:
-          format: date-time
-          type: string
-        period_start:
-          format: date-time
-          type: string
-        starts_at:
-          format: date-time
-          type: string
+        product_slot:
+          $ref: "#/components/schemas/BillingEntitlementSlot"
       required:
-        - grant_id
-        - available
-        - pending
-        - starts_at
+        - product_id
+        - display_name
+        - buckets
       type: object
-    BillingEntitlementPool:
+    BillingEntitlementSlot:
       additionalProperties: false
       properties:
+        available_units:
+          pattern: ^[0-9]+$
+          type: string
         bucket_display:
           type: string
         bucket_id:
           type: string
         coverage_label:
           type: string
-        entries:
-          items:
-            $ref: "#/components/schemas/BillingEntitlementGrantEntry"
-          type:
-            - array
-            - "null"
+        pending_units:
+          pattern: ^[0-9]+$
+          type: string
+        period_start_units:
+          pattern: ^[0-9]+$
+          type: string
         product_display:
           type: string
         product_id:
@@ -331,15 +327,14 @@ components:
           type: string
         sku_id:
           type: string
-        source:
-          enum:
-            - free_tier
-            - subscription
-            - purchase
-            - promo
-            - refund
-          type: string
-        source_label:
+        sources:
+          items:
+            $ref: "#/components/schemas/BillingEntitlementSourceTotal"
+          type:
+            - array
+            - "null"
+        spent_units:
+          pattern: ^[0-9]+$
           type: string
       required:
         - scope_type
@@ -350,34 +345,42 @@ components:
         - sku_id
         - sku_display
         - coverage_label
-        - source
-        - source_label
-        - entries
+        - period_start_units
+        - spent_units
+        - pending_units
+        - available_units
+        - sources
       type: object
-    BillingEntitlementProductSection:
+    BillingEntitlementSourceTotal:
       additionalProperties: false
       properties:
-        buckets:
-          items:
-            $ref: "#/components/schemas/BillingEntitlementBucketSection"
-          type:
-            - array
-            - "null"
-        display_name:
+        available_units:
+          pattern: ^[0-9]+$
           type: string
-        product_id:
+        inline_expires_at:
+          format: date-time
           type: string
-        product_pools:
-          items:
-            $ref: "#/components/schemas/BillingEntitlementPool"
-          type:
-            - array
-            - "null"
+        label:
+          type: string
+        period_start_units:
+          pattern: ^[0-9]+$
+          type: string
+        plan_id:
+          type: string
+        source:
+          enum:
+            - free_tier
+            - subscription
+            - purchase
+            - promo
+            - refund
+          type: string
       required:
-        - product_id
-        - display_name
-        - product_pools
-        - buckets
+        - source
+        - plan_id
+        - label
+        - period_start_units
+        - available_units
       type: object
     BillingEntitlementsView:
       additionalProperties: false
@@ -399,11 +402,7 @@ components:
             - array
             - "null"
         universal:
-          items:
-            $ref: "#/components/schemas/BillingEntitlementPool"
-          type:
-            - array
-            - "null"
+          $ref: "#/components/schemas/BillingEntitlementSlot"
       required:
         - org_id
         - universal

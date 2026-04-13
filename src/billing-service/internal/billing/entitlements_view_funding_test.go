@@ -6,53 +6,47 @@ import (
 	"time"
 )
 
-// TestEntitlementsViewMatchesFunderPrecedence is the load-bearing contract test
-// between the entitlements view-model and the reserve-time funder. The view's
-// "next-to-spend" position in any cell is read by customers as a claim about
-// what the funder will burn first; if the two ever drift, this test fires.
+// TestEntitlementsViewMatchesFunderPrecedence is the load-bearing contract
+// test between the entitlements view-model and the reserve-time funder. The
+// view's "next-to-spend" position in any cell is read by customers as a claim
+// about what the funder will burn first; if the two ever drift, this test
+// fires.
 //
-// For each pool surfaced by buildEntitlementsView, we run planGrantFunding
-// against the *full* grant set with a unit charge that lands cleanly on this
-// cell's scope (i.e. no narrower scope can shadow it), and assert that the
-// funder's first leg is the same grant the view shows on top. Feeding the
-// full grant set is the spec's stated bar — feeding only the cell's grants
-// would silently miss cross-scope ordering bugs.
+// For each rendered cell — i.e., each (slot, source, plan_id) → SourceTotal
+// with non-zero available — we run planGrantFunding against the *full* grant
+// set with a unit charge that lands cleanly on this cell's scope (no narrower
+// scope can shadow it), and assert that the funder's first leg is the same
+// grant the view shows on top (SourceTotal.TopGrantID). Feeding the full
+// grant set is the spec's stated bar — feeding only the cell's grants would
+// silently miss cross-scope ordering bugs.
 func TestEntitlementsViewMatchesFunderPrecedence(t *testing.T) {
 	t.Parallel()
 
 	productID := "sandbox"
-	productNames := map[string]string{productID: "Sandbox"}
-	// `isolated` is a bucket with no Bucket- or SKU-scope grants, so charges
-	// against it fall through to Product- and Account-scope. That's the only
-	// way to test wider-scope cells against the full grant set without a
-	// narrower scope catching the charge first.
-	bucketCatalog := map[string]bucketCatalogRow{
-		"compute":       {DisplayName: "Compute", SortOrder: 10},
-		"block_storage": {DisplayName: "Block Storage", SortOrder: 30},
-		"isolated":      {DisplayName: "Isolated", SortOrder: 90},
-	}
-	skuCatalog := map[string]skuCatalogRow{
-		"premium_nvme": {DisplayName: "Premium NVMe", BucketID: "block_storage", ProductID: productID},
-	}
+	now := time.Date(2026, time.April, 12, 0, 0, 0, 0, time.UTC)
+	// `isolated` is a bucket with no Bucket- or SKU-scope grants in this
+	// fixture, so charges against it fall through to Product- and
+	// Account-scope. That's the only way to test wider-scope cells against
+	// the full grant set without a narrower scope catching the charge first.
+	catalog := buildFundingTestCatalog(productID)
 
-	// Two grants per (scope, source) where possible so within-pool ordering
-	// is non-trivial. Earlier expiry sorts first, matching listGrantBalances.
-	//
 	// Wider-scope cells use *disjoint* sources from narrower scopes on
-	// purpose. The funder consumes most-specific first within each source, so
-	// e.g. a Universal/promo cell would be unreachable for *any* charge in
-	// `sandbox` if there were also a Product/promo grant — Product/promo
+	// purpose. The funder consumes most-specific first within each source,
+	// so e.g. a Universal/promo cell would be unreachable for *any* charge
+	// in `sandbox` if there were also a Product/promo grant — Product/promo
 	// would drain first. Each cell we test must have a charge target that
-	// reaches it without a narrower-same-source pool shadowing it; that's
-	// why product/account here use `promo` and `refund` rather than every
-	// source.
+	// reaches it without a narrower-same-source slot shadowing it; that's
+	// why product/account here use `promo` and `purchase`/`refund` rather
+	// than every source. Preserving this disjointness is load-bearing — if
+	// you tighten it, half the cells in this test become unreachable and
+	// the assertions go silently weak. Document the change here if you
+	// touch the fixture.
 	grants := []GrantBalance{
 		// SKU-scope on (block_storage, premium_nvme): free_tier + subscription.
 		viewFundingGrant("sku-free-a", SourceFreeTier, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 7),
 		viewFundingGrant("sku-free-b", SourceFreeTier, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 30),
 		viewFundingGrant("sku-sub-a", SourceSubscription, GrantScopeSKU, productID, "block_storage", "premium_nvme", 50, 14),
-		// Bucket-scope on (compute, *): free_tier + subscription. Same sources
-		// as SKU above is fine: SKU is in block_storage, Bucket is in compute.
+		// Bucket-scope on (compute, *): free_tier + subscription.
 		viewFundingGrant("bkt-free-a", SourceFreeTier, GrantScopeBucket, productID, "compute", "", 50, 7),
 		viewFundingGrant("bkt-free-b", SourceFreeTier, GrantScopeBucket, productID, "compute", "", 50, 30),
 		viewFundingGrant("bkt-sub-a", SourceSubscription, GrantScopeBucket, productID, "compute", "", 50, 14),
@@ -60,17 +54,16 @@ func TestEntitlementsViewMatchesFunderPrecedence(t *testing.T) {
 		viewFundingGrant("prd-promo-a", SourcePromo, GrantScopeProduct, productID, "", "", 50, 14),
 		viewFundingGrant("prd-promo-b", SourcePromo, GrantScopeProduct, productID, "", "", 50, 30),
 		// Account-scope universal: purchase + refund only (no narrower
-		// same-source grant). If you add purchase or refund anywhere narrower,
-		// the matching account cell becomes unreachable and this test will
-		// fire — that's the intended canary.
+		// same-source grant). If you add purchase or refund anywhere
+		// narrower, the matching account cell becomes unreachable and this
+		// test will fire — that's the intended canary.
 		viewFundingGrant("acc-pur-a", SourcePurchase, GrantScopeAccount, "", "", "", 50, 7),
 		viewFundingGrant("acc-pur-b", SourcePurchase, GrantScopeAccount, "", "", "", 50, 30),
 		viewFundingGrant("acc-ref-a", SourceRefund, GrantScopeAccount, "", "", "", 50, 14),
 	}
 
 	allGrants := scopedGrantsFromBalances(grants)
-
-	view := buildEntitlementsView(42, grants, productNames, bucketCatalog, skuCatalog)
+	view := buildEntitlementsView(42, now, catalog, grants)
 
 	cells := walkViewCells(view)
 	if got, want := len(cells), uniqueScopeSourceCells(grants); got != want {
@@ -79,19 +72,11 @@ func TestEntitlementsViewMatchesFunderPrecedence(t *testing.T) {
 
 	for _, cell := range cells {
 		t.Run(cell.label, func(t *testing.T) {
-			pool := cell.pool
-			if len(pool.Entries) == 0 {
-				t.Fatalf("%s: pool has no entries", cell.label)
+			if cell.total.AvailableUnits == 0 {
+				t.Fatalf("%s: empty cell surfaced from accumulator", cell.label)
 			}
-			// Construct a charge that lands cleanly on this cell's scope. The
-			// funder consumes most-specific first; for a wider-scope cell to
-			// be reachable, the charge must not match any narrower scope.
-			charge := chargeForCell(pool)
-			// Run against the full grant set, restricted to grants of the
-			// cell's source so the source-precedence inside the funder
-			// doesn't surface a different (more-specific or earlier-source)
-			// pool first.
-			candidate := grantsForSource(allGrants, pool.Source)
+			charge := chargeForCell(cell.slot)
+			candidate := grantsForSource(allGrants, cell.total.Source)
 			legs, err := planGrantFunding(productID, []chargeLine{charge}, candidate)
 			if err != nil {
 				t.Fatalf("%s: planGrantFunding: %v", cell.label, err)
@@ -99,58 +84,58 @@ func TestEntitlementsViewMatchesFunderPrecedence(t *testing.T) {
 			if len(legs) == 0 {
 				t.Fatalf("%s: funder produced no legs", cell.label)
 			}
-			top := pool.Entries[0]
-			if got := legs[0].GrantID.String(); got != top.GrantID {
-				t.Fatalf("%s: funder picked %s first; view shows %s", cell.label, got, top.GrantID)
+			if got := legs[0].GrantID.String(); got != cell.total.TopGrantID {
+				t.Fatalf("%s: funder picked %s first; view shows %s", cell.label, got, cell.total.TopGrantID)
 			}
-			if legs[0].GrantScopeType != pool.ScopeType {
-				t.Fatalf("%s: funder leg scope %s != view scope %s", cell.label, legs[0].GrantScopeType, pool.ScopeType)
+			if legs[0].GrantScopeType != cell.slot.ScopeType {
+				t.Fatalf("%s: funder leg scope %s != view scope %s", cell.label, legs[0].GrantScopeType, cell.slot.ScopeType)
 			}
-			if legs[0].Source != pool.Source {
-				t.Fatalf("%s: funder leg source %s != view source %s", cell.label, legs[0].Source, pool.Source)
+			if legs[0].Source != cell.total.Source {
+				t.Fatalf("%s: funder leg source %s != view source %s", cell.label, legs[0].Source, cell.total.Source)
 			}
 		})
 	}
 }
 
 // TestEntitlementsViewFundingPrefersTighterScope is the cross-scope drift
-// canary the within-pool test cannot catch on its own. It deliberately puts
+// canary the within-cell test cannot catch on its own. It deliberately puts
 // SKU-scope and Bucket-scope grants on the *same* (bucket, sku) target. A
-// charge that names the SKU must drain the SKU pool first — the bucket pool
-// must remain untouched until the SKU pool is empty. If the funder ever stops
-// honouring scope precedence, or the view starts showing the bucket pool's
-// top entry as next-to-spend for that target, this test fires.
+// charge that names the SKU must drain the SKU slot first; the bucket slot
+// must remain untouched until the SKU slot is empty. If the funder ever stops
+// honouring scope precedence, or the view starts claiming the bucket slot's
+// top entry is next-to-spend for that target, this test fires.
 func TestEntitlementsViewFundingPrefersTighterScope(t *testing.T) {
 	t.Parallel()
 
 	productID := "sandbox"
-	bucketCatalog := map[string]bucketCatalogRow{
-		"block_storage": {DisplayName: "Block Storage", SortOrder: 30},
-	}
-	skuCatalog := map[string]skuCatalogRow{
-		"premium_nvme": {DisplayName: "Premium NVMe", BucketID: "block_storage", ProductID: productID},
-	}
+	now := time.Date(2026, time.April, 12, 0, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog(productID)
 	grants := []GrantBalance{
 		viewFundingGrant("sku-free", SourceFreeTier, GrantScopeSKU, productID, "block_storage", "premium_nvme", 10, 7),
 		viewFundingGrant("bkt-free", SourceFreeTier, GrantScopeBucket, productID, "block_storage", "", 10, 7),
 	}
-	view := buildEntitlementsView(43, grants, map[string]string{productID: "Sandbox"}, bucketCatalog, skuCatalog)
+	view := buildEntitlementsView(43, now, catalog, grants)
 
-	bucket := view.Products[0].Buckets[0]
-	if got := len(bucket.Pools); got != 2 {
-		t.Fatalf("bucket pool count = %d, want 2 (one SKU, one Bucket)", got)
+	productSection, ok := findProductSection(view, productID)
+	if !ok {
+		t.Fatal("product section missing from view")
 	}
-	// Find the SKU-scope pool and assert its top entry is what the funder
-	// drains for a (block_storage, premium_nvme) charge against the full set.
-	var skuPool EntitlementPool
-	for _, p := range bucket.Pools {
-		if p.ScopeType == GrantScopeSKU {
-			skuPool = p
-		}
+	bucket, ok := findBucket(productSection, "block_storage")
+	if !ok {
+		t.Fatal("block_storage bucket missing from product section")
 	}
-	if skuPool.ScopeType != GrantScopeSKU {
-		t.Fatal("no SKU pool surfaced")
+	if bucket.BucketSlot == nil {
+		t.Fatal("expected bucket slot ('Any Block Storage SKU') to be populated")
 	}
+	skuSlot, ok := findSKU(bucket, "premium_nvme")
+	if !ok {
+		t.Fatal("premium_nvme SKU slot missing from bucket")
+	}
+	if len(skuSlot.Sources) != 1 || skuSlot.Sources[0].Source != SourceFreeTier {
+		t.Fatalf("expected one free-tier source on SKU slot, got %+v", skuSlot.Sources)
+	}
+	skuTop := skuSlot.Sources[0].TopGrantID
+
 	legs, err := planGrantFunding(productID, []chargeLine{
 		{BucketID: "block_storage", SKUID: "premium_nvme", AmountUnits: 1},
 	}, scopedGrantsFromBalances(grants))
@@ -160,21 +145,51 @@ func TestEntitlementsViewFundingPrefersTighterScope(t *testing.T) {
 	if legs[0].GrantScopeType != GrantScopeSKU {
 		t.Fatalf("funder pulled %s first; should be sku scope", legs[0].GrantScopeType)
 	}
-	if legs[0].GrantID.String() != skuPool.Entries[0].GrantID {
-		t.Fatalf("funder pulled %s; sku pool top is %s", legs[0].GrantID, skuPool.Entries[0].GrantID)
+	if legs[0].GrantID.String() != skuTop {
+		t.Fatalf("funder pulled %s; sku slot top is %s", legs[0].GrantID, skuTop)
 	}
 }
 
-// TestEntitlementsViewEmptyOrgRendersEmpty pins the empty-grants contract that
-// the rent-a-sandbox UI relies on for its empty state.
-func TestEntitlementsViewEmptyOrgRendersEmpty(t *testing.T) {
+// TestEntitlementsViewEmptyOrgRendersCatalog pins the empty-grants contract
+// the rent-a-sandbox UI relies on: even with zero grants, the catalog spine
+// renders, and every active SKU appears as a $0 row. The "no active credits"
+// empty-state card has been deleted; the catalog itself communicates emptiness.
+func TestEntitlementsViewEmptyOrgRendersCatalog(t *testing.T) {
 	t.Parallel()
-	view := buildEntitlementsView(99, nil, nil, nil, nil)
+	now := time.Date(2026, time.April, 12, 0, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog("sandbox")
+	view := buildEntitlementsView(99, now, catalog, nil)
+
 	if view.OrgID != 99 {
 		t.Fatalf("OrgID = %d, want 99", view.OrgID)
 	}
-	if len(view.Universal) != 0 || len(view.Products) != 0 {
-		t.Fatalf("expected empty view, got %+v", view)
+	if view.Universal.AvailableUnits != 0 || len(view.Universal.Sources) != 0 {
+		t.Fatalf("expected empty Universal slot, got %+v", view.Universal)
+	}
+	if view.Universal.CoverageLabel != "Usable anywhere" {
+		t.Fatalf("Universal coverage label = %q", view.Universal.CoverageLabel)
+	}
+	if got := len(view.Products); got != 1 {
+		t.Fatalf("expected 1 product section, got %d", got)
+	}
+	product := view.Products[0]
+	if product.ProductSlot != nil {
+		t.Fatalf("expected nil ProductSlot on empty org, got %+v", product.ProductSlot)
+	}
+	totalSKUs := 0
+	for _, bucket := range product.Buckets {
+		if bucket.BucketSlot != nil {
+			t.Fatalf("expected nil BucketSlot on empty org, got %+v", bucket.BucketSlot)
+		}
+		for _, sku := range bucket.SKUSlots {
+			if sku.AvailableUnits != 0 || len(sku.Sources) != 0 {
+				t.Fatalf("expected empty SKU slot %s, got %+v", sku.SKUID, sku)
+			}
+			totalSKUs++
+		}
+	}
+	if totalSKUs == 0 {
+		t.Fatal("expected catalog spine to surface SKU rows even with no grants")
 	}
 }
 
@@ -204,24 +219,78 @@ func TestFundingPrecedenceConstantsAreStable(t *testing.T) {
 	}
 }
 
+// buildFundingTestCatalog builds the in-memory catalog the funding tests use.
+// `compute`, `block_storage`, and `isolated` buckets each carry one SKU. The
+// `isolated` bucket exists solely so wider-scope cells (product, account)
+// have a charge target that no narrower scope can shadow.
+func buildFundingTestCatalog(productID string) entitlementCatalog {
+	return entitlementCatalog{
+		Products: []entitlementCatalogProduct{
+			{
+				ProductID:   productID,
+				DisplayName: "Sandbox",
+				Buckets: []entitlementCatalogBucket{
+					{
+						BucketID:    "compute",
+						DisplayName: "Compute",
+						SortOrder:   10,
+						SKUs: []entitlementCatalogSKU{
+							{SKUID: "compute_sku", DisplayName: "Compute"},
+						},
+					},
+					{
+						BucketID:    "block_storage",
+						DisplayName: "Block Storage",
+						SortOrder:   30,
+						SKUs: []entitlementCatalogSKU{
+							{SKUID: "premium_nvme", DisplayName: "Premium NVMe"},
+						},
+					},
+					{
+						BucketID:    "isolated",
+						DisplayName: "Isolated",
+						SortOrder:   90,
+						SKUs: []entitlementCatalogSKU{
+							{SKUID: "isolated_sku", DisplayName: "Isolated"},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 type viewCell struct {
 	label string
-	pool  EntitlementPool
+	slot  EntitlementSlot
+	total EntitlementSourceTotal
 }
 
 func walkViewCells(view EntitlementsView) []viewCell {
 	var cells []viewCell
-	for _, p := range view.Universal {
-		cells = append(cells, viewCell{label: "universal/" + p.Source.String(), pool: p})
+	emit := func(label string, slot EntitlementSlot) {
+		for _, total := range slot.Sources {
+			if total.AvailableUnits == 0 {
+				continue
+			}
+			cells = append(cells, viewCell{
+				label: fmt.Sprintf("%s/%s/%s", label, total.Source, sentinel(total.PlanID)),
+				slot:  slot,
+				total: total,
+			})
+		}
 	}
+	emit("universal", view.Universal)
 	for _, prod := range view.Products {
-		for _, p := range prod.ProductPools {
-			cells = append(cells, viewCell{label: "product/" + prod.ProductID + "/" + p.Source.String(), pool: p})
+		if prod.ProductSlot != nil {
+			emit("product/"+prod.ProductID, *prod.ProductSlot)
 		}
 		for _, bucket := range prod.Buckets {
-			for _, p := range bucket.Pools {
-				label := fmt.Sprintf("bucket/%s/%s/%s/%s", bucket.BucketID, p.ScopeType, p.Source, sentinel(p.SKUID))
-				cells = append(cells, viewCell{label: label, pool: p})
+			if bucket.BucketSlot != nil {
+				emit("bucket/"+bucket.BucketID, *bucket.BucketSlot)
+			}
+			for _, sku := range bucket.SKUSlots {
+				emit("sku/"+bucket.BucketID+"/"+sku.SKUID, sku)
 			}
 		}
 	}
@@ -233,6 +302,33 @@ func sentinel(s string) string {
 		return "_"
 	}
 	return s
+}
+
+func findProductSection(view EntitlementsView, productID string) (EntitlementProductSection, bool) {
+	for _, p := range view.Products {
+		if p.ProductID == productID {
+			return p, true
+		}
+	}
+	return EntitlementProductSection{}, false
+}
+
+func findBucket(section EntitlementProductSection, bucketID string) (EntitlementBucketSection, bool) {
+	for _, b := range section.Buckets {
+		if b.BucketID == bucketID {
+			return b, true
+		}
+	}
+	return EntitlementBucketSection{}, false
+}
+
+func findSKU(bucket EntitlementBucketSection, skuID string) (EntitlementSlot, bool) {
+	for _, slot := range bucket.SKUSlots {
+		if slot.SKUID == skuID {
+			return slot, true
+		}
+	}
+	return EntitlementSlot{}, false
 }
 
 // scopedGrantsFromBalances projects the test fixture's GrantBalances into the
@@ -272,12 +368,12 @@ func grantsForSource(grants []scopedGrantBalance, source GrantSourceType) []scop
 // being shadowed by a narrower scope in the test fixture. SKU cells charge
 // the SKU; bucket cells charge the bucket with no SKU; product/account cells
 // charge the `isolated` bucket which has no narrower-scope grants.
-func chargeForCell(pool EntitlementPool) chargeLine {
-	switch pool.ScopeType {
+func chargeForCell(slot EntitlementSlot) chargeLine {
+	switch slot.ScopeType {
 	case GrantScopeSKU:
-		return chargeLine{BucketID: pool.BucketID, SKUID: pool.SKUID, AmountUnits: 1}
+		return chargeLine{BucketID: slot.BucketID, SKUID: slot.SKUID, AmountUnits: 1}
 	case GrantScopeBucket:
-		return chargeLine{BucketID: pool.BucketID, AmountUnits: 1}
+		return chargeLine{BucketID: slot.BucketID, AmountUnits: 1}
 	default:
 		return chargeLine{BucketID: "isolated", AmountUnits: 1}
 	}
@@ -285,11 +381,11 @@ func chargeForCell(pool EntitlementPool) chargeLine {
 
 func uniqueScopeSourceCells(grants []GrantBalance) int {
 	type key struct {
-		scope    GrantScopeType
-		product  string
-		bucket   string
-		sku      string
-		source   GrantSourceType
+		scope   GrantScopeType
+		product string
+		bucket  string
+		sku     string
+		source  GrantSourceType
 	}
 	seen := map[key]struct{}{}
 	for _, g := range grants {
@@ -300,7 +396,9 @@ func uniqueScopeSourceCells(grants []GrantBalance) int {
 
 // viewFundingGrant builds a GrantBalance whose grant id is deterministic in
 // the (source, scope, *, ref) tuple — same scheme as testScopedGrant — so the
-// rendered entry id and the funder's leg id agree.
+// rendered top-grant id and the funder's leg id agree. The funding tests do
+// not exercise the period predicate; TestEntitlementsViewPeriodStartAggregation
+// covers it directly.
 func viewFundingGrant(ref string, source GrantSourceType, scope GrantScopeType, productID, bucketID, skuID string, available uint64, expiresInDays int) GrantBalance {
 	expires := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(expiresInDays) * 24 * time.Hour)
 	return GrantBalance{
@@ -312,6 +410,218 @@ func viewFundingGrant(ref string, source GrantSourceType, scope GrantScopeType, 
 		Source:         source,
 		StartsAt:       time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
 		ExpiresAt:      &expires,
+		OriginalAmount: available,
 		Available:      available,
 	}
+}
+
+// TestEntitlementsViewPeriodStartAggregation pins the boundary semantics of
+// the half-open `period_start <= now < period_end` predicate that drives the
+// "Period started with" column. Date arithmetic is a famous bug nest; this
+// test exists so a future maintainer who refactors `periodCovered` cannot
+// silently flip a `<` to `<=` (or forget that PeriodStart/PeriodEnd are
+// independently nullable in Go even though the schema constrains them to
+// move together) without one of these subtests firing.
+func TestEntitlementsViewPeriodStartAggregation(t *testing.T) {
+	t.Parallel()
+
+	productID := "sandbox"
+	now := time.Date(2026, time.April, 12, 12, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog(productID)
+
+	periodStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+	staleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	staleEnd := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC) // exactly == now's open boundary case
+	futureStart := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+	futureEnd := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	noPeriodGrantStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	// Each grant lands on the universal slot so the test reads off
+	// view.Universal directly. Within the universal slot we get one
+	// SourceTotal per source, so the per-source PeriodStart expectations
+	// can be checked precisely.
+	grants := []GrantBalance{
+		{
+			GrantID:        sourceReferenceGrantID(42, SourceFreeTier, GrantScopeAccount, "", "", "", "in-period-1"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourceFreeTier,
+			StartsAt:       periodStart,
+			PeriodStart:    &periodStart,
+			PeriodEnd:      &periodEnd,
+			OriginalAmount: 100,
+			Available:      90,
+		},
+		{
+			GrantID:        sourceReferenceGrantID(42, SourceFreeTier, GrantScopeAccount, "", "", "", "in-period-2"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourceFreeTier,
+			StartsAt:       periodStart,
+			PeriodStart:    &periodStart,
+			PeriodEnd:      &periodEnd,
+			OriginalAmount: 50,
+			Available:      50,
+		},
+		{
+			// `now` falls exactly on the closed-side boundary of the prior
+			// period; the half-open predicate must EXCLUDE this grant.
+			GrantID:        sourceReferenceGrantID(42, SourceSubscription, GrantScopeAccount, "", "", "", "boundary-prior"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourceSubscription,
+			StartsAt:       staleStart,
+			PeriodStart:    &staleStart,
+			PeriodEnd:      &staleEnd,
+			OriginalAmount: 200,
+			Available:      0,
+		},
+		{
+			// future-period grant — should not contribute.
+			GrantID:        sourceReferenceGrantID(42, SourceSubscription, GrantScopeAccount, "", "", "", "future-period"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourceSubscription,
+			StartsAt:       futureStart,
+			PeriodStart:    &futureStart,
+			PeriodEnd:      &futureEnd,
+			OriginalAmount: 75,
+			Available:      75,
+		},
+		{
+			// non-period grant (purchase) — should not contribute to
+			// PeriodStartUnits but its Available counts.
+			GrantID:        sourceReferenceGrantID(42, SourcePurchase, GrantScopeAccount, "", "", "", "no-period"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourcePurchase,
+			StartsAt:       noPeriodGrantStart,
+			OriginalAmount: 500,
+			Available:      500,
+		},
+	}
+
+	view := buildEntitlementsView(42, now, catalog, grants)
+
+	if got, want := view.Universal.PeriodStartUnits, uint64(150); got != want {
+		t.Fatalf("Universal.PeriodStartUnits = %d, want %d (sum of in-period free-tier grants only)", got, want)
+	}
+	if got, want := view.Universal.AvailableUnits, uint64(715); got != want {
+		t.Fatalf("Universal.AvailableUnits = %d, want %d (sum of all available)", got, want)
+	}
+
+	freeTier := findUniversalSource(t, view, SourceFreeTier)
+	if got, want := freeTier.PeriodStartUnits, uint64(150); got != want {
+		t.Fatalf("free_tier.PeriodStartUnits = %d, want %d", got, want)
+	}
+	subscription := findUniversalSource(t, view, SourceSubscription)
+	if got, want := subscription.PeriodStartUnits, uint64(0); got != want {
+		t.Fatalf("subscription.PeriodStartUnits = %d, want %d (boundary-prior excluded by half-open, future-period excluded by start>now)", got, want)
+	}
+	purchase := findUniversalSource(t, view, SourcePurchase)
+	if got, want := purchase.PeriodStartUnits, uint64(0); got != want {
+		t.Fatalf("purchase.PeriodStartUnits = %d, want %d (non-period grant)", got, want)
+	}
+	if got, want := purchase.AvailableUnits, uint64(500); got != want {
+		t.Fatalf("purchase.AvailableUnits = %d, want %d", got, want)
+	}
+}
+
+// TestEntitlementsViewPeriodStartHalfOpenInclusiveStart asserts that a grant
+// whose period_start is exactly equal to `now` IS counted (closed left side).
+// Sibling test to TestEntitlementsViewPeriodStartAggregation's open-right
+// boundary case.
+func TestEntitlementsViewPeriodStartHalfOpenInclusiveStart(t *testing.T) {
+	t.Parallel()
+	productID := "sandbox"
+	now := time.Date(2026, time.April, 12, 12, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog(productID)
+	end := now.Add(30 * 24 * time.Hour)
+	grants := []GrantBalance{{
+		GrantID:        sourceReferenceGrantID(42, SourceFreeTier, GrantScopeAccount, "", "", "", "now-equals-start"),
+		ScopeType:      GrantScopeAccount,
+		Source:         SourceFreeTier,
+		StartsAt:       now,
+		PeriodStart:    &now,
+		PeriodEnd:      &end,
+		OriginalAmount: 42,
+		Available:      42,
+	}}
+	view := buildEntitlementsView(42, now, catalog, grants)
+	if view.Universal.PeriodStartUnits != 42 {
+		t.Fatalf("now == period_start should be inclusive; got PeriodStartUnits=%d", view.Universal.PeriodStartUnits)
+	}
+}
+
+// TestEntitlementsViewInlineExpiry pins the inline-expiry surfacing rule:
+// non-period grants surface their earliest ExpiresAt on the source total;
+// period-bound grants do not (their expiry is implicit in the period
+// boundary, shown once at the row level if at all). Multiple non-period
+// grants in the same source collapse to the earliest expiry.
+func TestEntitlementsViewInlineExpiry(t *testing.T) {
+	t.Parallel()
+	productID := "sandbox"
+	now := time.Date(2026, time.April, 12, 12, 0, 0, 0, time.UTC)
+	catalog := buildFundingTestCatalog(productID)
+
+	earlyExpiry := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+	lateExpiry := time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC)
+	periodStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+
+	grants := []GrantBalance{
+		{
+			// Non-period purchase, late expiry.
+			GrantID:        sourceReferenceGrantID(42, SourcePurchase, GrantScopeAccount, "", "", "", "late-purchase"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourcePurchase,
+			StartsAt:       now.Add(-24 * time.Hour),
+			ExpiresAt:      &lateExpiry,
+			OriginalAmount: 100,
+			Available:      100,
+		},
+		{
+			// Non-period purchase, early expiry — must win.
+			GrantID:        sourceReferenceGrantID(42, SourcePurchase, GrantScopeAccount, "", "", "", "early-purchase"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourcePurchase,
+			StartsAt:       now.Add(-24 * time.Hour),
+			ExpiresAt:      &earlyExpiry,
+			OriginalAmount: 50,
+			Available:      50,
+		},
+		{
+			// Period-bound free-tier grant with its own ExpiresAt — must NOT
+			// surface inline because its expiry is implicit in the period.
+			GrantID:        sourceReferenceGrantID(42, SourceFreeTier, GrantScopeAccount, "", "", "", "period-grant"),
+			ScopeType:      GrantScopeAccount,
+			Source:         SourceFreeTier,
+			StartsAt:       periodStart,
+			PeriodStart:    &periodStart,
+			PeriodEnd:      &periodEnd,
+			ExpiresAt:      &periodEnd,
+			OriginalAmount: 30,
+			Available:      30,
+		},
+	}
+	view := buildEntitlementsView(42, now, catalog, grants)
+
+	purchase := findUniversalSource(t, view, SourcePurchase)
+	if purchase.InlineExpiresAt == nil {
+		t.Fatalf("purchase source missing inline expiry")
+	}
+	if !purchase.InlineExpiresAt.Equal(earlyExpiry) {
+		t.Fatalf("purchase inline expiry = %s, want earliest = %s", purchase.InlineExpiresAt, earlyExpiry)
+	}
+	freeTier := findUniversalSource(t, view, SourceFreeTier)
+	if freeTier.InlineExpiresAt != nil {
+		t.Fatalf("period-bound free_tier source should not surface inline expiry; got %s", freeTier.InlineExpiresAt)
+	}
+}
+
+func findUniversalSource(t *testing.T, view EntitlementsView, source GrantSourceType) EntitlementSourceTotal {
+	t.Helper()
+	for _, total := range view.Universal.Sources {
+		if total.Source == source {
+			return total
+		}
+	}
+	t.Fatalf("universal slot has no %s source; sources=%+v", source, view.Universal.Sources)
+	return EntitlementSourceTotal{}
 }

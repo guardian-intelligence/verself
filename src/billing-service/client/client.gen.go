@@ -125,16 +125,16 @@ func (e BillingCreateSubscriptionRequestCadence) Valid() bool {
 	}
 }
 
-// Defines values for BillingEntitlementPoolScopeType.
+// Defines values for BillingEntitlementSlotScopeType.
 const (
-	Account BillingEntitlementPoolScopeType = "account"
-	Bucket  BillingEntitlementPoolScopeType = "bucket"
-	Product BillingEntitlementPoolScopeType = "product"
-	Sku     BillingEntitlementPoolScopeType = "sku"
+	Account BillingEntitlementSlotScopeType = "account"
+	Bucket  BillingEntitlementSlotScopeType = "bucket"
+	Product BillingEntitlementSlotScopeType = "product"
+	Sku     BillingEntitlementSlotScopeType = "sku"
 )
 
-// Valid indicates whether the value is a known member of the BillingEntitlementPoolScopeType enum.
-func (e BillingEntitlementPoolScopeType) Valid() bool {
+// Valid indicates whether the value is a known member of the BillingEntitlementSlotScopeType enum.
+func (e BillingEntitlementSlotScopeType) Valid() bool {
 	switch e {
 	case Account:
 		return true
@@ -149,17 +149,17 @@ func (e BillingEntitlementPoolScopeType) Valid() bool {
 	}
 }
 
-// Defines values for BillingEntitlementPoolSource.
+// Defines values for BillingEntitlementSourceTotalSource.
 const (
-	FreeTier     BillingEntitlementPoolSource = "free_tier"
-	Promo        BillingEntitlementPoolSource = "promo"
-	Purchase     BillingEntitlementPoolSource = "purchase"
-	Refund       BillingEntitlementPoolSource = "refund"
-	Subscription BillingEntitlementPoolSource = "subscription"
+	FreeTier     BillingEntitlementSourceTotalSource = "free_tier"
+	Promo        BillingEntitlementSourceTotalSource = "promo"
+	Purchase     BillingEntitlementSourceTotalSource = "purchase"
+	Refund       BillingEntitlementSourceTotalSource = "refund"
+	Subscription BillingEntitlementSourceTotalSource = "subscription"
 )
 
-// Valid indicates whether the value is a known member of the BillingEntitlementPoolSource enum.
-func (e BillingEntitlementPoolSource) Valid() bool {
+// Valid indicates whether the value is a known member of the BillingEntitlementSourceTotalSource enum.
+func (e BillingEntitlementSourceTotalSource) Valid() bool {
 	switch e {
 	case FreeTier:
 		return true
@@ -280,49 +280,51 @@ type BillingCreateSubscriptionRequestCadence string
 // BillingEntitlementBucketSection defines model for BillingEntitlementBucketSection.
 type BillingEntitlementBucketSection struct {
 	BucketId    string                    `json:"bucket_id"`
+	BucketSlot  *BillingEntitlementSlot   `json:"bucket_slot,omitempty"`
 	DisplayName string                    `json:"display_name"`
-	Pools       *[]BillingEntitlementPool `json:"pools"`
+	SkuSlots    *[]BillingEntitlementSlot `json:"sku_slots"`
 }
-
-// BillingEntitlementGrantEntry defines model for BillingEntitlementGrantEntry.
-type BillingEntitlementGrantEntry struct {
-	Available   string     `json:"available"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	GrantId     string     `json:"grant_id"`
-	Pending     string     `json:"pending"`
-	PeriodEnd   *time.Time `json:"period_end,omitempty"`
-	PeriodStart *time.Time `json:"period_start,omitempty"`
-	StartsAt    time.Time  `json:"starts_at"`
-}
-
-// BillingEntitlementPool defines model for BillingEntitlementPool.
-type BillingEntitlementPool struct {
-	BucketDisplay  string                          `json:"bucket_display"`
-	BucketId       string                          `json:"bucket_id"`
-	CoverageLabel  string                          `json:"coverage_label"`
-	Entries        *[]BillingEntitlementGrantEntry `json:"entries"`
-	ProductDisplay string                          `json:"product_display"`
-	ProductId      string                          `json:"product_id"`
-	ScopeType      BillingEntitlementPoolScopeType `json:"scope_type"`
-	SkuDisplay     string                          `json:"sku_display"`
-	SkuId          string                          `json:"sku_id"`
-	Source         BillingEntitlementPoolSource    `json:"source"`
-	SourceLabel    string                          `json:"source_label"`
-}
-
-// BillingEntitlementPoolScopeType defines model for BillingEntitlementPool.ScopeType.
-type BillingEntitlementPoolScopeType string
-
-// BillingEntitlementPoolSource defines model for BillingEntitlementPool.Source.
-type BillingEntitlementPoolSource string
 
 // BillingEntitlementProductSection defines model for BillingEntitlementProductSection.
 type BillingEntitlementProductSection struct {
-	Buckets      *[]BillingEntitlementBucketSection `json:"buckets"`
-	DisplayName  string                             `json:"display_name"`
-	ProductId    string                             `json:"product_id"`
-	ProductPools *[]BillingEntitlementPool          `json:"product_pools"`
+	Buckets     *[]BillingEntitlementBucketSection `json:"buckets"`
+	DisplayName string                             `json:"display_name"`
+	ProductId   string                             `json:"product_id"`
+	ProductSlot *BillingEntitlementSlot            `json:"product_slot,omitempty"`
 }
+
+// BillingEntitlementSlot defines model for BillingEntitlementSlot.
+type BillingEntitlementSlot struct {
+	AvailableUnits   string                           `json:"available_units"`
+	BucketDisplay    string                           `json:"bucket_display"`
+	BucketId         string                           `json:"bucket_id"`
+	CoverageLabel    string                           `json:"coverage_label"`
+	PendingUnits     string                           `json:"pending_units"`
+	PeriodStartUnits string                           `json:"period_start_units"`
+	ProductDisplay   string                           `json:"product_display"`
+	ProductId        string                           `json:"product_id"`
+	ScopeType        BillingEntitlementSlotScopeType  `json:"scope_type"`
+	SkuDisplay       string                           `json:"sku_display"`
+	SkuId            string                           `json:"sku_id"`
+	Sources          *[]BillingEntitlementSourceTotal `json:"sources"`
+	SpentUnits       string                           `json:"spent_units"`
+}
+
+// BillingEntitlementSlotScopeType defines model for BillingEntitlementSlot.ScopeType.
+type BillingEntitlementSlotScopeType string
+
+// BillingEntitlementSourceTotal defines model for BillingEntitlementSourceTotal.
+type BillingEntitlementSourceTotal struct {
+	AvailableUnits   string                              `json:"available_units"`
+	InlineExpiresAt  *time.Time                          `json:"inline_expires_at,omitempty"`
+	Label            string                              `json:"label"`
+	PeriodStartUnits string                              `json:"period_start_units"`
+	PlanId           string                              `json:"plan_id"`
+	Source           BillingEntitlementSourceTotalSource `json:"source"`
+}
+
+// BillingEntitlementSourceTotalSource defines model for BillingEntitlementSourceTotal.Source.
+type BillingEntitlementSourceTotalSource string
 
 // BillingEntitlementsView defines model for BillingEntitlementsView.
 type BillingEntitlementsView struct {
@@ -330,7 +332,7 @@ type BillingEntitlementsView struct {
 	Schema    *string                             `json:"$schema,omitempty"`
 	OrgId     string                              `json:"org_id"`
 	Products  *[]BillingEntitlementProductSection `json:"products"`
-	Universal *[]BillingEntitlementPool           `json:"universal"`
+	Universal BillingEntitlementSlot              `json:"universal"`
 }
 
 // BillingGrant defines model for BillingGrant.
