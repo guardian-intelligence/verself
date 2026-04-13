@@ -1166,7 +1166,7 @@ Target Stripe usage:
 
 1. Vaulting: SetupIntent -> PaymentMethod -> `payment_methods` row linked to `provider_customer_id`.
 2. Payment-method management: Customer Portal for card management, not a first-party card-vault UI.
-3. Invoice collection: one-off Stripe invoices or payment intents created from an immutable Forge Metal invoice artifact.
+3. Invoice collection: one-off Stripe invoices or payment intents created from an issued immutable Forge Metal invoice artifact. The only exception is Stripe Tax pre-issue draft verification, where a provider draft is created from a Forge Metal finalization candidate solely to compute and reconcile tax before the Forge Metal artifact is issued.
 4. Optional Stripe Tax: when enabled, Stripe tax computation is a pre-issue finalization input. The Forge Metal invoice must not be issued until tax units are known and reconciled into the stored invoice snapshot.
 5. Refunds/disputes: provider events update Forge Metal payment state and adjustment/refund records.
 
@@ -1196,12 +1196,14 @@ Do not subscribe the billing endpoint to `customer.subscription.*` events in the
 
 Stripe collection flow for a finalizing or issued Forge Metal invoice:
 
-1. Create a Stripe draft invoice with `auto_advance = false` to prevent provider-side finalization before Forge Metal verifies the draft, `collection_method = charge_automatically` when the org has collection consent, and metadata containing `invoice_id`.
-2. Add invoice items with deterministic idempotency keys per Forge Metal invoice line.
-3. Verify the Stripe draft total matches the Forge Metal invoice total after ledger-unit-to-cent rounding and tax policy.
-4. After draft verification, finalize the Stripe invoice with automatic advancement/collection enabled so Stripe performs automatic collection and smart retries. If Forge Metal later owns dunning, keep automatic advancement disabled, explicitly finalize/pay through `billing.payment.retry`, and model retries as River-driven domain work.
-5. Persist `stripe_invoice_id`, hosted invoice URL, invoice PDF URL, payment intent ID, and provider status on the Forge Metal invoice row.
-6. Treat Stripe webhooks as payment-state inputs, not invoice truth.
+1. Build a Forge Metal finalization candidate in PostgreSQL from settled windows, recurring charges, adjustments, rounding policy, and overage-consent policy.
+2. When Stripe Tax is disabled, issue the immutable Forge Metal invoice before provider collection. When Stripe Tax is enabled, create a Stripe draft from the finalization candidate before issue, use it only to compute/verify tax, persist the reconciled tax units into `invoice_snapshot_json`, and then issue the immutable Forge Metal invoice.
+3. Create the Stripe draft invoice with `auto_advance = false` so Stripe cannot finalize the provider invoice before Forge Metal verification completes, `collection_method = charge_automatically` only when the org has collection consent, and metadata containing `invoice_id`.
+4. Add invoice items with deterministic idempotency keys per Forge Metal invoice line and finalization generation. Do not reuse a Stripe idempotency key after changing request parameters.
+5. Verify the Stripe draft total matches the Forge Metal invoice total after ledger-unit-to-cent rounding and tax policy.
+6. After draft verification and Forge Metal issue, explicitly finalize the Stripe invoice. If Stripe owns initial dunning, configure the invoice so Stripe performs automatic collection/retry after finalization and report results through webhooks. If Forge Metal later owns dunning, keep provider automation disabled, explicitly finalize/pay through `billing.payment.retry`, and model retries as River-driven domain work.
+7. Persist `stripe_invoice_id`, hosted invoice URL, invoice PDF URL, payment intent ID, and provider status on the Forge Metal invoice row.
+8. Treat Stripe webhooks as payment-state inputs, not invoice truth.
 
 When Stripe Tax is enabled, the draft creation and tax verification steps occur before the Forge Metal invoice is marked `issued`; after issue, Stripe collection must not mutate the Forge Metal invoice total.
 
@@ -1230,6 +1232,8 @@ Stripe docs to keep near this design:
 - SetupIntents: <https://docs.stripe.com/payments/setup-intents>
 - Invoice integration: <https://docs.stripe.com/invoicing/integration>
 - Automatic invoice advancement: <https://docs.stripe.com/invoicing/integration/automatic-advancement-collection>
+- Idempotent requests: <https://docs.stripe.com/api/idempotent_requests>
+- Invoices API: <https://docs.stripe.com/api/invoices>
 - Create invoice API: <https://docs.stripe.com/api/invoices/create>
 - Finalize invoice API: <https://docs.stripe.com/api/invoices/finalize>
 - Invoice items API: <https://docs.stripe.com/api/invoiceitems>
