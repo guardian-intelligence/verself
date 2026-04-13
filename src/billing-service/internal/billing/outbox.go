@@ -71,6 +71,8 @@ func grantIssuedEvent(grantID GrantID, grant CreditGrant, startsAt time.Time) bi
 		"source_reference_id":   grant.SourceReferenceID,
 		"entitlement_period_id": grant.EntitlementPeriodID,
 		"policy_version":        grant.PolicyVersion,
+		"change_id":             grant.ChangeID,
+		"calculation_kind":      grant.CalculationKind,
 		"scope_type":            grant.ScopeType.String(),
 		"scope_product_id":      grant.ScopeProductID,
 		"scope_bucket_id":       grant.ScopeBucketID,
@@ -216,6 +218,74 @@ func contractChangeAppliedEvent(
 		AggregateID:   changeID,
 		OrgID:         strconv.FormatUint(uint64(orgID), 10),
 		ProductID:     productID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func contractChangeRequestedEvent(quote contractChangeQuote) billingEventFact {
+	occurredAt := quote.RequestedAt.UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":                   strconv.FormatUint(uint64(quote.OrgID), 10),
+		"product_id":               quote.ProductID,
+		"contract_id":              quote.ContractID,
+		"change_id":                quote.ChangeID,
+		"change_type":              "upgrade",
+		"from_plan_id":             quote.FromPlanID,
+		"target_plan_id":           quote.TargetPlanID,
+		"from_phase_id":            quote.FromPhaseID,
+		"to_phase_id":              quote.ToPhaseID,
+		"cycle_id":                 quote.Cycle.CycleID,
+		"invoice_id":               quote.InvoiceID,
+		"price_delta_units":        strconv.FormatUint(quote.PriceDeltaUnits, 10),
+		"price_delta_cents":        strconv.FormatUint(quote.PriceDeltaCents, 10),
+		"entitlement_delta_mode":   "positive_delta",
+		"proration_numerator_ns":   strconv.FormatInt(quote.ProrationNumeratorNS, 10),
+		"proration_denominator_ns": strconv.FormatInt(quote.ProrationDenominatorNS, 10),
+		"requested_effective_at":   quote.EffectiveAt.Format(time.RFC3339Nano),
+		"occurred_at":              occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "contract_change_requested", quote.ChangeID),
+		EventType:     "contract_change_requested",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "contract_change",
+		AggregateID:   quote.ChangeID,
+		OrgID:         strconv.FormatUint(uint64(quote.OrgID), 10),
+		ProductID:     quote.ProductID,
+		OccurredAt:    occurredAt,
+		Payload:       payload,
+	}
+}
+
+func contractChangePaymentStartedEvent(quote contractChangeQuote, providerInvoiceID string, hostedInvoiceURL string) billingEventFact {
+	occurredAt := time.Now().UTC()
+	payload, _ := json.Marshal(map[string]string{
+		"org_id":                    strconv.FormatUint(uint64(quote.OrgID), 10),
+		"product_id":                quote.ProductID,
+		"contract_id":               quote.ContractID,
+		"change_id":                 quote.ChangeID,
+		"change_type":               "upgrade",
+		"from_plan_id":              quote.FromPlanID,
+		"target_plan_id":            quote.TargetPlanID,
+		"from_phase_id":             quote.FromPhaseID,
+		"to_phase_id":               quote.ToPhaseID,
+		"cycle_id":                  quote.Cycle.CycleID,
+		"invoice_id":                quote.InvoiceID,
+		"provider":                  "stripe",
+		"provider_invoice_id":       providerInvoiceID,
+		"stripe_hosted_invoice_url": hostedInvoiceURL,
+		"price_delta_units":         strconv.FormatUint(quote.PriceDeltaUnits, 10),
+		"occurred_at":               occurredAt.Format(time.RFC3339Nano),
+	})
+	return billingEventFact{
+		EventID:       deterministicTextID("billing-event", "contract_change_payment_started", quote.ChangeID, providerInvoiceID),
+		EventType:     "contract_change_payment_started",
+		EventVersion:  billingEventCurrentVersion,
+		AggregateType: "contract_change",
+		AggregateID:   quote.ChangeID,
+		OrgID:         strconv.FormatUint(uint64(quote.OrgID), 10),
+		ProductID:     quote.ProductID,
 		OccurredAt:    occurredAt,
 		Payload:       payload,
 	}
@@ -679,8 +749,8 @@ func populateBillingEventProjectionDimensions(event *BillingEvent) error {
 	event.ContractID = payloadString(payload, "contract_id")
 	event.CycleID = payloadString(payload, "cycle_id")
 	event.PricingContractID = firstNonEmpty(payloadString(payload, "pricing_contract_id"), event.ContractID)
-	event.PricingPhaseID = firstNonEmpty(payloadString(payload, "pricing_phase_id"), payloadString(payload, "phase_id"))
-	event.PricingPlanID = firstNonEmpty(payloadString(payload, "pricing_plan_id"), payloadString(payload, "plan_id"))
+	event.PricingPhaseID = firstNonEmpty(payloadString(payload, "pricing_phase_id"), payloadString(payload, "phase_id"), payloadString(payload, "to_phase_id"))
+	event.PricingPlanID = firstNonEmpty(payloadString(payload, "pricing_plan_id"), payloadString(payload, "plan_id"), payloadString(payload, "target_plan_id"))
 	event.InvoiceID = payloadString(payload, "invoice_id")
 	event.ProviderEventID = payloadString(payload, "provider_event_id")
 	return nil

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strconv"
 	"time"
-
-	"github.com/lib/pq"
 )
 
 func (c *Client) activateCatalogContract(
@@ -34,7 +32,6 @@ func (c *Client) activateCatalogContract(
 	cadenceKind := "anniversary_monthly"
 	existing, err := c.GetContract(ctx, orgID, contractID)
 	newContract := false
-	var changeType string
 	reuseExistingPhase := false
 	if errors.Is(err, ErrContractNotFound) {
 		newContract = true
@@ -53,11 +50,7 @@ func (c *Client) activateCatalogContract(
 			}
 		}
 		if existing.PlanID != "" && existing.PlanID != planID {
-			changeType, err = c.catalogPlanChangeType(ctx, existing.PlanID, planID)
-			if err != nil {
-				return err
-			}
-			effectiveAt = normalizePhaseChangeEffectiveAt(effectiveAt, existing.PhaseStart)
+			return fmt.Errorf("%w: use invoice-backed contract change from %s to %s", ErrUnsupportedContractChange, existing.PlanID, planID)
 		}
 	}
 
@@ -82,41 +75,6 @@ func (c *Client) activateCatalogContract(
 	defer tx.Rollback()
 
 	orgIDText := strconv.FormatUint(uint64(orgID), 10)
-	if changeType != "" {
-		changeID := deterministicTextID(
-			"contract-change",
-			contractID,
-			existing.PhaseID,
-			phaseID,
-			planID,
-			effectiveAt.UTC().Format(time.RFC3339Nano),
-		)
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO contract_changes (
-				change_id, contract_id, org_id, product_id, change_type, state, timing,
-				requested_plan_id, target_plan_id, from_phase_id, to_phase_id,
-				requested_effective_at, actual_effective_at
-			)
-			VALUES ($1, $2, $3, $4, $5, 'applied', 'immediate',
-			        $6, $7, $8, $9,
-			        $10, $10)
-			ON CONFLICT (change_id) DO UPDATE
-			SET state = 'applied',
-			    actual_effective_at = EXCLUDED.actual_effective_at,
-			    updated_at = now()
-		`, changeID, contractID, orgIDText, productID, changeType, existing.PlanID, planID, existing.PhaseID, phaseID, effectiveAt.UTC()); err != nil {
-			return fmt.Errorf("record contract change %s: %w", changeID, err)
-		}
-		if err := supersedeContractPhaseTx(ctx, tx, orgIDText, existing.PhaseID, phaseID, effectiveAt.UTC()); err != nil {
-			return err
-		}
-		if err := insertBillingEventTx(ctx, tx, contractPhaseClosedEvent(orgID, productID, contractID, existing.PhaseID, existing.PlanID, phaseID, "superseded", effectiveAt.UTC())); err != nil {
-			return err
-		}
-		if err := insertBillingEventTx(ctx, tx, contractChangeAppliedEvent(orgID, productID, contractID, changeID, changeType, existing.PlanID, planID, existing.PhaseID, phaseID, effectiveAt.UTC())); err != nil {
-			return err
-		}
-	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO contracts (
 			contract_id, org_id, product_id, display_name, contract_kind, status,
@@ -239,42 +197,6 @@ func newSelfServeContractPhaseID(contractID, planID string, requestedAt time.Tim
 	return deterministicTextID("self-serve-contract-phase", contractID, planID, requestedAt.UTC().Format(time.RFC3339Nano))
 }
 
-func (c *Client) catalogPlanChangeType(ctx context.Context, currentPlanID string, targetPlanID string) (string, error) {
-	amounts := map[string]int64{}
-	rows, err := c.pg.QueryContext(ctx, `
-		SELECT plan_id, monthly_amount_cents
-		FROM plans
-		WHERE plan_id = ANY($1)
-	`, pq.Array([]string{currentPlanID, targetPlanID}))
-	if err != nil {
-		return "", fmt.Errorf("lookup catalog plan amounts: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var planID string
-		var amount int64
-		if err := rows.Scan(&planID, &amount); err != nil {
-			return "", fmt.Errorf("scan catalog plan amount: %w", err)
-		}
-		amounts[planID] = amount
-	}
-	if err := rows.Err(); err != nil {
-		return "", fmt.Errorf("iterate catalog plan amounts: %w", err)
-	}
-	currentAmount, ok := amounts[currentPlanID]
-	if !ok {
-		return "", fmt.Errorf("current plan %s is not active in catalog", currentPlanID)
-	}
-	targetAmount, ok := amounts[targetPlanID]
-	if !ok {
-		return "", fmt.Errorf("target plan %s is not active in catalog", targetPlanID)
-	}
-	if targetAmount < currentAmount {
-		return "downgrade", nil
-	}
-	return "upgrade", nil
-}
-
 func normalizePhaseChangeEffectiveAt(effectiveAt time.Time, phaseStart *time.Time) time.Time {
 	effectiveAt = effectiveAt.UTC()
 	if phaseStart == nil {
@@ -294,6 +216,7 @@ func supersedeContractPhaseTx(ctx context.Context, tx *sql.Tx, orgIDText string,
 		SET state = 'superseded',
 		    entitlement_state = 'closed',
 		    effective_end = $3,
+		    superseded_by_phase_id = $4,
 		    metadata = metadata || jsonb_build_object('superseded_by_phase_id', $4::text),
 		    updated_at = now()
 		WHERE phase_id = $1
@@ -302,27 +225,6 @@ func supersedeContractPhaseTx(ctx context.Context, tx *sql.Tx, orgIDText string,
 		  AND (effective_end IS NULL OR effective_end > $3)
 	`, oldPhaseID, orgIDText, effectiveAt, successorPhaseID); err != nil {
 		return fmt.Errorf("supersede contract phase %s: %w", oldPhaseID, err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE entitlement_periods
-		SET entitlement_state = 'closed',
-		    updated_at = now()
-		WHERE phase_id = $1
-		  AND org_id = $2
-	`, oldPhaseID, orgIDText); err != nil {
-		return fmt.Errorf("close entitlement periods for phase %s: %w", oldPhaseID, err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE credit_grants g
-		SET closed_at = $3,
-		    closed_reason = 'contract_phase_superseded'
-		FROM entitlement_periods ep
-		WHERE g.entitlement_period_id = ep.period_id
-		  AND ep.phase_id = $1
-		  AND g.org_id = $2
-		  AND g.closed_at IS NULL
-	`, oldPhaseID, orgIDText, effectiveAt); err != nil {
-		return fmt.Errorf("close grants for phase %s: %w", oldPhaseID, err)
 	}
 	return nil
 }

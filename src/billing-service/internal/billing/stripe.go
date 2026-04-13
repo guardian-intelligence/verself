@@ -127,6 +127,25 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 	contractID := deterministicTextID("self-serve-contract", strconv.FormatUint(uint64(orgID), 10), productID)
 	phaseID := newSelfServeContractPhaseID(contractID, planID, requestedAt)
 
+	existing, err := c.GetContract(ctx, orgID, contractID)
+	if err == nil {
+		if existing.PlanID == planID {
+			return successURL, nil
+		}
+		result, err := c.CreateContractChange(ctx, orgID, contractID, ContractChangeRequest{
+			TargetPlanID: planID,
+			SuccessURL:   successURL,
+			CancelURL:    cancelURL,
+		})
+		if err != nil {
+			return "", err
+		}
+		return result.URL, nil
+	}
+	if err != nil && err != ErrContractNotFound {
+		return "", err
+	}
+
 	customerID, err := c.ensureStripeCustomer(ctx, orgID)
 	if err != nil {
 		return "", err
@@ -158,6 +177,190 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 		return "", fmt.Errorf("create contract payment-method checkout session: %w", err)
 	}
 	return session.URL, nil
+}
+
+type contractChangeInvoicePayment struct {
+	URL               string
+	Status            string
+	ProviderInvoiceID string
+	PaidAt            time.Time
+}
+
+func (c *Client) collectContractChangeInvoice(ctx context.Context, quote contractChangeQuote) (contractChangeInvoicePayment, error) {
+	customerID, err := c.ensureStripeCustomer(ctx, quote.OrgID)
+	if err != nil {
+		return contractChangeInvoicePayment{}, err
+	}
+	paymentMethodID, err := c.defaultStripePaymentMethod(ctx, quote.OrgID)
+	if err != nil {
+		return contractChangeInvoicePayment{}, err
+	}
+	metadata := map[string]string{
+		"org_id":            strconv.FormatUint(uint64(quote.OrgID), 10),
+		"product_id":        quote.ProductID,
+		"contract_id":       quote.ContractID,
+		"change_id":         quote.ChangeID,
+		"invoice_id":        quote.InvoiceID,
+		"from_plan_id":      quote.FromPlanID,
+		"target_plan_id":    quote.TargetPlanID,
+		"from_phase_id":     quote.FromPhaseID,
+		"to_phase_id":       quote.ToPhaseID,
+		"invoice_number":    quote.InvoiceNumber,
+		"price_delta_units": strconv.FormatUint(quote.PriceDeltaUnits, 10),
+	}
+
+	// Do not set Stripe's invoice Number: dev resets can rewind our allocator
+	// while Stripe retains historical invoices in the sandbox account.
+	createParams := &stripe.InvoiceCreateParams{
+		AutoAdvance:      stripe.Bool(false),
+		CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
+		Currency:         stripe.String(quote.Currency),
+		Customer:         stripe.String(customerID),
+		CustomFields: []*stripe.InvoiceCreateCustomFieldParams{{
+			Name:  stripe.String("Forge Metal invoice"),
+			Value: stripe.String(quote.InvoiceNumber),
+		}},
+		DefaultPaymentMethod:        stripe.String(paymentMethodID),
+		Description:                 stripe.String("Forge Metal invoice " + quote.InvoiceNumber + " plan upgrade"),
+		Metadata:                    metadata,
+		PendingInvoiceItemsBehavior: stripe.String("exclude"),
+	}
+	createParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":invoice")
+	invoice, err := c.stripe.V1Invoices.Create(ctx, createParams)
+	if err != nil {
+		return contractChangeInvoicePayment{}, fmt.Errorf("create stripe contract change invoice: %w", err)
+	}
+
+	itemParams := &stripe.InvoiceItemCreateParams{
+		Amount:      stripe.Int64(int64(quote.PriceDeltaCents)),
+		Currency:    stripe.String(quote.Currency),
+		Customer:    stripe.String(customerID),
+		Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID),
+		Invoice:     stripe.String(invoice.ID),
+		Metadata:    metadata,
+		Period: &stripe.InvoiceItemCreatePeriodParams{
+			Start: stripe.Int64(quote.EffectiveAt.Unix()),
+			End:   stripe.Int64(quote.Cycle.EndsAt.Unix()),
+		},
+	}
+	itemParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":item")
+	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
+		return contractChangeInvoicePayment{}, fmt.Errorf("create stripe contract change invoice item: %w", err)
+	}
+
+	finalizeParams := &stripe.InvoiceFinalizeInvoiceParams{
+		AutoAdvance: stripe.Bool(false),
+	}
+	finalizeParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":finalize")
+	finalized, err := c.stripe.V1Invoices.FinalizeInvoice(ctx, invoice.ID, finalizeParams)
+	if err != nil {
+		return contractChangeInvoicePayment{}, fmt.Errorf("finalize stripe contract change invoice: %w", err)
+	}
+
+	payParams := &stripe.InvoicePayParams{
+		PaymentMethod: stripe.String(paymentMethodID),
+		OffSession:    stripe.Bool(false),
+	}
+	payParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":pay")
+	paid, err := c.stripe.V1Invoices.Pay(ctx, finalized.ID, payParams)
+	if err != nil {
+		if updateErr := c.persistContractChangeStripeInvoice(ctx, quote, finalized, "issued", "pending"); updateErr != nil {
+			return contractChangeInvoicePayment{}, fmt.Errorf("pay stripe contract change invoice: %w; persist invoice: %v", err, updateErr)
+		}
+		return contractChangeInvoicePayment{}, fmt.Errorf("pay stripe contract change invoice: %w", err)
+	}
+
+	dbStatus, paymentStatus := billingInvoiceStatusFromStripeInvoice(paid)
+	if err := c.persistContractChangeStripeInvoice(ctx, quote, paid, dbStatus, paymentStatus); err != nil {
+		return contractChangeInvoicePayment{}, err
+	}
+	status := paymentStatus
+	if status == "" {
+		status = dbStatus
+	}
+	return contractChangeInvoicePayment{
+		URL:               paid.HostedInvoiceURL,
+		Status:            status,
+		ProviderInvoiceID: paid.ID,
+		PaidAt:            stripeInvoicePaidAt(paid, c.clock().UTC()),
+	}, nil
+}
+
+func (c *Client) defaultStripePaymentMethod(ctx context.Context, orgID OrgID) (string, error) {
+	var paymentMethodID string
+	err := c.pg.QueryRowContext(ctx, `
+		SELECT provider_payment_method_id
+		FROM payment_methods
+		WHERE org_id = $1
+		  AND provider = 'stripe'
+		  AND status = 'active'
+		  AND is_default
+		  AND provider_payment_method_id <> ''
+		ORDER BY updated_at DESC, payment_method_id DESC
+		LIMIT 1
+	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&paymentMethodID)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("%w: no default stripe payment method", ErrNoStripeCustomer)
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup default stripe payment method: %w", err)
+	}
+	return paymentMethodID, nil
+}
+
+func (c *Client) persistContractChangeStripeInvoice(ctx context.Context, quote contractChangeQuote, invoice *stripe.Invoice, dbStatus string, paymentStatus string) error {
+	if invoice == nil || invoice.ID == "" {
+		return nil
+	}
+	_, err := c.pg.ExecContext(ctx, `
+		UPDATE billing_invoices
+		SET status = $3,
+		    payment_status = $4,
+		    stripe_invoice_id = $5,
+		    stripe_hosted_invoice_url = $6,
+		    stripe_invoice_pdf_url = $7,
+		    updated_at = now()
+		WHERE invoice_id = $1
+		  AND change_id = $2
+	`, quote.InvoiceID, quote.ChangeID, dbStatus, paymentStatus, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF)
+	if err != nil {
+		return fmt.Errorf("persist stripe invoice %s for contract change %s: %w", invoice.ID, quote.ChangeID, err)
+	}
+	_, err = c.pg.ExecContext(ctx, `
+		UPDATE contract_changes
+		SET provider_invoice_id = $2,
+			    state = CASE WHEN state IN ('awaiting_payment', 'failed') THEN 'provider_pending' ELSE state END,
+		    updated_at = now()
+		WHERE change_id = $1
+		  AND provider_invoice_id = ''
+	`, quote.ChangeID, invoice.ID)
+	if err != nil {
+		return fmt.Errorf("persist stripe invoice on contract change %s: %w", quote.ChangeID, err)
+	}
+	return insertBillingEvent(ctx, c.pg, contractChangePaymentStartedEvent(quote, invoice.ID, invoice.HostedInvoiceURL))
+}
+
+func billingInvoiceStatusFromStripeInvoice(invoice *stripe.Invoice) (string, string) {
+	if invoice == nil {
+		return "issued", "pending"
+	}
+	switch invoice.Status {
+	case stripe.InvoiceStatusPaid:
+		return "paid", "paid"
+	case stripe.InvoiceStatusDraft:
+		return "draft", "pending"
+	case stripe.InvoiceStatusVoid, stripe.InvoiceStatusUncollectible:
+		return "payment_failed", "failed"
+	default:
+		return "issued", "pending"
+	}
+}
+
+func stripeInvoicePaidAt(invoice *stripe.Invoice, fallback time.Time) time.Time {
+	if invoice != nil && invoice.StatusTransitions != nil && invoice.StatusTransitions.PaidAt > 0 {
+		return time.Unix(invoice.StatusTransitions.PaidAt, 0).UTC()
+	}
+	return fallback.UTC()
 }
 
 func (c *Client) ensureStripeCustomer(ctx context.Context, orgID OrgID) (string, error) {
@@ -336,9 +539,9 @@ func (c *Client) ApplyProviderEvent(ctx context.Context, eventID string) (bool, 
 	case "payment_intent.succeeded":
 		handleErr = c.handlePaymentIntentSucceeded(ctx, event)
 	case "invoice.paid":
-		handleErr = c.handleInvoicePaid(ctx, event)
+		handleErr = c.handleInvoicePaid(ctx, claim.EventID, event)
 	case "invoice.payment_failed":
-		handleErr = c.handleInvoicePaymentFailed(ctx, event)
+		handleErr = c.handleInvoicePaymentFailed(ctx, claim.EventID, event)
 	default:
 		finalState = "ignored"
 	}
@@ -380,13 +583,13 @@ func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Eve
 		INSERT INTO billing_provider_events (
 			event_id, provider, provider_event_id, event_type, state, livemode,
 			provider_created_at, next_attempt_at, org_id, product_id, contract_id,
-			invoice_id, provider_customer_id, provider_invoice_id, provider_payment_intent_id,
+			change_id, invoice_id, provider_customer_id, provider_invoice_id, provider_payment_intent_id,
 			provider_object_type, provider_object_id, payload
 		)
 		VALUES ($1, 'stripe', $2, $3, 'queued', $4, $5, $6,
 		        $7, $8, $9,
-		        $10, $11, $12, $13,
-		        $14, $15, $16::jsonb)
+		        $10, $11, $12, $13, $14,
+		        $15, $16, $17::jsonb)
 		ON CONFLICT (provider, provider_event_id) DO UPDATE
 		SET event_type = EXCLUDED.event_type,
 		    livemode = EXCLUDED.livemode,
@@ -405,6 +608,7 @@ func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Eve
 		    org_id = CASE WHEN billing_provider_events.org_id = '' THEN EXCLUDED.org_id ELSE billing_provider_events.org_id END,
 		    product_id = CASE WHEN billing_provider_events.product_id = '' THEN EXCLUDED.product_id ELSE billing_provider_events.product_id END,
 		    contract_id = CASE WHEN billing_provider_events.contract_id = '' THEN EXCLUDED.contract_id ELSE billing_provider_events.contract_id END,
+		    change_id = CASE WHEN billing_provider_events.change_id = '' THEN EXCLUDED.change_id ELSE billing_provider_events.change_id END,
 		    invoice_id = CASE WHEN billing_provider_events.invoice_id = '' THEN EXCLUDED.invoice_id ELSE billing_provider_events.invoice_id END,
 		    provider_customer_id = CASE WHEN billing_provider_events.provider_customer_id = '' THEN EXCLUDED.provider_customer_id ELSE billing_provider_events.provider_customer_id END,
 		    provider_invoice_id = CASE WHEN billing_provider_events.provider_invoice_id = '' THEN EXCLUDED.provider_invoice_id ELSE billing_provider_events.provider_invoice_id END,
@@ -414,7 +618,7 @@ func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Eve
 		    updated_at = now()
 	`, eventID, event.ID, string(event.Type), event.Livemode, time.Unix(event.Created, 0).UTC(), c.clock().UTC(),
 		annotation.OrgID, annotation.ProductID, annotation.ContractID,
-		annotation.InvoiceID, annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
+		annotation.ChangeID, annotation.InvoiceID, annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
 		annotation.ObjectType, annotation.ObjectID, string(payload))
 	if err != nil {
 		return "", fmt.Errorf("record stripe provider event %s: %w", event.ID, err)
@@ -440,6 +644,7 @@ func stripeRawProviderEventAnnotation(event stripe.Event) providerEventAnnotatio
 		OrgID:            metadata["org_id"],
 		ProductID:        metadata["product_id"],
 		ContractID:       metadata["contract_id"],
+		ChangeID:         metadata["change_id"],
 		InvoiceID:        metadata["invoice_id"],
 		ProviderCustomer: stringValue(object["customer"]),
 		ObjectType:       providerObjectTypeFromStripeEventType(string(event.Type)),
@@ -524,6 +729,7 @@ func providerEventReceivedEvent(eventID string, event stripe.Event, annotation p
 		"org_id":                     annotation.OrgID,
 		"product_id":                 annotation.ProductID,
 		"contract_id":                annotation.ContractID,
+		"change_id":                  annotation.ChangeID,
 		"invoice_id":                 annotation.InvoiceID,
 		"provider_customer_id":       annotation.ProviderCustomer,
 		"provider_invoice_id":        annotation.ProviderInvoiceID,
@@ -557,6 +763,7 @@ func providerEventAppliedEvent(eventID string, providerEventID string, providerE
 		"org_id":                     annotation.OrgID,
 		"product_id":                 annotation.ProductID,
 		"contract_id":                annotation.ContractID,
+		"change_id":                  annotation.ChangeID,
 		"invoice_id":                 annotation.InvoiceID,
 		"provider_customer_id":       annotation.ProviderCustomer,
 		"provider_invoice_id":        annotation.ProviderInvoiceID,
@@ -634,7 +841,7 @@ func (c *Client) markStripeProviderEventFinal(ctx context.Context, eventID strin
 		    updated_at = $3
 		WHERE event_id = $1
 		  AND state = 'applying'
-		RETURNING provider_event_id, event_type, org_id, product_id, contract_id, invoice_id,
+		RETURNING provider_event_id, event_type, org_id, product_id, contract_id, change_id, invoice_id,
 		          provider_customer_id, provider_invoice_id, provider_payment_intent_id,
 		          provider_object_type, provider_object_id
 	`, eventID, state, now).Scan(
@@ -643,6 +850,7 @@ func (c *Client) markStripeProviderEventFinal(ctx context.Context, eventID strin
 		&annotation.OrgID,
 		&annotation.ProductID,
 		&annotation.ContractID,
+		&annotation.ChangeID,
 		&annotation.InvoiceID,
 		&annotation.ProviderCustomer,
 		&annotation.ProviderInvoiceID,
@@ -821,6 +1029,7 @@ type providerEventAnnotation struct {
 	OrgID                   string
 	ProductID               string
 	ContractID              string
+	ChangeID                string
 	InvoiceID               string
 	ProviderCustomer        string
 	ProviderInvoiceID       string
@@ -843,16 +1052,17 @@ func (c *Client) annotateStripeProviderEvent(ctx context.Context, eventID string
 		SET org_id = $2,
 		    product_id = $3,
 		    contract_id = $4,
-		    invoice_id = $5,
-		    provider_customer_id = $6,
-		    provider_invoice_id = $7,
-		    provider_payment_intent_id = $8,
-		    provider_object_type = $9,
-		    provider_object_id = $10,
-		    normalized_payload = $11::jsonb,
+		    change_id = $5,
+		    invoice_id = $6,
+		    provider_customer_id = $7,
+		    provider_invoice_id = $8,
+		    provider_payment_intent_id = $9,
+		    provider_object_type = $10,
+		    provider_object_id = $11,
+		    normalized_payload = $12::jsonb,
 		    updated_at = now()
 		WHERE event_id = $1
-	`, eventID, annotation.OrgID, annotation.ProductID, annotation.ContractID, annotation.InvoiceID,
+	`, eventID, annotation.OrgID, annotation.ProductID, annotation.ContractID, annotation.ChangeID, annotation.InvoiceID,
 		annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
 		annotation.ObjectType, annotation.ObjectID, string(normalized))
 	if err != nil {
@@ -934,6 +1144,11 @@ func (c *Client) upsertPaymentMethodFromSetupIntent(ctx context.Context, intent 
 	if err != nil {
 		return fmt.Errorf("setup_intent.succeeded: parse org id: %w", err)
 	}
+	if existing, err := c.GetContract(ctx, OrgID(rawOrgID), contractID); err == nil && existing.PlanID != "" && existing.PlanID != planID {
+		return nil
+	} else if err != nil && err != ErrContractNotFound {
+		return err
+	}
 	effectiveAt := setupIntentEffectiveAt(intent, c.clock().UTC())
 	if err := c.activateCatalogContract(ctx, OrgID(rawOrgID), productID, planID, contractID, phaseID, cadence, effectiveAt, PaymentPaid); err != nil {
 		return fmt.Errorf("activate contract from setup intent: %w", err)
@@ -987,7 +1202,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 	return nil
 }
 
-func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) error {
+func (c *Client) handleInvoicePaid(ctx context.Context, providerEventID string, event stripe.Event) error {
 	invoice, err := decodeStripeEventObject[stripe.Invoice](event, "invoice.paid")
 	if err != nil {
 		return err
@@ -995,20 +1210,49 @@ func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) erro
 	if invoice.ID == "" {
 		return nil
 	}
-	_, err = c.pg.ExecContext(ctx, `
+	var invoiceID string
+	var changeID string
+	err = c.pg.QueryRowContext(ctx, `
 		UPDATE billing_invoices
 		SET payment_status = 'paid',
-		    status = CASE WHEN status = 'issued' THEN 'paid' ELSE status END,
+		    status = CASE WHEN status IN ('issued', 'draft', 'finalizing', 'payment_failed') THEN 'paid' ELSE status END,
+		    stripe_hosted_invoice_url = COALESCE(NULLIF($2, ''), stripe_hosted_invoice_url),
+		    stripe_invoice_pdf_url = COALESCE(NULLIF($3, ''), stripe_invoice_pdf_url),
 		    updated_at = now()
 		WHERE stripe_invoice_id = $1
-	`, invoice.ID)
+		RETURNING invoice_id, change_id
+	`, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF).Scan(&invoiceID, &changeID)
+	if err == sql.ErrNoRows && invoice.Metadata != nil {
+		invoiceID = invoice.Metadata["invoice_id"]
+		changeID = invoice.Metadata["change_id"]
+		if invoiceID != "" {
+			_, err = c.pg.ExecContext(ctx, `
+				UPDATE billing_invoices
+				SET payment_status = 'paid',
+				    status = CASE WHEN status IN ('issued', 'draft', 'finalizing', 'payment_failed') THEN 'paid' ELSE status END,
+				    stripe_invoice_id = $2,
+				    stripe_hosted_invoice_url = COALESCE(NULLIF($3, ''), stripe_hosted_invoice_url),
+				    stripe_invoice_pdf_url = COALESCE(NULLIF($4, ''), stripe_invoice_pdf_url),
+				    updated_at = now()
+				WHERE invoice_id = $1
+			`, invoiceID, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF)
+		}
+	}
+	if err == sql.ErrNoRows {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("invoice.paid: update billing invoice: %w", err)
+	}
+	if changeID != "" {
+		if err := c.applyPaidContractChange(ctx, changeID, invoiceID, invoice.ID, providerEventID, stripeInvoicePaidAt(&invoice, c.clock().UTC())); err != nil {
+			return fmt.Errorf("invoice.paid: apply contract change %s: %w", changeID, err)
+		}
 	}
 	return nil
 }
 
-func (c *Client) handleInvoicePaymentFailed(ctx context.Context, event stripe.Event) error {
+func (c *Client) handleInvoicePaymentFailed(ctx context.Context, providerEventID string, event stripe.Event) error {
 	invoice, err := decodeStripeEventObject[stripe.Invoice](event, "invoice.payment_failed")
 	if err != nil {
 		return err
@@ -1016,15 +1260,47 @@ func (c *Client) handleInvoicePaymentFailed(ctx context.Context, event stripe.Ev
 	if invoice.ID == "" {
 		return nil
 	}
-	_, err = c.pg.ExecContext(ctx, `
+	var changeID string
+	err = c.pg.QueryRowContext(ctx, `
 		UPDATE billing_invoices
 		SET payment_status = 'failed',
-		    status = CASE WHEN status = 'issued' THEN 'payment_failed' ELSE status END,
+		    status = CASE WHEN status IN ('issued', 'draft', 'finalizing') THEN 'payment_failed' ELSE status END,
 		    updated_at = now()
 		WHERE stripe_invoice_id = $1
-	`, invoice.ID)
+		RETURNING change_id
+	`, invoice.ID).Scan(&changeID)
+	if err == sql.ErrNoRows && invoice.Metadata != nil {
+		changeID = invoice.Metadata["change_id"]
+		if invoice.Metadata["invoice_id"] != "" {
+			_, err = c.pg.ExecContext(ctx, `
+				UPDATE billing_invoices
+				SET payment_status = 'failed',
+				    status = CASE WHEN status IN ('issued', 'draft', 'finalizing') THEN 'payment_failed' ELSE status END,
+				    stripe_invoice_id = $2,
+				    updated_at = now()
+				WHERE invoice_id = $1
+			`, invoice.Metadata["invoice_id"], invoice.ID)
+		}
+	}
+	if err == sql.ErrNoRows {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("invoice.payment_failed: update billing invoice: %w", err)
+	}
+	if changeID != "" {
+		_, err = c.pg.ExecContext(ctx, `
+			UPDATE contract_changes
+			SET state = 'failed',
+			    failure_reason = $2,
+			    state_version = state_version + 1,
+			    updated_at = now()
+			WHERE change_id = $1
+			  AND state <> 'applied'
+		`, changeID, "stripe invoice payment failed via provider event "+providerEventID)
+		if err != nil {
+			return fmt.Errorf("invoice.payment_failed: mark contract change %s failed: %w", changeID, err)
+		}
 	}
 	return nil
 }

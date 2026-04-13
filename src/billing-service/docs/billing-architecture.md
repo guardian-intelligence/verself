@@ -622,7 +622,7 @@ Key fields:
 - `provider_invoice_id`
 - `provider_event_id`
 - `change_id`
-- `calculation_kind` (`regular`, `upgrade_delta`, `carryforward_correction`)
+- `calculation_kind` (`recurrence`, `activation`, `upgrade_delta`, `manual_adjustment`)
 - `source_reference_id`
 - `created_reason`
 
