@@ -28,8 +28,19 @@ const combinedCaption =
 
 export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
   const productSections = view.products ?? [];
-  const visibleSlots = collectVisibleSlots(view);
-  const totalAvailableForTests = visibleSlots.reduce((acc, slot) => acc + slot.available_units, 0);
+  // The hidden `data-test-available-units` attribute is a deliberate
+  // cross-slot sum used by e2e harness `readBalance()` for *relative*
+  // comparisons (started_balance vs finished_balance). It double-counts in
+  // every honest sense — different slots cover different scopes the funder
+  // drains in a fixed order — and is never displayed to users. Do not render
+  // this value, and do not "fix" it into a top-line total. The whole point of
+  // the slot model is that no honest cross-slot sum exists; this attribute
+  // earns its dishonesty by being monotonic-under-debit, hidden, and
+  // test-only.
+  const totalAvailableForTests = collectVisibleSlots(view).reduce(
+    (acc, slot) => acc + slot.available_units,
+    0,
+  );
 
   return (
     <div
