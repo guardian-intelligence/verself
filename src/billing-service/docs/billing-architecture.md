@@ -14,7 +14,7 @@ Forge Metal owns billing periods, plan policy, invoice artifacts, and consent.
 Stripe is a payment rail and hosted payment-method provider, not the billing domain model.
 ```
 
-PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit grants, billing cycles, billing windows, invoices, invoice adjustments, provider bindings, provider events, outbox rows, and reconciliation cursors. River owns durable asynchronous execution of billing work derived from that state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers still converge to the same contract, phase, cycle, entitlement period, grant, invoice, adjustment, and outbox facts.
+PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit grants, billing cycles, billing windows, invoices, invoice adjustments, provider bindings, provider events, billing event rows, event-delivery queue rows, and reconciliation cursors. River owns durable asynchronous execution of billing work derived from that state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers still converge to the same contract, phase, cycle, entitlement period, grant, invoice, adjustment, and billing event facts.
 
 Stripe is a payment and hosted billing provider. The target architecture does not use Stripe Subscriptions as the self-serve contract state machine. Forge Metal owns cadence, cycle rollover, contract changes, plan phases, entitlement materialization, invoice issue/finalization, overage consent, and dunning policy. Stripe is consulted when a card is vaulted, a hosted payment-method management surface is needed, an invoice is sent to Stripe for collection, a payment/refund/dispute event arrives, or Stripe Tax is later enabled.
 
@@ -50,7 +50,7 @@ Reference points in this repo:
 
 | System | Role |
 |---|---|
-| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit grants, billing cycles, billing windows, invoices, invoice adjustments, payment methods, provider bindings, provider events, outbox rows, schedule-defining timestamps, and reconciliation cursors. |
+| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit grants, billing cycles, billing windows, invoices, invoice adjustments, payment methods, provider bindings, provider events, billing event rows, event-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
 | River | Durable queue and scheduler runtime for provider-event application, contract-change execution, phase-boundary advancement, entitlement-period materialization, cycle rollover, invoice finalization, Stripe invoice collection, invoice email delivery, retries, and periodic repair. |
 | TigerBeetle | Financial ledger for credit grants, receivables, reservations, settlements, voids, refunds, and spend-cap enforcement. |
 | ClickHouse | Append-only usage evidence plus billing event, metering, invoice, adjustment, and provider-event projections used for invoice preview, statements, dashboards, verification, and reconciliation. |
@@ -61,7 +61,7 @@ Reference points in this repo:
 
 Scheduling and queuing are first-class billing verbs.
 
-Scheduling is the act of declaring that work is due at or after a domain time. Billing schedules are encoded in PostgreSQL rows, not hidden inside River. Examples include `requested_effective_at`, `actual_effective_at`, `effective_start`, `effective_end`, `period_start`, `period_end`, `cycle.starts_at`, `cycle.ends_at`, `finalization_due_at`, `grace_until`, `next_materialize_at`, `next_attempt_at`, and `delivered_at IS NULL`.
+Scheduling is the act of declaring that work is due at or after a domain time. Billing schedules are encoded in PostgreSQL rows, not hidden inside River. Examples include `requested_effective_at`, `actual_effective_at`, `effective_start`, `effective_end`, `period_start`, `period_end`, `cycle.starts_at`, `cycle.ends_at`, `finalization_due_at`, `grace_until`, `next_materialize_at`, and `billing_event_delivery_queue.next_attempt_at`.
 
 Queuing is the act of inserting a durable River job to execute one bounded transition derived from PostgreSQL state. River gives us retry, backoff, concurrency limits, delayed execution, periodic scans, OpenTelemetry spans, and transactional enqueueing. It does not replace the domain state machine.
 
@@ -70,7 +70,7 @@ Workers are thin executors. A worker must:
 1. Load the authoritative PostgreSQL row by deterministic domain identity.
 2. Verify the transition is still due and allowed.
 3. Apply one bounded state-machine step with compare-and-swap semantics.
-4. Write any `billing_outbox_events` in the same transaction as the authoritative state change.
+4. Write any immutable `billing_events` facts and corresponding `billing_event_delivery_queue` rows in the same transaction as the authoritative state change.
 5. Enqueue follow-up River jobs in the same transaction when the transition creates new due work.
 6. Exit without side effects when the row is already terminal, superseded, not yet due, or already applied.
 
@@ -89,14 +89,16 @@ Target billing job kinds:
 - `billing.invoice.email`: send the stored Forge Metal invoice email through mailbox-service.
 - `billing.payment.retry`: run payment retry policy only when Forge Metal owns dunning instead of delegating automatic collection to Stripe.
 - `billing.metering.project_window`: project one settled billing window into ClickHouse.
-- `billing.outbox.project_event`: project one outbox fact into ClickHouse.
-- `billing.outbox.reconcile`: repair stuck or missing outbox projection jobs.
+- `billing.event_delivery.project`: project one billing event fact into ClickHouse.
+- `billing.event_delivery.project_pending`: repair stuck or missing event delivery projection jobs.
 
-The first implemented River cut keeps the existing bounded batch projectors and
-reconciler as `billing.metering.project_pending_windows`,
-`billing.outbox.project_pending_events`, and `billing.entitlements.reconcile`.
-Those jobs are repair scanners, not replacements for the target one-row domain
-transition jobs above.
+The first implemented River cut keeps bounded repair scanners as
+`billing.metering.project_pending_windows`, `billing.event_delivery.project_pending`,
+and `billing.entitlements.reconcile`, and adds the one-row
+`billing.event_delivery.project` worker for precise event delivery. Producers
+that cannot enqueue River transactionally with their current SQL transaction
+still converge through the delivery queue plus periodic scanner; the target
+shape is to enqueue one-row jobs in the same transaction as the domain row.
 
 Job uniqueness must be derived from domain identity, not random worker identity:
 
@@ -108,7 +110,7 @@ Job uniqueness must be derived from domain identity, not random worker identity:
 - Invoice finalization jobs key by `invoice_finalization_id` or `cycle_id` when there is exactly one invoice per cycle.
 - Stripe collection jobs key by `invoice_id`.
 - Invoice email jobs key by `invoice_id`.
-- Outbox projection jobs key by `event_id`.
+- Event delivery projection jobs key by `event_id`.
 - Metering projection jobs key by `window_id`.
 
 Billing-service must run its own River runtime against the billing PostgreSQL database. The sandbox-rental-service River runtime is a useful pattern, not a shared worker pool for billing. Billing workers need to enqueue jobs transactionally with billing domain rows, so their River tables and client belong in the billing database boundary.
@@ -134,7 +136,8 @@ contracts
   -> contract_entitlement_lines
   -> entitlement_periods
   -> credit_grants
-  -> billing_outbox_events
+  -> billing_events
+  -> billing_event_delivery_queue
 ```
 
 Invoice period accounting is modeled as:
@@ -145,7 +148,8 @@ billing_cycles
   -> billing_invoices
   -> invoice_line_items
   -> invoice_adjustments
-  -> billing_outbox_events
+  -> billing_events
+  -> billing_event_delivery_queue
 ```
 
 Provider ingress is modeled as:
@@ -155,7 +159,8 @@ provider webhook/API event
   -> billing_provider_events
   -> River billing.provider_event.apply
   -> provider-neutral payment, invoice, contract, phase, or adjustment mutation
-  -> billing_outbox_events
+  -> billing_events
+  -> billing_event_delivery_queue
 ```
 
 A `contract` is the commercial agreement with an org. A `contract_phase` is the time-bounded version of that agreement: Hobby for a cycle, Pro after an immediate upgrade, or a bespoke enterprise package for a signed term. A `contract_entitlement_line` is the recurring promise inside the phase: which source funds which scope, how much, and on what recurrence. An `entitlement_period` materializes one recurrence window. A `credit_grant` is the spendable TigerBeetle-backed balance issued from that period.
@@ -697,7 +702,7 @@ Finalization must:
 6. Resolve tax and convert ledger units to Stripe invoice cents with an explicit rounding/residual policy when Stripe collection is needed.
 7. Allocate an invoice number only when the invoice artifact is ready to issue.
 8. Insert the immutable invoice artifact.
-9. Emit outbox facts for created adjustments, issued invoices, finalized invoices, or blocked finalizations.
+9. Emit billing event facts for created adjustments, issued invoices, finalized invoices, or blocked finalizations.
 10. Enqueue Stripe collection and invoice email jobs when applicable.
 
 If Stripe Tax is enabled, the Stripe draft/tax verification step happens while the Forge Metal invoice is still finalizing. The local invoice must not move to `issued` until tax units and the provider-facing cent total have been reconciled into `invoice_snapshot_json`.
@@ -781,30 +786,60 @@ The allocator row is locked with `SELECT ... FOR UPDATE` and incremented in the 
 
 The target number format is `FM-{year}-{seq}` unless the operator configures a different issuer prefix. Scope allocation by `(issuer_id, year)` to avoid a global hot row and avoid leaking total invoice volume across years or issuers.
 
-### `billing_outbox_events`
+### `billing_events`
 
-Durable PostgreSQL outbox for facts that must reach ClickHouse.
+Immutable PostgreSQL fact stream for material billing facts that must be projected to ClickHouse.
 
 Key fields:
 
 - `event_id`
 - `event_type`
+- `event_version`
 - `aggregate_type`
 - `aggregate_id`
 - `org_id`
 - `product_id`
 - `occurred_at`
 - `payload`
-- `state` (`pending`, `projecting`, `delivered`, `failed`, `dead_letter`)
+- `payload_hash`
+- `correlation_id`
+- `causation_event_id`
+- `created_at`
+
+The billing event row is append-only. Re-inserting the same `event_id` with the same canonical `payload_hash` is an idempotent no-op. Re-inserting the same `event_id` with a different hash is a data-integrity error because a supposedly immutable fact changed meaning.
+
+Grant issuance writes the PostgreSQL grant row and a `billing_events` fact in the same transaction. Contract creation, provider event ingestion, payment-method changes, contract changes, phase transitions, entitlement materialization, cycle rollover, billing-window projection decisions, invoice finalization, invoice adjustments, Stripe collection updates, and invoice email delivery also write billing events in the same transaction as their authoritative PostgreSQL state change.
+
+Successful delivery does not mutate `billing_events`; delivery status is operational state and belongs outside the fact stream.
+
+### `billing_event_delivery_queue`
+
+Active-only delivery backlog and DLQ for billing facts that need sink-specific projection.
+
+Key fields:
+
+- `event_id`
+- `sink`
+- `generation`
+- `state` (`pending`, `in_progress`, `retryable_failed`, `dead_letter`)
+- `attempts`
 - `next_attempt_at`
 - `last_attempt_at`
-- `delivered_at`
+- `lease_expires_at`
+- `leased_by`
+- `last_attempt_id`
 - `delivery_error`
-- `attempts`
+- `dead_lettered_at`
+- `dead_letter_reason`
+- `operator_note`
+- `created_at`
+- `updated_at`
 
-Grant issuance writes the PostgreSQL grant row and an outbox event in the same transaction. Contract creation, provider event ingestion, payment-method changes, contract changes, phase transitions, entitlement materialization, cycle rollover, billing-window projection decisions, invoice finalization, invoice adjustments, Stripe collection updates, and invoice email delivery also write outbox events in the same transaction as their authoritative PostgreSQL state change.
+A queue row is inserted in the same transaction as a new `billing_events` fact for every required sink. Delivery workers lease due rows, project to the sink, and delete the queue row on success. Repeated failure transitions the row to `dead_letter`, where it remains until an operator fixes the underlying cause and requeues it with an incremented `generation`.
 
-River runs projection jobs against pending outbox events. Projection workers are idempotent and may use row locks internally, but River is the scheduling and retry surface. ClickHouse is proof/read-model infrastructure; PostgreSQL remains authoritative.
+River runs `billing.event_delivery.project` for one delivery row and `billing.event_delivery.project_pending` as a bounded repair scanner. ClickHouse delivery is at-least-once. If projection succeeds but the queue delete fails, the retry may replay the same fact; the ClickHouse projection must therefore be idempotent by `event_id`.
+
+ClickHouse is proof/read-model infrastructure; PostgreSQL remains authoritative.
 
 Expected event types include:
 
@@ -819,7 +854,7 @@ Expected event types include:
 - `billing_cycle_opened`
 - `billing_cycle_closed_for_usage`
 - `grant_issued`
-- `catalog_plan_reconciled`
+- `contract_catalog_reconciled`
 - `billing_window_projected`
 - `invoice_adjustment_created`
 - `invoice_issued`
@@ -944,15 +979,16 @@ failed -> dead_letter
 
 `ignored` is for duplicate, stale, or irrelevant provider events that were validly received but do not change domain state. `dead_letter` is for events that repeatedly fail and require operator intervention or a code/data fix.
 
-### Outbox lifecycle
+### Billing event delivery lifecycle
 
 ```text
-pending -> projecting -> delivered
-pending -> projecting -> failed -> pending
-failed -> dead_letter
+pending -> in_progress -> delivered (queue row deleted)
+pending -> in_progress -> retryable_failed -> pending
+retryable_failed -> in_progress -> dead_letter
+dead_letter -> pending (operator requeue, generation incremented)
 ```
 
-Projection failures are retried by River using deterministic event identity. Delivery to ClickHouse is not part of the authoritative transaction; the outbox row is the durable bridge.
+Projection failures are retried by River using deterministic `(event_id, sink, generation)` identity. Delivery to ClickHouse is not part of the authoritative transaction; the immutable `billing_events` row plus active `billing_event_delivery_queue` row is the durable bridge.
 
 ## Request-path reservation and self-healing
 
@@ -987,7 +1023,7 @@ This satisfies the user-facing guarantee: a customer must not lose a valid entit
 
 Recurring grants are materialized from durable rows; they are not computed from provider state on the reservation hot path.
 
-- Free-tier eligibility is universal: every org gets the configured free-tier policies. The billing-side org provisioning path must synchronously materialize the current billing cycle, current free-tier `entitlement_periods`, `credit_grants`, and `grant_issued` outbox facts before the org can submit billable usage. Reserve also self-heals the same deterministic current-period rows before funding.
+- Free-tier eligibility is universal: every org gets the configured free-tier policies. The billing-side org provisioning path must synchronously materialize the current billing cycle, current free-tier `entitlement_periods`, `credit_grants`, and `grant_issued` billing event facts before the org can submit billable usage. Reserve also self-heals the same deterministic current-period rows before funding.
 - Contract eligibility is phase state plus entitlement-line recurrence. Only `active` and `grace` phases can materialize spendable contract periods. `scheduled` and `pending_payment` phases are planning state and must not fund reservations unless an explicit grace transition has been recorded.
 - Self-serve `billing_cycle` lines materialize from Forge Metal cycle boundaries, not Stripe subscription periods. Enterprise `calendar_month_day` lines materialize from the contract timezone and anchor day. `anniversary` anchors are available for non-cycle provider flows that renew from the service start date rather than the calendar.
 - Period and grant identifiers are deterministic over org, source, scope, contract, phase, line, policy version, cycle id, and period boundaries. Retrying org provisioning, webhook handling, River jobs, reconciliation, or reserve self-healing must converge on the same rows.
@@ -1264,7 +1300,7 @@ Provider-event fault cases:
 - Missing provider metadata resolved through local binding state.
 - Unsupported provider event type recorded and ignored.
 - Worker failure after provider event is recorded but before invoice/payment mutation.
-- Worker failure after invoice/payment mutation but before outbox projection.
+- Worker failure after invoice/payment mutation but before event delivery projection.
 
 Scheduler fault cases:
 
@@ -1273,7 +1309,7 @@ Scheduler fault cases:
 - River job retried after the cycle successor has already opened.
 - River job retried after the phase has already closed.
 - Entitlement materialization job runs twice for the same period.
-- Outbox projection job fails after ClickHouse insert but before marking delivered.
+- Event delivery projection job fails after ClickHouse insert but before deleting the queue row.
 - Reserve runs before scheduled free-tier or active contract entitlement materialization.
 - Invoice finalization is delayed while successor cycle remains open for valid usage.
 
@@ -1289,7 +1325,7 @@ Invoice finalization fault cases:
 - Stripe total diverges from the Forge Metal invoice after rounding or tax.
 - Invoice email delivery fails after invoice issue and Stripe collection succeeds.
 
-Expected behavior is convergence, not exactly-once execution. PostgreSQL state, deterministic identifiers, TigerBeetle idempotency, Stripe idempotency keys, invoice immutability, and outbox idempotency must make repeated work safe.
+Expected behavior is convergence, not exactly-once execution. PostgreSQL state, deterministic identifiers, TigerBeetle idempotency, Stripe idempotency keys, invoice immutability, and billing event delivery idempotency must make repeated work safe.
 
 ## API naming target
 
@@ -1359,11 +1395,15 @@ Confirm grant issuance facts are visible in ClickHouse after org creation, free-
 SELECT
   event_id,
   event_type,
+  event_version,
   aggregate_type,
   aggregate_id,
   org_id,
   product_id,
   payload,
+  payload_hash,
+  correlation_id,
+  causation_event_id,
   recorded_at
 FROM forge_metal.billing_events
 WHERE event_type = 'grant_issued'
@@ -1379,11 +1419,15 @@ Confirm provider events, change requests, phase transitions, and cycle transitio
 SELECT
   event_id,
   event_type,
+  event_version,
   aggregate_type,
   aggregate_id,
   org_id,
   product_id,
   payload,
+  payload_hash,
+  correlation_id,
+  causation_event_id,
   recorded_at
 FROM forge_metal.billing_events
 WHERE event_type IN (
@@ -1500,9 +1544,11 @@ LIMIT 20
 SELECT
   event_id,
   event_type,
+  event_version,
   aggregate_id,
   org_id,
   payload,
+  payload_hash,
   recorded_at
 FROM forge_metal.billing_events
 WHERE event_type IN ('invoice_adjustment_created', 'invoice_finalization_blocked')
