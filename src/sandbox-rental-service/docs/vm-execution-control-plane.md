@@ -10,8 +10,10 @@ Code pointers:
 - `internal/api/` - secured Huma routes and IAM operation catalog.
 - `migrations/` - PostgreSQL tables for executions, segments, checkpoint refs,
   checkpoint versions, save requests, logs, and billing windows.
-- `docs/durable-execution-workflow-plan.md` - phased rewrite plan for durable
-  River-backed execution workflow, reconciliation, pagination, and evidence gates.
+- `docs/durable-execution-workflow-plan.md` - phased rewrite plan for the
+  River-backed queue/scheduler runtime, reconciliation, pagination, and evidence
+  gates. River schedules sandbox-rental-service control-plane work;
+  vm-orchestrator remains the VM execution boundary.
 - `docs/forgejo-runner-phase-0.md` - Forgejo Actions runner-engine tracer
   bullet using the Forgejo `act` library before the River cutover.
 - `../../vm-orchestrator/proto/v1/` - host daemon gRPC API consumed by this service.

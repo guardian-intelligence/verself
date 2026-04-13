@@ -4,7 +4,7 @@ Public `/api/*` Huma routes must use the secured-operation registration pattern 
 
 
 
-Use River OSS as the worker/queue substrate, keep the execution state machine explicit in Postgres, and delete/rewrite the current jobs code instead of refactoring it in place. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in
+Use River OSS as the worker/queue runtime for sandbox-rental-service control-plane work, keep the execution state machine explicit in Postgres, and delete/rewrite the current jobs code instead of refactoring it in place. vm-orchestrator remains the VM execution boundary. Do not use River Pro features as a foundational dependency. If we need global concurrency beyond a single process, model it in
   our own PG capacity tables.
 
   What To Delete/Rewrite
