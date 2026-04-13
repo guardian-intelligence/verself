@@ -296,8 +296,7 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 		acc.available += grant.Available
 		acc.spent += grant.Spent
 		acc.pending += grant.Pending
-		periodCovered := grant.PeriodStart != nil && grant.PeriodEnd != nil &&
-			!grant.PeriodStart.After(now) && now.Before(*grant.PeriodEnd)
+		periodCovered := grant.Period != nil && grant.Period.Contains(now)
 		if periodCovered {
 			acc.periodStart += grant.OriginalAmount
 		}

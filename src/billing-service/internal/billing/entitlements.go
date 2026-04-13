@@ -92,6 +92,7 @@ func (c *Client) ensureCalendarFreeTierEntitlements(
 		}
 		periodStart := period.PeriodStart
 		periodEnd := period.PeriodEnd
+		grantPeriod := &GrantPeriod{Start: periodStart, End: periodEnd}
 		if _, err := c.IssueCreditGrant(ctx, CreditGrant{
 			OrgID:               orgID,
 			ScopeType:           period.ScopeType,
@@ -104,8 +105,7 @@ func (c *Client) ensureCalendarFreeTierEntitlements(
 			EntitlementPeriodID: period.PeriodID,
 			PolicyVersion:       period.PolicyVersion,
 			StartsAt:            &periodStart,
-			PeriodStart:         &periodStart,
-			PeriodEnd:           &periodEnd,
+			Period:              grantPeriod,
 			ExpiresAt:           &periodEnd,
 		}); err != nil {
 			return fmt.Errorf("issue free-tier grant for policy %s: %w", policy.PolicyID, err)

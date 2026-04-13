@@ -119,6 +119,26 @@ type StatementTotals struct {
 	TotalDueUnits     uint64
 }
 
+// GrantPeriod is the half-open billing window [Start, End) a recurring grant
+// belongs to. The 001_billing_schema.up.sql CHECK constraints make
+// credit_grants.period_start and credit_grants.period_end either both NULL or
+// both NOT NULL with end > start; modeling them as a single value type is how
+// that joint invariant is enforced in the Go layer. A non-nil *GrantPeriod
+// always satisfies end > start; the (set, nil) and (nil, set) combinations
+// are unrepresentable.
+type GrantPeriod struct {
+	Start time.Time
+	End   time.Time
+}
+
+// Contains reports whether the half-open interval [Start, End) contains now.
+// This is the canonical "is this grant currently in its issued period" check
+// the entitlements view-model uses to fold a grant's OriginalAmount into the
+// "Period started with" column.
+func (p GrantPeriod) Contains(now time.Time) bool {
+	return !p.Start.After(now) && now.Before(p.End)
+}
+
 type GrantBalance struct {
 	GrantID             GrantID
 	ScopeType           GrantScopeType
@@ -136,8 +156,7 @@ type GrantBalance struct {
 	PlanID          string
 	PlanDisplayName string
 	StartsAt        time.Time
-	PeriodStart     *time.Time
-	PeriodEnd       *time.Time
+	Period          *GrantPeriod
 	ExpiresAt       *time.Time
 	// OriginalAmount is the grant's deposited amount, equal to the TigerBeetle
 	// account's credits_posted. Grants are issued with a single deposit
@@ -275,8 +294,7 @@ type CreditGrant struct {
 	EntitlementPeriodID string
 	PolicyVersion       string
 	StartsAt            *time.Time
-	PeriodStart         *time.Time
-	PeriodEnd           *time.Time
+	Period              *GrantPeriod
 	ExpiresAt           *time.Time
 }
 

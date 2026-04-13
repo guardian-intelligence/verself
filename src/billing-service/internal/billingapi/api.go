@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -245,8 +246,8 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[Gra
 			EntitlementPeriodID: grant.EntitlementPeriodID,
 			PolicyVersion:       grant.PolicyVersion,
 			StartsAt:            grant.StartsAt,
-			PeriodStart:         grant.PeriodStart,
-			PeriodEnd:           grant.PeriodEnd,
+			PeriodStart:         grantPeriodStartPtr(grant.Period),
+			PeriodEnd:           grantPeriodEndPtr(grant.Period),
 			Available:           apiwire.Uint64(grant.Available),
 			Pending:             apiwire.Uint64(grant.Pending),
 			ExpiresAt:           grant.ExpiresAt,
@@ -754,4 +755,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// grantPeriodStartPtr / grantPeriodEndPtr project a billing.GrantPeriod into
+// the apiwire BillingGrant DTO's pair of optional time.Time fields. The wire
+// shape mirrors the on-disk schema (two nullable columns) so external
+// consumers don't need to learn the in-memory GrantPeriod value type.
+func grantPeriodStartPtr(p *billing.GrantPeriod) *time.Time {
+	if p == nil {
+		return nil
+	}
+	value := p.Start
+	return &value
+}
+
+func grantPeriodEndPtr(p *billing.GrantPeriod) *time.Time {
+	if p == nil {
+		return nil
+	}
+	value := p.End
+	return &value
 }
