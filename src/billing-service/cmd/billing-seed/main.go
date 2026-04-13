@@ -565,14 +565,14 @@ func sandboxSKUs() []skuSeed {
 		{
 			SKUID:        sandboxComputeSKU,
 			BucketID:     "compute",
-			DisplayName:  "AMD EPYC 4484PX @ 5.66GHz",
+			DisplayName:  "AMD EPYC 4484PX",
 			QuantityUnit: "vCPU-second",
 			UnitRate:     325_000,
 		},
 		{
 			SKUID:        sandboxMemorySKU,
 			BucketID:     "memory",
-			DisplayName:  "Standard Memory",
+			DisplayName:  "DDR5-5200",
 			QuantityUnit: "GiB-second",
 			UnitRate:     40_000,
 		},
