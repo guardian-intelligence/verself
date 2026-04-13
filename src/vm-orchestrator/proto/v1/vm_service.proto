@@ -30,6 +30,14 @@ message HostRunSpec {
   repeated string checkpoint_save_refs = 6;
   string attempt_id = 7;
   string segment_id = 8;
+  string workload_kind = 9;
+  string runner_class = 10;
+  string workflow_yaml = 11;
+  map<string, string> workflow_env = 12;
+  map<string, string> workflow_secrets = 13;
+  string workflow_event_name = 14;
+  map<string, string> workflow_inputs = 15;
+  string github_jit_config = 16;
 }
 
 message PhaseResult {

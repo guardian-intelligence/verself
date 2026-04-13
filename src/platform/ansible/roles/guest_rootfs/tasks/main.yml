@@ -1,6 +1,6 @@
 ---
 # Build the Firecracker guest rootfs: compile local binaries, upload to the
-# remote host, and run the Alpine rootfs builder.
+# remote host, and run the Ubuntu rootfs builder.
 
 # ── Controller-side builds ──────────────────────────────────────────────────
 

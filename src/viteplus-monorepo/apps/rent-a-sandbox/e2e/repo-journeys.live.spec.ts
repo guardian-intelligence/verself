@@ -18,6 +18,11 @@ function verificationRunCommand(marker: string): string {
     `printf '%s\\n' ${quotedMarker} > "$HOME/forge-metal-proof.txt"`,
     `test -s ./forge-metal-proof.txt`,
     `test -s "$HOME/forge-metal-proof.txt"`,
+    `test -x /opt/actions-runner/run.sh`,
+    `test -x /usr/local/bin/forgejo-runner`,
+    `go version | grep -q 'go1.25.8'`,
+    `node --version | grep -q '^v22.22.2$'`,
+    `forgejo-runner --version | grep -q '12.8.2'`,
     `printf '%s\\n' ${quotedMarker}`,
   ].join(" && ");
 }

@@ -15,11 +15,19 @@ func TestCodecRoundTrip(t *testing.T) {
 	codec := NewCodec(&buf, &buf)
 
 	wantPayload := RunRequest{
-		RunID:           "job-1",
-		RunCommand:      []string{"true"},
-		RunWorkDir:      "/workspace",
-		Network:         NetworkConfig{AddressCIDR: "172.16.0.2/30", Gateway: "172.16.0.1", LinkName: "eth0"},
-		ProtocolVersion: ProtocolVersion,
+		RunID:             "job-1",
+		WorkloadKind:      WorkloadKindForgejoWorkflow,
+		RunnerClass:       "metal-4vcpu-ubuntu-2404",
+		RunCommand:        []string{"true"},
+		RunWorkDir:        "/workspace",
+		WorkflowYAML:      "name: ci\n",
+		WorkflowEnv:       map[string]string{"CI": "true"},
+		WorkflowSecrets:   map[string]string{"TOKEN": "secret"},
+		WorkflowEventName: "push",
+		WorkflowInputs:    map[string]string{"name": "forge-metal"},
+		GitHubJITConfig:   "encoded-jit",
+		Network:           NetworkConfig{AddressCIDR: "172.16.0.2/30", Gateway: "172.16.0.1", LinkName: "eth0"},
+		ProtocolVersion:   ProtocolVersion,
 	}
 	env, err := NewEnvelope(TypeRunRequest, 7, 1234, wantPayload)
 	if err != nil {
@@ -48,6 +56,34 @@ func TestCodecRoundTrip(t *testing.T) {
 	}
 	if gotPayload.RunWorkDir != wantPayload.RunWorkDir {
 		t.Fatalf("run work dir: got %q want %q", gotPayload.RunWorkDir, wantPayload.RunWorkDir)
+	}
+	if gotPayload.WorkloadKind != wantPayload.WorkloadKind || gotPayload.RunnerClass != wantPayload.RunnerClass {
+		t.Fatalf("workload fields: got %q/%q want %q/%q", gotPayload.WorkloadKind, gotPayload.RunnerClass, wantPayload.WorkloadKind, wantPayload.RunnerClass)
+	}
+	if gotPayload.WorkflowYAML != wantPayload.WorkflowYAML || gotPayload.WorkflowEventName != wantPayload.WorkflowEventName {
+		t.Fatalf("workflow fields not preserved: %#v", gotPayload)
+	}
+	if gotPayload.WorkflowEnv["CI"] != "true" || gotPayload.WorkflowSecrets["TOKEN"] != "secret" || gotPayload.WorkflowInputs["name"] != "forge-metal" {
+		t.Fatalf("workflow maps not preserved: %#v", gotPayload)
+	}
+	if gotPayload.GitHubJITConfig != wantPayload.GitHubJITConfig {
+		t.Fatalf("github jit config: got %q want %q", gotPayload.GitHubJITConfig, wantPayload.GitHubJITConfig)
+	}
+}
+
+func TestValidateWorkloadKind(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"", WorkloadKindDirect, WorkloadKindForgejoWorkflow, WorkloadKindGitHubRunner} {
+		if err := ValidateWorkloadKind(kind); err != nil {
+			t.Fatalf("ValidateWorkloadKind(%q): %v", kind, err)
+		}
+	}
+	if got := NormalizeWorkloadKind(""); got != WorkloadKindDirect {
+		t.Fatalf("NormalizeWorkloadKind blank: got %q want %q", got, WorkloadKindDirect)
+	}
+	if err := ValidateWorkloadKind("python_in_space"); err == nil {
+		t.Fatal("ValidateWorkloadKind accepted an unknown kind")
 	}
 }
 

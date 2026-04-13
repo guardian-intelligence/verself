@@ -2,7 +2,7 @@
 # Build the Firecracker guest rootfs and stage guest artifacts.
 #
 # Builds Zig + Go binaries locally, uploads them to the remote host,
-# runs the Alpine rootfs builder, and copies output to /var/lib/forge-metal/guest-artifacts/.
+# runs the Ubuntu rootfs builder, and copies output to /var/lib/forge-metal/guest-artifacts/.
 #
 # Usage:
 #   cd ansible && ansible-playbook playbooks/guest-rootfs.yml

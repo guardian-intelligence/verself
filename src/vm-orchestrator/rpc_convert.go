@@ -9,9 +9,17 @@ import (
 func hostRunSpecToProto(spec HostRunSpec) *vmrpc.HostRunSpec {
 	return &vmrpc.HostRunSpec{
 		RunId:              spec.RunID,
+		WorkloadKind:       spec.WorkloadKind,
+		RunnerClass:        spec.RunnerClass,
 		RunCommand:         cloneStringSlice(spec.RunCommand),
 		RunWorkDir:         spec.RunWorkDir,
 		Env:                cloneStringMap(spec.Env),
+		WorkflowYaml:       spec.WorkflowYAML,
+		WorkflowEnv:        cloneStringMap(spec.WorkflowEnv),
+		WorkflowSecrets:    cloneStringMap(spec.WorkflowSecrets),
+		WorkflowEventName:  spec.WorkflowEventName,
+		WorkflowInputs:     cloneStringMap(spec.WorkflowInputs),
+		GithubJitConfig:    spec.GitHubJITConfig,
 		BillablePhases:     cloneStringSlice(spec.BillablePhases),
 		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
 		AttemptId:          spec.AttemptID,
@@ -25,9 +33,17 @@ func hostRunSpecFromProto(spec *vmrpc.HostRunSpec) HostRunSpec {
 	}
 	return HostRunSpec{
 		RunID:              spec.GetRunId(),
+		WorkloadKind:       spec.GetWorkloadKind(),
+		RunnerClass:        spec.GetRunnerClass(),
 		RunCommand:         cloneStringSlice(spec.GetRunCommand()),
 		RunWorkDir:         spec.GetRunWorkDir(),
 		Env:                cloneStringMap(spec.GetEnv()),
+		WorkflowYAML:       spec.GetWorkflowYaml(),
+		WorkflowEnv:        cloneStringMap(spec.GetWorkflowEnv()),
+		WorkflowSecrets:    cloneStringMap(spec.GetWorkflowSecrets()),
+		WorkflowEventName:  spec.GetWorkflowEventName(),
+		WorkflowInputs:     cloneStringMap(spec.GetWorkflowInputs()),
+		GitHubJITConfig:    spec.GetGithubJitConfig(),
 		BillablePhases:     cloneStringSlice(spec.GetBillablePhases()),
 		CheckpointSaveRefs: cloneStringSlice(spec.GetCheckpointSaveRefs()),
 		AttemptID:          spec.GetAttemptId(),
@@ -38,9 +54,17 @@ func hostRunSpecFromProto(spec *vmrpc.HostRunSpec) HostRunSpec {
 func runSpecFromHostRunSpec(spec HostRunSpec) RunSpec {
 	return RunSpec{
 		RunID:              spec.RunID,
+		WorkloadKind:       spec.WorkloadKind,
+		RunnerClass:        spec.RunnerClass,
 		RunCommand:         cloneStringSlice(spec.RunCommand),
 		RunWorkDir:         spec.RunWorkDir,
 		Env:                cloneStringMap(spec.Env),
+		WorkflowYAML:       spec.WorkflowYAML,
+		WorkflowEnv:        cloneStringMap(spec.WorkflowEnv),
+		WorkflowSecrets:    cloneStringMap(spec.WorkflowSecrets),
+		WorkflowEventName:  spec.WorkflowEventName,
+		WorkflowInputs:     cloneStringMap(spec.WorkflowInputs),
+		GitHubJITConfig:    spec.GitHubJITConfig,
 		BillablePhases:     cloneStringSlice(spec.BillablePhases),
 		CheckpointSaveRefs: cloneStringSlice(spec.CheckpointSaveRefs),
 	}
