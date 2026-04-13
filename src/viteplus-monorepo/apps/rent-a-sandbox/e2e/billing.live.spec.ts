@@ -244,37 +244,23 @@ async function requestHobbyCancellation(app: SandboxHarness) {
   await app.page.getByRole("button", { name: "Confirm Cancellation" }).click();
 }
 
-// In the slot model the bucket slot is one row per (scope, target). Each row
-// is `entitlements-slot-bucket:<product>:<bucket>:_` and the subscription
-// contribution shows up as a `<li data-source="subscription">` inside the
-// row's source-tuple list. The subscription has to be present in every Hobby
-// bucket — compute, memory, block_storage — for the test to consider it
-// visible.
-const hobbySubscriptionBucketSlotIDs = [
-  "entitlements-slot-bucket:sandbox:compute:_",
-  "entitlements-slot-bucket:sandbox:memory:_",
-  "entitlements-slot-bucket:sandbox:block_storage:_",
-];
+// The entitlements view flattens bucket-scoped sources into each SKU row's
+// receipt cell. The subscription contribution shows up as a
+// `<dt data-source="subscription">` inside every SKU row under the bucket the
+// subscription funds. The Hobby plan has to fund every Sandbox bucket —
+// compute, memory, block_storage — for the test to consider it visible.
+const hobbySubscriptionBuckets = ["compute", "memory", "block_storage"];
 
 async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
-  for (const testID of hobbySubscriptionBucketSlotIDs) {
-    const slot = app.page.getByTestId(testID);
-    if (!(await slot.isVisible().catch(() => false))) {
+  for (const bucket of hobbySubscriptionBuckets) {
+    const entry = app.page
+      .locator(`tr[data-bucket-id="${bucket}"] [data-source="subscription"]`)
+      .first();
+    if (!(await entry.isVisible().catch(() => false))) {
       return false;
     }
-    const subscriptionEntry = slot.locator('li[data-source="subscription"]');
-    if (
-      !(await subscriptionEntry
-        .first()
-        .isVisible()
-        .catch(() => false))
-    ) {
-      return false;
-    }
-    const text = await subscriptionEntry
-      .first()
-      .innerText()
-      .catch(() => "");
+    const row = app.page.locator(`tr[data-bucket-id="${bucket}"]`).first();
+    const text = await row.innerText().catch(() => "");
     if (!text.includes("$")) {
       return false;
     }
@@ -283,18 +269,11 @@ async function hasVisibleHobbySubscriptionEntitlements(app: SandboxHarness) {
 }
 
 async function hasAnyVisibleHobbySubscriptionEntitlement(app: SandboxHarness) {
-  for (const testID of hobbySubscriptionBucketSlotIDs) {
-    const slot = app.page.getByTestId(testID);
-    if (!(await slot.isVisible().catch(() => false))) {
-      continue;
-    }
-    if (
-      await slot
-        .locator('li[data-source="subscription"]')
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ) {
+  for (const bucket of hobbySubscriptionBuckets) {
+    const entry = app.page
+      .locator(`tr[data-bucket-id="${bucket}"] [data-source="subscription"]`)
+      .first();
+    if (await entry.isVisible().catch(() => false)) {
       return true;
     }
   }

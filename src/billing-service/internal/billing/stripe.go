@@ -442,7 +442,12 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 	if err != nil {
 		return fmt.Errorf("payment_intent.succeeded: parse ledger units: %w", err)
 	}
-	expiresAt := c.clock().UTC().AddDate(1, 0, 0)
+	// Prepaid account credit is modeled as a debit-card balance, not a
+	// coupon: it must not appear to expire in the customer-facing UI. We
+	// still stamp an expiration far in the future so the grant table's
+	// non-nullable path stays consistent with period-bound grants; the
+	// frontend never surfaces this date.
+	expiresAt := c.clock().UTC().AddDate(100, 0, 0)
 	_, err = c.DepositCredits(ctx, CreditGrant{
 		OrgID:             OrgID(orgID),
 		ScopeType:         GrantScopeAccount,
