@@ -56,20 +56,25 @@ const (
 )
 
 type Statement struct {
-	OrgID           OrgID
-	ProductID       string
-	PeriodStart     time.Time
-	PeriodEnd       time.Time
-	PeriodSource    string
-	GeneratedAt     time.Time
-	Currency        string
-	UnitLabel       string
-	LineItems       []StatementLineItem
-	BucketSummaries []StatementBucketSummary
-	GrantSummaries  []StatementGrantSummary
-	Totals          StatementTotals
+	OrgID          OrgID
+	ProductID      string
+	PeriodStart    time.Time
+	PeriodEnd      time.Time
+	PeriodSource   string
+	GeneratedAt    time.Time
+	Currency       string
+	UnitLabel      string
+	LineItems      []StatementLineItem
+	GrantSummaries []StatementGrantSummary
+	Totals         StatementTotals
 }
 
+// StatementLineItem is one (plan, bucket, sku, pricing_phase, unit_rate) row in
+// the customer-facing invoice. Each row carries both the gross charge and the
+// per-source drain split (free tier, subscription, purchase, promo, refund,
+// receivable) so the UI can render a receipt-style breakdown without a second
+// aggregation table. ReservedUnits captures the in-flight reservation share
+// for this (bucket, sku) pair; it is invoice-preview-only and never bills.
 type StatementLineItem struct {
 	ProductID         string
 	PlanID            string
@@ -81,13 +86,6 @@ type StatementLineItem struct {
 	PricingPhase      string
 	Quantity          float64
 	UnitRate          uint64
-	ChargeUnits       uint64
-}
-
-type StatementBucketSummary struct {
-	ProductID         string
-	BucketID          string
-	BucketDisplayName string
 	ChargeUnits       uint64
 	FreeTierUnits     uint64
 	SubscriptionUnits uint64
@@ -237,45 +235,51 @@ type SettleResult struct {
 	SettledAt           time.Time `json:"settled_at"`
 }
 
+// MeteringRow is the canonical settled-window projection written to ClickHouse.
+// The per-source drain maps are keyed by SKU id (ChargeSKUID on the originating
+// funding leg), not bucket id, because the funder drains most-specific-scope
+// first and the customer-facing invoice renders one line per SKU. Bucket-level
+// drain splits are derivable by grouping component_*_units through the
+// rate_context's sku→bucket mapping in the rare analytics query that needs it.
 type MeteringRow struct {
-	WindowID                string             `ch:"window_id"`
-	OrgID                   string             `ch:"org_id"`
-	ActorID                 string             `ch:"actor_id"`
-	ProductID               string             `ch:"product_id"`
-	SourceType              string             `ch:"source_type"`
-	SourceRef               string             `ch:"source_ref"`
-	WindowSeq               uint32             `ch:"window_seq"`
-	ReservationShape        string             `ch:"reservation_shape"`
-	StartedAt               time.Time          `ch:"started_at"`
-	EndedAt                 time.Time          `ch:"ended_at"`
-	ReservedQuantity        uint64             `ch:"reserved_quantity"`
-	ActualQuantity          uint64             `ch:"actual_quantity"`
-	BillableQuantity        uint64             `ch:"billable_quantity"`
-	WriteoffQuantity        uint64             `ch:"writeoff_quantity"`
-	PricingPhase            string             `ch:"pricing_phase"`
-	Dimensions              map[string]float64 `ch:"dimensions"`
-	ComponentQuantities     map[string]float64 `ch:"component_quantities"`
-	ComponentChargeUnits    map[string]uint64  `ch:"component_charge_units"`
-	BucketChargeUnits       map[string]uint64  `ch:"bucket_charge_units"`
-	ChargeUnits             uint64             `ch:"charge_units"`
-	WriteoffChargeUnits     uint64             `ch:"writeoff_charge_units"`
-	FreeTierUnits           uint64             `ch:"free_tier_units"`
-	SubscriptionUnits       uint64             `ch:"subscription_units"`
-	PurchaseUnits           uint64             `ch:"purchase_units"`
-	PromoUnits              uint64             `ch:"promo_units"`
-	RefundUnits             uint64             `ch:"refund_units"`
-	ReceivableUnits         uint64             `ch:"receivable_units"`
-	BucketFreeTierUnits     map[string]uint64  `ch:"bucket_free_tier_units"`
-	BucketSubscriptionUnits map[string]uint64  `ch:"bucket_subscription_units"`
-	BucketPurchaseUnits     map[string]uint64  `ch:"bucket_purchase_units"`
-	BucketPromoUnits        map[string]uint64  `ch:"bucket_promo_units"`
-	BucketRefundUnits       map[string]uint64  `ch:"bucket_refund_units"`
-	BucketReceivableUnits   map[string]uint64  `ch:"bucket_receivable_units"`
-	UsageEvidence           map[string]uint64  `ch:"usage_evidence"`
-	PlanID                  string             `ch:"plan_id"`
-	CostPerUnit             uint64             `ch:"cost_per_unit"`
-	RecordedAt              time.Time          `ch:"recorded_at"`
-	TraceID                 string             `ch:"trace_id"`
+	WindowID                   string             `ch:"window_id"`
+	OrgID                      string             `ch:"org_id"`
+	ActorID                    string             `ch:"actor_id"`
+	ProductID                  string             `ch:"product_id"`
+	SourceType                 string             `ch:"source_type"`
+	SourceRef                  string             `ch:"source_ref"`
+	WindowSeq                  uint32             `ch:"window_seq"`
+	ReservationShape           string             `ch:"reservation_shape"`
+	StartedAt                  time.Time          `ch:"started_at"`
+	EndedAt                    time.Time          `ch:"ended_at"`
+	ReservedQuantity           uint64             `ch:"reserved_quantity"`
+	ActualQuantity             uint64             `ch:"actual_quantity"`
+	BillableQuantity           uint64             `ch:"billable_quantity"`
+	WriteoffQuantity           uint64             `ch:"writeoff_quantity"`
+	PricingPhase               string             `ch:"pricing_phase"`
+	Dimensions                 map[string]float64 `ch:"dimensions"`
+	ComponentQuantities        map[string]float64 `ch:"component_quantities"`
+	ComponentChargeUnits       map[string]uint64  `ch:"component_charge_units"`
+	BucketChargeUnits          map[string]uint64  `ch:"bucket_charge_units"`
+	ChargeUnits                uint64             `ch:"charge_units"`
+	WriteoffChargeUnits        uint64             `ch:"writeoff_charge_units"`
+	FreeTierUnits              uint64             `ch:"free_tier_units"`
+	SubscriptionUnits          uint64             `ch:"subscription_units"`
+	PurchaseUnits              uint64             `ch:"purchase_units"`
+	PromoUnits                 uint64             `ch:"promo_units"`
+	RefundUnits                uint64             `ch:"refund_units"`
+	ReceivableUnits            uint64             `ch:"receivable_units"`
+	ComponentFreeTierUnits     map[string]uint64  `ch:"component_free_tier_units"`
+	ComponentSubscriptionUnits map[string]uint64  `ch:"component_subscription_units"`
+	ComponentPurchaseUnits     map[string]uint64  `ch:"component_purchase_units"`
+	ComponentPromoUnits        map[string]uint64  `ch:"component_promo_units"`
+	ComponentRefundUnits       map[string]uint64  `ch:"component_refund_units"`
+	ComponentReceivableUnits   map[string]uint64  `ch:"component_receivable_units"`
+	UsageEvidence              map[string]uint64  `ch:"usage_evidence"`
+	PlanID                     string             `ch:"plan_id"`
+	CostPerUnit                uint64             `ch:"cost_per_unit"`
+	RecordedAt                 time.Time          `ch:"recorded_at"`
+	TraceID                    string             `ch:"trace_id"`
 }
 
 type MeteringWriter interface {

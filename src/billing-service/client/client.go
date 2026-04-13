@@ -502,39 +502,11 @@ func parseBillingStatement(in BillingStatement) (apiwire.BillingStatement, error
 	if in.LineItems != nil {
 		lineItems = make([]apiwire.BillingStatementLineItem, 0, len(*in.LineItems))
 		for _, line := range *in.LineItems {
-			unitRate, err := parseDecimalUint64(line.UnitRate, "line_items.unit_rate")
+			parsed, err := parseBillingStatementLineItem(line)
 			if err != nil {
 				return apiwire.BillingStatement{}, err
 			}
-			chargeUnits, err := parseDecimalUint64(line.ChargeUnits, "line_items.charge_units")
-			if err != nil {
-				return apiwire.BillingStatement{}, err
-			}
-			lineItems = append(lineItems, apiwire.BillingStatementLineItem{
-				ProductID:         line.ProductId,
-				PlanID:            line.PlanId,
-				BucketID:          line.BucketId,
-				BucketDisplayName: line.BucketDisplayName,
-				SKUID:             line.SkuId,
-				SKUDisplayName:    line.SkuDisplayName,
-				QuantityUnit:      line.QuantityUnit,
-				PricingPhase:      line.PricingPhase,
-				Quantity:          line.Quantity,
-				UnitRate:          unitRate,
-				ChargeUnits:       chargeUnits,
-			})
-		}
-	}
-
-	bucketSummaries := make([]apiwire.BillingStatementBucketSummary, 0)
-	if in.BucketSummaries != nil {
-		bucketSummaries = make([]apiwire.BillingStatementBucketSummary, 0, len(*in.BucketSummaries))
-		for _, bucket := range *in.BucketSummaries {
-			parsed, err := parseBillingStatementBucketSummary(bucket)
-			if err != nil {
-				return apiwire.BillingStatement{}, err
-			}
-			bucketSummaries = append(bucketSummaries, parsed)
+			lineItems = append(lineItems, parsed)
 		}
 	}
 
@@ -566,58 +538,68 @@ func parseBillingStatement(in BillingStatement) (apiwire.BillingStatement, error
 		return apiwire.BillingStatement{}, err
 	}
 	return apiwire.BillingStatement{
-		OrgID:           orgID,
-		ProductID:       in.ProductId,
-		PeriodStart:     in.PeriodStart.UTC(),
-		PeriodEnd:       in.PeriodEnd.UTC(),
-		PeriodSource:    in.PeriodSource,
-		GeneratedAt:     in.GeneratedAt.UTC(),
-		Currency:        in.Currency,
-		UnitLabel:       in.UnitLabel,
-		LineItems:       lineItems,
-		BucketSummaries: bucketSummaries,
-		GrantSummaries:  grantSummaries,
-		Totals:          totals,
+		OrgID:          orgID,
+		ProductID:      in.ProductId,
+		PeriodStart:    in.PeriodStart.UTC(),
+		PeriodEnd:      in.PeriodEnd.UTC(),
+		PeriodSource:   in.PeriodSource,
+		GeneratedAt:    in.GeneratedAt.UTC(),
+		Currency:       in.Currency,
+		UnitLabel:      in.UnitLabel,
+		LineItems:      lineItems,
+		GrantSummaries: grantSummaries,
+		Totals:         totals,
 	}, nil
 }
 
-func parseBillingStatementBucketSummary(in BillingStatementBucketSummary) (apiwire.BillingStatementBucketSummary, error) {
-	chargeUnits, err := parseDecimalUint64(in.ChargeUnits, "bucket_summaries.charge_units")
+func parseBillingStatementLineItem(in BillingStatementLineItem) (apiwire.BillingStatementLineItem, error) {
+	unitRate, err := parseDecimalUint64(in.UnitRate, "line_items.unit_rate")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	freeTierUnits, err := parseDecimalUint64(in.FreeTierUnits, "bucket_summaries.free_tier_units")
+	chargeUnits, err := parseDecimalUint64(in.ChargeUnits, "line_items.charge_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	subscriptionUnits, err := parseDecimalUint64(in.SubscriptionUnits, "bucket_summaries.subscription_units")
+	freeTierUnits, err := parseDecimalUint64(in.FreeTierUnits, "line_items.free_tier_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	purchaseUnits, err := parseDecimalUint64(in.PurchaseUnits, "bucket_summaries.purchase_units")
+	subscriptionUnits, err := parseDecimalUint64(in.SubscriptionUnits, "line_items.subscription_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	promoUnits, err := parseDecimalUint64(in.PromoUnits, "bucket_summaries.promo_units")
+	purchaseUnits, err := parseDecimalUint64(in.PurchaseUnits, "line_items.purchase_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	refundUnits, err := parseDecimalUint64(in.RefundUnits, "bucket_summaries.refund_units")
+	promoUnits, err := parseDecimalUint64(in.PromoUnits, "line_items.promo_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	receivableUnits, err := parseDecimalUint64(in.ReceivableUnits, "bucket_summaries.receivable_units")
+	refundUnits, err := parseDecimalUint64(in.RefundUnits, "line_items.refund_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	reservedUnits, err := parseDecimalUint64(in.ReservedUnits, "bucket_summaries.reserved_units")
+	receivableUnits, err := parseDecimalUint64(in.ReceivableUnits, "line_items.receivable_units")
 	if err != nil {
-		return apiwire.BillingStatementBucketSummary{}, err
+		return apiwire.BillingStatementLineItem{}, err
 	}
-	return apiwire.BillingStatementBucketSummary{
+	reservedUnits, err := parseDecimalUint64(in.ReservedUnits, "line_items.reserved_units")
+	if err != nil {
+		return apiwire.BillingStatementLineItem{}, err
+	}
+	return apiwire.BillingStatementLineItem{
 		ProductID:         in.ProductId,
+		PlanID:            in.PlanId,
 		BucketID:          in.BucketId,
 		BucketDisplayName: in.BucketDisplayName,
+		SKUID:             in.SkuId,
+		SKUDisplayName:    in.SkuDisplayName,
+		QuantityUnit:      in.QuantityUnit,
+		PricingPhase:      in.PricingPhase,
+		Quantity:          in.Quantity,
+		UnitRate:          unitRate,
 		ChargeUnits:       chargeUnits,
 		FreeTierUnits:     freeTierUnits,
 		SubscriptionUnits: subscriptionUnits,

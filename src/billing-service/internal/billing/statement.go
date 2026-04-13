@@ -136,7 +136,6 @@ func buildStatement(
 		Currency:     "usd",
 		UnitLabel:    "ledger_units",
 	}
-	buckets := map[string]*StatementBucketSummary{}
 	lineItems := map[statementLineItemKey]*StatementLineItem{}
 	grantSummaries := map[statementGrantSummaryKey]*StatementGrantSummary{}
 
@@ -153,28 +152,26 @@ func buildStatement(
 			if err != nil {
 				return Statement{}, fmt.Errorf("statement metering row %s: %w", window.WindowID, err)
 			}
-			if err := addSettledStatementRow(&statement, buckets, lineItems, window, row); err != nil {
+			if err := addSettledStatementRow(&statement, lineItems, window, row); err != nil {
 				return Statement{}, fmt.Errorf("statement aggregate window %s: %w", window.WindowID, err)
 			}
 		case "reserved":
 			if !window.ExpiresAt.After(generatedAt) {
 				continue
 			}
-			if err := addReservedStatementWindow(&statement, buckets, window); err != nil {
+			if err := addReservedStatementWindow(&statement, lineItems, window); err != nil {
 				return Statement{}, fmt.Errorf("statement reserved window %s: %w", window.WindowID, err)
 			}
 		}
 	}
 
 	statement.LineItems = sortedStatementLineItems(lineItems)
-	statement.BucketSummaries = sortedStatementBuckets(buckets)
 	statement.GrantSummaries = sortedStatementGrantSummaries(grantSummaries)
 	return statement, nil
 }
 
 func addSettledStatementRow(
 	statement *Statement,
-	buckets map[string]*StatementBucketSummary,
 	lineItems map[statementLineItemKey]*StatementLineItem,
 	window persistedWindow,
 	row MeteringRow,
@@ -191,12 +188,6 @@ func addSettledStatementRow(
 	rateContext, err := completeRateContext(window)
 	if err != nil {
 		return err
-	}
-	for _, bucketID := range sortedUint64MapKeys(row.BucketChargeUnits) {
-		bucket := statementBucket(buckets, window.ProductID, bucketID, rateContext.BucketDisplayNames[bucketID])
-		if err := addStatementBucketMetering(bucket, row, bucketID); err != nil {
-			return err
-		}
 	}
 
 	quantities := row.ComponentQuantities
@@ -235,22 +226,85 @@ func addSettledStatementRow(
 		if err != nil {
 			return err
 		}
+		item.FreeTierUnits, err = safeAddUint64(item.FreeTierUnits, row.ComponentFreeTierUnits[skuID])
+		if err != nil {
+			return err
+		}
+		item.SubscriptionUnits, err = safeAddUint64(item.SubscriptionUnits, row.ComponentSubscriptionUnits[skuID])
+		if err != nil {
+			return err
+		}
+		item.PurchaseUnits, err = safeAddUint64(item.PurchaseUnits, row.ComponentPurchaseUnits[skuID])
+		if err != nil {
+			return err
+		}
+		item.PromoUnits, err = safeAddUint64(item.PromoUnits, row.ComponentPromoUnits[skuID])
+		if err != nil {
+			return err
+		}
+		item.RefundUnits, err = safeAddUint64(item.RefundUnits, row.ComponentRefundUnits[skuID])
+		if err != nil {
+			return err
+		}
+		item.ReceivableUnits, err = safeAddUint64(item.ReceivableUnits, row.ComponentReceivableUnits[skuID])
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func addReservedStatementWindow(statement *Statement, buckets map[string]*StatementBucketSummary, window persistedWindow) error {
+func addReservedStatementWindow(
+	statement *Statement,
+	lineItems map[statementLineItemKey]*StatementLineItem,
+	window persistedWindow,
+) error {
 	rateContext, err := completeRateContext(window)
 	if err != nil {
 		return err
 	}
+	// The legs are sized to the reservation quantity; aggregate by ChargeSKUID
+	// so each reserved line can credit the right SKU row. Legs without a
+	// ChargeSKUID (legacy pre-tightened reserve path) are silently dropped from
+	// per-line reserved totals but still credited to the statement-level total
+	// so the customer's top-line reserved figure remains honest.
 	for _, leg := range window.FundingLegs {
 		statement.Totals.ReservedUnits, err = safeAddUint64(statement.Totals.ReservedUnits, leg.Amount)
 		if err != nil {
 			return err
 		}
-		bucket := statementBucket(buckets, window.ProductID, leg.ChargeBucketID, rateContext.BucketDisplayNames[leg.ChargeBucketID])
-		bucket.ReservedUnits, err = safeAddUint64(bucket.ReservedUnits, leg.Amount)
+		if leg.ChargeSKUID == "" {
+			continue
+		}
+		sku, ok := rateContext.SKUDetails[leg.ChargeSKUID]
+		if !ok || sku.DisplayName == "" || sku.BucketID == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
+			return fmt.Errorf("sku metadata missing for reserved leg %s", leg.ChargeSKUID)
+		}
+		unitRate := rateContext.SKURates[leg.ChargeSKUID]
+		key := statementLineItemKey{
+			ProductID:    window.ProductID,
+			PlanID:       window.PlanID,
+			BucketID:     sku.BucketID,
+			SKUID:        leg.ChargeSKUID,
+			PricingPhase: string(window.PricingPhase),
+			UnitRate:     unitRate,
+		}
+		item := lineItems[key]
+		if item == nil {
+			item = &StatementLineItem{
+				ProductID:         key.ProductID,
+				PlanID:            key.PlanID,
+				BucketID:          key.BucketID,
+				BucketDisplayName: sku.BucketDisplayName,
+				SKUID:             key.SKUID,
+				SKUDisplayName:    sku.DisplayName,
+				QuantityUnit:      sku.QuantityUnit,
+				PricingPhase:      key.PricingPhase,
+				UnitRate:          key.UnitRate,
+			}
+			lineItems[key] = item
+		}
+		item.ReservedUnits, err = safeAddUint64(item.ReservedUnits, leg.Amount)
 		if err != nil {
 			return err
 		}
@@ -288,36 +342,6 @@ func addStatementAppliedTotals(totals *StatementTotals, row MeteringRow) error {
 	return nil
 }
 
-func addStatementBucketMetering(bucket *StatementBucketSummary, row MeteringRow, bucketID string) error {
-	var err error
-	bucket.ChargeUnits, err = safeAddUint64(bucket.ChargeUnits, row.BucketChargeUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.FreeTierUnits, err = safeAddUint64(bucket.FreeTierUnits, row.BucketFreeTierUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.SubscriptionUnits, err = safeAddUint64(bucket.SubscriptionUnits, row.BucketSubscriptionUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.PurchaseUnits, err = safeAddUint64(bucket.PurchaseUnits, row.BucketPurchaseUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.PromoUnits, err = safeAddUint64(bucket.PromoUnits, row.BucketPromoUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.RefundUnits, err = safeAddUint64(bucket.RefundUnits, row.BucketRefundUnits[bucketID])
-	if err != nil {
-		return err
-	}
-	bucket.ReceivableUnits, err = safeAddUint64(bucket.ReceivableUnits, row.BucketReceivableUnits[bucketID])
-	return err
-}
-
 func addStatementGrantSummary(summaries map[statementGrantSummaryKey]*StatementGrantSummary, grant GrantBalance) error {
 	key := statementGrantSummaryKey{
 		ScopeType:      grant.ScopeType,
@@ -344,21 +368,6 @@ func addStatementGrantSummary(summaries map[statementGrantSummaryKey]*StatementG
 	return err
 }
 
-func statementBucket(buckets map[string]*StatementBucketSummary, productID string, bucketID string, displayName string) *StatementBucketSummary {
-	if displayName == "" {
-		displayName = bucketID
-	}
-	bucket := buckets[bucketID]
-	if bucket == nil {
-		bucket = &StatementBucketSummary{ProductID: productID, BucketID: bucketID, BucketDisplayName: displayName}
-		buckets[bucketID] = bucket
-	}
-	if bucket.BucketDisplayName == "" {
-		bucket.BucketDisplayName = displayName
-	}
-	return bucket
-}
-
 func statementLineItemID(key statementLineItemKey) string {
 	return key.ProductID + ":" + key.PlanID + ":" + key.BucketID + ":" + key.SKUID + ":" + key.PricingPhase + ":" + strconv.FormatUint(key.UnitRate, 10)
 }
@@ -378,22 +387,6 @@ func sortedStatementLineItems(items map[statementLineItemKey]*StatementLineItem)
 	out := make([]StatementLineItem, 0, len(items))
 	for _, key := range keys {
 		out = append(out, *byID[key])
-	}
-	return out
-}
-
-func sortedStatementBuckets(buckets map[string]*StatementBucketSummary) []StatementBucketSummary {
-	if len(buckets) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(buckets))
-	for key := range buckets {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]StatementBucketSummary, 0, len(buckets))
-	for _, key := range keys {
-		out = append(out, *buckets[key])
 	}
 	return out
 }

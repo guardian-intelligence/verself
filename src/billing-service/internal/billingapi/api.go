@@ -287,22 +287,13 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 			Quantity:          line.Quantity,
 			UnitRate:          apiwire.Uint64(line.UnitRate),
 			ChargeUnits:       apiwire.Uint64(line.ChargeUnits),
-		})
-	}
-	bucketSummaries := make([]apiwire.BillingStatementBucketSummary, 0, len(statement.BucketSummaries))
-	for _, bucket := range statement.BucketSummaries {
-		bucketSummaries = append(bucketSummaries, apiwire.BillingStatementBucketSummary{
-			ProductID:         bucket.ProductID,
-			BucketID:          bucket.BucketID,
-			BucketDisplayName: bucket.BucketDisplayName,
-			ChargeUnits:       apiwire.Uint64(bucket.ChargeUnits),
-			FreeTierUnits:     apiwire.Uint64(bucket.FreeTierUnits),
-			SubscriptionUnits: apiwire.Uint64(bucket.SubscriptionUnits),
-			PurchaseUnits:     apiwire.Uint64(bucket.PurchaseUnits),
-			PromoUnits:        apiwire.Uint64(bucket.PromoUnits),
-			RefundUnits:       apiwire.Uint64(bucket.RefundUnits),
-			ReceivableUnits:   apiwire.Uint64(bucket.ReceivableUnits),
-			ReservedUnits:     apiwire.Uint64(bucket.ReservedUnits),
+			FreeTierUnits:     apiwire.Uint64(line.FreeTierUnits),
+			SubscriptionUnits: apiwire.Uint64(line.SubscriptionUnits),
+			PurchaseUnits:     apiwire.Uint64(line.PurchaseUnits),
+			PromoUnits:        apiwire.Uint64(line.PromoUnits),
+			RefundUnits:       apiwire.Uint64(line.RefundUnits),
+			ReceivableUnits:   apiwire.Uint64(line.ReceivableUnits),
+			ReservedUnits:     apiwire.Uint64(line.ReservedUnits),
 		})
 	}
 	grantSummaries := make([]apiwire.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
@@ -317,17 +308,16 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 		})
 	}
 	return apiwire.BillingStatement{
-		OrgID:           apiwire.Uint64(uint64(statement.OrgID)),
-		ProductID:       statement.ProductID,
-		PeriodStart:     statement.PeriodStart,
-		PeriodEnd:       statement.PeriodEnd,
-		PeriodSource:    statement.PeriodSource,
-		GeneratedAt:     statement.GeneratedAt,
-		Currency:        statement.Currency,
-		UnitLabel:       statement.UnitLabel,
-		LineItems:       lineItems,
-		BucketSummaries: bucketSummaries,
-		GrantSummaries:  grantSummaries,
+		OrgID:          apiwire.Uint64(uint64(statement.OrgID)),
+		ProductID:      statement.ProductID,
+		PeriodStart:    statement.PeriodStart,
+		PeriodEnd:      statement.PeriodEnd,
+		PeriodSource:   statement.PeriodSource,
+		GeneratedAt:    statement.GeneratedAt,
+		Currency:       statement.Currency,
+		UnitLabel:      statement.UnitLabel,
+		LineItems:      lineItems,
+		GrantSummaries: grantSummaries,
 		Totals: apiwire.BillingStatementTotals{
 			ChargeUnits:       apiwire.Uint64(statement.Totals.ChargeUnits),
 			FreeTierUnits:     apiwire.Uint64(statement.Totals.FreeTierUnits),

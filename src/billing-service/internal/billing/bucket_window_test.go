@@ -41,74 +41,94 @@ func TestComputeRateBreakdownGroupsComponentsByBucket(t *testing.T) {
 	assertEqual(t, breakdown.BucketCostPerUnit["compute"], uint64(20), "compute bucket cost")
 }
 
-func TestPickBucketReservationShrinksToTightestFundedBucket(t *testing.T) {
+func TestPickReservationShrinksToTightestFundedBucket(t *testing.T) {
 	t.Parallel()
 
-	quantity, totalChargeUnits, bucketChargeUnits, err := pickBucketReservationQuantity(
+	skuRates := map[string]uint64{
+		testBlockStorageSKU: 5,
+		testComputeSKU:      10,
+	}
+	rateContext := windowRateContext{
+		SKURates:             skuRates,
+		SKUBuckets:           testSKUBuckets(),
+		SKUDetails:           testSKURateContext(skuRates),
+		BucketDisplayNames:   testBucketDisplayNames(),
+		ComponentCostPerUnit: map[string]uint64{testBlockStorageSKU: 500, testComputeSKU: 20},
+		BucketCostPerUnit:    map[string]uint64{"block_storage": 500, "compute": 20},
+	}
+	plan, err := pickReservationQuantity(
 		"sandbox",
 		ReservePolicy{
 			TargetQuantity:      10,
 			MinQuantity:         5,
 			AllowPartialReserve: true,
 		},
-		map[string]uint64{
-			"compute":       20,
-			"block_storage": 500,
-		},
+		rateContext,
 		[]scopedGrantBalance{
 			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
 			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != nil {
-		t.Fatalf("pickBucketReservationQuantity: %v", err)
+		t.Fatalf("pickReservationQuantity: %v", err)
 	}
 
-	assertEqual(t, quantity, uint32(7), "quantity")
-	assertEqual(t, totalChargeUnits, uint64(3_640), "total charge units")
-	assertEqual(t, bucketChargeUnits["compute"], uint64(140), "compute charge units")
-	assertEqual(t, bucketChargeUnits["block_storage"], uint64(3_500), "storage charge units")
+	assertEqual(t, plan.Quantity, uint32(7), "quantity")
+	assertEqual(t, plan.TotalChargeUnits, uint64(3_640), "total charge units")
+	assertEqual(t, plan.ComponentCharges[testComputeSKU], uint64(140), "compute component charge")
+	assertEqual(t, plan.ComponentCharges[testBlockStorageSKU], uint64(3_500), "storage component charge")
+	assertEqual(t, plan.BucketCharges["compute"], uint64(140), "compute bucket charge")
+	assertEqual(t, plan.BucketCharges["block_storage"], uint64(3_500), "storage bucket charge")
 }
 
-func TestPickBucketReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
+func TestPickReservationFailsWhenAnyRequiredBucketIsShort(t *testing.T) {
 	t.Parallel()
 
-	_, _, _, err := pickBucketReservationQuantity(
+	skuRates := map[string]uint64{
+		testBlockStorageSKU: 5,
+		testComputeSKU:      10,
+	}
+	rateContext := windowRateContext{
+		SKURates:             skuRates,
+		SKUBuckets:           testSKUBuckets(),
+		SKUDetails:           testSKURateContext(skuRates),
+		BucketDisplayNames:   testBucketDisplayNames(),
+		ComponentCostPerUnit: map[string]uint64{testBlockStorageSKU: 500, testComputeSKU: 20},
+		BucketCostPerUnit:    map[string]uint64{"block_storage": 500, "compute": 20},
+	}
+	_, err := pickReservationQuantity(
 		"sandbox",
 		ReservePolicy{
 			TargetQuantity:      10,
 			MinQuantity:         8,
 			AllowPartialReserve: true,
 		},
-		map[string]uint64{
-			"compute":       20,
-			"block_storage": 500,
-		},
+		rateContext,
 		[]scopedGrantBalance{
 			testScopedGrant("bucket-compute", SourceSubscription, GrantScopeBucket, "sandbox", "compute", "", 10_000),
 			testScopedGrant("bucket-storage", SourceSubscription, GrantScopeBucket, "sandbox", "block_storage", "", 3_500),
 		},
 	)
 	if err != ErrInsufficientBalance {
-		t.Fatalf("pickBucketReservationQuantity error = %v, want %v", err, ErrInsufficientBalance)
+		t.Fatalf("pickReservationQuantity error = %v, want %v", err, ErrInsufficientBalance)
 	}
 }
 
-func TestSettlementFundingPostsEachBucketIndependently(t *testing.T) {
+func TestSettlementFundingPostsEachSKUIndependently(t *testing.T) {
 	t.Parallel()
 
-	actions, err := settleFundingLegsByBucket(
+	actions, err := settleFundingLegs(
 		[]WindowFundingLeg{
-			{ChargeBucketID: "compute", Amount: 140},
-			{ChargeBucketID: "block_storage", Amount: 3_500},
+			{ChargeBucketID: "compute", ChargeSKUID: testComputeSKU, Amount: 140},
+			{ChargeBucketID: "block_storage", ChargeSKUID: testBlockStorageSKU, Amount: 3_500},
 		},
 		map[string]uint64{
-			"compute":       100,
-			"block_storage": 2_500,
+			testComputeSKU:      100,
+			testBlockStorageSKU: 2_500,
 		},
 	)
 	if err != nil {
-		t.Fatalf("settleFundingLegsByBucket: %v", err)
+		t.Fatalf("settleFundingLegs: %v", err)
 	}
 
 	assertEqual(t, len(actions), 2, "action count")
@@ -165,8 +185,8 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 			},
 		},
 		FundingLegs: []WindowFundingLeg{
-			{ChargeProductID: "sandbox", ChargeBucketID: "compute", Amount: 140, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "compute"},
-			{ChargeProductID: "sandbox", ChargeBucketID: "block_storage", Amount: 3_500, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "block_storage"},
+			{ChargeProductID: "sandbox", ChargeBucketID: "compute", ChargeSKUID: testComputeSKU, Amount: 140, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "compute"},
+			{ChargeProductID: "sandbox", ChargeBucketID: "block_storage", ChargeSKUID: testBlockStorageSKU, Amount: 3_500, Source: SourceSubscription, GrantScopeType: GrantScopeBucket, GrantScopeProductID: "sandbox", GrantScopeBucketID: "block_storage"},
 		},
 		UsageSummary: map[string]any{"rootfs_provisioned_bytes": uint64(1_073_741_824)},
 		WindowStart:  start,
@@ -186,8 +206,8 @@ func TestBuildMeteringRowProjectsComponentAndBucketEvidence(t *testing.T) {
 	assertEqual(t, row.ComponentChargeUnits[testComputeSKU], uint64(100), "vCPU component charge")
 	assertEqual(t, row.BucketChargeUnits["block_storage"], uint64(2_500), "storage bucket charge")
 	assertEqual(t, row.BucketChargeUnits["compute"], uint64(100), "compute bucket charge")
-	assertEqual(t, row.BucketSubscriptionUnits["block_storage"], uint64(2_500), "storage subscription funding")
-	assertEqual(t, row.BucketSubscriptionUnits["compute"], uint64(100), "compute subscription funding")
+	assertEqual(t, row.ComponentSubscriptionUnits[testBlockStorageSKU], uint64(2_500), "storage subscription funding")
+	assertEqual(t, row.ComponentSubscriptionUnits[testComputeSKU], uint64(100), "compute subscription funding")
 	assertEqual(t, row.SubscriptionUnits, uint64(2_600), "total subscription funding")
 	assertEqual(t, row.UsageEvidence["rootfs_provisioned_bytes"], uint64(1_073_741_824), "rootfs evidence")
 }
@@ -237,6 +257,7 @@ func TestBuildMeteringRowProjectsAccountCreditToChargeBucket(t *testing.T) {
 			{
 				ChargeProductID:     "sandbox",
 				ChargeBucketID:      "block_storage",
+				ChargeSKUID:         testBlockStorageSKU,
 				Amount:              100,
 				Source:              SourcePurchase,
 				GrantScopeType:      GrantScopeAccount,
@@ -257,8 +278,15 @@ func TestBuildMeteringRowProjectsAccountCreditToChargeBucket(t *testing.T) {
 
 	assertEqual(t, row.ComponentChargeUnits[testBlockStorageSKU], uint64(100), "premium NVMe component charge")
 	assertEqual(t, row.BucketChargeUnits["block_storage"], uint64(100), "storage bucket charge")
-	assertEqual(t, row.BucketPurchaseUnits["block_storage"], uint64(100), "storage purchase funding")
+	assertEqual(t, row.ComponentPurchaseUnits[testBlockStorageSKU], uint64(100), "storage purchase funding")
 	assertEqual(t, row.PurchaseUnits, uint64(100), "total purchase funding")
+}
+
+func testSKUBuckets() map[string]string {
+	return map[string]string{
+		testComputeSKU:      "compute",
+		testBlockStorageSKU: "block_storage",
+	}
 }
 
 func assertEqual[T comparable](t *testing.T, got T, want T, label string) {
