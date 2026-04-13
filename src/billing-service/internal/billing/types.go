@@ -129,12 +129,28 @@ type GrantBalance struct {
 	SourceReferenceID   string
 	EntitlementPeriodID string
 	PolicyVersion       string
-	StartsAt            time.Time
-	PeriodStart         *time.Time
-	PeriodEnd           *time.Time
-	ExpiresAt           *time.Time
-	Available           uint64
-	Pending             uint64
+	// PlanID and PlanDisplayName are JOINed in for subscription-source grants
+	// via credit_grants.entitlement_period_id → entitlement_periods.contract_id
+	// → subscription_contracts.plan_id → plans.display_name. Empty for any
+	// non-subscription source.
+	PlanID          string
+	PlanDisplayName string
+	StartsAt        time.Time
+	PeriodStart     *time.Time
+	PeriodEnd       *time.Time
+	ExpiresAt       *time.Time
+	// OriginalAmount is the grant's deposited amount, equal to the TigerBeetle
+	// account's credits_posted. Grants are issued with a single deposit
+	// transfer and never topped up, so this is constant for the lifetime of
+	// the grant. The entitlements view uses it as the "amount at start of
+	// period" for grants whose period contains now.
+	OriginalAmount uint64
+	Available      uint64
+	Pending        uint64
+	// Spent is the TigerBeetle account's debits_posted — the total settled
+	// consumption against this grant. Available + Pending + Spent ==
+	// OriginalAmount in the steady state.
+	Spent uint64
 }
 
 type ReservePolicy struct {
@@ -451,17 +467,21 @@ func (t GrantSourceType) IsFreeTier() bool {
 	return t == SourceFreeTier
 }
 
-// GrantSourceLabel is the customer-facing label for a grant source. The
-// entitlements view exposes both the raw enum and this label so the frontend
-// never has to translate.
-func GrantSourceLabel(source GrantSourceType) string {
+// GrantSourceLabel is the customer-facing label for a grant source. For
+// subscription grants the caller passes the JOINed plan display name; if it's
+// non-empty the plan name is the label, otherwise we fall back to a generic
+// "Subscription" string. Non-subscription sources ignore planDisplayName.
+func GrantSourceLabel(source GrantSourceType, planDisplayName string) string {
 	switch source {
 	case SourceFreeTier:
-		return "Free tier"
+		return "Free"
 	case SourceSubscription:
-		return "Plan"
+		if planDisplayName != "" {
+			return planDisplayName
+		}
+		return "Subscription"
 	case SourcePurchase:
-		return "Top-up"
+		return "Top Up"
 	case SourcePromo:
 		return "Promo"
 	case SourceRefund:
