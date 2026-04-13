@@ -5,7 +5,11 @@ import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
 import { BillingFlashNotice, ContractStatusPill } from "~/features/billing/components";
-import { EntitlementsPanel } from "~/features/billing/entitlements";
+import {
+  EntitlementsPanel,
+  buildSKURemainingLookup,
+  type SKURemainingLookup,
+} from "~/features/billing/entitlements";
 import {
   useCancelContractMutation,
   useCreatePortalSessionMutation,
@@ -18,8 +22,10 @@ import {
 } from "~/features/billing/queries";
 import { parseBillingFlashSearch } from "~/features/billing/search";
 import {
+  formatDateTimeMillisUTC,
   formatDateUTC,
   formatInteger,
+  formatLedgerAmount,
   formatLedgerAmountPrecise,
   formatLedgerRate,
 } from "~/lib/format";
@@ -32,13 +38,18 @@ type LineItemDrainKey =
   | "purchase_units"
   | "promo_units"
   | "refund_units";
+type DrainSourceKind = "free_tier" | "contract" | "purchase" | "promo" | "refund";
 
-const drainSources: Array<{ key: LineItemDrainKey; label: string }> = [
-  { key: "free_tier_units", label: "Free tier" },
-  { key: "contract_units", label: "Contract" },
-  { key: "purchase_units", label: "Account balance" },
-  { key: "promo_units", label: "Promo" },
-  { key: "refund_units", label: "Refund" },
+const drainSources: Array<{
+  key: LineItemDrainKey;
+  source: DrainSourceKind;
+  fallbackLabel: string;
+}> = [
+  { key: "free_tier_units", source: "free_tier", fallbackLabel: "Free tier" },
+  { key: "contract_units", source: "contract", fallbackLabel: "Contract" },
+  { key: "purchase_units", source: "purchase", fallbackLabel: "Account balance" },
+  { key: "promo_units", source: "promo", fallbackLabel: "Promo" },
+  { key: "refund_units", source: "refund", fallbackLabel: "Refund" },
 ];
 
 const sandboxProductID = "sandbox";
@@ -113,7 +124,10 @@ function BillingPage() {
 
       <EntitlementsPanel view={entitlements} />
 
-      <StatementPreview statement={statement} />
+      <StatementPreview
+        statement={statement}
+        skuRemaining={buildSKURemainingLookup(entitlements)}
+      />
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold mb-3">Contracts</h2>
@@ -212,7 +226,13 @@ function BillingPage() {
   );
 }
 
-function StatementPreview({ statement }: { statement: Statement }) {
+function StatementPreview({
+  statement,
+  skuRemaining,
+}: {
+  statement: Statement;
+  skuRemaining: SKURemainingLookup;
+}) {
   const lineItems = statement.line_items ?? [];
   const grandTotal = statement.totals.total_due_units;
 
@@ -221,7 +241,7 @@ function StatementPreview({ statement }: { statement: Statement }) {
       <div className="space-y-1">
         <h2 className="text-lg font-semibold">Usage</h2>
         <p className="text-sm text-muted-foreground">
-          Current billing cycle started at {formatDateUTC(statement.period_start)}
+          Current billing cycle started at {formatDateTimeMillisUTC(statement.period_start)}
         </p>
       </div>
 
@@ -240,13 +260,14 @@ function StatementPreview({ statement }: { statement: Statement }) {
               <UsageLineRow
                 key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
                 line={line}
+                skuRemaining={skuRemaining}
               />
             ))}
             <div
               className="col-span-5 mx-4 mt-2 mb-4 border-t-2 border-foreground/80 pt-2 flex items-baseline justify-between text-base font-bold"
               data-testid="statement-grand-total"
             >
-              <span>Grand Total</span>
+              <span>Amount Owed</span>
               <span className="font-mono tabular-nums">
                 {formatLedgerAmountPrecise(grandTotal)}
               </span>
@@ -263,10 +284,31 @@ function StatementPreview({ statement }: { statement: Statement }) {
   );
 }
 
-function UsageLineRow({ line }: { line: StatementLineItem }) {
+function UsageLineRow({
+  line,
+  skuRemaining,
+}: {
+  line: StatementLineItem;
+  skuRemaining: SKURemainingLookup;
+}) {
+  const availableSources = skuRemaining.get(line.sku_id) ?? [];
   const drains = drainSources
-    .map((source) => ({ ...source, amount: line[source.key] }))
-    .filter((row) => row.amount > 0);
+    .map((source) => {
+      const amount = line[source.key];
+      const match = findRemainingSource(availableSources, source.source, line.plan_id);
+      return {
+        ...source,
+        amount,
+        label: match?.label ?? source.fallbackLabel,
+        planId: match?.plan_id ?? "",
+        remainingUnits: match?.available_units ?? 0,
+      };
+    })
+    // Keep any class where either this cycle drew against it OR it still has
+    // headroom to draw against — matches the user expectation that active
+    // entitlements (e.g. Pro contract allotments) appear as line items even
+    // before the funder touches them.
+    .filter((row) => row.amount > 0 || row.remainingUnits > 0);
   const hasReserved = line.reserved_units > 0;
   const skuTitle = `${line.bucket_display_name} — ${line.sku_display_name}`;
   const totalRows = 1 + drains.length + (hasReserved ? 1 : 0);
@@ -290,18 +332,26 @@ function UsageLineRow({ line }: { line: StatementLineItem }) {
       </div>
 
       <div className="pt-4 font-mono tabular-nums">{quantityText}</div>
-      <div className="pt-4 pl-2 font-mono tabular-nums text-muted-foreground whitespace-nowrap">
-        @ {rateText}
-      </div>
-      <div className="pt-4 pl-2 font-mono tabular-nums text-muted-foreground">=</div>
-      <div className="pt-4 pl-2 pr-4 font-mono tabular-nums font-semibold">{chargeText}</div>
+      <div className="pt-4 pl-2 font-mono tabular-nums whitespace-nowrap">@ {rateText}</div>
+      <div className="pt-4 pl-2 font-mono tabular-nums">+</div>
+      <div className="pt-4 pl-2 pr-4 font-mono tabular-nums">{chargeText}</div>
 
       {drains.map((drain, idx) => {
         const pb = idx === lastDrainIdx ? "pb-4" : "";
+        const showRemaining = drain.source !== "purchase";
         return (
           <Fragment key={drain.key}>
             <div className={`pt-1 ${pb} text-muted-foreground`} data-drain-source={drain.key}>
               {drain.label}
+              {showRemaining ? (
+                <span
+                  className="ml-1 text-xs"
+                  data-source={drain.source}
+                  data-plan-id={drain.planId || undefined}
+                >
+                  ({formatLedgerAmount(drain.remainingUnits)} remaining)
+                </span>
+              ) : null}
             </div>
             <div className={`pt-1 ${pb}`} />
             <div className={`pt-1 ${pb} pl-2 font-mono tabular-nums text-foreground`}>−</div>
@@ -326,6 +376,21 @@ function UsageLineRow({ line }: { line: StatementLineItem }) {
       ) : null}
     </Fragment>
   );
+}
+
+type EntitlementSourceTotalLite = NonNullable<ReturnType<SKURemainingLookup["get"]>>[number];
+
+function findRemainingSource(
+  sources: readonly EntitlementSourceTotalLite[],
+  drainSource: DrainSourceKind,
+  linePlanID: string,
+): EntitlementSourceTotalLite | undefined {
+  for (const source of sources) {
+    if (source.source !== drainSource) continue;
+    if (drainSource === "contract" && source.plan_id !== linePlanID) continue;
+    return source;
+  }
+  return undefined;
 }
 
 function formatQuantity(value: number, quantityUnit: string) {

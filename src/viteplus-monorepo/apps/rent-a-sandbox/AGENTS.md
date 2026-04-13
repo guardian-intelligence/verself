@@ -89,11 +89,18 @@ style:
   by per-source subtractions. Subtractions use bank-statement convention:
   the source label is on the left as plain text (`Free tier`, `Contract`,
   `Account balance`, …) and the debit amount is on the right with the minus
-  sign adjacent to the `$` sign (`− $0.10`). The formula and subtraction
-  rows are the same font size and monospace family — no nested font
-  hierarchy.
+  sign adjacent to the `$` sign (`− $0.10`). Everything numeric — the
+  quantity, the `@ rate` inline, the charge, the drain amounts, and the
+  Amount Owed total — renders in the monospace family with `tabular-nums`
+  so digits align across rows. Source labels and SKU names stay in the
+  default sans font. Do not bold numeric cells; bold introduces per-digit
+  width jitter even under `tabular-nums`.
+- Every entitlement class that is active for the SKU in the current cycle
+  renders as a subtraction row — including classes the funder has not yet
+  touched (drain = 0 but remaining > 0). A class is hidden only when both
+  drain and remaining are zero.
 - There is no per-line receivable roll-up. The only aggregation is the
-  `Grand Total` row at the bottom of the table, drawn as a single full-width
+  `Amount Owed` row at the bottom of the table, drawn as a single full-width
   `<td colSpan={2}>` with one thick separator above it, flex
   `justify-between` layout (label on the left, amount on the right), and
   bold same-size text on both sides.
