@@ -52,14 +52,16 @@ function logBillingPageLoadError(error: unknown) {
 
 export async function loadBillingPage(queryClient: QueryClient, auth: AuthenticatedAuth) {
   try {
-    const [entitlements, subscriptions] = await Promise.all([
+    const [entitlements, subscriptions, statement] = await Promise.all([
       queryClient.ensureQueryData(entitlementsQuery(auth)),
       queryClient.ensureQueryData(subscriptionsQuery(auth)),
+      queryClient.ensureQueryData(statementQuery(auth, "sandbox")),
     ]);
 
     return {
       entitlements,
       subscriptions,
+      statement,
     };
   } catch (error) {
     logBillingPageLoadError(error);

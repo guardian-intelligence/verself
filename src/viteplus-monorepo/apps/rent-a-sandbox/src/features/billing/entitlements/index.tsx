@@ -67,7 +67,7 @@ export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
                   <th className="text-right px-4 py-2 font-medium">Available</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {products.flatMap((section) => creditBalanceRows(section))}
               </tbody>
             </table>
