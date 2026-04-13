@@ -4,8 +4,8 @@ import "context"
 
 type verificationRunIDKey struct{}
 
-// WithVerificationRunID threads a caller-supplied correlation key through the
-// service without making it part of the durable execution schema.
+// WithVerificationRunID threads a caller-supplied evidence key through submit
+// and River worker contexts so ClickHouse rows can be joined to live proofs.
 func WithVerificationRunID(ctx context.Context, runID string) context.Context {
 	if runID == "" {
 		return ctx

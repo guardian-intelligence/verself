@@ -117,6 +117,12 @@
         IF to_regclass('public.execution_billing_windows') IS NOT NULL THEN
           EXECUTE 'ALTER TABLE public.execution_billing_windows OWNER TO sandbox_rental';
         END IF;
+        IF to_regclass('public.execution_events') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_events OWNER TO sandbox_rental';
+        END IF;
+        IF to_regclass('public.execution_workload_specs') IS NOT NULL THEN
+          EXECUTE 'ALTER TABLE public.execution_workload_specs OWNER TO sandbox_rental';
+        END IF;
         IF to_regclass('public.execution_billing_job_id_seq') IS NOT NULL THEN
           EXECUTE 'ALTER SEQUENCE public.execution_billing_job_id_seq OWNER TO sandbox_rental';
         END IF;
@@ -127,7 +133,9 @@
         public.executions,
         public.execution_attempts,
         public.execution_billing_windows,
-        public.execution_logs
+        public.execution_logs,
+        public.execution_events,
+        public.execution_workload_specs
       TO sandbox_rental;
       GRANT ALL PRIVILEGES ON SEQUENCE
         public.execution_billing_job_id_seq

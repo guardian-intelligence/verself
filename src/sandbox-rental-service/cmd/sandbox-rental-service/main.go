@@ -18,6 +18,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
+	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
@@ -176,16 +177,11 @@ func run() error {
 		return fmt.Errorf("create webhook secret codec: %w", err)
 	}
 
-	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{Logger: logger})
-	if err != nil {
-		return fmt.Errorf("create scheduler runtime: %w", err)
-	}
-
 	jobService := &jobs.Service{
 		PG:                            pg,
+		PGX:                           pgxPool,
 		CH:                            chConn,
 		CHDatabase:                    "forge_metal",
-		Scheduler:                     schedulerRuntime,
 		Orchestrator:                  orchestrator,
 		Billing:                       billingClient,
 		BillingVCPUs:                  int(capacity.VCPUsPerVM),
@@ -194,6 +190,17 @@ func run() error {
 		WebhookSecretCodec:            webhookSecretCodec,
 		Logger:                        logger,
 	}
+
+	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
+		Logger: logger,
+		RegisterWorkers: func(workers *river.Workers) error {
+			return jobs.RegisterSchedulerWorkers(workers, jobService)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create scheduler runtime: %w", err)
+	}
+	jobService.Scheduler = schedulerRuntime
 
 	if err := schedulerRuntime.Start(ctx); err != nil {
 		return fmt.Errorf("start scheduler runtime: %w", err)

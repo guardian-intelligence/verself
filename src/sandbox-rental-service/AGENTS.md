@@ -25,13 +25,18 @@ Use River OSS as the worker/queue runtime for sandbox-rental-service control-pla
   3. Enqueue execution.advance with River inside the same PG transaction.
   4. Return 202 Accepted or 201 Created with the execution ID.
 
-  The River worker should advance one durable transition at a time:
+  The River worker should advance durable transitions explicitly. The current
+  first cut is:
 
-  queued -> reserving -> reserved -> launching -> running -> finalizing -> succeeded|failed|canceled
+  queued -> reserved -> launching -> running -> finalizing -> succeeded|failed|canceled
+
+  Do not introduce a `reserving` state as local terminology without a migration
+  and a verification gate; it would become part of the public execution event
+  stream and reconciliation contract.
 
   Every transition should write an append-only execution_events row and update the current projection in the same transaction. The worker can be retried at any point and should inspect state before doing work. External side effects must be deterministic:
 
-  - TigerBeetle transfer/window IDs from attempt_id + window_seq.
+  - Billing reserve identity from attempt_id + window_seq; the billing service must return the existing window for a repeated reserve of the same source/window sequence only while that window is still reserved.
   - VM orchestrator job ID from attempt_id.
   - Billing reserve failure 402 becomes terminal insufficient_balance, not an exception.
   - PG failure becomes retryable worker error, not a stranded row.
@@ -77,6 +82,6 @@ Use River OSS as the worker/queue runtime for sandbox-rental-service control-pla
   - ClickHouse wide event projection
   - error recording and status setting on failure
 
-  Async worker traces should be linked back to the API submit trace, not necessarily parented under it. Store trace context in the execution row/job args and create a span link when River works the job.
+  Async worker traces should be correlated back to the API submit trace. Store trace context in the execution row/job args and extract it before River's OpenTelemetry middleware starts `river.work/*`, or add an explicit span link if parent/child semantics become misleading.
 
   So the strong path is: River for queue mechanics, PG for execution truth, TigerBeetle for financial truth, ClickHouse for proof/read models, OTel for trace correlation. This avoids building a bespoke job system while keeping the core state machine and billing invariants explicit and reviewable.

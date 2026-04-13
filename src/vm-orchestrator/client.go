@@ -8,6 +8,9 @@ import (
 	"time"
 
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -58,10 +61,21 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) EnsureRun(ctx context.Context, spec HostRunSpec) (string, bool, error) {
+	ctx, span := tracer.Start(ctx, "vm-orchestrator.EnsureRun")
+	defer span.End()
+	span.SetAttributes(attribute.String("run.id", spec.RunID))
+
 	resp, err := c.client.EnsureRun(ctx, &vmrpc.EnsureRunRequest{Spec: hostRunSpecToProto(spec)})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return "", false, fmt.Errorf("ensure run: %w", err)
 	}
+	span.SetAttributes(
+		attribute.String("run.id", resp.GetRunId()),
+		attribute.Bool("run.created", resp.GetCreated()),
+		attribute.String("run.state", resp.GetState().String()),
+	)
 	return resp.GetRunId(), resp.GetCreated(), nil
 }
 
@@ -90,15 +104,29 @@ func (c *Client) Run(ctx context.Context, spec HostRunSpec) (RunResult, error) {
 }
 
 func (c *Client) WaitRun(ctx context.Context, runID string, includeOutput bool) (HostRunSnapshot, error) {
+	ctx, span := tracer.Start(ctx, "vm-orchestrator.WaitRun",
+		trace.WithAttributes(
+			attribute.String("run.id", runID),
+			attribute.Bool("run.include_output", includeOutput),
+		))
+	defer span.End()
+
 	ticker := time.NewTicker(defaultPollInterval)
 	defer ticker.Stop()
 
 	for {
 		snapshot, err := c.GetRun(ctx, runID, includeOutput)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return HostRunSnapshot{}, err
 		}
 		if snapshot.Terminal {
+			span.SetAttributes(
+				attribute.String("run.state", runStateName(snapshot.State)),
+				attribute.Bool("run.terminal", snapshot.Terminal),
+				attribute.String("run.terminal_reason", snapshot.TerminalReason),
+			)
 			return snapshot, nil
 		}
 

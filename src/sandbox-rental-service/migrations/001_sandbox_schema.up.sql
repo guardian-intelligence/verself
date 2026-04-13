@@ -3,6 +3,8 @@
 
 DROP TABLE IF EXISTS execution_logs;
 DROP TABLE IF EXISTS execution_billing_windows;
+DROP TABLE IF EXISTS execution_events;
+DROP TABLE IF EXISTS execution_workload_specs;
 DROP TABLE IF EXISTS execution_attempts;
 DROP TABLE IF EXISTS executions;
 DROP TABLE IF EXISTS webhook_deliveries;

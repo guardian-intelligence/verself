@@ -6,6 +6,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,8 @@ import (
 	"github.com/forge-metal/sandbox-rental-service/internal/scheduler"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -46,6 +49,7 @@ const (
 	defaultRunCommand   = "echo hello"
 	defaultLogStream    = "stdout"
 	executionSourceType = "execution_attempt"
+	SourceKindAPI       = "api"
 
 	billingSKUCompute      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
 	billingSKUMemory       = "sandbox_memory_standard_gib_second"
@@ -80,6 +84,7 @@ type BillingClient interface {
 		concurrentCount uint64,
 		sourceType string,
 		sourceRef string,
+		windowSeq uint32,
 		allocation map[string]float64,
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
@@ -90,6 +95,7 @@ type BillingClient interface {
 
 type SchedulerRuntime interface {
 	EnqueueProbe(ctx context.Context, req scheduler.ProbeRequest) (scheduler.ProbeResult, error)
+	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
 }
 
 type SubmitRequest struct {
@@ -110,6 +116,9 @@ type ExecutionRecord struct {
 	OrgID          uint64          `json:"org_id"`
 	ActorID        string          `json:"actor_id"`
 	Kind           string          `json:"kind"`
+	SourceKind     string          `json:"source_kind,omitempty"`
+	WorkloadKind   string          `json:"workload_kind,omitempty"`
+	SourceRef      string          `json:"source_ref,omitempty"`
 	Provider       string          `json:"provider,omitempty"`
 	ProductID      string          `json:"product_id"`
 	Status         string          `json:"status"`
@@ -128,22 +137,24 @@ type ExecutionRecord struct {
 }
 
 type AttemptRecord struct {
-	AttemptID         uuid.UUID  `json:"attempt_id"`
-	AttemptSeq        int        `json:"attempt_seq"`
-	State             string     `json:"state"`
-	OrchestratorRunID string     `json:"orchestrator_run_id,omitempty"`
-	BillingJobID      int64      `json:"billing_job_id,omitempty"`
-	FailureReason     string     `json:"failure_reason,omitempty"`
-	ExitCode          int        `json:"exit_code,omitempty"`
-	DurationMs        int64      `json:"duration_ms,omitempty"`
-	ZFSWritten        int64      `json:"zfs_written,omitempty"`
-	StdoutBytes       int64      `json:"stdout_bytes,omitempty"`
-	StderrBytes       int64      `json:"stderr_bytes,omitempty"`
-	TraceID           string     `json:"trace_id,omitempty"`
-	StartedAt         *time.Time `json:"started_at,omitempty"`
-	CompletedAt       *time.Time `json:"completed_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	AttemptID          uuid.UUID  `json:"attempt_id"`
+	AttemptSeq         int        `json:"attempt_seq"`
+	State              string     `json:"state"`
+	OrchestratorRunID  string     `json:"orchestrator_run_id,omitempty"`
+	BillingJobID       int64      `json:"billing_job_id,omitempty"`
+	FailureReason      string     `json:"failure_reason,omitempty"`
+	ExitCode           int        `json:"exit_code,omitempty"`
+	DurationMs         int64      `json:"duration_ms,omitempty"`
+	ZFSWritten         int64      `json:"zfs_written,omitempty"`
+	StdoutBytes        int64      `json:"stdout_bytes,omitempty"`
+	StderrBytes        int64      `json:"stderr_bytes,omitempty"`
+	TraceID            string     `json:"trace_id,omitempty"`
+	SubmitTraceID      string     `json:"submit_trace_id,omitempty"`
+	SubmitTraceContext string     `json:"submit_trace_context,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 type BillingWindow struct {
@@ -176,6 +187,10 @@ type JobEventRow struct {
 	OrgID             uint64    `ch:"org_id"`
 	ActorID           string    `ch:"actor_id"`
 	Kind              string    `ch:"kind"`
+	SourceKind        string    `ch:"source_kind"`
+	WorkloadKind      string    `ch:"workload_kind"`
+	ExternalProvider  string    `ch:"external_provider"`
+	ExternalTaskID    string    `ch:"external_task_id"`
 	Provider          string    `ch:"provider"`
 	ProductID         string    `ch:"product_id"`
 	RepoID            string    `ch:"repo_id"`
@@ -204,6 +219,7 @@ type JobEventRow struct {
 // Service manages execution submission, billing, and state transitions.
 type Service struct {
 	PG                            *sql.DB
+	PGX                           *pgxpool.Pool
 	CH                            driver.Conn
 	CHDatabase                    string
 	Scheduler                     SchedulerRuntime
@@ -224,6 +240,47 @@ type executionSnapshot struct {
 	ExecutionID     uuid.UUID
 	LatestAttemptID uuid.UUID
 	Status          string
+}
+
+type executionWorkItem struct {
+	ExecutionID        uuid.UUID
+	AttemptID          uuid.UUID
+	OrgID              uint64
+	ActorID            string
+	Kind               string
+	SourceKind         string
+	WorkloadKind       string
+	SourceRef          string
+	Provider           string
+	ProductID          string
+	RepoID             string
+	Repo               string
+	RepoURL            string
+	Ref                string
+	DefaultBranch      string
+	RunCommand         string
+	VerificationRunID  string
+	CorrelationID      string
+	AttemptSeq         int
+	State              string
+	OrchestratorRunID  string
+	BillingJobID       sql.NullInt64
+	TraceID            string
+	SubmitTraceID      string
+	SubmitTraceContext string
+	Window             *executionBillingWindow
+}
+
+type executionBillingWindow struct {
+	WindowSeq        int
+	BillingWindowID  string
+	ReservationShape string
+	ReservedQuantity int
+	PricingPhase     string
+	State            string
+	WindowStart      time.Time
+	ActivatedAt      sql.NullTime
+	ReservationJSON  json.RawMessage
 }
 
 type executionOutcome struct {
@@ -251,13 +308,15 @@ type workloadActivation struct {
 	startedAt   time.Time
 }
 
-// Submit creates a durable execution and first attempt, reserves billing, and
-// starts asynchronous execution. It returns the execution and attempt IDs
-// immediately; callers poll for completion.
+// Submit creates a durable execution and first attempt, then transactionally
+// enqueues the River worker that advances the execution state machine.
 func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req SubmitRequest) (uuid.UUID, uuid.UUID, error) {
 	req, err := normalizeSubmitRequest(req)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, err
+	}
+	if s.Scheduler == nil {
+		return uuid.Nil, uuid.Nil, ErrRunnerUnavailable
 	}
 	if s.Orchestrator == nil {
 		return uuid.Nil, uuid.Nil, ErrRunnerUnavailable
@@ -281,84 +340,38 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	executionID := uuid.New()
 	attemptID := uuid.New()
 	correlationID := strings.TrimSpace(CorrelationIDFromContext(ctx))
-	traceID := traceIDFromContext(ctx)
+	verificationRunID := VerificationRunIDFromContext(ctx)
 	now := time.Now().UTC()
 
-	ctx, span := tracer.Start(ctx, "execution.Submit",
+	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.submit",
 		trace.WithAttributes(
 			attribute.String("execution.id", executionID.String()),
 			attribute.String("attempt.id", attemptID.String()),
 			attribute.Int64("execution.org_id", int64(orgID)),
 			attribute.String("execution.kind", req.Kind),
+			attribute.String("execution.source_kind", SourceKindAPI),
+			attribute.String("execution.workload_kind", req.Kind),
 			attribute.String("execution.repo", req.Repo),
+			attribute.String("verification.run_id", verificationRunID),
 		))
 	defer span.End()
+	traceID := traceIDFromContext(ctx)
+	traceParent := traceParentFromContext(ctx)
 
-	if err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, correlationID, now); err != nil {
+	job, err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, traceParent, correlationID, verificationRunID, now)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return uuid.Nil, uuid.Nil, fmt.Errorf("insert queued execution: %w", err)
 	}
-
-	billingJobID, err := s.nextBillingJobID(ctx)
-	if err != nil {
-		_ = s.failWithoutBilling(ctx, executionID, attemptID, "billing_job_id_unavailable", now)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return uuid.Nil, uuid.Nil, fmt.Errorf("allocate billing job id: %w", err)
-	}
-
-	currentConcurrent, err := s.countActiveAttempts(ctx, orgID)
-	if err != nil {
-		_ = s.failWithoutBilling(ctx, executionID, attemptID, "count_active_attempts_failed", now)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return uuid.Nil, uuid.Nil, fmt.Errorf("count active attempts: %w", err)
-	}
-
-	allocation, err := s.currentBillingAllocation(ctx)
-	if err != nil {
-		_ = s.failWithoutBilling(ctx, executionID, attemptID, "billing_capacity_unavailable", now)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return uuid.Nil, uuid.Nil, fmt.Errorf("build billing allocation: %w", err)
-	}
-	reservation, err := s.Billing.Reserve(
-		ctx,
-		billingJobID,
-		orgID,
-		req.ProductID,
-		actorID,
-		uint64(currentConcurrent+1),
-		executionSourceType,
-		attemptID.String(),
-		allocation,
+	span.SetAttributes(
+		attribute.Int64("river.job_id", job.JobID),
+		attribute.String("river.job_kind", job.Kind),
+		attribute.String("river.queue", job.Queue),
 	)
-	if err != nil {
-		_ = s.failWithoutBilling(ctx, executionID, attemptID, reserveFailureReason(err), now)
-		if errors.Is(err, billingclient.ErrForbidden) {
-			return uuid.Nil, uuid.Nil, ErrQuotaExceeded
-		}
-		return uuid.Nil, uuid.Nil, fmt.Errorf("billing reserve: %w", err)
-	}
 
-	if err := s.markReserved(ctx, executionID, attemptID, billingJobID, reservation, traceID, now); err != nil {
-		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
-			s.Logger.ErrorContext(ctx, "billing void after reserve persistence failure", "attempt_id", attemptID, "error", voidErr)
-		}
-		_ = s.failWithoutBilling(ctx, executionID, attemptID, "reserve_persist_failed", now)
-		return uuid.Nil, uuid.Nil, fmt.Errorf("persist reservation: %w", err)
-	}
-
-	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", executionID, "attempt_id", attemptID, "billing_job_id", billingJobID, "org_id", orgID, "kind", req.Kind, "window_seq", reservation.WindowSeq, "fm_correlation_id", correlationID)
-	s.writeSystemLog(ctx, executionID, attemptID,
-		"reserved billing window seq=%d seconds=%d pricing_phase=%s kind=%s",
-		reservation.WindowSeq,
-		reservation.WindowSecs,
-		reservation.PricingPhase,
-		req.Kind,
-	)
-	if verificationRunID := VerificationRunIDFromContext(ctx); verificationRunID != "" {
+	s.Logger.InfoContext(ctx, "execution queued", "execution_id", executionID, "attempt_id", attemptID, "river_job_id", job.JobID, "river_job_kind", job.Kind, "river_queue", job.Queue, "org_id", orgID, "kind", req.Kind, "fm_correlation_id", correlationID)
+	if verificationRunID != "" {
 		s.Logger.InfoContext(ctx, "execution verification correlation",
 			"verification_run_id", verificationRunID,
 			"execution_id", executionID,
@@ -368,18 +381,112 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 		)
 	}
 
-	execCtx := context.WithoutCancel(ctx)
-	go s.execute(execCtx, executionID, attemptID, orgID, actorID, req, reservation)
-
 	return executionID, attemptID, nil
 }
 
-func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, reservation billingclient.Reservation) {
-	ctx, span := tracer.Start(ctx, "execution.Attempt",
+func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID uuid.UUID) error {
+	item, err := s.loadExecutionWorkItem(ctx, executionID, attemptID)
+	if err != nil {
+		return err
+	}
+	ctx = WithCorrelationID(ctx, item.CorrelationID)
+	ctx = WithVerificationRunID(ctx, item.VerificationRunID)
+
+	switch item.State {
+	case StateQueued:
+		reservation, err := s.reserveQueuedExecution(ctx, item)
+		if err != nil {
+			return err
+		}
+		return s.execute(ctx, item.ExecutionID, item.AttemptID, item.OrgID, item.ActorID, item.submitRequest(), reservation)
+	case StateReserved:
+		if item.Window == nil {
+			return fmt.Errorf("reserved attempt %s has no billing window", item.AttemptID)
+		}
+		reservation, err := item.Window.reservation(item.AttemptID)
+		if err != nil {
+			return err
+		}
+		return s.execute(ctx, item.ExecutionID, item.AttemptID, item.OrgID, item.ActorID, item.submitRequest(), reservation)
+	case StateLaunching, StateRunning, StateFinalizing, StateSucceeded, StateFailed, StateCanceled, StateLost:
+		s.Logger.InfoContext(ctx, "execution advance no-op for state", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "state", item.State)
+		return nil
+	default:
+		return fmt.Errorf("unsupported execution state %q for attempt %s", item.State, item.AttemptID)
+	}
+}
+
+func (s *Service) reserveQueuedExecution(ctx context.Context, item executionWorkItem) (billingclient.Reservation, error) {
+	billingJobID, err := s.nextBillingJobID(ctx)
+	if err != nil {
+		now := time.Now().UTC()
+		_ = s.failWithoutBilling(ctx, item.ExecutionID, item.AttemptID, "billing_job_id_unavailable", now)
+		return billingclient.Reservation{}, fmt.Errorf("allocate billing job id: %w", err)
+	}
+
+	currentConcurrent, err := s.countActiveAttempts(ctx, item.OrgID)
+	if err != nil {
+		now := time.Now().UTC()
+		_ = s.failWithoutBilling(ctx, item.ExecutionID, item.AttemptID, "count_active_attempts_failed", now)
+		return billingclient.Reservation{}, fmt.Errorf("count active attempts: %w", err)
+	}
+
+	allocation, err := s.currentBillingAllocation(ctx)
+	if err != nil {
+		now := time.Now().UTC()
+		_ = s.failWithoutBilling(ctx, item.ExecutionID, item.AttemptID, "billing_capacity_unavailable", now)
+		return billingclient.Reservation{}, fmt.Errorf("build billing allocation: %w", err)
+	}
+	reservation, err := s.Billing.Reserve(
+		ctx,
+		billingJobID,
+		item.OrgID,
+		item.ProductID,
+		item.ActorID,
+		uint64(currentConcurrent+1),
+		executionSourceType,
+		item.AttemptID.String(),
+		0,
+		allocation,
+	)
+	if err != nil {
+		now := time.Now().UTC()
+		_ = s.failWithoutBilling(ctx, item.ExecutionID, item.AttemptID, reserveFailureReason(err), now)
+		if errors.Is(err, billingclient.ErrForbidden) {
+			return billingclient.Reservation{}, ErrQuotaExceeded
+		}
+		return billingclient.Reservation{}, fmt.Errorf("billing reserve: %w", err)
+	}
+
+	traceID := traceIDFromContext(ctx)
+	now := time.Now().UTC()
+	if err := s.markReserved(ctx, item.ExecutionID, item.AttemptID, billingJobID, reservation, traceID, now); err != nil {
+		if voidErr := s.Billing.Void(ctx, reservation); voidErr != nil {
+			s.Logger.ErrorContext(ctx, "billing void after reserve persistence failure", "attempt_id", item.AttemptID, "error", voidErr)
+		}
+		_ = s.failWithoutBilling(ctx, item.ExecutionID, item.AttemptID, "reserve_persist_failed", now)
+		return billingclient.Reservation{}, fmt.Errorf("persist reservation: %w", err)
+	}
+
+	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "billing_job_id", billingJobID, "org_id", item.OrgID, "kind", item.Kind, "window_seq", reservation.WindowSeq, "fm_correlation_id", item.CorrelationID)
+	s.writeSystemLog(ctx, item.ExecutionID, item.AttemptID,
+		"reserved billing window seq=%d seconds=%d pricing_phase=%s kind=%s",
+		reservation.WindowSeq,
+		reservation.WindowSecs,
+		reservation.PricingPhase,
+		item.Kind,
+	)
+	return reservation, nil
+}
+
+func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, reservation billingclient.Reservation) error {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.run",
 		trace.WithAttributes(
 			attribute.String("execution.id", executionID.String()),
 			attribute.String("attempt.id", attemptID.String()),
 			attribute.String("execution.kind", req.Kind),
+			attribute.String("execution.source_kind", SourceKindAPI),
+			attribute.String("execution.workload_kind", req.Kind),
 		))
 	defer span.End()
 
@@ -388,7 +495,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 	launchTime := time.Now()
 	if err := s.markLaunching(ctx, executionID, attemptID, orchestratorRunID, traceID, launchTime.UTC()); err != nil {
 		s.Logger.ErrorContext(ctx, "mark launching", "execution_id", executionID, "attempt_id", attemptID, "error", err)
-		return
+		return fmt.Errorf("mark launching: %w", err)
 	}
 	s.writeSystemLog(ctx, executionID, attemptID, "launching workload kind=%s orchestrator_run_id=%s", req.Kind, orchestratorRunID)
 
@@ -447,7 +554,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 							CompletedAt:   time.Now().UTC(),
 						}
 						_ = s.markFinalizing(ctx, executionID, attemptID, voidFailOutcome)
-						return
+						return nil
 					}
 					s.writeSystemLog(ctx, executionID, attemptID, "billing voided after launch failure window_seq=%d", currentReservation.WindowSeq)
 					if err := s.markWindowVoided(ctx, attemptID, int(currentReservation.WindowSeq), time.Now().UTC()); err != nil {
@@ -462,7 +569,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 					if termErr := s.markTerminal(ctx, executionID, attemptID, terminalOutcome); termErr != nil {
 						s.Logger.ErrorContext(ctx, "mark terminal launch failure", "execution_id", executionID, "attempt_id", attemptID, "error", termErr)
 					}
-					return
+					return nil
 				}
 			}
 
@@ -493,22 +600,22 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				}
 				if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
 					s.Logger.ErrorContext(ctx, "mark terminal without final billing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
-					return
+					return nil
 				}
 				s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
-				return
+				return nil
 			}
 
 			if err := s.markFinalizing(ctx, executionID, attemptID, outcome); err != nil {
 				s.Logger.ErrorContext(ctx, "mark finalizing", "execution_id", executionID, "attempt_id", attemptID, "error", err)
-				return
+				return nil
 			}
 			s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
 
 			actualSeconds := actualSecondsForReservation(currentReservation, outcome.CompletedAt)
 			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualSeconds), usageSummaryForOutcome(outcome)); settleErr != nil {
 				s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, actualSeconds, settleErr, totalChargeUnits)
-				return
+				return nil
 			}
 			windowChargeUnits := chargeUnits(currentReservation.CostPerSec, actualSeconds)
 			totalChargeUnits += windowChargeUnits
@@ -516,17 +623,17 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_quantity=%d charge_units=%d", currentReservation.WindowSeq, actualSeconds, windowChargeUnits)
 			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), actualSeconds, currentReservation.PricingPhase, settledAt); err != nil {
 				s.Logger.ErrorContext(ctx, "mark window settled", "attempt_id", attemptID, "error", err)
-				return
+				return nil
 			}
 
 			if err := s.markTerminal(ctx, executionID, attemptID, outcome); err != nil {
 				s.Logger.ErrorContext(ctx, "mark terminal", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 				s.writeSystemLog(ctx, executionID, attemptID, "terminal persistence deferred after billing settled: %v", err)
-				return
+				return nil
 			}
 
 			s.recordExecutionCompletion(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, totalChargeUnits)
-			return
+			return nil
 		case <-windowAdvanceTimerC:
 			if skipFinalBilling || windowAdvanceUnresolved {
 				continue
@@ -563,6 +670,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				0,
 				currentReservation.SourceType,
 				currentReservation.SourceRef,
+				uint32(currentReservation.WindowSeq)+1,
 				currentReservation.Allocation,
 			)
 			if reserveErr != nil {
@@ -823,6 +931,9 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			e.org_id,
 			e.actor_id,
 			e.kind,
+			e.source_kind,
+			e.workload_kind,
+			e.source_ref,
 			e.provider,
 			e.product_id,
 			e.status,
@@ -848,6 +959,8 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 			COALESCE(a.stdout_bytes, 0),
 			COALESCE(a.stderr_bytes, 0),
 			a.trace_id,
+			a.submit_trace_id,
+			a.submit_trace_context,
 			a.started_at,
 			a.completed_at,
 			a.created_at,
@@ -871,6 +984,9 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&record.OrgID,
 		&record.ActorID,
 		&record.Kind,
+		&record.SourceKind,
+		&record.WorkloadKind,
+		&record.SourceRef,
 		&record.Provider,
 		&record.ProductID,
 		&record.Status,
@@ -896,6 +1012,8 @@ func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uu
 		&attempt.StdoutBytes,
 		&attempt.StderrBytes,
 		&attempt.TraceID,
+		&attempt.SubmitTraceID,
+		&attempt.SubmitTraceContext,
 		&startedAt,
 		&completedAt,
 		&attemptCreatedAt,
@@ -1020,53 +1138,346 @@ func (s *Service) getBillingWindows(ctx context.Context, attemptID uuid.UUID) ([
 	return out, rows.Err()
 }
 
-func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID, correlationID string, now time.Time) error {
-	tx, err := s.PG.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemptID uuid.UUID) (executionWorkItem, error) {
+	row := s.PG.QueryRowContext(ctx, `
+		SELECT
+			e.execution_id,
+			a.attempt_id,
+			e.org_id,
+			e.actor_id,
+			e.kind,
+			e.source_kind,
+			e.workload_kind,
+			e.source_ref,
+			e.provider,
+			e.product_id,
+			COALESCE(e.repo_id::text, ''),
+			e.repo,
+			e.repo_url,
+			e.ref,
+			e.default_branch,
+			e.run_command,
+			e.verification_run_id,
+			e.correlation_id,
+			a.attempt_seq,
+			a.state,
+			a.orchestrator_run_id,
+			a.billing_job_id,
+			a.trace_id,
+			a.submit_trace_id,
+			a.submit_trace_context,
+			w.window_seq,
+			w.billing_window_id,
+			w.reservation_shape,
+			w.reserved_quantity,
+			w.pricing_phase,
+			w.state,
+			w.window_start,
+			w.activated_at,
+			w.reservation_jsonb::text
+		FROM executions e
+		JOIN execution_attempts a ON a.execution_id = e.execution_id
+		LEFT JOIN LATERAL (
+			SELECT window_seq, billing_window_id, reservation_shape, reserved_quantity, pricing_phase, state, window_start, activated_at, reservation_jsonb
+			FROM execution_billing_windows
+			WHERE attempt_id = a.attempt_id
+			ORDER BY window_seq DESC
+			LIMIT 1
+		) w ON true
+		WHERE e.execution_id = $1 AND a.attempt_id = $2
+	`, executionID, attemptID)
+
+	var (
+		item             executionWorkItem
+		windowSeq        sql.NullInt64
+		billingWindowID  sql.NullString
+		reservationShape sql.NullString
+		reservedQuantity sql.NullInt64
+		pricingPhase     sql.NullString
+		windowState      sql.NullString
+		windowStart      sql.NullTime
+		activatedAt      sql.NullTime
+		reservationJSON  sql.NullString
+	)
+	if err := row.Scan(
+		&item.ExecutionID,
+		&item.AttemptID,
+		&item.OrgID,
+		&item.ActorID,
+		&item.Kind,
+		&item.SourceKind,
+		&item.WorkloadKind,
+		&item.SourceRef,
+		&item.Provider,
+		&item.ProductID,
+		&item.RepoID,
+		&item.Repo,
+		&item.RepoURL,
+		&item.Ref,
+		&item.DefaultBranch,
+		&item.RunCommand,
+		&item.VerificationRunID,
+		&item.CorrelationID,
+		&item.AttemptSeq,
+		&item.State,
+		&item.OrchestratorRunID,
+		&item.BillingJobID,
+		&item.TraceID,
+		&item.SubmitTraceID,
+		&item.SubmitTraceContext,
+		&windowSeq,
+		&billingWindowID,
+		&reservationShape,
+		&reservedQuantity,
+		&pricingPhase,
+		&windowState,
+		&windowStart,
+		&activatedAt,
+		&reservationJSON,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return executionWorkItem{}, ErrExecutionMissing
+		}
+		return executionWorkItem{}, fmt.Errorf("load execution work item: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	if windowSeq.Valid {
+		item.Window = &executionBillingWindow{
+			WindowSeq:        int(windowSeq.Int64),
+			BillingWindowID:  billingWindowID.String,
+			ReservationShape: reservationShape.String,
+			ReservedQuantity: int(reservedQuantity.Int64),
+			PricingPhase:     pricingPhase.String,
+			State:            windowState.String,
+			WindowStart:      windowStart.Time,
+			ActivatedAt:      activatedAt,
+			ReservationJSON:  json.RawMessage(reservationJSON.String),
+		}
+	}
+	return item, nil
+}
+
+func (item executionWorkItem) submitRequest() SubmitRequest {
+	return SubmitRequest{
+		Kind:          item.Kind,
+		ProductID:     item.ProductID,
+		Provider:      item.Provider,
+		RepoID:        item.RepoID,
+		Repo:          item.Repo,
+		RepoURL:       item.RepoURL,
+		Ref:           item.Ref,
+		DefaultBranch: item.DefaultBranch,
+		RunCommand:    item.RunCommand,
+	}
+}
+
+func (window executionBillingWindow) reservation(attemptID uuid.UUID) (billingclient.Reservation, error) {
+	var reservation billingclient.Reservation
+	if len(window.ReservationJSON) == 0 || string(window.ReservationJSON) == "{}" {
+		return billingclient.Reservation{}, fmt.Errorf("reserved attempt %s window_seq=%d is missing billing reservation payload", attemptID, window.WindowSeq)
+	}
+	if err := json.Unmarshal(window.ReservationJSON, &reservation); err != nil {
+		return billingclient.Reservation{}, fmt.Errorf("decode billing reservation payload for attempt %s window_seq=%d: %w", attemptID, window.WindowSeq, err)
+	}
+	if strings.TrimSpace(reservation.WindowId) == "" {
+		return billingclient.Reservation{}, fmt.Errorf("billing reservation payload for attempt %s window_seq=%d is missing window id", attemptID, window.WindowSeq)
+	}
+	if reservation.SourceType == "" {
+		reservation.SourceType = executionSourceType
+	}
+	if reservation.SourceRef == "" {
+		reservation.SourceRef = attemptID.String()
+	}
+	if reservation.WindowSeq == 0 && window.WindowSeq != 0 {
+		reservation.WindowSeq = int32(window.WindowSeq)
+	}
+	if reservation.ReservationShape == "" {
+		reservation.ReservationShape = window.ReservationShape
+	}
+	if reservation.WindowSecs == 0 {
+		reservation.WindowSecs = int32(window.ReservedQuantity)
+	}
+	if reservation.PricingPhase == "" {
+		reservation.PricingPhase = window.PricingPhase
+	}
+	if reservation.WindowStart.IsZero() {
+		reservation.WindowStart = window.WindowStart.UTC()
+	}
+	if reservation.ActivatedAt == nil && window.ActivatedAt.Valid {
+		value := window.ActivatedAt.Time.UTC()
+		reservation.ActivatedAt = &value
+	}
+	return reservation, nil
+}
+
+func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID, traceParent, correlationID, verificationRunID string, now time.Time) (scheduler.ExecutionAdvanceResult, error) {
+	if s.PGX == nil {
+		return scheduler.ExecutionAdvanceResult{}, fmt.Errorf("pgx pool is required for transactional execution enqueue")
+	}
+	tx, err := s.PGX.Begin(ctx)
+	if err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var repoID any
 	if strings.TrimSpace(req.RepoID) != "" {
 		parsedRepoID, err := uuid.Parse(strings.TrimSpace(req.RepoID))
 		if err != nil {
-			return fmt.Errorf("parse repo_id: %w", err)
+			return scheduler.ExecutionAdvanceResult{}, fmt.Errorf("parse repo_id: %w", err)
 		}
 		repoID = parsedRepoID
 	}
-	if _, err := tx.ExecContext(ctx, `
+	sourceKind := SourceKindAPI
+	workloadKind := req.Kind
+	sourceRef := ""
+
+	if _, err := tx.Exec(ctx, `
 			INSERT INTO executions (
-				execution_id, org_id, actor_id, kind, provider, product_id, status, correlation_id,
+				execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref, provider,
+				product_id, status, correlation_id, verification_run_id,
 				idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
 				latest_attempt_id, created_at, updated_at
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8,
-				NULLIF($9, ''), $10, $11, $12, $13, $14, $15,
-				$16, $17, $17
+				$9, $10, $11, $12,
+				NULLIF($13, ''), $14, $15, $16, $17, $18, $19,
+				$20, $21, $21
 			)
-		`, executionID, int64(orgID), actorID, req.Kind, req.Provider, req.ProductID, StateQueued, correlationID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, attemptID, now); err != nil {
-		return err
+		`, executionID, int64(orgID), actorID, req.Kind, sourceKind, workloadKind, sourceRef, req.Provider, req.ProductID, StateQueued, correlationID, verificationRunID, req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand, attemptID, now); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO execution_attempts (
-			attempt_id, execution_id, attempt_seq, state, trace_id, created_at, updated_at
-		) VALUES ($1, $2, 1, $3, $4, $5, $5)
-	`, attemptID, executionID, StateQueued, traceID, now); err != nil {
-		return err
+			attempt_id, execution_id, attempt_seq, state, trace_id, submit_trace_id, submit_trace_context, created_at, updated_at
+		) VALUES ($1, $2, 1, $3, $4, $4, $5, $6, $6)
+	`, attemptID, executionID, StateQueued, traceID, traceParent, now); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
 	}
 
-	return tx.Commit()
+	specJSON, err := json.Marshal(map[string]any{
+		"kind":           req.Kind,
+		"provider":       req.Provider,
+		"product_id":     req.ProductID,
+		"repo_id":        req.RepoID,
+		"repo":           req.Repo,
+		"repo_url":       req.RepoURL,
+		"ref":            req.Ref,
+		"default_branch": req.DefaultBranch,
+		"run_command":    req.RunCommand,
+	})
+	if err != nil {
+		return scheduler.ExecutionAdvanceResult{}, fmt.Errorf("marshal workload spec: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO execution_workload_specs (
+			execution_id, workload_kind, spec_jsonb, secret_refs_jsonb, created_at
+		) VALUES ($1, $2, $3::jsonb, '{}'::jsonb, $4)
+	`, executionID, workloadKind, string(specJSON), now); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+
+	if err := appendExecutionEventPGX(ctx, tx, executionID, attemptID, "", StateQueued, "submit", traceID, now); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+
+	job, err := s.Scheduler.EnqueueExecutionAdvanceTx(ctx, tx, scheduler.ExecutionAdvanceRequest{
+		ExecutionID:       executionID.String(),
+		AttemptID:         attemptID.String(),
+		OrgID:             orgID,
+		ActorID:           actorID,
+		VerificationRunID: verificationRunID,
+		CorrelationID:     correlationID,
+		TraceParent:       traceParent,
+	})
+	if err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return scheduler.ExecutionAdvanceResult{}, err
+	}
+	return job, nil
+}
+
+func appendExecutionEventPGX(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, fromState, toState, reason, traceID string, createdAt time.Time) error {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.transition",
+		trace.WithAttributes(
+			attribute.String("execution.id", executionID.String()),
+			attribute.String("attempt.id", attemptID.String()),
+			attribute.String("execution.from_state", strings.TrimSpace(fromState)),
+			attribute.String("execution.to_state", strings.TrimSpace(toState)),
+			attribute.String("execution.transition.reason", strings.TrimSpace(reason)),
+		))
+	defer span.End()
+	_, err := tx.Exec(ctx, `
+		INSERT INTO execution_events (
+			execution_id, attempt_id, event_seq, from_state, to_state, reason, trace_id, created_at
+		)
+		SELECT $1, $2, COALESCE(max(event_seq), 0) + 1, $3, $4, $5, $6, $7
+		FROM execution_events
+		WHERE attempt_id = $2
+	`, executionID, attemptID, strings.TrimSpace(fromState), strings.TrimSpace(toState), strings.TrimSpace(reason), traceID, createdAt)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (s *Service) lockAttemptState(ctx context.Context, tx *sql.Tx, attemptID uuid.UUID) (string, error) {
+	var state string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state
+		FROM execution_attempts
+		WHERE attempt_id = $1
+		FOR UPDATE
+	`, attemptID).Scan(&state); err != nil {
+		return "", err
+	}
+	return state, nil
+}
+
+func (s *Service) appendExecutionEvent(ctx context.Context, tx *sql.Tx, executionID, attemptID uuid.UUID, fromState, toState, reason string, createdAt time.Time) error {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.transition",
+		trace.WithAttributes(
+			attribute.String("execution.id", executionID.String()),
+			attribute.String("attempt.id", attemptID.String()),
+			attribute.String("execution.from_state", strings.TrimSpace(fromState)),
+			attribute.String("execution.to_state", strings.TrimSpace(toState)),
+			attribute.String("execution.transition.reason", strings.TrimSpace(reason)),
+		))
+	defer span.End()
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO execution_events (
+			execution_id, attempt_id, event_seq, from_state, to_state, reason, trace_id, created_at
+		)
+		SELECT $1, $2, COALESCE(max(event_seq), 0) + 1, $3, $4, $5, $6, $7
+		FROM execution_events
+		WHERE attempt_id = $2
+	`, executionID, attemptID, strings.TrimSpace(fromState), strings.TrimSpace(toState), strings.TrimSpace(reason), traceIDFromContext(ctx), createdAt)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
 }
 
 func (s *Service) markReserved(ctx context.Context, executionID, attemptID uuid.UUID, billingJobID int64, reservation billingclient.Reservation, traceID string, now time.Time) error {
+	reservationJSON, err := json.Marshal(reservation)
+	if err != nil {
+		return fmt.Errorf("marshal billing reservation: %w", err)
+	}
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2, billing_job_id = $3, trace_id = $4, updated_at = $5
@@ -1077,9 +1488,9 @@ func (s *Service) markReserved(ctx context.Context, executionID, attemptID uuid.
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_billing_windows (
 			attempt_id, billing_window_id, window_seq, reservation_shape,
-			reserved_quantity, pricing_phase, state, window_start, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, 'reserved', $7, $8)
-	`, attemptID, reservation.WindowId, reservation.WindowSeq, reservation.ReservationShape, reservation.WindowSecs, reservation.PricingPhase, reservation.WindowStart, now); err != nil {
+			reserved_quantity, pricing_phase, reservation_jsonb, state, window_start, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'reserved', $8, $9)
+	`, attemptID, reservation.WindowId, reservation.WindowSeq, reservation.ReservationShape, reservation.WindowSecs, reservation.PricingPhase, string(reservationJSON), reservation.WindowStart, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1089,10 +1500,17 @@ func (s *Service) markReserved(ctx context.Context, executionID, attemptID uuid.
 	`, executionID, StateReserved, now); err != nil {
 		return err
 	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateReserved, "billing_reserved", now); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
 func (s *Service) markNextWindowReserved(ctx context.Context, attemptID uuid.UUID, next billingclient.Reservation, reservedAt time.Time) error {
+	reservationJSON, err := json.Marshal(next)
+	if err != nil {
+		return fmt.Errorf("marshal next billing reservation: %w", err)
+	}
 	tx, err := s.PG.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1102,9 +1520,9 @@ func (s *Service) markNextWindowReserved(ctx context.Context, attemptID uuid.UUI
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO execution_billing_windows (
 			attempt_id, billing_window_id, window_seq, reservation_shape,
-			reserved_quantity, pricing_phase, state, window_start, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, 'reserved', $7, $8)
-	`, attemptID, next.WindowId, next.WindowSeq, next.ReservationShape, next.WindowSecs, next.PricingPhase, next.WindowStart, reservedAt); err != nil {
+			reserved_quantity, pricing_phase, reservation_jsonb, state, window_start, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'reserved', $8, $9)
+	`, attemptID, next.WindowId, next.WindowSeq, next.ReservationShape, next.WindowSecs, next.PricingPhase, string(reservationJSON), next.WindowStart, reservedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1124,6 +1542,10 @@ func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2, orchestrator_run_id = $3, trace_id = $4, updated_at = $5
@@ -1138,6 +1560,9 @@ func (s *Service) markLaunching(ctx context.Context, executionID, attemptID uuid
 	`, executionID, StateLaunching, now); err != nil {
 		return err
 	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateLaunching, "orchestrator_launching", now); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1148,6 +1573,10 @@ func (s *Service) markRunning(ctx context.Context, executionID, attemptID uuid.U
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2, started_at = $3, updated_at = $3
@@ -1162,6 +1591,9 @@ func (s *Service) markRunning(ctx context.Context, executionID, attemptID uuid.U
 	`, executionID, StateRunning, startedAt); err != nil {
 		return err
 	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateRunning, "billable_phase_started", startedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1172,6 +1604,10 @@ func (s *Service) markFinalizing(ctx context.Context, executionID, attemptID uui
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2,
@@ -1196,6 +1632,9 @@ func (s *Service) markFinalizing(ctx context.Context, executionID, attemptID uui
 		`, executionID, StateFinalizing, outcome.CompletedAt); err != nil {
 		return err
 	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateFinalizing, "workload_completed", outcome.CompletedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1206,6 +1645,10 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2,
@@ -1228,6 +1671,9 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 			    updated_at = $3
 			WHERE execution_id = $1
 		`, executionID, outcome.State, outcome.CompletedAt); err != nil {
+		return err
+	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, outcome.State, "terminal", outcome.CompletedAt); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1267,6 +1713,10 @@ func (s *Service) failWithoutBilling(ctx context.Context, executionID, attemptID
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	fromState, err := s.lockAttemptState(ctx, tx, attemptID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE execution_attempts
 		SET state = $2, failure_reason = $3, completed_at = $4, updated_at = $4
@@ -1279,6 +1729,9 @@ func (s *Service) failWithoutBilling(ctx context.Context, executionID, attemptID
 		SET status = $2, updated_at = $3
 		WHERE execution_id = $1
 	`, executionID, StateFailed, completedAt); err != nil {
+		return err
+	}
+	if err := s.appendExecutionEvent(ctx, tx, executionID, attemptID, fromState, StateFailed, reason, completedAt); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -1407,6 +1860,15 @@ func (s *Service) recordExecutionCompletion(
 	outcome executionOutcome,
 	charge uint64,
 ) {
+	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.finalize",
+		trace.WithAttributes(
+			attribute.String("execution.id", executionID.String()),
+			attribute.String("attempt.id", attemptID.String()),
+			attribute.String("execution.state", outcome.State),
+			attribute.Int("execution.exit_code", outcome.ExitCode),
+		))
+	defer span.End()
+
 	if strings.TrimSpace(outcome.Logs) != "" {
 		s.writeLogChunks(ctx, executionID, attemptID, outcome.Logs, outcome.StartedAt)
 	}
@@ -1417,6 +1879,10 @@ func (s *Service) recordExecutionCompletion(
 		OrgID:             orgID,
 		ActorID:           actorID,
 		Kind:              req.Kind,
+		SourceKind:        SourceKindAPI,
+		WorkloadKind:      req.Kind,
+		ExternalProvider:  "",
+		ExternalTaskID:    "",
 		Provider:          req.Provider,
 		ProductID:         req.ProductID,
 		RepoID:            req.RepoID,
@@ -1599,6 +2065,14 @@ func traceIDFromContext(ctx context.Context) string {
 		return sc.TraceID().String()
 	}
 	return ""
+}
+
+func traceParentFromContext(ctx context.Context) string {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return ""
+	}
+	return fmt.Sprintf("00-%s-%s-%02x", sc.TraceID().String(), sc.SpanID().String(), byte(sc.TraceFlags()))
 }
 
 func firstNonEmpty(values ...string) string {

@@ -571,7 +571,7 @@ func submitExecution(svc *jobs.Service) func(context.Context, *SubmitExecutionIn
 		out.Body = apiwire.SandboxSubmitExecutionResult{
 			ExecutionID: executionID.String(),
 			AttemptID:   attemptID.String(),
-			Status:      jobs.StateReserved,
+			Status:      jobs.StateQueued,
 		}
 		return out, nil
 	}
