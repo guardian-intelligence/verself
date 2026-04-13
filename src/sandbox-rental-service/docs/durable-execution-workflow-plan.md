@@ -240,7 +240,7 @@ execution contract:
 
 - `source_kind`: `api`, `forgejo_actions`, `github_actions`, `cron`, `canary`,
   `vm_session`.
-- `workload_kind`: `direct`, `forgejo_workflow`, `github_workflow`,
+- `workload_kind`: `direct`, `forgejo_workflow`, `github_runner`,
   `vm_session`, or future explicit variants.
 - external identity fields: provider task/run/job IDs, repo, ref, SHA, runner
   label, request key/idempotency key, and log ack cursor.
@@ -297,7 +297,7 @@ scheduler.
 | 2 | Direct execution queued through River | `POST /api/v1/executions` transactionally writes execution + attempt + event + River job; worker calls vm-orchestrator and reaches terminal state with no request goroutine |
 | 3 | Reconciliation and capacity leases | Crash/restart and injected dependency faults reconcile; VM/runner/schedule capacity is enforced by service-owned PG leases |
 | 4 | Recurring schedules and VM sessions | Due cron occurrence and VM session renewal/expiry materialize through the same control-plane state machine |
-| 5 | Forgejo workflow workload | Forgejo `act` tracer is queued through River and executed by vm-orchestrator/Firecracker with live ClickHouse proof, without Forgejo runner protocol yet |
+| 5 | Forgejo workflow workload | Forgejo runner `exec` tracer is queued through River and executed by vm-orchestrator/Firecracker with live ClickHouse proof, without Forgejo runner protocol yet |
 | 6 | Forgejo runner adapter | Register/declare/fetch/log/finalize/cancel protocol attaches to the shared queue/scheduler runtime and drives a real Forgejo Actions job |
 | 7 | GitHub runner adapter | GitHub workflow-job/JIT runner integration uses the same queue/scheduler model and does not introduce a second CI scheduler |
 | 8 | Product read contract | Execution, event, log, schedule, runner, and session lists are cursor-paginated and observable |
@@ -825,7 +825,7 @@ Primary anchors:
 
 - In-repo: `forgejo-runner-phase-0.md`, `vm-execution-control-plane.md`,
   `firecracker-vm-networking.md`, `wire-contracts.md`.
-- Primary sources: Forgejo `act` fork, Forgejo runner source/protocol,
+- Primary sources: Forgejo runner source/protocol, Forgejo `act` fork,
   River transactional enqueueing.
 
 ### Verification Gate (Declared First)
@@ -834,15 +834,16 @@ Fail-first protocol:
 
 1. Submit a synthetic `forgejo_workflow` execution through the River-backed
    admission helper.
-2. Confirm baseline fails because no Forgejo workflow workload kind, no
-   Forgejo `act` integration, and no `vm-bridge.workflow_runner.*` spans exist.
+2. Confirm baseline fails because no Forgejo workflow workload kind, no pinned
+   Forgejo runner in the guest rootfs, and no runner-class projection exist.
 
 Green protocol:
 
 1. Workflow spec is admitted as `source_kind='forgejo_actions'` and
    `workload_kind='forgejo_workflow'`.
-2. Forgejo `act` library executes in Firecracker via the existing
-   vm-orchestrator/vm-bridge protocol.
+2. Forgejo runner `exec` executes in Firecracker via the existing
+   vm-orchestrator/vm-bridge protocol. Forgejo runner is the supported CLI
+   surface around the library-only Forgejo `act` fork.
 3. Workflow includes `actions/checkout@v4`, one Node-backed step, and marker
    `phase-0-forgejo-act`.
 4. Billing settles and ClickHouse row/span proof is reproduced after
@@ -852,16 +853,18 @@ Green protocol:
 
 - Add `forgejo_workflow` workload spec validation.
 - Add vmproto/vm-orchestrator fields needed to pass workflow spec into the VM.
-- Add `vm-bridge` workflow runner using the Forgejo `act` library pin recorded
+- Add `vm-bridge` workflow runner using the pinned Forgejo runner CLI recorded
   in `forgejo-runner-phase-0.md`.
 - Preserve the existing host service/vsock protocol; no new host service.
 
 ### Expected Database Changes
 
-- `execution_workload_specs` stores workflow spec metadata and secret refs.
+- `execution_workload_specs` stores workflow spec metadata and
+  `execution_workload_secrets` stores encrypted provider/workflow secrets.
 - `forge_metal.job_events` rows are populated with:
   - `source_kind='forgejo_actions'`
   - `workload_kind='forgejo_workflow'`
+  - `runner_class='metal-4vcpu-ubuntu-2404'`
   - `exit_code=0`
 - `forge_metal.job_logs` includes `phase-0-forgejo-act`.
 
@@ -870,7 +873,7 @@ Green protocol:
 PostgreSQL:
 
 ```sql
-SELECT e.source_kind, e.workload_kind, a.state
+SELECT e.source_kind, e.workload_kind, e.runner_class, a.state
 FROM executions e
 JOIN execution_attempts a ON a.attempt_id = e.latest_attempt_id
 WHERE e.execution_id = $1;
@@ -884,6 +887,7 @@ FROM forge_metal.job_events
 WHERE execution_id = $1
   AND source_kind = 'forgejo_actions'
   AND workload_kind = 'forgejo_workflow'
+  AND runner_class = 'metal-4vcpu-ubuntu-2404'
   AND status = 'succeeded'
   AND exit_code = 0;
 ```
@@ -900,12 +904,13 @@ Required trace order:
 1. `sandbox-rental.execution.submit`
 2. `river.insert_many`
 3. `river.work/execution.advance`
-4. `vm-orchestrator.EnsureRun`
-5. `vm-orchestrator.WaitRun`
-6. `vm-bridge.run_phase`
-7. `vm-bridge.workflow_runner.act_prepare`
-8. `vm-bridge.workflow_runner.act_execute`
-9. `sandbox-rental.execution.finalize`
+4. `sandbox-rental.runner_class.resolve`
+5. `vm-orchestrator.EnsureRun`
+6. `vmorchestrator.guest.run_request`
+7. `vmorchestrator.guest.phase_start`
+8. `vmorchestrator.guest.phase_end`
+9. `vm-orchestrator.WaitRun`
+10. `sandbox-rental.execution.finalize`
 
 ## Phase 6: Forgejo Runner Adapter
 
@@ -921,7 +926,7 @@ Primary anchors:
 Fail-first protocol:
 
 1. Enable Forgejo Actions in the local Forgejo deployment and push a workflow
-   targeting `forge-metal-2vcpu-4gb`.
+   targeting `metal-4vcpu-ubuntu-2404`.
 2. Confirm baseline has no runner registration/declare/fetch/log/finalize
    spans and Forgejo leaves the task queued.
 
@@ -930,7 +935,8 @@ Green protocol:
 1. `sandbox-rental-service` registers once and persists runner UUID + secret.
 2. `Declare` keeps the runner online across service restart.
 3. `runner.forgejo.fetch` long-polls only when capacity is available.
-4. Accepted task creates a normal execution through the Phase 2 admission path.
+4. Accepted task creates a normal `forgejo_workflow` execution through the
+   shared admission path.
 5. Live logs reach Forgejo through `runner.forgejo.update_log` with persisted ack
    cursor.
 6. Final task state is posted through `runner.forgejo.update_task`.
@@ -986,7 +992,7 @@ Required trace order:
 3. `river.work/runner.forgejo.fetch`
 4. `sandbox-rental.forgejo_runner.task_to_execution`
 5. `river.work/execution.advance`
-6. `vm-bridge.workflow_runner.act_execute`
+6. `vmorchestrator.guest.phase_end`
 7. `river.work/runner.forgejo.update_log`
 8. `river.work/runner.forgejo.update_task`
 
@@ -1011,20 +1017,26 @@ Fail-first protocol:
 
 Green protocol:
 
-1. `workflow_job` queued webhook is accepted, verified, and mapped to a runner
-   lease.
-2. GitHub JIT/ephemeral runner registration is created through official GitHub
-   APIs, or the phase is blocked with an explicit protocol finding if GitHub's
-   current runner model cannot be implemented without their runner binary.
-3. GitHub job work uses the same execution/capacity/billing/log model as
-   Forgejo.
-4. Completion/cancellation updates release the runner lease and settle billing.
+1. `workflow_job` queued webhook is accepted, signature-verified, and mapped to
+   a GitHub App installation created through the authenticated connect flow.
+2. GitHub JIT/ephemeral runner configuration is created through the official
+   GitHub REST API and submitted as `workload_kind='github_runner'`.
+3. The Firecracker guest runs the official GitHub Actions runner with the JIT
+   config on the same execution/capacity/billing/log model as direct and Forgejo
+   workloads.
+4. Completion/cancellation updates the GitHub workflow-job mapping and settles
+   billing through the shared execution state machine.
 
 ### Implementation Slice
 
-- Add GitHub provider tables and webhook verification.
-- Add `runner.github.provision`, `runner.github.finalize`, and
-  `runner.github.cleanup` workers.
+- Add the GitHub App installation connect flow, provider tables, and webhook
+  verification. Do not accept typed installation IDs from the product API; the
+  callback must prove the installation through GitHub's user-scoped setup flow
+  before it is mapped to a Forge Metal org.
+- Create JIT config synchronously in the signed webhook ingestion path, then
+  rely on the shared `execution.advance` River worker for VM execution. Add
+  dedicated GitHub workers later only if provider retries need independent
+  durability from execution submission.
 - Reuse `execution.advance`, `execution.cancel`, capacity leases, and log
   forwarding.
 - Do not model GitHub as a Forgejo-style `FetchTask`; GitHub's public surface is
@@ -1033,9 +1045,11 @@ Green protocol:
 
 ### Expected Database Changes
 
-- `github_runner_registrations`.
+- `github_app_installations`.
 - `github_workflow_job_executions`.
 - `forge_metal.job_events.external_provider='github'`.
+- `forge_metal.job_events.workload_kind='github_runner'`.
+- `forge_metal.job_events.runner_class='metal-4vcpu-ubuntu-2404'`.
 - No second scheduler table outside the shared execution/capacity model.
 
 ### Required E2E + Evidence Assertions
@@ -1043,7 +1057,7 @@ Green protocol:
 PostgreSQL:
 
 ```sql
-SELECT github_job_id, execution_id, state, finalized_at
+SELECT github_job_id, execution_id, state, submitted_at, finalized_at
 FROM github_workflow_job_executions
 WHERE github_job_id = $1;
 ```
@@ -1055,18 +1069,25 @@ SELECT Timestamp, SpanName, SpanAttributes['external.provider'] AS provider
 FROM default.otel_traces
 WHERE ServiceName = 'sandbox-rental-service'
   AND Timestamp BETWEEN parseDateTime64BestEffort($1) AND parseDateTime64BestEffort($2)
-  AND SpanAttributes['external.provider'] = 'github'
+  AND (
+    SpanAttributes['external.provider'] = 'github'
+    OR SpanAttributes['github.runner_class'] = 'metal-4vcpu-ubuntu-2404'
+    OR SpanAttributes['execution.workload_kind'] = 'github_runner'
+  )
 ORDER BY Timestamp;
 ```
 
 Required trace order:
 
 1. `sandbox-rental.github_runner.workflow_job`
-2. `river.work/runner.github.provision`
-3. `sandbox-rental.github_runner.create_jit_config`
-4. `river.work/execution.advance`
-5. `river.work/runner.github.finalize`
-6. `river.work/runner.github.cleanup`
+2. `sandbox-rental.github_runner.create_jit_config`
+3. `sandbox-rental.execution.submit`
+4. `river.insert_many`
+5. `river.work/execution.advance`
+6. `vm-orchestrator.EnsureRun`
+7. `vmorchestrator.guest.phase_start`
+8. `vmorchestrator.guest.phase_end`
+9. `sandbox-rental.execution.finalize`
 
 ## Phase 8: Product Read Contract
 
