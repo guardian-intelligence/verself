@@ -209,6 +209,6 @@ func assertTimeEqual(t *testing.T, value *time.Time, expected time.Time, label s
 		t.Fatalf("%s is not present", label)
 	}
 	if !value.Equal(expected) {
-		t.Fatalf("%s: got %s, want %s", label, value.Format(time.RFC3339), expected.Format(time.RFC3339))
+		t.Fatalf("%s: got %s, want %s", label, value.Format(time.RFC3339Nano), expected.Format(time.RFC3339Nano))
 	}
 }
