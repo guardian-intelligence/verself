@@ -6,7 +6,10 @@ Last Updated: 2026-04-13
 
 ## Scope
 
-Phase 0 exists to close the runner-engine decision before adding River-backed scheduling or the Forgejo runner north face. It proves that a Forgejo Actions task can be reduced to a deterministic workflow run using the Forgejo `act` fork and the existing Firecracker substrate.
+Phase 0 exists to close the runner-engine decision before adding River-backed
+queueing/scheduling or the Forgejo runner north face. It proves that a Forgejo
+Actions task can be reduced to a deterministic workflow run using the Forgejo
+`act` fork and the existing vm-orchestrator/Firecracker execution path.
 
 Phase 0 does not implement runner registration, `FetchTask`, live `UpdateLog`, customer-facing workflow submissions, per-org runners, cache, artifacts, or River. River is the next cutover after this tracer bullet is green.
 
@@ -16,7 +19,10 @@ Phase 0 does not implement runner registration, `FetchTask`, live `UpdateLog`, c
 - Treat the current tag `v1.37.0` as the Phase 0 pin candidate. It resolves to git hash `a48f2a44d9275a2edcef5e1df6b0a5ebca0d61dc` from `https://code.forgejo.org/forgejo/act.git`.
 - The fork currently declares `module github.com/nektos/act`. Go code should import `github.com/nektos/act/...` and use a module `replace` to `code.forgejo.org/forgejo/act v1.37.0` unless the fork changes its module path before implementation.
 - Do not import `code.forgejo.org/forgejo/runner/v12` or its vendored `act` tree into Forge Metal code. Use Forgejo runner as a protocol and behavior reference; use the MIT-licensed Forgejo `act` fork as the engine dependency.
-- Do not add a separate scheduler path for runner work before River. The tracer bullet may use a direct harness path, but the production runner path must queue through the River-backed execution state machine described in `durable-execution-workflow-plan.md`.
+- Do not add a separate scheduler path for runner work before River. The tracer
+  bullet may use a direct harness path, but the production runner path must
+  queue through River and advance the Postgres execution state machine described
+  in `durable-execution-workflow-plan.md`.
 - Correct the plan against current repo state: sandbox PostgreSQL migrations live in `src/sandbox-rental-service/migrations/`; ClickHouse job evidence tables live in `src/platform/migrations/`; `job_logs` uses `chunk` and `created_at`; billing windows use `actual_quantity`; Forgejo Actions are currently disabled in the Forgejo Ansible template; `.forgejo/workflows/ci.yml` already exists as a tracer workflow.
 
 ## Phase 0 Closure Definition
@@ -68,7 +74,8 @@ The fork is library-only, so baking an `act` binary into the rootfs is not a val
 
 ### 4. VM Tracer Bullet
 
-Add a private verification path that submits one synthetic Forgejo-task-shaped workflow through the existing direct execution substrate. The workflow:
+Add a private verification path that submits one synthetic Forgejo-task-shaped
+workflow through the existing direct execution control-plane path. The workflow:
 
 ```yaml
 name: phase-0-forgejo-act
@@ -140,11 +147,12 @@ After Phase 0 is green, stand up River in `sandbox-rental-service` before runner
 5. Register the queue taxonomy from `durable-execution-workflow-plan.md` even
    if only `execution.advance` is active at first, so Forgejo/GitHub runner
    adapters, VM session renewal, and recurring schedule materialization attach
-   to the same substrate.
-6. Re-run the Phase 0 tracer through the River worker instead of the private
-   direct harness.
+   to the same queue/scheduler runtime.
+6. Re-run the Phase 0 tracer queued through River instead of the private direct
+   harness.
 
-Only after the same tracer produces identical ClickHouse evidence through River should Phase A resume.
+Only after the same tracer produces identical ClickHouse evidence when queued
+through River should Phase A resume.
 
 ## Primary Sources
 

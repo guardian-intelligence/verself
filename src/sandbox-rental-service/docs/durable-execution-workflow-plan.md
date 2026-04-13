@@ -11,9 +11,10 @@ Last Updated: 2026-04-13
 - Add queue/backpressure controls independent of HTTP rate limiting.
 - Add first-class reconciliation for every nonterminal execution state.
 - Make pagination a service invariant for execution and evidence surfaces.
-- Make River the shared durable scheduler substrate for every execution producer:
-  direct API submissions, Forgejo/GitHub runner adapters, long-running VM
-  sessions, recurring schedules, and infrastructure canaries.
+- Make River the shared durable queue/scheduler runtime inside
+  `sandbox-rental-service` for every control-plane producer: direct API
+  submissions, Forgejo/GitHub runner adapters, long-running VM sessions,
+  recurring schedules, and infrastructure canaries.
 - Define the scheduler/queue taxonomy before rewriting code so runner dispatch,
   VM lifecycle supervision, and cron materialization share one execution state
   machine instead of growing separate schedulers.
@@ -29,7 +30,7 @@ Last Updated: 2026-04-13
 - Per-org runner pools, autoscaling across multiple hosts, cache/artifact
   protocols, and multi-tenant runner management UI. This plan includes the
   first single-runner Forgejo adapter and the future GitHub adapter attachment
-  point because those decisions affect the scheduler kernel.
+  point because those decisions affect the queue/scheduler model.
 - Changing the `execution_submit=120/min` per-API rate-limit policy.
 - Treating billing `402` reserve denial as an exception instead of terminal business outcome.
 
@@ -86,10 +87,14 @@ Each phase is a deployable vertical slice and must satisfy all of the following 
 
 Proof source of truth is ClickHouse traces/logs/events, not unit tests alone.
 
-## Scheduler Substrate Requirements
+## Scheduler Runtime Requirements
 
-River is the queue mechanic, not the domain scheduler. The durable truth remains
-in service-owned PostgreSQL tables:
+River is the queue/scheduler runtime for sandbox-rental-service control-plane
+work. It is not the VM execution substrate. vm-orchestrator remains the only
+privileged VM/ZFS/Firecracker execution boundary; River workers call
+vm-orchestrator when a durable control-plane transition needs VM work.
+
+The durable truth remains in service-owned PostgreSQL tables:
 
 - `executions`, `execution_attempts`, and `execution_events` own one-shot
   execution lifecycle state for direct commands, Forgejo/GitHub CI jobs,
@@ -100,8 +105,8 @@ in service-owned PostgreSQL tables:
   Forge Metal execution IDs.
 - Schedule definition tables own recurring customer cron semantics: schedule
   expression, timezone, next fire time, misfire policy, overlap policy, pause
-  state, and policy/billing owner. River only runs the scanner/materializer and
-  the resulting execution jobs.
+  state, and policy/billing owner. River only queues and runs the scanner,
+  materializer, and follow-on control-plane workers.
 - Capacity/lease tables own host/resource concurrency. River worker concurrency
   protects a single process; it is not the global source of truth for VM slots,
   org quotas, runner labels, or future multi-node pools.
@@ -162,9 +167,9 @@ Initial job kinds:
   window expired.
 
 The taxonomy intentionally makes external queues thin adapters. Forgejo and
-GitHub own CI task availability; River owns durable local work and recovery once
-we decide to accept a task. Customer-visible execution state is always projected
-from Forge Metal execution tables.
+GitHub own CI task availability; River owns durable local control-plane work and
+recovery once we decide to accept a task. Customer-visible execution state is
+always projected from Forge Metal execution tables.
 
 ## Capacity Model
 
@@ -249,8 +254,8 @@ eventual GitHub runner a protocol adapter instead of a second scheduler.
 
 ## Handoff Implementation Sequence
 
-The first River code cut should be a substrate cut, not a partial lifecycle
-rewrite:
+The first River code cut should be a queue-runtime cut, not a partial VM
+execution rewrite:
 
 1. Add `pgxpool`, `riverpgxv5`, and `otelriver` dependencies; keep the existing
    `database/sql` path alive only for code not yet owned by the scheduler cut.
@@ -268,7 +273,8 @@ rewrite:
    inspecting stored state before attempting side effects.
 6. Re-run the Forgejo `act` Phase 0 tracer through `execution.advance` before
    adding Forgejo `Register`/`Declare`/`FetchTask`. If the tracer cannot produce
-   the same ClickHouse evidence through River, runner integration stays blocked.
+   the same ClickHouse evidence when queued through River, runner integration
+   stays blocked.
 
 Do not use the River `database/sql` driver as a temporary production bridge. It
 would make the first cut easier, but it bakes in polling behavior and leaves the
@@ -280,13 +286,13 @@ scheduler.
 | Phase | Vertical Slice | Must-Pass Gate Summary |
 |---|---|---|
 | 0 | Baseline proof and guardrails | Existing direct execution path survives burst/fault rehearsal without `500`, PG slot exhaustion, or stale nonterminal attempts |
-| 1 | River substrate online | `riverpgxv5` client, River schema, queue taxonomy, and OTel middleware are deployed and proven by a real River probe job |
-| 2 | Direct execution on River | `POST /api/v1/executions` transactionally writes execution + attempt + event + River job; worker reaches terminal state with no request goroutine |
+| 1 | River queue runtime online | `riverpgxv5` client, River schema, queue taxonomy, and OTel middleware are deployed and proven by a real River probe job |
+| 2 | Direct execution queued through River | `POST /api/v1/executions` transactionally writes execution + attempt + event + River job; worker calls vm-orchestrator and reaches terminal state with no request goroutine |
 | 3 | Reconciliation and capacity leases | Crash/restart and injected dependency faults reconcile; VM/runner/schedule capacity is enforced by service-owned PG leases |
-| 4 | Recurring schedules and VM sessions | Due cron occurrence and VM session renewal/expiry materialize through the same execution kernel |
-| 5 | Forgejo workflow workload | Forgejo `act` tracer runs through River and Firecracker with live ClickHouse proof, without Forgejo runner protocol yet |
-| 6 | Forgejo runner adapter | Register/declare/fetch/log/finalize/cancel protocol attaches to the shared scheduler and drives a real Forgejo Actions job |
-| 7 | GitHub runner adapter | GitHub workflow-job/JIT runner integration uses the same scheduler kernel and does not introduce a second CI scheduler |
+| 4 | Recurring schedules and VM sessions | Due cron occurrence and VM session renewal/expiry materialize through the same control-plane state machine |
+| 5 | Forgejo workflow workload | Forgejo `act` tracer is queued through River and executed by vm-orchestrator/Firecracker with live ClickHouse proof, without Forgejo runner protocol yet |
+| 6 | Forgejo runner adapter | Register/declare/fetch/log/finalize/cancel protocol attaches to the shared queue/scheduler runtime and drives a real Forgejo Actions job |
+| 7 | GitHub runner adapter | GitHub workflow-job/JIT runner integration uses the same queue/scheduler model and does not introduce a second CI scheduler |
 | 8 | Product read contract | Execution, event, log, schedule, runner, and session lists are cursor-paginated and observable |
 
 ## Phase 0: Baseline Proof And Guardrails
@@ -377,7 +383,7 @@ Required trace order for one successful direct execution:
 4. `vm-orchestrator.WaitRun`
 5. `sandbox-rental.execution.finalize`
 
-## Phase 1: River Substrate Online
+## Phase 1: River Queue Runtime Online
 
 Primary anchors:
 
@@ -460,7 +466,7 @@ Required trace order:
 3. `river.work/scheduler.probe`
 4. `sandbox-rental.scheduler.probe.complete`
 
-## Phase 2: Direct Execution On River
+## Phase 2: Direct Execution Queued Through River
 
 Primary anchors:
 
@@ -483,7 +489,8 @@ Green protocol:
 1. `POST /api/v1/executions` returns after a single pgx transaction writes
    execution + attempt + workload spec + initial event + `execution.advance`.
 2. No request handler starts `go s.execute(...)`.
-3. `execution.advance` reaches terminal state for a direct command.
+3. `execution.advance` calls vm-orchestrator as needed and reaches terminal
+   state for a direct command.
 4. Replayed idempotency key returns the same execution and attempt.
 5. Worker spans are linked to the submit trace context.
 6. The same admission helper accepts a synthetic `source_kind='forgejo_actions'`
@@ -501,7 +508,8 @@ Green protocol:
 - Add `execution_workload_specs` for structured workload payloads and secret
   references.
 - Replace `Submit` with pgx transactional enqueue.
-- Implement `execution.advance` for the direct workload path.
+- Implement `execution.advance` for the direct workload path; vm-orchestrator
+  remains the VM executor.
 - Keep side-effect IDs deterministic:
   - billing job/window IDs from attempt/window sequence;
   - orchestrator run ID from attempt ID.
@@ -695,7 +703,7 @@ Green protocol:
 - Use River periodic jobs only for internal scanner ticks.
 - Implement idempotent `schedule.scan` and `schedule.fire`.
 - Add VM session renewal/expiry jobs behind private harnesses.
-- Keep customer-facing schedule APIs out until the substrate is proven.
+- Keep customer-facing schedule APIs out until the queue/runtime path is proven.
 
 ### Expected Database Changes
 
@@ -743,7 +751,7 @@ Required trace order for a scheduled execution:
 5. `river.work/execution.advance`
 6. `sandbox-rental.execution.finalize`
 
-## Phase 5: Forgejo Workflow Workload Through River
+## Phase 5: Forgejo Workflow Workload Queued Through River
 
 Primary anchors:
 
@@ -756,8 +764,8 @@ Primary anchors:
 
 Fail-first protocol:
 
-1. Submit a synthetic `forgejo_workflow` execution through the River admission
-   helper.
+1. Submit a synthetic `forgejo_workflow` execution through the River-backed
+   admission helper.
 2. Confirm baseline fails because no Forgejo workflow workload kind, no
    Forgejo `act` integration, and no `vm-bridge.workflow_runner.*` spans exist.
 
@@ -1079,12 +1087,12 @@ LIMIT 100;
 The scheduler cutover is complete only when:
 
 1. Request handlers no longer advance workload lifecycle directly.
-2. All execution producers use the shared admission transaction.
-3. River workers are the only lifecycle advancement path.
+2. All control-plane producers use the shared admission transaction.
+3. River workers are the only sandbox-rental-service lifecycle advancement path.
 4. `execution_events` is complete for every attempt.
 5. Capacity is enforced by PG leases, not in-memory counters or River Pro.
 6. Recurring schedules and VM sessions use the same execution/capacity/billing
-   kernel.
+   control-plane state machine.
 7. Forgejo and GitHub are protocol adapters, not separate schedulers.
 8. Every phase gate above is green on the bare-metal single-node deploy with
    ClickHouse evidence attached.
