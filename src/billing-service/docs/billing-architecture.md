@@ -615,13 +615,22 @@ The target metering projection contains row-level usage evidence and projected c
 - `component_quantities`
 - `component_charge_units`
 - `bucket_charge_units`
-- `bucket_free_tier_units`
-- `bucket_contract_units`
-- `bucket_purchase_units`
-- `bucket_promo_units`
-- `bucket_refund_units`
-- `bucket_receivable_units`
+- `component_free_tier_units`
+- `component_subscription_units`
+- `component_purchase_units`
+- `component_promo_units`
+- `component_refund_units`
+- `component_receivable_units`
 - `usage_evidence`
+
+The per-source drain maps are keyed by SKU id, not bucket id. The funder
+attributes every cent of every drain to the SKU that triggered it (via the
+`ChargeSKUID` axis on funding legs); these maps preserve that attribution
+through to ClickHouse so the customer-facing invoice can show per-line drain
+splits without a secondary aggregation. Bucket-level drain splits are
+derivable by grouping `component_*_units` keys through each row's
+`rate_context.sku_buckets` mapping in the analytics queries that still need
+the bucket axis.
 
 The current implementation may still use `subscription` field names in the ClickHouse row schema. The target model should migrate those projection names to `contract` while preserving backwards-compatible reads during rollout.
 

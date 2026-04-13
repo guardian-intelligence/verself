@@ -427,34 +427,18 @@ type BillingSettleWindowRequest struct {
 // BillingStatement defines model for BillingStatement.
 type BillingStatement struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string                          `json:"$schema,omitempty"`
-	BucketSummaries *[]BillingStatementBucketSummary `json:"bucket_summaries"`
-	Currency        string                           `json:"currency"`
-	GeneratedAt     time.Time                        `json:"generated_at"`
-	GrantSummaries  *[]BillingStatementGrantSummary  `json:"grant_summaries"`
-	LineItems       *[]BillingStatementLineItem      `json:"line_items"`
-	OrgId           string                           `json:"org_id"`
-	PeriodEnd       time.Time                        `json:"period_end"`
-	PeriodSource    string                           `json:"period_source"`
-	PeriodStart     time.Time                        `json:"period_start"`
-	ProductId       string                           `json:"product_id"`
-	Totals          BillingStatementTotals           `json:"totals"`
-	UnitLabel       string                           `json:"unit_label"`
-}
-
-// BillingStatementBucketSummary defines model for BillingStatementBucketSummary.
-type BillingStatementBucketSummary struct {
-	BucketDisplayName string `json:"bucket_display_name"`
-	BucketId          string `json:"bucket_id"`
-	ChargeUnits       string `json:"charge_units"`
-	FreeTierUnits     string `json:"free_tier_units"`
-	ProductId         string `json:"product_id"`
-	PromoUnits        string `json:"promo_units"`
-	PurchaseUnits     string `json:"purchase_units"`
-	ReceivableUnits   string `json:"receivable_units"`
-	RefundUnits       string `json:"refund_units"`
-	ReservedUnits     string `json:"reserved_units"`
-	SubscriptionUnits string `json:"subscription_units"`
+	Schema         *string                         `json:"$schema,omitempty"`
+	Currency       string                          `json:"currency"`
+	GeneratedAt    time.Time                       `json:"generated_at"`
+	GrantSummaries *[]BillingStatementGrantSummary `json:"grant_summaries"`
+	LineItems      *[]BillingStatementLineItem     `json:"line_items"`
+	OrgId          string                          `json:"org_id"`
+	PeriodEnd      time.Time                       `json:"period_end"`
+	PeriodSource   string                          `json:"period_source"`
+	PeriodStart    time.Time                       `json:"period_start"`
+	ProductId      string                          `json:"product_id"`
+	Totals         BillingStatementTotals          `json:"totals"`
+	UnitLabel      string                          `json:"unit_label"`
 }
 
 // BillingStatementGrantSummary defines model for BillingStatementGrantSummary.
@@ -472,13 +456,20 @@ type BillingStatementLineItem struct {
 	BucketDisplayName string  `json:"bucket_display_name"`
 	BucketId          string  `json:"bucket_id"`
 	ChargeUnits       string  `json:"charge_units"`
+	FreeTierUnits     string  `json:"free_tier_units"`
 	PlanId            string  `json:"plan_id"`
 	PricingPhase      string  `json:"pricing_phase"`
 	ProductId         string  `json:"product_id"`
+	PromoUnits        string  `json:"promo_units"`
+	PurchaseUnits     string  `json:"purchase_units"`
 	Quantity          float64 `json:"quantity"`
 	QuantityUnit      string  `json:"quantity_unit"`
+	ReceivableUnits   string  `json:"receivable_units"`
+	RefundUnits       string  `json:"refund_units"`
+	ReservedUnits     string  `json:"reserved_units"`
 	SkuDisplayName    string  `json:"sku_display_name"`
 	SkuId             string  `json:"sku_id"`
+	SubscriptionUnits string  `json:"subscription_units"`
 	UnitRate          string  `json:"unit_rate"`
 }
 

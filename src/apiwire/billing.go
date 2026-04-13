@@ -29,20 +29,24 @@ type BillingGrants struct {
 }
 
 type BillingStatement struct {
-	OrgID           OrgID                           `json:"org_id"`
-	ProductID       string                          `json:"product_id"`
-	PeriodStart     time.Time                       `json:"period_start"`
-	PeriodEnd       time.Time                       `json:"period_end"`
-	PeriodSource    string                          `json:"period_source"`
-	GeneratedAt     time.Time                       `json:"generated_at"`
-	Currency        string                          `json:"currency"`
-	UnitLabel       string                          `json:"unit_label"`
-	LineItems       []BillingStatementLineItem      `json:"line_items"`
-	BucketSummaries []BillingStatementBucketSummary `json:"bucket_summaries"`
-	GrantSummaries  []BillingStatementGrantSummary  `json:"grant_summaries"`
-	Totals          BillingStatementTotals          `json:"totals"`
+	OrgID          OrgID                          `json:"org_id"`
+	ProductID      string                         `json:"product_id"`
+	PeriodStart    time.Time                      `json:"period_start"`
+	PeriodEnd      time.Time                      `json:"period_end"`
+	PeriodSource   string                         `json:"period_source"`
+	GeneratedAt    time.Time                      `json:"generated_at"`
+	Currency       string                         `json:"currency"`
+	UnitLabel      string                         `json:"unit_label"`
+	LineItems      []BillingStatementLineItem     `json:"line_items"`
+	GrantSummaries []BillingStatementGrantSummary `json:"grant_summaries"`
+	Totals         BillingStatementTotals         `json:"totals"`
 }
 
+// BillingStatementLineItem carries per-line drain attribution: each row is
+// one (plan, bucket, sku, pricing_phase, unit_rate) and the Applied*Units
+// fields break down which sources funded ChargeUnits. The customer-facing
+// invoice renders this as a receipt-style breakdown without a secondary
+// bucket-summary table.
 type BillingStatementLineItem struct {
 	ProductID         string        `json:"product_id"`
 	PlanID            string        `json:"plan_id"`
@@ -54,13 +58,6 @@ type BillingStatementLineItem struct {
 	PricingPhase      string        `json:"pricing_phase"`
 	Quantity          float64       `json:"quantity"`
 	UnitRate          DecimalUint64 `json:"unit_rate"`
-	ChargeUnits       DecimalUint64 `json:"charge_units"`
-}
-
-type BillingStatementBucketSummary struct {
-	ProductID         string        `json:"product_id"`
-	BucketID          string        `json:"bucket_id"`
-	BucketDisplayName string        `json:"bucket_display_name"`
 	ChargeUnits       DecimalUint64 `json:"charge_units"`
 	FreeTierUnits     DecimalUint64 `json:"free_tier_units"`
 	SubscriptionUnits DecimalUint64 `json:"subscription_units"`

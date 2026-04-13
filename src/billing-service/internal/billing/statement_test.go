@@ -40,6 +40,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 					GrantID:             subscriptionGrantID,
 					ChargeProductID:     "sandbox",
 					ChargeBucketID:      "block_storage",
+					ChargeSKUID:         testBlockStorageSKU,
 					Amount:              2_500,
 					Source:              SourceSubscription,
 					GrantScopeType:      GrantScopeBucket,
@@ -50,6 +51,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 					GrantID:            grantID,
 					ChargeProductID:    "sandbox",
 					ChargeBucketID:     "block_storage",
+					ChargeSKUID:        testBlockStorageSKU,
 					Amount:             1_500,
 					Source:             SourcePurchase,
 					GrantScopeType:     GrantScopeAccount,
@@ -61,6 +63,7 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 					GrantID:         grantID,
 					ChargeProductID: "sandbox",
 					ChargeBucketID:  "block_storage",
+					ChargeSKUID:     testBlockStorageSKU,
 					Amount:          800,
 					Source:          SourcePurchase,
 					GrantScopeType:  GrantScopeAccount,
@@ -87,15 +90,11 @@ func TestBuildStatementSeparatesUsageFundingAndReservations(t *testing.T) {
 	assertEqual(t, line.Quantity, float64(100), "line quantity")
 	assertEqual(t, line.UnitRate, uint64(40), "line SKU rate")
 	assertEqual(t, line.ChargeUnits, uint64(4_000), "line charge")
+	assertEqual(t, line.SubscriptionUnits, uint64(2_500), "line subscription drain")
+	assertEqual(t, line.PurchaseUnits, uint64(1_500), "line purchase drain")
+	assertEqual(t, line.ReservedUnits, uint64(800), "line reserved")
 	assertEqual(t, line.PricingPhase, string(PricingPhaseIncluded), "line pricing phase")
 
-	assertEqual(t, len(statement.BucketSummaries), 1, "bucket count")
-	bucket := statement.BucketSummaries[0]
-	assertEqual(t, bucket.BucketDisplayName, "Block Storage", "bucket display")
-	assertEqual(t, bucket.ChargeUnits, uint64(4_000), "bucket charge")
-	assertEqual(t, bucket.SubscriptionUnits, uint64(2_500), "bucket subscription")
-	assertEqual(t, bucket.PurchaseUnits, uint64(1_500), "bucket purchase")
-	assertEqual(t, bucket.ReservedUnits, uint64(800), "bucket reserved")
 	assertEqual(t, statement.Totals.ChargeUnits, uint64(4_000), "total charge")
 	assertEqual(t, statement.Totals.SubscriptionUnits, uint64(2_500), "total subscription")
 	assertEqual(t, statement.Totals.PurchaseUnits, uint64(1_500), "total purchase")
