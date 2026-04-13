@@ -56,7 +56,7 @@ class BrowserMonitor {
       });
     });
     page.on("pageerror", (error) => {
-      this.pageErrors.push(error.stack || String(error));
+      this.pageErrors.push(`[${page.url()}] ${error.stack || String(error)}`);
     });
     page.on("requestfailed", (request) => {
       this.failedRequests.push({
@@ -174,52 +174,6 @@ export class SandboxHarness {
         },
       });
     });
-  }
-
-  async installVerificationOverlay(): Promise<void> {
-    await this.page.addInitScript(
-      ({ runID }) => {
-        const overlayId = "__forge_metal_verification_overlay";
-
-        function renderOverlay() {
-          let element = document.getElementById(overlayId);
-          if (!element) {
-            element = document.createElement("div");
-            element.id = overlayId;
-            Object.assign(element.style, {
-              position: "fixed",
-              right: "12px",
-              bottom: "12px",
-              zIndex: "2147483647",
-              padding: "8px 10px",
-              borderRadius: "8px",
-              background: "rgba(0, 0, 0, 0.82)",
-              color: "#fff",
-              font: "12px/1.4 Menlo, Monaco, monospace",
-              pointerEvents: "none",
-              whiteSpace: "pre",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-            });
-            document.documentElement.appendChild(element);
-          }
-
-          element.textContent = `forge-metal verification\n${runID}\n${new Date().toISOString()}`;
-        }
-
-        const install = () => {
-          renderOverlay();
-          window.setInterval(renderOverlay, 1000);
-        };
-
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", install, { once: true });
-          return;
-        }
-
-        install();
-      },
-      { runID: this.runID },
-    );
   }
 
   async persistRun(run: VerificationRun): Promise<void> {
@@ -458,10 +412,6 @@ export const test = base.extend<{ app: SandboxHarness }>({
   app: async ({ context, page }, use, testInfo) => {
     const app = new SandboxHarness(page, context, testInfo);
     await app.installVerificationHeader();
-
-    if (env.verificationRunID || process.env.FORGE_METAL_RECORD_ARTIFACTS === "1") {
-      await app.installVerificationOverlay();
-    }
 
     await use(app);
     await app.assertHealthy();

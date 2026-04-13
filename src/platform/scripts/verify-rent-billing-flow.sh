@@ -44,7 +44,7 @@ env \
     cd "$1"
     vp exec playwright test e2e/billing.live.spec.ts \
       --project=chromium \
-      --grep "subscription checkout activates Hobby and leaves it active" \
+      --grep "contract checkout activates Hobby and (schedules cancellation|leaves it active)" \
       --output "$2"
   ' bash "${VERIFICATION_REPO_ROOT}/src/viteplus-monorepo/apps/rent-a-sandbox" "${artifact_dir}/playwright-results" \
   >"${billing_log_path}" 2>&1
