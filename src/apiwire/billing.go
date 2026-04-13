@@ -245,6 +245,7 @@ type BillingReserveWindowRequest struct {
 	ConcurrentCount uint64             `json:"concurrent_count" minimum:"0" maximum:"9007199254740991"`
 	SourceType      string             `json:"source_type" minLength:"1" maxLength:"255"`
 	SourceRef       string             `json:"source_ref" minLength:"1" maxLength:"255"`
+	WindowSeq       uint32             `json:"window_seq" minimum:"0" maximum:"2147483647"`
 	Allocation      map[string]float64 `json:"allocation" minProperties:"1"`
 }
 
@@ -269,7 +270,7 @@ type BillingWindowReservation struct {
 	ActorID             string                   `json:"actor_id"`
 	SourceType          string                   `json:"source_type"`
 	SourceRef           string                   `json:"source_ref"`
-	WindowSeq           uint32                   `json:"window_seq" minimum:"0" maximum:"4294967295"`
+	WindowSeq           uint32                   `json:"window_seq" minimum:"0" maximum:"2147483647"`
 	ReservationShape    string                   `json:"reservation_shape"`
 	ReservedQuantity    uint32                   `json:"reserved_quantity" minimum:"0" maximum:"4294967295"`
 	ReservedChargeUnits DecimalUint64            `json:"reserved_charge_units"`

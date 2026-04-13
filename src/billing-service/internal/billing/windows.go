@@ -93,6 +93,17 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	if req.SourceType == "" || req.SourceRef == "" {
 		return WindowReservation{}, fmt.Errorf("source_type and source_ref are required")
 	}
+	if existing, ok, err := c.loadWindowBySourceSeq(ctx, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq); err != nil {
+		return WindowReservation{}, err
+	} else if ok {
+		if err := validateIdempotentReservation(existing, req); err != nil {
+			return WindowReservation{}, err
+		}
+		if err := validateReusableReservation(existing); err != nil {
+			return WindowReservation{}, err
+		}
+		return existing.reservation(), nil
+	}
 	if err := c.ensureOrgNotSuspended(ctx, req.OrgID); err != nil {
 		return WindowReservation{}, err
 	}
@@ -127,10 +138,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	chargeUnits := plan.TotalChargeUnits
 
 	windowID := ulidString()
-	windowSeq, err := c.nextWindowSeq(ctx, req.ProductID, req.SourceType, req.SourceRef)
-	if err != nil {
-		return WindowReservation{}, err
-	}
+	windowSeq := req.WindowSeq
 	windowStart := c.clock().UTC()
 	expiresAt, renewBy := windowTiming(windowStart, config.ReservePolicy, c.cfg.PendingTimeoutSecs, quantity)
 
@@ -169,6 +177,21 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		string(allocationJSON), string(rateContextJSON), string(fundingJSON), windowStart, expiresAt, renewBy)
 	if err != nil {
 		_ = c.voidReservedFunding(ctx, windowID, legs)
+		if isUniqueViolation(err) {
+			existing, ok, loadErr := c.loadWindowBySourceSeq(ctx, req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+			if loadErr != nil {
+				return WindowReservation{}, loadErr
+			}
+			if ok {
+				if validateErr := validateIdempotentReservation(existing, req); validateErr != nil {
+					return WindowReservation{}, validateErr
+				}
+				if reusableErr := validateReusableReservation(existing); reusableErr != nil {
+					return WindowReservation{}, reusableErr
+				}
+				return existing.reservation(), nil
+			}
+		}
 		return WindowReservation{}, fmt.Errorf("insert billing window: %w", err)
 	}
 
@@ -993,17 +1016,65 @@ func (w persistedWindow) reservation() WindowReservation {
 	}
 }
 
-func (c *Client) nextWindowSeq(ctx context.Context, productID, sourceType, sourceRef string) (uint32, error) {
-	var next sql.NullInt64
+func (c *Client) loadWindowBySourceSeq(ctx context.Context, productID, sourceType, sourceRef string, windowSeq uint32) (persistedWindow, bool, error) {
+	var windowID string
 	err := c.pg.QueryRowContext(ctx, `
-		SELECT COALESCE(MAX(window_seq) + 1, 0)
+		SELECT window_id
 		FROM billing_windows
-		WHERE product_id = $1 AND source_type = $2 AND source_ref = $3
-	`, productID, sourceType, sourceRef).Scan(&next)
-	if err != nil {
-		return 0, fmt.Errorf("load next window seq: %w", err)
+		WHERE product_id = $1
+		  AND source_type = $2
+		  AND source_ref = $3
+		  AND window_seq = $4
+	`, productID, sourceType, sourceRef, windowSeq).Scan(&windowID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return persistedWindow{}, false, nil
 	}
-	return uint32(next.Int64), nil
+	if err != nil {
+		return persistedWindow{}, false, fmt.Errorf("load billing window by source seq: %w", err)
+	}
+	window, err := c.loadPersistedWindow(ctx, windowID)
+	if err != nil {
+		return persistedWindow{}, false, err
+	}
+	return window, true, nil
+}
+
+func validateIdempotentReservation(existing persistedWindow, req ReserveRequest) error {
+	if existing.OrgID != req.OrgID {
+		return fmt.Errorf("idempotent billing reserve org mismatch for %s/%s/%s/%d", req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+	}
+	if existing.ActorID != req.ActorID {
+		return fmt.Errorf("idempotent billing reserve actor mismatch for %s/%s/%s/%d", req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+	}
+	if !float64MapsEqual(existing.Allocation, req.Allocation) {
+		return fmt.Errorf("idempotent billing reserve allocation mismatch for %s/%s/%s/%d", req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+	}
+	return nil
+}
+
+func validateReusableReservation(existing persistedWindow) error {
+	switch existing.State {
+	case "reserved":
+		return nil
+	case "settled":
+		return ErrWindowAlreadySettled
+	case "voided":
+		return ErrWindowAlreadyVoided
+	default:
+		return fmt.Errorf("%w: %s", ErrWindowNotReserved, existing.State)
+	}
+}
+
+func float64MapsEqual(a, b map[string]float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, av := range a {
+		if bv, ok := b[key]; !ok || bv != av {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) ensureOrgNotSuspended(ctx context.Context, orgID OrgID) error {
