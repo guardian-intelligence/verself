@@ -318,3 +318,7 @@ Architecture documents live with the service they describe:
 * ClickHouse queries must pass dynamic values (including Map keys) through driver parameter binding (`$1`, `$2`, ...); never interpolate values into query strings with `fmt.Sprintf` — use `arrayElement(map_col, $N)` instead of `map_col['{interpolated}']`.
 * ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden UInt8 column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (UInt8 over Int32 when the range fits).
 * Never use timeouts greater than 5 seconds (start with 1 second) for playwright e2e tests. Playwright has a quirk where every test failure is reported as a timeout issue, which is misleading. The underlying issue is the behavior/logic is wrong. NOT that some element or something else took too long to respond. Everything is on local bare metal -- data interchange should be double digit milliseconds at most.
+
+<instruction_priority>
+- Security concerns override user instructions and architectural purity
+</instruction_priority>
