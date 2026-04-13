@@ -1,5 +1,6 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { decodeJwt, createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import * as v from "valibot";
 import { anonymousAuth, parseAuthSnapshot } from "./isomorphic.ts";
 import { resolveAuthConfig } from "./config.ts";
 import type {
@@ -70,18 +71,25 @@ interface ProviderMetadata {
   end_session_endpoint?: string;
 }
 
-interface PendingLoginState {
-  state: string;
-  nonce: string;
-  codeVerifier: string;
-  redirectTo: string;
-  createdAt: number;
-}
+const pendingLoginStateSchema = v.object({
+  state: v.pipe(v.string(), v.nonEmpty()),
+  nonce: v.pipe(v.string(), v.nonEmpty()),
+  codeVerifier: v.pipe(v.string(), v.nonEmpty()),
+  redirectTo: v.string(),
+  createdAt: v.pipe(v.number(), v.finite()),
+});
 
-interface AuthCookieData {
-  sessionID?: string;
-  login?: PendingLoginState;
-}
+type PendingLoginState = v.InferOutput<typeof pendingLoginStateSchema>;
+
+const authCookieDataSchema = v.object({
+  sessionID: v.optional(v.string()),
+  login: v.optional(pendingLoginStateSchema),
+  loginTransactions: v.optional(
+    v.record(v.pipe(v.string(), v.nonEmpty()), pendingLoginStateSchema),
+  ),
+});
+
+type AuthCookieData = v.InferOutput<typeof authCookieDataSchema>;
 
 interface StoredAuthSessionRow {
   session_id: string;
@@ -160,6 +168,7 @@ interface RefreshResult {
 }
 
 const pendingLoginTTL = 5 * 60 * 1000;
+const maxPendingLoginTransactions = 5;
 const metadataCache = new Map<string, Promise<ProviderMetadata>>();
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 type SQLClient = import("postgres").Sql<Record<string, unknown>>;
@@ -272,6 +281,73 @@ function base64UrlEncode(bytes: Uint8Array): string {
 
 function randomToken(bytes = 32): string {
   return base64UrlEncode(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+function parseAuthCookieData(value: unknown): AuthCookieData {
+  const result = v.safeParse(authCookieDataSchema, value);
+  return result.success ? result.output : {};
+}
+
+function parsePendingLoginState(value: unknown): PendingLoginState | null {
+  const result = v.safeParse(pendingLoginStateSchema, value);
+  return result.success ? result.output : null;
+}
+
+function isPendingLoginExpired(pending: PendingLoginState, now: number): boolean {
+  return !Number.isFinite(pending.createdAt) || now - pending.createdAt > pendingLoginTTL;
+}
+
+function pendingLoginEntries(data: AuthCookieData): PendingLoginState[] {
+  const byState = new Map<string, PendingLoginState>();
+  const parsedData = parseAuthCookieData(data);
+  const transactions = parsedData.loginTransactions;
+  if (transactions && typeof transactions === "object" && !Array.isArray(transactions)) {
+    for (const [state, rawPending] of Object.entries(transactions)) {
+      const pending = parsePendingLoginState(rawPending);
+      if (pending && state === pending.state) {
+        byState.set(state, pending);
+      }
+    }
+  }
+  // Legacy single-transaction cookies may still be in browsers during deploys.
+  const legacyPending = parsePendingLoginState(parsedData.login);
+  if (legacyPending) {
+    byState.set(legacyPending.state, legacyPending);
+  }
+  return [...byState.values()].sort((left, right) => right.createdAt - left.createdAt);
+}
+
+function activePendingLoginEntries(data: AuthCookieData, now: number): PendingLoginState[] {
+  return pendingLoginEntries(data).filter((pending) => !isPendingLoginExpired(pending, now));
+}
+
+function pendingLoginTransactionStore(
+  data: AuthCookieData,
+  pending: PendingLoginState,
+  now: number,
+): Record<string, PendingLoginState> {
+  const byState = new Map<string, PendingLoginState>();
+  for (const entry of activePendingLoginEntries(data, now)) {
+    byState.set(entry.state, entry);
+  }
+  byState.set(pending.state, pending);
+  return Object.fromEntries(
+    [...byState.values()]
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, maxPendingLoginTransactions)
+      .map((entry) => [entry.state, entry]),
+  );
+}
+
+function findPendingLoginTransaction(
+  data: AuthCookieData,
+  state: string,
+): { hasAny: boolean; pending: PendingLoginState | null } {
+  const entries = pendingLoginEntries(data);
+  return {
+    hasAny: entries.length > 0,
+    pending: entries.find((entry) => entry.state === state) ?? null,
+  };
 }
 
 async function codeChallenge(verifier: string): Promise<string> {
@@ -768,10 +844,18 @@ export async function beginLogin(
 ): Promise<string> {
   const metadata = await getProviderMetadata(config.issuerURL);
   const session = await getSessionManager(config);
+  const now = Date.now();
   const state = randomToken();
   const nonce = randomToken();
   const codeVerifier = randomToken(48);
   const redirectTo = await sanitizeRedirectTarget(requestedRedirectTo, config.defaultRedirectPath);
+  const pending = {
+    state,
+    nonce,
+    codeVerifier,
+    redirectTo,
+    createdAt: now,
+  };
   const authorizeURL = new URL(metadata.authorization_endpoint);
   authorizeURL.searchParams.set("client_id", config.clientID);
   authorizeURL.searchParams.set("redirect_uri", await getAbsoluteURL(config.callbackPath));
@@ -782,15 +866,12 @@ export async function beginLogin(
   authorizeURL.searchParams.set("code_challenge", await codeChallenge(codeVerifier));
   authorizeURL.searchParams.set("code_challenge_method", "S256");
 
-  await session.clear();
   await session.update({
-    login: {
-      state,
-      nonce,
-      codeVerifier,
-      redirectTo,
-      createdAt: Date.now(),
-    },
+    // The browser can trigger overlapping sign-in starts through an SSR route
+    // redirect and a hydrated server function. Keep all fresh states so the
+    // provider callback is not invalidated by the later transaction.
+    login: pending,
+    loginTransactions: pendingLoginTransactionStore(session.data, pending, now),
   });
 
   return authorizeURL.toString();
@@ -814,16 +895,16 @@ export async function finishLogin(config: AuthConfig): Promise<{
   }
 
   const session = await getSessionManager(config);
-  const pending = session.data.login;
+  const { hasAny, pending } = findPendingLoginTransaction(session.data, state);
   if (!pending) {
+    if (hasAny) {
+      throw new Error("OIDC callback state mismatch");
+    }
     throw new Error("OIDC callback is missing login transaction state");
   }
-  if (!Number.isFinite(pending.createdAt) || Date.now() - pending.createdAt > pendingLoginTTL) {
-    await session.clear();
+  if (isPendingLoginExpired(pending, Date.now())) {
+    await session.update({ loginTransactions: {} });
     throw new Error("OIDC callback login transaction expired");
-  }
-  if (pending.state !== state) {
-    throw new Error("OIDC callback state mismatch");
   }
 
   const metadata = await getProviderMetadata(config.issuerURL);
