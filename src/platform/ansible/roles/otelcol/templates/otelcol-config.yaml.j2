@@ -361,7 +361,7 @@ receivers:
       disk: {}
       network: {}
   statsd:
-    endpoint: "{{ services.tigerbeetle.host }}:{{ services.tigerbeetle.statsd_port }}"
+    endpoint: "{{ services.otelcol.host }}:{{ services.otelcol.statsd_port }}"
     aggregation_interval: 10s
 
 processors:
