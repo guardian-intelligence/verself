@@ -151,6 +151,12 @@ Job uniqueness must be derived from domain identity, not random worker identity:
 
 Billing-service must run its own River runtime against the billing PostgreSQL database. The sandbox-rental-service River runtime is a useful pattern, not a shared worker pool for billing. Billing workers need to enqueue jobs transactionally with billing domain rows, so their River tables and client belong in the billing database boundary.
 
+Billing correctness must not require River Pro-only workflow, sequence, durable-periodic-job, or dead-letter features. Domain tables carry the state machine, due timestamps, retry counters, and dead-letter status; River job rows are execution handles. Use River's transactional enqueueing, delayed execution, unique jobs, retries, and telemetry where available, and use bounded PostgreSQL repair scanners for any scheduling durability that must survive missing job rows.
+
+River docs to keep near this design:
+
+- River: <https://riverqueue.com/>
+
 ## Core billing model
 
 The billing model is SKU-driven for usage, contract-driven for recurring entitlements, cycle-driven for invoice periods, and invoice-driven for customer-facing payment artifacts.
