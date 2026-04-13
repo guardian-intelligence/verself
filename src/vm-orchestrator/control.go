@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const maxBufferedGuestLogs = 10 * 1024 * 1024
@@ -113,7 +114,7 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
+func (c *guestControl) run(ctx context.Context, run RunSpec, lease NetworkLease, hostServiceIP string, hostServicePort int, handleCheckpoint checkpointHandler, logger *slog.Logger, observer RunObserver) (guestControlResult, error) {
 	var (
 		logBuf       strings.Builder
 		hello        vmproto.Hello
@@ -130,19 +131,31 @@ func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string
 		}
 	}
 
+	_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello",
+		attribute.String("run.id", run.RunID),
+	)
 	env, err := c.recv()
 	if err != nil {
+		endHelloSpan(err)
 		return guestControlResult{}, fmt.Errorf("read guest hello: %w", err)
 	}
 	if env.Type != vmproto.TypeHello {
-		return guestControlResult{}, unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
+		err := unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
+		endHelloSpan(err)
+		return guestControlResult{}, err
 	}
 	hello, err = vmproto.DecodePayload[vmproto.Hello](env)
 	if err != nil {
-		return guestControlResult{}, guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
+		err = guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
+		endHelloSpan(err)
+		return guestControlResult{}, err
 	}
 	gotHello = true
+	endHelloSpan(nil)
 
+	_, endRunRequestSpan := startStepSpan(ctx, "vmorchestrator.guest.run_request",
+		attribute.String("run.id", run.RunID),
+	)
 	if err := c.send(vmproto.TypeRunRequest, vmproto.RunRequest{
 		RunID:               run.RunID,
 		RunCommand:          cloneStringSlice(run.RunCommand),
@@ -152,8 +165,10 @@ func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
 	}); err != nil {
+		endRunRequestSpan(err)
 		return guestControlResult{}, fmt.Errorf("send run request: %w", err)
 	}
+	endRunRequestSpan(nil)
 
 	for {
 		env, err := c.recv()
@@ -194,13 +209,18 @@ func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string
 				return resultWithLogs(), fmt.Errorf("send checkpoint response: %w", err)
 			}
 		case vmproto.TypePhaseStart:
-			if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
-				observer.OnGuestPhaseStart(run.RunID, msg.Name)
+			msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env)
+			if err != nil {
+				return resultWithLogs(), err
 			}
+			_, endPhaseStartSpan := startStepSpan(ctx, "vmorchestrator.guest.phase_start",
+				attribute.String("run.id", run.RunID),
+				attribute.String("phase.name", msg.Name),
+			)
+			observer.OnGuestPhaseStart(run.RunID, msg.Name)
+			endPhaseStartSpan(nil)
 			if logger != nil {
-				if msg, err := vmproto.DecodePayload[vmproto.PhaseStart](env); err == nil {
-					logger.Info("guest phase start", "phase", msg.Name, "run_id", run.RunID)
-				}
+				logger.InfoContext(ctx, "guest phase start", "phase", msg.Name, "run_id", run.RunID)
 			}
 		case vmproto.TypePhaseEnd:
 			msg, err := vmproto.DecodePayload[vmproto.PhaseEnd](env)
@@ -217,8 +237,15 @@ func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string
 				ExitCode:   msg.ExitCode,
 				DurationMS: msg.DurationMS,
 			})
+			_, endPhaseEndSpan := startStepSpan(ctx, "vmorchestrator.guest.phase_end",
+				attribute.String("run.id", run.RunID),
+				attribute.String("phase.name", msg.Name),
+				attribute.Int("phase.exit_code", msg.ExitCode),
+				attribute.Int64("phase.duration_ms", msg.DurationMS),
+			)
+			endPhaseEndSpan(nil)
 			if logger != nil {
-				logger.Info("guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "run_id", run.RunID)
+				logger.InfoContext(ctx, "guest phase end", "phase", msg.Name, "exit_code", msg.ExitCode, "duration_ms", msg.DurationMS, "run_id", run.RunID)
 			}
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
@@ -240,7 +267,7 @@ func (c *guestControl) run(run RunSpec, lease NetworkLease, hostServiceIP string
 				return outcome, fmt.Errorf("ack guest result: %w", err)
 			}
 			if logger != nil {
-				logger.Info("guest result received; requesting graceful guest reboot", "run_id", run.RunID, "exit_code", msg.ExitCode)
+				logger.InfoContext(ctx, "guest result received; requesting graceful guest reboot", "run_id", run.RunID, "exit_code", msg.ExitCode)
 			}
 			if err := c.send(vmproto.TypeShutdown, vmproto.Shutdown{}); err != nil {
 				outcome := resultWithLogs()

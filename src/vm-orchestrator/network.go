@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -66,28 +67,53 @@ func NewAllocator(cfg NetworkPoolConfig) *Allocator {
 
 func setupNetwork(ctx context.Context, runID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
 	allocator := NewAllocator(cfg)
-	if err := allocator.Recover(ctx, ops); err != nil {
+	recoverCtx, endRecoverSpan := startStepSpan(ctx, "vmorchestrator.network.recover",
+		attribute.String("run.id", runID),
+		attribute.String("network.pool_cidr", allocator.cfg.PoolCIDR),
+	)
+	if err := allocator.Recover(recoverCtx, ops); err != nil {
+		endRecoverSpan(err)
 		return nil, nil, fmt.Errorf("recover stale leases: %w", err)
 	}
+	endRecoverSpan(nil)
 
-	lease, err := allocator.Acquire(ctx, runID)
+	acquireCtx, endAcquireSpan := startStepSpan(ctx, "vmorchestrator.network.acquire",
+		attribute.String("run.id", runID),
+		attribute.String("network.pool_cidr", allocator.cfg.PoolCIDR),
+	)
+	lease, err := allocator.Acquire(acquireCtx, runID)
 	if err != nil {
+		endAcquireSpan(err)
 		return nil, nil, err
 	}
+	endAcquireSpan(nil)
 
 	completedSteps := 0
 
-	if err := ops.TapCreate(ctx, lease.TapName, lease.HostCIDR); err != nil {
+	tapCreateCtx, endTapCreateSpan := startStepSpan(ctx, "vmorchestrator.network.tap_create",
+		attribute.String("run.id", runID),
+		attribute.String("network.tap", lease.TapName),
+		attribute.String("network.host_cidr", lease.HostCIDR),
+	)
+	if err := ops.TapCreate(tapCreateCtx, lease.TapName, lease.HostCIDR); err != nil {
+		endTapCreateSpan(err)
 		_ = allocator.Release(context.Background(), runID)
 		return nil, nil, fmt.Errorf("network setup create tap: %w", err)
 	}
+	endTapCreateSpan(nil)
 	completedSteps = 2 // TapCreate covers both tuntap add + addr add
 
-	if err := ops.TapUp(ctx, lease.TapName); err != nil {
+	tapUpCtx, endTapUpSpan := startStepSpan(ctx, "vmorchestrator.network.tap_up",
+		attribute.String("run.id", runID),
+		attribute.String("network.tap", lease.TapName),
+	)
+	if err := ops.TapUp(tapUpCtx, lease.TapName); err != nil {
+		endTapUpSpan(err)
 		cleanupNetworkOps(context.Background(), lease.TapName, completedSteps, ops)
 		_ = allocator.Release(context.Background(), runID)
 		return nil, nil, fmt.Errorf("network setup link up: %w", err)
 	}
+	endTapUpSpan(nil)
 	completedSteps = 3
 
 	cleanup := func() {

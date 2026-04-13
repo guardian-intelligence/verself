@@ -204,7 +204,12 @@ func (o *Orchestrator) RunObserved(ctx context.Context, run RunSpec, observer Ru
 	}()
 
 	// --- 1. Verify golden snapshot ---
-	exists, checkErr := zfsSnapshotExists(ctx, o.goldenSnapshot())
+	snapshotCtx, endSnapshotSpan := startStepSpan(ctx, "vmorchestrator.zfs.snapshot_check",
+		attribute.String("run.id", run.RunID),
+		attribute.String("zfs.snapshot", o.goldenSnapshot()),
+	)
+	exists, checkErr := zfsSnapshotExists(snapshotCtx, o.goldenSnapshot())
+	endSnapshotSpan(checkErr)
 	if checkErr != nil {
 		err = fmt.Errorf("check golden snapshot: %w", checkErr)
 		return
@@ -217,12 +222,19 @@ func (o *Orchestrator) RunObserved(ctx context.Context, run RunSpec, observer Ru
 	// --- 2. Clone zvol ---
 	cloneStart := time.Now()
 	dataset := o.cloneDataset(run.RunID)
-	if cloneErr := o.ops.ZFSClone(ctx, o.goldenSnapshot(), dataset, run.RunID); cloneErr != nil {
+	cloneCtx, endCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.clone",
+		attribute.String("run.id", run.RunID),
+		attribute.String("zfs.snapshot", o.goldenSnapshot()),
+		attribute.String("zfs.dataset", dataset),
+	)
+	if cloneErr := o.ops.ZFSClone(cloneCtx, o.goldenSnapshot(), dataset, run.RunID); cloneErr != nil {
+		endCloneSpan(cloneErr)
 		err = fmt.Errorf("clone zvol: %w", cloneErr)
 		return
 	}
+	endCloneSpan(nil)
 	cloneDuration := time.Since(cloneStart)
-	o.logger.Info("zvol cloned", "run_id", run.RunID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
+	o.logger.InfoContext(ctx, "zvol cloned", "run_id", run.RunID, "duration_ms", cloneDuration.Milliseconds(), "dataset", dataset)
 
 	result, err = o.runDataset(ctx, run, dataset, true, observer)
 	if err != nil {
@@ -285,27 +297,41 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 		cleanups = append(cleanups, func() {
 			retained, destroyErr := o.destroyDisposableWorkloadDataset(context.Background(), dataset, checkpointSaved.Load())
 			if destroyErr != nil {
-				logger.Warn("zvol destroy failed", "err", destroyErr)
+				logger.WarnContext(ctx, "zvol destroy failed", "err", destroyErr)
 				return
 			}
 			if retained {
-				logger.Info("retaining workload zvol because checkpoint snapshot was saved")
+				logger.InfoContext(ctx, "retaining workload zvol because checkpoint snapshot was saved")
 			}
 		})
 	}
 
 	devPath := zvolDevicePath(dataset)
-	if deviceErr := waitForDevice(ctx, devPath); deviceErr != nil {
+	deviceCtx, endDeviceSpan := startStepSpan(ctx, "vmorchestrator.zvol.wait_device",
+		attribute.String("run.id", run.RunID),
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("device.path", devPath),
+	)
+	if deviceErr := waitForDevice(deviceCtx, devPath); deviceErr != nil {
+		endDeviceSpan(deviceErr)
 		return result, fmt.Errorf("wait for zvol device %s: %w", devPath, deviceErr)
 	}
+	endDeviceSpan(nil)
 
 	jailStart := time.Now()
 	jailRoot := o.jailDir(run.RunID)
-	if jailErr := o.ops.SetupJail(ctx, jailRoot, devPath, o.cfg.KernelPath, o.cfg.JailerUID, o.cfg.JailerGID); jailErr != nil {
+	jailCtx, endJailSpan := startStepSpan(ctx, "vmorchestrator.jail.setup",
+		attribute.String("run.id", run.RunID),
+		attribute.String("jail.root", jailRoot),
+		attribute.String("device.path", devPath),
+	)
+	if jailErr := o.ops.SetupJail(jailCtx, jailRoot, devPath, o.cfg.KernelPath, o.cfg.JailerUID, o.cfg.JailerGID); jailErr != nil {
+		endJailSpan(jailErr)
 		return result, fmt.Errorf("setup jail: %w", jailErr)
 	}
+	endJailSpan(nil)
 	result.JailSetupTime = time.Since(jailStart)
-	logger.Info("jail ready", "duration_ms", result.JailSetupTime.Milliseconds())
+	logger.InfoContext(ctx, "jail ready", "duration_ms", result.JailSetupTime.Milliseconds())
 
 	jailBase := filepath.Dir(filepath.Dir(jailRoot))
 	cleanups = append(cleanups, func() {
@@ -317,12 +343,17 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 		StateDBPath:   o.cfg.StateDBPath,
 		HostInterface: o.cfg.HostInterface,
 	}
-	netSetup, netCleanup, netErr := setupNetwork(ctx, run.RunID, netCfg, o.ops)
+	netCtx, endNetworkSpan := startStepSpan(ctx, "vmorchestrator.network.setup",
+		attribute.String("run.id", run.RunID),
+		attribute.String("network.pool_cidr", netCfg.PoolCIDR),
+	)
+	netSetup, netCleanup, netErr := setupNetwork(netCtx, run.RunID, netCfg, o.ops)
+	endNetworkSpan(netErr)
 	if netErr != nil {
 		return result, fmt.Errorf("setup network: %w", netErr)
 	}
 	cleanups = append(cleanups, netCleanup)
-	logger.Info("network ready",
+	logger.InfoContext(ctx, "network ready",
 		"tap", netSetup.Lease.TapName,
 		"subnet", netSetup.Lease.SubnetCIDR,
 		"guest_ip", netSetup.Lease.GuestIP,
@@ -332,19 +363,29 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 	controlSockHost := filepath.Join(jailRoot, "run", "forge-control.sock")
 	metricsPathHost := filepath.Join(jailRoot, "metrics.json")
 
-	jailer, startErr := o.ops.StartJailer(ctx, run.RunID, JailerConfig{
+	jailerCtx, endJailerSpan := startStepSpan(ctx, "vmorchestrator.jailer.start",
+		attribute.String("run.id", run.RunID),
+	)
+	jailer, startErr := o.ops.StartJailer(jailerCtx, run.RunID, JailerConfig{
 		FirecrackerBin: o.cfg.FirecrackerBin,
 		JailerBin:      o.cfg.JailerBin,
 		ChrootBaseDir:  o.cfg.JailerRoot,
 		UID:            o.cfg.JailerUID,
 		GID:            o.cfg.JailerGID,
 	})
+	endJailerSpan(startErr)
 	if startErr != nil {
 		return result, fmt.Errorf("start jailer: %w", startErr)
 	}
-	if attachErr := NewAllocator(netCfg).AttachPID(ctx, run.RunID, jailer.Pid); attachErr != nil {
+	attachCtx, endAttachSpan := startStepSpan(ctx, "vmorchestrator.network.attach_pid",
+		attribute.String("run.id", run.RunID),
+		attribute.Int("process.pid", jailer.Pid),
+	)
+	if attachErr := NewAllocator(netCfg).AttachPID(attachCtx, run.RunID, jailer.Pid); attachErr != nil {
+		endAttachSpan(attachErr)
 		return result, fmt.Errorf("record network lease pid: %w", attachErr)
 	}
+	endAttachSpan(nil)
 
 	var jailerExited atomic.Bool
 	cleanups = append(cleanups, func() {
@@ -365,11 +406,17 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 		go captureSerialOutput(jailer.Stderr, &serialBuf, &logWg)
 	}
 
-	logger.Info("jailer started", "pid", jailer.Pid)
+	logger.InfoContext(ctx, "jailer started", "pid", jailer.Pid)
 
-	if waitErr := waitForSocket(ctx, apiSockHost); waitErr != nil {
+	apiSocketCtx, endAPISocketSpan := startStepSpan(ctx, "vmorchestrator.firecracker.api_socket_wait",
+		attribute.String("run.id", run.RunID),
+		attribute.String("socket.path", apiSockHost),
+	)
+	if waitErr := waitForSocket(apiSocketCtx, apiSockHost); waitErr != nil {
+		endAPISocketSpan(waitErr)
 		return result, fmt.Errorf("wait for API socket: %w", waitErr)
 	}
+	endAPISocketSpan(nil)
 
 	bootStart := time.Now()
 	client := newAPIClient(apiSockHost)
@@ -401,56 +448,71 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 
 	for _, step := range apiSteps {
 		stepStart := time.Now()
-		logger.Info("configuring firecracker", "step", step.name)
+		logger.InfoContext(ctx, "configuring firecracker", "step", step.name)
 		stepCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
+			attribute.String("run.id", run.RunID),
+			attribute.String("firecracker.step", step.name),
+		)
 		apiErr := step.fn(stepCtx)
+		endStepSpan(apiErr)
 		cancel()
 		if apiErr != nil {
 			return result, fmt.Errorf("configure VM %s: %w", step.name, apiErr)
 		}
-		logger.Info("configured firecracker",
+		logger.InfoContext(ctx, "configured firecracker",
 			"step", step.name,
 			"duration_ms", time.Since(stepStart).Milliseconds(),
 		)
 	}
 
 	startVMStart := time.Now()
-	logger.Info("configuring firecracker", "step", "instance-start")
+	logger.InfoContext(ctx, "configuring firecracker", "step", "instance-start")
 	startCtx, cancel := context.WithTimeout(ctx, firecrackerAPIStepTimeout)
+	startCtx, endStartSpan := startStepSpan(startCtx, "vmorchestrator.firecracker.instance_start",
+		attribute.String("run.id", run.RunID),
+	)
 	startVMErr := client.startInstance(startCtx)
+	endStartSpan(startVMErr)
 	cancel()
 	if startVMErr != nil {
 		return result, fmt.Errorf("start VM: %w", startVMErr)
 	}
-	logger.Info("configured firecracker",
+	logger.InfoContext(ctx, "configured firecracker",
 		"step", "instance-start",
 		"duration_ms", time.Since(startVMStart).Milliseconds(),
 	)
 	result.VMBootTime = time.Since(bootStart)
-	logger.Info("VM started", "boot_ms", result.VMBootTime.Milliseconds())
+	logger.InfoContext(ctx, "VM started", "boot_ms", result.VMBootTime.Milliseconds())
 
-	if waitErr := waitForPath(ctx, controlSockHost); waitErr != nil {
+	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
+		attribute.String("run.id", run.RunID),
+		attribute.String("socket.path", controlSockHost),
+	)
+	if waitErr := waitForPath(controlSocketCtx, controlSockHost); waitErr != nil {
+		endControlSocketSpan(waitErr)
 		return result, fmt.Errorf("wait for guest control socket: %w", waitErr)
 	}
+	endControlSocketSpan(nil)
 	if chmodErr := o.ops.Chmod(ctx, controlSockHost, 0o770); chmodErr != nil {
 		return result, fmt.Errorf("chmod guest control socket: %w", chmodErr)
 	}
 
-	telemetryCtx, telemetryCancel := context.WithCancel(context.Background())
+	telemetryCtx, telemetryCancel := context.WithCancel(ctx)
 	defer telemetryCancel()
 	telemetryFaultProfile, telemetryFaultErr := parseTelemetryFaultProfile(strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
 	if telemetryFaultErr != nil {
 		return result, fmt.Errorf("parse telemetry fault profile: %w", telemetryFaultErr)
 	}
 	if telemetryFaultProfile != nil {
-		logger.Warn("telemetry fault injection enabled", "profile", strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
+		logger.WarnContext(ctx, "telemetry fault injection enabled", "profile", strings.TrimSpace(run.Env[telemetryFaultProfileEnvVar]))
 	}
 	var telemetryWg sync.WaitGroup
 	telemetryWg.Add(1)
 	go func() {
 		defer telemetryWg.Done()
 		if telemetryErr := streamGuestTelemetry(telemetryCtx, controlSockHost, run.RunID, observer, logger, telemetryFaultProfile); telemetryErr != nil && !errors.Is(telemetryErr, context.Canceled) {
-			logger.Warn("guest telemetry stream ended", "run_id", run.RunID, "err", telemetryErr)
+			logger.WarnContext(ctx, "guest telemetry stream ended", "run_id", run.RunID, "err", telemetryErr)
 		}
 	}()
 	defer telemetryWg.Wait()
@@ -458,7 +520,12 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- jailer.Wait() }()
 
-	control, controlErr := connectGuestControl(ctx, controlSockHost, vmproto.GuestPort)
+	controlCtx, endControlConnectSpan := startStepSpan(ctx, "vmorchestrator.guest.control_connect",
+		attribute.String("run.id", run.RunID),
+		attribute.String("socket.path", controlSockHost),
+	)
+	control, controlErr := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort)
+	endControlConnectSpan(controlErr)
 	if controlErr != nil {
 		_ = jailer.Kill()
 		<-waitDone
@@ -474,9 +541,9 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 		result guestControlResult
 		err    error
 	}, 1)
-	handleCheckpoint := o.checkpointHandler(run, dataset, observer, logger)
+	handleCheckpoint := o.checkpointHandler(ctx, run, dataset, observer, logger)
 	go func() {
-		controlResult, err := control.run(run, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
+		controlResult, err := control.run(ctx, run, netSetup.Lease, o.cfg.HostServiceIP, o.cfg.HostServicePort, func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
 			resp := handleCheckpoint(req)
 			if resp.Accepted {
 				checkpointSaved.Store(true)
@@ -520,19 +587,24 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 	}
 
 	shutdownWaitStart := time.Now()
+	_, endExitWaitSpan := startStepSpan(ctx, "vmorchestrator.vm.exit_wait",
+		attribute.String("run.id", run.RunID),
+	)
 	select {
 	case waitErr := <-waitDone:
 		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
+		endExitWaitSpan(waitErr)
 		jailerExited.Store(true)
 		telemetryCancel()
 		if waitErr != nil && controlRunErr == nil {
 			controlRunErr = fmt.Errorf("wait for VM exit: %w", waitErr)
 		}
-		logger.Info("VM process exited after guest shutdown", "wait_ms", result.VMExitWaitDuration.Milliseconds())
+		logger.InfoContext(ctx, "VM process exited after guest shutdown", "wait_ms", result.VMExitWaitDuration.Milliseconds())
 	case <-time.After(15 * time.Second):
 		result.VMExitWaitDuration = time.Since(shutdownWaitStart)
 		result.ForcedShutdown = true
-		logger.Warn("VM did not exit after guest shutdown; killing Firecracker", "wait_ms", result.VMExitWaitDuration.Milliseconds())
+		endExitWaitSpan(fmt.Errorf("timed out waiting for VM exit after guest shutdown"))
+		logger.WarnContext(ctx, "VM did not exit after guest shutdown; killing Firecracker", "wait_ms", result.VMExitWaitDuration.Milliseconds())
 		_ = jailer.Kill()
 		<-waitDone
 		jailerExited.Store(true)
@@ -553,24 +625,36 @@ func (o *Orchestrator) runDataset(ctx context.Context, run RunSpec, dataset stri
 	result.DroppedLogBytes = controlResult.result.DroppedLogBytes
 	result.PhaseResults = append([]PhaseResult(nil), controlResult.phases...)
 	result.FailurePhase = firstFailedPhase(controlResult.phases)
-	logger.Info("VM exited", "exit_code", result.ExitCode)
+	logger.InfoContext(ctx, "VM exited", "exit_code", result.ExitCode)
 
 	result.Metrics = parseMetricsFile(metricsPathHost)
 
-	bgCtx, bgCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	bgCtx, bgCancel := context.WithTimeout(detachedTraceContext(ctx), 10*time.Second)
 	defer bgCancel()
-	if written, writtenErr := zfsWritten(bgCtx, dataset); writtenErr == nil {
+	writtenCtx, endWrittenSpan := startStepSpan(bgCtx, "vmorchestrator.zfs.written",
+		attribute.String("run.id", run.RunID),
+		attribute.String("zfs.dataset", dataset),
+	)
+	if written, writtenErr := zfsWritten(writtenCtx, dataset); writtenErr == nil {
 		result.ZFSWritten = written
+		endWrittenSpan(nil)
 	} else {
-		logger.Warn("zfs written unavailable", "dataset", dataset, "error", writtenErr)
+		endWrittenSpan(writtenErr)
+		logger.WarnContext(ctx, "zfs written unavailable", "dataset", dataset, "error", writtenErr)
 	}
-	if provisioned, volsizeErr := zfsVolsize(bgCtx, dataset); volsizeErr == nil {
+	volsizeCtx, endVolsizeSpan := startStepSpan(bgCtx, "vmorchestrator.zfs.volsize",
+		attribute.String("run.id", run.RunID),
+		attribute.String("zfs.dataset", dataset),
+	)
+	if provisioned, volsizeErr := zfsVolsize(volsizeCtx, dataset); volsizeErr == nil {
 		result.RootfsProvisionedBytes = provisioned
+		endVolsizeSpan(nil)
 	} else {
-		logger.Warn("zfs volsize unavailable", "dataset", dataset, "error", volsizeErr)
+		endVolsizeSpan(volsizeErr)
+		logger.WarnContext(ctx, "zfs volsize unavailable", "dataset", dataset, "error", volsizeErr)
 	}
 
-	logger.Info("run complete",
+	logger.InfoContext(ctx, "run complete",
 		"exit_code", result.ExitCode,
 		"total_ms", time.Since(start).Milliseconds(),
 		"boot_ms", result.VMBootTime.Milliseconds(),

@@ -17,11 +17,11 @@ const checkpointSnapshotPrefix = "ckpt-"
 
 var zfsSnapshotNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
-func (o *Orchestrator) checkpointHandler(run RunSpec, dataset string, observer RunObserver, logger *slog.Logger) checkpointHandler {
+func (o *Orchestrator) checkpointHandler(ctx context.Context, run RunSpec, dataset string, observer RunObserver, logger *slog.Logger) checkpointHandler {
 	allowedSaveRefs := normalizeCheckpointRefSet(run.CheckpointSaveRefs)
 
 	return func(req vmproto.CheckpointRequest) vmproto.CheckpointResponse {
-		resp := o.handleCheckpointRequest(run, dataset, allowedSaveRefs, req, logger)
+		resp := o.handleCheckpointRequest(ctx, run, dataset, allowedSaveRefs, req, logger)
 		observer.OnGuestCheckpoint(run.RunID, CheckpointEvent{
 			RequestID: resp.RequestID,
 			Operation: resp.Operation,
@@ -34,7 +34,7 @@ func (o *Orchestrator) checkpointHandler(run RunSpec, dataset string, observer R
 	}
 }
 
-func (o *Orchestrator) handleCheckpointRequest(run RunSpec, dataset string, allowedSaveRefs map[string]struct{}, req vmproto.CheckpointRequest, logger *slog.Logger) vmproto.CheckpointResponse {
+func (o *Orchestrator) handleCheckpointRequest(ctx context.Context, run RunSpec, dataset string, allowedSaveRefs map[string]struct{}, req vmproto.CheckpointRequest, logger *slog.Logger) vmproto.CheckpointResponse {
 	resp := vmproto.CheckpointResponse{
 		RequestID: req.RequestID,
 		Operation: req.Operation,
@@ -69,8 +69,9 @@ func (o *Orchestrator) handleCheckpointRequest(run RunSpec, dataset string, allo
 		return resp
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), zfsTimeout)
+	snapshotCtx, cancel := context.WithTimeout(detachedTraceContext(ctx), zfsTimeout)
 	defer cancel()
+	snapshotCtx, endSnapshotSpan := startStepSpan(snapshotCtx, "vmorchestrator.checkpoint.snapshot")
 
 	props := map[string]string{
 		"forge:run_id":               run.RunID,
@@ -79,18 +80,20 @@ func (o *Orchestrator) handleCheckpointRequest(run RunSpec, dataset string, allo
 		"forge:checkpoint_created":   time.Now().UTC().Format(time.RFC3339Nano),
 		"forge:checkpoint_operation": req.Operation,
 	}
-	if err := o.ops.ZFSSnapshot(ctx, dataset, snapshotName, props); err != nil {
+	if err := o.ops.ZFSSnapshot(snapshotCtx, dataset, snapshotName, props); err != nil {
+		endSnapshotSpan(err)
 		resp.Error = err.Error()
 		if logger != nil {
-			logger.Warn("checkpoint snapshot failed", "run_id", run.RunID, "ref", resp.Ref, "request_id", resp.RequestID, "err", err)
+			logger.WarnContext(ctx, "checkpoint snapshot failed", "run_id", run.RunID, "ref", resp.Ref, "request_id", resp.RequestID, "err", err)
 		}
 		return resp
 	}
+	endSnapshotSpan(nil)
 
 	resp.Accepted = true
 	resp.VersionID = versionID
 	if logger != nil {
-		logger.Info("checkpoint snapshot saved", "run_id", run.RunID, "ref", resp.Ref, "version_id", versionID)
+		logger.InfoContext(ctx, "checkpoint snapshot saved", "run_id", run.RunID, "ref", resp.Ref, "version_id", versionID)
 	}
 	return resp
 }

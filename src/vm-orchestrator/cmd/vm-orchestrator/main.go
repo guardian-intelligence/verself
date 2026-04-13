@@ -17,6 +17,7 @@ import (
 	fmotel "github.com/forge-metal/otel"
 	vmorchestrator "github.com/forge-metal/vm-orchestrator"
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 )
@@ -97,6 +98,7 @@ func run() error {
 	server := grpc.NewServer(
 		grpc.MaxRecvMsgSize(maxMessageSize),
 		grpc.MaxSendMsgSize(maxMessageSize),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	vmService, err := vmorchestrator.NewAPIServer(cfg, logger)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	vmrpc "github.com/forge-metal/vm-orchestrator/proto/v1"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -43,6 +44,7 @@ type managedRun struct {
 type runObserver struct {
 	server *APIServer
 	run    *managedRun
+	ctx    context.Context
 }
 
 func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
@@ -97,7 +99,8 @@ func (s *APIServer) EnsureRun(ctx context.Context, req *vmrpc.EnsureRunRequest) 
 
 	if created {
 		run := runSpecFromHostRunSpec(runSpec)
-		go s.runManagedRun(record, func(runCtx context.Context, observer RunObserver) (RunResult, error) {
+		runCtx := detachedTraceContext(ctx)
+		go s.runManagedRun(runCtx, record, func(runCtx context.Context, observer RunObserver) (RunResult, error) {
 			orch := New(s.cfg, s.logger)
 			return orch.RunObserved(runCtx, run, observer)
 		})
@@ -161,7 +164,7 @@ func (s *APIServer) CancelRun(ctx context.Context, req *vmrpc.CancelRunRequest) 
 	record, ok := s.lookupLiveRun(runID)
 	if ok {
 		accepted := record.cancelRun()
-		s.appendRunEvent(runID, "cancel_requested", map[string]string{
+		s.appendRunEvent(ctx, runID, "cancel_requested", map[string]string{
 			"reason":                  reason,
 			"accepted":                strconv.FormatBool(accepted),
 			"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
@@ -180,7 +183,7 @@ func (s *APIServer) CancelRun(ctx context.Context, req *vmrpc.CancelRunRequest) 
 		return &vmrpc.CancelRunResponse{Accepted: false}, nil
 	}
 
-	s.appendRunEvent(runID, "cancel_requested", map[string]string{
+	s.appendRunEvent(ctx, runID, "cancel_requested", map[string]string{
 		"reason":                  reason,
 		"accepted":                "false",
 		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
@@ -313,7 +316,7 @@ func (s *APIServer) ensureRunRecord(ctx context.Context, spec HostRunSpec) (*man
 		}
 	}
 
-	s.logger.Info(
+	s.logger.InfoContext(ctx,
 		"host run state transition",
 		"run_id", spec.RunID,
 		"from_state", "",
@@ -349,13 +352,18 @@ func (s *APIServer) lookupLiveRun(runID string) (*managedRun, bool) {
 	return record, ok
 }
 
-func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Context, RunObserver) (RunResult, error)) {
+func (s *APIServer) runManagedRun(ctx context.Context, record *managedRun, runner func(context.Context, RunObserver) (RunResult, error)) {
 	defer s.forgetRun(record.id)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, span := tracer.Start(ctx, "vmorchestrator.managed_run",
+		trace.WithAttributes(attribute.String("run.id", record.id)))
+	defer span.End()
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	record.setRunning(cancel)
 	if err := s.state.transitionRunState(
-		context.Background(),
+		ctx,
 		record.id,
 		[]RunState{RunStatePending},
 		RunStateRunning,
@@ -365,9 +373,12 @@ func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Contex
 		nil,
 	); err != nil {
 		record.finish(RunStateFailed, nil, fmt.Errorf("transition run %s to running: %w", record.id, err))
+		if record.err != nil {
+			span.RecordError(record.err)
+		}
 		return
 	}
-	s.logger.Info(
+	s.logger.InfoContext(ctx,
 		"host run state transition",
 		"run_id", record.id,
 		"from_state", runStateName(RunStatePending),
@@ -375,10 +386,13 @@ func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Contex
 		"reason", "runner_started",
 	)
 
-	observer := &runObserver{server: s, run: record}
-	result, err := runner(ctx, observer)
+	observer := &runObserver{server: s, run: record, ctx: ctx}
+	result, err := runner(runCtx, observer)
 	finalState := finalRunState(err, result.ExitCode)
 	record.finish(finalState, &result, err)
+	if err != nil {
+		span.RecordError(err)
+	}
 
 	terminalReason := errorString(err)
 	terminalAttrs := map[string]string{
@@ -394,7 +408,7 @@ func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Contex
 	}
 
 	if stateErr := s.state.transitionRunState(
-		context.Background(),
+		ctx,
 		record.id,
 		[]RunState{RunStatePending, RunStateRunning},
 		finalState,
@@ -403,9 +417,10 @@ func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Contex
 		terminalReason,
 		&result,
 	); stateErr != nil {
-		s.logger.Error("persist terminal host run state failed", "run_id", record.id, "err", stateErr)
+		span.RecordError(stateErr)
+		s.logger.ErrorContext(ctx, "persist terminal host run state failed", "run_id", record.id, "err", stateErr)
 	} else {
-		s.logger.Info(
+		s.logger.InfoContext(ctx,
 			"host run state transition",
 			"run_id", record.id,
 			"from_state", runStateName(RunStateRunning),
@@ -415,12 +430,15 @@ func (s *APIServer) runManagedRun(record *managedRun, runner func(context.Contex
 	}
 }
 
-func (s *APIServer) appendRunEvent(runID, eventType string, attrs map[string]string) {
+func (s *APIServer) appendRunEvent(ctx context.Context, runID, eventType string, attrs map[string]string) {
 	if strings.TrimSpace(runID) == "" || strings.TrimSpace(eventType) == "" {
 		return
 	}
-	if err := s.state.appendRunEvent(context.Background(), runID, eventType, attrs); err != nil {
-		s.logger.Warn("append run event to host state ledger failed", "run_id", runID, "event_type", eventType, "err", err)
+	// Caller cancellation must not drop accepted host ledger events.
+	eventCtx, cancel := context.WithTimeout(detachedTraceContext(ctx), 5*time.Second)
+	defer cancel()
+	if err := s.state.appendRunEvent(eventCtx, runID, eventType, attrs); err != nil {
+		s.logger.WarnContext(eventCtx, "append run event to host state ledger failed", "run_id", runID, "event_type", eventType, "err", err)
 	}
 }
 
@@ -429,7 +447,7 @@ func (s *APIServer) activeRunCount(ctx context.Context) int {
 	if err == nil {
 		return count
 	}
-	s.logger.Warn("active run count fell back to in-memory state", "err", err)
+	s.logger.WarnContext(ctx, "active run count fell back to in-memory state", "err", err)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -457,7 +475,7 @@ func (o *runObserver) OnGuestPhaseStart(_ string, phase string) {
 		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 	}
 	if o.server != nil {
-		o.server.appendRunEvent(o.run.id, "phase_started", attrs)
+		o.server.appendRunEvent(o.ctx, o.run.id, "phase_started", attrs)
 	}
 }
 
@@ -474,7 +492,7 @@ func (o *runObserver) OnGuestPhaseEnd(_ string, result PhaseResult) {
 		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 	}
 	if o.server != nil {
-		o.server.appendRunEvent(o.run.id, "phase_ended", attrs)
+		o.server.appendRunEvent(o.ctx, o.run.id, "phase_ended", attrs)
 	}
 }
 
@@ -489,7 +507,7 @@ func (o *runObserver) OnGuestCheckpoint(_ string, event CheckpointEvent) {
 		"host_received_unix_nano": strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 	}
 	if o.server != nil {
-		o.server.appendRunEvent(o.run.id, "checkpoint_request", attrs)
+		o.server.appendRunEvent(o.ctx, o.run.id, "checkpoint_request", attrs)
 	}
 }
 
@@ -527,7 +545,7 @@ func (o *runObserver) OnTelemetryEvent(event TelemetryEvent) {
 		attrs["telemetry_received_unix_nano"] = strconv.FormatInt(event.ReceivedAtUnix.UTC().UnixNano(), 10)
 	}
 
-	o.server.appendRunEvent(runID, eventType, attrs)
+	o.server.appendRunEvent(o.ctx, runID, eventType, attrs)
 }
 
 func (r *managedRun) setRunning(cancel context.CancelFunc) {
