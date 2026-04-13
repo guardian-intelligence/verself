@@ -12,17 +12,19 @@ function JobsPage() {
   const entitlements = Route.useLoaderData();
   const { auth } = Route.useRouteContext();
 
-  // No honest top-line balance to check; if there is no pool anywhere with
-  // remaining capacity, there is nothing to spend on a new execution.
-  const universalEmpty = (entitlements.universal ?? []).every((pool) =>
-    pool.entries.every((entry) => entry.available <= 0),
-  );
-  const productsEmpty = (entitlements.products ?? []).every((product) =>
-    [
-      ...(product.product_pools ?? []),
-      ...(product.buckets ?? []).flatMap((bucket) => bucket.pools ?? []),
-    ].every((pool) => pool.entries.every((entry) => entry.available <= 0)),
-  );
+  // No honest top-line balance — slots never sum across coverage targets. We
+  // gate the "New Execution" button on the union of every slot having zero
+  // available, which is the only honest "nothing to spend anywhere" check.
+  const universalEmpty = entitlements.universal.available_units <= 0;
+  const productsEmpty = (entitlements.products ?? []).every((product) => {
+    const productSlotEmpty = !product.product_slot || product.product_slot.available_units <= 0;
+    const bucketsEmpty = (product.buckets ?? []).every((bucket) => {
+      const bucketSlotEmpty = !bucket.bucket_slot || bucket.bucket_slot.available_units <= 0;
+      const skuSlotsEmpty = (bucket.sku_slots ?? []).every((slot) => slot.available_units <= 0);
+      return bucketSlotEmpty && skuSlotsEmpty;
+    });
+    return productSlotEmpty && bucketsEmpty;
+  });
   const creditsExhausted = universalEmpty && productsEmpty;
 
   return (
