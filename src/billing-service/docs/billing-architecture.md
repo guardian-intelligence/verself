@@ -1600,15 +1600,18 @@ voiding --ledger command retryable_failed--> voiding
 ### Billing-document lifecycle
 
 ```text
+document status:
 issued -> voided
-issued -> payment_pending
-payment_pending -> paid
-payment_pending -> payment_failed
-payment_failed -> paid
-payment_failed -> uncollectible
+
+payment_status:
+n_a
+pending -> paid
+pending -> failed
+failed -> paid
+failed -> uncollectible
 ```
 
-A document is immutable after `issued`. Payment status and provider attachment fields may change, but document lines, totals, period boundaries, recipient snapshot, and rendered body must not. A blocked finalization is not a document lifecycle state because blocked finalizations are not customer debt and must not allocate a document number unless an operator deliberately issues a correction or explanatory internal statement.
+A document is immutable after `status = 'issued'`. `payment_status` and provider attachment fields may change, but document lines, totals, period boundaries, recipient snapshot, and rendered body must not. A blocked finalization is not a document lifecycle state because blocked finalizations are not customer debt and must not allocate a document number unless an operator deliberately issues a correction or explanatory internal statement.
 
 ### Dispute lifecycle
 
