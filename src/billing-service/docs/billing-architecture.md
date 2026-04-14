@@ -1924,6 +1924,126 @@ Invoice finalization fault cases:
 
 Expected behavior is convergence, not exactly-once execution. PostgreSQL state, deterministic identifiers, TigerBeetle idempotency, Stripe idempotency keys, invoice immutability, and billing event delivery idempotency must make repeated work safe.
 
+## Edge-case appendix
+
+This section records the target behavior for cases that are easy to mishandle when implementing the state machines.
+
+### Grant issuance and spendability
+
+**Provider payment succeeds, checkout returns, but the webhook is delayed.**
+
+The browser may show “payment received and applying” based on the checkout return, but no spendable balance exists until the provider event is durably recorded, applied, the `credit_grants` row is created, `grant_issued` is emitted, the TigerBeetle `grant_deposit` command posts, and `grant_ledger_posted` is emitted. UI polling must key off provider-event/grant state rather than assuming the redirect proves balance.
+
+**The grant row exists but TigerBeetle is unavailable before deposit dispatch.**
+
+The grant remains `ledger_posting_state = 'pending'` or `retryable_failed` and cannot fund reservations. Balance reads either omit it from available balance or mark it as pending to operators. The system must not fall back to `credit_grants.amount - spent` arithmetic because that would create a second financial truth. Retry and reconciliation reuse the persisted account and transfer IDs.
+
+**TigerBeetle posts the grant deposit, then the process crashes before PostgreSQL marks the grant posted.**
+
+The ledger command can be replayed or reconciled by the same IDs. If TigerBeetle returns an idempotent already-exists/already-posted result with matching fields, PostgreSQL completes the aggregate transition, marks `ledger_posting_state = 'posted'`, emits `grant_ledger_posted`, and makes the grant eligible for reservation. `grant_issued` remains the earlier metadata fact and must not be retroactively treated as the spendable event.
+
+**Two workers try to materialize the same entitlement period.**
+
+The deterministic period/grant uniqueness constraints pick one PostgreSQL row. Only one command generation may be active for the grant. Duplicate workers either observe the existing posted command and exit or reuse the same pending command. They must not allocate a second TigerBeetle grant account for the same source reference.
+
+### Reservation, settlement, and voiding
+
+**Reservation command posts in TigerBeetle, then PostgreSQL fails before `billing_windows.state = 'reserved'`.**
+
+The original caller must not start work unless it receives the reserved response. A retry with the same idempotency key or a repair scanner finds `billing_ledger_commands(state = 'posted')`, completes the window transition to `reserved`, marks legs `pending`, and emits `billing_window_reserved`. The same pending transfer IDs are reused; no second reservation is created.
+
+**Reservation is rejected for insufficient balance after PostgreSQL selected eligible grants.**
+
+TigerBeetle is authoritative. PostgreSQL marks the window `denied`, marks legs failed or removes unposted legs according to the state-machine convention, emits the denial event, and the caller must not launch work. This is the expected result when a concurrent reservation consumed the balance between grant selection and ledger dispatch.
+
+**Work launches, launch fails, and void dispatch is delayed.**
+
+The window moves to `voiding` and remains non-terminal until TigerBeetle accepts the void or reconciliation proves the pending reservation expired without posting. Pending balance may be temporarily unavailable, which is safer than double-spending it. No metering row or invoice usage line is emitted for a voiding window.
+
+**Settlement command posts, then PostgreSQL fails before `billing_windows.state = 'settled'`.**
+
+The window remains `settling`, which means settlement math is durable but terminal ledger acknowledgement has not been reflected into the aggregate. Projection and invoice finalization must ignore the row as unsettled. Repair completes leg states, marks the window `settled`, emits `billing_window_settled`, and then projects metering.
+
+**A settlement reports less usage than the reservation.**
+
+Settlement posts only the billable amount in waterfall order and voids the unused remainder. It never scales all sources proportionally. This preserves the hierarchy: tightest scope first, then free tier, contract, promo, refund, purchase, and finally consented receivable funding if allowed.
+
+**A workload duration includes launch/setup time and guest runtime.**
+
+Only the billable guest run phase is charged. Host launch latency, image setup, jailer setup, and warmup are usage evidence, not customer billable quantity. If guest runtime evidence is missing, the fallback must be an explicit host-side billable phase duration, not total wall-clock request duration.
+
+### Contract changes and recurring entitlements
+
+**A customer upgrades after consuming most of the lower-tier grant.**
+
+Already-issued current-cycle paid grants remain open until their own expiry. The upgrade charges the positive prorated price delta and issues only the positive prorated entitlement delta between the target phase and the current phase for the remainder of the cycle. The customer cannot extract more entitlement by stepping through intermediate plans because each immediate upgrade is computed against the effective entitlement already promised at that timestamp.
+
+**A customer schedules a downgrade or cancellation, then resumes the current plan before period end.**
+
+The scheduled `contract_changes` row transitions to canceled/reversed with actor and timestamp. The active phase remains the pricing and entitlement source until the cycle boundary. Starting the same plan while a downgrade is scheduled must resume/cancel the scheduled change rather than creating a new Stripe checkout or duplicate contract.
+
+**A contract enters grace because payment collection is late.**
+
+Entitlement continuity is controlled by contract/phase `entitlement_state`, not by Stripe subscription state. During explicit grace, contract grants may continue to materialize from `operator_contract_allowance_clearing`. If the account becomes terminally unpaid, unearned future grants are closed or voided, unused current-cycle contract allowance may be revoked through `contract_allowance_revoke` according to the contract policy, and already-consumed usage remains an invoice/receivable/correction problem rather than a hidden balance mutation.
+
+**Enterprise contract recurrence is calendar anchored while self-serve is anniversary or cycle anchored.**
+
+The recurrence policy lives on entitlement lines and phases. Both contract kinds materialize `entitlement_periods`, `credit_grants`, and `billing_cycles` through the same machinery; only the anchor calculation differs. Enterprise does not get a second subscription state machine.
+
+**Business time is advanced or reset by an operator script.**
+
+The business clock is an input to due-work discovery and period calculation, not a reason to mutate history. Already-opened cycles, periods, grants, windows, and invoices keep their timestamps. Reconciliation may open newly due periods after a forward jump. A backward reset must not create overlapping cycles or duplicate periods because deterministic domain identifiers and non-overlap constraints still apply.
+
+### Overage consent and adjustments
+
+**A free-tier org stores a payment method but does not opt into overage.**
+
+The payment method only authorizes future provider collection flows chosen by the customer. It does not create receivable funding legs. Once grants and prepaid balances are exhausted, reservation denies new work. If admitted usage leaks through a race, settlement records writeoff evidence and finalization applies a no-consent automatic adjustment within the USD $0.99 cap or blocks finalization above the cap.
+
+**A paid customer switches from bill-published-rate overage to hard cap mid-cycle.**
+
+Reservation snapshots the overage policy used to admit work. Usage admitted before the change under explicit consent can settle into receivable legs. Usage admitted after hard cap must not create receivable legs. Finalization verifies the captured reservation policy and the current invoice policy; ambiguous or missing consent blocks charging rather than surprising the customer.
+
+**No-consent leaked usage exceeds the automatic adjustment cap.**
+
+Finalization must not issue a collectible invoice for the leaked amount. It creates or updates a blocked finalization record, emits `invoice_finalization_blocked`, prevents further no-consent execution for the affected org/product until operator resolution, and leaves explicit evidence for a manual adjustment, credit-note invoice, or engineering fix.
+
+**A direct top-up is refunded after partial spend.**
+
+Only unspent purchased balance can be removed from the customer grant account through `refund_balance_remove`. Any refund exceeding unspent balance is represented as an invoice/payment correction, goodwill adjustment, or operator-approved ledger correction. The system must not create a negative customer grant balance to make Stripe refund state “fit.”
+
+### Invoice and provider boundaries
+
+**Stripe invoice totals diverge from the Forge Metal invoice because of rounding, tax, or provider line construction.**
+
+The Forge Metal invoice stays in `finalizing` or `blocked`; it does not become issued. The residual must be represented as an explicit rounding/tax line or the provider draft must be corrected until totals reconcile. Stripe PDFs and hosted pages are allowed only after the Forge Metal artifact is issued with a matching provider collection amount.
+
+**Stripe reports `invoice.payment_failed` and later `invoice.paid`.**
+
+Both provider events are immutable facts. The invoice payment state moves through failed/pending-retry to paid without changing the issued invoice artifact. Dunning and entitlement grace decisions read contract and invoice state, not Stripe subscription state.
+
+**Provider metadata is missing but a binding exists locally.**
+
+The provider event worker may resolve the event through `provider_bindings` only if the binding uniquely identifies the Forge Metal aggregate and the event type is allowed for that binding. Otherwise it records the provider event as unsupported or needs-operator and performs no financial mutation.
+
+### Projection, reconciliation, and operator repair
+
+**ClickHouse contains duplicate event rows after a retry.**
+
+This is acceptable for at-least-once delivery. Proof queries use `FINAL`, deterministic `event_id`, or aggregation by `event_id` depending on the table engine. Authorization, invoice issue, and balance reads never depend on ClickHouse immediate exactness.
+
+**A ledger command reaches `dead_letter`.**
+
+The domain aggregate remains non-terminal or guarded; it is not silently treated as success. Operator repair must either requeue the same generation when the payload is still correct, create a new generation with an explicit correction reason, or close the aggregate through a documented failure transition. The repair itself emits billing events and is visible in ClickHouse.
+
+**Reconciliation finds a TigerBeetle account or transfer PostgreSQL cannot explain.**
+
+Critical drift opens a `billing_ledger_drift_events` row, emits `ledger_drift_detected`, and trips the ledger write guard for the affected scope or the whole service depending on severity. New financial writes remain blocked until the operator resolves, waives, or corrects the drift with an auditable ledger correction.
+
+**A River job is missing, duplicated, or runs after the target row has changed.**
+
+PostgreSQL timestamps and row state define due work. Periodic repair reconstructs missing jobs. Duplicate or stale jobs re-read the row, observe that the transition is not due or already applied, and exit without side effects.
+
 ## API naming target
 
 The public/internal billing API is contract- and invoice-oriented:
