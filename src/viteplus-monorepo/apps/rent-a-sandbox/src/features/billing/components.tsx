@@ -1,6 +1,7 @@
 import { Callout } from "~/components/callout";
 import { formatDateTimeUTC } from "~/lib/format";
-import type { BillingFlashSearch } from "./search";
+import type { FlashIntent } from "./flash";
+import { assertUnreachable } from "./state";
 
 export function ContractStatusPill({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -20,69 +21,53 @@ export function ContractStatusPill({ status }: { status: string }) {
   );
 }
 
-export function BillingFlashNotice({
-  purchased,
-  contracted,
-  contractAction,
-  contractEffectiveAt,
-}: BillingFlashSearch) {
-  if (!purchased && !contracted) {
-    return null;
-  }
-
-  if (contracted) {
-    const message = contractFlashMessage(contractAction, contractEffectiveAt);
-    return (
-      <Callout tone="success" title={message.title}>
-        {message.body}
-      </Callout>
-    );
-  }
-
-  return (
-    <Callout tone="success" title="Credits purchased">
-      Credits purchased successfully. Your account credit pool has been updated.
-    </Callout>
-  );
-}
-
-function contractFlashMessage(action: BillingFlashSearch["contractAction"], effectiveAt?: string) {
-  const effectiveText = formatEffectiveAt(effectiveAt);
-  switch (action) {
-    case "upgrade":
-      return {
-        title: "Plan upgrade complete",
-        body: "Your upgraded plan is active now and the prorated allowance delta has been applied.",
-      };
-    case "downgrade":
-      return {
-        title: "Plan downgrade scheduled",
-        body: effectiveText
-          ? `Your current plan stays active until the next billing finalization at ${effectiveText}.`
-          : "Your current plan stays active until the next billing finalization.",
-      };
-    case "resume":
-      return {
-        title: "Plan resumed",
-        body: "The scheduled downgrade or cancellation was canceled. Your current plan remains active.",
-      };
-    case "unchanged":
-      return {
-        title: "Plan unchanged",
-        body: "You are already on this plan, so billing did not start a checkout session.",
-      };
-    case "start":
+// Renders a tonally-correct banner for every post-Stripe redirect. The DU
+// wiring forces every new FlashIntent kind to be handled here or the TypeScript
+// exhaustive switch fails at compile time.
+export function BillingFlashNotice({ intent }: { intent: FlashIntent }) {
+  switch (intent.kind) {
+    case "none":
+      return null;
+    case "credits_purchased":
+      return (
+        <Callout tone="success" title="Credits purchased">
+          Credits purchased successfully. Your account credit pool has been updated.
+        </Callout>
+      );
+    case "contract_started":
+      return (
+        <Callout tone="success" title="Plan checkout complete">
+          Stripe accepted the checkout. Your monthly allowances will be deposited after billing
+          applies the provider event.
+        </Callout>
+      );
+    case "contract_upgraded":
+      return (
+        <Callout tone="success" title="Plan upgrade complete">
+          Your upgraded plan is active now and the prorated allowance delta has been applied.
+        </Callout>
+      );
+    case "contract_downgrade_scheduled":
+      return (
+        <Callout tone="success" title="Plan downgrade scheduled">
+          {intent.effectiveAt
+            ? `Your current plan stays active until the next billing finalization at ${formatDateTimeUTC(intent.effectiveAt)}.`
+            : "Your current plan stays active until the next billing finalization."}
+        </Callout>
+      );
+    case "contract_resumed":
+      return (
+        <Callout tone="success" title="Plan resumed">
+          The scheduled downgrade or cancellation was canceled. Your current plan remains active.
+        </Callout>
+      );
+    case "contract_unchanged":
+      return (
+        <Callout tone="success" title="Plan unchanged">
+          You are already on this plan, so billing did not start a checkout session.
+        </Callout>
+      );
     default:
-      return {
-        title: "Plan checkout complete",
-        body: "Stripe accepted the checkout. Your monthly allowances will be deposited after billing applies the provider event.",
-      };
+      return assertUnreachable(intent);
   }
-}
-
-function formatEffectiveAt(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return formatDateTimeUTC(date);
 }
