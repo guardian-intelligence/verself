@@ -398,6 +398,12 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 			if err != nil {
 				return fmt.Errorf("set business clock override: %w", err)
 			}
+		} else {
+			// A stale override would make the contract activation below reopen a future cycle.
+			_, err = tx.Exec(ctx, `DELETE FROM billing_clock_overrides WHERE scope_kind = 'org_product' AND scope_id = $1`, orgIDText(orgID)+":"+cfg.productID)
+			if err != nil {
+				return fmt.Errorf("clear business clock override: %w", err)
+			}
 		}
 		_, err = tx.Exec(ctx, `
 			UPDATE billing_cycles

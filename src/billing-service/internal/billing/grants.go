@@ -39,7 +39,7 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	rows, err := c.pg.Query(ctx, `
 		SELECT g.grant_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
 		       g.amount, g.source, g.source_reference_id, COALESCE(g.entitlement_period_id,''), g.policy_version,
-		       COALESCE(cp.plan_id,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
+		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
 		FROM credit_grants g
 		LEFT JOIN entitlement_periods p ON p.period_id = g.entitlement_period_id
 		LEFT JOIN contract_phases cp ON cp.phase_id = p.phase_id
@@ -59,7 +59,7 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 		var g GrantBalance
 		var amount int64
 		var periodStart, periodEnd, expiresAt pgtype.Timestamptz
-		if err := rows.Scan(&g.GrantID, &g.ScopeType, &g.ScopeProductID, &g.ScopeBucketID, &g.ScopeSKUID, &amount, &g.Source, &g.SourceReferenceID, &g.EntitlementPeriodID, &g.PolicyVersion, &g.PlanID, &g.PlanDisplayName, &g.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
+		if err := rows.Scan(&g.GrantID, &g.ScopeType, &g.ScopeProductID, &g.ScopeBucketID, &g.ScopeSKUID, &amount, &g.Source, &g.SourceReferenceID, &g.EntitlementPeriodID, &g.PolicyVersion, &g.PlanID, &g.PlanTier, &g.PlanDisplayName, &g.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan credit grant: %w", err)
 		}
 		g.OrgID = orgID
@@ -75,7 +75,10 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 		}
 		out = append(out, g)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return grantsByFundingPriority(out), nil
 }
 
 func (c *Client) grantUsage(ctx context.Context, orgID OrgID) (map[string]uint64, map[string]uint64, error) {
@@ -112,9 +115,36 @@ func (c *Client) grantUsage(ctx context.Context, orgID OrgID) (map[string]uint64
 func grantsByFundingPriority(grants []GrantBalance) []GrantBalance {
 	out := append([]GrantBalance(nil), grants...)
 	sort.SliceStable(out, func(i, j int) bool {
-		return sourcePriority(out[i].Source) < sourcePriority(out[j].Source)
+		if scopePriority(out[i].ScopeType) != scopePriority(out[j].ScopeType) {
+			return scopePriority(out[i].ScopeType) < scopePriority(out[j].ScopeType)
+		}
+		if sourcePriority(out[i].Source) != sourcePriority(out[j].Source) {
+			return sourcePriority(out[i].Source) < sourcePriority(out[j].Source)
+		}
+		if planPriority(out[i].PlanTier, out[i].PlanID) != planPriority(out[j].PlanTier, out[j].PlanID) {
+			return planPriority(out[i].PlanTier, out[i].PlanID) < planPriority(out[j].PlanTier, out[j].PlanID)
+		}
+		if !out[i].StartsAt.Equal(out[j].StartsAt) {
+			return out[i].StartsAt.Before(out[j].StartsAt)
+		}
+		return out[i].GrantID < out[j].GrantID
 	})
 	return out
+}
+
+func scopePriority(scope string) int {
+	switch scope {
+	case "sku":
+		return 1
+	case "bucket":
+		return 2
+	case "product":
+		return 3
+	case "account":
+		return 4
+	default:
+		return 99
+	}
 }
 
 func sourcePriority(source string) int {
@@ -131,6 +161,24 @@ func sourcePriority(source string) int {
 		return 5
 	default:
 		return 99
+	}
+}
+
+func planPriority(tier, planID string) int {
+	switch tier {
+	case "":
+		return 0
+	case "default":
+		return 10
+	case "hobby":
+		return 20
+	case "pro":
+		return 30
+	default:
+		if planID == "" {
+			return 90
+		}
+		return 50
 	}
 }
 

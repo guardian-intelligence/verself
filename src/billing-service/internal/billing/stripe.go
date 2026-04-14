@@ -75,7 +75,7 @@ func (c *Client) ensureStripeCustomer(ctx context.Context, orgID OrgID) (string,
 	if billingEmail != "" {
 		params.Email = stripe.String(billingEmail)
 	}
-	params.SetIdempotencyKey("forge-metal:customer:" + orgIDText(orgID))
+	params.SetIdempotencyKey(textID("stripe_customer_request", orgIDText(orgID), billingEmail))
 	customer, err := c.stripe.V1Customers.Create(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("create stripe customer: %w", err)

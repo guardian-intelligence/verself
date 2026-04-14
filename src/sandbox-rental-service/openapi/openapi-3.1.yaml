@@ -29,6 +29,15 @@ components:
           type: string
         payment_state:
           type: string
+        pending_change_effective_at:
+          format: date-time
+          type: string
+        pending_change_id:
+          type: string
+        pending_change_target_plan_id:
+          type: string
+        pending_change_type:
+          type: string
         phase_end:
           format: date-time
           type: string

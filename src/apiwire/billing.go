@@ -90,18 +90,22 @@ type BillingStatementTotals struct {
 }
 
 type BillingContract struct {
-	ContractID       string     `json:"contract_id"`
-	ProductID        string     `json:"product_id"`
-	PlanID           string     `json:"plan_id"`
-	PhaseID          string     `json:"phase_id"`
-	CadenceKind      string     `json:"cadence_kind"`
-	Status           string     `json:"status"`
-	PaymentState     string     `json:"payment_state"`
-	EntitlementState string     `json:"entitlement_state"`
-	StartsAt         time.Time  `json:"starts_at"`
-	EndsAt           *time.Time `json:"ends_at,omitempty"`
-	PhaseStart       *time.Time `json:"phase_start,omitempty"`
-	PhaseEnd         *time.Time `json:"phase_end,omitempty"`
+	ContractID                string     `json:"contract_id"`
+	ProductID                 string     `json:"product_id"`
+	PlanID                    string     `json:"plan_id"`
+	PhaseID                   string     `json:"phase_id"`
+	CadenceKind               string     `json:"cadence_kind"`
+	Status                    string     `json:"status"`
+	PaymentState              string     `json:"payment_state"`
+	EntitlementState          string     `json:"entitlement_state"`
+	PendingChangeID           string     `json:"pending_change_id,omitempty"`
+	PendingChangeType         string     `json:"pending_change_type,omitempty"`
+	PendingChangeTargetPlanID string     `json:"pending_change_target_plan_id,omitempty"`
+	PendingChangeEffectiveAt  *time.Time `json:"pending_change_effective_at,omitempty"`
+	StartsAt                  time.Time  `json:"starts_at"`
+	EndsAt                    *time.Time `json:"ends_at,omitempty"`
+	PhaseStart                *time.Time `json:"phase_start,omitempty"`
+	PhaseEnd                  *time.Time `json:"phase_end,omitempty"`
 }
 
 type BillingContracts struct {

@@ -32,11 +32,11 @@ type Reservation struct {
 	SourceRef        string
 	WindowSeq        int32
 	ReservationShape string
-	WindowSecs       int32
+	WindowMillis     int32
 	PricingPhase     string
 	Allocation       map[string]float64
 	SKURates         map[string]int64
-	CostPerSec       int64
+	CostPerMillis    int64
 	WindowStart      time.Time
 	ActivatedAt      *time.Time
 	ExpiresAt        time.Time

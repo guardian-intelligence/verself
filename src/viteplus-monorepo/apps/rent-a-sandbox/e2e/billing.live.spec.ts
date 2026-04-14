@@ -276,6 +276,94 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.persistRun(run);
     }
   });
+
+  test("same-plan start resumes a scheduled downgrade without Stripe checkout", async ({ app }) => {
+    const run = app.createRun();
+
+    try {
+      const fixture = await app.setBillingUserState({
+        businessNow: contractFixtureNow(app),
+        state: "pro",
+      });
+
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      await app.goto("/billing");
+      run.started_balance = await app.readBalance();
+
+      await app.assertStableRoute({
+        path: "/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
+      });
+
+      const downgradeRedirect = await beginContractCheckout(app, hobbyPlan);
+      if (downgradeRedirect === "checkout") {
+        throw new Error("period-end downgrade unexpectedly required Stripe checkout");
+      }
+
+      await app.assertStableRoute({
+        path: "/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        expectedText: ["Choose a Plan", `Resume ${proPlan.displayName}`],
+      });
+
+      const resumeRedirect = await beginContractCheckout(app, proPlan);
+      if (resumeRedirect === "checkout") {
+        throw new Error("same-plan resume unexpectedly required Stripe checkout");
+      }
+
+      const clock = await app.setBillingClock({
+        orgID: fixture.org_id,
+        reason: `${app.runID}-period-end-after-resume`,
+        set: periodEndClockNow(app),
+      });
+      expect(clock.cycles_rolled_over).toBeGreaterThanOrEqual(1);
+      expect(clock.entitlements_ensured).toBeGreaterThanOrEqual(1);
+
+      await app.waitForCondition(
+        "pro remains active after resumed downgrade",
+        shortTimeoutMS,
+        async () => {
+          await app.goto("/billing");
+          const activeProRowText = (
+            await contractRows(app, proPlan.planID)
+              .allInnerTexts()
+              .catch(() => [])
+          ).find(
+            (text) =>
+              text.includes(proPlan.planID) && text.includes("active") && text.includes("paid"),
+          );
+          const activeHobbyRows = (
+            await contractRows(app, hobbyPlan.planID)
+              .allInnerTexts()
+              .catch(() => [])
+          ).filter(
+            (text) =>
+              text.includes(hobbyPlan.planID) && text.includes("active") && text.includes("paid"),
+          );
+
+          if (activeProRowText && activeHobbyRows.length === 0) {
+            return activeProRowText;
+          }
+
+          return false;
+        },
+      );
+
+      run.detail_url = "/billing";
+      run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
 });
 
 type ContractPlanSpec = {
@@ -338,7 +426,7 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   if (redirect === "checkout") {
     await completeStripeCheckout(app, { returnURLIncludes: "/billing?contracted=true" });
   }
-  await app.expectSSRHTML("/billing?contracted=true", ["Contract checkout complete", "Contracts"]);
+  await app.expectSSRHTML("/billing?contracted=true", ["Plan checkout complete", "Contracts"]);
   await app.goto("/billing?contracted=true");
 
   return await app.waitForCondition(`${plan.planID} contract activation`, 120_000, async () => {
@@ -387,7 +475,7 @@ async function beginContractCheckout(
     if (app.page.url().includes("checkout.stripe.com")) {
       return "checkout";
     }
-    if (app.page.url().includes("/billing?contracted=true")) {
+    if (isContractedBillingURL(app.page.url())) {
       return "billing";
     }
 
@@ -410,11 +498,15 @@ async function beginContractCheckout(
     if (app.page.url().includes("checkout.stripe.com")) {
       return "checkout";
     }
-    if (app.page.url().includes("/billing?contracted=true")) {
+    if (isContractedBillingURL(app.page.url())) {
       return "billing";
     }
     return false;
   });
+}
+
+function isContractedBillingURL(rawURL: string) {
+  return rawURL.includes("/billing") && rawURL.includes("contracted=true");
 }
 
 async function requestHobbyCancellation(app: SandboxHarness) {

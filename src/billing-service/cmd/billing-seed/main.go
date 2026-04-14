@@ -18,9 +18,9 @@ import (
 
 const (
 	sandboxProductID       = "sandbox"
-	sandboxComputeSKU      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
-	sandboxMemorySKU       = "sandbox_memory_standard_gib_second"
-	sandboxBlockStorageSKU = "sandbox_block_storage_premium_nvme_gib_second"
+	sandboxComputeSKU      = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	sandboxMemorySKU       = "sandbox_memory_standard_gib_ms"
+	sandboxBlockStorageSKU = "sandbox_block_storage_premium_nvme_gib_ms"
 )
 
 type config struct {
@@ -162,7 +162,7 @@ func run() error {
 }
 
 func parseFlags() (config, error) {
-	cfg := config{productID: sandboxProductID, productDisplayName: "Sandbox", meterUnit: "sku_second", billingModel: "metered", orgTrustTier: "new", planID: "sandbox-default", planDisplayName: "Sandbox PAYG", freeTierBucketsJSON: `{}`, planEntitlementsJSON: `{}`, targetPrepaidUnits: 500_000_000, prepaidSource: "purchase", expiresAfter: 365 * 24 * time.Hour}
+	cfg := config{productID: sandboxProductID, productDisplayName: "Sandbox", meterUnit: "sku_ms", billingModel: "metered", orgTrustTier: "new", planID: "sandbox-default", planDisplayName: "Sandbox PAYG", freeTierBucketsJSON: `{}`, planEntitlementsJSON: `{}`, targetPrepaidUnits: 500_000_000, prepaidSource: "purchase", expiresAfter: 365 * 24 * time.Hour}
 	flag.StringVar(&cfg.pgDSNFile, "pg-dsn-file", "", "path to PostgreSQL DSN file")
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", "", "PostgreSQL DSN")
 	flag.Uint64Var(&cfg.orgID, "org-id", 0, "org ID to seed")
@@ -211,7 +211,7 @@ func resolvePGDSN(cfg config) (string, error) {
 }
 
 func upsertProduct(ctx context.Context, pg *pgxpool.Pool, cfg config) (bool, error) {
-	_, err := pg.Exec(ctx, `INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (product_id) DO UPDATE SET display_name = EXCLUDED.display_name, meter_unit = EXCLUDED.meter_unit, billing_model = EXCLUDED.billing_model, reserve_policy = EXCLUDED.reserve_policy`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel, []byte(`{"shape":"time","target_quantity":300}`))
+	_, err := pg.Exec(ctx, `INSERT INTO products (product_id, display_name, meter_unit, billing_model, reserve_policy) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (product_id) DO UPDATE SET display_name = EXCLUDED.display_name, meter_unit = EXCLUDED.meter_unit, billing_model = EXCLUDED.billing_model, reserve_policy = EXCLUDED.reserve_policy`, cfg.productID, cfg.productDisplayName, cfg.meterUnit, cfg.billingModel, []byte(`{"shape":"time","target_quantity":300000}`))
 	return true, err
 }
 
@@ -344,5 +344,5 @@ func sandboxBuckets() []bucketSeed {
 }
 
 func sandboxSKUs() []skuSeed {
-	return []skuSeed{{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-second", 325_000}, {sandboxMemorySKU, "memory", "DDR5-5200", "GiB-second", 40_000}, {sandboxBlockStorageSKU, "block_storage", "Premium NVMe", "GiB-second", 10_000}}
+	return []skuSeed{{sandboxComputeSKU, "compute", "AMD EPYC 4484PX", "vCPU-ms", 325}, {sandboxMemorySKU, "memory", "DDR5-5200", "GiB-ms", 40}, {sandboxBlockStorageSKU, "block_storage", "Premium NVMe", "GiB-ms", 10}}
 }

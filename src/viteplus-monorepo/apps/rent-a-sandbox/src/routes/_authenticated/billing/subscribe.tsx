@@ -56,11 +56,21 @@ function SubscribePage() {
         <div className="grid md:grid-cols-3 gap-4">
           {plans.map((plan) => {
             const isCurrentPlan = activeContract?.plan_id === plan.plan_id;
+            const pendingChangeType = activeContract?.pending_change_type ?? "";
+            const hasPendingPlanChange =
+              pendingChangeType === "downgrade" || pendingChangeType === "cancel";
+            const canResumeCurrentPlan = isCurrentPlan && hasPendingPlanChange;
+            const isScheduledDowngradeTarget =
+              pendingChangeType === "downgrade" &&
+              activeContract?.pending_change_target_plan_id === plan.plan_id;
             const isSupportedUpgrade =
               activeContract &&
               activePlan &&
+              !hasPendingPlanChange &&
               plan.monthly_amount_cents > activePlan.monthly_amount_cents;
-            const isSupportedPlanChange = Boolean(activeContract && activePlan && !isCurrentPlan);
+            const isSupportedPlanChange = Boolean(
+              activeContract && activePlan && !isCurrentPlan && !hasPendingPlanChange,
+            );
             return (
               <div
                 key={plan.plan_id}
@@ -80,31 +90,43 @@ function SubscribePage() {
                   type="button"
                   data-testid={`start-contract-plan-${plan.plan_id}`}
                   onClick={() => {
-                    if (isSupportedPlanChange && activeContract) {
+                    if ((isSupportedPlanChange || canResumeCurrentPlan) && activeContract) {
                       changeMutation.mutate({
                         contractId: activeContract.contract_id,
                         targetPlanId: plan.plan_id,
+                        action: canResumeCurrentPlan
+                          ? "resume"
+                          : isSupportedUpgrade
+                            ? "upgrade"
+                            : "downgrade",
                       });
                       return;
                     }
-                    createMutation.mutate(plan.plan_id);
+                    createMutation.mutate({ planId: plan.plan_id, action: "start" });
                   }}
                   disabled={
-                    isPending || isCurrentPlan || Boolean(activeContract && !isSupportedPlanChange)
+                    isPending ||
+                    Boolean(activeContract && !isSupportedPlanChange && !canResumeCurrentPlan)
                   }
                   className="mt-auto px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
                 >
                   {isPending
                     ? "Redirecting..."
-                    : isCurrentPlan
-                      ? "Current plan"
-                      : isSupportedUpgrade
-                        ? `Upgrade to ${plan.display_name}`
-                        : isSupportedPlanChange
-                          ? `Schedule ${plan.display_name} downgrade`
-                          : activeContract
-                            ? "Plan change unavailable"
-                            : `Start ${plan.display_name}`}
+                    : canResumeCurrentPlan
+                      ? `Resume ${plan.display_name}`
+                      : isCurrentPlan
+                        ? "Current plan"
+                        : isScheduledDowngradeTarget
+                          ? `${plan.display_name} downgrade scheduled`
+                          : hasPendingPlanChange
+                            ? "Plan change pending"
+                            : isSupportedUpgrade
+                              ? `Upgrade to ${plan.display_name}`
+                              : isSupportedPlanChange
+                                ? `Schedule ${plan.display_name} downgrade`
+                                : activeContract
+                                  ? "Plan change unavailable"
+                                  : `Start ${plan.display_name}`}
                 </button>
               </div>
             );

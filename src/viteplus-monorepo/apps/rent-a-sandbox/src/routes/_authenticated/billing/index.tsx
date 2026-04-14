@@ -403,6 +403,10 @@ function formatQuantity(value: number, quantityUnit: string) {
 function formatQuantityUnit(quantityUnit: string, quantity: number) {
   if (quantity === 1) return quantityUnit;
   switch (quantityUnit) {
+    case "GiB-ms":
+      return "GiB-ms";
+    case "vCPU-ms":
+      return "vCPU-ms";
     case "GiB-second":
       return "GiB-seconds";
     case "vCPU-second":

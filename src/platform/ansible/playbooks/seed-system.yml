@@ -101,7 +101,7 @@
 
     seed_system_product_id: sandbox
     seed_system_product_display_name: Sandbox
-    seed_system_meter_unit: sku_second
+    seed_system_meter_unit: sku_ms
     seed_system_billing_model: metered
     seed_system_plan_id: sandbox-default
     seed_system_plan_display_name: Sandbox PAYG
@@ -142,7 +142,7 @@
     # promo grant pinned to a specific block-storage SKU. Without it the SKU
     # row in the rent-a-sandbox /billing screen never renders.
     seed_system_acme_sku_scoped_grants:
-      - sku_id: sandbox_block_storage_premium_nvme_gib_second
+      - sku_id: sandbox_block_storage_premium_nvme_gib_ms
         units: 50000000
         source: promo
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"

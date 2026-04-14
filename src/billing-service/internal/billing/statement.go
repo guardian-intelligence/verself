@@ -142,7 +142,11 @@ func statementLine(lines map[statementLineKey]*StatementLineItem, window persist
 	key := statementLineKey{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, SKUID: skuID, PricingPhase: window.PricingPhase, UnitRate: rate}
 	item := lines[key]
 	if item == nil {
-		item = &StatementLineItem{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, BucketDisplayName: window.RateContext.BucketDisplayNames[bucketID], SKUID: skuID, SKUDisplayName: window.RateContext.SKUDisplayNames[skuID], QuantityUnit: "sku_second", PricingPhase: window.PricingPhase, UnitRate: rate}
+		quantityUnit := window.RateContext.SKUQuantityUnits[skuID]
+		if quantityUnit == "" {
+			quantityUnit = "unit"
+		}
+		item = &StatementLineItem{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, BucketDisplayName: window.RateContext.BucketDisplayNames[bucketID], SKUID: skuID, SKUDisplayName: window.RateContext.SKUDisplayNames[skuID], QuantityUnit: quantityUnit, PricingPhase: window.PricingPhase, UnitRate: rate}
 		lines[key] = item
 	}
 	return item
