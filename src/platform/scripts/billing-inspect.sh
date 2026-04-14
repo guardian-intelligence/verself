@@ -257,11 +257,11 @@ EOF2
       --query "
         SELECT event_id, event_type, aggregate_type, aggregate_id, org_id, product_id, occurred_at, recorded_at, payload
         FROM forge_metal.billing_events
-        WHERE occurred_at > now() - toIntervalMinute({minutes:UInt32})
+        WHERE recorded_at > now() - toIntervalMinute({minutes:UInt32})
           AND ({org_id:String} = '' OR org_id = {org_id:String})
           AND ({product_id:String} = '' OR product_id = {product_id:String})
           AND ({event_type:String} = '' OR event_type = {event_type:String})
-        ORDER BY occurred_at DESC, event_id DESC
+        ORDER BY recorded_at DESC, event_id DESC
         LIMIT {row_limit:UInt32}
         FORMAT ${event_format}
       "
