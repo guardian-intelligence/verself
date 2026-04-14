@@ -233,6 +233,26 @@ read, persist, or refresh Zitadel bearer tokens. Frontend `beforeLoad` checks
 are useful for SSR gating, redirects, and user experience; they are not
 authorization.
 
+This rule is enforced at the edge by a Content-Security-Policy header with
+`connect-src 'self'` applied to every customer-facing frontend domain
+(`rent_a_sandbox_domain`, `stalwart_domain`, `letters_domain`). The policy lives
+in the `frontend_security_headers` snippet in
+`src/platform/ansible/roles/caddy/templates/Caddyfile.j2`. Because `connect-src`
+is restricted to the frontend's own origin, the browser cannot issue `fetch`,
+`XHR`, `WebSocket`, or `EventSource` requests to `billing.<domain>`,
+`auth.<domain>`, or any other Go service origin — every API round trip must
+traverse a TanStack Start server function, which is where the bearer attachment
+actually happens. A regression that adds a cross-origin browser fetch surfaces
+as a loud CSP console error and a blocked request rather than a silent token
+leak. Same-origin sub-paths such as `/v1/shape` (Electric SQL) and `/jmap/*`
+(Stalwart JMAP on the mail domain) are unaffected because Caddy fronts them on
+the frontend origin.
+
+Script CSP still allows `'unsafe-inline'` because Vinxi/TanStack Start injects
+inline hydration scripts; moving to per-request nonces is a tracked hardening
+step and does not change the bearer-isolation guarantee, which rides on
+`connect-src`.
+
 Do not assume a web UI persona by inserting rows into `frontend_auth.auth_sessions`.
 Those sessions are coupled to the encrypted HTTP-only cookie, OAuth state,
 nonce, PKCE, token expiry, and refresh semantics owned by the auth server
