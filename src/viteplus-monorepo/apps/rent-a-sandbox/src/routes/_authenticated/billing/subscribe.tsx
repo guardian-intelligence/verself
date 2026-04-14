@@ -1,10 +1,11 @@
+import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";
 import {
   assertUnreachable,
-  derivePlanCard,
+  deriveAllPlanCards,
   intentFor,
   type BillingAccount,
   type PlanCardIntent,
@@ -27,6 +28,12 @@ function SubscribePage() {
   });
   const mutation = usePlanCardActionMutation();
   const plans = snapshot.plans.plans ?? [];
+  // deriveAllPlanCards emits the billing.plan_cards.derive span carrying the
+  // comma-joined distribution of card kinds. That span is the post-deploy
+  // verification knob for "did every expected state actually render during
+  // this test run" — see the commit message on the selector intro for the
+  // ClickHouse query.
+  const cards = useMemo(() => deriveAllPlanCards(account, plans), [account, plans]);
 
   return (
     <div className="space-y-6">
@@ -37,17 +44,16 @@ function SubscribePage() {
 
       {plans.length > 0 ? (
         <div className="grid md:grid-cols-3 gap-4">
-          {plans.map((plan) => {
-            const card = derivePlanCard(account, plan);
+          {cards.map((card) => {
             const intent = intentFor(card, account);
             return (
               <PlanCardView
-                key={plan.plan_id}
+                key={card.plan.plan_id}
                 account={account}
                 card={card}
                 intent={intent}
                 isPending={mutation.isPending}
-                onClick={() => mutation.mutate({ intent, plan })}
+                onClick={() => mutation.mutate({ intent, plan: card.plan })}
               />
             );
           })}
