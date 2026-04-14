@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/forge-metal/billing-service/internal/billing"
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 )
 
 const (
@@ -85,8 +86,16 @@ func run() error {
 	if err := pg.Ping(ctx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
-	client, err := billing.NewClient(pg, nil, nil, billing.Config{UseStripe: false}, slog.Default())
+	ledgerClient, err := openLedgerClient()
 	if err != nil {
+		return err
+	}
+	defer ledgerClient.Close()
+	client, err := billing.NewClient(pg, nil, nil, billing.Config{UseStripe: false}, slog.Default(), ledgerClient)
+	if err != nil {
+		return err
+	}
+	if err := client.EnsureLedgerBootstrapped(ctx); err != nil {
 		return err
 	}
 
@@ -165,6 +174,22 @@ func run() error {
 	}
 	fmt.Println(string(encoded))
 	return nil
+}
+
+func openLedgerClient() (*ledger.Client, error) {
+	address := strings.TrimSpace(os.Getenv("BILLING_TB_ADDRESS"))
+	if address == "" {
+		address = "127.0.0.1:3320"
+	}
+	clusterID := uint64(0)
+	if raw := strings.TrimSpace(os.Getenv("BILLING_TB_CLUSTER_ID")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse BILLING_TB_CLUSTER_ID: %w", err)
+		}
+		clusterID = parsed
+	}
+	return ledger.NewClient(clusterID, strings.Split(address, ","))
 }
 
 func parseFlags() (config, error) {
@@ -438,14 +463,16 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 			return fmt.Errorf("ensure open cycle: %w", err)
 		}
 		_, err = tx.Exec(ctx, `
-			DELETE FROM credit_grants
+			UPDATE credit_grants
+			SET closed_at = $3, closed_reason = 'set-user-state'
 			WHERE org_id = $1
 			  AND source IN ('free_tier', 'contract')
+			  AND closed_at IS NULL
 			  AND (
 			    scope_product_id = $2
 			    OR entitlement_period_id IN (SELECT period_id FROM entitlement_periods WHERE org_id = $1 AND product_id = $2)
 			  )
-		`, orgIDText(orgID), cfg.productID)
+		`, orgIDText(orgID), cfg.productID, now)
 		if err != nil {
 			return fmt.Errorf("clear old entitlement grants: %w", err)
 		}

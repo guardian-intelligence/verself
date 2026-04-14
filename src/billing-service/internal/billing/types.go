@@ -3,6 +3,8 @@ package billing
 import (
 	"errors"
 	"time"
+
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 )
 
 type OrgID uint64
@@ -11,6 +13,8 @@ type Config struct {
 	StripeSecretKey           string
 	EventDeliveryProjectEvery time.Duration
 	EntitlementReconcileEvery time.Duration
+	LedgerDispatchEvery       time.Duration
+	LedgerReconcileEvery      time.Duration
 	PendingTimeout            time.Duration
 	UseStripe                 bool
 }
@@ -19,6 +23,8 @@ func DefaultConfig() Config {
 	return Config{
 		EventDeliveryProjectEvery: time.Second,
 		EntitlementReconcileEvery: time.Hour,
+		LedgerDispatchEvery:       time.Second,
+		LedgerReconcileEvery:      time.Minute,
 		PendingTimeout:            time.Hour,
 		UseStripe:                 true,
 	}
@@ -181,6 +187,7 @@ type GrantBalance struct {
 	Available           uint64
 	Pending             uint64
 	Spent               uint64
+	ledgerAccountID     ledger.ID
 }
 
 type Statement struct {

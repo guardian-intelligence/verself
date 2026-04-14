@@ -7,10 +7,16 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 )
 
 type fundingLeg struct {
 	GrantID           string `json:"grant_id,omitempty"`
+	GrantAccountID    string `json:"grant_account_id,omitempty"`
+	ReservationID     string `json:"reservation_transfer_id,omitempty"`
+	SettlementID      string `json:"settlement_transfer_id,omitempty"`
+	VoidID            string `json:"void_transfer_id,omitempty"`
 	Amount            uint64 `json:"amount"`
 	Source            string `json:"source"`
 	ScopeType         string `json:"scope_type,omitempty"`
@@ -31,15 +37,13 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 		if err := c.EnsureCurrentEntitlements(ctx, orgID, productID); err != nil {
 			return nil, err
 		}
-	}
-	used, pending, err := c.grantUsage(ctx, orgID)
-	if err != nil {
+	} else if _, err := c.PostPendingGrantDeposits(ctx, orgID, ""); err != nil {
 		return nil, err
 	}
 	rows, err := c.pg.Query(ctx, `
 		SELECT g.grant_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
 		       g.amount, g.source, g.source_reference_id, COALESCE(g.entitlement_period_id,''), g.policy_version,
-		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
+		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at, g.account_id
 		FROM credit_grants g
 		LEFT JOIN entitlement_periods p ON p.period_id = g.entitlement_period_id
 		LEFT JOIN contract_phases cp ON cp.phase_id = p.phase_id
@@ -58,9 +62,14 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 	for rows.Next() {
 		var g GrantBalance
 		var amount int64
+		var accountRaw []byte
 		var periodStart, periodEnd, expiresAt pgtype.Timestamptz
-		if err := rows.Scan(&g.GrantID, &g.ScopeType, &g.ScopeProductID, &g.ScopeBucketID, &g.ScopeSKUID, &amount, &g.Source, &g.SourceReferenceID, &g.EntitlementPeriodID, &g.PolicyVersion, &g.PlanID, &g.PlanTier, &g.PlanDisplayName, &g.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
+		if err := rows.Scan(&g.GrantID, &g.ScopeType, &g.ScopeProductID, &g.ScopeBucketID, &g.ScopeSKUID, &amount, &g.Source, &g.SourceReferenceID, &g.EntitlementPeriodID, &g.PolicyVersion, &g.PlanID, &g.PlanTier, &g.PlanDisplayName, &g.StartsAt, &periodStart, &periodEnd, &expiresAt, &accountRaw); err != nil {
 			return nil, fmt.Errorf("scan credit grant: %w", err)
+		}
+		accountID, err := ledger.IDFromBytes(accountRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse grant account id %s: %w", g.GrantID, err)
 		}
 		g.OrgID = orgID
 		g.OriginalAmount = uint64(amount)
@@ -68,17 +77,47 @@ func (c *Client) ListGrantBalances(ctx context.Context, orgID OrgID, productID s
 		g.PeriodStart = timePtr(periodStart)
 		g.PeriodEnd = timePtr(periodEnd)
 		g.ExpiresAt = timePtr(expiresAt)
-		g.Pending = pending[g.GrantID]
-		g.Spent = used[g.GrantID]
-		if g.OriginalAmount > g.Pending+g.Spent {
-			g.Available = g.OriginalAmount - g.Pending - g.Spent
-		}
+		g.ledgerAccountID = accountID
 		out = append(out, g)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if err := c.hydrateGrantLedgerBalances(ctx, out); err != nil {
+		return nil, err
+	}
 	return grantsByFundingPriority(out), nil
+}
+
+func (c *Client) hydrateGrantLedgerBalances(ctx context.Context, grants []GrantBalance) error {
+	if len(grants) == 0 {
+		return nil
+	}
+	ledgerClient, err := c.requireLedger()
+	if err != nil {
+		return err
+	}
+	ids := make([]ledger.ID, 0, len(grants))
+	for _, grant := range grants {
+		if grant.ledgerAccountID.IsZero() {
+			return fmt.Errorf("grant %s missing ledger account id", grant.GrantID)
+		}
+		ids = append(ids, grant.ledgerAccountID)
+	}
+	balances, err := ledgerClient.LookupBalances(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range grants {
+		balance, ok := balances[grants[i].ledgerAccountID]
+		if !ok {
+			return fmt.Errorf("%w: grant %s account %s", ledger.ErrAccountNotFound, grants[i].GrantID, grants[i].ledgerAccountID.String())
+		}
+		grants[i].Available = balance.Available
+		grants[i].Pending = balance.Pending
+		grants[i].Spent = balance.Spent
+	}
+	return nil
 }
 
 func (c *Client) grantUsage(ctx context.Context, orgID OrgID) (map[string]uint64, map[string]uint64, error) {

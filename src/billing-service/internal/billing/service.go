@@ -14,6 +14,7 @@ import (
 	"github.com/stripe/stripe-go/v85"
 	"go.opentelemetry.io/otel"
 
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/store"
 )
 
@@ -27,9 +28,10 @@ type Client struct {
 	logger  *slog.Logger
 	queries *store.Queries
 	runtime *Runtime
+	ledger  *ledger.Client
 }
 
-func NewClient(pg *pgxpool.Pool, stripeClient *stripe.Client, ch clickhouse.Conn, cfg Config, logger *slog.Logger) (*Client, error) {
+func NewClient(pg *pgxpool.Pool, stripeClient *stripe.Client, ch clickhouse.Conn, cfg Config, logger *slog.Logger, ledgerClient *ledger.Client) (*Client, error) {
 	if pg == nil {
 		return nil, fmt.Errorf("%w: postgres pool is required", ErrInvalidConfig)
 	}
@@ -42,10 +44,16 @@ func NewClient(pg *pgxpool.Pool, stripeClient *stripe.Client, ch clickhouse.Conn
 	if cfg.EntitlementReconcileEvery == 0 {
 		cfg.EntitlementReconcileEvery = time.Hour
 	}
+	if cfg.LedgerDispatchEvery == 0 {
+		cfg.LedgerDispatchEvery = time.Second
+	}
+	if cfg.LedgerReconcileEvery == 0 {
+		cfg.LedgerReconcileEvery = time.Minute
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Client{pg: pg, stripe: stripeClient, ch: ch, cfg: cfg, logger: logger, queries: store.New(pg)}, nil
+	return &Client{pg: pg, stripe: stripeClient, ch: ch, cfg: cfg, logger: logger, queries: store.New(pg), ledger: ledgerClient}, nil
 }
 
 func (c *Client) Pool() *pgxpool.Pool { return c.pg }
