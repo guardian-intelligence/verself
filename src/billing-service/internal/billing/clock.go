@@ -177,7 +177,7 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 			}
 		}
 
-		voided, err := c.voidCyclesOverlappingWallClockResetTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow, reason)
+		voided, err := c.voidCyclesForWallClockResetTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow, reason)
 		if err != nil {
 			return err
 		}
@@ -210,6 +210,8 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 			"current_cycle_id":             repair.CurrentCycleID,
 			"preserved_paid_plan":          paid.ok,
 			"preserved_purchase_balances":  true,
+			"fixture_repair":               true,
+			"closed_grant_ledger_sweep":    false,
 		}
 		if repair.PreviousBusinessNow != nil {
 			payload["previous_business_now"] = repair.PreviousBusinessNow.Format(time.RFC3339Nano)
@@ -281,7 +283,7 @@ func (c *Client) shiftActiveContractToWallClockTx(ctx context.Context, tx pgx.Tx
 	return nil
 }
 
-func (c *Client) voidCyclesOverlappingWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time, reason string) ([]string, error) {
+func (c *Client) voidCyclesForWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time, reason string) ([]string, error) {
 	rows, err := tx.Query(ctx, `
 		UPDATE billing_cycles
 		SET status = 'voided',
@@ -292,7 +294,10 @@ func (c *Client) voidCyclesOverlappingWallClockResetTx(ctx context.Context, tx p
 		WHERE org_id = $1
 		  AND product_id = $2
 		  AND status <> 'voided'
-		  AND tstzrange(starts_at, ends_at, '[)') && tstzrange($3::timestamptz, $4::timestamptz, '[)')
+		  AND (
+		    status IN ('open', 'closing')
+		    OR tstzrange(starts_at, ends_at, '[)') && tstzrange($3::timestamptz, $4::timestamptz, '[)')
+		  )
 		RETURNING cycle_id
 	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow, reason)
 	if err != nil {
