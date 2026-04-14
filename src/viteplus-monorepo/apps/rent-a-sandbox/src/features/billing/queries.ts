@@ -61,9 +61,6 @@ export async function loadBillingPage(queryClient: QueryClient, auth: Authentica
     ]);
 
     const snapshot: BillingSnapshot = { plans, contracts, entitlements, statement };
-    // Eager derivation so the loader span carries account.kind attributes.
-    // The client re-derives via useBillingAccount but that call is a no-op at
-    // the OTel layer in the browser.
     const account = deriveBillingAccount(snapshot);
 
     return {

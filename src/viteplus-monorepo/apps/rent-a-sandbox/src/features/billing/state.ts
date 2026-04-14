@@ -1,4 +1,3 @@
-import { trace, type Attributes } from "@opentelemetry/api";
 import type {
   BillingPlan,
   Contract,
@@ -9,13 +8,17 @@ import type {
   Statement,
 } from "~/lib/sandbox-rental-api";
 
+// Billing state collapses the four boundary-parsed objects the billing-service
+// returns (plans, contracts, entitlements, statement) into a small set of
+// discriminated unions the UI can render off exhaustively. Every route that
+// touches billing — subscribe, billing index, jobs gate — consumes these
+// types instead of walking raw wire shapes or fanning out booleans from
+// Contract.pending_change_type.
+
 // --------------------------------------------------------------------------
 // Public types
 // --------------------------------------------------------------------------
 
-// Every branch that represents "the customer is paying us" carries the same
-// CreditsState so downstream views (usage table, jobs CTA, credits header)
-// never have to do their own bookkeeping.
 export type BillingAccount =
   | { readonly kind: "no_contract"; readonly credits: CreditsState }
   | {
@@ -44,10 +47,10 @@ export type CreditsState = {
   readonly kind: "available" | "exhausted";
   readonly availableUnits: number;
   readonly pendingUnits: number;
-  // Per-product pools so the usage table can answer "how much of this product's
-  // bucket remains" without re-walking the entitlement tree. Purchase (account
-  // balance) is intentionally omitted from byProduct — it only surfaces via
-  // accountBalance above the table. See features/billing/entitlements.
+  // Per-product pools so the usage table can answer "how much of this
+  // product's bucket remains" without re-walking the entitlement tree.
+  // Purchase (account balance) is intentionally omitted from byProduct —
+  // it only surfaces via accountBalance.
   readonly byProduct: ReadonlyMap<string, CreditsProductState>;
   readonly accountBalance: AccountBalance;
 };
@@ -56,10 +59,8 @@ export type CreditsProductState = {
   readonly productId: string;
   readonly availableUnits: number;
   readonly pendingUnits: number;
-  // Flattened source list per SKU in consumption order (free_tier → contract →
-  // promo → refund → purchase). Key: sku_id. This is the same shape the old
-  // SKURemainingLookup produced; consumers that need drain annotations read
-  // from here.
+  // Flattened source list per SKU in consumption order
+  // (free_tier → contract → promo → refund). Keyed by sku_id.
   readonly bySKU: ReadonlyMap<string, readonly EntitlementSourceTotal[]>;
 };
 
@@ -112,30 +113,13 @@ export type BillingSnapshot = {
 
 const SANDBOX_PRODUCT_ID = "sandbox";
 
-// Pure derivation. Wrapped in a billing.account.derive span so each SSR
-// observation shows up in ClickHouse with the observed account.kind and
-// credits.kind attributes. Client-side re-derivation is a no-op at the OTel
-// layer (no browser provider registered) but still returns the correct value.
 export function deriveBillingAccount(snapshot: BillingSnapshot): BillingAccount {
-  const tracer = trace.getTracer("rent-a-sandbox");
-  return tracer.startActiveSpan("billing.account.derive", (span) => {
-    try {
-      const account = buildAccount(snapshot);
-      span.setAttributes(accountSpanAttributes(account));
-      return account;
-    } finally {
-      span.end();
-    }
-  });
-}
-
-function buildAccount(snapshot: BillingSnapshot): BillingAccount {
   const plans = snapshot.plans.plans ?? [];
   const contracts = snapshot.contracts.contracts ?? [];
   const credits = buildCreditsState(snapshot.entitlements);
 
-  // Single active sandbox contract. Multiple-product support would pick the
-  // sandbox row explicitly; we only ship the sandbox product today.
+  // Single active sandbox contract. Multi-product support would pick the
+  // sandbox row explicitly; only the sandbox product is sold today.
   const activeContract = contracts.find(
     (c) =>
       c.product_id === SANDBOX_PRODUCT_ID &&
@@ -148,9 +132,8 @@ function buildAccount(snapshot: BillingSnapshot): BillingAccount {
 
   const plan = plans.find((p) => p.plan_id === activeContract.plan_id);
   if (!plan) {
-    // Contract references a plan the catalog doesn't know about — treat as
-    // no_contract for UX purposes, but keep the raw contract around if we ever
-    // add a diagnostic surface. Loud failure matches CLAUDE.md guidance.
+    // A contract whose plan_id is missing from the catalog is a data
+    // integrity break, not a rendering edge case — fail loud.
     throw new BillingAccountError(
       `contract ${activeContract.contract_id} references unknown plan_id=${activeContract.plan_id}`,
     );
@@ -220,8 +203,8 @@ export function derivePlanCard(account: BillingAccount, plan: BillingPlan): Plan
 
     case "pending_downgrade": {
       if (plan.plan_id === account.plan.plan_id) {
-        // Clicking the current plan while a downgrade is pending resumes it —
-        // same-plan "start" is the billing-service's documented resume affordance.
+        // Clicking the current plan while a downgrade is pending resumes it;
+        // billing-service treats a same-plan "start" as a resume affordance.
         return { kind: "current_resumable", plan };
       }
       if (plan.plan_id === account.target.plan_id) {
@@ -243,21 +226,7 @@ export function deriveAllPlanCards(
   account: BillingAccount,
   plans: readonly BillingPlan[],
 ): readonly PlanCardState[] {
-  const tracer = trace.getTracer("rent-a-sandbox");
-  return tracer.startActiveSpan("billing.plan_cards.derive", (span) => {
-    try {
-      const cards = plans.map((plan) => derivePlanCard(account, plan));
-      const kinds = cards.map((c) => c.kind);
-      span.setAttributes({
-        "billing.account.kind": account.kind,
-        "billing.plan_cards.count": cards.length,
-        "billing.plan_cards.kinds": kinds.join(","),
-      });
-      return cards;
-    } finally {
-      span.end();
-    }
-  });
+  return plans.map((plan) => derivePlanCard(account, plan));
 }
 
 export function intentFor(card: PlanCardState, account: BillingAccount): PlanCardIntent {
@@ -312,10 +281,8 @@ function buildCreditsState(view: EntitlementsView): CreditsState {
     byProduct.set(product.product_id, buildProductCredits(product));
   }
 
-  // "exhausted" = no product bucket can draw AND account balance can't draw
-  // AND the universal slot has nothing left. This matches the old nested
-  // entitlements.products.every() check in jobs/index.tsx, collapsed to one
-  // computation on the account shape.
+  // Exhausted = nothing left to draw anywhere: no universal slot, no
+  // account balance, no product bucket.
   const universalAvailable = view.universal.available_units;
   const anyProductAvailable = Array.from(byProduct.values()).some((p) => p.availableUnits > 0);
   const exhausted =
@@ -384,8 +351,9 @@ function buildProductCredits(
   };
 }
 
-// Lifted verbatim from features/billing/entitlements so derive is the single
-// entry point for credits aggregation. The old module now re-exports from here.
+// combineSources merges bucket- and product-scoped entitlements into a flat
+// list per SKU in draining order. Purchase (account balance) is excluded —
+// it surfaces only via AccountBalance.
 function combineSources(
   sources: readonly EntitlementSourceTotal[],
 ): readonly EntitlementSourceTotal[] {
@@ -399,7 +367,6 @@ function combineSources(
   const byKey = new Map<string, EntitlementSourceTotal>();
   for (const source of sources) {
     if (source.available_units === 0) continue;
-    // Account-scoped top-ups surface only via the Account Balance header.
     if (source.source === "purchase") continue;
     const key = `${source.source}:${source.plan_id || "_"}:${source.label}`;
     const existing = byKey.get(key);
@@ -413,50 +380,6 @@ function combineSources(
 }
 
 // --------------------------------------------------------------------------
-// Span helpers
-// --------------------------------------------------------------------------
-
-function accountSpanAttributes(account: BillingAccount): Attributes {
-  const base: Attributes = {
-    "billing.account.kind": account.kind,
-    "billing.credits.kind": account.credits.kind,
-    "billing.credits.available_units": account.credits.availableUnits,
-    "billing.credits.pending_units": account.credits.pendingUnits,
-    "billing.credits.product_count": account.credits.byProduct.size,
-    "billing.credits.account_balance_available_units":
-      account.credits.accountBalance.availableUnits,
-  };
-  if ("plan" in account) {
-    base["billing.active_plan_id"] = account.plan.plan_id;
-    base["billing.active_plan_tier"] = account.plan.tier;
-  }
-  if (account.kind === "pending_downgrade") {
-    base["billing.pending_target_plan_id"] = account.target.plan_id;
-    if (account.effectiveAt) {
-      base["billing.pending_effective_at"] = account.effectiveAt.toISOString();
-    }
-  }
-  if (account.kind === "pending_cancel" && account.effectiveAt) {
-    base["billing.pending_effective_at"] = account.effectiveAt.toISOString();
-  }
-  return base;
-}
-
-export function planCardActionAttributes(
-  card: PlanCardState,
-  intent: PlanCardIntent,
-  account: BillingAccount,
-): Attributes {
-  return {
-    "billing.account.kind": account.kind,
-    "billing.plan_card.kind": card.kind,
-    "billing.plan_card.plan_id": card.plan.plan_id,
-    "billing.plan_card.plan_tier": card.plan.tier,
-    "billing.plan_card.intent": intent.kind,
-  };
-}
-
-// --------------------------------------------------------------------------
 // Misc helpers
 // --------------------------------------------------------------------------
 
@@ -466,8 +389,8 @@ function parseIsoDate(value: string | undefined | null): Date | null {
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
-// Exhaustiveness assertion — any missing switch arm becomes a compile error
-// at every consumer of a BillingAccount / PlanCardState discriminant.
+// Missing switch arms for any BillingAccount or PlanCardState discriminant
+// become compile errors at every consumer.
 export function assertUnreachable(value: never): never {
   throw new Error(`unreachable: ${JSON.stringify(value)}`);
 }
