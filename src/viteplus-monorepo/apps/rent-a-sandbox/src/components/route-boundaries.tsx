@@ -8,12 +8,12 @@ export function AppPending() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Skeleton className="h-6 w-40 rounded-none" />
-        <Skeleton className="h-4 w-72 max-w-full rounded-none" />
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-80 max-w-full" />
       </div>
       <div className="grid gap-4">
-        <Skeleton className="h-28 w-full rounded-none" />
-        <Skeleton className="h-28 w-full rounded-none" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full" />
       </div>
     </div>
   );
@@ -27,10 +27,10 @@ export function AppRouteError({ error, reset }: ErrorComponentProps) {
         error={error}
         action={
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="default" className="rounded-none" onClick={() => reset()}>
+            <Button type="button" onClick={() => reset()}>
               Retry
             </Button>
-            <Button asChild variant="outline" className="rounded-none">
+            <Button asChild variant="outline">
               <Link to="/executions">Back to executions</Link>
             </Button>
           </div>
@@ -46,7 +46,7 @@ export function AppNotFound(_props: NotFoundRouteProps) {
       title="Not found"
       body="The page or resource you requested does not exist."
       action={
-        <Button asChild variant="default" className="rounded-none">
+        <Button asChild>
           <Link to="/executions">Return to executions</Link>
         </Button>
       }

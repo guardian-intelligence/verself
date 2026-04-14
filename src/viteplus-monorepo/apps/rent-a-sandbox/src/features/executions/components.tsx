@@ -30,7 +30,7 @@ import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
 import { type ElectricExecution } from "~/lib/collections";
 import { formatDateTimeUTC } from "~/lib/format";
-import { formatExecutionRepo, useExecutionLogs, useExecutionRows } from "./live";
+import { useExecutionLogs, useExecutionRows } from "./live";
 import { executionQuery } from "./queries";
 import { ExecutionStatusBadge, isExecutionActiveStatus } from "./status";
 import { DEFAULT_RUN_COMMAND, validateRunCommand } from "./validation";
@@ -80,10 +80,7 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link
-          to="/executions"
-          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
-        >
+        <Link to="/executions" className="text-sm text-muted-foreground hover:text-foreground">
           Executions
         </Link>
         <span className="text-muted-foreground">/</span>
@@ -93,10 +90,10 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <InfoCard
-          label="Repository"
-          value={formatExecutionRepo(execution.repo, execution.repo_url)}
+          label="Source"
+          value={execution.source_ref || execution.source_kind || "--"}
         />
-        <InfoCard label="Ref" value={execution.ref || execution.default_branch || "--"} />
+        <InfoCard label="Kind" value={execution.kind} />
         <InfoCard
           label="Duration"
           value={attempt.duration_ms ? `${(attempt.duration_ms / 1000).toFixed(1)}s` : "--"}
@@ -106,7 +103,6 @@ function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
           label="ZFS written"
           value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
         />
-        <InfoCard label="Kind" value={execution.kind} />
         <InfoCard label="Attempt" value={attempt.attempt_id.slice(0, 8)} />
       </div>
 
@@ -122,10 +118,7 @@ function ExecutionDetailLoading({ executionId }: { executionId: string }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link
-          to="/executions"
-          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
-        >
+        <Link to="/executions" className="text-sm text-muted-foreground hover:text-foreground">
           Executions
         </Link>
         <span className="text-muted-foreground">/</span>
@@ -178,7 +171,7 @@ export function ExecutionSubmissionForm({
               onBlur={field.handleBlur}
               onChange={(e) => field.handleChange(e.target.value)}
               rows={4}
-              className="rounded-none font-mono"
+              className="font-mono"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
               <FieldError>{field.state.meta.errors[0]}</FieldError>
@@ -193,11 +186,7 @@ export function ExecutionSubmissionForm({
 
       <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
         {([canSubmit, isSubmitting]) => (
-          <Button
-            type="submit"
-            disabled={!canSubmit || isSubmitting || mutation.isPending}
-            className="rounded-none"
-          >
+          <Button type="submit" disabled={!canSubmit || isSubmitting || mutation.isPending}>
             {mutation.isPending || isSubmitting ? "Submitting…" : "Submit execution"}
           </Button>
         )}
@@ -243,17 +232,13 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="border border-foreground">
+      <div className="overflow-hidden rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="font-mono text-[10px] uppercase tracking-wider">ID</TableHead>
-              <TableHead className="font-mono text-[10px] uppercase tracking-wider">
-                Status
-              </TableHead>
-              <TableHead className="font-mono text-[10px] uppercase tracking-wider">
-                Created
-              </TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -263,7 +248,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
                   <Link
                     to="/executions/$executionId"
                     params={{ executionId: execution.execution_id }}
-                    className="font-mono hover:underline"
+                    className="font-mono text-primary hover:underline"
                   >
                     {execution.execution_id.slice(0, 8)}
                   </Link>
@@ -271,7 +256,7 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
                 <TableCell>
                   <ExecutionStatusBadge status={execution.status} />
                 </TableCell>
-                <TableCell className="font-mono text-muted-foreground">
+                <TableCell className="text-muted-foreground">
                   {formatDateTimeUTC(execution.created_at)}
                 </TableCell>
               </TableRow>
@@ -315,8 +300,8 @@ function ExecutionTablePagination({
 
   return (
     <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        {start.toLocaleString()}–{end.toLocaleString()} of {totalCount.toLocaleString()}
+      <p className="text-xs text-muted-foreground">
+        Showing {start.toLocaleString()}–{end.toLocaleString()} of {totalCount.toLocaleString()}
       </p>
       <Pagination className="mx-0 w-auto justify-end">
         <PaginationContent>
@@ -379,7 +364,7 @@ function ExecutionListError({ status }: { status: string }) {
       title="Could not load executions"
       error={`Execution sync failed (${status}).`}
       action={
-        <Button asChild variant="outline" className="rounded-none">
+        <Button asChild variant="outline">
           <Link to="/executions">Retry</Link>
         </Button>
       }
@@ -393,7 +378,7 @@ function ExecutionListEmpty() {
       title="No executions yet"
       body="Launch a manual execution to get started."
       action={
-        <Button asChild variant="default" className="rounded-none">
+        <Button asChild variant="default">
           <Link to="/executions/new">New execution</Link>
         </Button>
       }
@@ -404,9 +389,7 @@ function ExecutionListEmpty() {
 function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Logs
-      </h2>
+      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
       <Callout title="Loading logs">
         {isRunning ? "Waiting for output…" : "No log output yet."}
       </Callout>
@@ -417,14 +400,12 @@ function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
 function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Logs
-      </h2>
+      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
       <ErrorCallout
         title="Log stream unavailable"
         error={`Log stream unavailable (${status}).`}
         action={
-          <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             {isRunning
               ? "The attempt is still running, but logs have not synced yet."
               : "No log output is available."}
@@ -438,9 +419,7 @@ function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: 
 function ExecutionLogsEmpty({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Logs
-      </h2>
+      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
       <Callout title="Logs">{isRunning ? "Waiting for output…" : "No log output."}</Callout>
     </div>
   );
@@ -451,13 +430,11 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
 
   return (
     <div>
-      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Logs
-      </h2>
+      <h2 className="mb-2 text-sm font-semibold">Logs</h2>
       <div className="relative">
         <pre
           ref={scrollRef}
-          className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap border border-foreground bg-foreground/5 p-4 font-mono text-xs"
+          className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-4 font-mono text-xs"
         >
           <code ref={contentRef}>{logText}</code>
         </pre>
@@ -465,7 +442,7 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
           <Button
             type="button"
             onClick={() => scrollToBottom()}
-            className="absolute bottom-3 right-3 rounded-none"
+            className="absolute bottom-3 right-3 shadow-md"
             size="sm"
           >
             Scroll to bottom
@@ -478,14 +455,12 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="gap-1 rounded-none border-foreground p-3 shadow-none">
+    <Card className="gap-1 p-3">
       <CardHeader className="p-0">
-        <CardTitle className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          {label}
-        </CardTitle>
+        <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="truncate font-mono text-sm font-medium">{value}</div>
+        <div className="truncate text-sm font-medium">{value}</div>
       </CardContent>
     </Card>
   );

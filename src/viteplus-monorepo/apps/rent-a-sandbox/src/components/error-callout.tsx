@@ -20,15 +20,8 @@ export function ErrorCallout({
   className?: string;
 }) {
   return (
-    <Alert
-      role="alert"
-      variant="destructive"
-      className={cn(
-        "rounded-none border-foreground border-l-2 border-l-destructive",
-        className,
-      )}
-    >
-      <AlertTitle className="font-mono text-xs uppercase tracking-wider">{title}</AlertTitle>
+    <Alert role="alert" variant="destructive" className={cn(className)}>
+      <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{errorMessage(error, "An unexpected error occurred.")}</AlertDescription>
       {action ? <div className="mt-3">{action}</div> : null}
     </Alert>

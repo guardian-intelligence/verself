@@ -155,10 +155,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
 
   return (
     <div
-      // Backdrop. Click closes. The dialog itself stops propagation so
-      // clicks inside do not bubble up and dismiss.
       aria-hidden="true"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 px-4 pt-[15vh]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onOpenChange(false);
       }}
@@ -169,12 +167,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="w-full max-w-xl border border-foreground bg-background shadow-[4px_4px_0_0_rgba(0,0,0,1)]"
+        className="w-full max-w-xl overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
         onKeyDown={handleListKeyDown}
       >
-        <div className="flex items-center gap-3 border-b border-foreground px-4 py-3">
-          <span aria-hidden="true" className="font-mono text-xs uppercase tracking-wider">
-            &gt;
+        <div className="flex items-center gap-2 border-b px-3">
+          <span aria-hidden="true" className="text-muted-foreground">
+            ⌕
           </span>
           <input
             ref={inputRef}
@@ -185,23 +183,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
               setQuery(event.target.value);
               setCursor(0);
             }}
-            className="flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
             data-testid="command-palette-input"
             aria-label="Command palette input"
           />
-          <kbd className="rounded border border-foreground px-1.5 py-0.5 font-mono text-[10px] uppercase">
+          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
             Esc
           </kbd>
         </div>
-        <div className="max-h-[50vh] overflow-y-auto py-2" data-testid="command-palette-list">
+        <div className="max-h-[50vh] overflow-y-auto p-1" data-testid="command-palette-list">
           {filtered.length === 0 ? (
-            <div className="px-4 py-6 text-center font-mono text-xs uppercase tracking-wider text-muted-foreground">
-              No matches
-            </div>
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</div>
           ) : (
             grouped.map((group) => (
-              <div key={group.section} className="mb-2 last:mb-0">
-                <div className="px-4 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <div key={group.section} className="py-1">
+                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
                   {group.section}
                 </div>
                 {group.entries.map((entry) => {
@@ -218,15 +214,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
                         void runAction(entry.action);
                       }}
                       className={cn(
-                        "flex w-full items-center justify-between border-l-2 border-transparent px-4 py-2 text-left font-mono text-sm",
-                        isActive ? "border-foreground bg-foreground/5" : "hover:bg-foreground/5",
+                        "flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-sm",
+                        isActive
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground",
                       )}
                     >
                       <span>{entry.label}</span>
                       {entry.description ? (
-                        <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                          {entry.description}
-                        </span>
+                        <span className="text-xs text-muted-foreground">{entry.description}</span>
                       ) : null}
                     </button>
                   );
@@ -234,11 +230,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteControlProp
               </div>
             ))
           )}
-        </div>
-        <div className="flex items-center justify-between border-t border-foreground px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          <span>Navigate: ↑ ↓</span>
-          <span>Select: Enter</span>
-          <span>Close: Esc</span>
         </div>
       </div>
     </div>

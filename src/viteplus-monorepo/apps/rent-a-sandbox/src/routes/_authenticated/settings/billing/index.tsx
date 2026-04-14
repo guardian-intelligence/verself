@@ -77,27 +77,25 @@ function BillingPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">Billing</h2>
-        <div className="flex flex-wrap gap-3">
-          {contractRows.length > 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => portalMutation.mutate()}
-              disabled={portalMutation.isPending}
-              className="rounded-none"
-            >
-              {portalMutation.isPending ? "Opening…" : "Manage billing"}
-            </Button>
-          ) : null}
-          <Button asChild variant="outline" className="rounded-none">
-            <Link to="/settings/billing/subscribe">Choose plan</Link>
+      {/* The settings shell already renders "Settings" + the "Billing"
+          section label, so the page starts straight into actions. */}
+      <div className="flex flex-wrap gap-3">
+        {contractRows.length > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => portalMutation.mutate()}
+            disabled={portalMutation.isPending}
+          >
+            {portalMutation.isPending ? "Opening…" : "Manage billing"}
           </Button>
-          <Button asChild variant="default" className="rounded-none">
-            <Link to="/settings/billing/credits">Buy credits</Link>
-          </Button>
-        </div>
+        ) : null}
+        <Button asChild variant="outline">
+          <Link to="/settings/billing/subscribe">Choose plan</Link>
+        </Button>
+        <Button asChild variant="default">
+          <Link to="/settings/billing/credits">Buy credits</Link>
+        </Button>
       </div>
 
       <BillingFlashNotice intent={flashIntent} />
@@ -117,37 +115,21 @@ function BillingPage() {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Contracts
-        </h2>
-        <div className="border border-foreground">
+        <h2 className="text-sm font-semibold">Contracts</h2>
+        <div className="overflow-hidden rounded-md border">
           <table className="w-full text-sm">
-            <thead className="border-b border-foreground bg-foreground/[0.03]">
+            <thead className="bg-muted/50">
               <tr>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Plan
-                </th>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Payment
-                </th>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Entitlement
-                </th>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Cadence
-                </th>
-                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
-                  Period end
-                </th>
-                <th className="px-4 py-2 text-right font-mono text-[10px] uppercase tracking-wider">
-                  Actions
-                </th>
+                <th className="px-4 py-2 text-left font-medium">Plan</th>
+                <th className="px-4 py-2 text-left font-medium">Status</th>
+                <th className="px-4 py-2 text-left font-medium">Payment</th>
+                <th className="px-4 py-2 text-left font-medium">Entitlement</th>
+                <th className="px-4 py-2 text-left font-medium">Cadence</th>
+                <th className="px-4 py-2 text-left font-medium">Period end</th>
+                <th className="px-4 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-foreground/20">
+            <tbody className="divide-y">
               {contractRows.length > 0 ? (
                 contractRows.map((contract) => {
                   const canCancel =
@@ -161,20 +143,14 @@ function BillingPage() {
                       key={contract.contract_id}
                       data-testid={`contract-row-${contract.contract_id}`}
                     >
-                      <td className="px-4 py-2 font-mono font-medium">{contract.plan_id}</td>
+                      <td className="px-4 py-2 font-medium">{contract.plan_id}</td>
                       <td className="px-4 py-2">
                         <ContractStatusPill status={contract.status} />
                       </td>
-                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
-                        {contract.payment_state}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
-                        {contract.entitlement_state}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
-                        {contract.cadence_kind}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-muted-foreground">
+                      <td className="px-4 py-2">{contract.payment_state}</td>
+                      <td className="px-4 py-2">{contract.entitlement_state}</td>
+                      <td className="px-4 py-2">{contract.cadence_kind}</td>
+                      <td className="px-4 py-2 text-muted-foreground">
                         {contract.ends_at ? formatDateUTC(contract.ends_at) : "--"}
                       </td>
                       <td className="px-4 py-2 text-right">
@@ -185,7 +161,6 @@ function BillingPage() {
                                 type="button"
                                 variant="destructive"
                                 size="sm"
-                                className="rounded-none"
                                 onClick={() => {
                                   cancelMutation.mutate(contract.contract_id, {
                                     onSuccess: () => setCancelTarget(null),
@@ -199,7 +174,6 @@ function BillingPage() {
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="rounded-none"
                                 onClick={() => setCancelTarget(null)}
                                 disabled={cancelMutation.isPending}
                               >
@@ -211,7 +185,6 @@ function BillingPage() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="rounded-none"
                               data-testid={`cancel-contract-${contract.contract_id}`}
                               onClick={() => setCancelTarget(contract.contract_id)}
                               disabled={cancelMutation.isPending}
@@ -254,16 +227,18 @@ function StatementPreview({
   return (
     <section className="space-y-3" data-testid="statement-usage">
       <div className="space-y-1">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Usage
-        </h2>
-        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-          Cycle started {formatDateTimeMillisUTC(statement.period_start)}
+        <h2 className="text-sm font-semibold">Usage</h2>
+        <p className="text-xs text-muted-foreground">
+          Current cycle started {formatDateTimeMillisUTC(statement.period_start)}
         </p>
       </div>
 
-      <div className="border border-foreground text-sm">
-        <div className="flex items-baseline justify-between border-b border-foreground bg-foreground/[0.03] px-4 py-2 font-mono text-[10px] uppercase tracking-wider">
+      {/* The statement body is the one part of the billing page where
+          receipt-style monospaced numerics genuinely help — charges,
+          drains, and the grand total line up across rows. Chrome
+          around it (borders, heading) stays default shadcn. */}
+      <div className="overflow-hidden rounded-md border text-sm">
+        <div className="flex items-baseline justify-between border-b bg-muted/50 px-4 py-2 text-xs font-medium">
           <span>SKU</span>
           <span>Usage</span>
         </div>

@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@forge-metal/ui/components/ui/button";
+import { Card, CardContent } from "@forge-metal/ui/components/ui/card";
 import { ErrorCallout } from "~/components/error-callout";
 import { useCreateCheckoutSessionMutation } from "~/features/billing/mutations";
 
@@ -19,19 +20,16 @@ function CreditsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Credits
-          </h2>
-          <p className="text-2xl font-semibold">Purchase credits</p>
+          <h2 className="text-lg font-semibold">Purchase credits</h2>
           <p className="text-sm text-muted-foreground">
             Add prepaid account balance for usage beyond your current bucket allowances.
           </p>
         </div>
         <Link
           to="/settings/billing"
-          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← Back to billing
         </Link>
@@ -39,19 +37,20 @@ function CreditsPage() {
 
       <div className="grid gap-4 md:grid-cols-4">
         {CREDIT_PACKS.map((pack) => (
-          <Button
-            key={pack.cents}
-            type="button"
-            variant="outline"
-            onClick={() => mutation.mutate(pack.cents)}
-            disabled={mutation.isPending}
-            className="flex h-auto flex-col items-center gap-1 rounded-none border-foreground py-6"
-          >
-            <span className="font-mono text-2xl font-semibold tabular-nums">{pack.label}</span>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Account top-up
-            </span>
-          </Button>
+          <Card key={pack.cents} className="transition-colors hover:bg-accent/30">
+            <CardContent className="flex flex-col items-center gap-2 py-6">
+              <span className="font-mono text-2xl font-semibold tabular-nums">{pack.label}</span>
+              <span className="text-xs text-muted-foreground">Account top-up</span>
+              <Button
+                type="button"
+                className="mt-2 w-full"
+                onClick={() => mutation.mutate(pack.cents)}
+                disabled={mutation.isPending}
+              >
+                Buy
+              </Button>
+            </CardContent>
+          </Card>
         ))}
       </div>
 

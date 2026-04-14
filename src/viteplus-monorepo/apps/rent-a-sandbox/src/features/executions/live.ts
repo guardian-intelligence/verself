@@ -51,8 +51,3 @@ export function buildLogText(chunks: readonly { chunk: string }[]) {
   return chunks.map((chunk) => chunk.chunk).join("");
 }
 
-export function formatExecutionRepo(repo?: string, repoURL?: string) {
-  if (repo) return repo;
-  if (!repoURL) return "--";
-  return repoURL.replace("https://", "");
-}

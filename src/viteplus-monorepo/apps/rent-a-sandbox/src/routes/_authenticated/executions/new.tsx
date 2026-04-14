@@ -14,11 +14,11 @@ function NewExecutionPage() {
       <div className="flex items-center gap-4">
         <Link
           to="/executions"
-          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          className="text-sm text-muted-foreground hover:text-foreground"
         >
-          &larr; Back
+          ← Back
         </Link>
-        <h1 className="text-2xl font-semibold">New execution</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">New execution</h1>
       </div>
 
       <Callout title="Manual execution">

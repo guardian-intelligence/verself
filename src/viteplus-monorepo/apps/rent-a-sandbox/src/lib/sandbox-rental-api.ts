@@ -9,12 +9,8 @@ import {
   getBillingEntitlements,
   getBillingStatement,
   getExecution as getGeneratedExecution,
-  getRepo as getGeneratedRepo,
-  importRepo as importGeneratedRepo,
   listBillingPlans,
   listBillingContracts,
-  listRepos,
-  rescanRepo as rescanGeneratedRepo,
   submitExecution,
 } from "../__generated/sandbox-rental-api/index.js";
 import {
@@ -39,15 +35,11 @@ import {
   vCreateBillingContractResponse,
   vGetBillingStatementQuery,
   vGetExecutionPath,
-  vGetRepoPath,
-  vImportRepoBody,
   vListBillingPlansResponse,
   vListBillingContractsResponse,
-  vListReposResponse,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
   vSandboxExecutionRecord,
-  vSandboxRepoRecord,
   vSubmitExecutionBody,
   vSubmitExecutionResponse,
 } from "../__generated/sandbox-rental-api/valibot.gen.js";
@@ -108,28 +100,6 @@ function createSandboxRentalClient(options: SandboxRentalClientOptions): Client 
     headers: createBearerJSONHeaders(options.accessToken),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-}
-
-const repoScanIssueSchema = v.strictObject({
-  path: v.string(),
-  job_id: v.optional(v.string()),
-  reason: v.string(),
-  labels: v.optional(v.array(v.string())),
-  details: v.optional(v.string()),
-});
-
-export type RepoScanIssue = v.InferOutput<typeof repoScanIssueSchema>;
-
-export const repoCompatibilitySummarySchema = v.strictObject({
-  mode: v.optional(v.string()),
-  issues: v.optional(v.array(repoScanIssueSchema)),
-});
-
-export type RepoCompatibilitySummary = v.InferOutput<typeof repoCompatibilitySummarySchema>;
-
-function parseCompatibilitySummary(input: unknown): RepoCompatibilitySummary | undefined {
-  if (input === undefined || input === null) return undefined;
-  return v.parse(repoCompatibilitySummarySchema, input);
 }
 
 function normalizeAttempt(input: v.InferOutput<typeof vSandboxAttemptRecord>) {
@@ -348,16 +318,6 @@ function parseExecution(input: unknown) {
 
 export type Execution = ReturnType<typeof parseExecution>;
 
-function parseRepo(input: unknown) {
-  const { $schema: _schema, compatibility_summary, ...repo } = v.parse(vSandboxRepoRecord, input);
-  return {
-    ...repo,
-    compatibility_summary: parseCompatibilitySummary(compatibility_summary),
-  };
-}
-
-export type Repo = ReturnType<typeof parseRepo>;
-
 export const statementQuerySchema = v.pipe(
   v.strictObject({
     productId: v.string(),
@@ -446,21 +406,6 @@ export const executionIdInputSchema = v.pipe(
 );
 
 export type ExecutionIdInput = v.InferOutput<typeof executionIdInputSchema>;
-
-export const repoIdInputSchema = v.pipe(
-  v.strictObject({
-    repoId: v.string(),
-  }),
-  v.transform(({ repoId }) => ({
-    repoId: v.parse(vGetRepoPath, { repo_id: repoId }).repo_id,
-  })),
-);
-
-export type RepoIdInput = v.InferOutput<typeof repoIdInputSchema>;
-
-export const importRepoRequestSchema = vImportRepoBody;
-
-export type ImportRepoRequest = v.InferOutput<typeof importRepoRequestSchema>;
 
 export type SubmitExecutionResponse = v.InferOutput<typeof vSubmitExecutionResponse>;
 export type CheckoutSession = v.InferOutput<typeof vCreateBillingCheckoutResponse>;
@@ -709,90 +654,3 @@ export async function getExecution(
   return parseExecution(result.data);
 }
 
-export async function importRepo(
-  options: SandboxRentalClientOptions & { body: ImportRepoRequest },
-): Promise<Repo> {
-  const client = createSandboxRentalClient(options);
-  const body = v.parse(importRepoRequestSchema, options.body);
-  const requestBody = {
-    clone_url: body.clone_url,
-    ...(body.default_branch !== undefined ? { default_branch: body.default_branch } : {}),
-    ...(body.full_name !== undefined ? { full_name: body.full_name } : {}),
-    ...(body.name !== undefined ? { name: body.name } : {}),
-    ...(body.owner !== undefined ? { owner: body.owner } : {}),
-    ...(body.provider !== undefined ? { provider: body.provider } : {}),
-    ...(body.provider_repo_id !== undefined ? { provider_repo_id: body.provider_repo_id } : {}),
-  };
-  const path = "/api/v1/repos";
-  const result = await importGeneratedRepo({
-    body: requestBody,
-    client,
-    headers: idempotencyHeaders("repo-import"),
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseRepo(result.data);
-}
-
-export async function getRepos(options: SandboxRentalClientOptions): Promise<Array<Repo>> {
-  const client = createSandboxRentalClient(options);
-  const path = "/api/v1/repos";
-  const result = await listRepos({
-    client,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  const repos = v.parse(vListReposResponse, result.data);
-  return repos?.map((repo) => parseRepo(repo)) ?? [];
-}
-
-export async function getRepo(
-  options: SandboxRentalClientOptions & { repoId: string },
-): Promise<Repo> {
-  const client = createSandboxRentalClient(options);
-  const { repoId } = v.parse(repoIdInputSchema, { repoId: options.repoId });
-  const path = `/api/v1/repos/${repoId}`;
-  const result = await getGeneratedRepo({
-    client,
-    path: { repo_id: repoId },
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseRepo(result.data);
-}
-
-export async function rescanRepo(
-  options: SandboxRentalClientOptions & { repoId: string },
-): Promise<Repo> {
-  const client = createSandboxRentalClient(options);
-  const { repoId } = v.parse(repoIdInputSchema, { repoId: options.repoId });
-  const path = `/api/v1/repos/${repoId}/rescan`;
-  const result = await rescanGeneratedRepo({
-    client,
-    headers: idempotencyHeaders("repo-rescan"),
-    path: { repo_id: repoId },
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseRepo(result.data);
-}

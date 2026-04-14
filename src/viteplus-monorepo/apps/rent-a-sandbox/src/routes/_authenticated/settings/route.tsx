@@ -6,48 +6,55 @@ export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsLayout,
 });
 
-// Secondary layout shared by every settings subpage. Acts as the "drawer"
-// inside the main app shell: horizontal tabs on desktop, a flat stack on
-// mobile. Follows Linear / Vercel / GitHub settings conventions: one tab
-// strip + one outlet. No Radix overlays, no dropdowns.
+// Secondary layout for the settings subtree. Claude.ai-style: single
+// "Settings" page title at the top, a vertical section list on the left,
+// and main content on the right. On mobile the section list collapses
+// into a horizontal scroll strip above the content.
 function SettingsLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Settings
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage your plan, credits, and organization.
         </p>
-        <h1 className="text-2xl font-semibold">Account &amp; organization</h1>
       </header>
 
-      <nav
-        aria-label="Settings sections"
-        className="flex flex-wrap gap-4 border-b border-foreground"
-      >
-        {SETTINGS_NAV.map((entry) => {
-          const active = isPathActive(path, entry);
-          return (
-            <Link
-              key={entry.id}
-              to={entry.to}
-              data-testid={`settings-tab-${entry.id}`}
-              data-status={active ? "active" : "inactive"}
-              className={cn(
-                "-mb-px border-b-2 px-1 pb-2 font-mono text-xs uppercase tracking-[0.15em]",
-                active
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {entry.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+        <nav
+          aria-label="Settings sections"
+          className="md:w-48 md:shrink-0"
+        >
+          <ul className="flex gap-1 overflow-x-auto md:flex-col">
+            {SETTINGS_NAV.map((entry) => {
+              const active = isPathActive(path, entry);
+              return (
+                <li key={entry.id}>
+                  <Link
+                    to={entry.to}
+                    data-testid={`settings-tab-${entry.id}`}
+                    data-status={active ? "active" : "inactive"}
+                    className={cn(
+                      "block whitespace-nowrap rounded-md px-3 py-2 text-sm",
+                      active
+                        ? "bg-accent font-medium text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    )}
+                  >
+                    {entry.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
 
-      <Outlet />
+        <div className="min-w-0 flex-1">
+          <Outlet />
+        </div>
+      </div>
     </div>
   );
 }
