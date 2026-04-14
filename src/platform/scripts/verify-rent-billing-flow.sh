@@ -13,9 +13,11 @@ artifact_root="${VERIFICATION_ARTIFACT_ROOT:-${VERIFICATION_REPO_ROOT}/artifacts
 artifact_dir="${artifact_root}/${run_id}"
 run_json_path="${artifact_dir}/run.json"
 billing_log_path="${artifact_dir}/billing-flow.log"
+cleanup_log_path="${artifact_dir}/billing-cleanup.log"
 
 mkdir -p "${artifact_dir}"
 verification_print_artifacts "${artifact_dir}" "${billing_log_path}" "${run_json_path}"
+echo "cleanup log: ${cleanup_log_path}"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 verification_wait_for_http "rent-a-sandbox UI" "${base_url}" "200"
@@ -60,11 +62,29 @@ verification_collect_run_or_window_evidence "${run_json_path}" "${artifact_dir}/
 evidence_status=$?
 set -e
 
+set +e
+"${script_dir}/billing-clock.sh" \
+  --org platform \
+  --product-id sandbox \
+  --wall-clock \
+  --reason "${run_id}-cleanup" \
+  >"${cleanup_log_path}" 2>&1
+cleanup_status=$?
+set -e
+if [[ "${cleanup_status}" -ne 0 ]]; then
+  echo "billing clock cleanup failed with status ${cleanup_status}; log: ${cleanup_log_path}" >&2
+  tail -n 120 "${cleanup_log_path}" >&2 || true
+fi
+
 verification_tail_log_on_failure "${billing_status}" "${billing_log_path}" "200"
 
 if [[ "${billing_status}" -eq 0 && "${evidence_status}" -ne 0 ]]; then
   echo "evidence collection failed after successful billing flow: ${artifact_dir}/evidence" >&2
   exit "${evidence_status}"
+fi
+
+if [[ "${billing_status}" -eq 0 && "${cleanup_status}" -ne 0 ]]; then
+  exit "${cleanup_status}"
 fi
 
 exit "${billing_status}"
