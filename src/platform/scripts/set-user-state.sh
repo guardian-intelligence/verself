@@ -129,7 +129,7 @@ fi
 
 binary_dir="${VERIFICATION_REPO_ROOT}/artifacts/bin"
 binary_path="${binary_dir}/billing-set-user-state"
-remote_path="/tmp/forge-metal-billing-set-user-state"
+remote_path=""
 mkdir -p "${binary_dir}"
 
 (
@@ -137,7 +137,16 @@ mkdir -p "${binary_dir}"
   go build -o "${binary_path}" ./cmd/billing-set-user-state
 )
 
-verification_ssh "cat > '${remote_path}' && chmod 0755 '${remote_path}'" <"${binary_path}"
+remote_path="$(verification_remote_temp_path forge-metal-billing-set-user-state)"
+remote_path_q="$(printf '%q' "${remote_path}")"
+cleanup_remote() {
+  if [[ -n "${remote_path}" ]]; then
+    verification_ssh "rm -f ${remote_path_q}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_remote EXIT
+
+verification_ssh "cat > ${remote_path_q} && chmod 0755 ${remote_path_q}" <"${binary_path}"
 
 remote_args=(
   sudo "${remote_path}"

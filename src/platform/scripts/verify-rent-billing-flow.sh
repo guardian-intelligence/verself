@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
@@ -14,6 +15,8 @@ run_json_path="${artifact_dir}/run.json"
 billing_log_path="${artifact_dir}/billing-flow.log"
 
 mkdir -p "${artifact_dir}"
+verification_print_artifacts "${artifact_dir}" "${billing_log_path}" "${run_json_path}"
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 verification_wait_for_http "rent-a-sandbox UI" "${base_url}" "200"
 
@@ -27,6 +30,7 @@ ceo_password="$(
 )"
 
 set +e
+# shellcheck disable=SC2016 # Positional args are expanded inside the child shell.
 env \
   VERIFICATION_RUN_ID="${run_id}" \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
@@ -49,9 +53,18 @@ env \
   >"${billing_log_path}" 2>&1
 billing_status=$?
 set -e
+ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-if [[ -f "${run_json_path}" ]]; then
-  "${script_dir}/collect-sandbox-verification-evidence.sh" "${run_json_path}" "${artifact_dir}/evidence"
+set +e
+verification_collect_run_or_window_evidence "${run_json_path}" "${artifact_dir}/evidence" "${started_at}" "${ended_at}"
+evidence_status=$?
+set -e
+
+verification_tail_log_on_failure "${billing_status}" "${billing_log_path}" "200"
+
+if [[ "${billing_status}" -eq 0 && "${evidence_status}" -ne 0 ]]; then
+  echo "evidence collection failed after successful billing flow: ${artifact_dir}/evidence" >&2
+  exit "${evidence_status}"
 fi
 
 exit "${billing_status}"
