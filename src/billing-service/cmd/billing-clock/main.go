@@ -30,6 +30,7 @@ type output struct {
 	EntitlementsEnsured    uint64 `json:"entitlements_ensured"`
 	VoidedCycleCount       int    `json:"voided_cycle_count,omitempty"`
 	ClosedGrantCount       int    `json:"closed_grant_count,omitempty"`
+	ReassignedWindowCount  int    `json:"reassigned_window_count,omitempty"`
 	CurrentCycleID         string `json:"current_cycle_id,omitempty"`
 	PreviousBusinessNow    string `json:"previous_business_now,omitempty"`
 }
@@ -145,6 +146,7 @@ func run() error {
 		EntitlementsEnsured:    state.DueWork.EntitlementsEnsured,
 		VoidedCycleCount:       len(state.Repair.VoidedCycleIDs),
 		ClosedGrantCount:       len(state.Repair.ClosedGrantIDs),
+		ReassignedWindowCount:  len(state.Repair.ReassignedWindowIDs),
 		CurrentCycleID:         state.Repair.CurrentCycleID,
 	}
 	if state.Repair.PreviousBusinessNow != nil {

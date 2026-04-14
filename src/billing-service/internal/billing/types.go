@@ -90,6 +90,7 @@ type BusinessClockRepairSummary struct {
 	PreviousBusinessNow *time.Time
 	VoidedCycleIDs      []string
 	ClosedGrantIDs      []string
+	ReassignedWindowIDs []string
 	CurrentCycleID      string
 }
 

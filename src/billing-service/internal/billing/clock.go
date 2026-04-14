@@ -203,6 +203,11 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 			return err
 		}
 		repair.CurrentCycleID = cycle.CycleID
+		reassignedWindowIDs, err := c.reassignWallClockWindowsTx(ctx, tx, orgID, productID, startsAt, endsAt, cycle.CycleID, wallNow)
+		if err != nil {
+			return err
+		}
+		repair.ReassignedWindowIDs = reassignedWindowIDs
 		payload := map[string]any{
 			"scope_kind":                   scopeKind,
 			"scope_id":                     scopeID,
@@ -212,6 +217,8 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 			"voided_cycle_count":           len(repair.VoidedCycleIDs),
 			"closed_entitlement_grant_ids": repair.ClosedGrantIDs,
 			"closed_entitlement_grants":    len(repair.ClosedGrantIDs),
+			"reassigned_window_ids":        repair.ReassignedWindowIDs,
+			"reassigned_window_count":      len(repair.ReassignedWindowIDs),
 			"current_cycle_id":             repair.CurrentCycleID,
 			"preserved_paid_plan":          paid.ok,
 			"preserved_purchase_balances":  true,
@@ -466,6 +473,39 @@ func (c *Client) insertWallClockResetCycleTx(ctx context.Context, tx pgx.Tx, q *
 		return billingCycle{}, err
 	}
 	return cycle, nil
+}
+
+func (c *Client) reassignWallClockWindowsTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt time.Time, cycleID string, wallNow time.Time) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE billing_windows
+		SET cycle_id = $5,
+		    metadata = metadata || jsonb_build_object(
+		      'cycle_reassigned_by', 'billing-wall-clock',
+		      'cycle_reassigned_at', $6::timestamptz::text,
+		      'previous_cycle_id', cycle_id
+		    ),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND state IN ('reserved', 'active', 'settling', 'settled')
+		  AND window_start >= $3::timestamptz
+		  AND window_start < $4::timestamptz
+		  AND cycle_id <> $5
+		RETURNING window_id
+	`, orgIDText(orgID), productID, startsAt, endsAt, cycleID, wallNow)
+	if err != nil {
+		return nil, fmt.Errorf("reassign wall-clock billing windows: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (c *Client) reconcileClockTarget(ctx context.Context, orgID OrgID, productID string, summary DueWorkSummary) (BusinessClockState, error) {
