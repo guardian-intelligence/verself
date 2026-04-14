@@ -46,7 +46,7 @@ type config struct {
 }
 
 type result struct {
-	OrgID          uint64            `json:"org_id"`
+	OrgID          string            `json:"org_id"`
 	OrgName        string            `json:"org_name"`
 	Email          string            `json:"email"`
 	ProductID      string            `json:"product_id"`
@@ -155,7 +155,7 @@ func run() error {
 	for _, grant := range grants {
 		totals[grant.Source] += grant.Available
 	}
-	out := result{OrgID: orgID, OrgName: orgName, Email: cfg.email, ProductID: cfg.productID, State: cfg.state, PlanID: targetPlanID, BusinessNow: now.Format(time.RFC3339Nano), TotalsBySource: totals, Contracts: len(contracts)}
+	out := result{OrgID: orgIDText(orgID), OrgName: orgName, Email: cfg.email, ProductID: cfg.productID, State: cfg.state, PlanID: targetPlanID, BusinessNow: now.Format(time.RFC3339Nano), TotalsBySource: totals, Contracts: len(contracts)}
 	if cfg.balanceSet {
 		out.BalanceUnits = &balanceUnits
 	}
@@ -406,7 +406,10 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 			  AND product_id = $2
 			  AND cycle_id <> $3
 			  AND status <> 'voided'
-			  AND tstzrange(starts_at, ends_at, '[)') && tstzrange($4::timestamptz, $5::timestamptz, '[)')
+			  AND (
+			    status = 'open'
+			    OR tstzrange(starts_at, ends_at, '[)') && tstzrange($4::timestamptz, $5::timestamptz, '[)')
+			  )
 		`, orgIDText(orgID), cfg.productID, cycleID, cycleStart, cycleEnd)
 		if err != nil {
 			return fmt.Errorf("void overlapping cycles: %w", err)
