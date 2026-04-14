@@ -111,4 +111,4 @@ here. Bucket-level analytics belong in Grafana, not the customer UI.
 
 ## ShadCN/ui
 
-Use the /shadcn skill when working in this repo. All components are installed. Blocks are not installed.
+Use the /shadcn skill (if you're Claude) when working in this repo. All components are installed. Blocks are not installed.
