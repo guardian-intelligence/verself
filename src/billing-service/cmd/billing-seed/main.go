@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/forge-metal/billing-service/internal/billing"
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 )
 
 const (
@@ -106,8 +108,16 @@ func run() error {
 	if err := pg.Ping(ctx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
-	client, err := billing.NewClient(pg, nil, nil, billing.Config{UseStripe: false}, slog.Default())
+	ledgerClient, err := openLedgerClient()
 	if err != nil {
+		return err
+	}
+	defer ledgerClient.Close()
+	client, err := billing.NewClient(pg, nil, nil, billing.Config{UseStripe: false}, slog.Default(), ledgerClient)
+	if err != nil {
+		return err
+	}
+	if err := client.EnsureLedgerBootstrapped(ctx); err != nil {
 		return err
 	}
 	productUpserted, err := upsertProduct(ctx, pg, cfg)
@@ -159,6 +169,22 @@ func run() error {
 	}
 	fmt.Println(string(encoded))
 	return nil
+}
+
+func openLedgerClient() (*ledger.Client, error) {
+	address := strings.TrimSpace(os.Getenv("BILLING_TB_ADDRESS"))
+	if address == "" {
+		address = "127.0.0.1:3320"
+	}
+	clusterID := uint64(0)
+	if raw := strings.TrimSpace(os.Getenv("BILLING_TB_CLUSTER_ID")); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse BILLING_TB_CLUSTER_ID: %w", err)
+		}
+		clusterID = parsed
+	}
+	return ledger.NewClient(clusterID, strings.Split(address, ","))
 }
 
 func parseFlags() (config, error) {

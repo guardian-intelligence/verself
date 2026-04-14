@@ -21,6 +21,7 @@ import (
 
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/billingapi"
 	fmotel "github.com/forge-metal/otel"
 )
@@ -42,6 +43,8 @@ func run() error {
 
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
 	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
+	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
+	tbClusterID := envUint64Or("BILLING_TB_CLUSTER_ID", 0)
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
@@ -79,9 +82,17 @@ func run() error {
 	if stripeKey != "" {
 		stripeClient = stripe.NewClient(stripeKey)
 	}
-	billingClient, err := billing.NewClient(pgPool, stripeClient, chConn, cfg, logger)
+	ledgerClient, err := ledger.NewClient(tbClusterID, strings.Split(tbAddress, ","))
+	if err != nil {
+		return fmt.Errorf("create tigerbeetle client: %w", err)
+	}
+	defer ledgerClient.Close()
+	billingClient, err := billing.NewClient(pgPool, stripeClient, chConn, cfg, logger, ledgerClient)
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
+	}
+	if err := billingClient.EnsureLedgerBootstrapped(ctx); err != nil {
+		return fmt.Errorf("bootstrap billing ledger: %w", err)
 	}
 
 	billingRuntime, err := billing.NewRuntime(pgPool, billingClient, logger)
@@ -216,6 +227,19 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envUint64Or(key string, fallback uint64) uint64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid %s=%q: %v\n", key, value, err)
+		os.Exit(1)
+	}
+	return parsed
 }
 
 func envUint64(key string, fallback uint64) uint64 {

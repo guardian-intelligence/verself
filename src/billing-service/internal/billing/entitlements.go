@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/store"
 )
 
@@ -36,7 +37,11 @@ func (c *Client) EnsureCurrentEntitlements(ctx context.Context, orgID OrgID, pro
 	if _, err := c.ApplyDueBillingWork(ctx, orgID, productID); err != nil {
 		return err
 	}
-	return c.ensureCurrentEntitlements(ctx, orgID, productID)
+	if err := c.ensureCurrentEntitlements(ctx, orgID, productID); err != nil {
+		return err
+	}
+	_, err := c.PostPendingGrantDeposits(ctx, orgID, productID)
+	return err
 }
 
 func (c *Client) ensureCurrentEntitlements(ctx context.Context, orgID OrgID, productID string) error {
@@ -167,6 +172,8 @@ type entitlementInsert struct {
 }
 
 func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in entitlementInsert) error {
+	accountID := ledger.NewID()
+	depositID := ledger.NewID()
 	_, err := tx.Exec(ctx, `
 		INSERT INTO entitlement_periods (
 			period_id, org_id, product_id, cycle_id, source, policy_id, contract_id, phase_id, line_id,
@@ -181,10 +188,11 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in 
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO credit_grants (
 			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
-			source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at, ledger_state
-		) VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$14,'posted')
+			source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at,
+			account_id, deposit_transfer_id, ledger_posting_state
+		) VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$14,$15,$16,'pending')
 		ON CONFLICT (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id) DO NOTHING
-	`, in.GrantID, orgIDText(in.OrgID), in.ScopeType, in.ScopeProductID, in.ScopeBucketID, in.ScopeSKUID, int64(in.Amount), in.Source, in.SourceReferenceID, in.PeriodID, in.PolicyVersion, in.PeriodStart, in.PeriodStart, in.PeriodEnd)
+	`, in.GrantID, orgIDText(in.OrgID), in.ScopeType, in.ScopeProductID, in.ScopeBucketID, in.ScopeSKUID, int64(in.Amount), in.Source, in.SourceReferenceID, in.PeriodID, in.PolicyVersion, in.PeriodStart, in.PeriodStart, in.PeriodEnd, accountID.Bytes(), depositID.Bytes())
 	if err != nil {
 		return fmt.Errorf("insert credit grant %s: %w", in.GrantID, err)
 	}
@@ -235,18 +243,27 @@ func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantB
 	if grant.StartsAt.IsZero() {
 		grant.StartsAt = time.Now().UTC()
 	}
+	accountID := ledger.NewID()
+	depositID := ledger.NewID()
 	err := c.WithTx(ctx, "billing.credits.deposit", func(ctx context.Context, tx pgx.Tx, _ *store.Queries) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO credit_grants (grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source, source_reference_id, entitlement_period_id, policy_version, starts_at, expires_at, ledger_state)
-			VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11,$12,$13,'posted')
+			INSERT INTO credit_grants (
+				grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
+				source_reference_id, entitlement_period_id, policy_version, starts_at, expires_at,
+				account_id, deposit_transfer_id, ledger_posting_state
+			)
+			VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11,$12,$13,$14,$15,'pending')
 			ON CONFLICT (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id) DO NOTHING
-		`, grant.GrantID, orgIDText(orgID), grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, int64(firstUint64(grant.OriginalAmount, grant.Amount)), grant.Source, grant.SourceReferenceID, grant.EntitlementPeriodID, cleanNonEmpty(grant.PolicyVersion, "v1"), grant.StartsAt, nullableTime(grant.ExpiresAt))
+		`, grant.GrantID, orgIDText(orgID), grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, int64(firstUint64(grant.OriginalAmount, grant.Amount)), grant.Source, grant.SourceReferenceID, grant.EntitlementPeriodID, cleanNonEmpty(grant.PolicyVersion, "v1"), grant.StartsAt, nullableTime(grant.ExpiresAt), accountID.Bytes(), depositID.Bytes())
 		if err != nil {
 			return fmt.Errorf("insert deposit grant: %w", err)
 		}
 		return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "grant_issued", AggregateType: "credit_grant", AggregateID: grant.GrantID, OrgID: orgID, ProductID: grant.ScopeProductID, OccurredAt: grant.StartsAt, Payload: map[string]any{"grant_id": grant.GrantID, "source": grant.Source, "amount": firstUint64(grant.OriginalAmount, grant.Amount)}})
 	})
-	return grant, err
+	if err != nil {
+		return grant, err
+	}
+	return grant, c.postGrantDeposit(ctx, grant.GrantID)
 }
 
 func firstUint64(values ...uint64) uint64 {

@@ -25,6 +25,8 @@ const (
 	ProviderEventApplyKind          = "billing.provider_event.apply"
 	ProviderEventApplyPendingKind   = "billing.provider_event.apply_pending"
 	EventDeliveryProjectPendingKind = "billing.event_delivery.project_pending"
+	LedgerDispatchPendingKind       = "billing.ledger.dispatch_pending"
+	LedgerReconcileKind             = "billing.ledger.reconcile"
 	MeteringProjectWindowKind       = "billing.metering.project_window"
 	MeteringProjectPendingKind      = "billing.metering.project_pending"
 	DueWorkApplyPendingKind         = "billing.due_work.apply_pending"
@@ -53,6 +55,18 @@ type EventDeliveryProjectPendingArgs struct {
 }
 
 func (EventDeliveryProjectPendingArgs) Kind() string { return EventDeliveryProjectPendingKind }
+
+type LedgerDispatchPendingArgs struct {
+	Limit int `json:"limit"`
+}
+
+func (LedgerDispatchPendingArgs) Kind() string { return LedgerDispatchPendingKind }
+
+type LedgerReconcileArgs struct {
+	Limit int `json:"limit"`
+}
+
+func (LedgerReconcileArgs) Kind() string { return LedgerReconcileKind }
 
 type MeteringProjectWindowArgs struct {
 	WindowID string `json:"window_id" river:"unique"`
@@ -87,6 +101,16 @@ type EventDeliveryProjectPendingWorker struct {
 	billing *Client
 }
 
+type LedgerDispatchPendingWorker struct {
+	river.WorkerDefaults[LedgerDispatchPendingArgs]
+	billing *Client
+}
+
+type LedgerReconcileWorker struct {
+	river.WorkerDefaults[LedgerReconcileArgs]
+	billing *Client
+}
+
 type MeteringProjectWindowWorker struct {
 	river.WorkerDefaults[MeteringProjectWindowArgs]
 	billing *Client
@@ -116,6 +140,8 @@ func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) 
 	river.AddWorker(workers, &ProviderEventApplyWorker{billing: billingClient})
 	river.AddWorker(workers, &ProviderEventApplyPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &EventDeliveryProjectPendingWorker{billing: billingClient})
+	river.AddWorker(workers, &LedgerDispatchPendingWorker{billing: billingClient})
+	river.AddWorker(workers, &LedgerReconcileWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectWindowWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &DueWorkApplyPendingWorker{billing: billingClient})
@@ -191,6 +217,8 @@ func (r *Runtime) EnqueueMaintenance(ctx context.Context, cadence time.Duration)
 		opts *river.InsertOpts
 	}{
 		{args: EventDeliveryProjectPendingArgs{Sink: clickHouseBillingEventsSink, Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "event-delivery")},
+		{args: LedgerDispatchPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingDelivery, cadence, "ledger-dispatch")},
+		{args: LedgerReconcileArgs{Limit: 1000}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "ledger-reconcile")},
 		{args: ProviderEventApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "provider-event")},
 		{args: MeteringProjectPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "metering")},
 		{args: DueWorkApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "due-work")},
@@ -242,6 +270,28 @@ func (w *EventDeliveryProjectPendingWorker) Work(ctx context.Context, job *river
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.String("billing.sink", job.Args.Sink), attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", EventDeliveryProjectPendingKind), attribute.String("river.queue", QueueBillingReconcile))
 	_, err := w.billing.ProjectPendingBillingEventDeliveries(ctx, job.Args.Limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *LedgerDispatchPendingWorker) Work(ctx context.Context, job *river.Job[LedgerDispatchPendingArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", LedgerDispatchPendingKind), attribute.String("river.queue", QueueBillingDelivery))
+	_, err := w.billing.DispatchPendingLedgerCommands(ctx, job.Args.Limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *LedgerReconcileWorker) Work(ctx context.Context, job *river.Job[LedgerReconcileArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", LedgerReconcileKind), attribute.String("river.queue", QueueBillingReconcile))
+	_, err := w.billing.ReconcileLedger(ctx, job.Args.Limit)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

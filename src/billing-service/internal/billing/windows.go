@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/store"
 )
 
@@ -131,6 +132,9 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		if existing.State == "voided" || existing.State == "settled" {
 			return WindowReservation{}, fmt.Errorf("%w: existing window %s is %s", ErrWindowNotReserved, existing.WindowID, existing.State)
 		}
+		if existing.State == "reserving" || existing.State == "denied" || existing.State == "failed" {
+			return WindowReservation{}, fmt.Errorf("%w: existing window %s is %s", ErrWindowNotReserved, existing.WindowID, existing.State)
+		}
 		return existing.reservation(), nil
 	}
 	if err := c.EnsureCurrentEntitlements(ctx, req.OrgID, req.ProductID); err != nil {
@@ -138,6 +142,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 	}
 
 	var reserved persistedWindow
+	var reserveCommandID string
 	err := c.WithTx(ctx, "billing.window.reserve", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		now, err := c.BusinessNow(ctx, q, req.OrgID, req.ProductID)
 		if err != nil {
@@ -201,6 +206,11 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 			return err
 		}
 		windowID := billingWindowID(req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
+		ledgerCorrelationID := ledger.NewID()
+		reservePayload, err := c.reserveWindowLedgerPayloadTx(ctx, tx, legs, ledgerCorrelationID, now)
+		if err != nil {
+			return err
+		}
 		expiresAt := now.Add(time.Duration(quantity) * time.Millisecond)
 		renewBy := expiresAt.Add(-time.Duration(defaultRenewBefore) * time.Millisecond)
 		if !renewBy.After(now) {
@@ -214,16 +224,30 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 			INSERT INTO billing_windows (
 				window_id, cycle_id, org_id, actor_id, product_id, pricing_contract_id, pricing_phase_id, pricing_plan_id,
 				source_type, source_ref, billing_job_id, window_seq, state, reservation_shape, reserved_quantity,
-				reserved_charge_units, pricing_phase, allocation, rate_context, funding_legs, window_start, expires_at, renew_by
-			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,NULLIF($11,''),$12,'reserved','time',$13,$14,$15,$16,$17,$18,$19,$20,$21)
-		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, billingJobID, int64(req.WindowSeq), int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, now, expiresAt, renewBy)
+				reserved_charge_units, pricing_phase, allocation, rate_context, funding_legs, ledger_correlation_id, window_start, expires_at, renew_by
+			) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,NULLIF($11,''),$12,'reserving','time',$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+		`, windowID, cycle.CycleID, orgIDText(req.OrgID), req.ActorID, req.ProductID, pricing.ContractID, pricing.PhaseID, pricing.PlanID, req.SourceType, req.SourceRef, billingJobID, int64(req.WindowSeq), int64(quantity), int64(chargeUnits), pricingPhaseIncluded, allocationJSON, rateJSON, fundingJSON, ledgerCorrelationID.Bytes(), now, expiresAt, renewBy)
 		if err != nil {
 			return fmt.Errorf("insert billing window: %w", err)
 		}
+		if err := c.insertWindowLedgerLegsTx(ctx, tx, windowID, legs); err != nil {
+			return err
+		}
+		reserveCommandID, _, err = c.createLedgerCommandTx(ctx, tx, "reserve_window", "billing_window", windowID, req.OrgID, req.ProductID, "reserve_window:"+windowID, reservePayload)
+		if err != nil {
+			return err
+		}
 		reserved = persistedWindow{WindowID: windowID, CycleID: cycle.CycleID, OrgID: req.OrgID, ActorID: req.ActorID, ProductID: req.ProductID, PricingContractID: pricing.ContractID, PricingPhaseID: pricing.PhaseID, PricingPlanID: pricing.PlanID, SourceType: req.SourceType, SourceRef: req.SourceRef, WindowSeq: req.WindowSeq, State: "reserved", ReservationShape: "time", ReservedQuantity: quantity, ReservedChargeUnits: chargeUnits, PricingPhase: pricingPhaseIncluded, Allocation: cloneFloatMap(req.Allocation), RateContext: pricing, FundingLegs: legs, WindowStart: now, ExpiresAt: expiresAt, RenewBy: &renewBy}
-		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserved", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "window_seq": req.WindowSeq, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges}})
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_reserve_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: req.OrgID, ProductID: req.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": cycle.CycleID, "pricing_plan_id": pricing.PlanID, "pricing_phase_id": pricing.PhaseID, "pricing_contract_id": pricing.ContractID, "source_type": req.SourceType, "source_ref": req.SourceRef, "window_seq": req.WindowSeq, "charge_units": chargeUnits, "component_charge_units": componentCharges, "bucket_charge_units": bucketCharges, "ledger_command_id": reserveCommandID}})
 	})
 	if err != nil {
+		return WindowReservation{}, err
+	}
+	if err := c.dispatchLedgerCommand(ctx, reserveCommandID); err != nil {
+		_ = c.markWindowReservationFailed(ctx, reserved.WindowID, err)
+		return WindowReservation{}, err
+	}
+	if err := c.markWindowReservationPosted(ctx, reserved); err != nil {
 		return WindowReservation{}, err
 	}
 	return reserved.reservation(), nil
@@ -307,7 +331,7 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 		billable = window.ReservedQuantity
 		writeoff = actualQuantity - window.ReservedQuantity
 	}
-	componentBilled, bucketBilled, costPerUnit, err := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, billable)
+	componentBilled, _, costPerUnit, err := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, billable)
 	if err != nil {
 		return SettleResult{}, err
 	}
@@ -323,29 +347,38 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 	if err != nil {
 		return SettleResult{}, err
 	}
-	err = c.WithTx(ctx, "billing.window.settle", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+	var settleCommandID string
+	err = c.WithTx(ctx, "billing.window.settle.prepare", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		ct, err := tx.Exec(ctx, `
 			UPDATE billing_windows
-			SET state = 'settled', actual_quantity = $2, billable_quantity = $3, writeoff_quantity = $4,
+			SET state = 'settling', actual_quantity = $2, billable_quantity = $3, writeoff_quantity = $4,
 			    billed_charge_units = $5, writeoff_charge_units = $6, writeoff_reason = $7,
 			    usage_summary = $8, funding_legs = $9, settled_at = $10
 			WHERE window_id = $1 AND state IN ('reserved','active')
 		`, windowID, int64(actualQuantity), int64(billable), int64(writeoff), int64(billedUnits), int64(writeoffUnits), writeoffReason(writeoff, window), usageJSON, fundingJSON, settledAt)
 		if err != nil {
-			return fmt.Errorf("settle billing window: %w", err)
+			return fmt.Errorf("prepare billing window settlement: %w", err)
 		}
 		if ct.RowsAffected() == 0 {
 			return nil
 		}
-		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_settled", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: settledAt, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "pricing_plan_id": window.PricingPlanID, "pricing_phase_id": window.PricingPhaseID, "pricing_contract_id": window.PricingContractID, "actual_quantity": actualQuantity, "billable_quantity": billable, "writeoff_quantity": writeoff, "billed_charge_units": billedUnits, "writeoff_charge_units": writeoffUnits, "component_charge_units": componentBilled, "bucket_charge_units": bucketBilled}}); err != nil {
+		settlePayload, err := c.settleWindowLedgerPayloadTx(ctx, tx, windowID, settledFundingLegs, settledAt)
+		if err != nil {
 			return err
 		}
-		if c.runtime != nil {
-			return c.runtime.EnqueueMeteringProjectWindowTx(ctx, tx, windowID)
+		settleCommandID, _, err = c.createLedgerCommandTx(ctx, tx, "settle_window", "billing_window", windowID, window.OrgID, window.ProductID, "settle_window:"+windowID, settlePayload)
+		if err != nil {
+			return err
 		}
-		return nil
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_settle_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: settledAt, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "actual_quantity": actualQuantity, "billable_quantity": billable, "billed_charge_units": billedUnits, "ledger_command_id": settleCommandID}})
 	})
 	if err != nil {
+		return SettleResult{}, err
+	}
+	if err := c.dispatchLedgerCommand(ctx, settleCommandID); err != nil {
+		return SettleResult{}, err
+	}
+	if err := c.markWindowSettlementPosted(ctx, windowID); err != nil {
 		return SettleResult{}, err
 	}
 	settled, err := c.loadWindow(ctx, windowID)
@@ -443,13 +476,424 @@ func (c *Client) VoidWindow(ctx context.Context, windowID string) error {
 	if window.State == "settled" {
 		return ErrWindowAlreadySettled
 	}
+	if window.State != "reserved" && window.State != "active" {
+		return ErrWindowNotReserved
+	}
 	now := time.Now().UTC()
-	return c.WithTx(ctx, "billing.window.void", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		_, err := tx.Exec(ctx, `UPDATE billing_windows SET state = 'voided' WHERE window_id = $1 AND state IN ('reserved','active')`, windowID)
+	var voidCommandID string
+	if err := c.WithTx(ctx, "billing.window.void.prepare", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		ct, err := tx.Exec(ctx, `UPDATE billing_windows SET state = 'voiding' WHERE window_id = $1 AND state IN ('reserved','active')`, windowID)
+		if err != nil {
+			return fmt.Errorf("prepare billing window void: %w", err)
+		}
+		if ct.RowsAffected() == 0 {
+			return nil
+		}
+		payload, err := c.voidWindowLedgerPayloadTx(ctx, tx, windowID, now)
+		if err != nil {
+			return err
+		}
+		voidCommandID, _, err = c.createLedgerCommandTx(ctx, tx, "void_window", "billing_window", windowID, window.OrgID, window.ProductID, "void_window:"+windowID, payload)
+		if err != nil {
+			return err
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_void_requested", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "ledger_command_id": voidCommandID}})
+	}); err != nil {
+		return err
+	}
+	if err := c.dispatchLedgerCommand(ctx, voidCommandID); err != nil {
+		return err
+	}
+	return c.markWindowVoidPosted(ctx, windowID)
+}
+
+func (c *Client) reserveWindowLedgerPayloadTx(ctx context.Context, tx pgx.Tx, legs []fundingLeg, correlationID ledger.ID, businessTime time.Time) (ledger.CommandPayload, error) {
+	if correlationID.IsZero() {
+		return ledger.CommandPayload{}, fmt.Errorf("%w: reservation correlation id is required", ledger.ErrInvalidCommand)
+	}
+	operators, err := c.operatorLedgerAccountsTx(ctx, tx)
+	if err != nil {
+		return ledger.CommandPayload{}, err
+	}
+	revenueID, ok := operators["operator_revenue"]
+	if !ok {
+		return ledger.CommandPayload{}, fmt.Errorf("operator revenue ledger account is not bootstrapped")
+	}
+	timeoutSeconds := uint32(c.cfg.PendingTimeout / time.Second)
+	if timeoutSeconds == 0 {
+		timeoutSeconds = 1
+	}
+	transfers := make([]ledger.TransferPayload, 0, len(legs))
+	for _, leg := range legs {
+		if leg.GrantID == "" {
+			continue
+		}
+		accountID, err := ledger.ParseID(leg.GrantAccountID)
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("parse reservation grant account id for grant %s: %w", leg.GrantID, err)
+		}
+		reservationID, err := ledger.ParseID(leg.ReservationID)
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("parse reservation transfer id for grant %s: %w", leg.GrantID, err)
+		}
+		transfers = append(transfers, ledger.PendingReservationTransfer(reservationID, accountID, revenueID, leg.Amount, correlationID, unixMillis(businessTime), timeoutSeconds))
+	}
+	ledger.LinkTransfers(transfers)
+	return ledger.CommandPayload{Transfers: transfers}, nil
+}
+
+func (c *Client) settleWindowLedgerPayloadTx(ctx context.Context, tx pgx.Tx, windowID string, settledLegs []fundingLeg, businessTime time.Time) (ledger.CommandPayload, error) {
+	var correlationRaw []byte
+	if err := tx.QueryRow(ctx, `SELECT ledger_correlation_id FROM billing_windows WHERE window_id = $1`, windowID).Scan(&correlationRaw); err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("load window ledger correlation id: %w", err)
+	}
+	correlationID, err := ledger.IDFromBytes(correlationRaw)
+	if err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("parse window ledger correlation id: %w", err)
+	}
+	postedByReservation := map[string]uint64{}
+	for _, leg := range settledLegs {
+		if leg.ReservationID != "" {
+			postedByReservation[leg.ReservationID] += leg.Amount
+		}
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT leg_seq, COALESCE(grant_id, ''), reservation_transfer_id, amount_reserved
+		FROM billing_window_ledger_legs
+		WHERE window_id = $1 AND state = 'pending'
+		ORDER BY leg_seq
+		FOR UPDATE
+	`, windowID)
+	if err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("query pending window ledger legs: %w", err)
+	}
+	type pendingLeg struct {
+		legSeq         int
+		grantID        string
+		reservationRaw []byte
+		reservedAmount int64
+	}
+	pending := []pendingLeg{}
+	for rows.Next() {
+		var leg pendingLeg
+		if err := rows.Scan(&leg.legSeq, &leg.grantID, &leg.reservationRaw, &leg.reservedAmount); err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("scan pending window ledger leg: %w", err)
+		}
+		pending = append(pending, leg)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return ledger.CommandPayload{}, err
+	}
+	rows.Close()
+	transfers := []ledger.TransferPayload{}
+	for _, leg := range pending {
+		if leg.grantID == "" {
+			_, err := tx.Exec(ctx, `
+				UPDATE billing_window_ledger_legs
+				SET amount_posted = amount_reserved, amount_voided = 0
+				WHERE window_id = $1 AND leg_seq = $2
+			`, windowID, leg.legSeq)
+			if err != nil {
+				return ledger.CommandPayload{}, fmt.Errorf("mark receivable window leg settled: %w", err)
+			}
+			continue
+		}
+		reservationID, err := ledger.IDFromBytes(leg.reservationRaw)
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("parse pending transfer for window leg %d: %w", leg.legSeq, err)
+		}
+		postedAmount := postedByReservation[reservationID.String()]
+		if postedAmount > uint64(leg.reservedAmount) {
+			return ledger.CommandPayload{}, fmt.Errorf("window leg %d posted amount %d exceeds reserved amount %d", leg.legSeq, postedAmount, leg.reservedAmount)
+		}
+		if postedAmount > 0 {
+			settlementID := ledger.NewID()
+			transfers = append(transfers, ledger.PostPendingTransfer(settlementID, reservationID, postedAmount, correlationID, unixMillis(businessTime)))
+			_, err = tx.Exec(ctx, `
+				UPDATE billing_window_ledger_legs
+				SET settlement_transfer_id = $3, amount_posted = $4, amount_voided = $5
+				WHERE window_id = $1 AND leg_seq = $2
+			`, windowID, leg.legSeq, settlementID.Bytes(), int64(postedAmount), leg.reservedAmount-int64(postedAmount))
+			if err != nil {
+				return ledger.CommandPayload{}, fmt.Errorf("store settlement transfer for window leg %d: %w", leg.legSeq, err)
+			}
+			continue
+		}
+		voidID := ledger.NewID()
+		transfers = append(transfers, ledger.VoidPendingTransfer(voidID, reservationID, correlationID, unixMillis(businessTime)))
+		_, err = tx.Exec(ctx, `
+			UPDATE billing_window_ledger_legs
+			SET void_transfer_id = $3, amount_posted = 0, amount_voided = amount_reserved
+			WHERE window_id = $1 AND leg_seq = $2
+		`, windowID, leg.legSeq, voidID.Bytes())
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("store void transfer for window leg %d: %w", leg.legSeq, err)
+		}
+	}
+	ledger.LinkTransfers(transfers)
+	return ledger.CommandPayload{Transfers: transfers}, nil
+}
+
+func (c *Client) voidWindowLedgerPayloadTx(ctx context.Context, tx pgx.Tx, windowID string, businessTime time.Time) (ledger.CommandPayload, error) {
+	var correlationRaw []byte
+	if err := tx.QueryRow(ctx, `SELECT ledger_correlation_id FROM billing_windows WHERE window_id = $1`, windowID).Scan(&correlationRaw); err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("load window ledger correlation id: %w", err)
+	}
+	correlationID, err := ledger.IDFromBytes(correlationRaw)
+	if err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("parse window ledger correlation id: %w", err)
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT leg_seq, COALESCE(grant_id, ''), reservation_transfer_id
+		FROM billing_window_ledger_legs
+		WHERE window_id = $1 AND state = 'pending'
+		ORDER BY leg_seq
+		FOR UPDATE
+	`, windowID)
+	if err != nil {
+		return ledger.CommandPayload{}, fmt.Errorf("query pending window ledger legs for void: %w", err)
+	}
+	type voidLeg struct {
+		legSeq         int
+		grantID        string
+		reservationRaw []byte
+	}
+	pending := []voidLeg{}
+	for rows.Next() {
+		var leg voidLeg
+		if err := rows.Scan(&leg.legSeq, &leg.grantID, &leg.reservationRaw); err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("scan pending window ledger leg for void: %w", err)
+		}
+		pending = append(pending, leg)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return ledger.CommandPayload{}, err
+	}
+	rows.Close()
+	transfers := []ledger.TransferPayload{}
+	for _, leg := range pending {
+		if leg.grantID == "" {
+			_, err := tx.Exec(ctx, `
+				UPDATE billing_window_ledger_legs
+				SET amount_posted = 0, amount_voided = amount_reserved
+				WHERE window_id = $1 AND leg_seq = $2
+			`, windowID, leg.legSeq)
+			if err != nil {
+				return ledger.CommandPayload{}, fmt.Errorf("mark receivable window leg voided: %w", err)
+			}
+			continue
+		}
+		reservationID, err := ledger.IDFromBytes(leg.reservationRaw)
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("parse pending transfer for void window leg %d: %w", leg.legSeq, err)
+		}
+		voidID := ledger.NewID()
+		transfers = append(transfers, ledger.VoidPendingTransfer(voidID, reservationID, correlationID, unixMillis(businessTime)))
+		_, err = tx.Exec(ctx, `
+			UPDATE billing_window_ledger_legs
+			SET void_transfer_id = $3, amount_posted = 0, amount_voided = amount_reserved
+			WHERE window_id = $1 AND leg_seq = $2
+		`, windowID, leg.legSeq, voidID.Bytes())
+		if err != nil {
+			return ledger.CommandPayload{}, fmt.Errorf("store void transfer for window leg %d: %w", leg.legSeq, err)
+		}
+	}
+	ledger.LinkTransfers(transfers)
+	return ledger.CommandPayload{Transfers: transfers}, nil
+}
+
+func (c *Client) insertWindowLedgerLegsTx(ctx context.Context, tx pgx.Tx, windowID string, legs []fundingLeg) error {
+	for i, leg := range legs {
+		state := "pending"
+		if leg.GrantID != "" {
+			state = "pending_tb"
+		}
+		var accountID any
+		var reservationID any
+		if leg.GrantAccountID != "" {
+			parsed, err := ledger.ParseID(leg.GrantAccountID)
+			if err != nil {
+				return fmt.Errorf("parse grant account id for ledger leg %d: %w", i, err)
+			}
+			accountID = parsed.Bytes()
+		}
+		if leg.ReservationID != "" {
+			parsed, err := ledger.ParseID(leg.ReservationID)
+			if err != nil {
+				return fmt.Errorf("parse reservation id for ledger leg %d: %w", i, err)
+			}
+			reservationID = parsed.Bytes()
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO billing_window_ledger_legs (
+				window_id, leg_seq, grant_id, grant_account_id, reservation_transfer_id,
+				component_sku_id, component_bucket_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id,
+				plan_id, amount_reserved, state
+			) VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			ON CONFLICT (window_id, leg_seq) DO NOTHING
+		`, windowID, i, leg.GrantID, accountID, reservationID, leg.ComponentSKUID, leg.ComponentBucketID, leg.Source, leg.ScopeType, leg.ScopeProductID, leg.ScopeBucketID, leg.ScopeSKUID, leg.PlanID, int64(leg.Amount), state)
+		if err != nil {
+			return fmt.Errorf("insert window ledger leg %s[%d]: %w", windowID, i, err)
+		}
+	}
+	return nil
+}
+
+func (c *Client) markWindowReservationPosted(ctx context.Context, window persistedWindow) error {
+	return c.WithTx(ctx, "billing.window.reserve.posted", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		ct, err := tx.Exec(ctx, `
+			UPDATE billing_windows
+			SET state = 'reserved'
+			WHERE window_id = $1 AND state = 'reserving'
+		`, window.WindowID)
+		if err != nil {
+			return fmt.Errorf("mark reserved window posted: %w", err)
+		}
+		if ct.RowsAffected() == 0 {
+			return nil
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE billing_window_ledger_legs
+			SET state = 'pending'
+			WHERE window_id = $1 AND state = 'pending_tb'
+		`, window.WindowID)
+		if err != nil {
+			return fmt.Errorf("mark reserved window ledger legs pending: %w", err)
+		}
+		componentCharges, bucketCharges, _, _ := computeWindowCharges(window.Allocation, window.RateContext.SKURates, window.RateContext.SKUBuckets, window.ReservedQuantity)
+		return appendEvent(ctx, tx, q, eventFact{
+			EventType:     "billing_window_reserved",
+			AggregateType: "billing_window",
+			AggregateID:   window.WindowID,
+			OrgID:         window.OrgID,
+			ProductID:     window.ProductID,
+			OccurredAt:    window.WindowStart,
+			Payload: map[string]any{
+				"window_id":                 window.WindowID,
+				"cycle_id":                  window.CycleID,
+				"pricing_plan_id":           window.PricingPlanID,
+				"pricing_phase_id":          window.PricingPhaseID,
+				"pricing_contract_id":       window.PricingContractID,
+				"source_type":               window.SourceType,
+				"source_ref":                window.SourceRef,
+				"window_seq":                window.WindowSeq,
+				"charge_units":              window.ReservedChargeUnits,
+				"component_charge_units":    componentCharges,
+				"bucket_charge_units":       bucketCharges,
+				"ledger_reservation_posted": true,
+			},
+		})
+	})
+}
+
+func (c *Client) markWindowReservationFailed(ctx context.Context, windowID string, cause error) error {
+	state := "failed"
+	if errors.Is(cause, ledger.ErrInsufficientBalance) {
+		state = "denied"
+	}
+	return c.WithTx(ctx, "billing.window.reserve.failed", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		var orgText, productID string
+		err := tx.QueryRow(ctx, `
+			UPDATE billing_windows
+			SET state = $2, last_projection_error = $3
+			WHERE window_id = $1 AND state = 'reserving'
+			RETURNING org_id, product_id
+		`, windowID, state, cause.Error()).Scan(&orgText, &productID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("mark reservation failed: %w", err)
+		}
+		orgID, err := parseOrgID(orgText)
+		if err != nil {
+			return err
+		}
+		return appendEvent(ctx, tx, q, eventFact{
+			EventType:     "billing_window_reserve_failed",
+			AggregateType: "billing_window",
+			AggregateID:   windowID,
+			OrgID:         orgID,
+			ProductID:     productID,
+			OccurredAt:    time.Now().UTC(),
+			Payload:       map[string]any{"window_id": windowID, "state": state, "error": cause.Error()},
+		})
+	})
+}
+
+func (c *Client) markWindowSettlementPosted(ctx context.Context, windowID string) error {
+	window, err := c.loadWindow(ctx, windowID)
+	if err != nil {
+		return err
+	}
+	if window.State == "settled" {
+		return nil
+	}
+	if window.State != "settling" {
+		return nil
+	}
+	occurredAt := time.Now().UTC()
+	if window.SettledAt != nil {
+		occurredAt = window.SettledAt.UTC()
+	}
+	componentBilled, bucketBilled := chargeMapsFromFundingLegs(window.FundingLegs)
+	return c.WithTx(ctx, "billing.window.settle.posted", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		ct, err := tx.Exec(ctx, `UPDATE billing_windows SET state = 'settled' WHERE window_id = $1 AND state = 'settling'`, windowID)
+		if err != nil {
+			return fmt.Errorf("settle billing window: %w", err)
+		}
+		if ct.RowsAffected() == 0 {
+			return nil
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE billing_window_ledger_legs
+			SET state = CASE WHEN amount_posted > 0 THEN 'posted' ELSE 'voided' END
+			WHERE window_id = $1 AND state = 'pending'
+		`, windowID)
+		if err != nil {
+			return fmt.Errorf("settle billing window ledger legs: %w", err)
+		}
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_settled", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: occurredAt, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "pricing_plan_id": window.PricingPlanID, "pricing_phase_id": window.PricingPhaseID, "pricing_contract_id": window.PricingContractID, "actual_quantity": window.ActualQuantity, "billable_quantity": window.BillableQuantity, "writeoff_quantity": window.WriteoffQuantity, "billed_charge_units": window.BilledChargeUnits, "writeoff_charge_units": window.WriteoffChargeUnits, "component_charge_units": componentBilled, "bucket_charge_units": bucketBilled, "ledger_settlement_posted": true}}); err != nil {
+			return err
+		}
+		if c.runtime != nil {
+			return c.runtime.EnqueueMeteringProjectWindowTx(ctx, tx, windowID)
+		}
+		return nil
+	})
+}
+
+func (c *Client) markWindowVoidPosted(ctx context.Context, windowID string) error {
+	window, err := c.loadWindow(ctx, windowID)
+	if err != nil {
+		return err
+	}
+	if window.State == "voided" {
+		return nil
+	}
+	if window.State != "voiding" {
+		return nil
+	}
+	now := time.Now().UTC()
+	return c.WithTx(ctx, "billing.window.void.posted", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		ct, err := tx.Exec(ctx, `UPDATE billing_windows SET state = 'voided' WHERE window_id = $1 AND state = 'voiding'`, windowID)
 		if err != nil {
 			return fmt.Errorf("void billing window: %w", err)
 		}
-		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_voided", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "pricing_plan_id": window.PricingPlanID, "pricing_phase_id": window.PricingPhaseID, "pricing_contract_id": window.PricingContractID}})
+		if ct.RowsAffected() == 0 {
+			return nil
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE billing_window_ledger_legs
+			SET state = 'voided'
+			WHERE window_id = $1 AND state = 'pending'
+		`, windowID)
+		if err != nil {
+			return fmt.Errorf("void billing window ledger legs: %w", err)
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_window_voided", AggregateType: "billing_window", AggregateID: windowID, OrgID: window.OrgID, ProductID: window.ProductID, OccurredAt: now, Payload: map[string]any{"window_id": windowID, "cycle_id": window.CycleID, "pricing_plan_id": window.PricingPlanID, "pricing_phase_id": window.PricingPhaseID, "pricing_contract_id": window.PricingContractID, "ledger_void_posted": true}})
 	})
 }
 
@@ -644,7 +1088,8 @@ func (c *Client) fundReservationTx(ctx context.Context, tx pgx.Tx, orgID OrgID, 
 			amount := minUint64(remaining, grant.Available)
 			grant.Available -= amount
 			remaining -= amount
-			legs = append(legs, fundingLeg{GrantID: grant.GrantID, Amount: amount, Source: grant.Source, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, PlanID: grant.PlanID, ComponentSKUID: skuID, ComponentBucketID: bucketID})
+			reservationID := ledger.NewID()
+			legs = append(legs, fundingLeg{GrantID: grant.GrantID, GrantAccountID: grant.ledgerAccountID.String(), ReservationID: reservationID.String(), Amount: amount, Source: grant.Source, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, PlanID: grant.PlanID, ComponentSKUID: skuID, ComponentBucketID: bucketID})
 		}
 		if remaining > 0 && !allowPartial {
 			continue
@@ -654,10 +1099,6 @@ func (c *Client) fundReservationTx(ctx context.Context, tx pgx.Tx, orgID OrgID, 
 }
 
 func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string) ([]GrantBalance, error) {
-	used, pending, err := c.grantUsageTx(ctx, tx, orgID)
-	if err != nil {
-		return nil, err
-	}
 	now, err := c.BusinessNow(ctx, c.queries.WithTx(tx), orgID, productID)
 	if err != nil {
 		return nil, err
@@ -665,7 +1106,7 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 	rows, err := tx.Query(ctx, `
 		SELECT g.grant_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
 		       g.amount, g.source, g.source_reference_id, COALESCE(g.entitlement_period_id,''), g.policy_version,
-		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
+		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at, g.account_id
 		FROM credit_grants g
 		LEFT JOIN entitlement_periods ep ON ep.period_id = g.entitlement_period_id
 		LEFT JOIN contract_phases cp ON cp.phase_id = ep.phase_id
@@ -686,9 +1127,14 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 	for rows.Next() {
 		var grant GrantBalance
 		var amount int64
+		var accountRaw []byte
 		var periodStart, periodEnd, expiresAt pgtype.Timestamptz
-		if err := rows.Scan(&grant.GrantID, &grant.ScopeType, &grant.ScopeProductID, &grant.ScopeBucketID, &grant.ScopeSKUID, &amount, &grant.Source, &grant.SourceReferenceID, &grant.EntitlementPeriodID, &grant.PolicyVersion, &grant.PlanID, &grant.PlanTier, &grant.PlanDisplayName, &grant.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
+		if err := rows.Scan(&grant.GrantID, &grant.ScopeType, &grant.ScopeProductID, &grant.ScopeBucketID, &grant.ScopeSKUID, &amount, &grant.Source, &grant.SourceReferenceID, &grant.EntitlementPeriodID, &grant.PolicyVersion, &grant.PlanID, &grant.PlanTier, &grant.PlanDisplayName, &grant.StartsAt, &periodStart, &periodEnd, &expiresAt, &accountRaw); err != nil {
 			return nil, fmt.Errorf("scan grant for reservation: %w", err)
+		}
+		accountID, err := ledger.IDFromBytes(accountRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse grant account id %s: %w", grant.GrantID, err)
 		}
 		grant.OrgID = orgID
 		grant.OriginalAmount = uint64(amount)
@@ -696,14 +1142,13 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 		grant.PeriodStart = timePtr(periodStart)
 		grant.PeriodEnd = timePtr(periodEnd)
 		grant.ExpiresAt = timePtr(expiresAt)
-		grant.Pending = pending[grant.GrantID]
-		grant.Spent = used[grant.GrantID]
-		if grant.OriginalAmount > grant.Pending+grant.Spent {
-			grant.Available = grant.OriginalAmount - grant.Pending - grant.Spent
-		}
+		grant.ledgerAccountID = accountID
 		out = append(out, grant)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := c.hydrateGrantLedgerBalances(ctx, out); err != nil {
 		return nil, err
 	}
 	return grantsByFundingPriority(out), nil
@@ -887,6 +1332,23 @@ func sumFundingLegs(legs []fundingLeg) uint64 {
 		out += leg.Amount
 	}
 	return out
+}
+
+func chargeMapsFromFundingLegs(legs []fundingLeg) (map[string]uint64, map[string]uint64) {
+	components := map[string]uint64{}
+	buckets := map[string]uint64{}
+	for _, leg := range legs {
+		if leg.Amount == 0 {
+			continue
+		}
+		if leg.ComponentSKUID != "" {
+			components[leg.ComponentSKUID] += leg.Amount
+		}
+		if leg.ComponentBucketID != "" {
+			buckets[leg.ComponentBucketID] += leg.Amount
+		}
+	}
+	return components, buckets
 }
 
 func fundingLegsForComponent(legs []fundingLeg, skuID string) uint64 {

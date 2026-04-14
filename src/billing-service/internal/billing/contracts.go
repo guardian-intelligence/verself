@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stripe/stripe-go/v85"
 
+	"github.com/forge-metal/billing-service/internal/billing/ledger"
 	"github.com/forge-metal/billing-service/internal/store"
 )
 
@@ -521,7 +522,7 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 }
 
 func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote, providerInvoiceID string) error {
-	return c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+	if err := c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		closed, err := c.supersedeContractPhaseForUpgradeTx(ctx, tx, quote)
 		if err != nil {
 			return err
@@ -562,7 +563,11 @@ func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote
 			return fmt.Errorf("mark upgrade invoice paid: %w", err)
 		}
 		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "invoice_id": invoiceID(quote.ChangeID), "provider_invoice_id": providerInvoiceID}})
-	})
+	}); err != nil {
+		return err
+	}
+	_, err := c.PostPendingGrantDeposits(ctx, quote.OrgID, quote.ProductID)
+	return err
 }
 
 func (c *Client) supersedeContractPhaseForUpgradeTx(ctx context.Context, tx pgx.Tx, quote contractChangeQuote) (bool, error) {
@@ -923,6 +928,8 @@ func (c *Client) insertUpgradeDeltaGrantTx(ctx context.Context, tx pgx.Tx, quote
 	if delta.Amount == 0 {
 		return nil
 	}
+	accountID := ledger.NewID()
+	depositID := ledger.NewID()
 	policy := delta.Policy
 	lineID := textID("contract_line", quote.ToPhaseID, policy.PolicyID)
 	sourceRef := "upgrade_delta:" + quote.ChangeID + ":" + policy.PolicyID
@@ -937,10 +944,14 @@ func (c *Client) insertUpgradeDeltaGrantTx(ctx context.Context, tx pgx.Tx, quote
 		return fmt.Errorf("insert upgrade delta period: %w", err)
 	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO credit_grants (grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source, source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at, ledger_state)
-		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,'contract',$8,$9,$10,$11,$11,$12,$12,'posted')
+		INSERT INTO credit_grants (
+			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
+			source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at,
+			account_id, deposit_transfer_id, ledger_posting_state
+		)
+		VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,'contract',$8,$9,$10,$11,$11,$12,$12,$13,$14,'pending')
 		ON CONFLICT (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id) DO NOTHING
-	`, grantID, orgIDText(quote.OrgID), policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID, int64(delta.Amount), sourceRef, periodID, policy.PolicyVersion, quote.EffectiveAt, quote.CycleEnd)
+	`, grantID, orgIDText(quote.OrgID), policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID, int64(delta.Amount), sourceRef, periodID, policy.PolicyVersion, quote.EffectiveAt, quote.CycleEnd, accountID.Bytes(), depositID.Bytes())
 	if err != nil {
 		return fmt.Errorf("insert upgrade delta grant: %w", err)
 	}
