@@ -60,6 +60,7 @@ function SubscribePage() {
               activeContract &&
               activePlan &&
               plan.monthly_amount_cents > activePlan.monthly_amount_cents;
+            const isSupportedPlanChange = Boolean(activeContract && activePlan && !isCurrentPlan);
             return (
               <div
                 key={plan.plan_id}
@@ -79,7 +80,7 @@ function SubscribePage() {
                   type="button"
                   data-testid={`start-contract-plan-${plan.plan_id}`}
                   onClick={() => {
-                    if (isSupportedUpgrade) {
+                    if (isSupportedPlanChange && activeContract) {
                       changeMutation.mutate({
                         contractId: activeContract.contract_id,
                         targetPlanId: plan.plan_id,
@@ -89,7 +90,7 @@ function SubscribePage() {
                     createMutation.mutate(plan.plan_id);
                   }}
                   disabled={
-                    isPending || isCurrentPlan || Boolean(activeContract && !isSupportedUpgrade)
+                    isPending || isCurrentPlan || Boolean(activeContract && !isSupportedPlanChange)
                   }
                   className="mt-auto px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
                 >
@@ -99,9 +100,11 @@ function SubscribePage() {
                       ? "Current plan"
                       : isSupportedUpgrade
                         ? `Upgrade to ${plan.display_name}`
-                        : activeContract
-                          ? "Downgrade unavailable"
-                          : `Start ${plan.display_name}`}
+                        : isSupportedPlanChange
+                          ? `Schedule ${plan.display_name} downgrade`
+                          : activeContract
+                            ? "Plan change unavailable"
+                            : `Start ${plan.display_name}`}
                 </button>
               </div>
             );

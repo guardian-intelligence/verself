@@ -589,6 +589,8 @@ components:
           type: object
         billing_job_id:
           format: int64
+          maximum: 9007199254740991
+          minimum: 0
           type: integer
         concurrent_count:
           format: int64

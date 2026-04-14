@@ -243,7 +243,7 @@ type BillingReserveWindowRequest struct {
 	SourceType      string             `json:"source_type" minLength:"1" maxLength:"255"`
 	SourceRef       string             `json:"source_ref" minLength:"1" maxLength:"255"`
 	WindowSeq       uint32             `json:"window_seq" minimum:"0" maximum:"2147483647"`
-	BillingJobID    int64              `json:"billing_job_id,omitempty"`
+	BillingJobID    int64              `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
 	Allocation      map[string]float64 `json:"allocation" minProperties:"1"`
 }
 

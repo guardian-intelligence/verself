@@ -57,9 +57,6 @@ async function revealStripeCardForm(app: SandboxHarness): Promise<void> {
     if (await isStripeCardFormVisible(app)) {
       return true;
     }
-    if (await isStripeSavedPaymentReady(app)) {
-      return true;
-    }
 
     for (const locator of [
       app.page.locator('button[aria-label="Pay with card"]').first(),
@@ -76,15 +73,24 @@ async function revealStripeCardForm(app: SandboxHarness): Promise<void> {
       return (await isStripeCardFormVisible(app)) ? true : false;
     }
 
+    if (await isStripeSavedPaymentReady(app)) {
+      return true;
+    }
+
     return false;
   });
 }
 
 async function isStripeSavedPaymentReady(app: SandboxHarness): Promise<boolean> {
-  const buttons = app.page.getByRole("button", { name: /^(Pay|Subscribe|Save)$/i });
+  const buttons = app.page.getByRole("button", { name: /^(Pay|Subscribe)$/i });
   const buttonCount = await buttons.count();
   for (let index = 0; index < buttonCount; index += 1) {
-    if (await buttons.nth(index).isVisible().catch(() => false)) {
+    if (
+      await buttons
+        .nth(index)
+        .isVisible()
+        .catch(() => false)
+    ) {
       return true;
     }
   }

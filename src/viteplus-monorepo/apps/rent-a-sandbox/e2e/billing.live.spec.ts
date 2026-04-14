@@ -84,7 +84,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
-      await cancelExistingHobbyContract(app);
+      await resetContractState(app);
 
       await activateContract(app, hobbyPlan);
 
@@ -99,9 +99,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
           (text) => text.includes("sandbox-hobby") && text.includes("cancel_scheduled"),
         );
 
-        if (
-          scheduledRowText?.includes("active")
-        ) {
+        if (scheduledRowText?.includes("active")) {
           return scheduledRowText;
         }
 
@@ -130,7 +128,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
-      await cancelExistingHobbyContract(app);
+      await resetContractState(app);
       await activateContract(app, hobbyPlan);
 
       run.detail_url = "/billing?contracted=true";
@@ -156,6 +154,8 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       run.started_balance = await app.readBalance();
+      await resetContractState(app);
+      await activateContract(app, hobbyPlan);
       await activateContract(app, proPlan);
 
       await app.waitForCondition("pro upgrade carries hobby forward", 120_000, async () => {
@@ -176,16 +176,93 @@ test.describe("Rent-a-Sandbox Billing", () => {
             text.includes(hobbyPlan.planID) && text.includes("active") && text.includes("paid"),
         );
 
-        if (
-          activeProRowText &&
-          activeHobbyRows.length === 0
-        ) {
+        if (activeProRowText && activeHobbyRows.length === 0) {
           return activeProRowText;
         }
 
         await app.page.waitForTimeout(2_000);
         return false;
       });
+
+      run.detail_url = "/billing";
+      run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
+  test("period-end downgrade applies when billing business time reaches the next cycle", async ({
+    app,
+  }) => {
+    const run = app.createRun();
+
+    try {
+      const fixture = await app.setBillingUserState({
+        businessNow: contractFixtureNow(app),
+        state: "pro",
+      });
+
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+
+      await app.goto("/billing");
+      run.started_balance = await app.readBalance();
+
+      await app.assertStableRoute({
+        path: "/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
+      });
+
+      const redirect = await beginContractCheckout(app, hobbyPlan);
+      if (redirect === "checkout") {
+        throw new Error("period-end downgrade unexpectedly required Stripe checkout");
+      }
+
+      const clock = await app.setBillingClock({
+        orgID: fixture.org_id,
+        reason: `${app.runID}-period-end-downgrade`,
+        set: periodEndClockNow(app),
+      });
+      expect(clock.cycles_rolled_over).toBeGreaterThanOrEqual(1);
+      expect(clock.contract_changes_applied).toBeGreaterThanOrEqual(1);
+      expect(clock.entitlements_ensured).toBeGreaterThanOrEqual(1);
+
+      await app.waitForCondition(
+        "hobby active after period-end downgrade",
+        shortTimeoutMS,
+        async () => {
+          await app.goto("/billing");
+          const activeHobbyRowText = (
+            await contractRows(app, hobbyPlan.planID)
+              .allInnerTexts()
+              .catch(() => [])
+          ).find(
+            (text) =>
+              text.includes(hobbyPlan.planID) && text.includes("active") && text.includes("paid"),
+          );
+          const activeProRows = (
+            await contractRows(app, proPlan.planID)
+              .allInnerTexts()
+              .catch(() => [])
+          ).filter(
+            (text) =>
+              text.includes(proPlan.planID) && text.includes("active") && text.includes("paid"),
+          );
+
+          if (activeHobbyRowText && activeProRows.length === 0) {
+            return activeHobbyRowText;
+          }
+
+          return false;
+        },
+      );
 
       run.detail_url = "/billing";
       run.finished_balance = await app.readBalance();
@@ -218,6 +295,31 @@ const proPlan: ContractPlanSpec = {
   displayName: "Pro",
   priceText: "$20.00/mo",
 };
+
+async function resetContractState(app: SandboxHarness) {
+  await app.setBillingUserState({
+    businessNow: contractFixtureNow(app),
+    state: "free",
+  });
+}
+
+function contractFixtureNow(app: SandboxHarness) {
+  const seconds = stableSecondOffset(app.runID);
+  return new Date(Date.UTC(2026, 3, 13, 0, 0, seconds)).toISOString().replace(".000Z", "Z");
+}
+
+function periodEndClockNow(app: SandboxHarness) {
+  const seconds = stableSecondOffset(app.runID) + 1;
+  return new Date(Date.UTC(2026, 4, 1, 0, 0, seconds)).toISOString().replace(".000Z", "Z");
+}
+
+function stableSecondOffset(value: string) {
+  let hash = 0;
+  for (const char of value) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return hash % (12 * 60 * 60);
+}
 
 async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   await app.expectSSRHTML("/billing/subscribe", [
@@ -313,40 +415,6 @@ async function beginContractCheckout(
     }
     return false;
   });
-}
-
-async function cancelExistingHobbyContract(app: SandboxHarness) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await app.goto("/billing");
-    const cancelButton = hobbyCancelButtons(app).first();
-    if (await cancelButton.isVisible().catch(() => false)) {
-      await requestHobbyCancellation(app);
-      await app.waitForCondition("existing hobby contract cancellation", 90_000, async () => {
-        await app.goto("/billing");
-        const rowText = await hobbyContractRows(app)
-          .first()
-          .innerText()
-          .catch(() => "");
-        if (rowText.includes("cancel_scheduled")) {
-          return true;
-        }
-        if (
-          await hobbyCancelButtons(app)
-            .first()
-            .isVisible()
-            .catch(() => false)
-        ) {
-          await app.page.waitForTimeout(2_000);
-          return false;
-        }
-        return true;
-      });
-      continue;
-    }
-    return;
-  }
-
-  throw new Error("existing hobby contract cancellation did not converge");
 }
 
 async function requestHobbyCancellation(app: SandboxHarness) {

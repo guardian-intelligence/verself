@@ -136,6 +136,32 @@ export interface VerificationRepoMeta {
   commit_sha: string;
 }
 
+export interface BillingFixtureState {
+  org_id: string;
+  org_name: string;
+  email: string;
+  product_id: string;
+  state: string;
+  plan_id: string;
+  business_now: string;
+  balance_units?: number;
+  totals_by_source: Record<string, number>;
+  contracts: number;
+}
+
+export interface BillingClockState {
+  org_id: string;
+  product_id: string;
+  scope_kind: string;
+  scope_id: string;
+  business_now: string;
+  has_override: boolean;
+  generation: number;
+  cycles_rolled_over: number;
+  contract_changes_applied: number;
+  entitlements_ensured: number;
+}
+
 export class SandboxHarness {
   readonly monitor: BrowserMonitor;
   readonly runID: string;
@@ -405,6 +431,75 @@ export class SandboxHarness {
       },
     });
     return JSON.parse(stdout) as VerificationRepoMeta;
+  }
+
+  async setBillingUserState({
+    balanceCents,
+    businessNow,
+    org = "platform",
+    orgID,
+    planID,
+    productID = "sandbox",
+    state = "free",
+  }: {
+    balanceCents?: number;
+    businessNow?: string;
+    org?: string;
+    orgID?: number | string;
+    planID?: string;
+    productID?: string;
+    state?: string;
+  }): Promise<BillingFixtureState> {
+    const scriptPath = fileURLToPath(
+      new URL("../../../../platform/scripts/set-user-state.sh", import.meta.url),
+    );
+    const args = ["--email", env.testEmail, "--product-id", productID, "--state", state];
+    if (orgID !== undefined) {
+      args.push("--org-id", String(orgID));
+    } else {
+      args.push("--org", org);
+    }
+    if (planID) {
+      args.push("--plan-id", planID);
+    }
+    if (balanceCents !== undefined) {
+      args.push("--balance-cents", String(balanceCents));
+    }
+    if (businessNow) {
+      args.push("--business-now", businessNow);
+    }
+    const { stdout } = await execFile(scriptPath, args, { env: process.env });
+    return JSON.parse(stdout) as BillingFixtureState;
+  }
+
+  async setBillingClock({
+    advanceSeconds,
+    clear = false,
+    orgID,
+    productID = "sandbox",
+    reason = this.runID,
+    set,
+  }: {
+    advanceSeconds?: number;
+    clear?: boolean;
+    orgID: number | string;
+    productID?: string;
+    reason?: string;
+    set?: string;
+  }): Promise<BillingClockState> {
+    const scriptPath = fileURLToPath(
+      new URL("../../../../platform/scripts/billing-clock.sh", import.meta.url),
+    );
+    const args = ["--org-id", String(orgID), "--product-id", productID, "--reason", reason];
+    if (set) {
+      args.push("--set", set);
+    } else if (advanceSeconds !== undefined) {
+      args.push("--advance-seconds", String(advanceSeconds));
+    } else if (clear) {
+      args.push("--clear");
+    }
+    const { stdout } = await execFile(scriptPath, args, { env: process.env });
+    return JSON.parse(stdout) as BillingClockState;
   }
 }
 
