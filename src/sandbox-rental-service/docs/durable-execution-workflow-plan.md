@@ -48,6 +48,7 @@ Last Updated: 2026-04-13
 - Current evidence tables: [007_sandbox_job_logs.up.sql](../../platform/migrations/007_sandbox_job_logs.up.sql), [002_otel_tables.up.sql](../../platform/migrations/002_otel_tables.up.sql)
 - Live verification flow and evidence harvesting: [verify-sandbox-live.sh](../../platform/scripts/verify-sandbox-live.sh), [verify-scheduler-runtime.sh](../../platform/scripts/verify-scheduler-runtime.sh), [collect-sandbox-verification-evidence.sh](../../platform/scripts/collect-sandbox-verification-evidence.sh)
 - Forgejo runner engine tracer bullet before River integration: [forgejo-runner-phase-0.md](./forgejo-runner-phase-0.md)
+- GitHub App runner setup runbook: [github-app-runner-setup.md](./github-app-runner-setup.md)
 
 ### Primary Sources
 

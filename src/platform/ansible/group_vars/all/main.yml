@@ -26,6 +26,16 @@ stalwart_domain: "{{ stalwart_subdomain }}.{{ forge_metal_domain }}"
 # notifications.
 stalwart_operator_forward_to: ""
 
+# GitHub Actions runner integration. Create/update the customer-facing app at
+# https://github.com/settings/apps/new or
+# https://github.com/settings/apps/{{ sandbox_rental_service_github_app_slug }}.
+# The private key, webhook secret, and client secret live in the sandbox-rental
+# credstore and are not committed.
+sandbox_rental_service_github_app_enabled: true
+sandbox_rental_service_github_app_id: 3370540
+sandbox_rental_service_github_app_slug: forge-metal-ci
+sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
+
 # WireGuard
 wireguard_interface: wg0
 wireguard_port: 51820
