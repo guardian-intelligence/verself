@@ -167,10 +167,15 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 		}
 		startsAt := monthStartUTC(wallNow)
 		endsAt := nextMonth(wallNow)
+		anchorAt := startsAt
+		cycleSeq := int64(0)
 		cadence := "calendar_monthly"
 		if paid.ok {
-			startsAt = wallNow
-			endsAt = cycleEndAfter("anniversary_monthly", startsAt)
+			anchorAt = paid.anchorAt
+			if anchorAt.IsZero() || anchorAt.After(wallNow) {
+				anchorAt = wallNow
+			}
+			startsAt, endsAt, cycleSeq = cycleBoundsContaining("anniversary_monthly", anchorAt, wallNow)
 			cadence = "anniversary_monthly"
 			if err := c.shiftActiveContractToWallClockTx(ctx, tx, paid, wallNow); err != nil {
 				return err
@@ -193,7 +198,7 @@ func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID,
 		if err := c.reopenWallClockTargetEntitlementsTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow); err != nil {
 			return err
 		}
-		cycle, err := c.insertWallClockResetCycleTx(ctx, tx, q, orgID, productID, startsAt, endsAt, cadence, wallNow)
+		cycle, err := c.insertWallClockResetCycleTx(ctx, tx, q, orgID, productID, anchorAt, cycleSeq, startsAt, endsAt, cadence, wallNow)
 		if err != nil {
 			return err
 		}
@@ -233,11 +238,12 @@ type wallClockPaidPhase struct {
 	contractID string
 	phaseID    string
 	planID     string
+	anchorAt   time.Time
 }
 
 func (c *Client) activePaidPhaseForWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, wallNow time.Time) (wallClockPaidPhase, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT c.contract_id, p.phase_id, COALESCE(p.plan_id, '')
+		SELECT c.contract_id, p.phase_id, COALESCE(p.plan_id, ''), c.starts_at
 		FROM contracts c
 		JOIN contract_phases p ON p.contract_id = c.contract_id
 		WHERE c.org_id = $1
@@ -251,13 +257,14 @@ func (c *Client) activePaidPhaseForWallClockResetTx(ctx context.Context, tx pgx.
 		FOR UPDATE OF c, p
 	`, orgIDText(orgID), productID, wallNow)
 	var paid wallClockPaidPhase
-	if err := row.Scan(&paid.contractID, &paid.phaseID, &paid.planID); err != nil {
+	if err := row.Scan(&paid.contractID, &paid.phaseID, &paid.planID, &paid.anchorAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return wallClockPaidPhase{}, nil
 		}
 		return wallClockPaidPhase{}, fmt.Errorf("load active paid phase for wall-clock reset: %w", err)
 	}
 	paid.ok = paid.planID != ""
+	paid.anchorAt = paid.anchorAt.UTC()
 	return paid, nil
 }
 
@@ -369,7 +376,7 @@ func (c *Client) reopenWallClockTargetEntitlementsTx(ctx context.Context, tx pgx
 	if _, err := tx.Exec(ctx, `
 		UPDATE entitlement_periods
 		SET entitlement_state = 'active',
-		    metadata = (metadata - 'voided_by') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
+		    metadata = (metadata - 'voided_by' - 'voided_at' - 'reason') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
 		    updated_at = now()
 		WHERE org_id = $1
 		  AND product_id = $2
@@ -385,7 +392,7 @@ func (c *Client) reopenWallClockTargetEntitlementsTx(ctx context.Context, tx pgx
 		UPDATE credit_grants
 		SET closed_at = NULL,
 		    closed_reason = '',
-		    metadata = (metadata - 'closed_by') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
+		    metadata = (metadata - 'closed_by' - 'closed_at') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
 		    updated_at = now()
 		WHERE org_id = $1
 		  AND source IN ('free_tier', 'contract')
@@ -402,11 +409,11 @@ func (c *Client) reopenWallClockTargetEntitlementsTx(ctx context.Context, tx pgx
 	return nil
 }
 
-func (c *Client) insertWallClockResetCycleTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, startsAt, endsAt time.Time, cadence string, wallNow time.Time) (billingCycle, error) {
-	cycle := billingCycle{CycleID: cycleID(orgID, productID, startsAt), Currency: "usd", AnchorAt: startsAt, CycleSeq: 0, CadenceKind: cadence, StartsAt: startsAt, EndsAt: endsAt}
+func (c *Client) insertWallClockResetCycleTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, anchorAt time.Time, cycleSeq int64, startsAt, endsAt time.Time, cadence string, wallNow time.Time) (billingCycle, error) {
+	cycle := billingCycle{CycleID: cycleID(orgID, productID, startsAt), Currency: "usd", AnchorAt: anchorAt.UTC(), CycleSeq: cycleSeq, CadenceKind: cadence, StartsAt: startsAt.UTC(), EndsAt: endsAt.UTC()}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at, closed_reason, metadata)
-		VALUES ($1,$2,$3,'usd',$4,0,$5,$4,$6,'open',$6,'',jsonb_build_object('opened_by', 'billing-wall-clock'))
+		VALUES ($1,$2,$3,'usd',$4,$5,$6,$7,$8,'open',$8,'',jsonb_build_object('opened_by', 'billing-wall-clock'))
 		ON CONFLICT (cycle_id) DO UPDATE
 		SET currency = EXCLUDED.currency,
 		    anchor_at = EXCLUDED.anchor_at,
@@ -422,10 +429,10 @@ func (c *Client) insertWallClockResetCycleTx(ctx context.Context, tx pgx.Tx, q *
 		    closed_by_event_id = NULL,
 		    closed_for_usage_at = NULL,
 		    finalized_at = NULL,
-		    metadata = (billing_cycles.metadata - 'voided_by') || jsonb_build_object('opened_by', 'billing-wall-clock'),
+		    metadata = (billing_cycles.metadata - 'voided_by' - 'voided_at' - 'reason') || jsonb_build_object('opened_by', 'billing-wall-clock'),
 		    updated_at = now()
 		WHERE billing_cycles.status = 'voided'
-	`, cycle.CycleID, orgIDText(orgID), productID, startsAt, cadence, endsAt)
+	`, cycle.CycleID, orgIDText(orgID), productID, cycle.AnchorAt, cycle.CycleSeq, cadence, cycle.StartsAt, cycle.EndsAt)
 	if err != nil {
 		return billingCycle{}, fmt.Errorf("insert wall-clock reset billing cycle: %w", err)
 	}

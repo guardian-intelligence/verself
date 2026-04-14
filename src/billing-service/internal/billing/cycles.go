@@ -479,3 +479,31 @@ func cycleEndAfter(cadenceKind string, start time.Time) time.Time {
 		return nextMonth(start)
 	}
 }
+
+func cycleBoundsContaining(cadenceKind string, anchorAt time.Time, t time.Time) (time.Time, time.Time, int64) {
+	anchorAt = anchorAt.UTC()
+	t = t.UTC()
+	if cadenceKind != "anniversary_monthly" {
+		start := monthStartUTC(t)
+		return start, nextMonth(start), 0
+	}
+	if anchorAt.IsZero() || anchorAt.After(t) {
+		return t, cycleEndAfter(cadenceKind, t), 0
+	}
+	start := anchorAt
+	seq := int64(0)
+	for {
+		end := cycleEndAfter(cadenceKind, start)
+		if !end.After(start) {
+			return start, t, seq
+		}
+		if (start.Equal(t) || start.Before(t)) && end.After(t) {
+			return start, end, seq
+		}
+		start = end
+		seq++
+		if seq > 2400 {
+			return start, cycleEndAfter(cadenceKind, start), seq
+		}
+	}
+}
