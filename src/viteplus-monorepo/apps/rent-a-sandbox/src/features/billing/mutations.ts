@@ -7,16 +7,18 @@ import {
   createContractSession,
   createPortalSession,
 } from "~/server-fns/api";
+import type { BillingPlan } from "~/lib/sandbox-rental-api";
 import { contractsQuery, entitlementsQuery } from "./queries";
+import type { PlanCardIntent } from "./state";
 
-const sandboxProductID = "sandbox";
+const SANDBOX_PRODUCT_ID = "sandbox";
 
 export function useCreateCheckoutSessionMutation() {
   return useMutation({
     mutationFn: (amountCents: number) =>
       createCheckoutSession({
         data: {
-          product_id: sandboxProductID,
+          product_id: SANDBOX_PRODUCT_ID,
           amount_cents: amountCents,
           success_url: `${window.location.origin}/billing?purchased=true`,
           cancel_url: `${window.location.origin}/billing/credits`,
@@ -28,45 +30,44 @@ export function useCreateCheckoutSessionMutation() {
   });
 }
 
-export function useCreateContractSessionMutation() {
+// Drives every plan-card click off a single PlanCardIntent discriminated
+// union. `disabled` intents must never reach here — subscribe.tsx disables
+// the button and PlanCardButton never fires onClick — but we still throw
+// loudly if it slips through so a regression shows up as a crash rather
+// than a silent no-op.
+export function usePlanCardActionMutation() {
   return useMutation({
-    mutationFn: ({ planId, action = "start" }: { planId: string; action?: string }) =>
-      createContractSession({
-        data: {
-          plan_id: planId,
-          cadence: "monthly",
-          success_url: billingSuccessURL({ contractAction: action, targetPlanID: planId }),
-          cancel_url: `${window.location.origin}/billing/subscribe`,
-        },
-      }),
-    onSuccess: (data) => {
-      window.location.assign(data.url);
-    },
-  });
-}
+    mutationFn: async ({ intent, plan }: { intent: PlanCardIntent; plan: BillingPlan }) => {
+      const baseSuccessURL = `${window.location.origin}/billing?contracted=true`;
+      const cancelURL = `${window.location.origin}/billing/subscribe`;
 
-export function useCreateContractChangeSessionMutation() {
-  return useMutation({
-    mutationFn: ({
-      contractId,
-      targetPlanId,
-      action,
-    }: {
-      contractId: string;
-      targetPlanId: string;
-      action: "upgrade" | "downgrade" | "resume";
-    }) =>
-      createContractChangeSession({
-        data: {
-          contract_id: contractId,
-          target_plan_id: targetPlanId,
-          success_url: billingSuccessURL({
-            contractAction: action,
-            targetPlanID: targetPlanId,
-          }),
-          cancel_url: `${window.location.origin}/billing/subscribe`,
-        },
-      }),
+      switch (intent.kind) {
+        case "start":
+          return await createContractSession({
+            data: {
+              plan_id: intent.planId,
+              cadence: "monthly",
+              success_url: baseSuccessURL,
+              cancel_url: cancelURL,
+            },
+          });
+        case "upgrade":
+        case "downgrade":
+        case "resume":
+          return await createContractChangeSession({
+            data: {
+              contract_id: intent.contractId,
+              target_plan_id: intent.targetPlanId,
+              success_url: baseSuccessURL,
+              cancel_url: cancelURL,
+            },
+          });
+        case "disabled":
+          throw new Error(
+            `usePlanCardActionMutation: disabled intent clicked — plan=${plan.plan_id}`,
+          );
+      }
+    },
     onSuccess: (data) => {
       window.location.assign(data.url);
     },
@@ -109,8 +110,3 @@ export function useCancelContractMutation() {
 
 export { useCreateCheckoutSessionMutation as useCreditCheckoutMutation };
 export { useCreatePortalSessionMutation as useBillingPortalMutation };
-
-function billingSuccessURL(params: Record<string, string>) {
-  const search = new URLSearchParams({ contracted: "true", ...params });
-  return `${window.location.origin}/billing?${search.toString()}`;
-}
