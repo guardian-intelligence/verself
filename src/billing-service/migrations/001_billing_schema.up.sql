@@ -1,10 +1,14 @@
 -- Billing-service reset schema.
 --
 -- This is intentionally a full cutover schema, not a compatibility migration.
--- PostgreSQL owns billing truth; River owns execution handles; ClickHouse is a
--- projection sink fed from billing_events via billing_event_delivery_queue.
+-- PostgreSQL owns billing domain and scheduling truth; TigerBeetle owns
+-- financial balances and reservations; River owns execution handles; ClickHouse
+-- is a projection sink fed from billing_events via billing_event_delivery_queue.
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+CREATE DOMAIN tbid AS BYTEA
+    CHECK (octet_length(VALUE) = 16);
 
 CREATE OR REPLACE FUNCTION billing_set_updated_at()
 RETURNS trigger
@@ -542,9 +546,11 @@ CREATE TABLE credit_grants (
     expires_at             TIMESTAMPTZ,
     closed_at              TIMESTAMPTZ,
     closed_reason          TEXT        NOT NULL DEFAULT '',
-    tigerbeetle_account_id TEXT,
-    deposit_transfer_id    TEXT,
-    ledger_state           TEXT        NOT NULL DEFAULT 'posted' CHECK (ledger_state IN ('pending', 'posted', 'failed')),
+    account_id             tbid,
+    deposit_transfer_id    tbid,
+    ledger_posting_state   TEXT        NOT NULL DEFAULT 'pending' CHECK (ledger_posting_state IN ('pending', 'in_progress', 'posted', 'retryable_failed', 'failed', 'dead_letter')),
+    ledger_posted_at       TIMESTAMPTZ,
+    ledger_last_error      TEXT        NOT NULL DEFAULT '',
     metadata               JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -576,7 +582,7 @@ CREATE TABLE billing_windows (
     source_ref              TEXT        NOT NULL CHECK (source_ref <> ''),
     billing_job_id          TEXT,
     window_seq              BIGINT      NOT NULL CHECK (window_seq >= 0),
-    state                   TEXT        NOT NULL CHECK (state IN ('reserving', 'reserved', 'active', 'settled', 'voided', 'denied', 'failed')),
+    state                   TEXT        NOT NULL CHECK (state IN ('reserving', 'reserved', 'active', 'settling', 'settled', 'voiding', 'voided', 'denied', 'failed')),
     reservation_shape       TEXT        NOT NULL CHECK (reservation_shape IN ('time', 'units')),
     reserved_quantity       BIGINT      NOT NULL CHECK (reserved_quantity >= 0),
     actual_quantity         BIGINT      NOT NULL DEFAULT 0 CHECK (actual_quantity >= 0),
@@ -594,6 +600,7 @@ CREATE TABLE billing_windows (
     rate_context            JSONB       NOT NULL DEFAULT '{}'::jsonb,
     usage_summary           JSONB       NOT NULL DEFAULT '{}'::jsonb,
     funding_legs            JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    ledger_correlation_id   tbid,
     window_start            TIMESTAMPTZ NOT NULL,
     activated_at            TIMESTAMPTZ,
     expires_at              TIMESTAMPTZ NOT NULL,
@@ -605,8 +612,8 @@ CREATE TABLE billing_windows (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (expires_at > window_start),
-    CHECK (settled_at IS NULL OR state = 'settled'),
-    CHECK (activated_at IS NULL OR state IN ('active', 'settled')),
+    CHECK (settled_at IS NULL OR state IN ('settling', 'settled')),
+    CHECK (activated_at IS NULL OR state IN ('active', 'settling', 'settled', 'voiding', 'voided')),
     UNIQUE (product_id, source_type, source_ref, window_seq)
 );
 
@@ -620,6 +627,35 @@ CREATE INDEX billing_windows_cycle_idx
 CREATE INDEX billing_windows_projection_pending_idx
     ON billing_windows (state, metering_projected_at, created_at, window_id)
     WHERE state = 'settled' AND metering_projected_at IS NULL;
+
+CREATE TABLE billing_window_ledger_legs (
+    window_id               TEXT        NOT NULL REFERENCES billing_windows(window_id) ON DELETE CASCADE,
+    leg_seq                 INTEGER     NOT NULL CHECK (leg_seq >= 0),
+    grant_id                TEXT        REFERENCES credit_grants(grant_id) ON DELETE RESTRICT,
+    grant_account_id        tbid,
+    reservation_transfer_id tbid,
+    settlement_transfer_id  tbid,
+    void_transfer_id        tbid,
+    component_sku_id        TEXT        NOT NULL DEFAULT '',
+    component_bucket_id     TEXT        NOT NULL DEFAULT '',
+    source                  TEXT        NOT NULL CHECK (source IN ('free_tier', 'contract', 'purchase', 'promo', 'refund', 'receivable', 'adjustment')),
+    scope_type              TEXT        NOT NULL DEFAULT '',
+    scope_product_id        TEXT        NOT NULL DEFAULT '',
+    scope_bucket_id         TEXT        NOT NULL DEFAULT '',
+    scope_sku_id            TEXT        NOT NULL DEFAULT '',
+    plan_id                 TEXT        NOT NULL DEFAULT '',
+    amount_reserved         BIGINT      NOT NULL CHECK (amount_reserved >= 0),
+    amount_posted           BIGINT      NOT NULL DEFAULT 0 CHECK (amount_posted >= 0),
+    amount_voided           BIGINT      NOT NULL DEFAULT 0 CHECK (amount_voided >= 0),
+    state                   TEXT        NOT NULL CHECK (state IN ('pending_tb', 'pending', 'posted', 'voided', 'failed')),
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (window_id, leg_seq)
+);
+
+CREATE INDEX billing_window_ledger_legs_grant_idx
+    ON billing_window_ledger_legs (grant_id, state, window_id, leg_seq)
+    WHERE grant_id IS NOT NULL;
 
 CREATE TABLE invoice_finalizations (
     invoice_finalization_id             TEXT        PRIMARY KEY CHECK (invoice_finalization_id <> ''),
@@ -788,13 +824,74 @@ CREATE TABLE invoice_number_allocators (
     PRIMARY KEY (issuer_id, invoice_year)
 );
 
-CREATE TABLE billing_account_registry (
-    account_kind             TEXT        PRIMARY KEY CHECK (account_kind <> ''),
-    tigerbeetle_account_id   TEXT        NOT NULL CHECK (tigerbeetle_account_id <> ''),
-    description              TEXT        NOT NULL DEFAULT '',
-    metadata                 JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE billing_ledger_accounts (
+    account_key      TEXT        PRIMARY KEY CHECK (account_key <> ''),
+    account_id       tbid        NOT NULL UNIQUE,
+    ledger           INTEGER     NOT NULL CHECK (ledger > 0),
+    code             INTEGER     NOT NULL CHECK (code > 0 AND code <= 65535),
+    flags            INTEGER     NOT NULL CHECK (flags >= 0 AND flags <= 65535),
+    account_kind     TEXT        NOT NULL CHECK (account_kind <> ''),
+    description      TEXT        NOT NULL DEFAULT '',
+    metadata         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX billing_ledger_accounts_kind_idx
+    ON billing_ledger_accounts (account_kind, code, account_key);
+
+CREATE TABLE billing_ledger_commands (
+    command_id          TEXT        PRIMARY KEY CHECK (command_id <> ''),
+    operation           TEXT        NOT NULL CHECK (operation <> ''),
+    aggregate_type      TEXT        NOT NULL CHECK (aggregate_type <> ''),
+    aggregate_id        TEXT        NOT NULL CHECK (aggregate_id <> ''),
+    org_id              TEXT        NOT NULL DEFAULT '',
+    product_id          TEXT        NOT NULL DEFAULT '',
+    idempotency_key     TEXT        NOT NULL UNIQUE CHECK (idempotency_key <> ''),
+    state               TEXT        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'in_progress', 'posted', 'retryable_failed', 'dead_letter')),
+    payload             JSONB       NOT NULL,
+    attempts            INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    next_attempt_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_attempt_at     TIMESTAMPTZ,
+    lease_expires_at    TIMESTAMPTZ,
+    leased_by           TEXT        NOT NULL DEFAULT '',
+    last_attempt_id     TEXT        NOT NULL DEFAULT '',
+    last_error          TEXT        NOT NULL DEFAULT '',
+    posted_at           TIMESTAMPTZ,
+    dead_lettered_at    TIMESTAMPTZ,
+    dead_letter_reason  TEXT        NOT NULL DEFAULT '',
+    operator_note       TEXT        NOT NULL DEFAULT '',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX billing_ledger_commands_due_idx
+    ON billing_ledger_commands (state, next_attempt_at, created_at, command_id)
+    WHERE state IN ('pending', 'retryable_failed');
+
+CREATE INDEX billing_ledger_commands_lease_idx
+    ON billing_ledger_commands (state, lease_expires_at, command_id)
+    WHERE state = 'in_progress';
+
+CREATE INDEX billing_ledger_commands_aggregate_idx
+    ON billing_ledger_commands (aggregate_type, aggregate_id, created_at, command_id);
+
+CREATE INDEX billing_ledger_commands_dead_letter_idx
+    ON billing_ledger_commands (dead_lettered_at, command_id)
+    WHERE state = 'dead_letter';
+
+CREATE TABLE billing_ledger_drift_events (
+    drift_id             TEXT        PRIMARY KEY CHECK (drift_id <> ''),
+    drift_kind           TEXT        NOT NULL CHECK (drift_kind <> ''),
+    severity             TEXT        NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+    aggregate_type       TEXT        NOT NULL DEFAULT '',
+    aggregate_id         TEXT        NOT NULL DEFAULT '',
+    observed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    pg_snapshot          JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    tigerbeetle_snapshot JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    state                TEXT        NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'acknowledged', 'resolved')),
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE billing_events (
@@ -889,9 +986,12 @@ CREATE TRIGGER billing_cycles_set_updated_at BEFORE UPDATE ON billing_cycles FOR
 CREATE TRIGGER entitlement_periods_set_updated_at BEFORE UPDATE ON entitlement_periods FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER credit_grants_set_updated_at BEFORE UPDATE ON credit_grants FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_windows_set_updated_at BEFORE UPDATE ON billing_windows FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_window_ledger_legs_set_updated_at BEFORE UPDATE ON billing_window_ledger_legs FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER invoice_finalizations_set_updated_at BEFORE UPDATE ON invoice_finalizations FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_invoices_set_updated_at BEFORE UPDATE ON billing_invoices FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
-CREATE TRIGGER billing_account_registry_set_updated_at BEFORE UPDATE ON billing_account_registry FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_ledger_accounts_set_updated_at BEFORE UPDATE ON billing_ledger_accounts FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_ledger_commands_set_updated_at BEFORE UPDATE ON billing_ledger_commands FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_ledger_drift_events_set_updated_at BEFORE UPDATE ON billing_ledger_drift_events FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_event_delivery_queue_set_updated_at BEFORE UPDATE ON billing_event_delivery_queue FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_clock_overrides_set_updated_at BEFORE UPDATE ON billing_clock_overrides FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 
