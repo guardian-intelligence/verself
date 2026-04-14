@@ -17,6 +17,11 @@ verification_context_init() {
   VERIFICATION_DOMAIN="$(awk -F'"' '/^forge_metal_domain:/{print $2}' "${VERIFICATION_VARS_FILE}")"
   VERIFICATION_REMOTE_HOST="$(grep -m1 'ansible_host=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
   VERIFICATION_REMOTE_USER="$(grep -m1 'ansible_user=' "${VERIFICATION_INVENTORY}" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
+  VERIFICATION_SSH_OPTS=(-o IPQoS=none -o StrictHostKeyChecking=no)
+
+  if [[ -n "${SSH_OPTS:-}" ]]; then
+    read -r -a VERIFICATION_SSH_OPTS <<<"${SSH_OPTS}"
+  fi
 
   if [[ -z "${VERIFICATION_DOMAIN}" || -z "${VERIFICATION_REMOTE_HOST}" || -z "${VERIFICATION_REMOTE_USER}" ]]; then
     echo "failed to resolve verification context from inventory/group vars" >&2
@@ -25,13 +30,232 @@ verification_context_init() {
 }
 
 verification_ssh() {
-  ssh -o IPQoS=none -o StrictHostKeyChecking=no \
+  # shellcheck disable=SC2029 # Callers pass fully quoted remote commands by design.
+  ssh "${VERIFICATION_SSH_OPTS[@]}" \
     "${VERIFICATION_REMOTE_USER}@${VERIFICATION_REMOTE_HOST}" "$@"
+}
+
+verification_remote_temp_path() {
+  local prefix="$1"
+  verification_ssh "mktemp /tmp/${prefix}.XXXXXX"
 }
 
 verification_remote_sudo_cat() {
   local remote_path="$1"
   verification_ssh "sudo cat '${remote_path}'"
+}
+
+verification_print_artifacts() {
+  local artifact_dir="$1"
+  local log_path="$2"
+  local run_json_path="${3:-}"
+
+  echo "artifacts: ${artifact_dir}"
+  echo "log: ${log_path}"
+  if [[ -n "${run_json_path}" ]]; then
+    echo "run json: ${run_json_path}"
+  fi
+}
+
+verification_tail_log_on_failure() {
+  local status="$1"
+  local log_path="$2"
+  local lines="${3:-160}"
+
+  if [[ "${status}" -eq 0 || ! -f "${log_path}" ]]; then
+    return 0
+  fi
+
+  echo "verification failed with status ${status}; last ${lines} log lines from ${log_path}:" >&2
+  tail -n "${lines}" "${log_path}" >&2 || true
+}
+
+verification_collect_window_evidence() {
+  local output_dir="$1"
+  local window_start="$2"
+  local window_end="$3"
+  local billing_db="${BILLING_DB:-billing}"
+
+  mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database default \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          Timestamp,
+          ServiceName,
+          SeverityText,
+          Body,
+          toString(LogAttributes) AS attrs
+        FROM otel_logs
+        WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+          AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
+        ORDER BY Timestamp
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/otel_logs.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database default \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          Timestamp,
+          ServiceName,
+          SpanName,
+          StatusCode,
+          intDiv(Duration, 1000000) AS duration_ms,
+          SpanAttributes['http.method'] AS http_method,
+          SpanAttributes['http.target'] AS http_target,
+          SpanAttributes['http.status_code'] AS http_status_code
+        FROM otel_traces
+        WHERE Timestamp BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+          AND ServiceName IN ('rent-a-sandbox', 'sandbox-rental-service', 'billing-service', 'vm-orchestrator')
+        ORDER BY Timestamp
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/otel_traces.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/clickhouse.sh \
+      --database forge_metal \
+      --param_window_start="${window_start}" \
+      --param_window_end="${window_end}" \
+      --query "
+        SELECT
+          event_id,
+          event_type,
+          aggregate_type,
+          aggregate_id,
+          contract_id,
+          cycle_id,
+          finalization_id,
+          document_id,
+          org_id,
+          product_id,
+          occurred_at,
+          payload,
+          recorded_at
+        FROM billing_events
+        WHERE recorded_at BETWEEN parseDateTime64BestEffort({window_start:String}) AND parseDateTime64BestEffort({window_end:String})
+        ORDER BY recorded_at, event_id
+        FORMAT TSVWithNames
+      "
+  ) >"${output_dir}/clickhouse/billing_events.tsv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/pg.sh "${billing_db}" --query "
+      COPY (
+        SELECT
+          cycle_id,
+          org_id,
+          product_id,
+          cadence_kind,
+          status,
+          starts_at,
+          ends_at,
+          finalized_at,
+          created_at
+        FROM billing_cycles
+        WHERE created_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+           OR starts_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+           OR ends_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+        ORDER BY starts_at, cycle_id
+      ) TO STDOUT WITH CSV HEADER;
+    "
+  ) >"${output_dir}/postgres/billing_cycles.csv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/pg.sh "${billing_db}" --query "
+      COPY (
+        SELECT
+          finalization_id,
+          subject_type,
+          subject_id,
+          COALESCE(cycle_id, '') AS cycle_id,
+          COALESCE(document_id, '') AS document_id,
+          document_kind,
+          state,
+          customer_visible,
+          has_usage,
+          has_financial_activity,
+          started_at,
+          completed_at,
+          created_at
+        FROM billing_finalizations
+        WHERE created_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+           OR started_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+        ORDER BY started_at, finalization_id
+      ) TO STDOUT WITH CSV HEADER;
+    "
+  ) >"${output_dir}/postgres/billing_finalizations.csv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/pg.sh "${billing_db}" --query "
+      COPY (
+        SELECT
+          document_id,
+          COALESCE(document_number, '') AS document_number,
+          document_kind,
+          COALESCE(finalization_id, '') AS finalization_id,
+          COALESCE(cycle_id, '') AS cycle_id,
+          status,
+          payment_status,
+          period_start,
+          period_end,
+          issued_at,
+          total_due_units,
+          created_at
+        FROM billing_documents
+        WHERE created_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+           OR issued_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+        ORDER BY period_start, document_id
+      ) TO STDOUT WITH CSV HEADER;
+    "
+  ) >"${output_dir}/postgres/billing_documents.csv"
+
+  (
+    cd "${VERIFICATION_PLATFORM_ROOT}" || return
+    ./scripts/pg.sh "${billing_db}" --query "
+      COPY (
+        SELECT
+          scope_kind,
+          scope_id,
+          business_now,
+          reason,
+          updated_at
+        FROM billing_clock_overrides
+        WHERE updated_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+        ORDER BY updated_at, scope_kind, scope_id
+      ) TO STDOUT WITH CSV HEADER;
+    "
+  ) >"${output_dir}/postgres/billing_clock_overrides.csv"
+}
+
+verification_collect_run_or_window_evidence() {
+  local run_json_path="$1"
+  local output_dir="$2"
+  local window_start="$3"
+  local window_end="$4"
+
+  if [[ -f "${run_json_path}" ]]; then
+    "${VERIFICATION_SCRIPT_DIR}/collect-sandbox-verification-evidence.sh" "${run_json_path}" "${output_dir}"
+    return
+  fi
+
+  echo "run json not found; collecting fallback evidence for ${window_start}..${window_end}" >&2
+  verification_collect_window_evidence "${output_dir}" "${window_start}" "${window_end}"
 }
 
 verification_wait_for_http() {

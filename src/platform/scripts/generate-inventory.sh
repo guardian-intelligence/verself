@@ -15,9 +15,6 @@ if [ -z "$worker_ips" ] && [ -z "$infra_ips" ]; then
   exit 1
 fi
 
-# Get cluster name from tfvars
-cluster_name=$(cd "$TF_DIR" && tofu output -json worker_ids 2>/dev/null | jq -r '.[0]' 2>/dev/null | sed 's/.*_//' || echo "node")
-
 # Read cluster_name from tfvars for hostname prefix
 if [ -f "$TF_DIR/terraform.tfvars.json" ]; then
   cluster=$(jq -r '.cluster_name // "dev"' "$TF_DIR/terraform.tfvars.json")

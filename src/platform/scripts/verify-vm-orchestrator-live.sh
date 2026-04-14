@@ -14,6 +14,7 @@ set -euo pipefail
 #   VM_ORCHESTRATOR_PROOF_SKIP_DEPLOY=1 make vm-orchestrator-proof-bridge-fault
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 

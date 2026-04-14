@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
@@ -19,7 +20,8 @@ if [[ -z "${base_url}" ]]; then
 fi
 
 mkdir -p "${artifact_dir}"
-submit_requested_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+verification_print_artifacts "${artifact_dir}" "${smoke_log_path}" "${run_json_path}"
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 verification_wait_for_http "rent-a-sandbox UI" "${base_url}" "200"
 
@@ -28,6 +30,7 @@ acme_admin_password="$(
 )"
 
 set +e
+# shellcheck disable=SC2016 # Positional args are expanded inside the child shell.
 env \
   VERIFICATION_RUN_ID="${run_id}" \
   VERIFICATION_RUN_JSON_PATH="${run_json_path}" \
@@ -47,9 +50,18 @@ env \
   >"${smoke_log_path}" 2>&1
 smoke_status=$?
 set -e
+ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-if [[ -f "${run_json_path}" ]]; then
-  "${script_dir}/collect-sandbox-verification-evidence.sh" "${run_json_path}" "${artifact_dir}/evidence"
+set +e
+verification_collect_run_or_window_evidence "${run_json_path}" "${artifact_dir}/evidence" "${started_at}" "${ended_at}"
+evidence_status=$?
+set -e
+
+verification_tail_log_on_failure "${smoke_status}" "${smoke_log_path}" "160"
+
+if [[ "${smoke_status}" -eq 0 && "${evidence_status}" -ne 0 ]]; then
+  echo "evidence collection failed after successful UI smoke: ${artifact_dir}/evidence" >&2
+  exit "${evidence_status}"
 fi
 
 exit "${smoke_status}"

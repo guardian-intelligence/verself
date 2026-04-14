@@ -31,36 +31,31 @@ while getopts "s:m:n:etl" opt; do
   esac
 done
 
-# --- resolve inventory + credentials ---
-
-inventory="${INVENTORY:-ansible/inventory/hosts.ini}"
-secrets_file="${SOPS_SECRETS_FILE:-ansible/group_vars/all/secrets.sops.yml}"
-
-if [[ ! -f "$inventory" ]]; then
-  echo "ERROR: $inventory not found." >&2; exit 1
+if ! [[ "${MINUTES}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: minutes must be a positive integer" >&2
+  exit 1
+fi
+if ! [[ "${LIMIT}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: limit must be a positive integer" >&2
+  exit 1
+fi
+if (( LIMIT > 500 )); then
+  echo "ERROR: limit must be <= 500" >&2
+  exit 1
+fi
+if [[ -n "${SERVICE}" && ! "${SERVICE}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  echo "ERROR: service must contain only letters, numbers, dot, underscore, or dash" >&2
+  exit 1
 fi
 
-remote_host="$(grep -m1 'ansible_host=' "$inventory" | sed 's/.*ansible_host=\([^ ]*\).*/\1/')"
-remote_user="$(grep -m1 'ansible_user=' "$inventory" | sed 's/.*ansible_user=\([^ ]*\).*/\1/')"
-ch_password="$(sops -d --extract '["clickhouse_password"]' "$secrets_file")"
-ssh_opts=(-o IPQoS=none -o StrictHostKeyChecking=no)
-
-if [[ -n "${SSH_OPTS:-}" ]]; then
-  read -r -a ssh_opts <<<"${SSH_OPTS}"
-fi
-
-# POST query to ClickHouse HTTP API via SSH — avoids all shell quoting issues.
 ch_query() {
-  ssh "${ssh_opts[@]}" "${remote_user}@${remote_host}" \
-    "curl -sf 'http://127.0.0.1:8123/?user=default&password=${ch_password}' --data-binary @-" <<< "$1"
+  ./scripts/clickhouse.sh \
+    --database default \
+    --param_service="${SERVICE}" \
+    --param_minutes="${MINUTES}" \
+    --param_row_limit="${LIMIT}" \
+    --query "$1"
 }
-
-# --- build filters ---
-
-svc_filter=""
-if [[ -n "$SERVICE" ]]; then
-  svc_filter="AND ServiceName = '${SERVICE}'"
-fi
 
 # --- traces ---
 
@@ -81,12 +76,12 @@ if $SHOW_TRACES; then
       SpanAttributes['http.status_code'] AS status,
       intDiv(Duration, 1000000) AS ms
     FROM default.otel_traces
-    WHERE Timestamp > now() - INTERVAL ${MINUTES} MINUTE
-      ${svc_filter}
+    WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+      AND ({service:String} = '' OR ServiceName = {service:String})
       ${error_filter}
       AND SpanAttributes['http.target'] != ''
     ORDER BY Timestamp DESC
-    LIMIT ${LIMIT}
+    LIMIT {row_limit:UInt32}
     FORMAT PrettyCompact
   "
   echo ""
@@ -110,11 +105,11 @@ if $SHOW_LOGS; then
       Body AS message,
       toString(LogAttributes) AS attrs
     FROM default.otel_logs
-    WHERE Timestamp > now() - INTERVAL ${MINUTES} MINUTE
-      ${svc_filter}
+    WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+      AND ({service:String} = '' OR ServiceName = {service:String})
       ${error_filter}
     ORDER BY Timestamp DESC
-    LIMIT ${LIMIT}
+    LIMIT {row_limit:UInt32}
     FORMAT PrettyCompact
   "
 fi

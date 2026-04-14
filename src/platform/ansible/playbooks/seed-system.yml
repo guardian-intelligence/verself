@@ -146,9 +146,9 @@
         units: 50000000
         source: promo
     seed_system_helper_local_path: "/tmp/billing-seed-{{ inventory_hostname }}"
-    seed_system_helper_remote_path: /tmp/billing-seed
+    seed_system_helper_remote_path: "/opt/forge-metal/staging/billing-seed-{{ inventory_hostname }}"
     seed_system_stripe_catalog_helper_local_path: "/tmp/billing-stripe-catalog-{{ inventory_hostname }}"
-    seed_system_stripe_catalog_helper_remote_path: /tmp/billing-stripe-catalog
+    seed_system_stripe_catalog_helper_remote_path: "/opt/forge-metal/staging/billing-stripe-catalog-{{ inventory_hostname }}"
 
     seed_system_stalwart_disabled_permissions:
       - email-send
@@ -701,6 +701,13 @@
       delegate_to: localhost
       become: false
       changed_when: false
+      tags: [billing]
+
+    - name: Ensure billing helper staging directory exists
+      ansible.builtin.file:
+        path: /opt/forge-metal/staging
+        state: directory
+        mode: "0755"
       tags: [billing]
 
     - name: Upload billing seed helper

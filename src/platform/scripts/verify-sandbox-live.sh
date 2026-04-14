@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=src/platform/scripts/lib/verification-context.sh
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 
@@ -39,6 +40,7 @@ verification_repo_url="$(
 )"
 
 set +e
+# shellcheck disable=SC2016 # Positional args are expanded inside the child shell.
 env \
   TEST_EMAIL="acme-admin@${VERIFICATION_DOMAIN}" \
   TEST_PASSWORD="${acme_admin_password}" \

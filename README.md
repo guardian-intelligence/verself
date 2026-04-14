@@ -121,13 +121,34 @@ make billing-clock ORG_ID=123
 make billing-clock ORG_ID=123 SET=2026-05-01T00:00:00Z REASON=e2e-rollover
 make billing-clock ORG_ID=123 ADVANCE_SECONDS=2678400 REASON=e2e-rollover
 make billing-clock ORG_ID=123 CLEAR=1 REASON=e2e-cleanup
+make billing-wall-clock ORG=platform REASON=e2e-cleanup
 ```
 
 The clock helper builds and runs `src/billing-service/cmd/billing-clock` on the
 target node. It calls billing-service code paths against billing PostgreSQL, so
 clock changes can synchronously apply due cycle rollover, scheduled
 downgrades/cancellations, current-period grants, and corresponding
-`billing_events`.
+`billing_events`. `billing-wall-clock` is the fixture repair path for browser
+and operator testing: it clears the org/product clock override, voids current
+test cycles that no longer overlap wall-clock time, preserves paid plan state
+and account purchase balances, rematerializes current-period entitlements, and
+emits `billing_clock_reset_to_wall_clock`.
+
+Use the billing inspection wrappers when reviewing live state after a test:
+
+```bash
+make billing-state ORG=platform
+make billing-documents ORG=platform
+make billing-finalizations ORG=platform
+make billing-events EVENT=billing_clock_reset_to_wall_clock MINUTES=30
+make billing-pg-query QUERY='SELECT current_database()'
+make billing-proof
+```
+
+`billing-proof` runs the deployed billing Playwright flow and writes artifacts
+under `artifacts/sandbox-billing/<run-id>/`. If the browser test exits before
+it writes a structured run JSON, the wrapper still collects a time-windowed
+fallback evidence bundle from ClickHouse and billing PostgreSQL.
 
 Billing naming is intentionally split:
 

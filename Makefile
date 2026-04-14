@@ -1,9 +1,9 @@
-.PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
-       hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
-       set-user-state billing-clock billing-reset verification-reset \
+.PHONY: help test lint lint-scripts lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
+       hooks-install doctor inventory-check setup-dev setup-sops provision deprovision deploy site guest-rootfs security-patch identity-reset seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
+       set-user-state billing-clock billing-wall-clock billing-state billing-documents billing-finalizations billing-events billing-pg-shell billing-pg-query billing-proof billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
-       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
-       wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof scheduler-proof verify-scheduler grafana-proof services-doctor
+       mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords mail-observe edit-secrets verification-repo \
+       wipe-pg-db wipe-server vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof rent-ui-smoke rent-ui-local rent-local-dev scheduler-proof verify-scheduler grafana-proof observability-smoke vm-guest-telemetry-dev services-doctor
 
 FM       := src/platform
 AW       := src/apiwire
@@ -22,6 +22,9 @@ ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
 ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
 
+help: ## Show available root automation targets
+	@awk 'BEGIN {FS = ":.*## "; printf "Forge Metal targets:\n"} /^[A-Za-z0-9_.-]+:.*## / {printf "  %-32s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
 vm-guest-telemetry-build: ## Build the vm-guest-telemetry Zig binary
 	cd src/vm-guest-telemetry && zig build -Doptimize=ReleaseSafe
 
@@ -30,6 +33,9 @@ test: ## Run unit tests
 
 lint: lint-conversions
 	golangci-lint run $(GO_PKGS)
+
+lint-scripts: ## Run ShellCheck over platform shell scripts
+	shellcheck -x -P . $(FM)/scripts/*.sh $(FM)/scripts/lib/*.sh $(FM)/scripts/security/*.sh
 
 lint-conversions:
 	gosec -quiet -include=G115 $(GO_PKGS)
@@ -94,6 +100,34 @@ openapi-wire-check: ## Verify frontend-consumed OpenAPI 3.1 specs are JS wire-sa
 inventory-check: ## Validate that the generated Ansible inventory exists
 	@test -f "$(INVENTORY)" || { echo "ERROR: $(INVENTORY) not found. Run: cd $(FM)/ansible && ansible-playbook playbooks/provision.yml"; exit 1; }
 
+setup-dev: ## Install pinned controller dev tools
+	cd $(FM)/ansible && ansible-playbook playbooks/setup-dev.yml
+
+setup-sops: ## Bootstrap SOPS + Age encryption
+	cd $(FM)/ansible && ansible-playbook playbooks/setup-sops.yml
+
+provision: ## Provision bare metal and generate inventory
+	cd $(FM)/ansible && ansible-playbook playbooks/provision.yml
+
+deprovision: ## Destroy provisioned bare metal infrastructure: make deprovision CONFIRM=deprovision
+	@test "$(CONFIRM)" = "deprovision" || { echo "ERROR: deprovision requires CONFIRM=deprovision"; exit 1; }
+	cd $(FM)/ansible && ansible-playbook playbooks/deprovision.yml
+
+deploy: inventory-check ## Deploy single-node environment: make deploy [TAGS=billing_service,caddy]
+	cd $(FM)/ansible && ansible-playbook playbooks/dev-single-node.yml $(if $(TAGS),--tags "$(TAGS)",)
+
+site: inventory-check ## Deploy multi-node site playbook
+	cd $(FM)/ansible && ansible-playbook playbooks/site.yml $(if $(TAGS),--tags "$(TAGS)",)
+
+guest-rootfs: inventory-check ## Build and stage Firecracker guest artifacts
+	cd $(FM)/ansible && ansible-playbook playbooks/guest-rootfs.yml $(if $(TAGS),--tags "$(TAGS)",)
+
+security-patch: inventory-check ## Apply OS security updates through Ansible
+	cd $(FM)/ansible && ansible-playbook playbooks/security-patch.yml
+
+identity-reset: inventory-check ## Exhaustively wipe identity-service PostgreSQL state and restart dependents
+	cd $(FM)/ansible && ansible-playbook playbooks/identity-reset.yml
+
 seed-system: inventory-check ## Seed platform + Acme tenants, billing, mailboxes, and auth verify
 	cd $(FM)/ansible && ansible-playbook playbooks/seed-system.yml
 
@@ -127,12 +161,46 @@ set-user-state: inventory-check ## Set billing fixture state: make set-user-stat
 
 billing-clock: inventory-check ## Inspect or mutate billing business time: make billing-clock ORG_ID=123 [SET=...|ADVANCE_SECONDS=...|CLEAR=1]
 	@cd $(FM) && ./scripts/billing-clock.sh \
+		--org "$(ORG)" \
 		--org-id "$(ORG_ID)" \
 		--product-id "$(BILLING_PRODUCT_ID)" \
 		$(if $(SET),--set "$(SET)",) \
 		$(if $(ADVANCE_SECONDS),--advance-seconds "$(ADVANCE_SECONDS)",) \
 		$(if $(CLEAR),--clear,) \
 		$(if $(REASON),--reason "$(REASON)",)
+
+billing-wall-clock: inventory-check ## Reset billing test time to wall-clock and repair current cycle: make billing-wall-clock ORG=platform
+	@cd $(FM) && ./scripts/billing-clock.sh \
+		--org "$(ORG)" \
+		--org-id "$(ORG_ID)" \
+		--product-id "$(BILLING_PRODUCT_ID)" \
+		--wall-clock \
+		$(if $(REASON),--reason "$(REASON)",)
+
+billing-state: inventory-check ## Inspect billing state for an org: make billing-state ORG=platform [BILLING_PRODUCT_ID=sandbox]
+	@test -n "$(ORG)$(ORG_ID)" || { echo "ERROR: ORG or ORG_ID is required"; exit 1; }
+	cd $(FM) && ./scripts/billing-inspect.sh --kind state --org "$(ORG)" --org-id "$(ORG_ID)" --product-id "$(BILLING_PRODUCT_ID)" $(if $(FORMAT),--format "$(FORMAT)",)
+
+billing-documents: inventory-check ## List billing documents for an org: make billing-documents ORG=platform
+	@test -n "$(ORG)$(ORG_ID)" || { echo "ERROR: ORG or ORG_ID is required"; exit 1; }
+	cd $(FM) && ./scripts/billing-inspect.sh --kind documents --org "$(ORG)" --org-id "$(ORG_ID)" --product-id "$(BILLING_PRODUCT_ID)" $(if $(FORMAT),--format "$(FORMAT)",)
+
+billing-finalizations: inventory-check ## List billing finalizations for an org: make billing-finalizations ORG=platform
+	@test -n "$(ORG)$(ORG_ID)" || { echo "ERROR: ORG or ORG_ID is required"; exit 1; }
+	cd $(FM) && ./scripts/billing-inspect.sh --kind finalizations --org "$(ORG)" --org-id "$(ORG_ID)" --product-id "$(BILLING_PRODUCT_ID)" $(if $(FORMAT),--format "$(FORMAT)",)
+
+billing-events: inventory-check ## Query recent billing events in ClickHouse: make billing-events [ORG_ID=123] [EVENT=billing_document_issued] [MINUTES=60]
+	cd $(FM) && ./scripts/billing-inspect.sh --kind events --org "$(ORG)" --org-id "$(ORG_ID)" --product-id "$(BILLING_PRODUCT_ID)" $(if $(EVENT),--event-type "$(EVENT)",) $(if $(MINUTES),--minutes "$(MINUTES)",) $(if $(FORMAT),--format "$(FORMAT)",)
+
+billing-pg-shell: inventory-check ## Open psql against the billing database
+	cd $(FM) && ./scripts/pg.sh billing
+
+billing-pg-query: inventory-check ## Run a PostgreSQL query against billing: make billing-pg-query QUERY='SELECT 1'
+	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
+	cd $(FM) && ./scripts/pg.sh billing --query "$(QUERY)"
+
+billing-proof: inventory-check ## Run live billing browser proof and collect evidence
+	cd $(FM) && ./scripts/verify-rent-billing-flow.sh
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
@@ -168,6 +236,15 @@ sandbox-middle: inventory-check ## Middle loop: default deploys UI and runs admi
 sandbox-proof: inventory-check ## Proof loop: full reset, redeploy, reseed, and live full-lifecycle sandbox verification
 	cd $(FM) && ./scripts/verify-sandbox-live.sh
 
+rent-ui-smoke: inventory-check ## Run deployed rent-a-sandbox authenticated shell smoke
+	cd $(FM) && TEST_BASE_URL="$${TEST_BASE_URL:-https://rentasandbox.$$(awk -F'\"' '/^forge_metal_domain:/{print $$2}' ansible/group_vars/all/main.yml)}" ./scripts/verify-rent-ui-smoke.sh
+
+rent-ui-local: inventory-check ## Run rent-a-sandbox smoke against local HMR dev server
+	cd $(FM) && ./scripts/verify-rent-ui-local.sh
+
+rent-local-dev: inventory-check ## Start local rent-a-sandbox dev tunnels and HMR server
+	cd $(FM) && ./scripts/run-rent-local-dev.sh $(if $(PRINT_ENV),--print-env,)
+
 scheduler-proof: inventory-check ## Proof loop: enqueue a River scheduler probe and assert PG + ClickHouse evidence
 	cd $(FM) && ./scripts/verify-scheduler-runtime.sh
 
@@ -191,6 +268,12 @@ telemetry-proof: inventory-check ## Run observability smoke and verify ansible s
 
 telemetry-proof-fail: inventory-check ## Run observability smoke fail-path and verify Error spans land in ClickHouse
 	cd $(FM) && TELEMETRY_PROOF_EXPECT_FAIL=1 ./scripts/telemetry-proof.sh
+
+observability-smoke: inventory-check ## Run the raw Ansible observability smoke playbook
+	cd $(FM)/ansible && ansible-playbook playbooks/observability-smoke.yml
+
+vm-guest-telemetry-dev: inventory-check ## Hot-swap vm-guest-telemetry and run the dev VM probe
+	cd $(FM)/ansible && ansible-playbook playbooks/vm-guest-telemetry-dev.yml
 
 clickhouse-shell: inventory-check ## Open an interactive clickhouse-client session on the worker
 	cd $(FM) && ./scripts/clickhouse.sh
@@ -257,6 +340,9 @@ mail-send-ceo: inventory-check ## Send via Resend to ceo inbox: make mail-send-c
 	@test -n "$(BODY)" || { echo "ERROR: BODY is required"; exit 1; }
 	cd $(FM) && ./scripts/mail-send.sh -t ceo -s "$(SUBJECT)" -b "$(BODY)"
 
+mail-observe: inventory-check ## Query ClickHouse mail events/metrics: make mail-observe [MAILBOX=ceo] [DIRECTION=inbound] [N=20]
+	cd $(FM) && ./scripts/mail-observe.sh $(if $(MAILBOX),--mailbox "$(MAILBOX)",) $(if $(DIRECTION),--direction "$(DIRECTION)",) $(if $(N),--limit "$(N)",) $(if $(METRICS),--metrics,)
+
 mail-passwords: inventory-check ## Show Stalwart mailbox passwords
 	@echo "ceo@$$(cd $(FM) && grep '^forge_metal_domain:' ansible/group_vars/all/main.yml | awk '{print $$2}' | tr -d '\"'):"
 	@cd $(FM) && sops -d --extract '["stalwart_ceo_password"]' ansible/group_vars/all/secrets.sops.yml
@@ -266,3 +352,7 @@ mail-passwords: inventory-check ## Show Stalwart mailbox passwords
 
 edit-secrets: ## Open encrypted secrets in $$EDITOR via sops
 	sops $(FM)/ansible/group_vars/all/secrets.sops.yml
+
+wipe-server: inventory-check ## Wipe all forge-metal state from the provisioned server: make wipe-server CONFIRM=wipe-server
+	@test "$(CONFIRM)" = "wipe-server" || { echo "ERROR: wipe-server requires CONFIRM=wipe-server"; exit 1; }
+	cd $(FM) && ./scripts/wipe-server.sh
