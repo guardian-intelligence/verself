@@ -4,9 +4,6 @@ import { formatDateTimeUTC } from "~/lib/format";
 import type { FlashIntent } from "./flash";
 import { assertUnreachable } from "./state";
 
-// Receipt design: status is conveyed by a single monochrome badge shape
-// plus a `data-contract-status` hook. e2e selectors can target the data
-// attribute; visual distinction comes from variant, not color.
 const TERMINAL_SUCCESS = new Set(["active"]);
 const TERMINAL_NEUTRAL = new Set(["cancel_scheduled", "suspended"]);
 const TERMINAL_FAILURE = new Set(["ended", "voided"]);
@@ -18,11 +15,7 @@ export function ContractStatusPill({ status }: { status: string }) {
   else if (TERMINAL_NEUTRAL.has(status)) variant = "secondary";
 
   return (
-    <Badge
-      variant={variant}
-      data-contract-status={status}
-      className="rounded-none border-foreground font-mono text-[10px] uppercase tracking-wider"
-    >
+    <Badge variant={variant} data-contract-status={status}>
       {status}
     </Badge>
   );

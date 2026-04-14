@@ -20,12 +20,12 @@ function ExecutionsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Executions
-          </h1>
-          <p className="text-2xl font-semibold">Direct VM executions</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Executions</h1>
+          <p className="text-sm text-muted-foreground">
+            Direct VM executions, billing windows, and logs.
+          </p>
         </div>
         {creditsExhausted ? (
           <Button
@@ -34,12 +34,11 @@ function ExecutionsPage() {
             disabled
             data-testid="new-execution-disabled"
             title="No credits remaining — purchase more or subscribe to a plan"
-            className="rounded-none"
           >
             New execution
           </Button>
         ) : (
-          <Button asChild variant="default" className="rounded-none">
+          <Button asChild variant="default">
             <Link to="/executions/new" data-testid="new-execution">
               New execution
             </Link>
@@ -73,7 +72,7 @@ function CreditsExhaustedCallout({ accountKind }: { accountKind: string }) {
       tone="warning"
       title="Your credit balance is empty"
       action={
-        <Button asChild variant="default" className="rounded-none">
+        <Button asChild variant="default">
           <Link to={ctaTarget} data-testid="credits-exhausted-cta">
             {ctaLabel}
           </Link>

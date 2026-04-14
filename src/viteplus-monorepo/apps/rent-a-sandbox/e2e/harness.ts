@@ -400,21 +400,22 @@ export class SandboxHarness {
   }
 
   async readBalance(): Promise<number> {
-    // Sums the entitlements view's hidden test attribute. The visible UI never
-    // shows a top-line balance — this is a relative-comparison anchor for e2e
-    // (started vs finished) only.
+    // Reads the visible account balance rendered by the billing index page.
+    // Source of truth is the same data-attribute the UI uses for its
+    // display, so this is no longer a phantom "cross-slot sum" — the test
+    // witness matches exactly what the user sees.
     if (!this.page.url().includes("/settings/billing")) {
       await this.goto("/settings/billing");
     }
-    const view = this.page.getByTestId("entitlements-view");
-    await view.first().waitFor({ state: "visible", timeout: shortTimeoutMS });
-    const raw = await view.first().getAttribute("data-test-available-units");
+    const balance = this.page.getByTestId("entitlements-account-balance");
+    await balance.first().waitFor({ state: "visible", timeout: shortTimeoutMS });
+    const raw = await balance.first().getAttribute("data-account-balance-units");
     if (raw === null) {
-      throw new Error("entitlements view missing data-test-available-units");
+      throw new Error("entitlements balance missing data-account-balance-units");
     }
     const units = Number.parseInt(raw, 10);
     if (!Number.isFinite(units)) {
-      throw new Error(`entitlements view test-available-units is not numeric: ${raw}`);
+      throw new Error(`entitlements balance units is not numeric: ${raw}`);
     }
     return units;
   }

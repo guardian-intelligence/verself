@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Button } from "@forge-metal/ui/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@forge-metal/ui/components/ui/card";
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";
@@ -34,10 +36,7 @@ function SubscribePage() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Plan
-        </h2>
-        <p className="text-2xl font-semibold">Choose a plan</p>
+        <h2 className="text-lg font-semibold">Choose a plan</h2>
         <p className="text-sm text-muted-foreground">
           Create a contract to get monthly bucketed allowances for sandbox usage.
         </p>
@@ -60,7 +59,7 @@ function SubscribePage() {
           })}
         </div>
       ) : (
-        <div className="border border-foreground p-6 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-md border bg-card p-6 text-sm text-muted-foreground">
           No contract plans are currently available.
         </div>
       )}
@@ -87,47 +86,41 @@ function PlanCardView({ account, card, intent, isPending, onClick }: PlanCardVie
   const current = card.kind === "current" || card.kind === "current_resumable";
 
   return (
-    <div
+    <Card
       data-testid={`contract-plan-${plan.plan_id}`}
       data-card-kind={card.kind}
-      className="flex flex-col gap-4 border border-foreground bg-background p-6"
+      className="flex h-full flex-col"
     >
-      <div>
-        <div className="flex items-baseline justify-between gap-2">
-          <h3 className="font-mono text-sm font-semibold uppercase tracking-wider">
-            {plan.display_name}
-          </h3>
-          {current ? (
-            <span className="border border-foreground px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider">
-              Current
-            </span>
-          ) : null}
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle>{plan.display_name}</CardTitle>
+          {current ? <Badge variant="secondary">Current</Badge> : null}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Monthly sandbox usage allowance for the {plan.tier} tier.
         </p>
-      </div>
-      <div className="font-mono text-3xl font-semibold tabular-nums">
-        {formatCents(plan.monthly_amount_cents, plan.currency)}
-        <span className="text-xs text-muted-foreground">/mo</span>
-      </div>
-      {copy.hint ? (
-        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-          {copy.hint}
-        </p>
-      ) : null}
-      <Button
-        type="button"
-        variant={current ? "outline" : "default"}
-        data-testid={`start-contract-plan-${plan.plan_id}`}
-        onClick={onClick}
-        disabled={disabled}
-        title={copy.tooltip}
-        className="mt-auto rounded-none"
-      >
-        {copy.label}
-      </Button>
-    </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="font-mono text-3xl font-semibold tabular-nums">
+          {formatCents(plan.monthly_amount_cents, plan.currency)}
+          <span className="ml-1 text-sm font-normal text-muted-foreground">/mo</span>
+        </div>
+        {copy.hint ? <p className="text-xs text-muted-foreground">{copy.hint}</p> : null}
+      </CardContent>
+      <CardFooter className="mt-auto">
+        <Button
+          type="button"
+          variant={current ? "outline" : "default"}
+          data-testid={`start-contract-plan-${plan.plan_id}`}
+          onClick={onClick}
+          disabled={disabled}
+          title={copy.tooltip}
+          className="w-full"
+        >
+          {copy.label}
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
 

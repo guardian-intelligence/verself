@@ -36,16 +36,10 @@ import {
   getExecution as getExecutionRequest,
   getPlans as getPlansRequest,
   getStatement as getStatementRequest,
-  getRepo as getRepoRequest,
-  getRepos as getReposRequest,
   getContracts as getContractsRequest,
   statementQuerySchema,
-  importRepo as importRepoRequest,
-  importRepoRequestSchema,
   isSandboxRentalApiError,
   isSandboxRentalNotFound,
-  repoIdInputSchema,
-  rescanRepo as rescanRepoRequest,
   SandboxRentalApiError,
   submitDirectExecution as submitDirectExecutionRequest,
   executionRequestSchema,
@@ -67,10 +61,7 @@ import type {
   PlansResponse,
   Statement,
   StatementQuery,
-  ImportRepoRequest,
   PortalRequest,
-  Repo,
-  RepoCompatibilitySummary,
   ExecutionRequest,
   ContractRequest,
   ContractsResponse,
@@ -97,11 +88,8 @@ export type {
   ExecutionRequest,
   Statement,
   StatementQuery,
-  ImportRepoRequest,
   PortalRequest,
   PlansResponse,
-  Repo,
-  RepoCompatibilitySummary,
   ContractRequest,
   ContractChangeRequest,
   ContractsResponse,
@@ -302,38 +290,3 @@ export const getExecution = createServerFn({ method: "GET" })
     });
   });
 
-export const importRepo = createServerFn({ method: "POST" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(importRepoRequestSchema)
-  .handler(async ({ context, data }) => {
-    return importRepoRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      body: data,
-    });
-  });
-
-export const getRepos = createServerFn({ method: "GET" })
-  .middleware([rentASandboxAuthMiddleware])
-  .handler(async ({ context }) => {
-    return getReposRequest(await sandboxRentalClientOptions(context));
-  });
-
-export const getRepo = createServerFn({ method: "GET" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(repoIdInputSchema)
-  .handler(async ({ context, data }) => {
-    return getRepoRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      repoId: data.repoId,
-    });
-  });
-
-export const rescanRepo = createServerFn({ method: "POST" })
-  .middleware([rentASandboxAuthMiddleware])
-  .inputValidator(repoIdInputSchema)
-  .handler(async ({ context, data }) => {
-    return rescanRepoRequest({
-      ...(await sandboxRentalClientOptions(context)),
-      repoId: data.repoId,
-    });
-  });
