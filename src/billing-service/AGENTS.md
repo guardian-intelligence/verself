@@ -1,6 +1,6 @@
 # billing-service
 
-Credit-based recurring contract billing with entitlements — prepaid + metered hybrid. The current rewrite is PostgreSQL + River for operational state/work execution, Stripe at the provider boundary, and ClickHouse for projection/audit evidence. TigerBeetle posting remains part of the long-term architecture, but it is not active in this cutover.
+Credit-based recurring contract billing with entitlements — prepaid + metered hybrid. PostgreSQL owns domain state and durable command envelopes, River owns scheduled/retry execution, Stripe is a provider boundary, TigerBeetle owns financial balances/reservations, and ClickHouse is projection/audit evidence.
 
 Architecture detail: `docs/billing-architecture.md`.
 
@@ -27,4 +27,4 @@ Live in `migrations/`. Platform provisions the database + role; the service's An
 ansible-playbook playbooks/billing-reset.yml
 ```
 
-Wipes billing PostgreSQL state and restarts billing callers. TigerBeetle reset behavior is only relevant once posting is wired back into the billing runtime.
+Wipes billing PostgreSQL state, recreates the TigerBeetle data file, and restarts billing callers. Use this instead of ad hoc mutations when changing ledger schema or account taxonomy.
