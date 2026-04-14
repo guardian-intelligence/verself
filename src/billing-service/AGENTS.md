@@ -4,6 +4,9 @@ Credit-based recurring contract billing with entitlements — prepaid + metered 
 
 Architecture detail: `docs/billing-architecture.md`.
 
+The billing-service PostgreSQL database is `billing`. The `sandbox` identifier
+is the current billable product ID, not a database name.
+
 ## Key use cases
 
 - Monthly contracts granting entitlements: credits, access to digital goods, software licenses, priority lanes.
@@ -19,7 +22,10 @@ The 3-node evolution should introduce NATS JetStream or Kafka + Debezium for pro
 
 ## Migrations
 
-Live in `migrations/`. Platform provisions the database + role; the service's Ansible role applies migrations on deploy. During pre-customer phase, prefer `billing-reset.yml` or `verification-reset.yml` over crafting tricky migrations.
+Live in `migrations/`. Platform provisions PostgreSQL database `billing` and
+role `billing`; the service's Ansible role applies migrations on deploy. During
+pre-customer phase, prefer `billing-reset.yml` or `verification-reset.yml` over
+crafting tricky migrations.
 
 ## Reset
 
@@ -27,4 +33,6 @@ Live in `migrations/`. Platform provisions the database + role; the service's An
 ansible-playbook playbooks/billing-reset.yml
 ```
 
-Wipes billing PostgreSQL state, recreates the TigerBeetle data file, and restarts billing callers. Use this instead of ad hoc mutations when changing ledger schema or account taxonomy.
+Wipes billing PostgreSQL database `billing`, recreates the TigerBeetle data
+file, and restarts billing callers. Use this instead of ad hoc mutations when
+changing ledger schema or account taxonomy.

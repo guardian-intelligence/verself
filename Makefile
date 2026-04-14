@@ -141,7 +141,7 @@ verification-reset: inventory-check ## Exhaustively wipe verification state (bil
 	cd $(FM)/ansible && ansible-playbook playbooks/verification-reset.yml
 
 wipe-pg-db: inventory-check ## Wipe one managed PostgreSQL service DB: make wipe-pg-db DB=sandbox_rental
-	@test -n "$(DB)" || { echo "ERROR: DB is required (sandbox|sandbox_rental|mailbox_service|identity_service|letters)"; exit 1; }
+	@test -n "$(DB)" || { echo "ERROR: DB is required (billing|sandbox_rental|mailbox_service|identity_service)"; exit 1; }
 	cd $(FM)/ansible && ansible-playbook playbooks/wipe-pg-db.yml -e "wipe_pg_db_name=$(DB)"
 
 verification-repo: inventory-check ## Ensure the public local Forgejo verification repo exists and is force-pushed from the fixture

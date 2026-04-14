@@ -22,6 +22,12 @@
     shell: /usr/sbin/nologin
     create_home: false
 
+- name: Assert billing PostgreSQL database name is safe
+  ansible.builtin.assert:
+    that:
+      - billing_service_pg_database is match('^[a-z_][a-z0-9_]*$')
+    fail_msg: billing_service_pg_database must be a lowercase PostgreSQL identifier.
+
 # --- nftables egress rules ---
 
 - name: Deploy billing-service nftables ruleset

@@ -5,7 +5,7 @@
 #   make wipe-pg-db DB=sandbox_rental
 #
 # Supported DBs:
-# - sandbox: billing ledger reset, including TigerBeetle
+# - billing: billing ledger reset, including TigerBeetle
 # - sandbox_rental
 # - mailbox_service
 # - identity_service
@@ -16,7 +16,7 @@
   force_handlers: true
   vars:
     wipe_pg_db_supported:
-      - sandbox
+      - billing
       - sandbox_rental
       - mailbox_service
       - identity_service
@@ -69,25 +69,25 @@
       no_log: true
 
   tasks:
-    - name: Include TigerBeetle for sandbox PostgreSQL wipe
+    - name: Include TigerBeetle for billing PostgreSQL wipe
       ansible.builtin.include_role:
         name: tigerbeetle
       tags: [tigerbeetle]
-      when: wipe_pg_db_name == 'sandbox'
+      when: wipe_pg_db_name == 'billing'
 
-    - name: Include billing-service for sandbox PostgreSQL wipe
+    - name: Include billing-service for billing PostgreSQL wipe
       ansible.builtin.include_role:
         name: billing_service
       tags: [billing_service]
       vars:
         billing_service_force_ledger_reset: true
-      when: wipe_pg_db_name == 'sandbox'
+      when: wipe_pg_db_name == 'billing'
 
-    - name: Include sandbox-rental-service after sandbox PostgreSQL wipe
+    - name: Include sandbox-rental-service after billing PostgreSQL wipe
       ansible.builtin.include_role:
         name: sandbox_rental_service
       tags: [sandbox_rental_service]
-      when: wipe_pg_db_name == 'sandbox'
+      when: wipe_pg_db_name == 'billing'
 
     - name: Include sandbox-rental-service for sandbox_rental PostgreSQL wipe
       ansible.builtin.include_role:

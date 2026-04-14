@@ -23,7 +23,7 @@
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres
-      -d sandbox
+      -d {{ billing_service_pg_database }}
       -tAc
       "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'orgs';"
   environment:
@@ -123,11 +123,11 @@
         port: "{{ services.tigerbeetle.port }}"
         timeout: 30
 
-    - name: Reset sandbox PostgreSQL database for billing schema
+    - name: Reset billing PostgreSQL database for billing schema
       ansible.builtin.include_role:
         name: postgresql_db_reset
       vars:
-        postgresql_db_reset_name: sandbox
+        postgresql_db_reset_name: "{{ billing_service_pg_database }}"
         postgresql_db_reset_owner: billing
         postgresql_db_reset_stop_units:
           - sandbox-rental-service
@@ -140,7 +140,7 @@
           -h {{ services.postgresql.host }}
           -p {{ services.postgresql.port }}
           -U billing
-          -d sandbox
+          -d {{ billing_service_pg_database }}
           -v ON_ERROR_STOP=1
           -f /opt/forge-metal/billing-service-migrations/{{ item }}
       environment:
@@ -169,7 +169,7 @@
       -h {{ services.postgresql.host }}
       -p {{ services.postgresql.port }}
       -U postgres
-      -d sandbox
+      -d {{ billing_service_pg_database }}
       -v ON_ERROR_STOP=1
     stdin: |
       DO $$
