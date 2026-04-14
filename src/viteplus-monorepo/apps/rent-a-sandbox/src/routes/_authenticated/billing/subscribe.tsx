@@ -28,11 +28,6 @@ function SubscribePage() {
   });
   const mutation = usePlanCardActionMutation();
   const plans = snapshot.plans.plans ?? [];
-  // deriveAllPlanCards emits the billing.plan_cards.derive span carrying the
-  // comma-joined distribution of card kinds. That span is the post-deploy
-  // verification knob for "did every expected state actually render during
-  // this test run" — see the commit message on the selector intro for the
-  // ClickHouse query.
   const cards = useMemo(() => deriveAllPlanCards(account, plans), [account, plans]);
 
   return (

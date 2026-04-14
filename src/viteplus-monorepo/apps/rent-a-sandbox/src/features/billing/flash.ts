@@ -1,13 +1,11 @@
-import { trace } from "@opentelemetry/api";
 import * as v from "valibot";
 
-// The billing-service is the authoritative producer of the post-Stripe
-// redirect query string. See src/billing-service/internal/billing/contracts.go
-// (contractReturnURL) for the canonical parameter set. This schema is a
-// client-side projection: Valibot validates the raw search, then
-// projectFlashIntent collapses the result into a discriminated union the UI
-// consumes directly. Malformed URLs get tagged in the span but fall back to
-// "no banner" so a broken referrer never crashes the route.
+// FlashIntent is the client-side projection of the post-Stripe redirect
+// query string. The billing-service is the authoritative producer — see
+// src/billing-service/internal/billing/contracts.go (contractReturnURL)
+// for the canonical parameter set. This module's job is to validate what
+// comes in at the route boundary and collapse it into a discriminated
+// union the UI renders off exhaustively.
 
 export type FlashIntent =
   | { readonly kind: "none" }
@@ -26,9 +24,9 @@ export type FlashIntent =
   | { readonly kind: "contract_resumed"; readonly targetPlanId?: string }
   | { readonly kind: "contract_unchanged"; readonly targetPlanId?: string };
 
-// Accepts string "true"/"false" in addition to booleans because Stripe's
-// return URL round-trip stringifies every query value — and the old code
-// tolerated both forms. The transform collapses them into real booleans.
+// Accepts string "true"/"false" in addition to booleans because the Stripe
+// redirect round-trip stringifies every query value. The transform
+// collapses them into real booleans before downstream consumers see them.
 const vBoolFlag = v.union([
   v.literal(true),
   v.literal(false),
@@ -44,8 +42,8 @@ const vBoolFlag = v.union([
 
 const vContractAction = v.picklist(["start", "upgrade", "downgrade", "resume", "unchanged"]);
 
-// Use object() not strictObject() so third-party referrer junk (utm_source,
-// fbclid, ...) doesn't blow up the route. Unknown keys pass through silently.
+// object() not strictObject() — third-party referrer junk (utm_source,
+// fbclid, ...) must pass through silently rather than blow up the route.
 const vFlashSearch = v.object({
   purchased: v.optional(vBoolFlag),
   contracted: v.optional(vBoolFlag),
@@ -56,37 +54,18 @@ const vFlashSearch = v.object({
 
 export type FlashSearch = v.InferOutput<typeof vFlashSearch>;
 
-// TanStack Router validateSearch entry point. Runs on both SSR and client
-// navigation. Emits billing.flash.parse with flash.kind attribute so the
-// banner distribution is queryable in default.otel_traces.
+// TanStack Router validateSearch entry point. A malformed URL falls back
+// to an empty object so downstream consumers render no banner — the
+// alternative (throwing) would crash the route for a broken external
+// referrer, which is worse UX than a missing banner.
 export function parseFlashSearch(search: Record<string, unknown>): FlashSearch {
-  const tracer = trace.getTracer("rent-a-sandbox");
-  return tracer.startActiveSpan("billing.flash.parse", (span) => {
-    try {
-      const result = v.safeParse(vFlashSearch, search);
-      if (!result.success) {
-        span.setAttributes({
-          "billing.flash.kind": "malformed",
-          "billing.flash.reason": summarizeIssues(result.issues),
-        });
-        return {};
-      }
-      const parsed = result.output;
-      const intent = projectFlashIntent(parsed);
-      span.setAttributes({
-        "billing.flash.kind": intent.kind,
-        ...(parsed.targetPlanID ? { "billing.flash.target_plan_id": parsed.targetPlanID } : {}),
-      });
-      return parsed;
-    } finally {
-      span.end();
-    }
-  });
+  const result = v.safeParse(vFlashSearch, search);
+  return result.success ? result.output : {};
 }
 
 // Pure projection from validated search params to the discriminated union
 // the UI consumes. Separated from parseFlashSearch so components can re-run
-// it without re-parsing when search params change.
+// it on memoized search state without re-parsing.
 export function projectFlashIntent(search: FlashSearch): FlashIntent {
   if (search.purchased === true) {
     return { kind: "credits_purchased" };
@@ -96,8 +75,9 @@ export function projectFlashIntent(search: FlashSearch): FlashIntent {
     return { kind: "none" };
   }
 
-  // exactOptionalPropertyTypes forces us to omit optional fields rather than
-  // set them to undefined — spread a planId/effectiveAt slice in conditionally.
+  // exactOptionalPropertyTypes forces us to omit optional fields rather
+  // than set them to undefined — conditionally spread the planId /
+  // effectiveAt slices into the result.
   const planIdPart = search.targetPlanID ? { targetPlanId: search.targetPlanID } : {};
   const parsedEffectiveAt = search.contractEffectiveAt
     ? parseEffectiveAt(search.contractEffectiveAt)
@@ -116,8 +96,8 @@ export function projectFlashIntent(search: FlashSearch): FlashIntent {
     case "unchanged":
       return { kind: "contract_unchanged", ...planIdPart };
     case undefined:
-      // contracted=true with no action field → older billing-service response.
-      // Treat as a plain "contract started" so the banner still renders.
+      // contracted=true with no action is treated as a plain "contract
+      // started" so the banner still renders on older redirect shapes.
       return { kind: "contract_started", ...planIdPart };
   }
 }
@@ -125,14 +105,4 @@ export function projectFlashIntent(search: FlashSearch): FlashIntent {
 function parseEffectiveAt(value: string): Date | undefined {
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed : undefined;
-}
-
-function summarizeIssues(issues: readonly v.BaseIssue<unknown>[]): string {
-  return issues
-    .slice(0, 3)
-    .map((issue) => {
-      const path = issue.path?.map((p) => String(p.key ?? "")).join(".") ?? "";
-      return path ? `${path}: ${issue.message}` : issue.message;
-    })
-    .join("; ");
 }

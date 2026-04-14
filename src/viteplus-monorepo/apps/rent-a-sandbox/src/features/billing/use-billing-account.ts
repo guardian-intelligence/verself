@@ -19,8 +19,7 @@ export interface UseBillingAccountOptions {
 // Core billing snapshot: plans + contracts + entitlements. No statement —
 // subscribe and jobs routes don't care about the current billing cycle's
 // line items, and useSuspenseQuery can't conditionally disable a query.
-// Callers that want the statement stack the useBillingSnapshotWithStatement
-// wrapper below on top.
+// Callers that want the statement use useBillingAccountWithStatement below.
 export function useBillingAccount(options: UseBillingAccountOptions = {}): {
   readonly account: BillingAccount;
   readonly snapshot: BillingSnapshot;
@@ -54,10 +53,10 @@ export interface UseBillingAccountWithStatementOptions extends UseBillingAccount
   readonly initialStatement?: Statement;
 }
 
-// Billing index route consumes the statement alongside the account. Fetches
-// all four queries unconditionally, derives a single snapshot, and re-runs
-// the pure selector so billing.account.derive spans on the SSR side carry
-// statement-aware attributes too.
+// Variant for routes that also render the current billing cycle's statement
+// line items (the /billing index). Fetches all four queries unconditionally
+// and derives the same BillingAccount shape plus a snapshot that carries
+// the statement.
 export function useBillingAccountWithStatement(
   options: UseBillingAccountWithStatementOptions = {},
 ): {
