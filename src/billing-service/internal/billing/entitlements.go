@@ -33,6 +33,13 @@ type grantRow struct {
 }
 
 func (c *Client) EnsureCurrentEntitlements(ctx context.Context, orgID OrgID, productID string) error {
+	if _, err := c.ApplyDueBillingWork(ctx, orgID, productID); err != nil {
+		return err
+	}
+	return c.ensureCurrentEntitlements(ctx, orgID, productID)
+}
+
+func (c *Client) ensureCurrentEntitlements(ctx context.Context, orgID OrgID, productID string) error {
 	return c.WithTx(ctx, "billing.entitlements.ensure_current", func(ctx context.Context, tx pgx.Tx, _ *store.Queries) error {
 		q := c.queries.WithTx(tx)
 		now, err := c.BusinessNow(ctx, q, orgID, productID)
@@ -51,22 +58,6 @@ func (c *Client) EnsureCurrentEntitlements(ctx context.Context, orgID OrgID, pro
 		}
 		return nil
 	})
-}
-
-func (c *Client) ensureOpenBillingCycleTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, now time.Time) (billingCycle, error) {
-	start := monthStartUTC(now)
-	end := nextMonth(now)
-	id := cycleID(orgID, productID, start)
-	_, err := tx.Exec(ctx, `
-		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at)
-		VALUES ($1, $2, $3, 'usd', $4, 0, 'calendar_monthly', $4, $5, 'open', $5)
-		ON CONFLICT (org_id, product_id, anchor_at, cycle_seq) DO UPDATE
-		SET updated_at = now()
-	`, id, orgIDText(orgID), productID, start, end)
-	if err != nil {
-		return billingCycle{}, fmt.Errorf("ensure open billing cycle: %w", err)
-	}
-	return billingCycle{CycleID: id, StartsAt: start, EndsAt: end}, nil
 }
 
 func (c *Client) materializeFreeTierTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, cycle billingCycle, now time.Time) error {
@@ -116,7 +107,7 @@ func (c *Client) materializeActiveContractTx(ctx context.Context, tx pgx.Tx, org
 	rows, err := tx.Query(ctx, `
 		SELECT l.line_id, l.phase_id, l.contract_id, l.policy_id, l.scope_type,
 		       COALESCE(l.scope_product_id, ''), COALESCE(l.scope_bucket_id, ''), COALESCE(l.scope_sku_id, ''),
-		       l.amount_units, l.policy_version
+		       l.amount_units, l.policy_version, COALESCE(p.plan_id, '')
 		FROM contract_entitlement_lines l
 		JOIN contract_phases p ON p.phase_id = l.phase_id
 		JOIN contracts c ON c.contract_id = l.contract_id
@@ -136,9 +127,9 @@ func (c *Client) materializeActiveContractTx(ctx context.Context, tx pgx.Tx, org
 	defer rows.Close()
 	inserts := []entitlementInsert{}
 	for rows.Next() {
-		var lineID, phaseID, contractID, policyID, scopeType, scopeProductID, scopeBucketID, scopeSKUID, policyVersion string
+		var lineID, phaseID, contractID, policyID, scopeType, scopeProductID, scopeBucketID, scopeSKUID, policyVersion, planID string
 		var amount int64
-		if err := rows.Scan(&lineID, &phaseID, &contractID, &policyID, &scopeType, &scopeProductID, &scopeBucketID, &scopeSKUID, &amount, &policyVersion); err != nil {
+		if err := rows.Scan(&lineID, &phaseID, &contractID, &policyID, &scopeType, &scopeProductID, &scopeBucketID, &scopeSKUID, &amount, &policyVersion, &planID); err != nil {
 			return fmt.Errorf("scan contract entitlement line: %w", err)
 		}
 		periodID := contractPeriodID(orgID, lineID, cycle.CycleID, cycle.StartsAt, cycle.EndsAt)
@@ -146,6 +137,7 @@ func (c *Client) materializeActiveContractTx(ctx context.Context, tx pgx.Tx, org
 		inserts = append(inserts, entitlementInsert{
 			PeriodID: periodID, OrgID: orgID, ProductID: productID, CycleID: cycle.CycleID, Source: "contract", PolicyID: policyID,
 			ContractID: contractID, PhaseID: phaseID, LineID: lineID, ScopeType: scopeType, ScopeProductID: scopeProductID, ScopeBucketID: scopeBucketID, ScopeSKUID: scopeSKUID,
+			PlanID: planID,
 			Amount: uint64(amount), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: policyVersion,
 			EntitlementState: "active", PaymentState: "paid", CalculationKind: "recurrence", SourceReferenceID: sourceRef,
 			GrantID: grantID(orgID, "contract", scopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceRef),
@@ -167,6 +159,7 @@ type entitlementInsert struct {
 	PeriodID, ProductID, CycleID, Source, PolicyID, ContractID, PhaseID, LineID string
 	ScopeType, ScopeProductID, ScopeBucketID, ScopeSKUID                        string
 	PolicyVersion, EntitlementState, PaymentState, CalculationKind              string
+	PlanID                                                                      string
 	SourceReferenceID, GrantID                                                  string
 	OrgID                                                                       OrgID
 	Amount                                                                      uint64
@@ -185,7 +178,7 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in 
 	if err != nil {
 		return fmt.Errorf("insert entitlement period %s: %w", in.PeriodID, err)
 	}
-	_, err = tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO credit_grants (
 			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
 			source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at, ledger_state
@@ -195,7 +188,28 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in 
 	if err != nil {
 		return fmt.Errorf("insert credit grant %s: %w", in.GrantID, err)
 	}
-	return nil
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	payload := map[string]any{
+		"grant_id":              in.GrantID,
+		"period_id":             in.PeriodID,
+		"cycle_id":              in.CycleID,
+		"source":                in.Source,
+		"source_reference_id":   in.SourceReferenceID,
+		"amount":                in.Amount,
+		"scope_type":            in.ScopeType,
+		"scope_product_id":      in.ScopeProductID,
+		"scope_bucket_id":       in.ScopeBucketID,
+		"scope_sku_id":          in.ScopeSKUID,
+		"period_start":          in.PeriodStart.Format(time.RFC3339Nano),
+		"period_end":            in.PeriodEnd.Format(time.RFC3339Nano),
+		"pricing_contract_id":   in.ContractID,
+		"pricing_phase_id":      in.PhaseID,
+		"pricing_plan_id":       in.PlanID,
+		"entitlement_policy_id": in.PolicyID,
+	}
+	return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "grant_issued", AggregateType: "credit_grant", AggregateID: in.GrantID, OrgID: in.OrgID, ProductID: in.ProductID, OccurredAt: in.PeriodStart, Payload: payload})
 }
 
 func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantBalance, error) {
@@ -230,7 +244,7 @@ func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantB
 		if err != nil {
 			return fmt.Errorf("insert deposit grant: %w", err)
 		}
-		return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "credit_grant_issued", AggregateType: "credit_grant", AggregateID: grant.GrantID, OrgID: orgID, ProductID: grant.ScopeProductID, OccurredAt: grant.StartsAt, Payload: map[string]any{"grant_id": grant.GrantID, "source": grant.Source, "amount": firstUint64(grant.OriginalAmount, grant.Amount)}})
+		return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "grant_issued", AggregateType: "credit_grant", AggregateID: grant.GrantID, OrgID: orgID, ProductID: grant.ScopeProductID, OccurredAt: grant.StartsAt, Payload: map[string]any{"grant_id": grant.GrantID, "source": grant.Source, "amount": firstUint64(grant.OriginalAmount, grant.Amount)}})
 	})
 	return grant, err
 }

@@ -137,25 +137,29 @@ func (c *Client) collectUpgradeInvoice(ctx context.Context, quote contractChange
 		return "", "", false, err
 	}
 	metadata := map[string]string{"org_id": orgIDText(quote.OrgID), "product_id": quote.ProductID, "contract_id": quote.ContractID, "change_id": quote.ChangeID, "invoice_id": invoiceID(quote.ChangeID), "from_plan_id": quote.FromPlanID, "target_plan_id": quote.TargetPlanID}
+	if quote.ProviderRequestID != "" {
+		metadata["provider_request_id"] = quote.ProviderRequestID
+	}
+	stripeID := cleanNonEmpty(quote.ProviderRequestID, quote.ChangeID)
 	createParams := &stripe.InvoiceCreateParams{AutoAdvance: stripe.Bool(false), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), DefaultPaymentMethod: stripe.String(paymentMethodID), Description: stripe.String("Forge Metal plan upgrade"), Metadata: metadata, PendingInvoiceItemsBehavior: stripe.String("exclude")}
-	createParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":invoice")
+	createParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":invoice")
 	invoice, err := c.stripe.V1Invoices.Create(ctx, createParams)
 	if err != nil {
 		return "", "", false, fmt.Errorf("create stripe upgrade invoice: %w", err)
 	}
 	itemParams := &stripe.InvoiceItemCreateParams{Amount: stripe.Int64(int64(quote.PriceDeltaCents)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID), Invoice: stripe.String(invoice.ID), Metadata: metadata, Period: &stripe.InvoiceItemCreatePeriodParams{Start: stripe.Int64(quote.EffectiveAt.Unix()), End: stripe.Int64(quote.CycleEnd.Unix())}}
-	itemParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":item")
+	itemParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":item")
 	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
 		return "", invoice.ID, false, fmt.Errorf("create stripe upgrade invoice item: %w", err)
 	}
 	finalizeParams := &stripe.InvoiceFinalizeInvoiceParams{AutoAdvance: stripe.Bool(false)}
-	finalizeParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":finalize")
+	finalizeParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":finalize")
 	finalized, err := c.stripe.V1Invoices.FinalizeInvoice(ctx, invoice.ID, finalizeParams)
 	if err != nil {
 		return "", invoice.ID, false, fmt.Errorf("finalize stripe upgrade invoice: %w", err)
 	}
 	payParams := &stripe.InvoicePayParams{PaymentMethod: stripe.String(paymentMethodID), OffSession: stripe.Bool(false)}
-	payParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":pay")
+	payParams.SetIdempotencyKey("forge-metal:upgrade:" + stripeID + ":pay")
 	paidInvoice, err := c.stripe.V1Invoices.Pay(ctx, finalized.ID, payParams)
 	if err != nil {
 		_ = c.updateUpgradeInvoiceProvider(ctx, quote, finalized.ID, finalized.HostedInvoiceURL, finalized.InvoicePDF, "issued", "pending")
@@ -380,28 +384,35 @@ func (c *Client) applySucceededSetupIntent(ctx context.Context, setup *stripe.Se
 		month = int(setup.PaymentMethod.Card.ExpMonth)
 		year = int(setup.PaymentMethod.Card.ExpYear)
 	}
-	now := time.Now().UTC()
+	appliedAt := time.Now().UTC()
+	businessNow := appliedAt
+	if productID != "" {
+		businessNow, err = c.BusinessNow(ctx, c.queries, orgID, productID)
+		if err != nil {
+			return err
+		}
+	}
 	err = c.WithTx(ctx, "billing.stripe.setup_intent.apply", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		_, _ = tx.Exec(ctx, `UPDATE payment_methods SET is_default = false WHERE org_id = $1 AND provider = 'stripe'`, orgIDText(orgID))
 		_, err := tx.Exec(ctx, `
 			INSERT INTO payment_methods (payment_method_id, org_id, provider, provider_customer_id, provider_payment_method_id, setup_intent_id, status, is_default, card_brand, card_last4, expires_month, expires_year, off_session_authorized_at)
 			VALUES ($1,$2,'stripe',$3,$4,$5,'active',true,$6,$7,$8,$9,$10)
 			ON CONFLICT (provider, provider_payment_method_id) DO UPDATE SET status = 'active', is_default = true, setup_intent_id = EXCLUDED.setup_intent_id, provider_customer_id = EXCLUDED.provider_customer_id, card_brand = EXCLUDED.card_brand, card_last4 = EXCLUDED.card_last4, expires_month = EXCLUDED.expires_month, expires_year = EXCLUDED.expires_year, off_session_authorized_at = EXCLUDED.off_session_authorized_at
-		`, textID("payment_method", "stripe", paymentMethodID), orgIDText(orgID), customerID, paymentMethodID, setup.ID, brand, last4, nullableInt(month), nullableInt(year), now)
+		`, textID("payment_method", "stripe", paymentMethodID), orgIDText(orgID), customerID, paymentMethodID, setup.ID, brand, last4, nullableInt(month), nullableInt(year), appliedAt)
 		if err != nil {
 			return fmt.Errorf("upsert payment method: %w", err)
 		}
 		_, _ = tx.Exec(ctx, `INSERT INTO provider_bindings (binding_id, aggregate_type, aggregate_id, provider, provider_object_type, provider_object_id, provider_customer_id, sync_state) VALUES ($1,'customer',$2,'stripe','customer',$3,$3,'synced') ON CONFLICT (provider, provider_object_type, provider_object_id) DO NOTHING`, textID("provider_binding", "stripe", "customer", customerID), orgIDText(orgID), customerID)
-		return appendEvent(ctx, tx, q, eventFact{EventType: "payment_method_activated", AggregateType: "payment_method", AggregateID: paymentMethodID, OrgID: orgID, ProductID: productID, OccurredAt: now, Payload: map[string]any{"provider": "stripe", "payment_method_id": paymentMethodID, "contract_id": contractID}})
+		return appendEvent(ctx, tx, q, eventFact{EventType: "payment_method_activated", AggregateType: "payment_method", AggregateID: paymentMethodID, OrgID: orgID, ProductID: productID, OccurredAt: appliedAt, Payload: map[string]any{"provider": "stripe", "payment_method_id": paymentMethodID, "contract_id": contractID}})
 	})
 	if err != nil {
 		return err
 	}
 	if planID != "" && contractID != "" {
 		if phaseIDValue == "" {
-			phaseIDValue = phaseID(contractID, planID, now)
+			phaseIDValue = phaseID(contractID, planID, businessNow)
 		}
-		if err := c.activateCatalogContract(ctx, orgID, productID, planID, contractID, phaseIDValue, now, now); err != nil {
+		if err := c.activateCatalogContract(ctx, orgID, productID, planID, contractID, phaseIDValue, businessNow, businessNow); err != nil {
 			return err
 		}
 		return c.EnsureCurrentEntitlements(ctx, orgID, productID)
@@ -423,7 +434,11 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 	if productID == "" || ledgerUnits == 0 {
 		return nil
 	}
-	_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "account", Source: "purchase", SourceReferenceID: "stripe_payment_intent:" + intent.ID, Amount: ledgerUnits, StartsAt: time.Now().UTC()})
+	startsAt, err := c.BusinessNow(ctx, c.queries, orgID, productID)
+	if err != nil {
+		return err
+	}
+	_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "account", Source: "purchase", SourceReferenceID: "stripe_payment_intent:" + intent.ID, Amount: ledgerUnits, StartsAt: startsAt})
 	return err
 }
 

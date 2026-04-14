@@ -25,20 +25,20 @@ func DefaultConfig() Config {
 }
 
 var (
-	ErrInvalidConfig     = errors.New("billing: invalid config")
-	ErrPaymentRequired   = errors.New("billing: payment required")
-	ErrForbidden         = errors.New("billing: forbidden")
-	ErrContractNotFound  = errors.New("billing: contract not found")
-	ErrNoStripeCustomer  = errors.New("billing: no stripe customer")
-	ErrUnsupportedChange = errors.New("billing: unsupported contract change")
-	ErrUnsupportedCadence = errors.New("billing: unsupported cadence")
-	ErrInsufficientBalance = errors.New("billing: insufficient balance")
-	ErrOrgSuspended = errors.New("billing: org suspended")
-	ErrWindowNotFound = errors.New("billing: window not found")
-	ErrWindowNotReserved = errors.New("billing: window not reserved")
-	ErrWindowNotActivated = errors.New("billing: window not activated")
+	ErrInvalidConfig        = errors.New("billing: invalid config")
+	ErrPaymentRequired      = errors.New("billing: payment required")
+	ErrForbidden            = errors.New("billing: forbidden")
+	ErrContractNotFound     = errors.New("billing: contract not found")
+	ErrNoStripeCustomer     = errors.New("billing: no stripe customer")
+	ErrUnsupportedChange    = errors.New("billing: unsupported contract change")
+	ErrUnsupportedCadence   = errors.New("billing: unsupported cadence")
+	ErrInsufficientBalance  = errors.New("billing: insufficient balance")
+	ErrOrgSuspended         = errors.New("billing: org suspended")
+	ErrWindowNotFound       = errors.New("billing: window not found")
+	ErrWindowNotReserved    = errors.New("billing: window not reserved")
+	ErrWindowNotActivated   = errors.New("billing: window not activated")
 	ErrWindowAlreadySettled = errors.New("billing: window already settled")
-	ErrWindowAlreadyVoided = errors.New("billing: window already voided")
+	ErrWindowAlreadyVoided  = errors.New("billing: window already voided")
 )
 
 type CheckoutParams struct {
@@ -59,6 +59,23 @@ type ContractChangeResult struct {
 	InvoiceID       string
 	Status          string
 	PriceDeltaUnits uint64
+}
+
+type DueWorkSummary struct {
+	CyclesRolledOver       uint64
+	ContractChangesApplied uint64
+	EntitlementsEnsured    uint64
+}
+
+type BusinessClockState struct {
+	OrgID       OrgID
+	ProductID   string
+	ScopeKind   string
+	ScopeID     string
+	BusinessNow time.Time
+	HasOverride bool
+	Generation  uint64
+	DueWork     DueWorkSummary
 }
 
 type BillingCadence string
