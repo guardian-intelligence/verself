@@ -161,6 +161,8 @@
       LoadCredential=stripe-webhook-secret:/etc/credstore/billing/stripe-webhook-secret
       LoadCredential=ch-password:/etc/credstore/billing/ch-password
       Environment=BILLING_CH_ADDRESS={{ services.clickhouse.host }}:{{ services.clickhouse.native_port }}
+      Environment=BILLING_TB_ADDRESS={{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}
+      Environment=BILLING_TB_CLUSTER_ID={{ billing_service_tigerbeetle_cluster_id }}
       Environment=BILLING_LISTEN_ADDR={{ services.billing.host }}:{{ services.billing.port }}
       Environment=BILLING_AUTH_ISSUER_URL={{ billing_service_auth_issuer_url }}
       Environment=BILLING_AUTH_JWKS_URL={{ billing_service_auth_jwks_url }}
