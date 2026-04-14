@@ -2,6 +2,7 @@ import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { trace } from "@opentelemetry/api";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
 import { getContracts, getEntitlements, getPlans, getStatement } from "~/server-fns/api";
+import { deriveBillingAccount, type BillingSnapshot } from "./state";
 
 function billingQueryKey<TParts extends readonly unknown[]>(
   auth: AuthenticatedAuth,
@@ -52,19 +53,54 @@ function logBillingPageLoadError(error: unknown) {
 
 export async function loadBillingPage(queryClient: QueryClient, auth: AuthenticatedAuth) {
   try {
-    const [entitlements, contracts, statement] = await Promise.all([
+    const [entitlements, contracts, plans, statement] = await Promise.all([
       queryClient.ensureQueryData(entitlementsQuery(auth)),
       queryClient.ensureQueryData(contractsQuery(auth)),
+      queryClient.ensureQueryData(plansQuery(auth)),
       queryClient.ensureQueryData(statementQuery(auth, "sandbox")),
     ]);
+
+    const snapshot: BillingSnapshot = { plans, contracts, entitlements, statement };
+    // Eager derivation so the loader span carries account.kind attributes.
+    // The client re-derives via useBillingAccount but that call is a no-op at
+    // the OTel layer in the browser.
+    const account = deriveBillingAccount(snapshot);
 
     return {
       entitlements,
       contracts,
+      plans,
       statement,
+      account,
     };
   } catch (error) {
     logBillingPageLoadError(error);
     throw error;
   }
 }
+
+export async function loadSubscribePage(queryClient: QueryClient, auth: AuthenticatedAuth) {
+  try {
+    const [plans, contracts, entitlements] = await Promise.all([
+      queryClient.ensureQueryData(plansQuery(auth)),
+      queryClient.ensureQueryData(contractsQuery(auth)),
+      queryClient.ensureQueryData(entitlementsQuery(auth)),
+    ]);
+    const snapshot: BillingSnapshot = {
+      plans,
+      contracts,
+      entitlements,
+      statement: null,
+    };
+    const account = deriveBillingAccount(snapshot);
+    return { plans, contracts, entitlements, account };
+  } catch (error) {
+    logBillingPageLoadError(error);
+    throw error;
+  }
+}
+
+export type LoadedBillingSnapshot = Awaited<ReturnType<typeof loadBillingPage>>;
+export type LoadedSubscribeSnapshot = Awaited<ReturnType<typeof loadSubscribePage>>;
+
+export { type BillingAccount } from "./state";
