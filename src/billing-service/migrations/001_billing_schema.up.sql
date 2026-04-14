@@ -249,7 +249,7 @@ CREATE TABLE billing_provider_events (
     provider_customer_id        TEXT,
     provider_invoice_id         TEXT,
     provider_payment_intent_id  TEXT,
-    contract_id                 TEXT        REFERENCES contracts(contract_id) ON DELETE SET NULL,
+    contract_id                 TEXT,
     change_id                   TEXT,
     invoice_id                  TEXT,
     binding_id                  TEXT        REFERENCES provider_bindings(binding_id) ON DELETE SET NULL,
@@ -360,10 +360,6 @@ CREATE TABLE contract_phases (
 ALTER TABLE contract_changes
     ADD CONSTRAINT contract_changes_from_phase_fk
     FOREIGN KEY (from_phase_id) REFERENCES contract_phases(phase_id) ON DELETE SET NULL;
-
-ALTER TABLE contract_changes
-    ADD CONSTRAINT contract_changes_to_phase_fk
-    FOREIGN KEY (to_phase_id) REFERENCES contract_phases(phase_id) ON DELETE SET NULL;
 
 CREATE INDEX contract_phases_contract_idx
     ON contract_phases (contract_id, effective_start DESC, phase_id);

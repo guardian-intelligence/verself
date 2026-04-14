@@ -25,7 +25,7 @@ func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, product
 		if err != nil {
 			return "", err
 		}
-		_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "product", ScopeProductID: productID, Source: "purchase", SourceReferenceID: textID("offline_purchase", orgIDText(orgID), productID, strconv.FormatInt(params.AmountCents, 10), time.Now().UTC().Format(time.RFC3339Nano)), Amount: units, StartsAt: time.Now().UTC()})
+		_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "account", Source: "purchase", SourceReferenceID: textID("offline_purchase", orgIDText(orgID), productID, strconv.FormatInt(params.AmountCents, 10), time.Now().UTC().Format(time.RFC3339Nano)), Amount: units, StartsAt: time.Now().UTC()})
 		return params.SuccessURL, err
 	}
 	var productName string
@@ -294,7 +294,7 @@ func (c *Client) ApplyProviderEvent(ctx context.Context, eventID string) (bool, 
 	case "invoice.payment_failed":
 		applyErr = c.handleInvoicePaymentFailed(ctx, event)
 	case "checkout.session.completed":
-		applyErr = nil
+		applyErr = c.handleCheckoutSessionCompleted(ctx, event)
 	default:
 		return true, c.markProviderEventFinal(ctx, eventID, "ignored")
 	}
@@ -309,6 +309,54 @@ func (c *Client) handleSetupIntentSucceeded(ctx context.Context, event stripe.Ev
 	var setup stripe.SetupIntent
 	if err := json.Unmarshal(event.Data.Raw, &setup); err != nil {
 		return fmt.Errorf("decode setup intent: %w", err)
+	}
+	return c.applySucceededSetupIntent(ctx, &setup)
+}
+
+func (c *Client) handleCheckoutSessionCompleted(ctx context.Context, event stripe.Event) error {
+	var session stripe.CheckoutSession
+	if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
+		return fmt.Errorf("decode checkout session: %w", err)
+	}
+	if session.Mode != stripe.CheckoutSessionModeSetup {
+		return nil
+	}
+	if session.SetupIntent == nil || session.SetupIntent.ID == "" {
+		return fmt.Errorf("checkout session %s has no setup intent", session.ID)
+	}
+	setup := session.SetupIntent
+	if setup.Status != stripe.SetupIntentStatusSucceeded || setup.PaymentMethod == nil || setup.PaymentMethod.ID == "" {
+		if c.stripe == nil {
+			return fmt.Errorf("checkout session %s setup intent %s is not expanded", session.ID, setup.ID)
+		}
+		params := &stripe.SetupIntentRetrieveParams{}
+		params.AddExpand("payment_method")
+		var err error
+		setup, err = c.stripe.V1SetupIntents.Retrieve(ctx, setup.ID, params)
+		if err != nil {
+			return fmt.Errorf("retrieve checkout setup intent %s: %w", setup.ID, err)
+		}
+	}
+	if setup.Metadata == nil {
+		setup.Metadata = map[string]string{}
+	}
+	for key, value := range session.Metadata {
+		if setup.Metadata[key] == "" {
+			setup.Metadata[key] = value
+		}
+	}
+	if setup.Customer == nil {
+		setup.Customer = session.Customer
+	}
+	return c.applySucceededSetupIntent(ctx, setup)
+}
+
+func (c *Client) applySucceededSetupIntent(ctx context.Context, setup *stripe.SetupIntent) error {
+	if setup == nil {
+		return fmt.Errorf("setup intent is required")
+	}
+	if setup.Status != stripe.SetupIntentStatusSucceeded {
+		return fmt.Errorf("setup intent %s is %s", setup.ID, setup.Status)
 	}
 	metadata := setup.Metadata
 	orgID, err := parseOrgID(metadata["org_id"])
@@ -375,7 +423,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 	if productID == "" || ledgerUnits == 0 {
 		return nil
 	}
-	_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "product", ScopeProductID: productID, Source: "purchase", SourceReferenceID: "stripe_payment_intent:" + intent.ID, Amount: ledgerUnits, StartsAt: time.Now().UTC()})
+	_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "account", Source: "purchase", SourceReferenceID: "stripe_payment_intent:" + intent.ID, Amount: ledgerUnits, StartsAt: time.Now().UTC()})
 	return err
 }
 

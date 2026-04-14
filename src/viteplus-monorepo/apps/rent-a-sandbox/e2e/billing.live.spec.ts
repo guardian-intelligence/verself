@@ -1,5 +1,5 @@
 import { completeStripeCheckout } from "./billing-helpers";
-import { ensureTestUserExists, expect, test, type SandboxHarness } from "./harness";
+import { ensureTestUserExists, expect, shortTimeoutMS, test, type SandboxHarness } from "./harness";
 
 test.describe("Rent-a-Sandbox Billing", () => {
   test.describe.configure({ mode: "serial" });
@@ -17,6 +17,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
+      const topUpLedgerUnits = 1_000_000_000;
       await app.expectSSRHTML("/billing/credits", [
         "Purchase Credits",
         "Add prepaid account balance",
@@ -24,36 +25,43 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.assertStableRoute({
         path: "/billing/credits",
         ready: app.page.getByRole("heading", { name: "Purchase Credits" }),
-        expectedText: ["Purchase Credits", "Add prepaid account balance", "$10"],
+        expectedText: ["Purchase Credits", "Add prepaid account balance", "$100"],
       });
 
+      await app.goto("/billing");
       run.started_balance = await app.readBalance();
+      const startedAccountBalance = await readVisibleAccountBalanceUnits(app);
 
-      await app.page.getByRole("link", { name: "Billing", exact: true }).click();
       await expect(app.page.getByRole("heading", { name: "Billing" })).toBeVisible();
 
       await app.page.getByRole("link", { name: "Buy Credits" }).click();
       await expect(app.page.getByRole("heading", { name: "Purchase Credits" })).toBeVisible();
-      await app.page.getByRole("button", { name: /^\$10\b/ }).click();
+      await beginCreditCheckout(app, /^\$100\b/);
 
       await completeStripeCheckout(app);
       await app.expectSSRHTML("/billing?purchased=true", ["Credits purchased", "Account Balance"]);
 
       run.detail_url = "/billing?purchased=true";
-      run.finished_balance = await app.waitForCondition("purchased balance", 90_000, async () => {
+      const purchaseResult = await app.waitForCondition("purchased balance", 90_000, async () => {
         await app.goto("/billing?purchased=true");
         const currentBalance = await app.readBalance();
+        const currentAccountBalance = await readVisibleAccountBalanceUnits(app);
         const flashVisible = await app.page
           .getByText("Credits purchased successfully. Your account credit pool has been updated.")
           .isVisible()
           .catch(() => false);
 
-        if (flashVisible && currentBalance > run.started_balance) {
-          return currentBalance;
+        if (
+          flashVisible &&
+          currentBalance > run.started_balance &&
+          currentAccountBalance >= startedAccountBalance + topUpLedgerUnits
+        ) {
+          return { currentBalance, currentAccountBalance };
         }
 
         return false;
       });
+      run.finished_balance = purchaseResult.currentBalance;
 
       await expect(app.page.getByTestId("entitlements-account-balance")).toBeVisible();
       await expect(app.page.getByTestId("account-balance-value")).toBeVisible();
@@ -248,6 +256,27 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   });
 }
 
+async function beginCreditCheckout(app: SandboxHarness, buttonName: RegExp) {
+  await app.waitForCondition("credit checkout redirect", 30_000, async () => {
+    if (app.page.url().includes("checkout.stripe.com")) {
+      return true;
+    }
+
+    const checkoutButton = app.page.getByRole("button", { name: buttonName });
+    if (!(await checkoutButton.isVisible().catch(() => false))) {
+      return false;
+    }
+    if (!(await checkoutButton.isEnabled().catch(() => false))) {
+      return false;
+    }
+
+    // SSR can expose the button before the TanStack Start click handler hydrates.
+    await checkoutButton.click();
+    await app.page.waitForTimeout(500);
+    return app.page.url().includes("checkout.stripe.com") ? true : false;
+  });
+}
+
 async function beginContractCheckout(
   app: SandboxHarness,
   plan: ContractPlanSpec,
@@ -364,4 +393,18 @@ function hobbyCancelButtons(app: SandboxHarness) {
 
 function contractRows(app: SandboxHarness, planID: string) {
   return app.page.locator('[data-testid^="contract-row-"]').filter({ hasText: planID });
+}
+
+async function readVisibleAccountBalanceUnits(app: SandboxHarness) {
+  const accountBalance = app.page.getByTestId("entitlements-account-balance").first();
+  await accountBalance.waitFor({ state: "visible", timeout: shortTimeoutMS });
+  const raw = await accountBalance.getAttribute("data-account-balance-units");
+  if (raw === null) {
+    throw new Error("account balance missing data-account-balance-units");
+  }
+  const units = Number.parseInt(raw, 10);
+  if (!Number.isFinite(units)) {
+    throw new Error(`account balance units is not numeric: ${raw}`);
+  }
+  return units;
 }
