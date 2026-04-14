@@ -335,11 +335,7 @@ function ExecutionTablePagination({
               </PaginationItem>
             ) : (
               <PaginationItem key={entry}>
-                <PaginationLink
-                  href="#"
-                  isActive={entry === currentPage}
-                  onClick={handle(entry)}
-                >
+                <PaginationLink href="#" isActive={entry === currentPage} onClick={handle(entry)}>
                   {entry}
                 </PaginationLink>
               </PaginationItem>
