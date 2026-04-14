@@ -117,7 +117,12 @@ func (c *Client) FinalizeBillingFinalization(ctx context.Context, finalizationID
 		_ = c.failBillingFinalization(ctx, finalizationID, err)
 		return true, nil
 	}
-	statement, err := c.statementForCycle(ctx, finalization.OrgID, finalization.ProductID, cycle, time.Now().UTC(), false)
+	completedAt, err := c.BusinessNow(ctx, c.queries, finalization.OrgID, finalization.ProductID)
+	if err != nil {
+		_ = c.failBillingFinalization(ctx, finalizationID, err)
+		return true, nil
+	}
+	statement, err := c.statementForCycle(ctx, finalization.OrgID, finalization.ProductID, cycle, completedAt, false)
 	if err != nil {
 		_ = c.failBillingFinalization(ctx, finalizationID, err)
 		return true, nil
@@ -130,7 +135,7 @@ func (c *Client) FinalizeBillingFinalization(ctx context.Context, finalizationID
 	}
 	hasFinancialActivity := hasUsage || hasPaidContract || statement.Totals.TotalDueUnits > 0 || statement.Totals.PurchaseUnits > 0 || statement.Totals.PromoUnits > 0 || statement.Totals.RefundUnits > 0 || statement.Totals.ReceivableUnits > 0
 	customerVisible := hasUsage || hasPaidContract || statement.Totals.TotalDueUnits > 0 || statement.Totals.ReceivableUnits > 0
-	if err := c.issueFinalizationDocument(ctx, finalization, cycle, statement, hasUsage, hasFinancialActivity, customerVisible); err != nil {
+	if err := c.issueFinalizationDocument(ctx, finalization, cycle, statement, completedAt, hasUsage, hasFinancialActivity, customerVisible); err != nil {
 		_ = c.failBillingFinalization(ctx, finalizationID, err)
 		return true, nil
 	}
@@ -214,12 +219,12 @@ func (c *Client) cycleHasPaidContractOverlap(ctx context.Context, orgID OrgID, p
 	return exists, nil
 }
 
-func (c *Client) issueFinalizationDocument(ctx context.Context, finalization billingFinalization, cycle billingCycle, statement Statement, hasUsage bool, hasFinancialActivity bool, customerVisible bool) error {
+func (c *Client) issueFinalizationDocument(ctx context.Context, finalization billingFinalization, cycle billingCycle, statement Statement, completedAt time.Time, hasUsage bool, hasFinancialActivity bool, customerVisible bool) error {
 	snapshot, err := json.Marshal(statement)
 	if err != nil {
 		return fmt.Errorf("marshal document snapshot: %w", err)
 	}
-	now := time.Now().UTC()
+	completedAt = completedAt.UTC()
 	documentKind := "statement"
 	documentStatus := "issued"
 	paymentStatus := "n_a"
@@ -240,7 +245,7 @@ func (c *Client) issueFinalizationDocument(ctx context.Context, finalization bil
 		if customerVisible {
 			documentIDValue = documentID(finalization.SubjectType, finalization.SubjectID)
 			var err error
-			documentNumber, err = allocateDocumentNumberTx(ctx, tx, now)
+			documentNumber, err = allocateDocumentNumberTx(ctx, tx, completedAt)
 			if err != nil {
 				return err
 			}
@@ -248,7 +253,7 @@ func (c *Client) issueFinalizationDocument(ctx context.Context, finalization bil
 				INSERT INTO billing_documents (document_id, document_number, document_kind, finalization_id, org_id, product_id, cycle_id, status, payment_status, period_start, period_end, issued_at, currency, subtotal_units, total_due_units, document_snapshot_json, rendered_html, content_hash)
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 				ON CONFLICT (document_id) DO NOTHING
-			`, documentIDValue, documentNumber, documentKind, finalization.FinalizationID, orgIDText(finalization.OrgID), finalization.ProductID, cycle.CycleID, documentStatus, paymentStatus, cycle.StartsAt, cycle.EndsAt, now, statement.Currency, int64(statement.Totals.ChargeUnits), int64(statement.Totals.TotalDueUnits), snapshot, renderDocumentHTML(statement), textID("document_snapshot", string(snapshot)))
+			`, documentIDValue, documentNumber, documentKind, finalization.FinalizationID, orgIDText(finalization.OrgID), finalization.ProductID, cycle.CycleID, documentStatus, paymentStatus, cycle.StartsAt, cycle.EndsAt, completedAt, statement.Currency, int64(statement.Totals.ChargeUnits), int64(statement.Totals.TotalDueUnits), snapshot, renderDocumentHTML(statement), textID("document_snapshot", string(snapshot)))
 			if err != nil {
 				return fmt.Errorf("insert billing document: %w", err)
 			}
@@ -269,7 +274,7 @@ func (c *Client) issueFinalizationDocument(ctx context.Context, finalization bil
 			    snapshot_hash = $10,
 			    updated_at = now()
 			WHERE finalization_id = $1
-		`, finalization.FinalizationID, finalizationState, documentIDValue, documentKind, customerVisible, notificationPolicy, hasUsage, hasFinancialActivity, now, textID("document_snapshot", string(snapshot)))
+		`, finalization.FinalizationID, finalizationState, documentIDValue, documentKind, customerVisible, notificationPolicy, hasUsage, hasFinancialActivity, completedAt, textID("document_snapshot", string(snapshot)))
 		if err != nil {
 			return fmt.Errorf("update finalization complete: %w", err)
 		}
@@ -281,19 +286,19 @@ func (c *Client) issueFinalizationDocument(ctx context.Context, finalization bil
 			    updated_at = now()
 			WHERE cycle_id = $1
 			  AND status IN ('closed_for_usage', 'finalized')
-		`, cycle.CycleID, finalization.FinalizationID, now)
+		`, cycle.CycleID, finalization.FinalizationID, completedAt)
 		if err != nil {
 			return fmt.Errorf("mark cycle finalized: %w", err)
 		}
 		if customerVisible {
-			if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_document_issued", AggregateType: "billing_document", AggregateID: documentIDValue, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: now, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_number": documentNumber, "document_kind": documentKind, "cycle_id": cycle.CycleID, "total_due_units": statement.Totals.TotalDueUnits, "payment_status": paymentStatus}}); err != nil {
+			if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_document_issued", AggregateType: "billing_document", AggregateID: documentIDValue, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: completedAt, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_number": documentNumber, "document_kind": documentKind, "cycle_id": cycle.CycleID, "total_due_units": statement.Totals.TotalDueUnits, "payment_status": paymentStatus}}); err != nil {
 				return err
 			}
 		}
-		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_finalization_closed", AggregateType: "billing_finalization", AggregateID: finalization.FinalizationID, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: now, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_kind": documentKind, "cycle_id": cycle.CycleID, "state": finalizationState, "customer_visible": customerVisible, "has_usage": hasUsage, "has_financial_activity": hasFinancialActivity}}); err != nil {
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "billing_finalization_closed", AggregateType: "billing_finalization", AggregateID: finalization.FinalizationID, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: completedAt, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_kind": documentKind, "cycle_id": cycle.CycleID, "state": finalizationState, "customer_visible": customerVisible, "has_usage": hasUsage, "has_financial_activity": hasFinancialActivity}}); err != nil {
 			return err
 		}
-		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_cycle_finalized", AggregateType: "billing_cycle", AggregateID: cycle.CycleID, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: now, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_kind": documentKind, "cycle_id": cycle.CycleID, "starts_at": cycle.StartsAt.Format(time.RFC3339Nano), "ends_at": cycle.EndsAt.Format(time.RFC3339Nano)}})
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_cycle_finalized", AggregateType: "billing_cycle", AggregateID: cycle.CycleID, OrgID: finalization.OrgID, ProductID: finalization.ProductID, OccurredAt: completedAt, Payload: map[string]any{"finalization_id": finalization.FinalizationID, "document_id": documentIDValue, "document_kind": documentKind, "cycle_id": cycle.CycleID, "starts_at": cycle.StartsAt.Format(time.RFC3339Nano), "ends_at": cycle.EndsAt.Format(time.RFC3339Nano)}})
 	})
 }
 

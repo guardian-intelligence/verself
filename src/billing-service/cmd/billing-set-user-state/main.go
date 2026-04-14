@@ -482,12 +482,39 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 		if err != nil {
 			return fmt.Errorf("clear old entitlement periods: %w", err)
 		}
+		// This helper hard-resets fixture state; immutable production artifacts are deliberately out of scope.
+		if err := clearDocumentArtifacts(ctx, tx, orgID, cfg.productID); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `DELETE FROM contracts WHERE org_id = $1 AND product_id = $2`, orgIDText(orgID), cfg.productID)
 		if err != nil {
 			return fmt.Errorf("clear contracts: %w", err)
 		}
 		return nil
 	})
+}
+
+func clearDocumentArtifacts(ctx context.Context, tx pgx.Tx, orgID uint64, productID string) error {
+	args := []any{orgIDText(orgID), productID}
+	statements := []struct {
+		name string
+		sql  string
+	}{
+		{name: "clear provider events", sql: `DELETE FROM billing_provider_events WHERE org_id = $1 AND product_id = $2`},
+		{name: "clear payment disputes", sql: `DELETE FROM billing_payment_disputes WHERE org_id = $1 AND product_id = $2`},
+		{name: "clear document previews", sql: `DELETE FROM billing_document_previews WHERE org_id = $1 AND product_id = $2`},
+		{name: "clear invoice adjustments", sql: `DELETE FROM invoice_adjustments WHERE org_id = $1 AND product_id = $2`},
+		{name: "unlink active finalizations", sql: `UPDATE billing_cycles SET active_finalization_id = NULL WHERE org_id = $1 AND product_id = $2`},
+		{name: "unlink finalization documents", sql: `UPDATE billing_finalizations SET document_id = NULL WHERE org_id = $1 AND product_id = $2`},
+		{name: "clear billing documents", sql: `DELETE FROM billing_documents WHERE org_id = $1 AND product_id = $2`},
+		{name: "clear billing finalizations", sql: `DELETE FROM billing_finalizations WHERE org_id = $1 AND product_id = $2`},
+	}
+	for _, stmt := range statements {
+		if _, err := tx.Exec(ctx, stmt.sql, args...); err != nil {
+			return fmt.Errorf("%s: %w", stmt.name, err)
+		}
+	}
+	return nil
 }
 
 func closePurchaseGrants(ctx context.Context, pg *pgxpool.Pool, orgID uint64, productID string, now time.Time) error {

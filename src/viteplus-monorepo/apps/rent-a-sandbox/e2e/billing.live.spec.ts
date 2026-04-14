@@ -224,11 +224,12 @@ test.describe("Rent-a-Sandbox Billing", () => {
       if (redirect === "checkout") {
         throw new Error("period-end downgrade unexpectedly required Stripe checkout");
       }
+      const downgradeEffectiveAt = contractEffectiveAtFromCurrentURL(app);
 
       const clock = await app.setBillingClock({
         orgID: fixture.org_id,
         reason: `${app.runID}-period-end-downgrade`,
-        set: periodEndClockNow(app),
+        set: oneSecondAfter(downgradeEffectiveAt),
       });
       expect(clock.cycles_rolled_over).toBeGreaterThanOrEqual(1);
       expect(clock.contract_changes_applied).toBeGreaterThanOrEqual(1);
@@ -321,6 +322,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       if (downgradeRedirect === "checkout") {
         throw new Error("period-end downgrade unexpectedly required Stripe checkout");
       }
+      const downgradeEffectiveAt = contractEffectiveAtFromCurrentURL(app);
 
       await app.assertStableRoute({
         path: "/billing/subscribe",
@@ -336,7 +338,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       const clock = await app.setBillingClock({
         orgID: fixture.org_id,
         reason: `${app.runID}-period-end-after-resume`,
-        set: periodEndClockNow(app),
+        set: oneSecondAfter(downgradeEffectiveAt),
       });
       expect(clock.cycles_rolled_over).toBeGreaterThanOrEqual(1);
       expect(clock.entitlements_ensured).toBeGreaterThanOrEqual(1);
@@ -415,17 +417,28 @@ function contractFixtureNow(app: SandboxHarness) {
   return new Date(Date.UTC(2026, 3, 13, 0, 0, seconds)).toISOString().replace(".000Z", "Z");
 }
 
-function periodEndClockNow(app: SandboxHarness) {
-  const seconds = stableSecondOffset(app.runID) + 1;
-  return new Date(Date.UTC(2026, 4, 1, 0, 0, seconds)).toISOString().replace(".000Z", "Z");
-}
-
 function stableSecondOffset(value: string) {
   let hash = 0;
   for (const char of value) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   }
   return hash % (12 * 60 * 60);
+}
+
+function contractEffectiveAtFromCurrentURL(app: SandboxHarness) {
+  const raw = new URL(app.page.url()).searchParams.get("contractEffectiveAt");
+  if (!raw) {
+    throw new Error(`expected contractEffectiveAt in ${app.page.url()}`);
+  }
+  const effectiveAt = new Date(raw);
+  if (Number.isNaN(effectiveAt.getTime())) {
+    throw new Error(`invalid contractEffectiveAt ${raw}`);
+  }
+  return effectiveAt;
+}
+
+function oneSecondAfter(value: Date) {
+  return new Date(value.getTime() + 1_000).toISOString().replace(".000Z", "Z");
 }
 
 async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {

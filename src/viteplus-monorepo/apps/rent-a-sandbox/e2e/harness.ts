@@ -546,7 +546,7 @@ export class SandboxHarness {
     `;
     const { stdout } = await execFile(
       scriptPath,
-      ["billing", "--no-align", "--tuples-only", "--quiet", "--query", sql],
+      ["sandbox", "--no-align", "--tuples-only", "--quiet", "--query", sql],
       { cwd: platformDir, env: process.env },
     );
     return JSON.parse(stdout.trim() || "[]") as BillingDocumentEvidence[];
