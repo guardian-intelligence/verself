@@ -245,7 +245,9 @@ SELECT
   pricing_contract_id,
   pricing_phase_id,
   pricing_plan_id,
-  invoice_id,
+  finalization_id,
+  document_id,
+  document_kind,
   provider_event_id,
   org_id,
   product_id,
@@ -260,6 +262,49 @@ WHERE occurred_at BETWEEN parseDateTime64BestEffort('${window_start}') AND parse
 ORDER BY occurred_at, event_id
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/billing_events.tsv"
+
+remote_psql sandbox "
+  COPY (
+    SELECT
+      finalization_id,
+      subject_type,
+      subject_id,
+      COALESCE(cycle_id, '') AS cycle_id,
+      COALESCE(document_id, '') AS document_id,
+      document_kind,
+      state,
+      customer_visible,
+      has_usage,
+      has_financial_activity,
+      started_at,
+      completed_at
+    FROM billing_finalizations
+    WHERE created_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+       OR started_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+    ORDER BY started_at, finalization_id
+  ) TO STDOUT WITH CSV HEADER;
+" >"${output_dir}/postgres/billing_finalizations.csv"
+
+remote_psql sandbox "
+  COPY (
+    SELECT
+      document_id,
+      COALESCE(document_number, '') AS document_number,
+      document_kind,
+      COALESCE(finalization_id, '') AS finalization_id,
+      COALESCE(cycle_id, '') AS cycle_id,
+      status,
+      payment_status,
+      period_start,
+      period_end,
+      issued_at,
+      total_due_units
+    FROM billing_documents
+    WHERE created_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+       OR issued_at BETWEEN '${window_start}'::timestamptz AND '${window_end}'::timestamptz
+    ORDER BY period_start, document_id
+  ) TO STDOUT WITH CSV HEADER;
+" >"${output_dir}/postgres/billing_documents.csv"
 
 if [[ -n "${execution_id}" ]]; then
   remote_psql sandbox_rental "
@@ -875,6 +920,8 @@ Collected files:
 - clickhouse/vm_trace_span_names.tsv
 - clickhouse/vm_trace_spans.tsv
 - clickhouse/billing_events.tsv
+- postgres/billing_finalizations.csv
+- postgres/billing_documents.csv
 - postgres/execution.csv
 - postgres/execution_billing_windows.csv
 - postgres/execution_events.csv

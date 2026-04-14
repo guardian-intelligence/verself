@@ -76,7 +76,9 @@ type billingEventProjectionRow struct {
 	PricingContractID string    `ch:"pricing_contract_id"`
 	PricingPhaseID    string    `ch:"pricing_phase_id"`
 	PricingPlanID     string    `ch:"pricing_plan_id"`
-	InvoiceID         string    `ch:"invoice_id"`
+	FinalizationID    string    `ch:"finalization_id"`
+	DocumentID        string    `ch:"document_id"`
+	DocumentKind      string    `ch:"document_kind"`
 	ProviderEventID   string    `ch:"provider_event_id"`
 	OrgID             string    `ch:"org_id"`
 	ProductID         string    `ch:"product_id"`
@@ -141,7 +143,9 @@ func (c *Client) projectBillingEventDelivery(ctx context.Context, eventID string
 		PricingContractID: stringPayload(payload, "pricing_contract_id"),
 		PricingPhaseID:    stringPayload(payload, "pricing_phase_id"),
 		PricingPlanID:     stringPayload(payload, "pricing_plan_id"),
-		InvoiceID:         stringPayload(payload, "invoice_id"),
+		FinalizationID:    stringPayload(payload, "finalization_id"),
+		DocumentID:        stringPayload(payload, "document_id"),
+		DocumentKind:      stringPayload(payload, "document_kind"),
 		ProviderEventID:   stringPayload(payload, "provider_event_id"),
 		OrgID:             event.OrgID,
 		ProductID:         event.ProductID,

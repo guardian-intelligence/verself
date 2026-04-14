@@ -51,6 +51,11 @@ type GrantsInput struct {
 	Active    bool   `query:"active,omitempty"`
 }
 
+type DocumentsInput struct {
+	OrgPath
+	ProductID string `query:"product_id,omitempty" maxLength:"255"`
+}
+
 type StatementInput struct {
 	OrgPath
 	ProductID string `query:"product_id" required:"true" minLength:"1" maxLength:"255"`
@@ -104,6 +109,7 @@ func RegisterRoutes(api huma.API, cfg Config) {
 	public := huma.NewGroup(api, "/internal/billing/v1")
 	huma.Get(public, "/orgs/{org_id}/entitlements", h.getEntitlements, op("get-entitlements", "Get org entitlements view"))
 	huma.Get(public, "/orgs/{org_id}/grants", h.listGrants, op("list-grants", "List org credit grants"))
+	huma.Get(public, "/orgs/{org_id}/documents", h.listDocuments, op("list-documents", "List issued billing documents"))
 	huma.Get(public, "/orgs/{org_id}/statement", h.getStatement, op("get-statement", "Preview current statement"))
 	huma.Get(public, "/orgs/{org_id}/contracts", h.listContracts, op("list-contracts", "List org contracts"))
 	huma.Get(public, "/products/{product_id}/plans", h.listPlans, op("list-plans", "List active plans"))
@@ -158,6 +164,22 @@ func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[api
 		out = append(out, apiwire.BillingGrant{GrantID: grant.GrantID, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, Source: grant.Source, SourceReferenceID: grant.SourceReferenceID, EntitlementPeriodID: grant.EntitlementPeriodID, PolicyVersion: grant.PolicyVersion, StartsAt: grant.StartsAt, PeriodStart: grant.PeriodStart, PeriodEnd: grant.PeriodEnd, Available: apiwire.Uint64(grant.Available), Pending: apiwire.Uint64(grant.Pending), ExpiresAt: grant.ExpiresAt})
 	}
 	return &body[apiwire.BillingGrants]{Body: apiwire.BillingGrants{Grants: out}}, nil
+}
+
+func (h *Handler) listDocuments(ctx context.Context, input *DocumentsInput) (*body[apiwire.BillingDocuments], error) {
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	documents, err := h.client.ListDocuments(ctx, orgID, input.ProductID)
+	if err != nil {
+		return nil, h.internalError(ctx, "list documents", err)
+	}
+	out := make([]apiwire.BillingDocument, 0, len(documents))
+	for _, document := range documents {
+		out = append(out, documentResponse(document))
+	}
+	return &body[apiwire.BillingDocuments]{Body: apiwire.BillingDocuments{Documents: out}}, nil
 }
 
 func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[apiwire.BillingStatement], error) {
@@ -242,7 +264,7 @@ func (h *Handler) createContractChange(ctx context.Context, input *CreateContrac
 		}
 		return nil, h.internalError(ctx, "create contract change", err)
 	}
-	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, InvoiceID: result.InvoiceID, Status: result.Status, PriceDelta: apiwire.Uint64(result.PriceDeltaUnits)}}, nil
+	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, FinalizationID: result.FinalizationID, DocumentID: result.DocumentID, Status: result.Status, PriceDelta: apiwire.Uint64(result.PriceDeltaUnits)}}, nil
 }
 
 func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[apiwire.BillingCancelContractResponse], error) {
@@ -362,6 +384,30 @@ func statementResponse(statement billing.Statement) apiwire.BillingStatement {
 		summaries = append(summaries, apiwire.BillingStatementGrantSummary{ScopeType: summary.ScopeType, ScopeProductID: summary.ScopeProductID, ScopeBucketID: summary.ScopeBucketID, Source: summary.Source, Available: apiwire.Uint64(summary.Available), Pending: apiwire.Uint64(summary.Pending)})
 	}
 	return apiwire.BillingStatement{OrgID: apiwire.Uint64(uint64(statement.OrgID)), ProductID: statement.ProductID, PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, PeriodSource: statement.PeriodSource, GeneratedAt: statement.GeneratedAt, Currency: statement.Currency, UnitLabel: statement.UnitLabel, LineItems: items, GrantSummaries: summaries, Totals: apiwire.BillingStatementTotals{ChargeUnits: apiwire.Uint64(statement.Totals.ChargeUnits), FreeTierUnits: apiwire.Uint64(statement.Totals.FreeTierUnits), ContractUnits: apiwire.Uint64(statement.Totals.ContractUnits), PurchaseUnits: apiwire.Uint64(statement.Totals.PurchaseUnits), PromoUnits: apiwire.Uint64(statement.Totals.PromoUnits), RefundUnits: apiwire.Uint64(statement.Totals.RefundUnits), ReceivableUnits: apiwire.Uint64(statement.Totals.ReceivableUnits), ReservedUnits: apiwire.Uint64(statement.Totals.ReservedUnits), TotalDueUnits: apiwire.Uint64(statement.Totals.TotalDueUnits)}}
+}
+
+func documentResponse(document billing.DocumentRecord) apiwire.BillingDocument {
+	return apiwire.BillingDocument{
+		DocumentID:             document.DocumentID,
+		DocumentNumber:         document.DocumentNumber,
+		DocumentKind:           document.DocumentKind,
+		FinalizationID:         document.FinalizationID,
+		ProductID:              document.ProductID,
+		CycleID:                document.CycleID,
+		Status:                 document.Status,
+		PaymentStatus:          document.PaymentStatus,
+		PeriodStart:            document.PeriodStart,
+		PeriodEnd:              document.PeriodEnd,
+		IssuedAt:               document.IssuedAt,
+		Currency:               document.Currency,
+		SubtotalUnits:          apiwire.Uint64(document.SubtotalUnits),
+		AdjustmentUnits:        apiwire.Int64(document.AdjustmentUnits),
+		TaxUnits:               apiwire.Uint64(document.TaxUnits),
+		TotalDueUnits:          apiwire.Uint64(document.TotalDueUnits),
+		StripeHostedInvoiceURL: document.StripeHostedInvoiceURL,
+		StripeInvoicePDFURL:    document.StripeInvoicePDFURL,
+		StripePaymentIntentID:  document.StripePaymentIntentID,
+	}
 }
 
 func entitlementsResponse(view billing.EntitlementsView) apiwire.BillingEntitlementsView {

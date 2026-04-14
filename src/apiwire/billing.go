@@ -112,6 +112,32 @@ type BillingContracts struct {
 	Contracts []BillingContract `json:"contracts"`
 }
 
+type BillingDocument struct {
+	DocumentID             string        `json:"document_id"`
+	DocumentNumber         string        `json:"document_number"`
+	DocumentKind           string        `json:"document_kind" enum:"invoice,statement,internal_statement,credit_note,adjustment_invoice"`
+	FinalizationID         string        `json:"finalization_id"`
+	ProductID              string        `json:"product_id"`
+	CycleID                string        `json:"cycle_id"`
+	Status                 string        `json:"status"`
+	PaymentStatus          string        `json:"payment_status"`
+	PeriodStart            time.Time     `json:"period_start"`
+	PeriodEnd              time.Time     `json:"period_end"`
+	IssuedAt               *time.Time    `json:"issued_at,omitempty"`
+	Currency               string        `json:"currency"`
+	SubtotalUnits          DecimalUint64 `json:"subtotal_units"`
+	AdjustmentUnits        DecimalInt64  `json:"adjustment_units"`
+	TaxUnits               DecimalUint64 `json:"tax_units"`
+	TotalDueUnits          DecimalUint64 `json:"total_due_units"`
+	StripeHostedInvoiceURL string        `json:"stripe_hosted_invoice_url,omitempty"`
+	StripeInvoicePDFURL    string        `json:"stripe_invoice_pdf_url,omitempty"`
+	StripePaymentIntentID  string        `json:"stripe_payment_intent_id,omitempty"`
+}
+
+type BillingDocuments struct {
+	Documents []BillingDocument `json:"documents"`
+}
+
 type BillingPlan struct {
 	PlanID             string        `json:"plan_id"`
 	ProductID          string        `json:"product_id"`
@@ -215,11 +241,12 @@ type BillingCreateContractChangeRequest struct {
 }
 
 type BillingContractChangeResponse struct {
-	URL        string        `json:"url"`
-	ChangeID   string        `json:"change_id"`
-	InvoiceID  string        `json:"invoice_id"`
-	Status     string        `json:"status"`
-	PriceDelta DecimalUint64 `json:"price_delta_units"`
+	URL            string        `json:"url"`
+	ChangeID       string        `json:"change_id"`
+	FinalizationID string        `json:"finalization_id,omitempty"`
+	DocumentID     string        `json:"document_id,omitempty"`
+	Status         string        `json:"status"`
+	PriceDelta     DecimalUint64 `json:"price_delta_units"`
 }
 
 type BillingCreatePortalSessionRequest struct {

@@ -162,6 +162,19 @@ export interface BillingClockState {
   entitlements_ensured: number;
 }
 
+export interface BillingDocumentEvidence {
+  document_id: string;
+  document_number: string;
+  document_kind: string;
+  finalization_id: string;
+  cycle_id: string;
+  status: string;
+  payment_status: string;
+  period_start: string;
+  period_end: string;
+  total_due_units: number;
+}
+
 export class SandboxHarness {
   readonly monitor: BrowserMonitor;
   readonly runID: string;
@@ -500,6 +513,43 @@ export class SandboxHarness {
     }
     const { stdout } = await execFile(scriptPath, args, { env: process.env });
     return JSON.parse(stdout) as BillingClockState;
+  }
+
+  async readBillingDocuments({
+    orgID,
+    productID = "sandbox",
+  }: {
+    orgID: number | string;
+    productID?: string;
+  }): Promise<BillingDocumentEvidence[]> {
+    const platformDir = fileURLToPath(new URL("../../../../platform/", import.meta.url));
+    const scriptPath = fileURLToPath(new URL("scripts/pg.sh", new URL("../../../../platform/", import.meta.url)));
+    const orgIDText = String(orgID).replaceAll("'", "''");
+    const productIDText = productID.replaceAll("'", "''");
+    const sql = `
+      SELECT COALESCE(json_agg(json_build_object(
+        'document_id', document_id,
+        'document_number', COALESCE(document_number, ''),
+        'document_kind', document_kind,
+        'finalization_id', COALESCE(finalization_id, ''),
+        'cycle_id', COALESCE(cycle_id, ''),
+        'status', status,
+        'payment_status', payment_status,
+        'period_start', to_char(period_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+        'period_end', to_char(period_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+        'total_due_units', total_due_units
+      ) ORDER BY period_start DESC, document_id DESC), '[]'::json)::text
+      FROM billing_documents
+      WHERE org_id = '${orgIDText}'
+        AND product_id = '${productIDText}'
+        AND status <> 'voided';
+    `;
+    const { stdout } = await execFile(
+      scriptPath,
+      ["billing", "--no-align", "--tuples-only", "--quiet", "--query", sql],
+      { cwd: platformDir, env: process.env },
+    );
+    return JSON.parse(stdout.trim() || "[]") as BillingDocumentEvidence[];
   }
 }
 

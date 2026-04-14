@@ -48,6 +48,7 @@ func (c *Client) ApplyDueBillingWork(ctx context.Context, orgID OrgID, productID
 	for {
 		rolled := false
 		var appliedChanges uint64
+		var finalizationID string
 		err := c.WithTx(ctx, "billing.due_work.apply", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 			now, err := c.BusinessNow(ctx, q, orgID, productID)
 			if err != nil {
@@ -64,6 +65,10 @@ func (c *Client) ApplyDueBillingWork(ctx context.Context, orgID OrgID, productID
 			if err != nil {
 				return err
 			}
+			finalizationID, err = c.ensureCycleFinalizationTx(ctx, tx, q, orgID, productID, cycle, now)
+			if err != nil {
+				return err
+			}
 			if err := c.openSuccessorCycleTx(ctx, tx, q, orgID, productID, cycle, now); err != nil {
 				return err
 			}
@@ -75,6 +80,11 @@ func (c *Client) ApplyDueBillingWork(ctx context.Context, orgID OrgID, productID
 		}
 		if !rolled {
 			return summary, nil
+		}
+		if finalizationID != "" && c.runtime == nil {
+			if _, err := c.FinalizeBillingFinalization(ctx, finalizationID); err != nil {
+				return summary, err
+			}
 		}
 		summary.CyclesRolledOver++
 		summary.ContractChangesApplied += appliedChanges
@@ -154,10 +164,12 @@ func (c *Client) ensureOpenBillingCycleTx(ctx context.Context, tx pgx.Tx, orgID 
 		    ends_at = EXCLUDED.ends_at,
 		    status = 'open',
 		    finalization_due_at = EXCLUDED.finalization_due_at,
-		    blocked_reason = '',
+		    closed_reason = '',
+		    active_finalization_id = NULL,
+		    successor_cycle_id = NULL,
+		    closed_by_event_id = NULL,
 		    closed_for_usage_at = NULL,
 		    finalized_at = NULL,
-		    invoice_id = NULL,
 		    metadata = billing_cycles.metadata - 'voided_by'
 		WHERE billing_cycles.status = 'voided'
 	`, cycle.CycleID, orgIDText(orgID), productID, cycle.Currency, cycle.AnchorAt, cycle.CycleSeq, cycle.CadenceKind, cycle.StartsAt, cycle.EndsAt)
@@ -313,10 +325,12 @@ func (c *Client) openSuccessorCycleTx(ctx context.Context, tx pgx.Tx, q *store.Q
 		    ends_at = EXCLUDED.ends_at,
 		    status = 'open',
 		    finalization_due_at = EXCLUDED.finalization_due_at,
-		    blocked_reason = '',
+		    closed_reason = '',
+		    active_finalization_id = NULL,
+		    successor_cycle_id = NULL,
+		    closed_by_event_id = NULL,
 		    closed_for_usage_at = NULL,
 		    finalized_at = NULL,
-		    invoice_id = NULL,
 		    metadata = billing_cycles.metadata - 'voided_by'
 		WHERE billing_cycles.status = 'voided'
 	`, successor.CycleID, orgIDText(orgID), productID, successor.Currency, successor.PredecessorCycleID, successor.AnchorAt, successor.CycleSeq, successor.CadenceKind, successor.StartsAt, successor.EndsAt)
@@ -325,6 +339,9 @@ func (c *Client) openSuccessorCycleTx(ctx context.Context, tx pgx.Tx, q *store.Q
 	}
 	if tag.RowsAffected() == 0 {
 		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE billing_cycles SET successor_cycle_id = $2 WHERE cycle_id = $1 AND successor_cycle_id IS NULL`, predecessor.CycleID, successor.CycleID); err != nil {
+		return fmt.Errorf("link successor billing cycle: %w", err)
 	}
 	return appendEvent(ctx, tx, q, eventFact{
 		EventType:     "billing_cycle_opened",
@@ -343,6 +360,83 @@ func (c *Client) openSuccessorCycleTx(ctx context.Context, tx pgx.Tx, q *store.Q
 			"cadence_kind":         successor.CadenceKind,
 		},
 	})
+}
+
+func (c *Client) splitCycleForContractActivationTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, effectiveAt time.Time) (billingCycle, string, error) {
+	if cycle, ok, err := c.openBillingCycleContainingTx(ctx, tx, orgID, productID, effectiveAt); err != nil {
+		return billingCycle{}, "", err
+	} else if ok && !cycle.StartsAt.Before(effectiveAt) {
+		return cycle, "", nil
+	} else if ok {
+		originalEnd := cycle.EndsAt
+		_, err := tx.Exec(ctx, `
+			UPDATE billing_cycles
+			SET status = 'closed_for_usage',
+			    ends_at = $2,
+			    finalization_due_at = $2,
+			    closed_for_usage_at = $2,
+			    closed_reason = 'free_to_paid_activation'
+			WHERE cycle_id = $1
+			  AND status IN ('open', 'closing')
+		`, cycle.CycleID, effectiveAt)
+		if err != nil {
+			return billingCycle{}, "", fmt.Errorf("close free cycle at activation: %w", err)
+		}
+		cycle.EndsAt = effectiveAt
+		finalizationID, err := c.ensureCycleFinalizationTx(ctx, tx, q, orgID, productID, cycle, effectiveAt)
+		if err != nil {
+			return billingCycle{}, "", err
+		}
+		successor, err := c.insertActivationCycleTx(ctx, tx, q, orgID, productID, cycle.CycleID, effectiveAt, effectiveAt, originalEnd)
+		if err != nil {
+			return billingCycle{}, "", err
+		}
+		return successor, finalizationID, nil
+	}
+	cycle, err := c.insertActivationCycleTx(ctx, tx, q, orgID, productID, "", effectiveAt, effectiveAt, time.Time{})
+	return cycle, "", err
+}
+
+func (c *Client) insertActivationCycleTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, predecessorCycleID string, anchor time.Time, startsAt time.Time, _ time.Time) (billingCycle, error) {
+	cadence := "anniversary_monthly"
+	endsAt := cycleEndAfter(cadence, startsAt)
+	cycle := billingCycle{CycleID: cycleID(orgID, productID, startsAt), Currency: "usd", PredecessorCycleID: predecessorCycleID, AnchorAt: anchor, CycleSeq: 0, CadenceKind: cadence, StartsAt: startsAt, EndsAt: endsAt}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, predecessor_cycle_id, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at)
+		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,0,$7,$8,$9,'open',$9)
+		ON CONFLICT (cycle_id) DO NOTHING
+	`, cycle.CycleID, orgIDText(orgID), productID, cycle.Currency, predecessorCycleID, cycle.AnchorAt, cycle.CadenceKind, cycle.StartsAt, cycle.EndsAt)
+	if err != nil {
+		return billingCycle{}, fmt.Errorf("insert activation billing cycle: %w", err)
+	}
+	if predecessorCycleID != "" {
+		if _, err := tx.Exec(ctx, `UPDATE billing_cycles SET successor_cycle_id = $2 WHERE cycle_id = $1 AND successor_cycle_id IS NULL`, predecessorCycleID, cycle.CycleID); err != nil {
+			return billingCycle{}, fmt.Errorf("link activation successor cycle: %w", err)
+		}
+	}
+	if tag.RowsAffected() > 0 {
+		if err := appendEvent(ctx, tx, q, eventFact{
+			EventType:     "billing_cycle_opened",
+			AggregateType: "billing_cycle",
+			AggregateID:   cycle.CycleID,
+			OrgID:         orgID,
+			ProductID:     productID,
+			OccurredAt:    startsAt,
+			Payload: map[string]any{
+				"cycle_id":             cycle.CycleID,
+				"predecessor_cycle_id": predecessorCycleID,
+				"starts_at":            cycle.StartsAt.Format(time.RFC3339Nano),
+				"ends_at":              cycle.EndsAt.Format(time.RFC3339Nano),
+				"anchor_at":            cycle.AnchorAt.Format(time.RFC3339Nano),
+				"cycle_seq":            cycle.CycleSeq,
+				"cadence_kind":         cycle.CadenceKind,
+				"reason":               "free_to_paid_activation",
+			},
+		}); err != nil {
+			return billingCycle{}, err
+		}
+	}
+	return cycle, nil
 }
 
 func cycleEndAfter(cadenceKind string, start time.Time) time.Time {

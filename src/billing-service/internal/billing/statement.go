@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 type statementLineKey struct {
@@ -31,30 +32,36 @@ func (c *Client) PreviewStatement(ctx context.Context, orgID OrgID, productID st
 	if err != nil {
 		return Statement{}, err
 	}
-	grants, err := c.ListGrantBalances(ctx, orgID, productID)
-	if err != nil {
-		return Statement{}, err
-	}
-	windows, err := c.statementWindows(ctx, orgID, productID, cycle)
-	if err != nil {
-		return Statement{}, err
-	}
 	now, err := c.BusinessNow(ctx, c.queries, orgID, productID)
 	if err != nil {
 		return Statement{}, err
 	}
-	statement := Statement{OrgID: orgID, ProductID: productID, PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PeriodSource: "billing_cycle", GeneratedAt: now, Currency: "usd", UnitLabel: "ledger_units"}
+	return c.statementForCycle(ctx, orgID, productID, cycle, now, true)
+}
+
+func (c *Client) statementForCycle(ctx context.Context, orgID OrgID, productID string, cycle billingCycle, generatedAt time.Time, includeGrantSummaries bool) (Statement, error) {
+	windows, err := c.statementWindows(ctx, orgID, productID, cycle)
+	if err != nil {
+		return Statement{}, err
+	}
+	statement := Statement{OrgID: orgID, ProductID: productID, PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PeriodSource: "billing_cycle", GeneratedAt: generatedAt.UTC(), Currency: cleanNonEmpty(cycle.Currency, "usd"), UnitLabel: "ledger_units"}
 	lines := map[statementLineKey]*StatementLineItem{}
 	summaries := map[statementGrantKey]*StatementGrantSummary{}
-	for _, grant := range grants {
-		key := statementGrantKey{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
-		summary := summaries[key]
-		if summary == nil {
-			summary = &StatementGrantSummary{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
-			summaries[key] = summary
+	if includeGrantSummaries {
+		grants, err := c.ListGrantBalances(ctx, orgID, productID)
+		if err != nil {
+			return Statement{}, err
 		}
-		summary.Available += grant.Available
-		summary.Pending += grant.Pending
+		for _, grant := range grants {
+			key := statementGrantKey{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
+			summary := summaries[key]
+			if summary == nil {
+				summary = &StatementGrantSummary{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
+				summaries[key] = summary
+			}
+			summary.Available += grant.Available
+			summary.Pending += grant.Pending
+		}
 	}
 	for _, window := range windows {
 		switch window.State {
@@ -65,7 +72,9 @@ func (c *Client) PreviewStatement(ctx context.Context, orgID OrgID, productID st
 		}
 	}
 	statement.LineItems = sortedStatementLines(lines)
-	statement.GrantSummaries = sortedStatementSummaries(summaries)
+	if includeGrantSummaries {
+		statement.GrantSummaries = sortedStatementSummaries(summaries)
+	}
 	return statement, nil
 }
 

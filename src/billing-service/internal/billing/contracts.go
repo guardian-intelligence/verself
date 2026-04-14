@@ -297,7 +297,7 @@ func (c *Client) CreateContractChange(ctx context.Context, orgID OrgID, contract
 		}
 		url = contractReturnURL(req.SuccessURL, map[string]string{"contractAction": "upgrade", "contractEffectiveAt": quote.EffectiveAt.Format(time.RFC3339Nano), "targetPlanID": target.PlanID})
 	}
-	return ContractChangeResult{URL: url, ChangeID: quote.ChangeID, InvoiceID: invoiceID(quote.ChangeID), Status: status, PriceDeltaUnits: quote.PriceDeltaUnits}, nil
+	return ContractChangeResult{URL: url, ChangeID: quote.ChangeID, FinalizationID: finalizationID("contract_change", quote.ChangeID), DocumentID: documentID("contract_change", quote.ChangeID), Status: status, PriceDeltaUnits: quote.PriceDeltaUnits}, nil
 }
 
 type scheduledChangeToCancel struct {
@@ -484,8 +484,10 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 	if err != nil {
 		return quote, err
 	}
+	finalizationIDValue := finalizationID("contract_change", quote.ChangeID)
+	documentIDValue := documentID("contract_change", quote.ChangeID)
 	err = c.WithTx(ctx, "billing.contract_change.request_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		number, err := allocateInvoiceNumberTx(ctx, tx, quote.RequestedAt)
+		number, err := allocateDocumentNumberTx(ctx, tx, quote.RequestedAt)
 		if err != nil {
 			return err
 		}
@@ -500,14 +502,26 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 			return fmt.Errorf("insert upgrade change: %w", err)
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO billing_invoices (invoice_id, invoice_number, org_id, product_id, cycle_id, change_id, invoice_kind, status, payment_status, period_start, period_end, issued_at, currency, subtotal_units, total_due_units, invoice_snapshot_json, content_hash)
-			VALUES ($1,$2,$3,$4,$5,$6,'contract_change','issued','pending',$7,$8,$9,'usd',$10,$10,$11,$12)
-			ON CONFLICT (invoice_id) DO NOTHING
-		`, invoiceID(quote.ChangeID), number, orgIDText(quote.OrgID), quote.ProductID, quote.CycleID, quote.ChangeID, quote.EffectiveAt, quote.CycleEnd, quote.RequestedAt, int64(quote.PriceDeltaUnits), payload, textID("invoice_snapshot", string(payload)))
+			INSERT INTO billing_finalizations (finalization_id, subject_type, subject_id, cycle_id, contract_change_id, org_id, product_id, reason, document_kind, state, customer_visible, notification_policy, has_financial_activity, started_at, completed_at, idempotency_key, snapshot_hash, metadata)
+			VALUES ($1,'contract_change',$2,$3,$2,$4,$5,'immediate_upgrade_delta','invoice','collection_pending',true,'always',true,$6,$6,$1,$7,$8)
+			ON CONFLICT (subject_type, subject_id, idempotency_key) DO NOTHING
+		`, finalizationIDValue, quote.ChangeID, quote.CycleID, orgIDText(quote.OrgID), quote.ProductID, quote.RequestedAt, textID("document_snapshot", string(payload)), payload)
 		if err != nil {
-			return fmt.Errorf("insert upgrade invoice: %w", err)
+			return fmt.Errorf("insert upgrade finalization: %w", err)
 		}
-		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_requested", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.RequestedAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "target_plan_id": quote.TargetPlanID, "invoice_id": invoiceID(quote.ChangeID), "price_delta_units": quote.PriceDeltaUnits}})
+		_, err = tx.Exec(ctx, `
+			INSERT INTO billing_documents (document_id, document_number, document_kind, finalization_id, org_id, product_id, cycle_id, change_id, status, payment_status, period_start, period_end, issued_at, currency, subtotal_units, total_due_units, document_snapshot_json, content_hash)
+			VALUES ($1,$2,'invoice',$3,$4,$5,$6,$7,'issued','pending',$8,$9,$10,'usd',$11,$11,$12,$13)
+			ON CONFLICT (document_id) DO NOTHING
+		`, documentIDValue, number, finalizationIDValue, orgIDText(quote.OrgID), quote.ProductID, quote.CycleID, quote.ChangeID, quote.EffectiveAt, quote.CycleEnd, quote.RequestedAt, int64(quote.PriceDeltaUnits), payload, textID("document_snapshot", string(payload)))
+		if err != nil {
+			return fmt.Errorf("insert upgrade document: %w", err)
+		}
+		_, err = tx.Exec(ctx, `UPDATE billing_finalizations SET document_id = $2 WHERE finalization_id = $1 AND document_id IS NULL`, finalizationIDValue, documentIDValue)
+		if err != nil {
+			return fmt.Errorf("link upgrade document: %w", err)
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_requested", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.RequestedAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "target_plan_id": quote.TargetPlanID, "finalization_id": finalizationIDValue, "document_id": documentIDValue, "document_kind": "invoice", "price_delta_units": quote.PriceDeltaUnits}})
 	})
 	if err != nil {
 		return quote, err
@@ -522,6 +536,8 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 }
 
 func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote, providerInvoiceID string) error {
+	finalizationIDValue := finalizationID("contract_change", quote.ChangeID)
+	documentIDValue := documentID("contract_change", quote.ChangeID)
 	if err := c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		closed, err := c.supersedeContractPhaseForUpgradeTx(ctx, tx, quote)
 		if err != nil {
@@ -558,11 +574,15 @@ func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote
 		if err != nil {
 			return fmt.Errorf("mark upgrade applied: %w", err)
 		}
-		_, err = tx.Exec(ctx, `UPDATE billing_invoices SET status = 'paid', payment_status = 'paid', stripe_invoice_id = NULLIF($2,''), issued_at = COALESCE(issued_at, $3) WHERE invoice_id = $1`, invoiceID(quote.ChangeID), providerInvoiceID, quote.EffectiveAt)
+		_, err = tx.Exec(ctx, `UPDATE billing_documents SET status = 'paid', payment_status = 'paid', stripe_invoice_id = NULLIF($2,''), issued_at = COALESCE(issued_at, $3) WHERE document_id = $1`, documentIDValue, providerInvoiceID, quote.EffectiveAt)
 		if err != nil {
-			return fmt.Errorf("mark upgrade invoice paid: %w", err)
+			return fmt.Errorf("mark upgrade document paid: %w", err)
 		}
-		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "invoice_id": invoiceID(quote.ChangeID), "provider_invoice_id": providerInvoiceID}})
+		_, err = tx.Exec(ctx, `UPDATE billing_finalizations SET state = 'paid', completed_at = COALESCE(completed_at, $2), document_id = $3, updated_at = now() WHERE finalization_id = $1`, finalizationIDValue, quote.EffectiveAt, documentIDValue)
+		if err != nil {
+			return fmt.Errorf("mark upgrade finalization paid: %w", err)
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "finalization_id": finalizationIDValue, "document_id": documentIDValue, "document_kind": "invoice", "provider_invoice_id": providerInvoiceID}})
 	}); err != nil {
 		return err
 	}
@@ -850,10 +870,18 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 	if err != nil {
 		return err
 	}
-	return c.WithTx(ctx, "billing.contract.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+	var freeFinalizationID string
+	err = c.WithTx(ctx, "billing.contract.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		var alreadyActive bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contract_phases WHERE phase_id = $1 AND contract_id = $2 AND state = 'active' AND payment_state = 'paid')`, phaseID, contractID).Scan(&alreadyActive); err != nil {
 			return fmt.Errorf("check active contract phase: %w", err)
+		}
+		if !alreadyActive {
+			_, finalizationID, err := c.splitCycleForContractActivationTx(ctx, tx, q, orgID, productID, effectiveAt)
+			if err != nil {
+				return err
+			}
+			freeFinalizationID = finalizationID
 		}
 		if err := c.insertContractTx(ctx, tx, orgID, productID, contractID, planID, effectiveAt); err != nil {
 			return err
@@ -872,6 +900,13 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if freeFinalizationID != "" && c.runtime == nil {
+		_, err = c.FinalizeBillingFinalization(ctx, freeFinalizationID)
+	}
+	return err
 }
 
 func (c *Client) insertContractTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID, contractID, planID string, startsAt time.Time) error {
@@ -1031,20 +1066,20 @@ func prorateCents(cents uint64, remaining time.Duration, period time.Duration) u
 	return uint64(math.Ceil(float64(cents) * float64(remaining) / float64(period)))
 }
 
-func allocateInvoiceNumberTx(ctx context.Context, tx pgx.Tx, issuedAt time.Time) (string, error) {
+func allocateDocumentNumberTx(ctx context.Context, tx pgx.Tx, issuedAt time.Time) (string, error) {
 	year := issuedAt.UTC().Year()
-	_, err := tx.Exec(ctx, `INSERT INTO invoice_number_allocators (issuer_id, invoice_year, prefix, next_number) VALUES ('forge-metal', $1, 'FM', 1) ON CONFLICT (issuer_id, invoice_year) DO NOTHING`, year)
+	_, err := tx.Exec(ctx, `INSERT INTO document_number_allocators (issuer_id, document_year, prefix, next_number) VALUES ('forge-metal', $1, 'FM', 1) ON CONFLICT (issuer_id, document_year) DO NOTHING`, year)
 	if err != nil {
-		return "", fmt.Errorf("ensure invoice allocator: %w", err)
+		return "", fmt.Errorf("ensure document allocator: %w", err)
 	}
 	var next int64
-	err = tx.QueryRow(ctx, `SELECT next_number FROM invoice_number_allocators WHERE issuer_id = 'forge-metal' AND invoice_year = $1 FOR UPDATE`, year).Scan(&next)
+	err = tx.QueryRow(ctx, `SELECT next_number FROM document_number_allocators WHERE issuer_id = 'forge-metal' AND document_year = $1 FOR UPDATE`, year).Scan(&next)
 	if err != nil {
-		return "", fmt.Errorf("lock invoice allocator: %w", err)
+		return "", fmt.Errorf("lock document allocator: %w", err)
 	}
-	_, err = tx.Exec(ctx, `UPDATE invoice_number_allocators SET next_number = next_number + 1 WHERE issuer_id = 'forge-metal' AND invoice_year = $1`, year)
+	_, err = tx.Exec(ctx, `UPDATE document_number_allocators SET next_number = next_number + 1 WHERE issuer_id = 'forge-metal' AND document_year = $1`, year)
 	if err != nil {
-		return "", fmt.Errorf("advance invoice allocator: %w", err)
+		return "", fmt.Errorf("advance document allocator: %w", err)
 	}
 	return fmt.Sprintf("FM-%d-%06d", year, next), nil
 }

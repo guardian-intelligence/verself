@@ -264,6 +264,25 @@ test.describe("Rent-a-Sandbox Billing", () => {
         },
       );
 
+      const document = await app.waitForCondition(
+        "period-end billing document issued",
+        shortTimeoutMS,
+        async () => {
+          const documents = await app.readBillingDocuments({ orgID: fixture.org_id });
+          return (
+            documents.find(
+              (candidate) =>
+                candidate.document_kind === "statement" &&
+                candidate.status === "issued" &&
+                candidate.payment_status === "n_a" &&
+                candidate.finalization_id &&
+                candidate.cycle_id,
+            ) ?? false
+          );
+        },
+      );
+      expect(document.document_number).toMatch(/^FM-\d{4}-\d{6}$/);
+
       run.detail_url = "/billing";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
