@@ -1,7 +1,7 @@
 .PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
        set-user-state billing-clock billing-reset verification-reset \
-       vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
+       vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas pg-shell pg-query pg-list tb-shell tb-command mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof scheduler-proof verify-scheduler grafana-proof services-doctor
 
@@ -201,6 +201,25 @@ clickhouse-query: inventory-check ## Run a ClickHouse query on the worker: make 
 
 clickhouse-schemas: inventory-check ## Print CREATE TABLE statements for all project tables
 	cd $(FM) && ./scripts/clickhouse.sh --query "SELECT concat(database, '.', name, '\n', create_table_query, '\n') FROM system.tables WHERE database IN ('forge_metal', 'default') AND name NOT LIKE '.%' ORDER BY database, name FORMAT TSVRaw"
+
+pg-list: inventory-check ## List PostgreSQL databases on the worker (authoritative via \l)
+	cd $(FM) && ./scripts/pg.sh --list
+
+pg-shell: inventory-check ## Open interactive psql: make pg-shell DB=sandbox_rental (run 'make pg-list' to see databases)
+	@test -n "$(DB)" || { echo "ERROR: DB is required (run 'make pg-list' to see databases)"; exit 1; }
+	cd $(FM) && ./scripts/pg.sh "$(DB)"
+
+pg-query: inventory-check ## Run a PostgreSQL query on the worker: make pg-query DB=sandbox_rental QUERY='SELECT 1'
+	@test -n "$(DB)" || { echo "ERROR: DB is required (run 'make pg-list' to see databases)"; exit 1; }
+	@test -n "$(QUERY)" || { echo "ERROR: QUERY is required"; exit 1; }
+	cd $(FM) && ./scripts/pg.sh "$(DB)" --query "$(QUERY)"
+
+tb-shell: inventory-check ## Open the TigerBeetle REPL (Ctrl+D to exit). Ops: create_accounts, create_transfers, lookup_accounts, lookup_transfers, get_account_transfers, get_account_balances, query_accounts, query_transfers
+	cd $(FM) && ./scripts/tigerbeetle.sh
+
+tb-command: inventory-check ## Run a single TigerBeetle REPL op: make tb-command COMMAND='query_accounts limit=10;'
+	@test -n "$(COMMAND)" || { echo "ERROR: COMMAND is required (e.g. 'lookup_accounts id=1;')"; exit 1; }
+	cd $(FM) && ./scripts/tigerbeetle.sh --command "$(COMMAND)"
 
 MAILBOX_ARG = $(if $(MAILBOX),$(MAILBOX),$(if $(filter command line,$(origin USER)),$(USER),))
 MAILBOX_ACCOUNT_FLAG = $(if $(MAILBOX_ARG),--account $(MAILBOX_ARG),)

@@ -7,6 +7,8 @@ go.work -- All of those are Golang
 src/vm-orchestrator -- Go host daemon for Firecracker, ZFS, TAP networking, jailer lifecycle, vm-bridge, and gRPC control.
 src/vm-guest-telemetry -- Zig guest agent that streams health samples from Firecracker VMs.
 
+Run `make pg-list` to list the pg databases.
+
 This repo is for a free open-source software product that is a turnkey "software company in a box": fully self-hosted bare-metal platform with Forgejo, Fast CI via Firecracker + deep ZFS optimizations, Grafana + ClickHouse observability (logs + traces + metrics), TigerBeetle for financial OTLP, Stripe integration, Zitadel for enterprise-grade auth, PostgreSQL for general purpose RDBMS. This is not a PaaS -- the user owns what they deploy.
 
 Features:
