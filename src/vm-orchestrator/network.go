@@ -53,7 +53,8 @@ type NetworkLease struct {
 
 // Allocator manages persistent, host-wide network leases for Firecracker VMs.
 type Allocator struct {
-	cfg NetworkPoolConfig
+	cfg           NetworkPoolConfig
+	tapExistsFunc func(string) bool
 }
 
 // networkSetup is the runtime network configuration passed into Firecracker.
@@ -62,7 +63,10 @@ type networkSetup struct {
 }
 
 func NewAllocator(cfg NetworkPoolConfig) *Allocator {
-	return &Allocator{cfg: normalizeNetworkPoolConfig(cfg)}
+	return &Allocator{
+		cfg:           normalizeNetworkPoolConfig(cfg),
+		tapExistsFunc: tapExists,
+	}
 }
 
 func setupNetwork(ctx context.Context, runID string, cfg NetworkPoolConfig, ops PrivOps) (*networkSetup, func(), error) {
@@ -305,6 +309,11 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 		rollbackTx(tx)
 		return err
 	}
+	freeTaps, err := listFreeNetworkSlotsWithTapTx(ctx, tx)
+	if err != nil {
+		rollbackTx(tx)
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit recover scan tx: %w", err)
 	}
@@ -318,12 +327,12 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 			continue
 		}
 
-		tapPresent := tapExists(lease.TapName)
+		tapPresent := a.tapExists(lease.TapName)
 		if tapPresent {
 			if ops == nil {
 				return fmt.Errorf("cleanup stale tap %s: privileged ops are required", lease.TapName)
 			}
-			if cleanupErr := cleanupNetworkOps(ctx, lease.TapName, 3, ops); cleanupErr != nil {
+			if cleanupErr := cleanupNetworkOpsIfPresent(ctx, lease.TapName, 3, ops, a.tapExists); cleanupErr != nil {
 				return cleanupErr
 			}
 		}
@@ -352,6 +361,25 @@ func (a *Allocator) Recover(ctx context.Context, ops PrivOps) error {
 		}
 		if err := releaseTx.Commit(); err != nil {
 			return fmt.Errorf("commit recover release slot %d: %w", lease.SlotIndex, err)
+		}
+	}
+
+	for _, slot := range freeTaps {
+		if !a.tapExists(slot.TapName) {
+			continue
+		}
+		if ops == nil {
+			return fmt.Errorf("cleanup stale free tap %s: privileged ops are required", slot.TapName)
+		}
+		cleanupCtx, endCleanupSpan := startStepSpan(ctx, "vmorchestrator.network.recover_free_tap",
+			attribute.Int("network.slot_index", slot.SlotIndex),
+			attribute.Int64("network.generation", int64(slot.Generation)),
+			attribute.String("network.tap", slot.TapName),
+		)
+		cleanupErr := cleanupNetworkOpsIfPresent(cleanupCtx, slot.TapName, 3, ops, a.tapExists)
+		endCleanupSpan(cleanupErr)
+		if cleanupErr != nil {
+			return cleanupErr
 		}
 	}
 
@@ -584,6 +612,39 @@ func listAllocatedNetworkLeasesTx(ctx context.Context, tx *sql.Tx) ([]NetworkLea
 	return out, nil
 }
 
+type freeNetworkSlotTap struct {
+	SlotIndex  int
+	Generation uint64
+	TapName    string
+}
+
+func listFreeNetworkSlotsWithTapTx(ctx context.Context, tx *sql.Tx) ([]freeNetworkSlotTap, error) {
+	rows, err := tx.QueryContext(
+		ctx,
+		`SELECT slot_index, generation, tap_name
+		 FROM network_slots
+		 WHERE state = 'free' AND tap_name != ''
+		 ORDER BY slot_index ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query free network slots with tap metadata: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]freeNetworkSlotTap, 0)
+	for rows.Next() {
+		var slot freeNetworkSlotTap
+		if err := rows.Scan(&slot.SlotIndex, &slot.Generation, &slot.TapName); err != nil {
+			return nil, fmt.Errorf("scan free network slot with tap metadata: %w", err)
+		}
+		out = append(out, slot)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate free network slots with tap metadata: %w", err)
+	}
+	return out, nil
+}
+
 func normalizeNetworkPoolConfig(cfg NetworkPoolConfig) NetworkPoolConfig {
 	if cfg.PoolCIDR == "" {
 		cfg.PoolCIDR = defaultGuestPoolCIDR
@@ -646,13 +707,27 @@ func tapDeviceName(slot int) string {
 }
 
 func cleanupNetworkOps(ctx context.Context, tapName string, steps int, ops PrivOps) error {
+	return cleanupNetworkOpsIfPresent(ctx, tapName, steps, ops, tapExists)
+}
+
+func cleanupNetworkOpsIfPresent(ctx context.Context, tapName string, steps int, ops PrivOps, tapExistsFunc func(string) bool) error {
 	if steps < 1 || tapName == "" {
 		return nil
 	}
-	if !tapExists(tapName) {
+	if tapExistsFunc == nil {
+		tapExistsFunc = tapExists
+	}
+	if !tapExistsFunc(tapName) {
 		return nil
 	}
 	return ops.TapDelete(ctx, tapName)
+}
+
+func (a *Allocator) tapExists(name string) bool {
+	if a == nil || a.tapExistsFunc == nil {
+		return tapExists(name)
+	}
+	return a.tapExistsFunc(name)
 }
 
 func tapExists(name string) bool {
