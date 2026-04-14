@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Callout } from "~/components/callout";
+import { useBillingAccount } from "~/features/billing/use-billing-account";
 import { ExecutionListPanel } from "~/features/jobs/components";
 import { loadJobsIndex } from "~/features/jobs/queries";
 
@@ -9,23 +10,11 @@ export const Route = createFileRoute("/_authenticated/jobs/")({
 });
 
 function JobsPage() {
-  const entitlements = Route.useLoaderData();
   const { auth } = Route.useRouteContext();
-
-  // No honest top-line balance — slots never sum across coverage targets. We
-  // gate the "New Execution" button on the union of every slot having zero
-  // available, which is the only honest "nothing to spend anywhere" check.
-  const universalEmpty = entitlements.universal.available_units <= 0;
-  const productsEmpty = (entitlements.products ?? []).every((product) => {
-    const productSlotEmpty = !product.product_slot || product.product_slot.available_units <= 0;
-    const bucketsEmpty = (product.buckets ?? []).every((bucket) => {
-      const bucketSlotEmpty = !bucket.bucket_slot || bucket.bucket_slot.available_units <= 0;
-      const skuSlotsEmpty = (bucket.sku_slots ?? []).every((slot) => slot.available_units <= 0);
-      return bucketSlotEmpty && skuSlotsEmpty;
-    });
-    return productSlotEmpty && bucketsEmpty;
-  });
-  const creditsExhausted = universalEmpty && productsEmpty;
+  // The loader already derived and warmed the snapshot; this hook re-runs the
+  // pure selector on the cached query data so client refetches stay honest.
+  const { account } = useBillingAccount();
+  const creditsExhausted = account.credits.kind === "exhausted";
 
   return (
     <div className="space-y-6">
@@ -38,7 +27,8 @@ function JobsPage() {
         </div>
         {creditsExhausted ? (
           <span
-            title="No credits remaining - purchase more at /billing/credits"
+            title="No credits remaining — purchase more or subscribe to a plan"
+            data-testid="new-execution-disabled"
             className="px-4 py-2 rounded-md bg-muted text-muted-foreground text-sm cursor-not-allowed"
           >
             New Execution
@@ -53,22 +43,7 @@ function JobsPage() {
         )}
       </div>
 
-      {creditsExhausted && (
-        <Callout
-          tone="warning"
-          title="Your credit balance is empty"
-          action={
-            <Link
-              to="/billing/credits"
-              className="whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-            >
-              Buy Credits
-            </Link>
-          }
-        >
-          Purchase credits to start executions.
-        </Callout>
-      )}
+      {creditsExhausted ? <CreditsExhaustedCallout accountKind={account.kind} /> : null}
 
       {auth.orgId ? (
         <ExecutionListPanel orgId={auth.orgId} />
@@ -79,5 +54,30 @@ function JobsPage() {
         </Callout>
       )}
     </div>
+  );
+}
+
+function CreditsExhaustedCallout({ accountKind }: { accountKind: string }) {
+  // Subscribers whose plan allowance is drained get pointed at the top-up
+  // page; users with no contract at all get pointed at the plan picker.
+  const ctaTarget = accountKind === "no_contract" ? "/billing/subscribe" : "/billing/credits";
+  const ctaLabel = accountKind === "no_contract" ? "Choose Plan" : "Buy Credits";
+
+  return (
+    <Callout
+      tone="warning"
+      title="Your credit balance is empty"
+      action={
+        <Link
+          to={ctaTarget}
+          data-testid="credits-exhausted-cta"
+          className="whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
+        >
+          {ctaLabel}
+        </Link>
+      }
+    >
+      Purchase credits or pick a plan to start executions.
+    </Callout>
   );
 }
