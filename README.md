@@ -91,6 +91,22 @@ Useful overrides:
 - `BUSINESS_NOW` (RFC3339/RFC3339Nano org-product billing clock override)
 - `OVERAGE_POLICY`, `TRUST_TIER`, `ORG_NAME`
 
+Use `billing-clock` when you want to move billing time without resetting the
+user's contract or balances:
+
+```bash
+make billing-clock ORG_ID=123
+make billing-clock ORG_ID=123 SET=2026-05-01T00:00:00Z REASON=e2e-rollover
+make billing-clock ORG_ID=123 ADVANCE_SECONDS=2678400 REASON=e2e-rollover
+make billing-clock ORG_ID=123 CLEAR=1 REASON=e2e-cleanup
+```
+
+The clock helper builds and runs `src/billing-service/cmd/billing-clock` on the
+target node. It calls billing-service code paths against billing PostgreSQL, so
+clock changes can synchronously apply due cycle rollover, scheduled
+downgrades/cancellations, current-period grants, and corresponding
+`billing_events`.
+
 ### 5. Log in
 
 ```bash

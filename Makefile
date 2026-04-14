@@ -1,6 +1,6 @@
 .PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
        hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
-       set-user-state billing-reset verification-reset \
+       set-user-state billing-clock billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof scheduler-proof verify-scheduler grafana-proof services-doctor
@@ -124,6 +124,15 @@ set-user-state: inventory-check ## Set billing fixture state: make set-user-stat
 		--business-now "$(BUSINESS_NOW)" \
 		--overage-policy "$(OVERAGE_POLICY)" \
 		--trust-tier "$(TRUST_TIER)"
+
+billing-clock: inventory-check ## Inspect or mutate billing business time: make billing-clock ORG_ID=123 [SET=...|ADVANCE_SECONDS=...|CLEAR=1]
+	@cd $(FM) && ./scripts/billing-clock.sh \
+		--org-id "$(ORG_ID)" \
+		--product-id "$(BILLING_PRODUCT_ID)" \
+		$(if $(SET),--set "$(SET)",) \
+		$(if $(ADVANCE_SECONDS),--advance-seconds "$(ADVANCE_SECONDS)",) \
+		$(if $(CLEAR),--clear,) \
+		$(if $(REASON),--reason "$(REASON)",)
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml
