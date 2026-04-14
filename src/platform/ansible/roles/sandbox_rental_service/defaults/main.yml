@@ -23,6 +23,7 @@ sandbox_rental_service_github_app_enabled: false
 sandbox_rental_service_github_app_id: 0
 sandbox_rental_service_github_app_slug: ""
 sandbox_rental_service_github_app_client_id: ""
+sandbox_rental_service_github_app_settings_url: ""
 sandbox_rental_service_github_api_base_url: "https://api.github.com"
 sandbox_rental_service_github_web_base_url: "https://github.com"
 sandbox_rental_service_github_runner_group_id: 1

@@ -15,7 +15,7 @@ https://github.com/settings/apps/new
 Edit the current dev app at:
 
 ```text
-https://github.com/settings/apps/forge-metal-ci
+https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci
 ```
 
 Current dev public identifiers:
@@ -25,6 +25,7 @@ sandbox_rental_service_github_app_enabled: true
 sandbox_rental_service_github_app_id: 3370540
 sandbox_rental_service_github_app_slug: forge-metal-ci
 sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
+sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/forge-metal-ci"
 ```
 
 Use these GitHub App settings:
