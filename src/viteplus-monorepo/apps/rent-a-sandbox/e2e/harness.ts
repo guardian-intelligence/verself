@@ -523,7 +523,9 @@ export class SandboxHarness {
     productID?: string;
   }): Promise<BillingDocumentEvidence[]> {
     const platformDir = fileURLToPath(new URL("../../../../platform/", import.meta.url));
-    const scriptPath = fileURLToPath(new URL("scripts/pg.sh", new URL("../../../../platform/", import.meta.url)));
+    const scriptPath = fileURLToPath(
+      new URL("scripts/pg.sh", new URL("../../../../platform/", import.meta.url)),
+    );
     const orgIDText = String(orgID).replaceAll("'", "''");
     const productIDText = productID.replaceAll("'", "''");
     const sql = `
@@ -546,7 +548,7 @@ export class SandboxHarness {
     `;
     const { stdout } = await execFile(
       scriptPath,
-      ["sandbox", "--no-align", "--tuples-only", "--quiet", "--query", sql],
+      ["billing", "--no-align", "--tuples-only", "--quiet", "--query", sql],
       { cwd: platformDir, env: process.env },
     );
     return JSON.parse(stdout.trim() || "[]") as BillingDocumentEvidence[];
