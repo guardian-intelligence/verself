@@ -102,16 +102,11 @@ mkdir -p "${binary_dir}"
   go build -o "${binary_path}" ./cmd/billing-clock
 )
 
-remote_path="$(verification_remote_temp_path forge-metal-billing-clock)"
-remote_path_q="$(printf '%q' "${remote_path}")"
+remote_path="$(verification_upload_executable "${binary_path}" forge-metal-billing-clock)"
 cleanup_remote() {
-  if [[ -n "${remote_path}" ]]; then
-    verification_ssh "rm -f ${remote_path_q}" >/dev/null 2>&1 || true
-  fi
+  verification_remove_remote_path "${remote_path}"
 }
 trap cleanup_remote EXIT
-
-verification_ssh "cat > ${remote_path_q} && chmod 0755 ${remote_path_q}" <"${binary_path}"
 
 remote_args=(
   sudo "${remote_path}"

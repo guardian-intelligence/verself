@@ -37,7 +37,38 @@ verification_ssh() {
 
 verification_remote_temp_path() {
   local prefix="$1"
-  verification_ssh "mktemp /tmp/${prefix}.XXXXXX"
+  local remote_staging_dir="${VERIFICATION_REMOTE_STAGING_DIR:-/opt/forge-metal/staging}"
+
+  if [[ ! "${prefix}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    echo "unsafe remote temp prefix: ${prefix}" >&2
+    return 1
+  fi
+
+  local remote_staging_dir_q
+  remote_staging_dir_q="$(printf '%q' "${remote_staging_dir}")"
+  verification_ssh "sudo install -d -m 0755 ${remote_staging_dir_q} && sudo mktemp -u ${remote_staging_dir_q}/${prefix}.XXXXXX"
+}
+
+verification_upload_executable() {
+  local local_path="$1"
+  local prefix="$2"
+  local remote_path
+  local remote_path_q
+
+  remote_path="$(verification_remote_temp_path "${prefix}")"
+  remote_path_q="$(printf '%q' "${remote_path}")"
+  verification_ssh "sudo tee ${remote_path_q} >/dev/null && sudo chmod 0755 ${remote_path_q}" <"${local_path}"
+  printf '%s\n' "${remote_path}"
+}
+
+verification_remove_remote_path() {
+  local remote_path="$1"
+  if [[ -z "${remote_path}" ]]; then
+    return 0
+  fi
+  local remote_path_q
+  remote_path_q="$(printf '%q' "${remote_path}")"
+  verification_ssh "sudo rm -f ${remote_path_q}" >/dev/null 2>&1 || true
 }
 
 verification_remote_sudo_cat() {
