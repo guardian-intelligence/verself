@@ -1,12 +1,35 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@forge-metal/auth-web/isomorphic";
-import { entitlementsQuery } from "~/features/billing/queries";
+import { contractsQuery, entitlementsQuery, plansQuery } from "~/features/billing/queries";
+import {
+  deriveBillingAccount,
+  type BillingAccount,
+  type BillingSnapshot,
+} from "~/features/billing/state";
 import { getExecution } from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 import { isExecutionActiveStatus } from "./status";
 
-export async function loadJobsIndex(queryClient: QueryClient, auth: AuthenticatedAuth) {
-  return queryClient.ensureQueryData(entitlementsQuery(auth));
+// The jobs page is gated on billing credits state, so we preload the three
+// billing snapshot sources the selector needs. Statement is intentionally
+// omitted — the credits_exhausted check derives from the entitlements tree,
+// not from the current billing cycle's line items.
+export async function loadJobsIndex(
+  queryClient: QueryClient,
+  auth: AuthenticatedAuth,
+): Promise<{ account: BillingAccount }> {
+  const [entitlements, contracts, plans] = await Promise.all([
+    queryClient.ensureQueryData(entitlementsQuery(auth)),
+    queryClient.ensureQueryData(contractsQuery(auth)),
+    queryClient.ensureQueryData(plansQuery(auth)),
+  ]);
+  const snapshot: BillingSnapshot = {
+    plans,
+    contracts,
+    entitlements,
+    statement: null,
+  };
+  return { account: deriveBillingAccount(snapshot) };
 }
 
 export function executionQuery(auth: AuthenticatedAuth, executionId: string) {
