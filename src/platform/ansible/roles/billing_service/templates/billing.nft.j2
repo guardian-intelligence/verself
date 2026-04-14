@@ -14,7 +14,7 @@ table inet forge_metal_billing {
         # Only constrain packets originating from the billing user.
         meta skuid != billing accept
 
-        # Loopback covers TigerBeetle, PostgreSQL, ClickHouse.
+        # Loopback covers PostgreSQL, ClickHouse, and local auth JWKS.
         oifname "lo" accept
 
         # Established/related (return traffic for accepted connections).

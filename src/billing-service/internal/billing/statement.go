@@ -3,18 +3,11 @@ package billing
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
-	"strconv"
-	"time"
 )
 
-type statementPeriod struct {
-	Start  time.Time
-	End    time.Time
-	Source string
-}
-
-type statementLineItemKey struct {
+type statementLineKey struct {
 	ProductID    string
 	PlanID       string
 	BucketID     string
@@ -23,22 +16,18 @@ type statementLineItemKey struct {
 	UnitRate     uint64
 }
 
-type statementGrantSummaryKey struct {
-	ScopeType      GrantScopeType
+type statementGrantKey struct {
+	ScopeType      string
 	ScopeProductID string
 	ScopeBucketID  string
-	Source         GrantSourceType
+	Source         string
 }
 
 func (c *Client) PreviewStatement(ctx context.Context, orgID OrgID, productID string) (Statement, error) {
-	if err := ctx.Err(); err != nil {
-		return Statement{}, err
-	}
 	if productID == "" {
 		return Statement{}, fmt.Errorf("product_id is required")
 	}
-
-	period, err := c.currentStatementPeriod(ctx, orgID, productID)
+	cycle, err := c.EnsureOpenBillingCycle(ctx, orgID, productID)
 	if err != nil {
 		return Statement{}, err
 	}
@@ -46,351 +35,178 @@ func (c *Client) PreviewStatement(ctx context.Context, orgID OrgID, productID st
 	if err != nil {
 		return Statement{}, err
 	}
-	windows, err := c.statementWindows(ctx, orgID, productID, period)
+	windows, err := c.statementWindows(ctx, orgID, productID, cycle)
 	if err != nil {
 		return Statement{}, err
 	}
-	return buildStatement(orgID, productID, period, grants, windows, c.clock().UTC())
-}
-
-func (c *Client) currentStatementPeriod(ctx context.Context, orgID OrgID, productID string) (statementPeriod, error) {
-	cycle, err := c.EnsureOpenBillingCycle(ctx, orgID, productID)
+	now, err := c.BusinessNow(ctx, c.queries, orgID, productID)
 	if err != nil {
-		return statementPeriod{}, err
+		return Statement{}, err
 	}
-	if cycle.EndsAt.After(cycle.StartsAt) {
-		return statementPeriod{Start: cycle.StartsAt.UTC(), End: cycle.EndsAt.UTC(), Source: "billing_cycle"}, nil
+	statement := Statement{OrgID: orgID, ProductID: productID, PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PeriodSource: "billing_cycle", GeneratedAt: now, Currency: "usd", UnitLabel: "ledger_units"}
+	lines := map[statementLineKey]*StatementLineItem{}
+	summaries := map[statementGrantKey]*StatementGrantSummary{}
+	for _, grant := range grants {
+		key := statementGrantKey{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
+		summary := summaries[key]
+		if summary == nil {
+			summary = &StatementGrantSummary{ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, Source: grant.Source}
+			summaries[key] = summary
+		}
+		summary.Available += grant.Available
+		summary.Pending += grant.Pending
 	}
-	return statementPeriod{}, fmt.Errorf("open billing cycle %s has invalid interval", cycle.CycleID)
+	for _, window := range windows {
+		switch window.State {
+		case "settled":
+			addSettledStatementWindow(&statement, lines, window)
+		case "reserved", "active":
+			addReservedStatementWindow(&statement, lines, window)
+		}
+	}
+	statement.LineItems = sortedStatementLines(lines)
+	statement.GrantSummaries = sortedStatementSummaries(summaries)
+	return statement, nil
 }
 
-func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID string, period statementPeriod) ([]persistedWindow, error) {
-	rows, err := c.pg.QueryContext(ctx, `
+func (c *Client) statementWindows(ctx context.Context, orgID OrgID, productID string, cycle billingCycle) ([]persistedWindow, error) {
+	rows, err := c.pg.Query(ctx, `
 		SELECT window_id
 		FROM billing_windows
 		WHERE org_id = $1
 		  AND product_id = $2
-		  AND state IN ('reserved', 'settled')
+		  AND state IN ('reserved','active','settled')
 		  AND window_start >= $3
 		  AND window_start < $4
-		ORDER BY window_start ASC, window_seq ASC, window_id ASC
-	`, strconv.FormatUint(uint64(orgID), 10), productID, period.Start, period.End)
+		ORDER BY window_start, window_seq, window_id
+	`, orgIDText(orgID), productID, cycle.StartsAt, cycle.EndsAt)
 	if err != nil {
 		return nil, fmt.Errorf("query statement windows: %w", err)
 	}
 	defer rows.Close()
-
-	var windowIDs []string
+	out := []persistedWindow{}
 	for rows.Next() {
 		var windowID string
 		if err := rows.Scan(&windowID); err != nil {
-			return nil, fmt.Errorf("scan statement window id: %w", err)
+			return nil, fmt.Errorf("scan statement window: %w", err)
 		}
-		windowIDs = append(windowIDs, windowID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate statement windows: %w", err)
-	}
-
-	windows := make([]persistedWindow, 0, len(windowIDs))
-	for _, windowID := range windowIDs {
-		window, err := c.loadPersistedWindow(ctx, windowID)
+		window, err := c.loadWindow(ctx, windowID)
 		if err != nil {
-			return nil, fmt.Errorf("load statement window %s: %w", windowID, err)
+			return nil, err
 		}
-		windows = append(windows, window)
+		out = append(out, window)
 	}
-	return windows, nil
+	return out, rows.Err()
 }
 
-func buildStatement(
-	orgID OrgID,
-	productID string,
-	period statementPeriod,
-	grants []GrantBalance,
-	windows []persistedWindow,
-	generatedAt time.Time,
-) (Statement, error) {
-	statement := Statement{
-		OrgID:        orgID,
-		ProductID:    productID,
-		PeriodStart:  period.Start.UTC(),
-		PeriodEnd:    period.End.UTC(),
-		PeriodSource: period.Source,
-		GeneratedAt:  generatedAt.UTC(),
-		Currency:     "usd",
-		UnitLabel:    "ledger_units",
-	}
-	lineItems := map[statementLineItemKey]*StatementLineItem{}
-	grantSummaries := map[statementGrantSummaryKey]*StatementGrantSummary{}
-
-	for _, grant := range grants {
-		if err := addStatementGrantSummary(grantSummaries, grant); err != nil {
-			return Statement{}, err
-		}
-	}
-
-	for _, window := range windows {
-		switch window.State {
-		case "settled":
-			row, err := buildMeteringRow(window)
-			if err != nil {
-				return Statement{}, fmt.Errorf("statement metering row %s: %w", window.WindowID, err)
-			}
-			if err := addSettledStatementRow(&statement, lineItems, window, row); err != nil {
-				return Statement{}, fmt.Errorf("statement aggregate window %s: %w", window.WindowID, err)
-			}
-		case "reserved":
-			if !window.ExpiresAt.After(generatedAt) {
-				continue
-			}
-			if err := addReservedStatementWindow(&statement, lineItems, window); err != nil {
-				return Statement{}, fmt.Errorf("statement reserved window %s: %w", window.WindowID, err)
-			}
-		}
-	}
-
-	statement.LineItems = sortedStatementLineItems(lineItems)
-	statement.GrantSummaries = sortedStatementGrantSummaries(grantSummaries)
-	return statement, nil
-}
-
-func addSettledStatementRow(
-	statement *Statement,
-	lineItems map[statementLineItemKey]*StatementLineItem,
-	window persistedWindow,
-	row MeteringRow,
-) error {
-	var err error
-	statement.Totals.ChargeUnits, err = safeAddUint64(statement.Totals.ChargeUnits, row.ChargeUnits)
-	if err != nil {
-		return err
-	}
-	if err := addStatementAppliedTotals(&statement.Totals, row); err != nil {
-		return err
-	}
-
-	rateContext, err := completeRateContext(window)
-	if err != nil {
-		return err
-	}
-
-	quantities := row.ComponentQuantities
-	for _, skuID := range sortedUint64MapKeys(row.ComponentChargeUnits) {
-		sku, ok := rateContext.SKUDetails[skuID]
-		if !ok || sku.DisplayName == "" || sku.BucketID == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
-			return fmt.Errorf("sku metadata missing for %s", skuID)
-		}
-		unitRate := rateContext.SKURates[skuID]
-		pricingPhase := string(window.PricingPhase)
-		key := statementLineItemKey{
-			ProductID:    window.ProductID,
-			PlanID:       window.PlanID,
-			BucketID:     sku.BucketID,
-			SKUID:        skuID,
-			PricingPhase: pricingPhase,
-			UnitRate:     unitRate,
-		}
-		item := lineItems[key]
-		if item == nil {
-			item = &StatementLineItem{
-				ProductID:         key.ProductID,
-				PlanID:            key.PlanID,
-				BucketID:          key.BucketID,
-				BucketDisplayName: sku.BucketDisplayName,
-				SKUID:             key.SKUID,
-				SKUDisplayName:    sku.DisplayName,
-				QuantityUnit:      sku.QuantityUnit,
-				PricingPhase:      key.PricingPhase,
-				UnitRate:          key.UnitRate,
-			}
-			lineItems[key] = item
-		}
-		item.Quantity += quantities[skuID]
-		item.ChargeUnits, err = safeAddUint64(item.ChargeUnits, row.ComponentChargeUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.FreeTierUnits, err = safeAddUint64(item.FreeTierUnits, row.ComponentFreeTierUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.ContractUnits, err = safeAddUint64(item.ContractUnits, row.ComponentContractUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.PurchaseUnits, err = safeAddUint64(item.PurchaseUnits, row.ComponentPurchaseUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.PromoUnits, err = safeAddUint64(item.PromoUnits, row.ComponentPromoUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.RefundUnits, err = safeAddUint64(item.RefundUnits, row.ComponentRefundUnits[skuID])
-		if err != nil {
-			return err
-		}
-		item.ReceivableUnits, err = safeAddUint64(item.ReceivableUnits, row.ComponentReceivableUnits[skuID])
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func addReservedStatementWindow(
-	statement *Statement,
-	lineItems map[statementLineItemKey]*StatementLineItem,
-	window persistedWindow,
-) error {
-	rateContext, err := completeRateContext(window)
-	if err != nil {
-		return err
-	}
-	// The legs are sized to the reservation quantity; aggregate by ChargeSKUID
-	// so each reserved line can credit the right SKU row. Legs without a
-	// ChargeSKUID (legacy pre-tightened reserve path) are silently dropped from
-	// per-line reserved totals but still credited to the statement-level total
-	// so the customer's top-line reserved figure remains honest.
-	for _, leg := range window.FundingLegs {
-		statement.Totals.ReservedUnits, err = safeAddUint64(statement.Totals.ReservedUnits, leg.Amount)
-		if err != nil {
-			return err
-		}
-		if leg.ChargeSKUID == "" {
+func addSettledStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) {
+	statement.Totals.ChargeUnits += window.BilledChargeUnits
+	statement.Totals.ReservedUnits += 0
+	statement.Totals.TotalDueUnits += sourceTotal(window.FundingLegs, "receivable")
+	statement.Totals.FreeTierUnits += sourceTotal(window.FundingLegs, "free_tier")
+	statement.Totals.ContractUnits += sourceTotal(window.FundingLegs, "contract")
+	statement.Totals.PurchaseUnits += sourceTotal(window.FundingLegs, "purchase")
+	statement.Totals.PromoUnits += sourceTotal(window.FundingLegs, "promo")
+	statement.Totals.RefundUnits += sourceTotal(window.FundingLegs, "refund")
+	statement.Totals.ReceivableUnits += sourceTotal(window.FundingLegs, "receivable")
+	for skuID, rate := range window.RateContext.SKURates {
+		charge := uint64(window.BillableQuantity) * uint64FromFloatRate(window.Allocation[skuID], rate)
+		if charge == 0 {
 			continue
 		}
-		sku, ok := rateContext.SKUDetails[leg.ChargeSKUID]
-		if !ok || sku.DisplayName == "" || sku.BucketID == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
-			return fmt.Errorf("sku metadata missing for reserved leg %s", leg.ChargeSKUID)
-		}
-		unitRate := rateContext.SKURates[leg.ChargeSKUID]
-		key := statementLineItemKey{
-			ProductID:    window.ProductID,
-			PlanID:       window.PlanID,
-			BucketID:     sku.BucketID,
-			SKUID:        leg.ChargeSKUID,
-			PricingPhase: string(window.PricingPhase),
-			UnitRate:     unitRate,
-		}
-		item := lineItems[key]
-		if item == nil {
-			item = &StatementLineItem{
-				ProductID:         key.ProductID,
-				PlanID:            key.PlanID,
-				BucketID:          key.BucketID,
-				BucketDisplayName: sku.BucketDisplayName,
-				SKUID:             key.SKUID,
-				SKUDisplayName:    sku.DisplayName,
-				QuantityUnit:      sku.QuantityUnit,
-				PricingPhase:      key.PricingPhase,
-				UnitRate:          key.UnitRate,
-			}
-			lineItems[key] = item
-		}
-		item.ReservedUnits, err = safeAddUint64(item.ReservedUnits, leg.Amount)
-		if err != nil {
-			return err
-		}
+		item := statementLine(lines, window, skuID, rate)
+		item.Quantity += float64(window.BillableQuantity) * window.Allocation[skuID]
+		item.ChargeUnits += charge
+		item.FreeTierUnits += componentSourceTotal(window.FundingLegs, skuID, "free_tier")
+		item.ContractUnits += componentSourceTotal(window.FundingLegs, skuID, "contract")
+		item.PurchaseUnits += componentSourceTotal(window.FundingLegs, skuID, "purchase")
+		item.PromoUnits += componentSourceTotal(window.FundingLegs, skuID, "promo")
+		item.RefundUnits += componentSourceTotal(window.FundingLegs, skuID, "refund")
+		item.ReceivableUnits += componentSourceTotal(window.FundingLegs, skuID, "receivable")
 	}
-	return nil
 }
 
-func addStatementAppliedTotals(totals *StatementTotals, row MeteringRow) error {
-	var err error
-	totals.FreeTierUnits, err = safeAddUint64(totals.FreeTierUnits, row.FreeTierUnits)
-	if err != nil {
-		return err
-	}
-	totals.ContractUnits, err = safeAddUint64(totals.ContractUnits, row.ContractUnits)
-	if err != nil {
-		return err
-	}
-	totals.PurchaseUnits, err = safeAddUint64(totals.PurchaseUnits, row.PurchaseUnits)
-	if err != nil {
-		return err
-	}
-	totals.PromoUnits, err = safeAddUint64(totals.PromoUnits, row.PromoUnits)
-	if err != nil {
-		return err
-	}
-	totals.RefundUnits, err = safeAddUint64(totals.RefundUnits, row.RefundUnits)
-	if err != nil {
-		return err
-	}
-	totals.ReceivableUnits, err = safeAddUint64(totals.ReceivableUnits, row.ReceivableUnits)
-	if err != nil {
-		return err
-	}
-	totals.TotalDueUnits = totals.ReceivableUnits
-	return nil
-}
-
-func addStatementGrantSummary(summaries map[statementGrantSummaryKey]*StatementGrantSummary, grant GrantBalance) error {
-	key := statementGrantSummaryKey{
-		ScopeType:      grant.ScopeType,
-		ScopeProductID: grant.ScopeProductID,
-		ScopeBucketID:  grant.ScopeBucketID,
-		Source:         grant.Source,
-	}
-	summary := summaries[key]
-	if summary == nil {
-		summary = &StatementGrantSummary{
-			ScopeType:      grant.ScopeType,
-			ScopeProductID: grant.ScopeProductID,
-			ScopeBucketID:  grant.ScopeBucketID,
-			Source:         grant.Source,
+func addReservedStatementWindow(statement *Statement, lines map[statementLineKey]*StatementLineItem, window persistedWindow) {
+	for _, leg := range window.FundingLegs {
+		statement.Totals.ReservedUnits += leg.Amount
+		if leg.ComponentSKUID == "" {
+			continue
 		}
-		summaries[key] = summary
+		item := statementLine(lines, window, leg.ComponentSKUID, window.RateContext.SKURates[leg.ComponentSKUID])
+		item.ReservedUnits += leg.Amount
 	}
-	var err error
-	summary.Available, err = safeAddUint64(summary.Available, grant.Available)
-	if err != nil {
-		return err
-	}
-	summary.Pending, err = safeAddUint64(summary.Pending, grant.Pending)
-	return err
 }
 
-func statementLineItemID(key statementLineItemKey) string {
-	return key.ProductID + ":" + key.PlanID + ":" + key.BucketID + ":" + key.SKUID + ":" + key.PricingPhase + ":" + strconv.FormatUint(key.UnitRate, 10)
+func statementLine(lines map[statementLineKey]*StatementLineItem, window persistedWindow, skuID string, rate uint64) *StatementLineItem {
+	bucketID := window.RateContext.SKUBuckets[skuID]
+	key := statementLineKey{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, SKUID: skuID, PricingPhase: window.PricingPhase, UnitRate: rate}
+	item := lines[key]
+	if item == nil {
+		item = &StatementLineItem{ProductID: window.ProductID, PlanID: window.PricingPlanID, BucketID: bucketID, BucketDisplayName: window.RateContext.BucketDisplayNames[bucketID], SKUID: skuID, SKUDisplayName: window.RateContext.SKUDisplayNames[skuID], QuantityUnit: "sku_second", PricingPhase: window.PricingPhase, UnitRate: rate}
+		lines[key] = item
+	}
+	return item
 }
 
-func sortedStatementLineItems(items map[statementLineItemKey]*StatementLineItem) []StatementLineItem {
-	if len(items) == 0 {
-		return nil
+func sortedStatementLines(lines map[statementLineKey]*StatementLineItem) []StatementLineItem {
+	keys := make([]statementLineKey, 0, len(lines))
+	for key := range lines {
+		keys = append(keys, key)
 	}
-	keys := make([]string, 0, len(items))
-	byID := make(map[string]*StatementLineItem, len(items))
-	for key, item := range items {
-		id := statementLineItemID(key)
-		keys = append(keys, id)
-		byID[id] = item
-	}
-	sort.Strings(keys)
-	out := make([]StatementLineItem, 0, len(items))
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].BucketID != keys[j].BucketID {
+			return keys[i].BucketID < keys[j].BucketID
+		}
+		return keys[i].SKUID < keys[j].SKUID
+	})
+	out := make([]StatementLineItem, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, *byID[key])
+		out = append(out, *lines[key])
 	}
 	return out
 }
 
-func sortedStatementGrantSummaries(summaries map[statementGrantSummaryKey]*StatementGrantSummary) []StatementGrantSummary {
-	if len(summaries) == 0 {
-		return nil
+func sortedStatementSummaries(summaries map[statementGrantKey]*StatementGrantSummary) []StatementGrantSummary {
+	keys := make([]statementGrantKey, 0, len(summaries))
+	for key := range summaries {
+		keys = append(keys, key)
 	}
-	keys := make([]string, 0, len(summaries))
-	byID := make(map[string]*StatementGrantSummary, len(summaries))
-	for key, summary := range summaries {
-		id := key.ScopeType.String() + ":" + key.ScopeProductID + ":" + key.ScopeBucketID + ":" + key.Source.String()
-		keys = append(keys, id)
-		byID[id] = summary
-	}
-	sort.Strings(keys)
-	out := make([]StatementGrantSummary, 0, len(summaries))
+	sort.Slice(keys, func(i, j int) bool {
+		if sourcePriority(keys[i].Source) != sourcePriority(keys[j].Source) {
+			return sourcePriority(keys[i].Source) < sourcePriority(keys[j].Source)
+		}
+		if keys[i].ScopeType != keys[j].ScopeType {
+			return keys[i].ScopeType < keys[j].ScopeType
+		}
+		return keys[i].ScopeBucketID < keys[j].ScopeBucketID
+	})
+	out := make([]StatementGrantSummary, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, *byID[key])
+		out = append(out, *summaries[key])
 	}
 	return out
+}
+
+func sourceTotal(legs []fundingLeg, source string) uint64 {
+	var out uint64
+	for _, leg := range legs {
+		if leg.Source == source {
+			out += leg.Amount
+		}
+	}
+	return out
+}
+
+func componentSourceTotal(legs []fundingLeg, skuID string, source string) uint64 {
+	var out uint64
+	for _, leg := range legs {
+		if leg.Source == source && leg.ComponentSKUID == skuID {
+			out += leg.Amount
+		}
+	}
+	return out
+}
+
+func uint64FromFloatRate(units float64, rate uint64) uint64 {
+	return uint64(math.Ceil(units * float64(rate)))
 }

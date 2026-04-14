@@ -2,168 +2,91 @@ package billing
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"hash"
-	"hash/fnv"
-
-	"github.com/oklog/ulid/v2"
-	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	"strconv"
+	"strings"
+	"time"
 )
 
-type GrantID [16]byte
+const ledgerUnitsPerCent uint64 = 100_000
 
-type (
-	AccountID  struct{ raw types.Uint128 }
-	TransferID struct{ raw types.Uint128 }
-)
-
-func NewGrantID() GrantID {
-	return GrantID(ulid.Make())
+func orgIDText(orgID OrgID) string {
+	return strconv.FormatUint(uint64(orgID), 10)
 }
 
-func sourceReferenceGrantID(orgID OrgID, source GrantSourceType, scopeType GrantScopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceReferenceID string) GrantID {
+func textID(kind string, parts ...string) string {
 	h := sha256.New()
-	_, _ = h.Write([]byte("grant-source-reference"))
-	hashUint64(h, uint64(orgID))
-	hashString(h, source.String())
-	hashString(h, scopeType.String())
-	hashString(h, scopeProductID)
-	hashString(h, scopeBucketID)
-	hashString(h, scopeSKUID)
-	hashString(h, sourceReferenceID)
-	sum := h.Sum(nil)
-	var id GrantID
-	copy(id[:], sum[:16])
-	return id
-}
-
-func deterministicTextID(namespace string, values ...string) string {
-	h := sha256.New()
-	hashString(h, namespace)
-	for _, value := range values {
-		hashString(h, value)
+	_, _ = h.Write([]byte(kind))
+	for _, part := range parts {
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(part))
 	}
 	sum := h.Sum(nil)
-	return hex.EncodeToString(sum[:16])
+	return kind + "_" + hex.EncodeToString(sum[:16])
 }
 
-func hashUint64(h hash.Hash, value uint64) {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], value)
-	_, _ = h.Write(buf[:])
+func monthStartUTC(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
-func hashString(h hash.Hash, value string) {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], uint64(len(value)))
-	_, _ = h.Write(buf[:])
-	_, _ = h.Write([]byte(value))
+func nextMonth(t time.Time) time.Time {
+	return monthStartUTC(t).AddDate(0, 1, 0)
 }
 
-func ParseGrantID(value string) (GrantID, error) {
-	parsed, err := ulid.ParseStrict(value)
-	if err != nil {
-		return GrantID{}, fmt.Errorf("parse grant id %q: %w", value, err)
+func cycleID(orgID OrgID, productID string, startsAt time.Time) string {
+	return textID("cycle", orgIDText(orgID), productID, startsAt.UTC().Format(time.RFC3339Nano))
+}
+
+func freeTierPeriodID(orgID OrgID, policyID string, start, end time.Time) string {
+	return textID("period", orgIDText(orgID), "free_tier", policyID, start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+}
+
+func contractPeriodID(orgID OrgID, lineID string, cycleID string, start, end time.Time) string {
+	return textID("period", orgIDText(orgID), "contract", lineID, cycleID, start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+}
+
+func grantID(orgID OrgID, source, scopeType, productID, bucketID, skuID, sourceRef string) string {
+	return textID("grant", orgIDText(orgID), source, scopeType, productID, bucketID, skuID, sourceRef)
+}
+
+func billingWindowID(productID, sourceType, sourceRef string, seq uint32) string {
+	return textID("win", productID, sourceType, sourceRef, strconv.FormatUint(uint64(seq), 10))
+}
+
+func contractID(orgID OrgID, productID string) string {
+	return textID("contract", orgIDText(orgID), productID)
+}
+
+func phaseID(contractID string, planID string, effectiveAt time.Time) string {
+	return textID("phase", contractID, planID, effectiveAt.UTC().Format(time.RFC3339Nano))
+}
+
+func changeID(contractID, targetPlanID string, effectiveAt time.Time) string {
+	return textID("change", contractID, targetPlanID, effectiveAt.UTC().Format(time.RFC3339Nano))
+}
+
+func invoiceID(changeID string) string {
+	return textID("invoice", changeID)
+}
+
+func eventID(eventType, aggregateID string, occurredAt time.Time, payloadHash string) string {
+	return textID("evt", eventType, aggregateID, occurredAt.UTC().Format(time.RFC3339Nano), payloadHash)
+}
+
+func cleanNonEmpty(parts ...string) string {
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			return strings.TrimSpace(part)
+		}
 	}
-	return GrantID(parsed), nil
+	return ""
 }
 
-func (g GrantID) String() string {
-	return ulid.ULID(g).String()
-}
-
-func (g GrantID) MarshalText() ([]byte, error) {
-	return []byte(g.String()), nil
-}
-
-func (g *GrantID) UnmarshalText(text []byte) error {
-	parsed, err := ParseGrantID(string(text))
-	if err != nil {
-		return err
+func moneyUnitsFromCents(cents int64) (uint64, error) {
+	if cents < 0 {
+		return 0, fmt.Errorf("cents must be non-negative")
 	}
-	*g = parsed
-	return nil
-}
-
-func grantHalfSwap(grant GrantID) types.Uint128 {
-	var buf [16]byte
-	binary.LittleEndian.PutUint64(buf[0:8], binary.BigEndian.Uint64(grant[8:16]))
-	binary.LittleEndian.PutUint64(buf[8:16], binary.BigEndian.Uint64(grant[0:8]))
-	return types.BytesToUint128(buf)
-}
-
-func GrantAccountID(grant GrantID) AccountID {
-	return AccountID{raw: grantHalfSwap(grant)}
-}
-
-func OperatorAccountID(t OperatorAcctType) AccountID {
-	var id [16]byte
-	binary.LittleEndian.PutUint16(id[0:2], uint16(t))
-	return AccountID{raw: types.BytesToUint128(id)}
-}
-
-func WindowTransferID(windowID string, legIndex uint8, kind XferKind) TransferID {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%d", windowID, legIndex, kind)))
-	var raw [16]byte
-	copy(raw[:], sum[:16])
-	raw[5] = uint8(kind)
-	raw[4] = legIndex
-	return TransferID{raw: types.BytesToUint128(raw)}
-}
-
-func WindowLookupSeed(windowID string) types.Uint128 {
-	sum := sha256.Sum256([]byte(windowID))
-	var raw [16]byte
-	copy(raw[:], sum[:16])
-	return types.BytesToUint128(raw)
-}
-
-func ProductPeriodAccountID(orgID OrgID, productID string, periodKey string) AccountID {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(productID))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(periodKey))
-	hash := h.Sum64()
-
-	var id [16]byte
-	binary.LittleEndian.PutUint64(id[0:8], hash)
-	binary.LittleEndian.PutUint64(id[8:16], uint64(orgID))
-	return AccountID{raw: types.BytesToUint128(id)}
-}
-
-func (a AccountID) Raw() types.Uint128 { return a.raw }
-
-func (t TransferID) Raw() types.Uint128 { return t.raw }
-
-func (t TransferID) String() string {
-	b := t.raw.Bytes()
-	return hex.EncodeToString(b[:])
-}
-
-func (t TransferID) MarshalText() ([]byte, error) {
-	return []byte(t.String()), nil
-}
-
-func (t *TransferID) UnmarshalText(text []byte) error {
-	parsed, err := ParseTransferID(string(text))
-	if err != nil {
-		return err
-	}
-	*t = parsed
-	return nil
-}
-
-func ParseTransferID(value string) (TransferID, error) {
-	raw, err := hex.DecodeString(value)
-	if err != nil {
-		return TransferID{}, fmt.Errorf("parse transfer id %q: %w", value, err)
-	}
-	if len(raw) != 16 {
-		return TransferID{}, fmt.Errorf("parse transfer id %q: expected 16 bytes, got %d", value, len(raw))
-	}
-	var buf [16]byte
-	copy(buf[:], raw)
-	return TransferID{raw: types.BytesToUint128(buf)}, nil
+	return uint64(cents) * ledgerUnitsPerCent, nil
 }

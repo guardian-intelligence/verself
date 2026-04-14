@@ -114,7 +114,6 @@
       memory: 5000000
       block_storage: 2000000
     seed_system_plan_entitlements: {}
-    seed_system_quotas: {}
     seed_system_contract_tiers:
       - plan_id: sandbox-hobby
         display_name: Hobby
@@ -717,10 +716,6 @@
           - "{{ seed_system_helper_remote_path }}"
           - --pg-dsn-file
           - /etc/credstore/billing/pg-dsn
-          - --tb-address
-          - "{{ services.tigerbeetle.host }}:{{ services.tigerbeetle.port }}"
-          - --tb-cluster-id
-          - "{{ billing_service_tigerbeetle_cluster_id | default(0, true) | string }}"
           - --org-id
           - "{{ item.org_id }}"
           - --org-name
@@ -743,8 +738,6 @@
           - "{{ seed_system_free_tier_buckets | to_json }}"
           - --plan-entitlements-json
           - "{{ seed_system_plan_entitlements | to_json }}"
-          - --quotas-json
-          - "{{ seed_system_quotas | to_json }}"
           - --target-prepaid-units
           - "{{ item.target_prepaid_units | string }}"
           - --prepaid-source

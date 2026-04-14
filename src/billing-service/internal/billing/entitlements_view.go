@@ -7,12 +7,6 @@ import (
 	"time"
 )
 
-// EntitlementsView is the slot-keyed customer view of an org's open credit.
-// The catalog is the spine: account → product → bucket → sku, top to bottom.
-// The funder consumes the inverse order (sku → bucket → product → account)
-// because most-specific scope drains first. Both orderings are correct; do not
-// "fix" the display by aligning it to the funder. Rows answer "what coverage
-// do I have," not "what drains first."
 type EntitlementsView struct {
 	OrgID     OrgID
 	Universal EntitlementSlot
@@ -33,11 +27,8 @@ type EntitlementBucketSection struct {
 	SKUSlots    []EntitlementSlot
 }
 
-// EntitlementSlot is one row in the customer's entitlements table. The four
-// scalar columns are the customer-visible aggregates; Sources is the cell
-// breakdown rendered inside the Period-started-with and Available cells.
 type EntitlementSlot struct {
-	ScopeType        GrantScopeType
+	ScopeType        string
 	ProductID        string
 	ProductDisplay   string
 	BucketID         string
@@ -52,53 +43,16 @@ type EntitlementSlot struct {
 	Sources          []EntitlementSourceTotal
 }
 
-// EntitlementSourceTotal aggregates one (source, plan_id) inside a slot.
-// Multiple contract plans contributing to the same slot fan out to one
-// SourceTotal per plan; non-contract sources collapse to one entry per
-// source. TopGrantID is the funder's next-to-drain grant for this cell — it
-// is the contract surface the funding-equivalence test pins, but the apiwire
-// mapping does not surface it because customers never need to read a raw
-// grant id.
 type EntitlementSourceTotal struct {
-	Source           GrantSourceType
+	Source           string
 	PlanID           string
 	Label            string
 	PeriodStartUnits uint64
 	AvailableUnits   uint64
 	PendingUnits     uint64
 	InlineExpiresAt  *time.Time
-	TopGrantID       string
 }
 
-// ListEntitlementsView returns the org's entitlements rendered against the
-// full active catalog. The catalog is queried independently of the grant set
-// so empty SKU rows still surface — the customer can see "this product has
-// 5 SKUs and you have credit for 2 of them" without consulting a pricing
-// page, and adding a new SKU appears in the table with no code change.
-func (c *Client) ListEntitlementsView(ctx context.Context, orgID OrgID) (EntitlementsView, error) {
-	if err := ctx.Err(); err != nil {
-		return EntitlementsView{}, err
-	}
-
-	catalog, err := c.loadEntitlementCatalog(ctx)
-	if err != nil {
-		return EntitlementsView{}, err
-	}
-
-	grants, err := c.listGrantBalances(ctx, orgID, "")
-	if err != nil {
-		return EntitlementsView{}, fmt.Errorf("list grants: %w", err)
-	}
-
-	now := c.clock().UTC()
-	return buildEntitlementsView(orgID, now, catalog, grants), nil
-}
-
-// entitlementCatalog is the in-memory shape consumed by buildEntitlementsView.
-// loadEntitlementCatalog hand-assembles it from three queries — products, the
-// active SKUs joined to credit_buckets, and the per-bucket sort order — so
-// the spine that drives row enumeration is explicit and not derivable from
-// the grant set.
 type entitlementCatalog struct {
 	Products []entitlementCatalogProduct
 }
@@ -121,402 +75,223 @@ type entitlementCatalogSKU struct {
 	DisplayName string
 }
 
-func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog, error) {
-	productRows, err := c.pg.QueryContext(ctx, `
-		SELECT product_id, display_name
-		FROM products
-		ORDER BY display_name ASC, product_id ASC
-	`)
+func (c *Client) ListEntitlementsView(ctx context.Context, orgID OrgID) (EntitlementsView, error) {
+	catalog, err := c.loadEntitlementCatalog(ctx)
 	if err != nil {
-		return entitlementCatalog{}, fmt.Errorf("query products: %w", err)
+		return EntitlementsView{}, err
 	}
-	type productRec struct {
-		productID, displayName string
-	}
-	var productRecs []productRec
-	for productRows.Next() {
-		var rec productRec
-		if err := productRows.Scan(&rec.productID, &rec.displayName); err != nil {
-			productRows.Close()
-			return entitlementCatalog{}, fmt.Errorf("scan product: %w", err)
+	for _, product := range catalog.Products {
+		if err := c.EnsureCurrentEntitlements(ctx, orgID, product.ProductID); err != nil {
+			return EntitlementsView{}, err
 		}
-		productRecs = append(productRecs, rec)
 	}
-	if err := productRows.Err(); err != nil {
-		productRows.Close()
-		return entitlementCatalog{}, fmt.Errorf("iterate products: %w", err)
-	}
-	productRows.Close()
-
-	skuRows, err := c.pg.QueryContext(ctx, `
-		SELECT s.product_id, s.bucket_id, s.sku_id, s.display_name,
-		       b.display_name AS bucket_display, b.sort_order
-		FROM skus s
-		JOIN credit_buckets b ON b.bucket_id = s.bucket_id
-		WHERE s.active = true
-		ORDER BY s.product_id ASC, b.sort_order ASC, b.bucket_id ASC, s.display_name ASC, s.sku_id ASC
-	`)
+	grants, err := c.ListGrantBalances(ctx, orgID, "")
 	if err != nil {
-		return entitlementCatalog{}, fmt.Errorf("query catalog skus: %w", err)
+		return EntitlementsView{}, err
 	}
-	defer skuRows.Close()
-
-	products := make([]entitlementCatalogProduct, len(productRecs))
-	productLookup := map[string]int{}
-	for i, rec := range productRecs {
-		products[i] = entitlementCatalogProduct{
-			ProductID:   rec.productID,
-			DisplayName: rec.displayName,
-		}
-		productLookup[rec.productID] = i
+	now, err := c.BusinessNow(ctx, c.queries, orgID, "")
+	if err != nil {
+		return EntitlementsView{}, err
 	}
-
-	type bucketKey struct{ productID, bucketID string }
-	bucketLookup := map[bucketKey]int{}
-
-	for skuRows.Next() {
-		var productID, bucketID, skuID, skuDisplay, bucketDisplay string
-		var sortOrder int
-		if err := skuRows.Scan(&productID, &bucketID, &skuID, &skuDisplay, &bucketDisplay, &sortOrder); err != nil {
-			return entitlementCatalog{}, fmt.Errorf("scan catalog sku: %w", err)
-		}
-		pIdx, ok := productLookup[productID]
-		if !ok {
-			// FK guarantees this is unreachable in practice; if it ever
-			// fires, surface the SKU under a stale product so the credit
-			// stays visible rather than vanishing.
-			products = append(products, entitlementCatalogProduct{ProductID: productID, DisplayName: productID})
-			pIdx = len(products) - 1
-			productLookup[productID] = pIdx
-		}
-		bk := bucketKey{productID: productID, bucketID: bucketID}
-		bIdx, ok := bucketLookup[bk]
-		if !ok {
-			products[pIdx].Buckets = append(products[pIdx].Buckets, entitlementCatalogBucket{
-				BucketID:    bucketID,
-				DisplayName: bucketDisplay,
-				SortOrder:   sortOrder,
-			})
-			bIdx = len(products[pIdx].Buckets) - 1
-			bucketLookup[bk] = bIdx
-		}
-		products[pIdx].Buckets[bIdx].SKUs = append(products[pIdx].Buckets[bIdx].SKUs, entitlementCatalogSKU{
-			SKUID:       skuID,
-			DisplayName: skuDisplay,
-		})
-	}
-	if err := skuRows.Err(); err != nil {
-		return entitlementCatalog{}, fmt.Errorf("iterate catalog skus: %w", err)
-	}
-
-	return entitlementCatalog{Products: products}, nil
+	return buildEntitlementsView(orgID, now, catalog, grants), nil
 }
 
-// buildEntitlementsView is the pure slot-tree builder that the request handler
-// and the funding-equivalence test both call. It is the only function that
-// maps grants to display rows; all aggregation lives here. The display order
-// is account → product → bucket → sku; the funder consumes the inverse order.
-// Both are deliberate.
+func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog, error) {
+	rows, err := c.pg.Query(ctx, `
+		SELECT p.product_id, p.display_name, b.bucket_id, b.display_name, b.sort_order, s.sku_id, s.display_name
+		FROM products p
+		LEFT JOIN skus s ON s.product_id = p.product_id AND s.active
+		LEFT JOIN credit_buckets b ON b.bucket_id = s.bucket_id
+		WHERE p.active
+		ORDER BY p.display_name, p.product_id, b.sort_order NULLS LAST, b.bucket_id, s.display_name, s.sku_id
+	`)
+	if err != nil {
+		return entitlementCatalog{}, fmt.Errorf("query entitlement catalog: %w", err)
+	}
+	defer rows.Close()
+	products := []entitlementCatalogProduct{}
+	productIdx := map[string]int{}
+	bucketIdx := map[string]map[string]int{}
+	for rows.Next() {
+		var productID, productDisplay string
+		var bucketID, bucketDisplay, skuID, skuDisplay *string
+		var sortOrder *int
+		if err := rows.Scan(&productID, &productDisplay, &bucketID, &bucketDisplay, &sortOrder, &skuID, &skuDisplay); err != nil {
+			return entitlementCatalog{}, fmt.Errorf("scan entitlement catalog: %w", err)
+		}
+		pi, ok := productIdx[productID]
+		if !ok {
+			products = append(products, entitlementCatalogProduct{ProductID: productID, DisplayName: productDisplay})
+			pi = len(products) - 1
+			productIdx[productID] = pi
+			bucketIdx[productID] = map[string]int{}
+		}
+		if bucketID == nil || skuID == nil {
+			continue
+		}
+		bi, ok := bucketIdx[productID][*bucketID]
+		if !ok {
+			order := 0
+			if sortOrder != nil {
+				order = *sortOrder
+			}
+			products[pi].Buckets = append(products[pi].Buckets, entitlementCatalogBucket{BucketID: *bucketID, DisplayName: derefString(bucketDisplay), SortOrder: order})
+			bi = len(products[pi].Buckets) - 1
+			bucketIdx[productID][*bucketID] = bi
+		}
+		products[pi].Buckets[bi].SKUs = append(products[pi].Buckets[bi].SKUs, entitlementCatalogSKU{SKUID: *skuID, DisplayName: derefString(skuDisplay)})
+	}
+	return entitlementCatalog{Products: products}, rows.Err()
+}
+
 func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalog, grants []GrantBalance) EntitlementsView {
-	view := EntitlementsView{
-		OrgID:     orgID,
-		Universal: newUniversalSlot(),
-	}
-
-	productSections := make([]EntitlementProductSection, 0, len(catalog.Products))
-	productLookup := map[string]int{}
+	view := EntitlementsView{OrgID: orgID, Universal: EntitlementSlot{ScopeType: "account", CoverageLabel: "All products"}}
+	productIndex := map[string]int{}
+	bucketIndex := map[string]map[string]int{}
 	for _, product := range catalog.Products {
-		section := EntitlementProductSection{
-			ProductID:   product.ProductID,
-			DisplayName: product.DisplayName,
-			Buckets:     make([]EntitlementBucketSection, 0, len(product.Buckets)),
-		}
+		section := EntitlementProductSection{ProductID: product.ProductID, DisplayName: product.DisplayName, Buckets: make([]EntitlementBucketSection, 0, len(product.Buckets))}
 		for _, bucket := range product.Buckets {
-			bucketSec := EntitlementBucketSection{
-				BucketID:    bucket.BucketID,
-				DisplayName: bucket.DisplayName,
-				SKUSlots:    make([]EntitlementSlot, 0, len(bucket.SKUs)),
-			}
+			bucketSection := EntitlementBucketSection{BucketID: bucket.BucketID, DisplayName: bucket.DisplayName, SKUSlots: make([]EntitlementSlot, 0, len(bucket.SKUs))}
 			for _, sku := range bucket.SKUs {
-				bucketSec.SKUSlots = append(bucketSec.SKUSlots, EntitlementSlot{
-					ScopeType:      GrantScopeSKU,
-					ProductID:      product.ProductID,
-					ProductDisplay: product.DisplayName,
-					BucketID:       bucket.BucketID,
-					BucketDisplay:  bucket.DisplayName,
-					SKUID:          sku.SKUID,
-					SKUDisplay:     sku.DisplayName,
-					CoverageLabel:  sku.DisplayName,
-				})
+				bucketSection.SKUSlots = append(bucketSection.SKUSlots, EntitlementSlot{ScopeType: "sku", ProductID: product.ProductID, ProductDisplay: product.DisplayName, BucketID: bucket.BucketID, BucketDisplay: bucket.DisplayName, SKUID: sku.SKUID, SKUDisplay: sku.DisplayName, CoverageLabel: sku.DisplayName})
 			}
-			section.Buckets = append(section.Buckets, bucketSec)
+			section.Buckets = append(section.Buckets, bucketSection)
 		}
-		productLookup[product.ProductID] = len(productSections)
-		productSections = append(productSections, section)
-	}
-
-	type slotKey struct {
-		scope     GrantScopeType
-		productID string
-		bucketID  string
-		skuID     string
-	}
-	type sourceKey struct {
-		source GrantSourceType
-		planID string
-	}
-	type sourceAcc struct {
-		key             sourceKey
-		label           string
-		periodStart     uint64
-		available       uint64
-		pending         uint64
-		inlineExpiresAt *time.Time
-		topGrantID      string
-	}
-	type slotAcc struct {
-		periodStart uint64
-		available   uint64
-		spent       uint64
-		pending     uint64
-		sourceOrder []sourceKey
-		sources     map[sourceKey]*sourceAcc
-	}
-	slotAccs := map[slotKey]*slotAcc{}
-
-	getSlotAcc := func(key slotKey) *slotAcc {
-		acc, ok := slotAccs[key]
-		if !ok {
-			acc = &slotAcc{sources: map[sourceKey]*sourceAcc{}}
-			slotAccs[key] = acc
+		bucketIndex[product.ProductID] = map[string]int{}
+		for i, bucket := range section.Buckets {
+			bucketIndex[product.ProductID][bucket.BucketID] = i
 		}
-		return acc
+		productIndex[product.ProductID] = len(view.Products)
+		view.Products = append(view.Products, section)
 	}
-
-	pushGrant := func(key slotKey, grant GrantBalance) {
-		acc := getSlotAcc(key)
-		acc.available += grant.Available
-		acc.spent += grant.Spent
-		acc.pending += grant.Pending
-		periodCovered := grant.Period != nil && grant.Period.Contains(now)
-		if periodCovered {
-			acc.periodStart += grant.OriginalAmount
-		}
-		sk := sourceKey{source: grant.Source, planID: grant.PlanID}
-		src, ok := acc.sources[sk]
-		if !ok {
-			src = &sourceAcc{
-				key:        sk,
-				label:      GrantSourceLabel(grant.Source, grant.PlanDisplayName),
-				topGrantID: grant.GrantID.String(),
-			}
-			acc.sources[sk] = src
-			acc.sourceOrder = append(acc.sourceOrder, sk)
-		}
-		src.available += grant.Available
-		src.pending += grant.Pending
-		if periodCovered {
-			src.periodStart += grant.OriginalAmount
-		}
-		// Inline expiry surfaces only for non-period grants. Period-bound
-		// expiries are implicit in the period boundary, which is shared by
-		// every period grant in the same row, so surfacing them inline would
-		// be visual noise. The earliest non-period expiry in the cell is the
-		// one customers care about ("when does my next thing disappear").
-		if !periodCovered && grant.ExpiresAt != nil {
-			if src.inlineExpiresAt == nil || grant.ExpiresAt.Before(*src.inlineExpiresAt) {
-				expires := *grant.ExpiresAt
-				src.inlineExpiresAt = &expires
-			}
-		}
-	}
-
-	bucketIndexOf := func(productIdx int, bucketID string) int {
-		for i, b := range productSections[productIdx].Buckets {
-			if b.BucketID == bucketID {
-				return i
-			}
-		}
-		return -1
-	}
-	skuIndexOf := func(productIdx, bucketIdx int, skuID string) int {
-		for i, slot := range productSections[productIdx].Buckets[bucketIdx].SKUSlots {
-			if slot.SKUID == skuID {
-				return i
-			}
-		}
-		return -1
-	}
-	ensureProduct := func(productID string) int {
-		if idx, ok := productLookup[productID]; ok {
-			return idx
-		}
-		// Off-catalog fallback: a grant references a product that's not on
-		// the active spine (deactivated, deleted upstream of FK enforcement).
-		// Surface it at the end so credit never silently disappears.
-		productSections = append(productSections, EntitlementProductSection{
-			ProductID:   productID,
-			DisplayName: productID,
-		})
-		idx := len(productSections) - 1
-		productLookup[productID] = idx
-		return idx
-	}
-	ensureBucket := func(productIdx int, bucketID string) int {
-		if idx := bucketIndexOf(productIdx, bucketID); idx != -1 {
-			return idx
-		}
-		productSections[productIdx].Buckets = append(productSections[productIdx].Buckets, EntitlementBucketSection{
-			BucketID:    bucketID,
-			DisplayName: bucketID,
-		})
-		return len(productSections[productIdx].Buckets) - 1
-	}
-	ensureSKU := func(productIdx, bucketIdx int, skuID string) int {
-		if idx := skuIndexOf(productIdx, bucketIdx, skuID); idx != -1 {
-			return idx
-		}
-		section := productSections[productIdx]
-		bucket := section.Buckets[bucketIdx]
-		productSections[productIdx].Buckets[bucketIdx].SKUSlots = append(productSections[productIdx].Buckets[bucketIdx].SKUSlots, EntitlementSlot{
-			ScopeType:      GrantScopeSKU,
-			ProductID:      section.ProductID,
-			ProductDisplay: section.DisplayName,
-			BucketID:       bucket.BucketID,
-			BucketDisplay:  bucket.DisplayName,
-			SKUID:          skuID,
-			SKUDisplay:     skuID,
-			CoverageLabel:  skuID,
-		})
-		return len(productSections[productIdx].Buckets[bucketIdx].SKUSlots) - 1
-	}
-
 	for _, grant := range grants {
+		periodStart := uint64(0)
+		if grant.PeriodStart != nil && grant.PeriodEnd != nil && !now.Before(*grant.PeriodStart) && now.Before(*grant.PeriodEnd) {
+			periodStart = grant.OriginalAmount
+		}
+		add := func(slot *EntitlementSlot) {
+			if slot == nil {
+				return
+			}
+			slot.PeriodStartUnits += periodStart
+			slot.SpentUnits += grant.Spent
+			slot.PendingUnits += grant.Pending
+			slot.AvailableUnits += grant.Available
+			addSourceTotal(slot, grant, periodStart)
+		}
 		switch grant.ScopeType {
-		case GrantScopeAccount:
-			pushGrant(slotKey{scope: GrantScopeAccount}, grant)
-		case GrantScopeProduct:
-			ensureProduct(grant.ScopeProductID)
-			pushGrant(slotKey{scope: GrantScopeProduct, productID: grant.ScopeProductID}, grant)
-		case GrantScopeBucket:
-			pIdx := ensureProduct(grant.ScopeProductID)
-			ensureBucket(pIdx, grant.ScopeBucketID)
-			pushGrant(slotKey{scope: GrantScopeBucket, productID: grant.ScopeProductID, bucketID: grant.ScopeBucketID}, grant)
-		case GrantScopeSKU:
-			pIdx := ensureProduct(grant.ScopeProductID)
-			bIdx := ensureBucket(pIdx, grant.ScopeBucketID)
-			ensureSKU(pIdx, bIdx, grant.ScopeSKUID)
-			pushGrant(slotKey{scope: GrantScopeSKU, productID: grant.ScopeProductID, bucketID: grant.ScopeBucketID, skuID: grant.ScopeSKUID}, grant)
-		}
-	}
-
-	finalize := func(target *EntitlementSlot, key slotKey) {
-		acc, ok := slotAccs[key]
-		if !ok {
-			return
-		}
-		target.PeriodStartUnits = acc.periodStart
-		target.SpentUnits = acc.spent
-		target.PendingUnits = acc.pending
-		target.AvailableUnits = acc.available
-		sources := make([]EntitlementSourceTotal, 0, len(acc.sourceOrder))
-		for _, sk := range acc.sourceOrder {
-			src := acc.sources[sk]
-			sources = append(sources, EntitlementSourceTotal{
-				Source:           src.key.source,
-				PlanID:           src.key.planID,
-				Label:            src.label,
-				PeriodStartUnits: src.periodStart,
-				AvailableUnits:   src.available,
-				PendingUnits:     src.pending,
-				InlineExpiresAt:  src.inlineExpiresAt,
-				TopGrantID:       src.topGrantID,
-			})
-		}
-		sortSourceTotals(sources)
-		target.Sources = sources
-	}
-
-	finalize(&view.Universal, slotKey{scope: GrantScopeAccount})
-
-	for pIdx := range productSections {
-		section := &productSections[pIdx]
-		productKey := slotKey{scope: GrantScopeProduct, productID: section.ProductID}
-		if _, ok := slotAccs[productKey]; ok {
-			slot := newProductSlot(*section)
-			finalize(&slot, productKey)
-			section.ProductSlot = &slot
-		}
-		for bIdx := range section.Buckets {
-			bucket := &section.Buckets[bIdx]
-			bk := slotKey{scope: GrantScopeBucket, productID: section.ProductID, bucketID: bucket.BucketID}
-			if _, ok := slotAccs[bk]; ok {
-				slot := newBucketSlot(*section, *bucket)
-				finalize(&slot, bk)
-				bucket.BucketSlot = &slot
+		case "account":
+			add(&view.Universal)
+		case "product":
+			pi, ok := productIndex[grant.ScopeProductID]
+			if !ok {
+				continue
 			}
-			for sIdx := range bucket.SKUSlots {
-				sku := &bucket.SKUSlots[sIdx]
-				skuKey := slotKey{scope: GrantScopeSKU, productID: section.ProductID, bucketID: bucket.BucketID, skuID: sku.SKUID}
-				finalize(sku, skuKey)
+			if view.Products[pi].ProductSlot == nil {
+				view.Products[pi].ProductSlot = &EntitlementSlot{ScopeType: "product", ProductID: grant.ScopeProductID, ProductDisplay: view.Products[pi].DisplayName, CoverageLabel: view.Products[pi].DisplayName}
+			}
+			add(view.Products[pi].ProductSlot)
+		case "bucket":
+			pi, ok := productIndex[grant.ScopeProductID]
+			if !ok {
+				continue
+			}
+			bi, ok := bucketIndex[grant.ScopeProductID][grant.ScopeBucketID]
+			if !ok {
+				continue
+			}
+			bucket := &view.Products[pi].Buckets[bi]
+			if bucket.BucketSlot == nil {
+				bucket.BucketSlot = &EntitlementSlot{ScopeType: "bucket", ProductID: grant.ScopeProductID, ProductDisplay: view.Products[pi].DisplayName, BucketID: grant.ScopeBucketID, BucketDisplay: bucket.DisplayName, CoverageLabel: bucket.DisplayName}
+			}
+			add(bucket.BucketSlot)
+		case "sku":
+			pi, ok := productIndex[grant.ScopeProductID]
+			if !ok {
+				continue
+			}
+			bi, ok := bucketIndex[grant.ScopeProductID][grant.ScopeBucketID]
+			if !ok {
+				continue
+			}
+			for i := range view.Products[pi].Buckets[bi].SKUSlots {
+				if view.Products[pi].Buckets[bi].SKUSlots[i].SKUID == grant.ScopeSKUID {
+					add(&view.Products[pi].Buckets[bi].SKUSlots[i])
+					break
+				}
 			}
 		}
 	}
-
-	view.Products = productSections
+	sortEntitlementSources(&view.Universal)
+	for pi := range view.Products {
+		sortEntitlementSources(view.Products[pi].ProductSlot)
+		for bi := range view.Products[pi].Buckets {
+			sortEntitlementSources(view.Products[pi].Buckets[bi].BucketSlot)
+			for si := range view.Products[pi].Buckets[bi].SKUSlots {
+				sortEntitlementSources(&view.Products[pi].Buckets[bi].SKUSlots[si])
+			}
+		}
+	}
 	return view
 }
 
-func newUniversalSlot() EntitlementSlot {
-	return EntitlementSlot{
-		ScopeType:     GrantScopeAccount,
-		CoverageLabel: "Usable anywhere",
-	}
-}
-
-func newProductSlot(section EntitlementProductSection) EntitlementSlot {
-	display := section.DisplayName
-	if display == "" {
-		display = section.ProductID
-	}
-	return EntitlementSlot{
-		ScopeType:      GrantScopeProduct,
-		ProductID:      section.ProductID,
-		ProductDisplay: section.DisplayName,
-		CoverageLabel:  fmt.Sprintf("Any bucket in %s", display),
-	}
-}
-
-func newBucketSlot(section EntitlementProductSection, bucket EntitlementBucketSection) EntitlementSlot {
-	display := bucket.DisplayName
-	if display == "" {
-		display = bucket.BucketID
-	}
-	return EntitlementSlot{
-		ScopeType:      GrantScopeBucket,
-		ProductID:      section.ProductID,
-		ProductDisplay: section.DisplayName,
-		BucketID:       bucket.BucketID,
-		BucketDisplay:  bucket.DisplayName,
-		CoverageLabel:  fmt.Sprintf("Any %s SKU", display),
-	}
-}
-
-func sortSourceTotals(totals []EntitlementSourceTotal) {
-	rank := grantSourceRank()
-	sort.SliceStable(totals, func(i, j int) bool {
-		ri, rj := rank[totals[i].Source], rank[totals[j].Source]
-		if ri != rj {
-			return ri < rj
+func addSourceTotal(slot *EntitlementSlot, grant GrantBalance, periodStart uint64) {
+	label := entitlementSourceLabel(grant.Source, grant.PlanDisplayName)
+	for i := range slot.Sources {
+		if slot.Sources[i].Source == grant.Source && slot.Sources[i].PlanID == grant.PlanID {
+			slot.Sources[i].PeriodStartUnits += periodStart
+			slot.Sources[i].AvailableUnits += grant.Available
+			slot.Sources[i].PendingUnits += grant.Pending
+			if periodStart == 0 && grant.ExpiresAt != nil && (slot.Sources[i].InlineExpiresAt == nil || grant.ExpiresAt.Before(*slot.Sources[i].InlineExpiresAt)) {
+				v := *grant.ExpiresAt
+				slot.Sources[i].InlineExpiresAt = &v
+			}
+			return
 		}
-		return totals[i].PlanID < totals[j].PlanID
+	}
+	var inline *time.Time
+	if periodStart == 0 && grant.ExpiresAt != nil {
+		v := *grant.ExpiresAt
+		inline = &v
+	}
+	slot.Sources = append(slot.Sources, EntitlementSourceTotal{Source: grant.Source, PlanID: grant.PlanID, Label: label, PeriodStartUnits: periodStart, AvailableUnits: grant.Available, PendingUnits: grant.Pending, InlineExpiresAt: inline})
+}
+
+func sortEntitlementSources(slot *EntitlementSlot) {
+	if slot == nil {
+		return
+	}
+	sort.SliceStable(slot.Sources, func(i, j int) bool {
+		if sourcePriority(slot.Sources[i].Source) != sourcePriority(slot.Sources[j].Source) {
+			return sourcePriority(slot.Sources[i].Source) < sourcePriority(slot.Sources[j].Source)
+		}
+		return slot.Sources[i].PlanID < slot.Sources[j].PlanID
 	})
 }
 
-func grantSourceRank() map[GrantSourceType]int {
-	rank := make(map[GrantSourceType]int, len(GrantSourceFundingOrder))
-	for i, source := range GrantSourceFundingOrder {
-		rank[source] = i
+func entitlementSourceLabel(source, planDisplay string) string {
+	if source == "contract" && planDisplay != "" {
+		return planDisplay
 	}
-	return rank
+	switch source {
+	case "free_tier":
+		return "Free tier"
+	case "contract":
+		return "Subscription"
+	case "purchase":
+		return "Purchased credits"
+	case "promo":
+		return "Promo credits"
+	case "refund":
+		return "Refund credits"
+	default:
+		return source
+	}
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

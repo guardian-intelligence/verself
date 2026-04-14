@@ -2,109 +2,103 @@ package billing
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/forge-metal/billing-service/internal/store"
 )
 
-type SKUConfig struct {
-	SKUID             string
-	DisplayName       string
-	BucketID          string
-	BucketDisplayName string
-	QuantityUnit      string
-	UnitRate          uint64
-}
-
-type BucketConfig struct {
-	BucketID    string
-	DisplayName string
-}
-
-type skuRateContext struct {
-	DisplayName       string `json:"display_name"`
-	BucketID          string `json:"bucket_id"`
-	BucketDisplayName string `json:"bucket_display_name"`
-	QuantityUnit      string `json:"quantity_unit"`
-	UnitRate          uint64 `json:"unit_rate"`
-}
-
-func (c *Client) loadPlanSKUConfig(ctx context.Context, planID string) (map[string]SKUConfig, map[string]BucketConfig, error) {
-	rows, err := c.pg.QueryContext(ctx, `
-		SELECT s.sku_id, s.display_name, s.bucket_id, b.display_name, s.quantity_unit, r.unit_rate
-		FROM plan_sku_rates r
-		JOIN skus s ON s.sku_id = r.sku_id
-		JOIN credit_buckets b ON b.bucket_id = s.bucket_id
-		WHERE r.plan_id = $1
-		  AND r.active
-		  AND s.active
-		ORDER BY b.sort_order, s.sku_id
-	`, planID)
+func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string, trustTier string) error {
+	if trustTier == "" {
+		trustTier = "new"
+	}
+	err := c.queries.UpsertOrg(ctx, store.UpsertOrgParams{
+		OrgID:            orgIDText(orgID),
+		DisplayName:      cleanNonEmpty(displayName, "Org "+orgIDText(orgID)),
+		BillingEmail:     "",
+		TrustTier:        trustTier,
+		OveragePolicy:    "block",
+		OverageConsentAt: pgtype.Timestamptz{},
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("load plan sku rates: %w", err)
+		return fmt.Errorf("upsert org: %w", err)
 	}
-	defer rows.Close()
-
-	skus := map[string]SKUConfig{}
-	buckets := map[string]BucketConfig{}
-	for rows.Next() {
-		var sku SKUConfig
-		var unitRate int64
-		if err := rows.Scan(&sku.SKUID, &sku.DisplayName, &sku.BucketID, &sku.BucketDisplayName, &sku.QuantityUnit, &unitRate); err != nil {
-			return nil, nil, fmt.Errorf("scan plan sku rate: %w", err)
+	products, err := c.queries.ListProductIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list products for org bootstrap: %w", err)
+	}
+	for _, productID := range products {
+		if err := c.EnsureCurrentEntitlements(ctx, orgID, productID); err != nil {
+			return err
 		}
-		if sku.SKUID == "" || sku.BucketID == "" || sku.DisplayName == "" || sku.BucketDisplayName == "" || sku.QuantityUnit == "" {
-			return nil, nil, fmt.Errorf("plan %s has incomplete sku catalog row", planID)
-		}
-		if unitRate < 0 {
-			return nil, nil, fmt.Errorf("plan %s sku %s has negative SKU rate", planID, sku.SKUID)
-		}
-		sku.UnitRate = uint64(unitRate)
-		skus[sku.SKUID] = sku
-		buckets[sku.BucketID] = BucketConfig{BucketID: sku.BucketID, DisplayName: sku.BucketDisplayName}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("iterate plan sku rates: %w", err)
-	}
-	if len(skus) == 0 {
-		return nil, nil, sql.ErrNoRows
-	}
-	return skus, buckets, nil
-}
-
-func skuRatesFromSKUConfig(skus map[string]SKUConfig) map[string]uint64 {
-	out := make(map[string]uint64, len(skus))
-	for skuID, sku := range skus {
-		out[skuID] = sku.UnitRate
-	}
-	return out
-}
-
-func skuBucketsFromSKUConfig(skus map[string]SKUConfig) map[string]string {
-	out := make(map[string]string, len(skus))
-	for skuID, sku := range skus {
-		out[skuID] = sku.BucketID
-	}
-	return out
-}
-
-func skuRateContextFromConfig(skus map[string]SKUConfig) map[string]skuRateContext {
-	out := make(map[string]skuRateContext, len(skus))
-	for skuID, sku := range skus {
-		out[skuID] = skuRateContext{
-			DisplayName:       sku.DisplayName,
-			BucketID:          sku.BucketID,
-			BucketDisplayName: sku.BucketDisplayName,
-			QuantityUnit:      sku.QuantityUnit,
-			UnitRate:          sku.UnitRate,
+		if _, err := c.EnsureOpenBillingCycle(ctx, orgID, productID); err != nil {
+			return err
 		}
 	}
-	return out
+	return nil
 }
 
-func bucketDisplayNamesFromConfig(buckets map[string]BucketConfig) map[string]string {
-	out := make(map[string]string, len(buckets))
-	for bucketID, bucket := range buckets {
-		out[bucketID] = bucket.DisplayName
+func (c *Client) ListPlans(ctx context.Context, productID string) ([]PlanRecord, error) {
+	rows, err := c.queries.ListActivePlans(ctx, store.ListActivePlansParams{ProductID: productID})
+	if err != nil {
+		return nil, fmt.Errorf("list active plans: %w", err)
 	}
-	return out
+	out := make([]PlanRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, PlanRecord{
+			PlanID:             row.PlanID,
+			ProductID:          row.ProductID,
+			DisplayName:        row.DisplayName,
+			BillingMode:        row.BillingMode,
+			Tier:               row.Tier,
+			Currency:           row.Currency,
+			MonthlyAmountCents: uint64(row.MonthlyAmountCents),
+			AnnualAmountCents:  uint64(row.AnnualAmountCents),
+			Active:             row.Active,
+			IsDefault:          row.IsDefault,
+		})
+	}
+	return out, nil
+}
+
+func (c *Client) ListContracts(ctx context.Context, orgID OrgID) ([]ContractRecord, error) {
+	now, err := c.BusinessNow(ctx, c.queries, orgID, "")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := c.queries.ListContractsForOrg(ctx, store.ListContractsForOrgParams{OrgID: orgIDText(orgID), EffectiveStart: timestamptz(now)})
+	if err != nil {
+		return nil, fmt.Errorf("list contracts: %w", err)
+	}
+	out := make([]ContractRecord, 0, len(rows))
+	for _, row := range rows {
+		record := ContractRecord{
+			ContractID:       row.ContractID,
+			ProductID:        row.ProductID,
+			PlanID:           row.PlanID,
+			PhaseID:          row.PhaseID,
+			CadenceKind:      "anniversary_monthly",
+			Status:           row.State,
+			PaymentState:     row.PaymentState,
+			EntitlementState: row.EntitlementState,
+		}
+		if row.StartsAt.Valid {
+			record.StartsAt = row.StartsAt.Time.UTC()
+		}
+		if row.EndsAt.Valid {
+			v := row.EndsAt.Time.UTC()
+			record.EndsAt = &v
+		}
+		if row.PhaseStart.Valid {
+			v := row.PhaseStart.Time.UTC()
+			record.PhaseStart = &v
+		}
+		if row.PhaseEnd.Valid {
+			v := row.PhaseEnd.Time.UTC()
+			record.PhaseEnd = &v
+		}
+		out = append(out, record)
+	}
+	return out, nil
 }

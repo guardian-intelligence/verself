@@ -2,305 +2,124 @@ package billing
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
+
+	"github.com/forge-metal/billing-service/internal/store"
 )
-
-const (
-	stripeProviderEventMaxAttempts = 5
-	stripeProviderEventBaseBackoff = 30 * time.Second
-	stripeProviderEventMaxBackoff  = 15 * time.Minute
-)
-
-var stripeProviderEventTracer = otel.Tracer("billing-service/billing/provider-events")
-
-type stripeProviderEventClaim struct {
-	EventID   string
-	EventType string
-	Payload   []byte
-	Attempts  int
-}
 
 func (c *Client) CreateCheckoutSession(ctx context.Context, orgID OrgID, productID string, params CheckoutParams) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
+	if params.AmountCents <= 0 {
+		return "", fmt.Errorf("amount_cents must be positive")
 	}
-
-	var displayName string
-	if err := c.pg.QueryRowContext(ctx, `
-		SELECT display_name FROM products WHERE product_id = $1
-	`, productID).Scan(&displayName); err != nil {
-		return "", fmt.Errorf("read product for checkout: %w", err)
-	}
-
-	orgIDText := strconv.FormatUint(uint64(orgID), 10)
-	var stripeCustomerID sql.NullString
-	_ = c.pg.QueryRowContext(ctx, `
-		SELECT stripe_customer_id FROM orgs WHERE org_id = $1
-	`, orgIDText).Scan(&stripeCustomerID)
-
-	sessionParams := &stripe.CheckoutSessionCreateParams{
-		Mode:             stripe.String(string(stripe.CheckoutSessionModePayment)),
-		CustomerCreation: stripe.String("always"),
-		SuccessURL:       stripe.String(params.SuccessURL),
-		CancelURL:        stripe.String(params.CancelURL),
-		PaymentMethodOptions: &stripe.CheckoutSessionCreatePaymentMethodOptionsParams{
-			Card: &stripe.CheckoutSessionCreatePaymentMethodOptionsCardParams{
-				RequestThreeDSecure: stripe.String(
-					string(stripe.CheckoutSessionPaymentMethodOptionsCardRequestThreeDSecureAny),
-				),
-			},
-		},
-		LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{
-				Currency:   stripe.String("usd"),
-				UnitAmount: stripe.Int64(params.AmountCents),
-				ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
-					Name: stripe.String(displayName + " Credits"),
-				},
-			},
-		}},
-		PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{
-			Metadata: map[string]string{
-				"org_id":       orgIDText,
-				"product_id":   productID,
-				"ledger_units": strconv.FormatInt(params.AmountCents*100_000, 10),
-			},
-		},
-	}
-	if stripeCustomerID.Valid && stripeCustomerID.String != "" {
-		sessionParams.Customer = stripe.String(stripeCustomerID.String)
-		sessionParams.CustomerCreation = nil
-	}
-	sessionParams.AddMetadata("org_id", orgIDText)
-	sessionParams.AddMetadata("product_id", productID)
-	sessionParams.AddMetadata("ledger_units", strconv.FormatInt(params.AmountCents*100_000, 10))
-
-	session, err := c.stripe.V1CheckoutSessions.Create(ctx, sessionParams)
-	if err != nil {
-		return "", fmt.Errorf("create checkout session: %w", err)
-	}
-	return session.URL, nil
-}
-
-func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string, cadence BillingCadence, successURL, cancelURL string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	if planID == "" {
-		return "", fmt.Errorf("plan_id is required")
-	}
-	if cadence == "" {
-		cadence = CadenceMonthly
-	}
-	if cadence != CadenceMonthly {
-		return "", fmt.Errorf("%w: %q", ErrUnsupportedCadence, cadence)
-	}
-
-	var productID string
-	var displayName string
-	var currency string
-	if err := c.pg.QueryRowContext(ctx, `
-		SELECT p.product_id, p.display_name, p.currency
-		FROM plans p
-		WHERE p.plan_id = $1
-		  AND p.active
-	`, planID).Scan(&productID, &displayName, &currency); err != nil {
-		return "", fmt.Errorf("read plan for contract: %w", err)
-	}
-	if currency == "" {
-		currency = "usd"
-	}
-
-	requestedAt := c.clock().UTC()
-	contractID := deterministicTextID("self-serve-contract", strconv.FormatUint(uint64(orgID), 10), productID)
-	phaseID := newSelfServeContractPhaseID(contractID, planID, requestedAt)
-
-	existing, err := c.GetContract(ctx, orgID, contractID)
-	if err == nil {
-		if existing.PlanID == planID {
-			return successURL, nil
-		}
-		result, err := c.CreateContractChange(ctx, orgID, contractID, ContractChangeRequest{
-			TargetPlanID: planID,
-			SuccessURL:   successURL,
-			CancelURL:    cancelURL,
-		})
+	if !c.cfg.UseStripe || c.stripe == nil {
+		units, err := moneyUnitsFromCents(params.AmountCents)
 		if err != nil {
 			return "", err
 		}
-		return result.URL, nil
+		_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "product", ScopeProductID: productID, Source: "purchase", SourceReferenceID: textID("offline_purchase", orgIDText(orgID), productID, strconv.FormatInt(params.AmountCents, 10), time.Now().UTC().Format(time.RFC3339Nano)), Amount: units, StartsAt: time.Now().UTC()})
+		return params.SuccessURL, err
 	}
-	if err != nil && err != ErrContractNotFound {
-		return "", err
+	var productName string
+	if err := c.pg.QueryRow(ctx, `SELECT display_name FROM products WHERE product_id = $1`, productID).Scan(&productName); err != nil {
+		return "", fmt.Errorf("load checkout product: %w", err)
 	}
-
-	customerID, err := c.ensureStripeCustomer(ctx, orgID)
+	customerID, _ := c.lookupStripeCustomer(ctx, orgID)
+	metadata := map[string]string{"org_id": orgIDText(orgID), "product_id": productID, "ledger_units": strconv.FormatInt(params.AmountCents*int64(ledgerUnitsPerCent), 10)}
+	checkoutParams := &stripe.CheckoutSessionCreateParams{Mode: stripe.String(string(stripe.CheckoutSessionModePayment)), SuccessURL: stripe.String(params.SuccessURL), CancelURL: stripe.String(params.CancelURL), LineItems: []*stripe.CheckoutSessionCreateLineItemParams{{Quantity: stripe.Int64(1), PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{Currency: stripe.String("usd"), UnitAmount: stripe.Int64(params.AmountCents), ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{Name: stripe.String(productName + " Credits")}}}}, PaymentIntentData: &stripe.CheckoutSessionCreatePaymentIntentDataParams{Metadata: metadata}, Metadata: metadata}
+	if customerID != "" {
+		checkoutParams.Customer = stripe.String(customerID)
+	} else {
+		checkoutParams.CustomerCreation = stripe.String("always")
+	}
+	session, err := c.stripe.V1CheckoutSessions.Create(ctx, checkoutParams)
 	if err != nil {
-		return "", err
-	}
-
-	metadata := map[string]string{
-		"org_id":      strconv.FormatUint(uint64(orgID), 10),
-		"product_id":  productID,
-		"plan_id":     planID,
-		"contract_id": contractID,
-		"phase_id":    phaseID,
-		"cadence":     string(cadence),
-	}
-	sessionParams := &stripe.CheckoutSessionCreateParams{
-		Mode:       stripe.String(string(stripe.CheckoutSessionModeSetup)),
-		Customer:   stripe.String(customerID),
-		Currency:   stripe.String(currency),
-		SuccessURL: stripe.String(successURL),
-		CancelURL:  stripe.String(cancelURL),
-		SetupIntentData: &stripe.CheckoutSessionCreateSetupIntentDataParams{
-			Description: stripe.String(displayName + " payment method"),
-			Metadata:    metadata,
-		},
-		Metadata: metadata,
-	}
-
-	session, err := c.stripe.V1CheckoutSessions.Create(ctx, sessionParams)
-	if err != nil {
-		return "", fmt.Errorf("create contract payment-method checkout session: %w", err)
+		return "", fmt.Errorf("create stripe checkout session: %w", err)
 	}
 	return session.URL, nil
 }
 
-type contractChangeInvoicePayment struct {
-	URL               string
-	Status            string
-	ProviderInvoiceID string
-	PaidAt            time.Time
+func (c *Client) CreatePortalSession(ctx context.Context, orgID OrgID, returnURL string) (string, error) {
+	customerID, err := c.lookupStripeCustomer(ctx, orgID)
+	if err != nil || customerID == "" {
+		return "", ErrNoStripeCustomer
+	}
+	if c.stripe == nil {
+		return "", ErrNoStripeCustomer
+	}
+	session, err := c.stripe.V1BillingPortalSessions.Create(ctx, &stripe.BillingPortalSessionCreateParams{Customer: stripe.String(customerID), ReturnURL: stripe.String(returnURL)})
+	if err != nil {
+		return "", fmt.Errorf("create stripe portal session: %w", err)
+	}
+	return session.URL, nil
 }
 
-func (c *Client) collectContractChangeInvoice(ctx context.Context, quote contractChangeQuote) (contractChangeInvoicePayment, error) {
-	customerID, err := c.ensureStripeCustomer(ctx, quote.OrgID)
+func (c *Client) ensureStripeCustomer(ctx context.Context, orgID OrgID) (string, error) {
+	if customerID, err := c.lookupStripeCustomer(ctx, orgID); err == nil && customerID != "" {
+		return customerID, nil
+	}
+	if c.stripe == nil {
+		return "", ErrNoStripeCustomer
+	}
+	var billingEmail string
+	_ = c.pg.QueryRow(ctx, `SELECT billing_email FROM orgs WHERE org_id = $1`, orgIDText(orgID)).Scan(&billingEmail)
+	params := &stripe.CustomerCreateParams{Metadata: map[string]string{"org_id": orgIDText(orgID)}}
+	if billingEmail != "" {
+		params.Email = stripe.String(billingEmail)
+	}
+	params.SetIdempotencyKey("forge-metal:customer:" + orgIDText(orgID))
+	customer, err := c.stripe.V1Customers.Create(ctx, params)
 	if err != nil {
-		return contractChangeInvoicePayment{}, err
+		return "", fmt.Errorf("create stripe customer: %w", err)
 	}
-	paymentMethodID, err := c.defaultStripePaymentMethod(ctx, quote.OrgID)
+	_, err = c.pg.Exec(ctx, `
+		INSERT INTO provider_bindings (binding_id, aggregate_type, aggregate_id, provider, provider_object_type, provider_object_id, provider_customer_id, sync_state)
+		VALUES ($1,'customer',$2,'stripe','customer',$3,$3,'synced')
+		ON CONFLICT (provider, provider_object_type, provider_object_id) DO UPDATE SET aggregate_id = EXCLUDED.aggregate_id, provider_customer_id = EXCLUDED.provider_customer_id, sync_state = 'synced'
+	`, textID("provider_binding", "stripe", "customer", customer.ID), orgIDText(orgID), customer.ID)
 	if err != nil {
-		return contractChangeInvoicePayment{}, err
+		return "", fmt.Errorf("persist stripe customer binding: %w", err)
 	}
-	metadata := map[string]string{
-		"org_id":            strconv.FormatUint(uint64(quote.OrgID), 10),
-		"product_id":        quote.ProductID,
-		"contract_id":       quote.ContractID,
-		"change_id":         quote.ChangeID,
-		"invoice_id":        quote.InvoiceID,
-		"from_plan_id":      quote.FromPlanID,
-		"target_plan_id":    quote.TargetPlanID,
-		"from_phase_id":     quote.FromPhaseID,
-		"to_phase_id":       quote.ToPhaseID,
-		"invoice_number":    quote.InvoiceNumber,
-		"price_delta_units": strconv.FormatUint(quote.PriceDeltaUnits, 10),
-	}
+	return customer.ID, nil
+}
 
-	// Do not set Stripe's invoice Number: dev resets can rewind our allocator
-	// while Stripe retains historical invoices in the sandbox account.
-	createParams := &stripe.InvoiceCreateParams{
-		AutoAdvance:      stripe.Bool(false),
-		CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
-		Currency:         stripe.String(quote.Currency),
-		Customer:         stripe.String(customerID),
-		CustomFields: []*stripe.InvoiceCreateCustomFieldParams{{
-			Name:  stripe.String("Forge Metal invoice"),
-			Value: stripe.String(quote.InvoiceNumber),
-		}},
-		DefaultPaymentMethod:        stripe.String(paymentMethodID),
-		Description:                 stripe.String("Forge Metal invoice " + quote.InvoiceNumber + " plan upgrade"),
-		Metadata:                    metadata,
-		PendingInvoiceItemsBehavior: stripe.String("exclude"),
+func (c *Client) lookupStripeCustomer(ctx context.Context, orgID OrgID) (string, error) {
+	var customerID string
+	err := c.pg.QueryRow(ctx, `
+		SELECT provider_object_id
+		FROM provider_bindings
+		WHERE aggregate_type = 'customer' AND aggregate_id = $1 AND provider = 'stripe' AND provider_object_type = 'customer'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, orgIDText(orgID)).Scan(&customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoStripeCustomer
 	}
-	createParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":invoice")
-	invoice, err := c.stripe.V1Invoices.Create(ctx, createParams)
 	if err != nil {
-		return contractChangeInvoicePayment{}, fmt.Errorf("create stripe contract change invoice: %w", err)
+		return "", fmt.Errorf("lookup stripe customer: %w", err)
 	}
-
-	itemParams := &stripe.InvoiceItemCreateParams{
-		Amount:      stripe.Int64(int64(quote.PriceDeltaCents)),
-		Currency:    stripe.String(quote.Currency),
-		Customer:    stripe.String(customerID),
-		Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID),
-		Invoice:     stripe.String(invoice.ID),
-		Metadata:    metadata,
-		Period: &stripe.InvoiceItemCreatePeriodParams{
-			Start: stripe.Int64(quote.EffectiveAt.Unix()),
-			End:   stripe.Int64(quote.Cycle.EndsAt.Unix()),
-		},
-	}
-	itemParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":item")
-	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
-		return contractChangeInvoicePayment{}, fmt.Errorf("create stripe contract change invoice item: %w", err)
-	}
-
-	finalizeParams := &stripe.InvoiceFinalizeInvoiceParams{
-		AutoAdvance: stripe.Bool(false),
-	}
-	finalizeParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":finalize")
-	finalized, err := c.stripe.V1Invoices.FinalizeInvoice(ctx, invoice.ID, finalizeParams)
-	if err != nil {
-		return contractChangeInvoicePayment{}, fmt.Errorf("finalize stripe contract change invoice: %w", err)
-	}
-
-	payParams := &stripe.InvoicePayParams{
-		PaymentMethod: stripe.String(paymentMethodID),
-		OffSession:    stripe.Bool(false),
-	}
-	payParams.SetIdempotencyKey(contractChangeStripeIdempotencyKey(quote.ChangeID) + ":pay")
-	paid, err := c.stripe.V1Invoices.Pay(ctx, finalized.ID, payParams)
-	if err != nil {
-		if updateErr := c.persistContractChangeStripeInvoice(ctx, quote, finalized, "issued", "pending"); updateErr != nil {
-			return contractChangeInvoicePayment{}, fmt.Errorf("pay stripe contract change invoice: %w; persist invoice: %v", err, updateErr)
-		}
-		return contractChangeInvoicePayment{}, fmt.Errorf("pay stripe contract change invoice: %w", err)
-	}
-
-	dbStatus, paymentStatus := billingInvoiceStatusFromStripeInvoice(paid)
-	if err := c.persistContractChangeStripeInvoice(ctx, quote, paid, dbStatus, paymentStatus); err != nil {
-		return contractChangeInvoicePayment{}, err
-	}
-	status := paymentStatus
-	if status == "" {
-		status = dbStatus
-	}
-	return contractChangeInvoicePayment{
-		URL:               paid.HostedInvoiceURL,
-		Status:            status,
-		ProviderInvoiceID: paid.ID,
-		PaidAt:            stripeInvoicePaidAt(paid, c.clock().UTC()),
-	}, nil
+	return customerID, nil
 }
 
 func (c *Client) defaultStripePaymentMethod(ctx context.Context, orgID OrgID) (string, error) {
 	var paymentMethodID string
-	err := c.pg.QueryRowContext(ctx, `
+	err := c.pg.QueryRow(ctx, `
 		SELECT provider_payment_method_id
 		FROM payment_methods
-		WHERE org_id = $1
-		  AND provider = 'stripe'
-		  AND status = 'active'
-		  AND is_default
-		  AND provider_payment_method_id <> ''
+		WHERE org_id = $1 AND provider = 'stripe' AND status = 'active' AND is_default
 		ORDER BY updated_at DESC, payment_method_id DESC
 		LIMIT 1
-	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&paymentMethodID)
-	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("%w: no default stripe payment method", ErrNoStripeCustomer)
+	`, orgIDText(orgID)).Scan(&paymentMethodID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoStripeCustomer
 	}
 	if err != nil {
 		return "", fmt.Errorf("lookup default stripe payment method: %w", err)
@@ -308,369 +127,351 @@ func (c *Client) defaultStripePaymentMethod(ctx context.Context, orgID OrgID) (s
 	return paymentMethodID, nil
 }
 
-func (c *Client) persistContractChangeStripeInvoice(ctx context.Context, quote contractChangeQuote, invoice *stripe.Invoice, dbStatus string, paymentStatus string) error {
-	if invoice == nil || invoice.ID == "" {
-		return nil
-	}
-	_, err := c.pg.ExecContext(ctx, `
-		UPDATE billing_invoices
-		SET status = $3,
-		    payment_status = $4,
-		    stripe_invoice_id = $5,
-		    stripe_hosted_invoice_url = $6,
-		    stripe_invoice_pdf_url = $7,
-		    updated_at = now()
-		WHERE invoice_id = $1
-		  AND change_id = $2
-	`, quote.InvoiceID, quote.ChangeID, dbStatus, paymentStatus, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF)
+func (c *Client) collectUpgradeInvoice(ctx context.Context, quote contractChangeQuote) (hostedURL string, providerInvoiceID string, paid bool, err error) {
+	customerID, err := c.ensureStripeCustomer(ctx, quote.OrgID)
 	if err != nil {
-		return fmt.Errorf("persist stripe invoice %s for contract change %s: %w", invoice.ID, quote.ChangeID, err)
+		return "", "", false, err
 	}
-	_, err = c.pg.ExecContext(ctx, `
-		UPDATE contract_changes
-		SET provider_invoice_id = $2,
-			    state = CASE WHEN state IN ('awaiting_payment', 'failed') THEN 'provider_pending' ELSE state END,
-		    updated_at = now()
-		WHERE change_id = $1
-		  AND provider_invoice_id = ''
-	`, quote.ChangeID, invoice.ID)
+	paymentMethodID, err := c.defaultStripePaymentMethod(ctx, quote.OrgID)
 	if err != nil {
-		return fmt.Errorf("persist stripe invoice on contract change %s: %w", quote.ChangeID, err)
+		return "", "", false, err
 	}
-	return insertBillingEvent(ctx, c.pg, contractChangePaymentStartedEvent(quote, invoice.ID, invoice.HostedInvoiceURL))
+	metadata := map[string]string{"org_id": orgIDText(quote.OrgID), "product_id": quote.ProductID, "contract_id": quote.ContractID, "change_id": quote.ChangeID, "invoice_id": invoiceID(quote.ChangeID), "from_plan_id": quote.FromPlanID, "target_plan_id": quote.TargetPlanID}
+	createParams := &stripe.InvoiceCreateParams{AutoAdvance: stripe.Bool(false), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), DefaultPaymentMethod: stripe.String(paymentMethodID), Description: stripe.String("Forge Metal plan upgrade"), Metadata: metadata, PendingInvoiceItemsBehavior: stripe.String("exclude")}
+	createParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":invoice")
+	invoice, err := c.stripe.V1Invoices.Create(ctx, createParams)
+	if err != nil {
+		return "", "", false, fmt.Errorf("create stripe upgrade invoice: %w", err)
+	}
+	itemParams := &stripe.InvoiceItemCreateParams{Amount: stripe.Int64(int64(quote.PriceDeltaCents)), Currency: stripe.String("usd"), Customer: stripe.String(customerID), Description: stripe.String("Prorated upgrade from " + quote.FromPlanID + " to " + quote.TargetPlanID), Invoice: stripe.String(invoice.ID), Metadata: metadata, Period: &stripe.InvoiceItemCreatePeriodParams{Start: stripe.Int64(quote.EffectiveAt.Unix()), End: stripe.Int64(quote.CycleEnd.Unix())}}
+	itemParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":item")
+	if _, err := c.stripe.V1InvoiceItems.Create(ctx, itemParams); err != nil {
+		return "", invoice.ID, false, fmt.Errorf("create stripe upgrade invoice item: %w", err)
+	}
+	finalizeParams := &stripe.InvoiceFinalizeInvoiceParams{AutoAdvance: stripe.Bool(false)}
+	finalizeParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":finalize")
+	finalized, err := c.stripe.V1Invoices.FinalizeInvoice(ctx, invoice.ID, finalizeParams)
+	if err != nil {
+		return "", invoice.ID, false, fmt.Errorf("finalize stripe upgrade invoice: %w", err)
+	}
+	payParams := &stripe.InvoicePayParams{PaymentMethod: stripe.String(paymentMethodID), OffSession: stripe.Bool(false)}
+	payParams.SetIdempotencyKey("forge-metal:upgrade:" + quote.ChangeID + ":pay")
+	paidInvoice, err := c.stripe.V1Invoices.Pay(ctx, finalized.ID, payParams)
+	if err != nil {
+		_ = c.updateUpgradeInvoiceProvider(ctx, quote, finalized.ID, finalized.HostedInvoiceURL, finalized.InvoicePDF, "issued", "pending")
+		return finalized.HostedInvoiceURL, finalized.ID, false, fmt.Errorf("pay stripe upgrade invoice: %w", err)
+	}
+	paymentStatus := "pending"
+	dbStatus := "issued"
+	if paidInvoice.Status == stripe.InvoiceStatusPaid {
+		paymentStatus = "paid"
+		dbStatus = "paid"
+	}
+	if err := c.updateUpgradeInvoiceProvider(ctx, quote, paidInvoice.ID, paidInvoice.HostedInvoiceURL, paidInvoice.InvoicePDF, dbStatus, paymentStatus); err != nil {
+		return paidInvoice.HostedInvoiceURL, paidInvoice.ID, false, err
+	}
+	return paidInvoice.HostedInvoiceURL, paidInvoice.ID, paymentStatus == "paid", nil
 }
 
-func billingInvoiceStatusFromStripeInvoice(invoice *stripe.Invoice) (string, string) {
-	if invoice == nil {
-		return "issued", "pending"
-	}
-	switch invoice.Status {
-	case stripe.InvoiceStatusPaid:
-		return "paid", "paid"
-	case stripe.InvoiceStatusDraft:
-		return "draft", "pending"
-	case stripe.InvoiceStatusVoid, stripe.InvoiceStatusUncollectible:
-		return "payment_failed", "failed"
-	default:
-		return "issued", "pending"
-	}
-}
-
-func stripeInvoicePaidAt(invoice *stripe.Invoice, fallback time.Time) time.Time {
-	if invoice != nil && invoice.StatusTransitions != nil && invoice.StatusTransitions.PaidAt > 0 {
-		return time.Unix(invoice.StatusTransitions.PaidAt, 0).UTC()
-	}
-	return fallback.UTC()
-}
-
-func (c *Client) ensureStripeCustomer(ctx context.Context, orgID OrgID) (string, error) {
-	orgIDText := strconv.FormatUint(uint64(orgID), 10)
-	var stripeCustomerID sql.NullString
-	var billingEmail sql.NullString
-	if err := c.pg.QueryRowContext(ctx, `
-		SELECT stripe_customer_id, billing_email FROM orgs WHERE org_id = $1
-	`, orgIDText).Scan(&stripeCustomerID, &billingEmail); err != nil {
-		return "", fmt.Errorf("lookup org stripe customer: %w", err)
-	}
-	if stripeCustomerID.Valid && stripeCustomerID.String != "" {
-		return stripeCustomerID.String, nil
-	}
-
-	params := &stripe.CustomerCreateParams{
-		Metadata: map[string]string{"org_id": orgIDText},
-	}
-	params.SetIdempotencyKey("forge-metal:stripe-customer:" + orgIDText)
-	if billingEmail.Valid && billingEmail.String != "" {
-		params.Email = stripe.String(billingEmail.String)
-	}
-	customer, err := c.stripe.V1Customers.Create(ctx, params)
+func (c *Client) updateUpgradeInvoiceProvider(ctx context.Context, quote contractChangeQuote, providerInvoiceID, hostedURL, pdfURL, status, paymentStatus string) error {
+	_, err := c.pg.Exec(ctx, `UPDATE billing_invoices SET stripe_invoice_id = NULLIF($2,''), stripe_hosted_invoice_url = $3, stripe_invoice_pdf_url = $4, status = $5, payment_status = $6 WHERE invoice_id = $1`, invoiceID(quote.ChangeID), providerInvoiceID, hostedURL, pdfURL, status, paymentStatus)
 	if err != nil {
-		return "", fmt.Errorf("create stripe customer: %w", err)
+		return fmt.Errorf("update upgrade invoice provider state: %w", err)
 	}
-	if _, err := c.pg.ExecContext(ctx, `
-		UPDATE orgs
-		SET stripe_customer_id = $2,
-		    updated_at = now()
-		WHERE org_id = $1
-	`, orgIDText, customer.ID); err != nil {
-		return "", fmt.Errorf("persist stripe customer: %w", err)
-	}
-	return customer.ID, nil
-}
-
-func (c *Client) CreatePortalSession(ctx context.Context, orgID OrgID, returnURL string) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-
-	orgIDText := strconv.FormatUint(uint64(orgID), 10)
-	var stripeCustomerID sql.NullString
-	_ = c.pg.QueryRowContext(ctx, `
-		SELECT stripe_customer_id FROM orgs WHERE org_id = $1
-	`, orgIDText).Scan(&stripeCustomerID)
-	if !stripeCustomerID.Valid || stripeCustomerID.String == "" {
-		return "", ErrNoStripeCustomer
-	}
-
-	session, err := c.stripe.V1BillingPortalSessions.Create(ctx, &stripe.BillingPortalSessionCreateParams{
-		Customer:  stripe.String(stripeCustomerID.String),
-		ReturnURL: stripe.String(returnURL),
-	})
-	if err != nil {
-		return "", fmt.Errorf("create portal session: %w", err)
-	}
-	return session.URL, nil
+	_, err = c.pg.Exec(ctx, `UPDATE contract_changes SET provider_invoice_id = NULLIF($2,''), state = CASE WHEN $3 = 'paid' THEN state ELSE 'provider_pending' END WHERE change_id = $1`, quote.ChangeID, providerInvoiceID, paymentStatus)
+	return err
 }
 
 func (c *Client) HandleStripeWebhook(ctx context.Context, payload []byte, signatureHeader string, webhookSecret string) error {
-	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.stripe.webhook.receive")
-	defer span.End()
-
 	event, err := webhook.ConstructEvent(payload, signatureHeader, webhookSecret)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("construct stripe webhook event: %w", err)
 	}
-	span.SetAttributes(
-		attribute.String("stripe.event_id", event.ID),
-		attribute.String("stripe.event_type", string(event.Type)),
-	)
-
-	_, err = c.recordStripeProviderEvent(ctx, event, payload)
+	eventID, err := c.recordStripeProviderEvent(ctx, event, payload)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	if c.runtime != nil {
+		return nil
+	}
+	_, err = c.ApplyProviderEvent(ctx, eventID)
+	return err
+}
+
+func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Event, payload []byte) (string, error) {
+	metadata := stripeEventMetadata(event)
+	eventID := textID("provider_event", "stripe", event.ID)
+	objectID := stripeEventObjectID(event)
+	occurred := time.Unix(event.Created, 0).UTC()
+	if event.Created == 0 {
+		occurred = time.Now().UTC()
+	}
+	err := c.WithTx(ctx, "billing.provider_event.record", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO billing_provider_events (event_id, provider_event_id, provider, event_type, provider_object_type, provider_object_id, provider_customer_id, provider_invoice_id, provider_payment_intent_id, contract_id, change_id, invoice_id, org_id, product_id, provider_created_at, livemode, payload, state, idempotency_key)
+			VALUES ($1,$2,'stripe',$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),$14,$15,$16,'received',$1)
+			ON CONFLICT (provider, provider_event_id) DO UPDATE
+			SET payload = EXCLUDED.payload,
+			    product_id = COALESCE(billing_provider_events.product_id, EXCLUDED.product_id),
+			    state = CASE WHEN billing_provider_events.state IN ('applied','ignored','dead_letter') THEN billing_provider_events.state ELSE 'received' END,
+			    updated_at = now()
+		`, eventID, event.ID, string(event.Type), stripeProviderObjectType(string(event.Type)), objectID, metadata["customer_id"], metadata["provider_invoice_id"], metadata["provider_payment_intent_id"], metadata["contract_id"], metadata["change_id"], metadata["invoice_id"], metadata["org_id"], metadata["product_id"], occurred, event.Livemode, payload)
+		if err != nil {
+			return fmt.Errorf("insert stripe provider event: %w", err)
+		}
+		orgID, _ := parseOrgID(metadata["org_id"])
+		if orgID == 0 {
+			return nil
+		}
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "provider_event_received", AggregateType: "provider_event", AggregateID: eventID, OrgID: orgID, ProductID: metadata["product_id"], OccurredAt: occurred, Payload: map[string]any{"provider_event_id": event.ID, "provider_event_type": string(event.Type), "provider_event_id_internal": eventID, "contract_id": metadata["contract_id"], "change_id": metadata["change_id"], "invoice_id": metadata["invoice_id"]}}); err != nil {
+			return err
+		}
+		if c.runtime != nil {
+			return c.runtime.EnqueueProviderEventApplyTx(ctx, tx, eventID)
+		}
+		return nil
+	})
+	return eventID, err
+}
+
+func (c *Client) ApplyPendingProviderEvents(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := c.pg.Query(ctx, `SELECT event_id FROM billing_provider_events WHERE provider = 'stripe' AND state IN ('received','queued','failed') AND COALESCE(next_attempt_at, received_at) <= now() ORDER BY received_at LIMIT $1`, limit)
+	if err != nil {
+		return 0, fmt.Errorf("query pending provider events: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	applied := 0
+	for _, id := range ids {
+		ok, err := c.ApplyProviderEvent(ctx, id)
+		if err != nil {
+			return applied, err
+		}
+		if ok {
+			applied++
+		}
+	}
+	return applied, rows.Err()
+}
+
+func (c *Client) ApplyProviderEvent(ctx context.Context, eventID string) (bool, error) {
+	var payload []byte
+	var eventType string
+	err := c.pg.QueryRow(ctx, `
+		UPDATE billing_provider_events SET state = 'applying', attempts = attempts + 1, next_attempt_at = NULL, last_error = '', updated_at = now()
+		WHERE event_id = $1 AND state IN ('received','queued','failed')
+		RETURNING event_type, payload
+	`, eventID).Scan(&eventType, &payload)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("claim provider event: %w", err)
+	}
+	var event stripe.Event
+	if err := json.Unmarshal(payload, &event); err != nil {
+		_ = c.failProviderEvent(ctx, eventID, err)
+		return true, nil
+	}
+	var applyErr error
+	switch string(event.Type) {
+	case "setup_intent.succeeded":
+		applyErr = c.handleSetupIntentSucceeded(ctx, event)
+	case "payment_intent.succeeded":
+		applyErr = c.handlePaymentIntentSucceeded(ctx, event)
+	case "invoice.paid":
+		applyErr = c.handleInvoicePaid(ctx, event)
+	case "invoice.payment_failed":
+		applyErr = c.handleInvoicePaymentFailed(ctx, event)
+	case "checkout.session.completed":
+		applyErr = nil
+	default:
+		return true, c.markProviderEventFinal(ctx, eventID, "ignored")
+	}
+	if applyErr != nil {
+		_ = c.failProviderEvent(ctx, eventID, applyErr)
+		return true, nil
+	}
+	return true, c.markProviderEventFinal(ctx, eventID, "applied")
+}
+
+func (c *Client) handleSetupIntentSucceeded(ctx context.Context, event stripe.Event) error {
+	var setup stripe.SetupIntent
+	if err := json.Unmarshal(event.Data.Raw, &setup); err != nil {
+		return fmt.Errorf("decode setup intent: %w", err)
+	}
+	metadata := setup.Metadata
+	orgID, err := parseOrgID(metadata["org_id"])
+	if err != nil {
+		return err
+	}
+	productID, planID, contractID, phaseIDValue := metadata["product_id"], metadata["plan_id"], metadata["contract_id"], metadata["phase_id"]
+	if setup.PaymentMethod == nil || setup.PaymentMethod.ID == "" {
+		return fmt.Errorf("setup intent %s has no payment method", setup.ID)
+	}
+	customerID := ""
+	if setup.Customer != nil {
+		customerID = setup.Customer.ID
+	}
+	paymentMethodID := setup.PaymentMethod.ID
+	brand, last4 := "", ""
+	month, year := 0, 0
+	if setup.PaymentMethod.Card != nil {
+		brand = string(setup.PaymentMethod.Card.Brand)
+		last4 = setup.PaymentMethod.Card.Last4
+		month = int(setup.PaymentMethod.Card.ExpMonth)
+		year = int(setup.PaymentMethod.Card.ExpYear)
+	}
+	now := time.Now().UTC()
+	err = c.WithTx(ctx, "billing.stripe.setup_intent.apply", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		_, _ = tx.Exec(ctx, `UPDATE payment_methods SET is_default = false WHERE org_id = $1 AND provider = 'stripe'`, orgIDText(orgID))
+		_, err := tx.Exec(ctx, `
+			INSERT INTO payment_methods (payment_method_id, org_id, provider, provider_customer_id, provider_payment_method_id, setup_intent_id, status, is_default, card_brand, card_last4, expires_month, expires_year, off_session_authorized_at)
+			VALUES ($1,$2,'stripe',$3,$4,$5,'active',true,$6,$7,$8,$9,$10)
+			ON CONFLICT (provider, provider_payment_method_id) DO UPDATE SET status = 'active', is_default = true, setup_intent_id = EXCLUDED.setup_intent_id, provider_customer_id = EXCLUDED.provider_customer_id, card_brand = EXCLUDED.card_brand, card_last4 = EXCLUDED.card_last4, expires_month = EXCLUDED.expires_month, expires_year = EXCLUDED.expires_year, off_session_authorized_at = EXCLUDED.off_session_authorized_at
+		`, textID("payment_method", "stripe", paymentMethodID), orgIDText(orgID), customerID, paymentMethodID, setup.ID, brand, last4, nullableInt(month), nullableInt(year), now)
+		if err != nil {
+			return fmt.Errorf("upsert payment method: %w", err)
+		}
+		_, _ = tx.Exec(ctx, `INSERT INTO provider_bindings (binding_id, aggregate_type, aggregate_id, provider, provider_object_type, provider_object_id, provider_customer_id, sync_state) VALUES ($1,'customer',$2,'stripe','customer',$3,$3,'synced') ON CONFLICT (provider, provider_object_type, provider_object_id) DO NOTHING`, textID("provider_binding", "stripe", "customer", customerID), orgIDText(orgID), customerID)
+		return appendEvent(ctx, tx, q, eventFact{EventType: "payment_method_activated", AggregateType: "payment_method", AggregateID: paymentMethodID, OrgID: orgID, ProductID: productID, OccurredAt: now, Payload: map[string]any{"provider": "stripe", "payment_method_id": paymentMethodID, "contract_id": contractID}})
+	})
+	if err != nil {
+		return err
+	}
+	if planID != "" && contractID != "" {
+		if phaseIDValue == "" {
+			phaseIDValue = phaseID(contractID, planID, now)
+		}
+		if err := c.activateCatalogContract(ctx, orgID, productID, planID, contractID, phaseIDValue, now, now); err != nil {
+			return err
+		}
+		return c.EnsureCurrentEntitlements(ctx, orgID, productID)
 	}
 	return nil
 }
 
-func (c *Client) ApplyPendingProviderEvents(ctx context.Context, limit int) (int, error) {
-	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.provider_event.apply_pending")
-	defer span.End()
-
-	if limit <= 0 {
-		limit = 100
+func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.Event) error {
+	var intent stripe.PaymentIntent
+	if err := json.Unmarshal(event.Data.Raw, &intent); err != nil {
+		return fmt.Errorf("decode payment intent: %w", err)
 	}
-	span.SetAttributes(attribute.Int("billing.provider_event.limit", limit))
-
-	rows, err := c.pg.QueryContext(ctx, `
-		SELECT event_id
-		FROM billing_provider_events
-		WHERE provider = 'stripe'
-		  AND state IN ('received', 'queued', 'failed')
-		  AND COALESCE(next_attempt_at, received_at) <= now()
-		ORDER BY COALESCE(next_attempt_at, received_at), event_id
-		LIMIT $1
-	`, limit)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return 0, fmt.Errorf("query pending stripe provider events: %w", err)
+	orgID, err := parseOrgID(intent.Metadata["org_id"])
+	if err != nil || orgID == 0 {
+		return nil
 	}
-	defer rows.Close()
-
-	var eventIDs []string
-	for rows.Next() {
-		var eventID string
-		if err := rows.Scan(&eventID); err != nil {
-			return 0, fmt.Errorf("scan pending stripe provider event: %w", err)
-		}
-		eventIDs = append(eventIDs, eventID)
+	productID := intent.Metadata["product_id"]
+	ledgerUnits, _ := strconv.ParseUint(intent.Metadata["ledger_units"], 10, 64)
+	if productID == "" || ledgerUnits == 0 {
+		return nil
 	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate pending stripe provider events: %w", err)
-	}
-
-	applied := 0
-	for _, eventID := range eventIDs {
-		didApply, err := c.ApplyProviderEvent(ctx, eventID)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return applied, err
-		}
-		if didApply {
-			applied++
-		}
-	}
-	span.SetAttributes(attribute.Int("billing.provider_event.applied_count", applied))
-	return applied, nil
+	_, err = c.DepositCredits(ctx, GrantBalance{OrgID: orgID, ScopeType: "product", ScopeProductID: productID, Source: "purchase", SourceReferenceID: "stripe_payment_intent:" + intent.ID, Amount: ledgerUnits, StartsAt: time.Now().UTC()})
+	return err
 }
 
-func (c *Client) ApplyProviderEvent(ctx context.Context, eventID string) (bool, error) {
-	ctx, span := stripeProviderEventTracer.Start(ctx, "billing.provider_event.apply")
-	defer span.End()
-	span.SetAttributes(attribute.String("billing.provider_event.event_id", eventID))
-
-	claim, ok, err := c.claimStripeProviderEvent(ctx, eventID)
-	if err != nil || !ok {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		span.SetAttributes(attribute.Bool("billing.provider_event.applied", false))
-		return false, err
+func (c *Client) handleInvoicePaid(ctx context.Context, event stripe.Event) error {
+	var invoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+		return fmt.Errorf("decode invoice paid: %w", err)
 	}
-	span.SetAttributes(
-		attribute.String("billing.provider_event.event_type", claim.EventType),
-		attribute.Int("billing.provider_event.attempts", claim.Attempts),
-	)
-
-	var event stripe.Event
-	if err := json.Unmarshal(claim.Payload, &event); err != nil {
-		if markErr := c.failStripeProviderEvent(ctx, claim, fmt.Errorf("decode stripe provider event: %w", err)); markErr != nil {
-			span.RecordError(markErr)
-			span.SetStatus(codes.Error, markErr.Error())
-			return true, markErr
-		}
-		span.RecordError(err)
-		return true, nil
+	changeIDValue := invoice.Metadata["change_id"]
+	if changeIDValue == "" {
+		return nil
 	}
-
-	var handleErr error
-	finalState := "applied"
-	switch event.Type {
-	case "checkout.session.completed":
-		handleErr = c.handleCheckoutSessionCompleted(ctx, claim.EventID, event)
-	case "setup_intent.succeeded":
-		handleErr = c.handleSetupIntentSucceeded(ctx, claim.EventID, event)
-	case "payment_intent.succeeded":
-		handleErr = c.handlePaymentIntentSucceeded(ctx, event)
-	case "invoice.paid":
-		handleErr = c.handleInvoicePaid(ctx, claim.EventID, event)
-	case "invoice.payment_failed":
-		handleErr = c.handleInvoicePaymentFailed(ctx, claim.EventID, event)
-	default:
-		finalState = "ignored"
+	quote, err := c.loadContractChangeQuote(ctx, changeIDValue)
+	if err != nil {
+		return err
 	}
-	if handleErr != nil {
-		if markErr := c.failStripeProviderEvent(ctx, claim, handleErr); markErr != nil {
-			span.RecordError(markErr)
-			span.SetStatus(codes.Error, markErr.Error())
-			return true, fmt.Errorf("apply stripe provider event %s: %w; mark failure: %v", claim.EventID, handleErr, markErr)
-		}
-		span.RecordError(handleErr)
-		span.SetAttributes(attribute.String("billing.provider_event.state", "failed"))
-		return true, nil
-	}
-	if err := c.markStripeProviderEventFinal(ctx, claim.EventID, finalState); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return true, err
-	}
-	span.SetAttributes(
-		attribute.Bool("billing.provider_event.applied", finalState == "applied"),
-		attribute.String("billing.provider_event.state", finalState),
-	)
-	return true, nil
+	return c.applyPaidUpgrade(ctx, quote, invoice.ID)
 }
 
-func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Event, payload []byte) (string, error) {
-	if event.ID == "" {
-		return "", fmt.Errorf("stripe event id is required")
+func (c *Client) handleInvoicePaymentFailed(ctx context.Context, event stripe.Event) error {
+	var invoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+		return fmt.Errorf("decode invoice payment failed: %w", err)
 	}
-	eventID := deterministicTextID("stripe-provider-event", event.ID)
-	annotation := stripeRawProviderEventAnnotation(event)
-	tx, err := c.pg.BeginTx(ctx, nil)
-	if err != nil {
-		return "", fmt.Errorf("begin stripe provider event record: %w", err)
+	changeIDValue := invoice.Metadata["change_id"]
+	if changeIDValue == "" {
+		return nil
 	}
-	defer tx.Rollback()
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO billing_provider_events (
-			event_id, provider, provider_event_id, event_type, state, livemode,
-			provider_created_at, next_attempt_at, org_id, product_id, contract_id,
-			change_id, invoice_id, provider_customer_id, provider_invoice_id, provider_payment_intent_id,
-			provider_object_type, provider_object_id, payload
-		)
-		VALUES ($1, 'stripe', $2, $3, 'queued', $4, $5, $6,
-		        $7, $8, $9,
-		        $10, $11, $12, $13, $14,
-		        $15, $16, $17::jsonb)
-		ON CONFLICT (provider, provider_event_id) DO UPDATE
-		SET event_type = EXCLUDED.event_type,
-		    livemode = EXCLUDED.livemode,
-		    provider_created_at = EXCLUDED.provider_created_at,
-		    payload = EXCLUDED.payload,
-		    state = CASE
-		        WHEN billing_provider_events.state IN ('applying', 'applied', 'ignored', 'dead_letter')
-		            THEN billing_provider_events.state
-		        ELSE 'queued'
-		    END,
-		    next_attempt_at = CASE
-		        WHEN billing_provider_events.state IN ('applying', 'applied', 'ignored', 'dead_letter')
-		            THEN billing_provider_events.next_attempt_at
-		        ELSE EXCLUDED.next_attempt_at
-		    END,
-		    org_id = CASE WHEN billing_provider_events.org_id = '' THEN EXCLUDED.org_id ELSE billing_provider_events.org_id END,
-		    product_id = CASE WHEN billing_provider_events.product_id = '' THEN EXCLUDED.product_id ELSE billing_provider_events.product_id END,
-		    contract_id = CASE WHEN billing_provider_events.contract_id = '' THEN EXCLUDED.contract_id ELSE billing_provider_events.contract_id END,
-		    change_id = CASE WHEN billing_provider_events.change_id = '' THEN EXCLUDED.change_id ELSE billing_provider_events.change_id END,
-		    invoice_id = CASE WHEN billing_provider_events.invoice_id = '' THEN EXCLUDED.invoice_id ELSE billing_provider_events.invoice_id END,
-		    provider_customer_id = CASE WHEN billing_provider_events.provider_customer_id = '' THEN EXCLUDED.provider_customer_id ELSE billing_provider_events.provider_customer_id END,
-		    provider_invoice_id = CASE WHEN billing_provider_events.provider_invoice_id = '' THEN EXCLUDED.provider_invoice_id ELSE billing_provider_events.provider_invoice_id END,
-		    provider_payment_intent_id = CASE WHEN billing_provider_events.provider_payment_intent_id = '' THEN EXCLUDED.provider_payment_intent_id ELSE billing_provider_events.provider_payment_intent_id END,
-		    provider_object_type = CASE WHEN billing_provider_events.provider_object_type = '' THEN EXCLUDED.provider_object_type ELSE billing_provider_events.provider_object_type END,
-		    provider_object_id = CASE WHEN billing_provider_events.provider_object_id = '' THEN EXCLUDED.provider_object_id ELSE billing_provider_events.provider_object_id END,
-		    updated_at = now()
-	`, eventID, event.ID, string(event.Type), event.Livemode, time.Unix(event.Created, 0).UTC(), c.clock().UTC(),
-		annotation.OrgID, annotation.ProductID, annotation.ContractID,
-		annotation.ChangeID, annotation.InvoiceID, annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
-		annotation.ObjectType, annotation.ObjectID, string(payload))
-	if err != nil {
-		return "", fmt.Errorf("record stripe provider event %s: %w", event.ID, err)
-	}
-	if annotation.OrgID != "" {
-		if err := insertBillingEventTx(ctx, tx, providerEventReceivedEvent(eventID, event, annotation)); err != nil {
-			return "", err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("commit stripe provider event record: %w", err)
-	}
-	return eventID, nil
+	_, err := c.pg.Exec(ctx, `UPDATE billing_invoices SET status = 'payment_failed', payment_status = 'failed', stripe_invoice_id = $2, stripe_hosted_invoice_url = $3 WHERE change_id = $1`, changeIDValue, invoice.ID, invoice.HostedInvoiceURL)
+	return err
 }
 
-func stripeRawProviderEventAnnotation(event stripe.Event) providerEventAnnotation {
+func (c *Client) loadContractChangeQuote(ctx context.Context, changeIDValue string) (contractChangeQuote, error) {
+	var payload []byte
+	err := c.pg.QueryRow(ctx, `SELECT payload FROM contract_changes WHERE change_id = $1`, changeIDValue).Scan(&payload)
+	if err != nil {
+		return contractChangeQuote{}, fmt.Errorf("load contract change payload: %w", err)
+	}
+	var quote contractChangeQuote
+	if err := json.Unmarshal(payload, &quote); err != nil {
+		return contractChangeQuote{}, fmt.Errorf("decode contract change payload: %w", err)
+	}
+	return quote, nil
+}
+
+func (c *Client) markProviderEventFinal(ctx context.Context, eventID, state string) error {
+	var providerEventID, eventType, orgIDTextValue, productID, contractID, changeIDValue, invoiceIDValue string
+	err := c.pg.QueryRow(ctx, `
+		UPDATE billing_provider_events SET state = $2, applied_at = now(), last_error = '', updated_at = now()
+		WHERE event_id = $1 AND state = 'applying'
+		RETURNING provider_event_id, event_type, COALESCE(org_id,''), COALESCE(product_id,''), COALESCE(contract_id,''), COALESCE(change_id,''), COALESCE(invoice_id,'')
+	`, eventID, state).Scan(&providerEventID, &eventType, &orgIDTextValue, &productID, &contractID, &changeIDValue, &invoiceIDValue)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("mark provider event final: %w", err)
+	}
+	orgID, _ := parseOrgID(orgIDTextValue)
+	if orgID == 0 {
+		return nil
+	}
+	return c.WithTx(ctx, "billing.provider_event.final_event", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		return appendEvent(ctx, tx, q, eventFact{EventType: "provider_event_" + state, AggregateType: "provider_event", AggregateID: eventID, OrgID: orgID, ProductID: productID, OccurredAt: time.Now().UTC(), Payload: map[string]any{"provider_event_id": eventID, "provider_stripe_event_id": providerEventID, "provider_event_type": eventType, "contract_id": contractID, "change_id": changeIDValue, "invoice_id": invoiceIDValue}})
+	})
+}
+
+func (c *Client) failProviderEvent(ctx context.Context, eventID string, cause error) error {
+	_, err := c.pg.Exec(ctx, `UPDATE billing_provider_events SET state = CASE WHEN attempts >= 25 THEN 'dead_letter' ELSE 'failed' END, last_error = $2, next_attempt_at = now() + interval '30 seconds', updated_at = now() WHERE event_id = $1 AND state = 'applying'`, eventID, cause.Error())
+	return err
+}
+
+func stripeEventMetadata(event stripe.Event) map[string]string {
 	object := map[string]any{}
-	if event.Data != nil && len(event.Data.Raw) > 0 {
-		_ = json.Unmarshal(event.Data.Raw, &object)
+	_ = json.Unmarshal(event.Data.Raw, &object)
+	metadata := stringMap(object["metadata"])
+	metadata["customer_id"] = stringValue(object["customer"])
+	metadata["provider_invoice_id"] = ""
+	metadata["provider_payment_intent_id"] = ""
+	switch {
+	case strings.HasPrefix(string(event.Type), "invoice."):
+		metadata["provider_invoice_id"] = stringValue(object["id"])
+		metadata["provider_payment_intent_id"] = stringValue(object["payment_intent"])
+	case strings.HasPrefix(string(event.Type), "payment_intent."):
+		metadata["provider_payment_intent_id"] = stringValue(object["id"])
 	}
-	metadata := stringMapFromAny(object["metadata"])
-	annotation := providerEventAnnotation{
-		OrgID:            metadata["org_id"],
-		ProductID:        metadata["product_id"],
-		ContractID:       metadata["contract_id"],
-		ChangeID:         metadata["change_id"],
-		InvoiceID:        metadata["invoice_id"],
-		ProviderCustomer: stringValue(object["customer"]),
-		ObjectType:       providerObjectTypeFromStripeEventType(string(event.Type)),
-		ObjectID:         stringValue(object["id"]),
-		Normalized: map[string]string{
-			"stripe_event_id":   event.ID,
-			"stripe_event_type": string(event.Type),
-			"object_id":         stringValue(object["id"]),
-		},
-	}
-	switch string(event.Type) {
-	case "invoice.finalized", "invoice.paid", "invoice.payment_failed":
-		annotation.ProviderInvoiceID = stringValue(object["id"])
-		annotation.ProviderPaymentIntentID = stringValue(object["payment_intent"])
-	case "payment_intent.succeeded", "payment_intent.payment_failed":
-		annotation.ProviderPaymentIntentID = stringValue(object["id"])
-	case "checkout.session.completed":
-		annotation.ProviderPaymentIntentID = stringValue(object["payment_intent"])
-	}
-	return annotation
+	return metadata
 }
 
-func providerObjectTypeFromStripeEventType(eventType string) string {
-	if eventType == "" {
-		return ""
-	}
+func stripeEventObjectID(event stripe.Event) string {
+	object := map[string]any{}
+	_ = json.Unmarshal(event.Data.Raw, &object)
+	return stringValue(object["id"])
+}
+
+func stripeProviderObjectType(eventType string) string {
 	parts := strings.Split(eventType, ".")
 	if len(parts) <= 1 {
 		return eventType
@@ -678,20 +479,11 @@ func providerObjectTypeFromStripeEventType(eventType string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-func stringMapFromAny(value any) map[string]string {
+func stringMap(value any) map[string]string {
 	out := map[string]string{}
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, raw := range typed {
-			if str := stringValue(raw); str != "" {
-				out[key] = str
-			}
-		}
-	case map[string]string:
-		for key, str := range typed {
-			if str != "" {
-				out[key] = str
-			}
+	if m, ok := value.(map[string]any); ok {
+		for key, raw := range m {
+			out[key] = stringValue(raw)
 		}
 	}
 	return out
@@ -703,693 +495,29 @@ func stringValue(value any) string {
 		return ""
 	case string:
 		return typed
-	case json.Number:
-		return typed.String()
-	case float64:
-		return strconv.FormatFloat(typed, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(typed)
 	case map[string]any:
 		return stringValue(typed["id"])
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
 	default:
 		return ""
 	}
 }
 
-func providerEventReceivedEvent(eventID string, event stripe.Event, annotation providerEventAnnotation) billingEventFact {
-	occurredAt := time.Now().UTC()
-	if event.Created > 0 {
-		occurredAt = time.Unix(event.Created, 0).UTC()
+func parseOrgID(value string) (OrgID, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
 	}
-	payload, _ := json.Marshal(map[string]string{
-		"provider":                   "stripe",
-		"event_id":                   eventID,
-		"provider_event_id":          event.ID,
-		"provider_event_type":        string(event.Type),
-		"org_id":                     annotation.OrgID,
-		"product_id":                 annotation.ProductID,
-		"contract_id":                annotation.ContractID,
-		"change_id":                  annotation.ChangeID,
-		"invoice_id":                 annotation.InvoiceID,
-		"provider_customer_id":       annotation.ProviderCustomer,
-		"provider_invoice_id":        annotation.ProviderInvoiceID,
-		"provider_payment_intent_id": annotation.ProviderPaymentIntentID,
-		"provider_object_type":       annotation.ObjectType,
-		"provider_object_id":         annotation.ObjectID,
-		"occurred_at":                occurredAt.Format(time.RFC3339Nano),
-	})
-	return billingEventFact{
-		EventID:       deterministicTextID("billing-event", "provider_event_received", eventID),
-		EventType:     "provider_event_received",
-		EventVersion:  billingEventCurrentVersion,
-		AggregateType: "provider_event",
-		AggregateID:   eventID,
-		OrgID:         annotation.OrgID,
-		ProductID:     annotation.ProductID,
-		OccurredAt:    occurredAt,
-		Payload:       payload,
-	}
-}
-
-func providerEventAppliedEvent(eventID string, providerEventID string, providerEventType string, state string, annotation providerEventAnnotation, occurredAt time.Time) billingEventFact {
-	occurredAt = occurredAt.UTC()
-	eventType := "provider_event_applied"
-	payload, _ := json.Marshal(map[string]string{
-		"provider":                   "stripe",
-		"event_id":                   eventID,
-		"provider_event_id":          providerEventID,
-		"provider_event_type":        providerEventType,
-		"provider_event_state":       state,
-		"org_id":                     annotation.OrgID,
-		"product_id":                 annotation.ProductID,
-		"contract_id":                annotation.ContractID,
-		"change_id":                  annotation.ChangeID,
-		"invoice_id":                 annotation.InvoiceID,
-		"provider_customer_id":       annotation.ProviderCustomer,
-		"provider_invoice_id":        annotation.ProviderInvoiceID,
-		"provider_payment_intent_id": annotation.ProviderPaymentIntentID,
-		"provider_object_type":       annotation.ObjectType,
-		"provider_object_id":         annotation.ObjectID,
-		"occurred_at":                occurredAt.Format(time.RFC3339Nano),
-	})
-	return billingEventFact{
-		EventID:       deterministicTextID("billing-event", eventType, eventID, state),
-		EventType:     eventType,
-		EventVersion:  billingEventCurrentVersion,
-		AggregateType: "provider_event",
-		AggregateID:   eventID,
-		OrgID:         annotation.OrgID,
-		ProductID:     annotation.ProductID,
-		OccurredAt:    occurredAt,
-		Payload:       payload,
-	}
-}
-
-func (c *Client) claimStripeProviderEvent(ctx context.Context, eventID string) (stripeProviderEventClaim, bool, error) {
-	if strings.TrimSpace(eventID) == "" {
-		return stripeProviderEventClaim{}, false, fmt.Errorf("provider event id is required")
-	}
-	now := c.clock().UTC()
-	var claim stripeProviderEventClaim
-	var payload string
-	err := c.pg.QueryRowContext(ctx, `
-		UPDATE billing_provider_events
-		SET state = 'applying',
-		    attempts = attempts + 1,
-		    next_attempt_at = NULL,
-		    last_error = '',
-		    updated_at = $2
-		WHERE event_id = $1
-		  AND provider = 'stripe'
-		  AND state IN ('received', 'queued', 'failed')
-		  AND COALESCE(next_attempt_at, received_at) <= $2
-		RETURNING event_id, event_type, payload::text, attempts
-	`, eventID, now).Scan(&claim.EventID, &claim.EventType, &payload, &claim.Attempts)
-	if err == sql.ErrNoRows {
-		return stripeProviderEventClaim{}, false, nil
-	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
-		return stripeProviderEventClaim{}, false, fmt.Errorf("claim stripe provider event %s: %w", eventID, err)
+		return 0, fmt.Errorf("parse org_id %q: %w", value, err)
 	}
-	claim.Payload = []byte(payload)
-	return claim, true, nil
+	return OrgID(parsed), nil
 }
 
-func (c *Client) markStripeProviderEventFinal(ctx context.Context, eventID string, state string) error {
-	if eventID == "" {
+func nullableInt(value int) any {
+	if value == 0 {
 		return nil
 	}
-	if state != "applied" && state != "ignored" {
-		return fmt.Errorf("invalid final stripe provider event state %q", state)
-	}
-	now := c.clock().UTC()
-	tx, err := c.pg.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin stripe provider event final mark: %w", err)
-	}
-	defer tx.Rollback()
-
-	var annotation providerEventAnnotation
-	var providerEventID string
-	var eventType string
-	err = tx.QueryRowContext(ctx, `
-		UPDATE billing_provider_events
-		SET state = $2,
-		    applied_at = $3,
-		    last_error = '',
-		    next_attempt_at = NULL,
-		    updated_at = $3
-		WHERE event_id = $1
-		  AND state = 'applying'
-		RETURNING provider_event_id, event_type, org_id, product_id, contract_id, change_id, invoice_id,
-		          provider_customer_id, provider_invoice_id, provider_payment_intent_id,
-		          provider_object_type, provider_object_id
-	`, eventID, state, now).Scan(
-		&providerEventID,
-		&eventType,
-		&annotation.OrgID,
-		&annotation.ProductID,
-		&annotation.ContractID,
-		&annotation.ChangeID,
-		&annotation.InvoiceID,
-		&annotation.ProviderCustomer,
-		&annotation.ProviderInvoiceID,
-		&annotation.ProviderPaymentIntentID,
-		&annotation.ObjectType,
-		&annotation.ObjectID,
-	)
-	if err == sql.ErrNoRows {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit skipped stripe provider event final mark: %w", err)
-		}
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("mark stripe provider event %s final: %w", eventID, err)
-	}
-	if annotation.OrgID != "" {
-		if err := insertBillingEventTx(ctx, tx, providerEventAppliedEvent(eventID, providerEventID, eventType, state, annotation, now)); err != nil {
-			return err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit stripe provider event final mark: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) failStripeProviderEvent(ctx context.Context, claim stripeProviderEventClaim, cause error) error {
-	if claim.EventID == "" {
-		return nil
-	}
-	now := c.clock().UTC()
-	state := "failed"
-	var nextAttemptAt any = now.Add(stripeProviderEventRetryDelay(claim.Attempts))
-	if claim.Attempts >= stripeProviderEventMaxAttempts {
-		state = "dead_letter"
-		nextAttemptAt = nil
-	}
-	_, err := c.pg.ExecContext(ctx, `
-		UPDATE billing_provider_events
-		SET state = $2,
-		    next_attempt_at = $3,
-		    last_error = $4,
-		    updated_at = $5
-		WHERE event_id = $1
-		  AND state = 'applying'
-	`, claim.EventID, state, nextAttemptAt, cause.Error(), now)
-	if err != nil {
-		return fmt.Errorf("mark stripe provider event %s failed: %w", claim.EventID, err)
-	}
-	return nil
-}
-
-func stripeProviderEventRetryDelay(attempts int) time.Duration {
-	if attempts <= 0 {
-		attempts = 1
-	}
-	delay := stripeProviderEventBaseBackoff
-	for i := 1; i < attempts; i++ {
-		delay *= 2
-		if delay >= stripeProviderEventMaxBackoff {
-			return stripeProviderEventMaxBackoff
-		}
-	}
-	return delay
-}
-
-func (c *Client) handleCheckoutSessionCompleted(ctx context.Context, providerEventID string, event stripe.Event) error {
-	session, err := decodeStripeEventObject[stripe.CheckoutSession](event, "checkout.session.completed")
-	if err != nil {
-		return err
-	}
-	if err := c.annotateCheckoutSessionProviderEvent(ctx, providerEventID, session); err != nil {
-		return err
-	}
-
-	customerID := stripeCustomerID(session.Customer)
-	orgIDText := session.Metadata["org_id"]
-	if customerID != "" && orgIDText != "" {
-		_, err := c.pg.ExecContext(ctx, `
-			UPDATE orgs
-			SET stripe_customer_id = $1,
-			    updated_at = now()
-			WHERE org_id = $2
-		`, customerID, orgIDText)
-		if err != nil {
-			return fmt.Errorf("checkout.session.completed: update customer: %w", err)
-		}
-	}
-	if session.SetupIntent != nil && session.SetupIntent.ID != "" {
-		intent, err := c.retrieveCheckoutSetupIntent(ctx, session)
-		if err != nil {
-			return err
-		}
-		return c.upsertPaymentMethodFromSetupIntent(ctx, intent)
-	}
-	return nil
-}
-
-func (c *Client) handleSetupIntentSucceeded(ctx context.Context, providerEventID string, event stripe.Event) error {
-	intent, err := decodeStripeEventObject[stripe.SetupIntent](event, "setup_intent.succeeded")
-	if err != nil {
-		return err
-	}
-	if err := c.annotateSetupIntentProviderEvent(ctx, providerEventID, intent); err != nil {
-		return err
-	}
-	return c.upsertPaymentMethodFromSetupIntent(ctx, intent)
-}
-
-func (c *Client) retrieveCheckoutSetupIntent(ctx context.Context, session stripe.CheckoutSession) (stripe.SetupIntent, error) {
-	params := &stripe.SetupIntentRetrieveParams{}
-	params.AddExpand("payment_method")
-	intent, err := c.stripe.V1SetupIntents.Retrieve(ctx, session.SetupIntent.ID, params)
-	if err != nil {
-		return stripe.SetupIntent{}, fmt.Errorf("checkout.session.completed: retrieve setup intent: %w", err)
-	}
-	if intent == nil {
-		return stripe.SetupIntent{}, fmt.Errorf("checkout.session.completed: missing setup intent %s", session.SetupIntent.ID)
-	}
-	if intent.Metadata == nil {
-		intent.Metadata = map[string]string{}
-	}
-	for key, value := range session.Metadata {
-		if intent.Metadata[key] == "" {
-			intent.Metadata[key] = value
-		}
-	}
-	return *intent, nil
-}
-
-func (c *Client) annotateCheckoutSessionProviderEvent(ctx context.Context, eventID string, session stripe.CheckoutSession) error {
-	setupIntentID := ""
-	if session.SetupIntent != nil {
-		setupIntentID = session.SetupIntent.ID
-	}
-	normalized := map[string]string{
-		"checkout_session_id": session.ID,
-		"mode":                string(session.Mode),
-		"payment_status":      string(session.PaymentStatus),
-		"setup_intent_id":     setupIntentID,
-	}
-	return c.annotateStripeProviderEvent(ctx, eventID, providerEventAnnotation{
-		OrgID:            session.Metadata["org_id"],
-		ProductID:        session.Metadata["product_id"],
-		ContractID:       session.Metadata["contract_id"],
-		ProviderCustomer: stripeCustomerID(session.Customer),
-		ObjectType:       "checkout.session",
-		ObjectID:         session.ID,
-		Normalized:       normalized,
-	})
-}
-
-func (c *Client) annotateSetupIntentProviderEvent(ctx context.Context, eventID string, intent stripe.SetupIntent) error {
-	paymentMethodID := ""
-	if intent.PaymentMethod != nil {
-		paymentMethodID = intent.PaymentMethod.ID
-	}
-	normalized := map[string]string{
-		"setup_intent_id":   intent.ID,
-		"payment_method_id": paymentMethodID,
-		"status":            string(intent.Status),
-	}
-	return c.annotateStripeProviderEvent(ctx, eventID, providerEventAnnotation{
-		OrgID:            intent.Metadata["org_id"],
-		ProductID:        intent.Metadata["product_id"],
-		ContractID:       intent.Metadata["contract_id"],
-		ProviderCustomer: stripeCustomerID(intent.Customer),
-		ObjectType:       "setup_intent",
-		ObjectID:         intent.ID,
-		Normalized:       normalized,
-	})
-}
-
-type providerEventAnnotation struct {
-	OrgID                   string
-	ProductID               string
-	ContractID              string
-	ChangeID                string
-	InvoiceID               string
-	ProviderCustomer        string
-	ProviderInvoiceID       string
-	ProviderPaymentIntentID string
-	ObjectType              string
-	ObjectID                string
-	Normalized              map[string]string
-}
-
-func (c *Client) annotateStripeProviderEvent(ctx context.Context, eventID string, annotation providerEventAnnotation) error {
-	if eventID == "" {
-		return nil
-	}
-	normalized, err := json.Marshal(annotation.Normalized)
-	if err != nil {
-		return fmt.Errorf("marshal stripe provider event annotation: %w", err)
-	}
-	_, err = c.pg.ExecContext(ctx, `
-		UPDATE billing_provider_events
-		SET org_id = $2,
-		    product_id = $3,
-		    contract_id = $4,
-		    change_id = $5,
-		    invoice_id = $6,
-		    provider_customer_id = $7,
-		    provider_invoice_id = $8,
-		    provider_payment_intent_id = $9,
-		    provider_object_type = $10,
-		    provider_object_id = $11,
-		    normalized_payload = $12::jsonb,
-		    updated_at = now()
-		WHERE event_id = $1
-	`, eventID, annotation.OrgID, annotation.ProductID, annotation.ContractID, annotation.ChangeID, annotation.InvoiceID,
-		annotation.ProviderCustomer, annotation.ProviderInvoiceID, annotation.ProviderPaymentIntentID,
-		annotation.ObjectType, annotation.ObjectID, string(normalized))
-	if err != nil {
-		return fmt.Errorf("annotate stripe provider event %s: %w", eventID, err)
-	}
-	return nil
-}
-
-func (c *Client) upsertPaymentMethodFromSetupIntent(ctx context.Context, intent stripe.SetupIntent) error {
-	orgIDText := intent.Metadata["org_id"]
-	if orgIDText == "" || intent.PaymentMethod == nil || intent.PaymentMethod.ID == "" {
-		return nil
-	}
-	customerID := stripeCustomerID(intent.Customer)
-	paymentMethodID := deterministicTextID("stripe-payment-method", intent.PaymentMethod.ID)
-	brand := ""
-	last4 := ""
-	var expMonth any = nil
-	var expYear any = nil
-	if intent.PaymentMethod.Card != nil {
-		brand = string(intent.PaymentMethod.Card.Brand)
-		last4 = intent.PaymentMethod.Card.Last4
-		if intent.PaymentMethod.Card.ExpMonth != 0 {
-			expMonth = intent.PaymentMethod.Card.ExpMonth
-		}
-		if intent.PaymentMethod.Card.ExpYear != 0 {
-			expYear = intent.PaymentMethod.Card.ExpYear
-		}
-	}
-	tx, err := c.pg.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin stripe payment method upsert: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE payment_methods
-		SET is_default = false,
-		    updated_at = now()
-		WHERE org_id = $1
-		  AND is_default
-	`, orgIDText); err != nil {
-		return fmt.Errorf("clear prior default stripe payment method: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO payment_methods (
-			payment_method_id, org_id, provider, provider_payment_method_id,
-			provider_customer_id, status, is_default, card_brand, card_last4,
-			card_exp_month, card_exp_year
-		)
-		VALUES ($1, $2, 'stripe', $3, $4, 'active', true, $5, $6, $7, $8)
-		ON CONFLICT (provider, provider_payment_method_id) WHERE provider_payment_method_id <> '' DO UPDATE
-		SET status = 'active',
-		    is_default = true,
-		    provider_customer_id = EXCLUDED.provider_customer_id,
-		    card_brand = EXCLUDED.card_brand,
-		    card_last4 = EXCLUDED.card_last4,
-		    card_exp_month = EXCLUDED.card_exp_month,
-		    card_exp_year = EXCLUDED.card_exp_year,
-		    updated_at = now()
-	`, paymentMethodID, orgIDText, intent.PaymentMethod.ID, customerID, brand, last4, expMonth, expYear)
-	if err != nil {
-		return fmt.Errorf("upsert stripe payment method: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit stripe payment method upsert: %w", err)
-	}
-
-	contractID := intent.Metadata["contract_id"]
-	phaseID := intent.Metadata["phase_id"]
-	planID := intent.Metadata["plan_id"]
-	productID := intent.Metadata["product_id"]
-	cadence := intent.Metadata["cadence"]
-	if contractID == "" || phaseID == "" || planID == "" || productID == "" {
-		return nil
-	}
-	rawOrgID, err := strconv.ParseUint(orgIDText, 10, 64)
-	if err != nil {
-		return fmt.Errorf("setup_intent.succeeded: parse org id: %w", err)
-	}
-	if existing, err := c.GetContract(ctx, OrgID(rawOrgID), contractID); err == nil && existing.PlanID != "" && existing.PlanID != planID {
-		return nil
-	} else if err != nil && err != ErrContractNotFound {
-		return err
-	}
-	effectiveAt := setupIntentEffectiveAt(intent, c.clock().UTC())
-	if err := c.activateCatalogContract(ctx, OrgID(rawOrgID), productID, planID, contractID, phaseID, cadence, effectiveAt, PaymentPaid); err != nil {
-		return fmt.Errorf("activate contract from setup intent: %w", err)
-	}
-	return nil
-}
-
-func setupIntentEffectiveAt(intent stripe.SetupIntent, fallback time.Time) time.Time {
-	if intent.Created > 0 {
-		return time.Unix(intent.Created, 0).UTC()
-	}
-	return fallback.UTC()
-}
-
-func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.Event) error {
-	intent, err := decodeStripeEventObject[stripe.PaymentIntent](event, "payment_intent.succeeded")
-	if err != nil {
-		return err
-	}
-
-	paymentIntentID := intent.ID
-	orgIDText := intent.Metadata["org_id"]
-	productID := intent.Metadata["product_id"]
-	ledgerUnitsText := intent.Metadata["ledger_units"]
-	if paymentIntentID == "" || orgIDText == "" || productID == "" || ledgerUnitsText == "" {
-		return nil
-	}
-
-	orgID, err := strconv.ParseUint(orgIDText, 10, 64)
-	if err != nil {
-		return fmt.Errorf("payment_intent.succeeded: parse org id: %w", err)
-	}
-	ledgerUnits, err := strconv.ParseUint(ledgerUnitsText, 10, 64)
-	if err != nil {
-		return fmt.Errorf("payment_intent.succeeded: parse ledger units: %w", err)
-	}
-	// Prepaid account credit is modeled as a debit-card balance, not a coupon:
-	// it must not appear to expire in the customer-facing UI.
-	expiresAt := c.clock().UTC().AddDate(100, 0, 0)
-	_, err = c.DepositCredits(ctx, CreditGrant{
-		OrgID:             OrgID(orgID),
-		ScopeType:         GrantScopeAccount,
-		Amount:            ledgerUnits,
-		Source:            "purchase",
-		SourceReferenceID: "stripe:payment_intent:" + paymentIntentID,
-		ExpiresAt:         &expiresAt,
-	})
-	if err != nil {
-		return fmt.Errorf("payment_intent.succeeded: deposit credits: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) handleInvoicePaid(ctx context.Context, providerEventID string, event stripe.Event) error {
-	invoice, err := decodeStripeEventObject[stripe.Invoice](event, "invoice.paid")
-	if err != nil {
-		return err
-	}
-	if invoice.ID == "" {
-		return nil
-	}
-	var invoiceID string
-	var changeID string
-	err = c.pg.QueryRowContext(ctx, `
-		UPDATE billing_invoices
-		SET payment_status = 'paid',
-		    status = CASE WHEN status IN ('issued', 'draft', 'finalizing', 'payment_failed') THEN 'paid' ELSE status END,
-		    stripe_hosted_invoice_url = COALESCE(NULLIF($2, ''), stripe_hosted_invoice_url),
-		    stripe_invoice_pdf_url = COALESCE(NULLIF($3, ''), stripe_invoice_pdf_url),
-		    updated_at = now()
-		WHERE stripe_invoice_id = $1
-		RETURNING invoice_id, change_id
-	`, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF).Scan(&invoiceID, &changeID)
-	if err == sql.ErrNoRows && invoice.Metadata != nil {
-		invoiceID = invoice.Metadata["invoice_id"]
-		changeID = invoice.Metadata["change_id"]
-		if invoiceID != "" {
-			_, err = c.pg.ExecContext(ctx, `
-				UPDATE billing_invoices
-				SET payment_status = 'paid',
-				    status = CASE WHEN status IN ('issued', 'draft', 'finalizing', 'payment_failed') THEN 'paid' ELSE status END,
-				    stripe_invoice_id = $2,
-				    stripe_hosted_invoice_url = COALESCE(NULLIF($3, ''), stripe_hosted_invoice_url),
-				    stripe_invoice_pdf_url = COALESCE(NULLIF($4, ''), stripe_invoice_pdf_url),
-				    updated_at = now()
-				WHERE invoice_id = $1
-			`, invoiceID, invoice.ID, invoice.HostedInvoiceURL, invoice.InvoicePDF)
-		}
-	}
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("invoice.paid: update billing invoice: %w", err)
-	}
-	if changeID != "" {
-		if err := c.applyPaidContractChange(ctx, changeID, invoiceID, invoice.ID, providerEventID, stripeInvoicePaidAt(&invoice, c.clock().UTC())); err != nil {
-			return fmt.Errorf("invoice.paid: apply contract change %s: %w", changeID, err)
-		}
-	}
-	return nil
-}
-
-func (c *Client) handleInvoicePaymentFailed(ctx context.Context, providerEventID string, event stripe.Event) error {
-	invoice, err := decodeStripeEventObject[stripe.Invoice](event, "invoice.payment_failed")
-	if err != nil {
-		return err
-	}
-	if invoice.ID == "" {
-		return nil
-	}
-	var changeID string
-	err = c.pg.QueryRowContext(ctx, `
-		UPDATE billing_invoices
-		SET payment_status = 'failed',
-		    status = CASE WHEN status IN ('issued', 'draft', 'finalizing') THEN 'payment_failed' ELSE status END,
-		    updated_at = now()
-		WHERE stripe_invoice_id = $1
-		RETURNING change_id
-	`, invoice.ID).Scan(&changeID)
-	if err == sql.ErrNoRows && invoice.Metadata != nil {
-		changeID = invoice.Metadata["change_id"]
-		if invoice.Metadata["invoice_id"] != "" {
-			_, err = c.pg.ExecContext(ctx, `
-				UPDATE billing_invoices
-				SET payment_status = 'failed',
-				    status = CASE WHEN status IN ('issued', 'draft', 'finalizing') THEN 'payment_failed' ELSE status END,
-				    stripe_invoice_id = $2,
-				    updated_at = now()
-				WHERE invoice_id = $1
-			`, invoice.Metadata["invoice_id"], invoice.ID)
-		}
-	}
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("invoice.payment_failed: update billing invoice: %w", err)
-	}
-	if changeID != "" {
-		_, err = c.pg.ExecContext(ctx, `
-			UPDATE contract_changes
-			SET state = 'failed',
-			    failure_reason = $2,
-			    state_version = state_version + 1,
-			    updated_at = now()
-			WHERE change_id = $1
-			  AND state <> 'applied'
-		`, changeID, "stripe invoice payment failed via provider event "+providerEventID)
-		if err != nil {
-			return fmt.Errorf("invoice.payment_failed: mark contract change %s failed: %w", changeID, err)
-		}
-	}
-	return nil
-}
-
-func (c *Client) contractEntitlementPolicies(ctx context.Context, planID string, periodStart time.Time, periodEnd time.Time) ([]EntitlementPolicy, error) {
-	rows, err := c.pg.QueryContext(ctx, `
-		SELECT p.policy_id, p.source, p.product_id, p.scope_type, p.scope_product_id, p.scope_bucket_id, p.scope_sku_id,
-		       p.amount_units, p.cadence, p.anchor_kind, p.proration_mode, p.policy_version, p.active_from, p.active_until
-		FROM plan_entitlements pe
-		JOIN entitlement_policies p ON p.policy_id = pe.policy_id
-		WHERE pe.plan_id = $1
-		  AND p.source = 'contract'
-		  AND p.active_from < $2
-		  AND (p.active_until IS NULL OR p.active_until > $3)
-		ORDER BY p.policy_id
-	`, planID, periodEnd.UTC(), periodStart.UTC())
-	if err != nil {
-		return nil, fmt.Errorf("lookup plan entitlement policies: %w", err)
-	}
-	defer rows.Close()
-
-	var out []EntitlementPolicy
-	for rows.Next() {
-		var policy EntitlementPolicy
-		var sourceText, scopeText string
-		var amount int64
-		var activeUntil sql.NullTime
-		if err := rows.Scan(
-			&policy.PolicyID,
-			&sourceText,
-			&policy.ProductID,
-			&scopeText,
-			&policy.ScopeProductID,
-			&policy.ScopeBucketID,
-			&policy.ScopeSKUID,
-			&amount,
-			&policy.Cadence,
-			&policy.AnchorKind,
-			&policy.ProrationMode,
-			&policy.PolicyVersion,
-			&policy.ActiveFrom,
-			&activeUntil,
-		); err != nil {
-			return nil, fmt.Errorf("scan plan entitlement policy: %w", err)
-		}
-		source, err := ParseGrantSourceType(sourceText)
-		if err != nil {
-			return nil, err
-		}
-		scope, err := ParseGrantScopeType(scopeText)
-		if err != nil {
-			return nil, err
-		}
-		if amount < 0 {
-			return nil, fmt.Errorf("policy %s has negative amount", policy.PolicyID)
-		}
-		policy.Source = source
-		policy.ScopeType = scope
-		policy.AmountUnits = uint64(amount)
-		policy.ActiveFrom = policy.ActiveFrom.UTC()
-		if activeUntil.Valid {
-			value := activeUntil.Time.UTC()
-			policy.ActiveUntil = &value
-		}
-		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID); err != nil {
-			return nil, fmt.Errorf("policy %s: %w", policy.PolicyID, err)
-		}
-		out = append(out, policy)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate plan entitlement policies: %w", err)
-	}
-	return out, nil
-}
-
-func decodeStripeEventObject[T any](event stripe.Event, eventType string) (T, error) {
-	var out T
-	if event.Data == nil || len(event.Data.Raw) == 0 {
-		return out, fmt.Errorf("%s: missing Stripe event object", eventType)
-	}
-	if err := json.Unmarshal(event.Data.Raw, &out); err != nil {
-		return out, fmt.Errorf("%s: decode Stripe event object: %w", eventType, err)
-	}
-	return out, nil
-}
-
-func stripeCustomerID(customer *stripe.Customer) string {
-	if customer == nil {
-		return ""
-	}
-	return customer.ID
+	return value
 }

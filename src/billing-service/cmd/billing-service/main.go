@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,18 +16,16 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/lib/pq"
 	"github.com/stripe/stripe-go/v85"
-	tb "github.com/tigerbeetle/tigerbeetle-go"
-	tbtypes "github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	auth "github.com/forge-metal/auth-middleware"
 	"github.com/forge-metal/billing-service/internal/billing"
 	"github.com/forge-metal/billing-service/internal/billingapi"
-	"github.com/forge-metal/billing-service/internal/scheduler"
 	fmotel "github.com/forge-metal/otel"
 )
+
+const serviceVersion = "2.0.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -40,14 +36,12 @@ func main() {
 
 func run() error {
 	pgDSN := requireCredential("pg-dsn")
-	stripeKey := requireCredential("stripe-secret-key")
-	webhookSecret := requireCredential("stripe-webhook-secret")
+	stripeKey := credentialOr("stripe-secret-key", "")
+	webhookSecret := credentialOr("stripe-webhook-secret", "")
 	chPassword := credentialOr("ch-password", "")
 
-	tbAddress := envOr("BILLING_TB_ADDRESS", "127.0.0.1:3320")
-	tbClusterID := envUint64("BILLING_TB_CLUSTER_ID", 0)
-	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
 	listenAddr := envOr("BILLING_LISTEN_ADDR", "127.0.0.1:4242")
+	chAddress := envOr("BILLING_CH_ADDRESS", "127.0.0.1:9000")
 	authIssuerURL := requireEnv("BILLING_AUTH_ISSUER_URL")
 	authAudience := requireEnv("BILLING_AUTH_AUDIENCE")
 	authJWKSURL := envOr("BILLING_AUTH_JWKS_URL", "")
@@ -56,128 +50,71 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: "2.0.0"})
+	otelShutdown, logger, err := fmotel.Init(ctx, fmotel.Config{ServiceName: "billing-service", ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
 	defer otelShutdown(context.Background())
 	slog.SetDefault(logger)
 
-	pg, err := sql.Open("postgres", pgDSN)
+	pgPool, err := pgxpool.New(ctx, pgDSN)
 	if err != nil {
-		return fmt.Errorf("open postgres: %w", err)
+		return fmt.Errorf("open postgres pool: %w", err)
 	}
-	defer pg.Close()
-	if err := pg.Ping(); err != nil {
+	defer pgPool.Close()
+	if err := pgPool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	pgxPool, err := pgxpool.New(ctx, pgDSN)
-	if err != nil {
-		return fmt.Errorf("open postgres pgx pool: %w", err)
-	}
-	defer pgxPool.Close()
-
-	tbAddresses := strings.Split(tbAddress, ",")
-	tbClient, err := tb.NewClient(tbtypes.ToUint128(tbClusterID), tbAddresses)
-	if err != nil {
-		return fmt.Errorf("create tigerbeetle client: %w", err)
-	}
-	defer tbClient.Close()
-
-	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{chAddress},
-		Auth: clickhouse.Auth{
-			Database: "forge_metal",
-			Username: "default",
-			Password: chPassword,
-		},
-	})
+	chConn, err := clickhouse.Open(&clickhouse.Options{Addr: []string{chAddress}, Auth: clickhouse.Auth{Database: "forge_metal", Username: "default", Password: chPassword}})
 	if err != nil {
 		return fmt.Errorf("open clickhouse: %w", err)
 	}
 	defer func() { _ = chConn.Close() }()
 
-	meteringWriter := billing.NewClickHouseMeteringWriter(chConn, "forge_metal")
-	sc := stripe.NewClient(stripeKey)
 	cfg := billing.DefaultConfig()
 	cfg.StripeSecretKey = stripeKey
-	cfg.TigerBeetleAddresses = tbAddresses
-	cfg.TigerBeetleClusterID = tbClusterID
-
-	billingClient, err := billing.NewClient(tbClient, pg, sc, meteringWriter, cfg)
+	cfg.UseStripe = stripeKey != ""
+	var stripeClient *stripe.Client
+	if stripeKey != "" {
+		stripeClient = stripe.NewClient(stripeKey)
+	}
+	billingClient, err := billing.NewClient(pgPool, stripeClient, chConn, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create billing client: %w", err)
 	}
 
-	schedulerRuntime, err := scheduler.NewRuntime(pgxPool, scheduler.Config{
-		Logger:         logger,
-		Client:         billingClient,
-		ProjectEvery:   cfg.EventDeliveryProjectEvery,
-		ReconcileEvery: cfg.EntitlementReconcileEvery,
-		ProjectLimit:   100,
-		ReconcileLimit: 10000,
-	})
+	billingRuntime, err := billing.NewRuntime(pgPool, billingClient, logger)
 	if err != nil {
-		return fmt.Errorf("create billing scheduler runtime: %w", err)
+		return fmt.Errorf("create billing river runtime: %w", err)
 	}
-	if err := schedulerRuntime.Start(ctx); err != nil {
-		return fmt.Errorf("start billing scheduler runtime: %w", err)
+	if err := billingRuntime.Start(ctx); err != nil {
+		return err
+	}
+	if err := billingRuntime.EnqueueMaintenance(ctx, cfg.EventDeliveryProjectEvery); err != nil {
+		return fmt.Errorf("enqueue initial billing maintenance: %w", err)
 	}
 	defer func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := schedulerRuntime.Stop(stopCtx); err != nil {
-			logger.ErrorContext(context.Background(), "billing scheduler shutdown", "error", err)
+		if err := billingRuntime.Stop(stopCtx); err != nil {
+			logger.ErrorContext(context.Background(), "billing river runtime stop", "error", err)
 		}
 	}()
 
-	rootMux := http.NewServeMux()
-	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	rootMux.HandleFunc("POST /webhooks/stripe", func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "read webhook body", http.StatusBadRequest)
-			return
-		}
-		if err := billingClient.HandleStripeWebhook(r.Context(), body, r.Header.Get("Stripe-Signature"), webhookSecret); err != nil {
-			logger.ErrorContext(r.Context(), "billing webhook", "error", err)
-			http.Error(w, "webhook processing failed", http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
+	bgCtx, bgCancel := context.WithCancel(ctx)
+	defer bgCancel()
+	go runBackgroundLoop(bgCtx, logger, billingRuntime, cfg)
 
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{
-		Version:      "2.0.0",
-		ListenAddr:   listenAddr,
-		Client:       billingClient,
-		Logger:       logger,
-		InternalRole: internalRole,
-	})
-	protected := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
-		Audience:  authAudience,
-		ProjectID: authAudience,
-		JWKSURL:   authJWKSURL,
-	})(privateMux)
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, InternalRole: internalRole, StripeWebhookSecret: webhookSecret})
+	rootMux := http.NewServeMux()
+	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience, ProjectID: authAudience, JWKSURL: authJWKSURL})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
-	rootHandler := fmotel.CorrelationMiddleware(rootMux)
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           otelhttp.NewHandler(rootHandler, "billing-service"),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
+	srv := &http.Server{Addr: listenAddr, Handler: otelhttp.NewHandler(fmotel.CorrelationMiddleware(rootMux), "billing-service"), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -186,13 +123,54 @@ func run() error {
 			logger.ErrorContext(context.Background(), "billing shutdown", "error", err)
 		}
 	}()
-
-	logger.Info("billing: listening", "addr", listenAddr)
+	logger.Info("billing-service listening", "addr", listenAddr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("billing listen: %w", err)
+		return fmt.Errorf("listen billing-service: %w", err)
 	}
-
 	return nil
+}
+
+func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *billing.Runtime, cfg billing.Config) {
+	ticker := time.NewTicker(cfg.EventDeliveryProjectEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := runtime.EnqueueMaintenance(ctx, cfg.EventDeliveryProjectEvery); err != nil {
+				logger.WarnContext(ctx, "billing maintenance enqueue", "error", err)
+			}
+		}
+	}
+}
+
+func billingHandler(public http.Handler, protected http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isUnauthenticatedBillingPath(r.URL.Path) {
+			public.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
+}
+
+func isUnauthenticatedBillingPath(path string) bool {
+	if path == "/healthz" || path == "/readyz" || path == "/webhooks/stripe" {
+		return true
+	}
+	if strings.HasPrefix(path, "/openapi") {
+		return true
+	}
+	if strings.HasPrefix(path, "/internal/billing/v1/orgs/") || strings.HasPrefix(path, "/internal/billing/v1/products/") {
+		return true
+	}
+	switch path {
+	case "/internal/billing/v1/checkout", "/internal/billing/v1/contracts", "/internal/billing/v1/portal":
+		return true
+	default:
+		return false
+	}
 }
 
 func loadCredential(name string) (string, error) {
@@ -209,12 +187,8 @@ func loadCredential(name string) (string, error) {
 
 func requireCredential(name string) string {
 	value, err := loadCredential(name)
-	if err != nil {
+	if err != nil || value == "" {
 		fmt.Fprintf(os.Stderr, "required credential %s: %v\n", name, err)
-		os.Exit(1)
-	}
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "required credential %s is empty\n", name)
 		os.Exit(1)
 	}
 	return value
@@ -255,32 +229,4 @@ func envUint64(key string, fallback uint64) uint64 {
 		os.Exit(1)
 	}
 	return parsed
-}
-
-func billingHandler(public http.Handler, protected http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isUnauthenticatedBillingPath(r.URL.Path) {
-			public.ServeHTTP(w, r)
-			return
-		}
-		protected.ServeHTTP(w, r)
-	})
-}
-
-func isUnauthenticatedBillingPath(path string) bool {
-	if path == "/healthz" || path == "/readyz" || path == "/webhooks/stripe" {
-		return true
-	}
-	if strings.HasPrefix(path, "/openapi") {
-		return true
-	}
-	if strings.HasPrefix(path, "/internal/billing/v1/orgs/") {
-		return true
-	}
-	switch path {
-	case "/internal/billing/v1/checkout", "/internal/billing/v1/contracts", "/internal/billing/v1/portal":
-		return true
-	default:
-		return false
-	}
 }

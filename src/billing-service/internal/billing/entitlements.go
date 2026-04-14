@@ -2,450 +2,265 @@ package billing
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
-	"math/big"
-	"strconv"
+	"math"
+	"sort"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/forge-metal/billing-service/internal/store"
 )
 
-const (
-	entitlementReasonCurrent = "current_period_reconcile"
-	entitlementReasonNext    = "next_period_reconcile"
-)
+type grantRow struct {
+	GrantID             string
+	ScopeType           string
+	ScopeProductID      string
+	ScopeBucketID       string
+	ScopeSKUID          string
+	Amount              uint64
+	Source              string
+	SourceReferenceID   string
+	EntitlementPeriodID string
+	PolicyVersion       string
+	StartsAt            time.Time
+	PeriodStart         *time.Time
+	PeriodEnd           *time.Time
+	ExpiresAt           *time.Time
+	PlanID              string
+	PlanDisplayName     string
+}
 
 func (c *Client) EnsureCurrentEntitlements(ctx context.Context, orgID OrgID, productID string) error {
-	return c.ensureCalendarFreeTierEntitlements(ctx, orgID, productID, c.clock().UTC(), 0, entitlementReasonCurrent)
-}
-
-func (c *Client) EnsureNextEntitlements(ctx context.Context, orgID OrgID, productID string) error {
-	return c.ensureCalendarFreeTierEntitlements(ctx, orgID, productID, c.clock().UTC(), 1, entitlementReasonNext)
-}
-
-func (c *Client) ReconcileEntitlements(ctx context.Context, limit int) (int, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := c.pg.QueryContext(ctx, `
-		SELECT org_id
-		FROM orgs
-		ORDER BY org_id
-		LIMIT $1
-	`, limit)
-	if err != nil {
-		return 0, fmt.Errorf("query entitlement orgs: %w", err)
-	}
-	defer rows.Close()
-
-	reconciled := 0
-	for rows.Next() {
-		var orgIDText string
-		if err := rows.Scan(&orgIDText); err != nil {
-			return reconciled, fmt.Errorf("scan entitlement org: %w", err)
-		}
-		rawOrgID, err := strconv.ParseUint(orgIDText, 10, 64)
-		if err != nil {
-			return reconciled, fmt.Errorf("parse entitlement org id %q: %w", orgIDText, err)
-		}
-		orgID := OrgID(rawOrgID)
-		if err := c.EnsureCurrentEntitlements(ctx, orgID, ""); err != nil {
-			return reconciled, err
-		}
-		if err := c.EnsureNextEntitlements(ctx, orgID, ""); err != nil {
-			return reconciled, err
-		}
-		reconciled++
-	}
-	if err := rows.Err(); err != nil {
-		return reconciled, fmt.Errorf("iterate entitlement orgs: %w", err)
-	}
-	return reconciled, nil
-}
-
-func (c *Client) ensureCalendarFreeTierEntitlements(
-	ctx context.Context,
-	orgID OrgID,
-	productID string,
-	now time.Time,
-	monthOffset int,
-	reason string,
-) error {
-	orgCreatedAt, err := c.orgCreatedAt(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	anchorStart, anchorEnd := calendarMonthWindow(now.UTC().AddDate(0, monthOffset, 0))
-	policies, err := c.activeFreeTierPolicies(ctx, productID, anchorStart, anchorEnd)
-	if err != nil {
-		return err
-	}
-	for _, policy := range policies {
-		period, ok, err := entitlementPeriodForPolicy(orgID, policy, orgCreatedAt, anchorStart, anchorEnd, reason)
+	return c.WithTx(ctx, "billing.entitlements.ensure_current", func(ctx context.Context, tx pgx.Tx, _ *store.Queries) error {
+		q := c.queries.WithTx(tx)
+		now, err := c.BusinessNow(ctx, q, orgID, productID)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			continue
-		}
-		if err := c.ensureEntitlementPeriod(ctx, period); err != nil {
+		cycle, err := c.ensureOpenBillingCycleTx(ctx, tx, orgID, productID, now)
+		if err != nil {
 			return err
 		}
-		periodStart := period.PeriodStart
-		periodEnd := period.PeriodEnd
-		grantPeriod := &GrantPeriod{Start: periodStart, End: periodEnd}
-		if _, err := c.IssueCreditGrant(ctx, CreditGrant{
-			OrgID:               orgID,
-			ScopeType:           period.ScopeType,
-			ScopeProductID:      period.ScopeProductID,
-			ScopeBucketID:       period.ScopeBucketID,
-			ScopeSKUID:          period.ScopeSKUID,
-			Amount:              period.AmountUnits,
-			Source:              period.Source.String(),
-			SourceReferenceID:   period.SourceReferenceID,
-			EntitlementPeriodID: period.PeriodID,
-			PolicyVersion:       period.PolicyVersion,
-			StartsAt:            &periodStart,
-			Period:              grantPeriod,
-			ExpiresAt:           &periodEnd,
-		}); err != nil {
-			return fmt.Errorf("issue free-tier grant for policy %s: %w", policy.PolicyID, err)
+		if err := c.materializeFreeTierTx(ctx, tx, orgID, productID, cycle, now); err != nil {
+			return err
 		}
-	}
-	return nil
+		if err := c.materializeActiveContractTx(ctx, tx, orgID, productID, cycle, now); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
-func (c *Client) orgCreatedAt(ctx context.Context, orgID OrgID) (time.Time, error) {
-	var createdAt time.Time
-	if err := c.pg.QueryRowContext(ctx, `
-		SELECT created_at FROM orgs WHERE org_id = $1
-	`, strconv.FormatUint(uint64(orgID), 10)).Scan(&createdAt); err != nil {
-		if err == sql.ErrNoRows {
-			return time.Time{}, fmt.Errorf("org %d is not known to billing", orgID)
-		}
-		return time.Time{}, fmt.Errorf("lookup org created_at: %w", err)
+func (c *Client) ensureOpenBillingCycleTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, now time.Time) (billingCycle, error) {
+	start := monthStartUTC(now)
+	end := nextMonth(now)
+	id := cycleID(orgID, productID, start)
+	_, err := tx.Exec(ctx, `
+		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at)
+		VALUES ($1, $2, $3, 'usd', $4, 0, 'calendar_monthly', $4, $5, 'open', $5)
+		ON CONFLICT (org_id, product_id, anchor_at, cycle_seq) DO UPDATE
+		SET updated_at = now()
+	`, id, orgIDText(orgID), productID, start, end)
+	if err != nil {
+		return billingCycle{}, fmt.Errorf("ensure open billing cycle: %w", err)
 	}
-	return createdAt.UTC(), nil
+	return billingCycle{CycleID: id, StartsAt: start, EndsAt: end}, nil
 }
 
-func (c *Client) activeFreeTierPolicies(ctx context.Context, productID string, periodStart, periodEnd time.Time) ([]EntitlementPolicy, error) {
-	query := `
-		SELECT policy_id, source, product_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id,
-		       amount_units, cadence, anchor_kind, proration_mode, policy_version, active_from, active_until
+func (c *Client) materializeFreeTierTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, cycle billingCycle, now time.Time) error {
+	rows, err := tx.Query(ctx, `
+		SELECT policy_id, scope_type, COALESCE(scope_product_id, ''), COALESCE(scope_bucket_id, ''), COALESCE(scope_sku_id, ''), amount_units, policy_version
 		FROM entitlement_policies
 		WHERE source = 'free_tier'
-		  AND anchor_kind = 'calendar_month'
-		  AND active_from < $1
+		  AND product_id = $1
+		  AND active_from <= $2
 		  AND (active_until IS NULL OR active_until > $2)
-	`
-	args := []any{periodEnd, periodStart}
-	if productID != "" {
-		query += " AND (product_id = '' OR product_id = $3)"
-		args = append(args, productID)
-	}
-	query += " ORDER BY policy_id"
-
-	rows, err := c.pg.QueryContext(ctx, query, args...)
+		ORDER BY policy_id
+	`, productID, now)
 	if err != nil {
-		return nil, fmt.Errorf("query active free-tier policies: %w", err)
+		return fmt.Errorf("query free-tier policies: %w", err)
 	}
 	defer rows.Close()
-
-	var out []EntitlementPolicy
+	inserts := []entitlementInsert{}
 	for rows.Next() {
-		var policy EntitlementPolicy
-		var sourceText, scopeText string
+		var policyID, scopeType, scopeProductID, scopeBucketID, scopeSKUID, policyVersion string
 		var amount int64
-		var activeUntil sql.NullTime
-		if err := rows.Scan(
-			&policy.PolicyID,
-			&sourceText,
-			&policy.ProductID,
-			&scopeText,
-			&policy.ScopeProductID,
-			&policy.ScopeBucketID,
-			&policy.ScopeSKUID,
-			&amount,
-			&policy.Cadence,
-			&policy.AnchorKind,
-			&policy.ProrationMode,
-			&policy.PolicyVersion,
-			&policy.ActiveFrom,
-			&activeUntil,
-		); err != nil {
-			return nil, fmt.Errorf("scan free-tier policy: %w", err)
+		if err := rows.Scan(&policyID, &scopeType, &scopeProductID, &scopeBucketID, &scopeSKUID, &amount, &policyVersion); err != nil {
+			return fmt.Errorf("scan free-tier policy: %w", err)
 		}
-		source, err := ParseGrantSourceType(sourceText)
-		if err != nil {
-			return nil, err
-		}
-		scope, err := ParseGrantScopeType(scopeText)
-		if err != nil {
-			return nil, err
-		}
-		if amount < 0 {
-			return nil, fmt.Errorf("policy %s has negative amount", policy.PolicyID)
-		}
-		policy.Source = source
-		policy.ScopeType = scope
-		policy.AmountUnits = uint64(amount)
-		policy.ActiveFrom = policy.ActiveFrom.UTC()
-		if activeUntil.Valid {
-			value := activeUntil.Time.UTC()
-			policy.ActiveUntil = &value
-		}
-		if err := validateGrantScope(policy.ScopeType, policy.ScopeProductID, policy.ScopeBucketID, policy.ScopeSKUID); err != nil {
-			return nil, fmt.Errorf("policy %s: %w", policy.PolicyID, err)
-		}
-		out = append(out, policy)
+		periodID := freeTierPeriodID(orgID, policyID, cycle.StartsAt, cycle.EndsAt)
+		sourceRef := fmt.Sprintf("free_tier:%s:%s:%s", policyID, cycle.StartsAt.Format(time.RFC3339Nano), cycle.EndsAt.Format(time.RFC3339Nano))
+		inserts = append(inserts, entitlementInsert{
+			PeriodID: periodID, OrgID: orgID, ProductID: productID, CycleID: cycle.CycleID, Source: "free_tier", PolicyID: policyID,
+			ScopeType: scopeType, ScopeProductID: scopeProductID, ScopeBucketID: scopeBucketID, ScopeSKUID: scopeSKUID,
+			Amount: uint64(amount), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: policyVersion,
+			EntitlementState: "active", PaymentState: "not_required", CalculationKind: "recurrence", SourceReferenceID: sourceRef,
+			GrantID: grantID(orgID, "free_tier", scopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceRef),
+		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate free-tier policies: %w", err)
+		return err
 	}
-	return out, nil
-}
-
-func entitlementPeriodForPolicy(
-	orgID OrgID,
-	policy EntitlementPolicy,
-	orgCreatedAt time.Time,
-	anchorStart time.Time,
-	anchorEnd time.Time,
-	reason string,
-) (EntitlementPeriod, bool, error) {
-	if policy.AmountUnits == 0 {
-		return EntitlementPeriod{}, false, nil
-	}
-	periodStart := maxTime(anchorStart, orgCreatedAt.UTC(), policy.ActiveFrom.UTC())
-	periodEnd := anchorEnd
-	if policy.ActiveUntil != nil && policy.ActiveUntil.Before(periodEnd) {
-		periodEnd = policy.ActiveUntil.UTC()
-	}
-	if !periodEnd.After(periodStart) {
-		return EntitlementPeriod{}, false, nil
-	}
-
-	amount := policy.AmountUnits
-	if policy.ProrationMode == ProrationByTimeLeft && periodStart.After(anchorStart) {
-		amount = prorateUint64ByDuration(policy.AmountUnits, periodEnd.Sub(periodStart), anchorEnd.Sub(anchorStart))
-	}
-	if amount == 0 {
-		return EntitlementPeriod{}, false, nil
-	}
-
-	sourceRef := entitlementSourceReference(policy, periodStart, periodEnd)
-	return EntitlementPeriod{
-		PeriodID:          entitlementPeriodID(orgID, policy, periodStart, periodEnd),
-		OrgID:             orgID,
-		ProductID:         policy.ProductID,
-		Source:            policy.Source,
-		PolicyID:          policy.PolicyID,
-		ScopeType:         policy.ScopeType,
-		ScopeProductID:    policy.ScopeProductID,
-		ScopeBucketID:     policy.ScopeBucketID,
-		ScopeSKUID:        policy.ScopeSKUID,
-		AmountUnits:       amount,
-		PeriodStart:       periodStart,
-		PeriodEnd:         periodEnd,
-		PolicyVersion:     policy.PolicyVersion,
-		PaymentState:      PaymentNotRequired,
-		EntitlementState:  EntitlementActive,
-		CalculationKind:   "recurrence",
-		SourceReferenceID: sourceRef,
-		CreatedReason:     reason,
-	}, true, nil
-}
-
-func contractEntitlementPeriod(
-	orgID OrgID,
-	contractID string,
-	phaseID string,
-	lineID string,
-	policy EntitlementPolicy,
-	periodStart time.Time,
-	periodEnd time.Time,
-	paymentState EntitlementPaymentState,
-	entitlementState EntitlementState,
-) (EntitlementPeriod, bool) {
-	anchorStart := periodStart.UTC()
-	anchorEnd := periodEnd.UTC()
-	effectiveStart := maxTime(anchorStart, policy.ActiveFrom.UTC())
-	effectiveEnd := anchorEnd
-	if policy.ActiveUntil != nil && policy.ActiveUntil.Before(effectiveEnd) {
-		effectiveEnd = policy.ActiveUntil.UTC()
-	}
-	if policy.AmountUnits == 0 || contractID == "" || phaseID == "" || lineID == "" || !effectiveEnd.After(effectiveStart) {
-		return EntitlementPeriod{}, false
-	}
-	amount := policy.AmountUnits
-	if policy.ProrationMode == ProrationByTimeLeft {
-		fullPeriodEnd := periodEndForCadence(anchorStart, policy.Cadence)
-		fullPeriod := anchorEnd.Sub(anchorStart)
-		if fullPeriodEnd.After(anchorStart) && anchorEnd.Before(fullPeriodEnd) {
-			fullPeriod = fullPeriodEnd.Sub(anchorStart)
+	rows.Close()
+	for _, insert := range inserts {
+		if err := c.insertEntitlementAndGrantTx(ctx, tx, insert); err != nil {
+			return err
 		}
-		if effectiveStart.After(anchorStart) || effectiveEnd.Before(anchorEnd) {
-			amount = prorateUint64ByDuration(policy.AmountUnits, effectiveEnd.Sub(effectiveStart), fullPeriod)
-		}
-	}
-	if amount == 0 {
-		return EntitlementPeriod{}, false
-	}
-	sourceRef := contractEntitlementSourceReference(contractID, phaseID, lineID, policy, effectiveStart, effectiveEnd)
-	return EntitlementPeriod{
-		PeriodID:          contractEntitlementPeriodID(orgID, contractID, phaseID, lineID, policy, effectiveStart, effectiveEnd),
-		OrgID:             orgID,
-		ProductID:         policy.ProductID,
-		Source:            policy.Source,
-		PolicyID:          policy.PolicyID,
-		ContractID:        contractID,
-		PhaseID:           phaseID,
-		LineID:            lineID,
-		ScopeType:         policy.ScopeType,
-		ScopeProductID:    policy.ScopeProductID,
-		ScopeBucketID:     policy.ScopeBucketID,
-		ScopeSKUID:        policy.ScopeSKUID,
-		AmountUnits:       amount,
-		PeriodStart:       effectiveStart,
-		PeriodEnd:         effectiveEnd,
-		PolicyVersion:     policy.PolicyVersion,
-		PaymentState:      paymentState,
-		EntitlementState:  entitlementState,
-		CalculationKind:   "recurrence",
-		SourceReferenceID: sourceRef,
-		CreatedReason:     "contract_period_reconcile",
-	}, true
-}
-
-func (c *Client) ensureEntitlementPeriod(ctx context.Context, period EntitlementPeriod) error {
-	if period.PeriodID == "" {
-		return fmt.Errorf("entitlement period id is required")
-	}
-	if period.CalculationKind == "" {
-		period.CalculationKind = "recurrence"
-	}
-	_, err := c.pg.ExecContext(ctx, `
-		INSERT INTO entitlement_periods (
-			period_id, cycle_id, org_id, product_id, source, policy_id, contract_id, phase_id, line_id,
-			change_id, calculation_kind, provider_invoice_id, provider_event_id,
-			scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount_units,
-			period_start, period_end, policy_version, payment_state, entitlement_state,
-			source_reference_id, created_reason
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-		        $10, $11, $12, $13,
-		        $14, $15, $16, $17, $18,
-		        $19, $20, $21, $22, $23,
-		        $24, $25)
-		ON CONFLICT (period_id) DO UPDATE
-		SET payment_state = EXCLUDED.payment_state,
-		    entitlement_state = EXCLUDED.entitlement_state,
-		    updated_at = now()
-	`, period.PeriodID, period.CycleID, strconv.FormatUint(uint64(period.OrgID), 10), period.ProductID, period.Source.String(), period.PolicyID, period.ContractID, period.PhaseID, period.LineID,
-		period.ChangeID, period.CalculationKind, period.ProviderInvoiceID, period.ProviderEventID,
-		period.ScopeType.String(), period.ScopeProductID, period.ScopeBucketID, period.ScopeSKUID, period.AmountUnits,
-		period.PeriodStart, period.PeriodEnd, period.PolicyVersion, string(period.PaymentState), string(period.EntitlementState),
-		period.SourceReferenceID, period.CreatedReason)
-	if err != nil {
-		return fmt.Errorf("ensure entitlement period %s: %w", period.PeriodID, err)
 	}
 	return nil
 }
 
-func entitlementPeriodID(orgID OrgID, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
-	return deterministicTextID(
-		"entitlement-period",
-		strconv.FormatUint(uint64(orgID), 10),
-		policy.Source.String(),
-		policy.PolicyID,
-		policy.PolicyVersion,
-		policy.ScopeType.String(),
-		policy.ScopeProductID,
-		policy.ScopeBucketID,
-		policy.ScopeSKUID,
-		periodStart.UTC().Format(time.RFC3339Nano),
-		periodEnd.UTC().Format(time.RFC3339Nano),
-	)
-}
-
-func contractEntitlementPeriodID(orgID OrgID, contractID string, phaseID string, lineID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
-	return deterministicTextID(
-		"contract-entitlement-period",
-		strconv.FormatUint(uint64(orgID), 10),
-		contractID,
-		phaseID,
-		lineID,
-		policy.Source.String(),
-		policy.PolicyID,
-		policy.PolicyVersion,
-		policy.ScopeType.String(),
-		policy.ScopeProductID,
-		policy.ScopeBucketID,
-		policy.ScopeSKUID,
-		periodStart.UTC().Format(time.RFC3339Nano),
-		periodEnd.UTC().Format(time.RFC3339Nano),
-	)
-}
-
-func entitlementSourceReference(policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
-	return policy.Source.String() + ":" + policy.PolicyID + ":" + policy.PolicyVersion + ":" +
-		periodStart.UTC().Format(time.RFC3339Nano) + ":" + periodEnd.UTC().Format(time.RFC3339Nano)
-}
-
-func contractEntitlementSourceReference(contractID string, phaseID string, lineID string, policy EntitlementPolicy, periodStart time.Time, periodEnd time.Time) string {
-	return policy.Source.String() + ":" + contractID + ":" + phaseID + ":" + lineID + ":" + policy.PolicyID + ":" + policy.PolicyVersion + ":" +
-		periodStart.UTC().Format(time.RFC3339Nano) + ":" + periodEnd.UTC().Format(time.RFC3339Nano)
-}
-
-func calendarMonthWindow(value time.Time) (time.Time, time.Time) {
-	utc := value.UTC()
-	start := time.Date(utc.Year(), utc.Month(), 1, 0, 0, 0, 0, time.UTC)
-	return start, start.AddDate(0, 1, 0)
-}
-
-func periodEndForCadence(start time.Time, cadence EntitlementCadence) time.Time {
-	switch cadence {
-	case EntitlementCadenceAnnual:
-		return start.UTC().AddDate(1, 0, 0)
-	default:
-		return start.UTC().AddDate(0, 1, 0)
+func (c *Client) materializeActiveContractTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, cycle billingCycle, now time.Time) error {
+	rows, err := tx.Query(ctx, `
+		SELECT l.line_id, l.phase_id, l.contract_id, l.policy_id, l.scope_type,
+		       COALESCE(l.scope_product_id, ''), COALESCE(l.scope_bucket_id, ''), COALESCE(l.scope_sku_id, ''),
+		       l.amount_units, l.policy_version
+		FROM contract_entitlement_lines l
+		JOIN contract_phases p ON p.phase_id = l.phase_id
+		JOIN contracts c ON c.contract_id = l.contract_id
+		WHERE l.org_id = $1
+		  AND l.product_id = $2
+		  AND p.state IN ('active', 'grace')
+		  AND p.effective_start <= $3
+		  AND (p.effective_end IS NULL OR p.effective_end > $3)
+		  AND l.active_from <= $3
+		  AND (l.active_until IS NULL OR l.active_until > $3)
+		  AND c.state IN ('active', 'past_due', 'cancel_scheduled')
+		ORDER BY l.line_id
+	`, orgIDText(orgID), productID, now)
+	if err != nil {
+		return fmt.Errorf("query active contract entitlement lines: %w", err)
 	}
-}
-
-func graceUntil(periodEnd *time.Time, grace time.Duration) *time.Time {
-	if periodEnd == nil || grace <= 0 {
-		return nil
+	defer rows.Close()
+	inserts := []entitlementInsert{}
+	for rows.Next() {
+		var lineID, phaseID, contractID, policyID, scopeType, scopeProductID, scopeBucketID, scopeSKUID, policyVersion string
+		var amount int64
+		if err := rows.Scan(&lineID, &phaseID, &contractID, &policyID, &scopeType, &scopeProductID, &scopeBucketID, &scopeSKUID, &amount, &policyVersion); err != nil {
+			return fmt.Errorf("scan contract entitlement line: %w", err)
+		}
+		periodID := contractPeriodID(orgID, lineID, cycle.CycleID, cycle.StartsAt, cycle.EndsAt)
+		sourceRef := fmt.Sprintf("contract:%s:%s:%s", lineID, cycle.StartsAt.Format(time.RFC3339Nano), cycle.EndsAt.Format(time.RFC3339Nano))
+		inserts = append(inserts, entitlementInsert{
+			PeriodID: periodID, OrgID: orgID, ProductID: productID, CycleID: cycle.CycleID, Source: "contract", PolicyID: policyID,
+			ContractID: contractID, PhaseID: phaseID, LineID: lineID, ScopeType: scopeType, ScopeProductID: scopeProductID, ScopeBucketID: scopeBucketID, ScopeSKUID: scopeSKUID,
+			Amount: uint64(amount), PeriodStart: cycle.StartsAt, PeriodEnd: cycle.EndsAt, PolicyVersion: policyVersion,
+			EntitlementState: "active", PaymentState: "paid", CalculationKind: "recurrence", SourceReferenceID: sourceRef,
+			GrantID: grantID(orgID, "contract", scopeType, scopeProductID, scopeBucketID, scopeSKUID, sourceRef),
+		})
 	}
-	value := periodEnd.UTC().Add(grace)
-	return &value
-}
-
-func maxTime(values ...time.Time) time.Time {
-	var out time.Time
-	for _, value := range values {
-		if out.IsZero() || value.After(out) {
-			out = value
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	for _, insert := range inserts {
+		if err := c.insertEntitlementAndGrantTx(ctx, tx, insert); err != nil {
+			return err
 		}
 	}
-	return out
+	return nil
 }
 
-func prorateUint64ByDuration(amount uint64, numerator time.Duration, denominator time.Duration) uint64 {
-	if amount == 0 || numerator <= 0 || denominator <= 0 {
+type entitlementInsert struct {
+	PeriodID, ProductID, CycleID, Source, PolicyID, ContractID, PhaseID, LineID string
+	ScopeType, ScopeProductID, ScopeBucketID, ScopeSKUID                        string
+	PolicyVersion, EntitlementState, PaymentState, CalculationKind              string
+	SourceReferenceID, GrantID                                                  string
+	OrgID                                                                       OrgID
+	Amount                                                                      uint64
+	PeriodStart, PeriodEnd                                                      time.Time
+}
+
+func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in entitlementInsert) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO entitlement_periods (
+			period_id, org_id, product_id, cycle_id, source, policy_id, contract_id, phase_id, line_id,
+			scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount_units, period_start, period_end,
+			policy_version, payment_state, entitlement_state, calculation_kind, source_reference_id, created_reason
+		) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,''),NULLIF($12,''),NULLIF($13,''),$14,$15,$16,$17,$18,$19,$20,$21,'materialized')
+		ON CONFLICT (org_id, source, source_reference_id) DO NOTHING
+	`, in.PeriodID, orgIDText(in.OrgID), in.ProductID, in.CycleID, in.Source, in.PolicyID, in.ContractID, in.PhaseID, in.LineID, in.ScopeType, in.ScopeProductID, in.ScopeBucketID, in.ScopeSKUID, int64(in.Amount), in.PeriodStart, in.PeriodEnd, in.PolicyVersion, in.PaymentState, in.EntitlementState, in.CalculationKind, in.SourceReferenceID)
+	if err != nil {
+		return fmt.Errorf("insert entitlement period %s: %w", in.PeriodID, err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO credit_grants (
+			grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source,
+			source_reference_id, entitlement_period_id, policy_version, starts_at, period_start, period_end, expires_at, ledger_state
+		) VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$14,'posted')
+		ON CONFLICT (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id) DO NOTHING
+	`, in.GrantID, orgIDText(in.OrgID), in.ScopeType, in.ScopeProductID, in.ScopeBucketID, in.ScopeSKUID, int64(in.Amount), in.Source, in.SourceReferenceID, in.PeriodID, in.PolicyVersion, in.PeriodStart, in.PeriodStart, in.PeriodEnd)
+	if err != nil {
+		return fmt.Errorf("insert credit grant %s: %w", in.GrantID, err)
+	}
+	return nil
+}
+
+func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantBalance, error) {
+	if grant.Source == "" {
+		grant.Source = "purchase"
+	}
+	if grant.ScopeType == "" {
+		grant.ScopeType = "account"
+	}
+	orgID := grant.OrgID
+	if orgID == 0 {
+		return GrantBalance{}, fmt.Errorf("org_id is required")
+	}
+	if firstUint64(grant.OriginalAmount, grant.Amount) == 0 {
+		return GrantBalance{}, fmt.Errorf("amount is required")
+	}
+	if grant.SourceReferenceID == "" {
+		grant.SourceReferenceID = textID("deposit_ref", orgIDText(orgID), grant.GrantID, time.Now().UTC().Format(time.RFC3339Nano))
+	}
+	if grant.GrantID == "" {
+		grant.GrantID = grantID(orgID, grant.Source, grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, grant.SourceReferenceID)
+	}
+	if grant.StartsAt.IsZero() {
+		grant.StartsAt = time.Now().UTC()
+	}
+	err := c.WithTx(ctx, "billing.credits.deposit", func(ctx context.Context, tx pgx.Tx, _ *store.Queries) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO credit_grants (grant_id, org_id, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, amount, source, source_reference_id, entitlement_period_id, policy_version, starts_at, expires_at, ledger_state)
+			VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7,$8,$9,NULLIF($10,''),$11,$12,$13,'posted')
+			ON CONFLICT (org_id, source, scope_type, scope_product_id, scope_bucket_id, scope_sku_id, source_reference_id) DO NOTHING
+		`, grant.GrantID, orgIDText(orgID), grant.ScopeType, grant.ScopeProductID, grant.ScopeBucketID, grant.ScopeSKUID, int64(firstUint64(grant.OriginalAmount, grant.Amount)), grant.Source, grant.SourceReferenceID, grant.EntitlementPeriodID, cleanNonEmpty(grant.PolicyVersion, "v1"), grant.StartsAt, nullableTime(grant.ExpiresAt))
+		if err != nil {
+			return fmt.Errorf("insert deposit grant: %w", err)
+		}
+		return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "credit_grant_issued", AggregateType: "credit_grant", AggregateID: grant.GrantID, OrgID: orgID, ProductID: grant.ScopeProductID, OccurredAt: grant.StartsAt, Payload: map[string]any{"grant_id": grant.GrantID, "source": grant.Source, "amount": firstUint64(grant.OriginalAmount, grant.Amount)}})
+	})
+	return grant, err
+}
+
+func firstUint64(values ...uint64) uint64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func prorateUnits(full uint64, numerator, denominator int64) uint64 {
+	if denominator <= 0 || numerator <= 0 || full == 0 {
 		return 0
 	}
-	if numerator >= denominator {
-		return amount
-	}
+	return uint64(math.Ceil(float64(full) * float64(numerator) / float64(denominator)))
+}
 
-	num := new(big.Int).SetUint64(amount)
-	num.Mul(num, big.NewInt(int64(numerator)))
-	den := big.NewInt(int64(denominator))
-	quotient, remainder := new(big.Int).QuoRem(num, den, new(big.Int))
-	if remainder.Sign() > 0 {
-		quotient.Add(quotient, big.NewInt(1))
+func sortedKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
 	}
-	if !quotient.IsUint64() {
-		return amount
-	}
-	return quotient.Uint64()
+	sort.Strings(keys)
+	return keys
+}
+
+func jsonMap(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
