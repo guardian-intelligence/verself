@@ -1,6 +1,6 @@
 # billing-service
 
-Credit-based recurring contract billing with entitlements — prepaid + metered hybrid. Stripe + TigerBeetle + PostgreSQL tri-store. Includes `tb-inspect/` debugger.
+Credit-based recurring contract billing with entitlements — prepaid + metered hybrid. The current rewrite is PostgreSQL + River for operational state/work execution, Stripe at the provider boundary, and ClickHouse for projection/audit evidence. TigerBeetle posting remains part of the long-term architecture, but it is not active in this cutover.
 
 Architecture detail: `docs/billing-architecture.md`.
 
@@ -19,7 +19,7 @@ The 3-node evolution should introduce NATS JetStream or Kafka + Debezium for pro
 
 ## Migrations
 
-Live in `postgresql-migrations/`. Platform provisions the database + role; the service's Ansible role applies migrations on deploy. During pre-customer phase, prefer `billing-reset.yml` (exhaustive TigerBeetle + PG wipe) over crafting tricky migrations.
+Live in `migrations/`. Platform provisions the database + role; the service's Ansible role applies migrations on deploy. During pre-customer phase, prefer `billing-reset.yml` or `verification-reset.yml` over crafting tricky migrations.
 
 ## Reset
 
@@ -27,4 +27,4 @@ Live in `postgresql-migrations/`. Platform provisions the database + role; the s
 ansible-playbook playbooks/billing-reset.yml
 ```
 
-Wipes TigerBeetle and billing PostgreSQL state and restarts billing callers.
+Wipes billing PostgreSQL state and restarts billing callers. TigerBeetle reset behavior is only relevant once posting is wired back into the billing runtime.

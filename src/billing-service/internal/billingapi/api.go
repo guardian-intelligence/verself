@@ -3,9 +3,10 @@ package billingapi
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
-	"time"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -21,42 +22,19 @@ const (
 )
 
 type Config struct {
-	Version      string
-	ListenAddr   string
-	Client       *billing.Client
-	Logger       *slog.Logger
-	InternalRole string
+	Version             string
+	ListenAddr          string
+	Client              *billing.Client
+	Logger              *slog.Logger
+	InternalRole        string
+	StripeWebhookSecret string
 }
 
 type Handler struct {
-	client       *billing.Client
-	logger       *slog.Logger
-	internalRole string
-}
-
-func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
-	version := cfg.Version
-	if version == "" {
-		version = "2.0.0"
-	}
-	config := huma.DefaultConfig("Billing Service", version)
-	if cfg.ListenAddr != "" {
-		config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
-	}
-	api := humago.New(mux, config)
-	RegisterRoutes(api, cfg)
-	apiwire.ApplyOpenAPIWireDefaults(api)
-	return api
-}
-
-func OpenAPIDowngradeYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
-	return api.OpenAPI().DowngradeYAML()
-}
-
-func OpenAPIYAML() ([]byte, error) {
-	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
-	return api.OpenAPI().YAML()
+	client              *billing.Client
+	logger              *slog.Logger
+	internalRole        string
+	stripeWebhookSecret string
 }
 
 type body[T any] struct {
@@ -86,293 +64,320 @@ type ContractPath struct {
 	ContractID string `path:"contract_id" minLength:"1" maxLength:"255"`
 }
 
-type CancelContractInput struct {
-	ContractPath
-	Body apiwire.BillingCancelContractRequest `required:"true"`
-}
-
 type CreateContractChangeInput struct {
 	ContractPath
 	Body apiwire.BillingCreateContractChangeRequest `required:"true"`
 }
 
-type (
-	GrantResponse          = apiwire.BillingGrant
-	GrantsResponse         = apiwire.BillingGrants
-	StatementResponse      = apiwire.BillingStatement
-	ContractsResponse      = apiwire.BillingContracts
-	ContractResponse       = apiwire.BillingContract
-	PlansResponse          = apiwire.BillingPlans
-	PlanResponse           = apiwire.BillingPlan
-	CancelContractResponse = apiwire.BillingCancelContractResponse
-	EntitlementsResponse   = apiwire.BillingEntitlementsView
-)
-
-func billingOrgID(id string) (billing.OrgID, error) {
-	parsed, err := apiwire.ParseUint64(id)
-	if err != nil {
-		return 0, huma.Error400BadRequest("invalid org_id", err)
-	}
-	return billingOrgIDFromUint64(parsed)
+type CancelContractInput struct {
+	ContractPath
+	Body apiwire.BillingCancelContractRequest `required:"true"`
 }
 
-func billingOrgIDFromWire(id apiwire.DecimalUint64) (billing.OrgID, error) {
-	return billingOrgIDFromUint64(id.Uint64())
+func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
+	version := cfg.Version
+	if version == "" {
+		version = "2.0.0"
+	}
+	config := huma.DefaultConfig("Billing Service", version)
+	if cfg.ListenAddr != "" {
+		config.OpenAPI.Servers = []*huma.Server{{URL: "http://" + cfg.ListenAddr}}
+	}
+	api := humago.New(mux, config)
+	RegisterRoutes(api, cfg)
+	apiwire.ApplyOpenAPIWireDefaults(api)
+	return api
 }
 
-func billingOrgIDFromUint64(parsed uint64) (billing.OrgID, error) {
-	if parsed == 0 {
-		return 0, huma.Error400BadRequest("org_id must be positive")
-	}
-	return billing.OrgID(parsed), nil
+func OpenAPIYAML() ([]byte, error) {
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
+	return api.OpenAPI().YAML()
 }
 
-func windowReservationResponse(reservation billing.WindowReservation) apiwire.BillingWindowReservation {
-	return apiwire.BillingWindowReservation{
-		WindowID:            reservation.WindowID,
-		OrgID:               apiwire.Uint64(uint64(reservation.OrgID)),
-		ProductID:           reservation.ProductID,
-		PlanID:              reservation.PlanID,
-		ActorID:             reservation.ActorID,
-		SourceType:          reservation.SourceType,
-		SourceRef:           reservation.SourceRef,
-		WindowSeq:           reservation.WindowSeq,
-		ReservationShape:    string(reservation.ReservationShape),
-		ReservedQuantity:    reservation.ReservedQuantity,
-		ReservedChargeUnits: apiwire.Uint64(reservation.ReservedChargeUnits),
-		PricingPhase:        string(reservation.PricingPhase),
-		Allocation:          reservation.Allocation,
-		SKURates:            decimalSKURates(reservation.SKURates),
-		CostPerUnit:         apiwire.Uint64(reservation.CostPerUnit),
-		WindowStart:         reservation.WindowStart,
-		ActivatedAt:         reservation.ActivatedAt,
-		ExpiresAt:           reservation.ExpiresAt,
-		RenewBy:             reservation.RenewBy,
-	}
-}
-
-func decimalSKURates(skuRates map[string]uint64) map[string]apiwire.DecimalUint64 {
-	if len(skuRates) == 0 {
-		return map[string]apiwire.DecimalUint64{}
-	}
-	out := make(map[string]apiwire.DecimalUint64, len(skuRates))
-	for unit, rate := range skuRates {
-		out[unit] = apiwire.Uint64(rate)
-	}
-	return out
-}
-
-func settleResultResponse(result billing.SettleResult) apiwire.BillingSettleResult {
-	return apiwire.BillingSettleResult{
-		WindowID:            result.WindowID,
-		ActualQuantity:      result.ActualQuantity,
-		BillableQuantity:    result.BillableQuantity,
-		WriteoffQuantity:    result.WriteoffQuantity,
-		BilledChargeUnits:   apiwire.Uint64(result.BilledChargeUnits),
-		WriteoffChargeUnits: apiwire.Uint64(result.WriteoffChargeUnits),
-		SettledAt:           result.SettledAt,
-	}
+func OpenAPIDowngradeYAML() ([]byte, error) {
+	api := NewAPI(http.NewServeMux(), Config{Version: "2.0.0", ListenAddr: "127.0.0.1:4242", InternalRole: defaultInternalRole})
+	return api.OpenAPI().DowngradeYAML()
 }
 
 func RegisterRoutes(api huma.API, cfg Config) {
-	handler := &Handler{
-		client:       cfg.Client,
-		logger:       cfg.Logger,
-		internalRole: firstNonEmpty(cfg.InternalRole, defaultInternalRole),
-	}
-
+	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalRole: firstNonEmpty(cfg.InternalRole, defaultInternalRole), stripeWebhookSecret: cfg.StripeWebhookSecret}
 	public := huma.NewGroup(api, "/internal/billing/v1")
-	huma.Get(public, "/orgs/{org_id}/entitlements", handler.getEntitlements, operation("get-entitlements", "Get the entitlements view for an org"))
-	huma.Get(public, "/orgs/{org_id}/grants", handler.listGrants, operation("list-grants", "List credit grants for an org"))
-	huma.Get(public, "/orgs/{org_id}/statement", handler.getStatement, operation("get-statement", "Get current billing statement for an org"))
-	huma.Get(public, "/orgs/{org_id}/contracts", handler.listContracts, operation("list-contracts", "List contracts for an org"))
-	huma.Get(public, "/products/{product_id}/plans", handler.listPlans, operation("list-plans", "List active billing plans for a product"))
-	huma.Post(public, "/checkout", handler.createCheckout, operation("create-checkout", "Create a Stripe checkout session"))
-	huma.Post(public, "/contracts", handler.createContract, operation("create-contract", "Create a self-serve contract checkout", http.StatusBadRequest, http.StatusInternalServerError))
-	huma.Post(public, "/contracts/{contract_id}/changes", handler.createContractChange, operation("create-contract-change", "Create an invoice-backed contract change", http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError))
-	huma.Post(public, "/portal", handler.createPortal, operation("create-portal", "Create a Stripe customer portal session", http.StatusUnprocessableEntity, http.StatusInternalServerError))
-	huma.Post(public, "/contracts/{contract_id}/cancel", handler.cancelContract, operation("cancel-contract", "Schedule contract cancellation", http.StatusNotFound, http.StatusInternalServerError))
+	huma.Get(public, "/orgs/{org_id}/entitlements", h.getEntitlements, op("get-entitlements", "Get org entitlements view"))
+	huma.Get(public, "/orgs/{org_id}/grants", h.listGrants, op("list-grants", "List org credit grants"))
+	huma.Get(public, "/orgs/{org_id}/statement", h.getStatement, op("get-statement", "Preview current statement"))
+	huma.Get(public, "/orgs/{org_id}/contracts", h.listContracts, op("list-contracts", "List org contracts"))
+	huma.Get(public, "/products/{product_id}/plans", h.listPlans, op("list-plans", "List active plans"))
+	huma.Post(public, "/checkout", h.createCheckout, op("create-checkout", "Create credit checkout"))
+	huma.Post(public, "/contracts", h.createContract, op("create-contract", "Create contract checkout"))
+	huma.Post(public, "/contracts/{contract_id}/changes", h.createContractChange, op("create-contract-change", "Create contract change"))
+	huma.Post(public, "/contracts/{contract_id}/cancel", h.cancelContract, op("cancel-contract", "Cancel contract"))
+	huma.Post(public, "/portal", h.createPortal, op("create-portal", "Create Stripe portal session"))
 
 	service := huma.NewGroup(api, "/internal/billing/v1")
-	service.UseMiddleware(requireInternalRoleMiddleware(api, handler.internalRole))
-	huma.Post(service, "/reserve", handler.reserveWindow, operation("reserve-window", "Reserve a billing window", http.StatusPaymentRequired, http.StatusForbidden, http.StatusBadRequest, http.StatusInternalServerError))
-	huma.Post(service, "/activate", handler.activateWindow, operation("activate-window", "Activate a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
-	huma.Post(service, "/settle", handler.settleWindow, operation("settle-window", "Settle a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
-	huma.Post(service, "/void", handler.voidWindow, operation("void-window", "Void a reserved billing window", http.StatusNotFound, http.StatusBadRequest, http.StatusInternalServerError))
+	service.UseMiddleware(requireInternalRoleMiddleware(api, h.internalRole))
+	huma.Post(service, "/reserve", h.reserveWindow, op("reserve-window", "Reserve billing window", http.StatusPaymentRequired, http.StatusForbidden))
+	huma.Post(service, "/activate", h.activateWindow, op("activate-window", "Activate billing window", http.StatusNotFound))
+	huma.Post(service, "/settle", h.settleWindow, op("settle-window", "Settle billing window", http.StatusNotFound))
+	huma.Post(service, "/void", h.voidWindow, op("void-window", "Void billing window", http.StatusNotFound))
+
+	// Caddy exposes only this path publicly; Huma keeps the OpenAPI surface focused on internal callers.
+	api.Adapter().Handle(&huma.Operation{OperationID: "stripe-webhook", Method: http.MethodPost, Path: "/webhooks/stripe", Hidden: true}, h.stripeWebhook)
 }
 
-func operation(id, summary string, errors ...int) func(*huma.Operation) {
-	return func(op *huma.Operation) {
-		op.OperationID = id
-		op.Summary = summary
-		op.Errors = errors
+func op(id, summary string, errors ...int) func(*huma.Operation) {
+	return func(operation *huma.Operation) {
+		operation.OperationID = id
+		operation.Summary = summary
+		operation.Errors = errors
 	}
 }
 
-func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[EntitlementsResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) getEntitlements(ctx context.Context, input *OrgPath) (*body[apiwire.BillingEntitlementsView], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
 	}
-	view, err := client.ListEntitlementsView(ctx, orgID)
+	view, err := h.client.ListEntitlementsView(ctx, orgID)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "get entitlements", err, "org_id", uint64(orgID))
+		return nil, h.internalError(ctx, "get entitlements", err)
 	}
-	return &body[EntitlementsResponse]{Body: entitlementsResponse(orgID, view)}, nil
+	return &body[apiwire.BillingEntitlementsView]{Body: entitlementsResponse(view)}, nil
 }
 
-func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[GrantsResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) listGrants(ctx context.Context, input *GrantsInput) (*body[apiwire.BillingGrants], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
 	}
-	grants, err := client.ListGrantBalances(ctx, orgID, input.ProductID)
+	grants, err := h.client.ListGrantBalances(ctx, orgID, input.ProductID)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "list grants", err, "org_id", uint64(orgID), "product_id", input.ProductID)
+		return nil, h.internalError(ctx, "list grants", err)
 	}
-	out := make([]GrantResponse, 0, len(grants))
+	out := make([]apiwire.BillingGrant, 0, len(grants))
 	for _, grant := range grants {
-		out = append(out, GrantResponse{
-			GrantID:             grant.GrantID.String(),
-			ScopeType:           grant.ScopeType.String(),
-			ScopeProductID:      grant.ScopeProductID,
-			ScopeBucketID:       grant.ScopeBucketID,
-			ScopeSKUID:          grant.ScopeSKUID,
-			Source:              grant.Source.String(),
-			SourceReferenceID:   grant.SourceReferenceID,
-			EntitlementPeriodID: grant.EntitlementPeriodID,
-			PolicyVersion:       grant.PolicyVersion,
-			StartsAt:            grant.StartsAt,
-			PeriodStart:         grantPeriodStartPtr(grant.Period),
-			PeriodEnd:           grantPeriodEndPtr(grant.Period),
-			Available:           apiwire.Uint64(grant.Available),
-			Pending:             apiwire.Uint64(grant.Pending),
-			ExpiresAt:           grant.ExpiresAt,
-		})
+		out = append(out, apiwire.BillingGrant{GrantID: grant.GrantID, ScopeType: grant.ScopeType, ScopeProductID: grant.ScopeProductID, ScopeBucketID: grant.ScopeBucketID, ScopeSKUID: grant.ScopeSKUID, Source: grant.Source, SourceReferenceID: grant.SourceReferenceID, EntitlementPeriodID: grant.EntitlementPeriodID, PolicyVersion: grant.PolicyVersion, StartsAt: grant.StartsAt, PeriodStart: grant.PeriodStart, PeriodEnd: grant.PeriodEnd, Available: apiwire.Uint64(grant.Available), Pending: apiwire.Uint64(grant.Pending), ExpiresAt: grant.ExpiresAt})
 	}
-	return &body[GrantsResponse]{Body: GrantsResponse{Grants: out}}, nil
+	return &body[apiwire.BillingGrants]{Body: apiwire.BillingGrants{Grants: out}}, nil
 }
 
-func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[StatementResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
+func (h *Handler) getStatement(ctx context.Context, input *StatementInput) (*body[apiwire.BillingStatement], error) {
 	orgID, err := billingOrgID(input.OrgID)
 	if err != nil {
 		return nil, err
 	}
-	statement, err := client.PreviewStatement(ctx, orgID, input.ProductID)
+	statement, err := h.client.PreviewStatement(ctx, orgID, input.ProductID)
 	if err != nil {
-		return nil, h.internalServerError(ctx, "get statement", err, "org_id", uint64(orgID), "product_id", input.ProductID)
+		return nil, h.internalError(ctx, "get statement", err)
 	}
-	return &body[StatementResponse]{Body: statementResponse(statement)}, nil
+	return &body[apiwire.BillingStatement]{Body: statementResponse(statement)}, nil
+}
+
+func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[apiwire.BillingContracts], error) {
+	orgID, err := billingOrgID(input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	contracts, err := h.client.ListContracts(ctx, orgID)
+	if err != nil {
+		return nil, h.internalError(ctx, "list contracts", err)
+	}
+	out := make([]apiwire.BillingContract, 0, len(contracts))
+	for _, contract := range contracts {
+		out = append(out, contractResponse(contract))
+	}
+	return &body[apiwire.BillingContracts]{Body: apiwire.BillingContracts{Contracts: out}}, nil
+}
+
+func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[apiwire.BillingPlans], error) {
+	plans, err := h.client.ListPlans(ctx, input.ProductID)
+	if err != nil {
+		return nil, h.internalError(ctx, "list plans", err)
+	}
+	out := make([]apiwire.BillingPlan, 0, len(plans))
+	for _, plan := range plans {
+		out = append(out, apiwire.BillingPlan{PlanID: plan.PlanID, ProductID: plan.ProductID, DisplayName: plan.DisplayName, BillingMode: plan.BillingMode, Tier: plan.Tier, Currency: plan.Currency, MonthlyAmountCents: apiwire.Uint64(plan.MonthlyAmountCents), AnnualAmountCents: apiwire.Uint64(plan.AnnualAmountCents), Active: plan.Active, IsDefault: plan.IsDefault})
+	}
+	return &body[apiwire.BillingPlans]{Body: apiwire.BillingPlans{Plans: out}}, nil
+}
+
+func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.BillingCreateCheckoutRequest]) (*body[apiwire.BillingURLResponse], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := h.client.CreateCheckoutSession(ctx, orgID, input.Body.ProductID, billing.CheckoutParams{AmountCents: input.Body.AmountCents, SuccessURL: input.Body.SuccessURL, CancelURL: input.Body.CancelURL})
+	if err != nil {
+		return nil, h.internalError(ctx, "create checkout", err)
+	}
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) createContract(ctx context.Context, input *body[apiwire.BillingCreateContractRequest]) (*body[apiwire.BillingURLResponse], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := h.client.CreateContract(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
+	if err != nil {
+		if errors.Is(err, billing.ErrUnsupportedCadence) || errors.Is(err, billing.ErrUnsupportedChange) {
+			return nil, huma.Error400BadRequest("unsupported contract request", err)
+		}
+		return nil, h.internalError(ctx, "create contract", err)
+	}
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[apiwire.BillingContractChangeResponse], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := h.client.CreateContractChange(ctx, orgID, input.ContractID, billing.ContractChangeRequest{TargetPlanID: input.Body.TargetPlanID, SuccessURL: input.Body.SuccessURL, CancelURL: input.Body.CancelURL})
+	if err != nil {
+		if errors.Is(err, billing.ErrContractNotFound) {
+			return nil, huma.Error404NotFound("contract not found")
+		}
+		if errors.Is(err, billing.ErrUnsupportedChange) {
+			return nil, huma.Error400BadRequest("unsupported contract change", err)
+		}
+		return nil, h.internalError(ctx, "create contract change", err)
+	}
+	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{URL: result.URL, ChangeID: result.ChangeID, InvoiceID: result.InvoiceID, Status: result.Status, PriceDelta: apiwire.Uint64(result.PriceDeltaUnits)}}, nil
+}
+
+func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[apiwire.BillingCancelContractResponse], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	contract, err := h.client.CancelContract(ctx, orgID, input.ContractID)
+	if err != nil {
+		if errors.Is(err, billing.ErrContractNotFound) {
+			return nil, huma.Error404NotFound("contract not found")
+		}
+		return nil, h.internalError(ctx, "cancel contract", err)
+	}
+	return &body[apiwire.BillingCancelContractResponse]{Body: apiwire.BillingCancelContractResponse{Contract: contractResponse(contract)}}, nil
+}
+
+func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingCreatePortalSessionRequest]) (*body[apiwire.BillingURLResponse], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	url, err := h.client.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
+	if err != nil {
+		if errors.Is(err, billing.ErrNoStripeCustomer) {
+			problem := huma.Error422UnprocessableEntity("no stripe customer linked to this org", err)
+			if model, ok := problem.(*huma.ErrorModel); ok {
+				model.Type = problemTypeNoStripeCustomer
+			}
+			return nil, problem
+		}
+		return nil, h.internalError(ctx, "create portal", err)
+	}
+	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+}
+
+func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	reservation, err := h.client.ReserveWindow(ctx, billing.ReserveRequest{OrgID: orgID, ProductID: input.Body.ProductID, ActorID: input.Body.ActorID, ConcurrentCount: input.Body.ConcurrentCount, SourceType: input.Body.SourceType, SourceRef: input.Body.SourceRef, WindowSeq: input.Body.WindowSeq, BillingJobID: input.Body.BillingJobID, Allocation: input.Body.Allocation})
+	if err != nil {
+		return nil, h.windowError(ctx, "reserve", err)
+	}
+	return &body[apiwire.BillingReserveWindowResult]{Body: apiwire.BillingReserveWindowResult{Reservation: reservationResponse(reservation)}}, nil
+}
+
+func (h *Handler) activateWindow(ctx context.Context, input *body[apiwire.BillingActivateWindowRequest]) (*body[apiwire.BillingActivateWindowResult], error) {
+	reservation, err := h.client.ActivateWindow(ctx, input.Body.WindowID, input.Body.ActivatedAt)
+	if err != nil {
+		return nil, h.windowError(ctx, "activate", err)
+	}
+	return &body[apiwire.BillingActivateWindowResult]{Body: apiwire.BillingActivateWindowResult{Reservation: reservationResponse(reservation)}}, nil
+}
+
+func (h *Handler) settleWindow(ctx context.Context, input *body[apiwire.BillingSettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
+	result, err := h.client.SettleWindow(ctx, input.Body.WindowID, input.Body.ActualQuantity, input.Body.UsageSummary)
+	if err != nil {
+		return nil, h.windowError(ctx, "settle", err)
+	}
+	return &body[apiwire.BillingSettleResult]{Body: apiwire.BillingSettleResult{WindowID: result.WindowID, ActualQuantity: result.ActualQuantity, BillableQuantity: result.BillableQuantity, WriteoffQuantity: result.WriteoffQuantity, BilledChargeUnits: apiwire.Uint64(result.BilledChargeUnits), WriteoffChargeUnits: apiwire.Uint64(result.WriteoffChargeUnits), SettledAt: result.SettledAt}}, nil
+}
+
+func (h *Handler) voidWindow(ctx context.Context, input *body[apiwire.BillingVoidWindowRequest]) (*body[apiwire.BillingVoidWindowResult], error) {
+	if err := h.client.VoidWindow(ctx, input.Body.WindowID); err != nil {
+		return nil, h.windowError(ctx, "void", err)
+	}
+	return &body[apiwire.BillingVoidWindowResult]{Body: apiwire.BillingVoidWindowResult{WindowID: input.Body.WindowID}}, nil
+}
+
+func (h *Handler) stripeWebhook(ctx huma.Context) {
+	payload, err := io.ReadAll(ctx.BodyReader())
+	if err != nil {
+		writePlainError(ctx, http.StatusBadRequest, "read webhook body")
+		return
+	}
+	if h.stripeWebhookSecret == "" {
+		writePlainError(ctx, http.StatusInternalServerError, "stripe webhook secret is not configured")
+		return
+	}
+	if err := h.client.HandleStripeWebhook(ctx.Context(), payload, ctx.Header("Stripe-Signature"), h.stripeWebhookSecret); err != nil {
+		writePlainError(ctx, http.StatusBadRequest, "stripe webhook rejected")
+		return
+	}
+	ctx.SetStatus(http.StatusNoContent)
+}
+
+func writePlainError(ctx huma.Context, status int, message string) {
+	ctx.SetStatus(status)
+	ctx.SetHeader("Content-Type", "text/plain; charset=utf-8")
+	_, _ = ctx.BodyWriter().Write([]byte(message))
+}
+
+func (h *Handler) windowError(ctx context.Context, op string, err error) error {
+	switch {
+	case errors.Is(err, billing.ErrInsufficientBalance), errors.Is(err, billing.ErrPaymentRequired):
+		return huma.Error402PaymentRequired(op, err)
+	case errors.Is(err, billing.ErrOrgSuspended), errors.Is(err, billing.ErrForbidden):
+		return huma.Error403Forbidden(op, err)
+	case errors.Is(err, billing.ErrWindowNotFound):
+		return huma.Error404NotFound("window not found", err)
+	case errors.Is(err, billing.ErrWindowNotReserved), errors.Is(err, billing.ErrWindowNotActivated), errors.Is(err, billing.ErrWindowAlreadySettled), errors.Is(err, billing.ErrWindowAlreadyVoided):
+		return huma.Error400BadRequest(op, err)
+	default:
+		return h.internalError(ctx, op, err)
+	}
 }
 
 func statementResponse(statement billing.Statement) apiwire.BillingStatement {
-	lineItems := make([]apiwire.BillingStatementLineItem, 0, len(statement.LineItems))
+	items := make([]apiwire.BillingStatementLineItem, 0, len(statement.LineItems))
 	for _, line := range statement.LineItems {
-		lineItems = append(lineItems, apiwire.BillingStatementLineItem{
-			ProductID:         line.ProductID,
-			PlanID:            line.PlanID,
-			BucketID:          line.BucketID,
-			BucketDisplayName: line.BucketDisplayName,
-			SKUID:             line.SKUID,
-			SKUDisplayName:    line.SKUDisplayName,
-			QuantityUnit:      line.QuantityUnit,
-			PricingPhase:      line.PricingPhase,
-			Quantity:          line.Quantity,
-			UnitRate:          apiwire.Uint64(line.UnitRate),
-			ChargeUnits:       apiwire.Uint64(line.ChargeUnits),
-			FreeTierUnits:     apiwire.Uint64(line.FreeTierUnits),
-			ContractUnits:     apiwire.Uint64(line.ContractUnits),
-			PurchaseUnits:     apiwire.Uint64(line.PurchaseUnits),
-			PromoUnits:        apiwire.Uint64(line.PromoUnits),
-			RefundUnits:       apiwire.Uint64(line.RefundUnits),
-			ReceivableUnits:   apiwire.Uint64(line.ReceivableUnits),
-			ReservedUnits:     apiwire.Uint64(line.ReservedUnits),
-		})
+		items = append(items, apiwire.BillingStatementLineItem{ProductID: line.ProductID, PlanID: line.PlanID, BucketID: line.BucketID, BucketDisplayName: line.BucketDisplayName, SKUID: line.SKUID, SKUDisplayName: line.SKUDisplayName, QuantityUnit: line.QuantityUnit, PricingPhase: line.PricingPhase, Quantity: line.Quantity, UnitRate: apiwire.Uint64(line.UnitRate), ChargeUnits: apiwire.Uint64(line.ChargeUnits), FreeTierUnits: apiwire.Uint64(line.FreeTierUnits), ContractUnits: apiwire.Uint64(line.ContractUnits), PurchaseUnits: apiwire.Uint64(line.PurchaseUnits), PromoUnits: apiwire.Uint64(line.PromoUnits), RefundUnits: apiwire.Uint64(line.RefundUnits), ReceivableUnits: apiwire.Uint64(line.ReceivableUnits), ReservedUnits: apiwire.Uint64(line.ReservedUnits)})
 	}
-	grantSummaries := make([]apiwire.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
-	for _, grant := range statement.GrantSummaries {
-		grantSummaries = append(grantSummaries, apiwire.BillingStatementGrantSummary{
-			ScopeType:      grant.ScopeType.String(),
-			ScopeProductID: grant.ScopeProductID,
-			ScopeBucketID:  grant.ScopeBucketID,
-			Source:         grant.Source.String(),
-			Available:      apiwire.Uint64(grant.Available),
-			Pending:        apiwire.Uint64(grant.Pending),
-		})
+	summaries := make([]apiwire.BillingStatementGrantSummary, 0, len(statement.GrantSummaries))
+	for _, summary := range statement.GrantSummaries {
+		summaries = append(summaries, apiwire.BillingStatementGrantSummary{ScopeType: summary.ScopeType, ScopeProductID: summary.ScopeProductID, ScopeBucketID: summary.ScopeBucketID, Source: summary.Source, Available: apiwire.Uint64(summary.Available), Pending: apiwire.Uint64(summary.Pending)})
 	}
-	return apiwire.BillingStatement{
-		OrgID:          apiwire.Uint64(uint64(statement.OrgID)),
-		ProductID:      statement.ProductID,
-		PeriodStart:    statement.PeriodStart,
-		PeriodEnd:      statement.PeriodEnd,
-		PeriodSource:   statement.PeriodSource,
-		GeneratedAt:    statement.GeneratedAt,
-		Currency:       statement.Currency,
-		UnitLabel:      statement.UnitLabel,
-		LineItems:      lineItems,
-		GrantSummaries: grantSummaries,
-		Totals: apiwire.BillingStatementTotals{
-			ChargeUnits:     apiwire.Uint64(statement.Totals.ChargeUnits),
-			FreeTierUnits:   apiwire.Uint64(statement.Totals.FreeTierUnits),
-			ContractUnits:   apiwire.Uint64(statement.Totals.ContractUnits),
-			PurchaseUnits:   apiwire.Uint64(statement.Totals.PurchaseUnits),
-			PromoUnits:      apiwire.Uint64(statement.Totals.PromoUnits),
-			RefundUnits:     apiwire.Uint64(statement.Totals.RefundUnits),
-			ReceivableUnits: apiwire.Uint64(statement.Totals.ReceivableUnits),
-			ReservedUnits:   apiwire.Uint64(statement.Totals.ReservedUnits),
-			TotalDueUnits:   apiwire.Uint64(statement.Totals.TotalDueUnits),
-		},
-	}
+	return apiwire.BillingStatement{OrgID: apiwire.Uint64(uint64(statement.OrgID)), ProductID: statement.ProductID, PeriodStart: statement.PeriodStart, PeriodEnd: statement.PeriodEnd, PeriodSource: statement.PeriodSource, GeneratedAt: statement.GeneratedAt, Currency: statement.Currency, UnitLabel: statement.UnitLabel, LineItems: items, GrantSummaries: summaries, Totals: apiwire.BillingStatementTotals{ChargeUnits: apiwire.Uint64(statement.Totals.ChargeUnits), FreeTierUnits: apiwire.Uint64(statement.Totals.FreeTierUnits), ContractUnits: apiwire.Uint64(statement.Totals.ContractUnits), PurchaseUnits: apiwire.Uint64(statement.Totals.PurchaseUnits), PromoUnits: apiwire.Uint64(statement.Totals.PromoUnits), RefundUnits: apiwire.Uint64(statement.Totals.RefundUnits), ReceivableUnits: apiwire.Uint64(statement.Totals.ReceivableUnits), ReservedUnits: apiwire.Uint64(statement.Totals.ReservedUnits), TotalDueUnits: apiwire.Uint64(statement.Totals.TotalDueUnits)}}
 }
 
-func entitlementsResponse(orgID billing.OrgID, view billing.EntitlementsView) apiwire.BillingEntitlementsView {
-	return apiwire.BillingEntitlementsView{
-		OrgID:     apiwire.Uint64(uint64(orgID)),
-		Universal: entitlementSlot(view.Universal),
-		Products:  entitlementProductSections(view.Products),
-	}
-}
-
-func entitlementProductSections(in []billing.EntitlementProductSection) []apiwire.BillingEntitlementProductSection {
-	out := make([]apiwire.BillingEntitlementProductSection, 0, len(in))
-	for _, section := range in {
-		out = append(out, apiwire.BillingEntitlementProductSection{
-			ProductID:   section.ProductID,
-			DisplayName: section.DisplayName,
-			ProductSlot: entitlementSlotPtr(section.ProductSlot),
-			Buckets:     entitlementBucketSections(section.Buckets),
-		})
-	}
-	return out
-}
-
-func entitlementBucketSections(in []billing.EntitlementBucketSection) []apiwire.BillingEntitlementBucketSection {
-	out := make([]apiwire.BillingEntitlementBucketSection, 0, len(in))
-	for _, section := range in {
-		skuSlots := make([]apiwire.BillingEntitlementSlot, 0, len(section.SKUSlots))
-		for _, slot := range section.SKUSlots {
-			skuSlots = append(skuSlots, entitlementSlot(slot))
+func entitlementsResponse(view billing.EntitlementsView) apiwire.BillingEntitlementsView {
+	products := make([]apiwire.BillingEntitlementProductSection, 0, len(view.Products))
+	for _, product := range view.Products {
+		buckets := make([]apiwire.BillingEntitlementBucketSection, 0, len(product.Buckets))
+		for _, bucket := range product.Buckets {
+			skus := make([]apiwire.BillingEntitlementSlot, 0, len(bucket.SKUSlots))
+			for _, slot := range bucket.SKUSlots {
+				skus = append(skus, entitlementSlot(slot))
+			}
+			buckets = append(buckets, apiwire.BillingEntitlementBucketSection{BucketID: bucket.BucketID, DisplayName: bucket.DisplayName, BucketSlot: entitlementSlotPtr(bucket.BucketSlot), SKUSlots: skus})
 		}
-		out = append(out, apiwire.BillingEntitlementBucketSection{
-			BucketID:    section.BucketID,
-			DisplayName: section.DisplayName,
-			BucketSlot:  entitlementSlotPtr(section.BucketSlot),
-			SKUSlots:    skuSlots,
-		})
+		products = append(products, apiwire.BillingEntitlementProductSection{ProductID: product.ProductID, DisplayName: product.DisplayName, ProductSlot: entitlementSlotPtr(product.ProductSlot), Buckets: buckets})
 	}
-	return out
+	return apiwire.BillingEntitlementsView{OrgID: apiwire.Uint64(uint64(view.OrgID)), Universal: entitlementSlot(view.Universal), Products: products}
 }
 
 func entitlementSlotPtr(slot *billing.EntitlementSlot) *apiwire.BillingEntitlementSlot {
@@ -385,354 +390,44 @@ func entitlementSlotPtr(slot *billing.EntitlementSlot) *apiwire.BillingEntitleme
 
 func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlot {
 	sources := make([]apiwire.BillingEntitlementSourceTotal, 0, len(slot.Sources))
-	for _, src := range slot.Sources {
-		sources = append(sources, apiwire.BillingEntitlementSourceTotal{
-			Source:           src.Source.String(),
-			PlanID:           src.PlanID,
-			Label:            src.Label,
-			PeriodStartUnits: apiwire.Uint64(src.PeriodStartUnits),
-			AvailableUnits:   apiwire.Uint64(src.AvailableUnits),
-			PendingUnits:     apiwire.Uint64(src.PendingUnits),
-			InlineExpiresAt:  src.InlineExpiresAt,
-		})
+	for _, source := range slot.Sources {
+		sources = append(sources, apiwire.BillingEntitlementSourceTotal{Source: source.Source, PlanID: source.PlanID, Label: source.Label, PeriodStartUnits: apiwire.Uint64(source.PeriodStartUnits), AvailableUnits: apiwire.Uint64(source.AvailableUnits), PendingUnits: apiwire.Uint64(source.PendingUnits), InlineExpiresAt: source.InlineExpiresAt})
 	}
-	return apiwire.BillingEntitlementSlot{
-		ScopeType:        slot.ScopeType.String(),
-		ProductID:        slot.ProductID,
-		ProductDisplay:   slot.ProductDisplay,
-		BucketID:         slot.BucketID,
-		BucketDisplay:    slot.BucketDisplay,
-		SKUID:            slot.SKUID,
-		SKUDisplay:       slot.SKUDisplay,
-		CoverageLabel:    slot.CoverageLabel,
-		PeriodStartUnits: apiwire.Uint64(slot.PeriodStartUnits),
-		SpentUnits:       apiwire.Uint64(slot.SpentUnits),
-		PendingUnits:     apiwire.Uint64(slot.PendingUnits),
-		AvailableUnits:   apiwire.Uint64(slot.AvailableUnits),
-		Sources:          sources,
-	}
+	return apiwire.BillingEntitlementSlot{ScopeType: slot.ScopeType, ProductID: slot.ProductID, ProductDisplay: slot.ProductDisplay, BucketID: slot.BucketID, BucketDisplay: slot.BucketDisplay, SKUID: slot.SKUID, SKUDisplay: slot.SKUDisplay, CoverageLabel: slot.CoverageLabel, PeriodStartUnits: apiwire.Uint64(slot.PeriodStartUnits), SpentUnits: apiwire.Uint64(slot.SpentUnits), PendingUnits: apiwire.Uint64(slot.PendingUnits), AvailableUnits: apiwire.Uint64(slot.AvailableUnits), Sources: sources}
 }
 
-func (h *Handler) listContracts(ctx context.Context, input *OrgPath) (*body[ContractsResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgID(input.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	contracts, err := client.ListContracts(ctx, orgID)
-	if err != nil {
-		return nil, h.internalServerError(ctx, "list contracts", err, "org_id", uint64(orgID))
-	}
-	out := make([]ContractResponse, 0, len(contracts))
-	for _, contract := range contracts {
-		out = append(out, ContractResponse{
-			ContractID:       contract.ContractID,
-			ProductID:        contract.ProductID,
-			PlanID:           contract.PlanID,
-			PhaseID:          contract.PhaseID,
-			CadenceKind:      contract.CadenceKind,
-			Status:           contract.Status,
-			PaymentState:     string(contract.PaymentState),
-			EntitlementState: string(contract.EntitlementState),
-			StartsAt:         contract.StartsAt,
-			EndsAt:           contract.EndsAt,
-			PhaseStart:       contract.PhaseStart,
-			PhaseEnd:         contract.PhaseEnd,
-		})
-	}
-	return &body[ContractsResponse]{Body: ContractsResponse{Contracts: out}}, nil
+func contractResponse(contract billing.ContractRecord) apiwire.BillingContract {
+	return apiwire.BillingContract{ContractID: contract.ContractID, ProductID: contract.ProductID, PlanID: contract.PlanID, PhaseID: contract.PhaseID, CadenceKind: contract.CadenceKind, Status: contract.Status, PaymentState: contract.PaymentState, EntitlementState: contract.EntitlementState, StartsAt: contract.StartsAt, EndsAt: contract.EndsAt, PhaseStart: contract.PhaseStart, PhaseEnd: contract.PhaseEnd}
 }
 
-func (h *Handler) listPlans(ctx context.Context, input *ProductPath) (*body[PlansResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
+func reservationResponse(reservation billing.WindowReservation) apiwire.BillingWindowReservation {
+	rates := map[string]apiwire.DecimalUint64{}
+	for sku, rate := range reservation.SKURates {
+		rates[sku] = apiwire.Uint64(rate)
 	}
-	plans, err := client.ListPlans(ctx, input.ProductID)
-	if err != nil {
-		return nil, h.internalServerError(ctx, "list plans", err, "product_id", input.ProductID)
-	}
-	out := make([]PlanResponse, 0, len(plans))
-	for _, plan := range plans {
-		out = append(out, PlanResponse{
-			PlanID:             plan.PlanID,
-			ProductID:          plan.ProductID,
-			DisplayName:        plan.DisplayName,
-			BillingMode:        plan.BillingMode,
-			Tier:               plan.Tier,
-			Currency:           plan.Currency,
-			MonthlyAmountCents: apiwire.Uint64(plan.MonthlyAmountCents),
-			AnnualAmountCents:  apiwire.Uint64(plan.AnnualAmountCents),
-			Active:             plan.Active,
-			IsDefault:          plan.IsDefault,
-		})
-	}
-	return &body[PlansResponse]{Body: PlansResponse{Plans: out}}, nil
+	return apiwire.BillingWindowReservation{WindowID: reservation.WindowID, OrgID: apiwire.Uint64(uint64(reservation.OrgID)), ProductID: reservation.ProductID, PlanID: reservation.PlanID, ActorID: reservation.ActorID, SourceType: reservation.SourceType, SourceRef: reservation.SourceRef, WindowSeq: reservation.WindowSeq, ReservationShape: reservation.ReservationShape, ReservedQuantity: reservation.ReservedQuantity, ReservedChargeUnits: apiwire.Uint64(reservation.ReservedChargeUnits), PricingPhase: reservation.PricingPhase, Allocation: reservation.Allocation, SKURates: rates, CostPerUnit: apiwire.Uint64(reservation.CostPerUnit), WindowStart: reservation.WindowStart, ActivatedAt: reservation.ActivatedAt, ExpiresAt: reservation.ExpiresAt, RenewBy: reservation.RenewBy}
 }
 
-func (h *Handler) createCheckout(ctx context.Context, input *body[apiwire.BillingCreateCheckoutRequest]) (*body[apiwire.BillingURLResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
+func billingOrgID(id string) (billing.OrgID, error) {
+	parsed, err := strconv.ParseUint(id, 10, 64)
+	if err != nil || parsed == 0 {
+		return 0, huma.Error400BadRequest("invalid org_id", err)
 	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	url, err := client.CreateCheckoutSession(ctx, orgID, input.Body.ProductID, billing.CheckoutParams{
-		AmountCents: input.Body.AmountCents,
-		SuccessURL:  input.Body.SuccessURL,
-		CancelURL:   input.Body.CancelURL,
-	})
-	if err != nil {
-		return nil, h.internalServerError(ctx, "create checkout", err, "org_id", uint64(orgID), "product_id", input.Body.ProductID)
-	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+	return billing.OrgID(parsed), nil
 }
 
-func (h *Handler) createContract(ctx context.Context, input *body[apiwire.BillingCreateContractRequest]) (*body[apiwire.BillingURLResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
+func billingOrgIDFromWire(id apiwire.DecimalUint64) (billing.OrgID, error) {
+	if id.Uint64() == 0 {
+		return 0, huma.Error400BadRequest("org_id must be positive")
 	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	url, err := client.CreateContract(ctx, orgID, input.Body.PlanID, billing.BillingCadence(input.Body.Cadence), input.Body.SuccessURL, input.Body.CancelURL)
-	if err != nil {
-		if errors.Is(err, billing.ErrUnsupportedCadence) {
-			return nil, huma.Error400BadRequest("unsupported contract cadence", err)
-		}
-		if errors.Is(err, billing.ErrUnsupportedContractChange) {
-			return nil, huma.Error400BadRequest("unsupported contract change", err)
-		}
-		return nil, h.internalServerError(ctx, "create contract checkout", err, "org_id", uint64(orgID), "plan_id", input.Body.PlanID, "cadence", input.Body.Cadence)
-	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
+	return billing.OrgID(id.Uint64()), nil
 }
 
-func (h *Handler) createContractChange(ctx context.Context, input *CreateContractChangeInput) (*body[apiwire.BillingContractChangeResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	result, err := client.CreateContractChange(ctx, orgID, input.ContractID, billing.ContractChangeRequest{
-		TargetPlanID: input.Body.TargetPlanID,
-		SuccessURL:   input.Body.SuccessURL,
-		CancelURL:    input.Body.CancelURL,
-	})
-	if err != nil {
-		if errors.Is(err, billing.ErrUnsupportedContractChange) {
-			return nil, huma.Error400BadRequest("unsupported contract change", err)
-		}
-		if errors.Is(err, billing.ErrContractNotFound) {
-			return nil, huma.Error404NotFound("contract not found", err)
-		}
-		return nil, h.internalServerError(ctx, "create contract change", err, "org_id", uint64(orgID), "contract_id", input.ContractID, "target_plan_id", input.Body.TargetPlanID)
-	}
-	return &body[apiwire.BillingContractChangeResponse]{Body: apiwire.BillingContractChangeResponse{
-		URL:        result.URL,
-		ChangeID:   result.ChangeID,
-		InvoiceID:  result.InvoiceID,
-		Status:     result.Status,
-		PriceDelta: apiwire.Uint64(result.PriceDeltaUnits),
-	}}, nil
-}
-
-func (h *Handler) cancelContract(ctx context.Context, input *CancelContractInput) (*body[CancelContractResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	contract, err := client.CancelContract(ctx, orgID, input.ContractID)
-	if err != nil {
-		if errors.Is(err, billing.ErrContractNotFound) {
-			return nil, huma.Error404NotFound("contract not found", err)
-		}
-		return nil, h.internalServerError(ctx, "cancel contract", err, "org_id", uint64(orgID), "contract_id", input.ContractID)
-	}
-	return &body[CancelContractResponse]{Body: CancelContractResponse{
-		Contract: ContractResponse{
-			ContractID:       contract.ContractID,
-			ProductID:        contract.ProductID,
-			PlanID:           contract.PlanID,
-			PhaseID:          contract.PhaseID,
-			CadenceKind:      contract.CadenceKind,
-			Status:           contract.Status,
-			PaymentState:     string(contract.PaymentState),
-			EntitlementState: string(contract.EntitlementState),
-			StartsAt:         contract.StartsAt,
-			EndsAt:           contract.EndsAt,
-			PhaseStart:       contract.PhaseStart,
-			PhaseEnd:         contract.PhaseEnd,
-		},
-	}}, nil
-}
-
-func (h *Handler) createPortal(ctx context.Context, input *body[apiwire.BillingCreatePortalSessionRequest]) (*body[apiwire.BillingURLResponse], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	url, err := client.CreatePortalSession(ctx, orgID, input.Body.ReturnURL)
-	if err != nil {
-		if errors.Is(err, billing.ErrNoStripeCustomer) {
-			problem := huma.Error422UnprocessableEntity("no stripe customer linked to this org", err)
-			if model, ok := problem.(*huma.ErrorModel); ok {
-				model.Type = problemTypeNoStripeCustomer
-			}
-			return nil, problem
-		}
-		return nil, h.internalServerError(ctx, "create portal session", err, "org_id", uint64(orgID))
-	}
-	return &body[apiwire.BillingURLResponse]{Body: apiwire.BillingURLResponse{URL: url}}, nil
-}
-
-func (h *Handler) reserveWindow(ctx context.Context, input *body[apiwire.BillingReserveWindowRequest]) (*body[apiwire.BillingReserveWindowResult], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	reservation, err := client.ReserveWindow(ctx, billing.ReserveRequest{
-		OrgID:           orgID,
-		ProductID:       input.Body.ProductID,
-		ActorID:         input.Body.ActorID,
-		Allocation:      input.Body.Allocation,
-		ConcurrentCount: input.Body.ConcurrentCount,
-		SourceType:      input.Body.SourceType,
-		SourceRef:       input.Body.SourceRef,
-		WindowSeq:       input.Body.WindowSeq,
-	})
-	if err != nil {
-		return nil, h.reserveWindowError(ctx, err)
-	}
-	return &body[apiwire.BillingReserveWindowResult]{Body: apiwire.BillingReserveWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
-}
-
-func (h *Handler) settleWindow(ctx context.Context, input *body[apiwire.BillingSettleWindowRequest]) (*body[apiwire.BillingSettleResult], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	result, err := client.SettleWindow(ctx, input.Body.WindowID, input.Body.ActualQuantity, input.Body.UsageSummary)
-	if err != nil {
-		return nil, h.settleWindowError(ctx, input.Body, err)
-	}
-	return &body[apiwire.BillingSettleResult]{Body: settleResultResponse(result)}, nil
-}
-
-func (h *Handler) activateWindow(ctx context.Context, input *body[apiwire.BillingActivateWindowRequest]) (*body[apiwire.BillingActivateWindowResult], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	reservation, err := client.ActivateWindow(ctx, input.Body.WindowID, input.Body.ActivatedAt)
-	if err != nil {
-		return nil, h.activateWindowError(ctx, input.Body.WindowID, err)
-	}
-	return &body[apiwire.BillingActivateWindowResult]{Body: apiwire.BillingActivateWindowResult{Reservation: windowReservationResponse(reservation)}}, nil
-}
-
-func (h *Handler) voidWindow(ctx context.Context, input *body[apiwire.BillingVoidWindowRequest]) (*body[apiwire.BillingVoidWindowResult], error) {
-	client, err := h.requireClient()
-	if err != nil {
-		return nil, err
-	}
-	if err := client.VoidWindow(ctx, input.Body.WindowID); err != nil {
-		return nil, h.voidWindowError(ctx, input.Body.WindowID, err)
-	}
-	return &body[apiwire.BillingVoidWindowResult]{Body: apiwire.BillingVoidWindowResult{WindowID: input.Body.WindowID}}, nil
-}
-
-func (h *Handler) requireClient() (*billing.Client, error) {
-	if h.client == nil {
-		return nil, huma.Error500InternalServerError("billing client unavailable")
-	}
-	return h.client, nil
-}
-
-func (h *Handler) reserveWindowError(ctx context.Context, err error) error {
-	switch {
-	case errors.Is(err, billing.ErrInsufficientBalance):
-		return huma.Error402PaymentRequired("reserve", err)
-	case errors.Is(err, billing.ErrOrgSuspended):
-		return huma.Error403Forbidden("reserve", err)
-	case errors.Is(err, billing.ErrWindowAlreadySettled), errors.Is(err, billing.ErrWindowAlreadyVoided), errors.Is(err, billing.ErrWindowNotReserved):
-		return huma.Error400BadRequest("reserve", err)
-	default:
-		return h.internalServerError(ctx, "reserve", err)
-	}
-}
-
-func (h *Handler) settleWindowError(ctx context.Context, input apiwire.BillingSettleWindowRequest, err error) error {
-	switch {
-	case errors.Is(err, billing.ErrWindowNotFound):
-		return huma.Error404NotFound("window not found")
-	case errors.Is(err, billing.ErrWindowAlreadyVoided):
-		return huma.Error400BadRequest("window already voided")
-	case errors.Is(err, billing.ErrWindowNotActivated):
-		return huma.Error400BadRequest("window not activated")
-	default:
-		return h.internalServerError(ctx, "settle", err, "window_id", input.WindowID, "actual_quantity", input.ActualQuantity)
-	}
-}
-
-func (h *Handler) activateWindowError(ctx context.Context, windowID string, err error) error {
-	switch {
-	case errors.Is(err, billing.ErrWindowNotFound):
-		return huma.Error404NotFound("window not found")
-	case errors.Is(err, billing.ErrWindowAlreadySettled):
-		return huma.Error400BadRequest("window already settled")
-	case errors.Is(err, billing.ErrWindowAlreadyVoided):
-		return huma.Error400BadRequest("window already voided")
-	default:
-		return h.internalServerError(ctx, "activate", err, "window_id", windowID)
-	}
-}
-
-func (h *Handler) voidWindowError(ctx context.Context, windowID string, err error) error {
-	switch {
-	case errors.Is(err, billing.ErrWindowNotFound):
-		return huma.Error404NotFound("window not found")
-	case errors.Is(err, billing.ErrWindowAlreadySettled):
-		return huma.Error400BadRequest("window already settled")
-	default:
-		return h.internalServerError(ctx, "void", err, "window_id", windowID)
-	}
-}
-
-func (h *Handler) internalServerError(ctx context.Context, operation string, err error, attrs ...any) error {
-	args := make([]any, 0, len(attrs)+2)
-	args = append(args, attrs...)
-	args = append(args, "error", err)
-	h.logError(ctx, "billing api "+operation, args...)
-	return huma.Error500InternalServerError(operation, err)
-}
-
-func (h *Handler) logError(ctx context.Context, msg string, args ...any) {
+func (h *Handler) internalError(ctx context.Context, operation string, err error) error {
 	if h.logger != nil {
-		h.logger.ErrorContext(ctx, msg, args...)
+		h.logger.ErrorContext(ctx, "billing api "+operation, "error", err)
 	}
+	return huma.Error500InternalServerError(operation, err)
 }
 
 func requireInternalRoleMiddleware(api huma.API, role string) func(huma.Context, func(huma.Context)) {
@@ -759,24 +454,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// grantPeriodStartPtr / grantPeriodEndPtr project a billing.GrantPeriod into
-// the apiwire BillingGrant DTO's pair of optional time.Time fields. The wire
-// shape mirrors the on-disk schema (two nullable columns) so external
-// consumers don't need to learn the in-memory GrantPeriod value type.
-func grantPeriodStartPtr(p *billing.GrantPeriod) *time.Time {
-	if p == nil {
-		return nil
-	}
-	value := p.Start
-	return &value
-}
-
-func grantPeriodEndPtr(p *billing.GrantPeriod) *time.Time {
-	if p == nil {
-		return nil
-	}
-	value := p.End
-	return &value
 }

@@ -14,11 +14,8 @@ func main() {
 	format := flag.String("format", "3.0", "OpenAPI output format: 3.0 or 3.1")
 	check := flag.Bool("check", false, "Compare generated output against the committed file")
 	flag.Parse()
-
-	var (
-		spec []byte
-		err  error
-	)
+	var spec []byte
+	var err error
 	switch *format {
 	case "3.0":
 		spec, err = billingapi.OpenAPIDowngradeYAML()
@@ -32,7 +29,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
 	if *check {
 		specPath := filepath.Join("openapi", "openapi-"+*format+".yaml")
 		current, readErr := os.ReadFile(specPath)
@@ -46,9 +42,5 @@ func main() {
 		}
 		return
 	}
-
-	if _, err := os.Stdout.Write(spec); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	_, _ = os.Stdout.Write(spec)
 }

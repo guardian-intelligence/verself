@@ -566,6 +566,9 @@ components:
             type: number
           minProperties: 1
           type: object
+        billing_job_id:
+          format: int64
+          type: integer
         concurrent_count:
           format: int64
           maximum: 9007199254740991
@@ -1070,12 +1073,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingActivateWindowResult"
           description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
         "404":
           content:
             application/problem+json:
@@ -1094,7 +1091,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
-      summary: Activate a reserved billing window
+      summary: Activate billing window
   /internal/billing/v1/checkout:
     post:
       operationId: create-checkout
@@ -1117,7 +1114,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Create a Stripe checkout session
+      summary: Create credit checkout
   /internal/billing/v1/contracts:
     post:
       operationId: create-contract
@@ -1134,25 +1131,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingURLResponse"
           description: OK
-        "400":
+        default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Create a self-serve contract checkout
+          description: Error
+      summary: Create contract checkout
   /internal/billing/v1/contracts/{contract_id}/cancel:
     post:
       operationId: cancel-contract
@@ -1177,25 +1162,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingCancelContractResponse"
           description: OK
-        "404":
+        default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Not Found
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Schedule contract cancellation
+          description: Error
+      summary: Cancel contract
   /internal/billing/v1/contracts/{contract_id}/changes:
     post:
       operationId: create-contract-change
@@ -1220,31 +1193,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingContractChangeResponse"
           description: OK
-        "400":
+        default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
-        "404":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Not Found
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Create an invoice-backed contract change
+          description: Error
+      summary: Create contract change
   /internal/billing/v1/orgs/{org_id}/contracts:
     get:
       operationId: list-contracts
@@ -1268,7 +1223,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List contracts for an org
+      summary: List org contracts
   /internal/billing/v1/orgs/{org_id}/entitlements:
     get:
       operationId: get-entitlements
@@ -1292,7 +1247,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get the entitlements view for an org
+      summary: Get org entitlements view
   /internal/billing/v1/orgs/{org_id}/grants:
     get:
       operationId: list-grants
@@ -1327,7 +1282,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List credit grants for an org
+      summary: List org credit grants
   /internal/billing/v1/orgs/{org_id}/statement:
     get:
       operationId: get-statement
@@ -1359,7 +1314,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Get current billing statement for an org
+      summary: Preview current statement
   /internal/billing/v1/portal:
     post:
       operationId: create-portal
@@ -1376,19 +1331,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingURLResponse"
           description: OK
-        "422":
+        default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
-          description: Unprocessable Entity
-        "500":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Internal Server Error
-      summary: Create a Stripe customer portal session
+          description: Error
+      summary: Create Stripe portal session
   /internal/billing/v1/products/{product_id}/plans:
     get:
       operationId: list-plans
@@ -1413,7 +1362,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List active billing plans for a product
+      summary: List active plans
   /internal/billing/v1/reserve:
     post:
       operationId: reserve-window
@@ -1430,12 +1379,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingReserveWindowResult"
           description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
         "402":
           content:
             application/problem+json:
@@ -1460,7 +1403,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
-      summary: Reserve a billing window
+      summary: Reserve billing window
   /internal/billing/v1/settle:
     post:
       operationId: settle-window
@@ -1477,12 +1420,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingSettleResult"
           description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
         "404":
           content:
             application/problem+json:
@@ -1501,7 +1438,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
-      summary: Settle a reserved billing window
+      summary: Settle billing window
   /internal/billing/v1/void:
     post:
       operationId: void-window
@@ -1518,12 +1455,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/BillingVoidWindowResult"
           description: OK
-        "400":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Bad Request
         "404":
           content:
             application/problem+json:
@@ -1542,6 +1473,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
-      summary: Void a reserved billing window
+      summary: Void billing window
 servers:
   - url: http://127.0.0.1:4242

@@ -1,60 +1,165 @@
 package billing
 
 import (
-	"context"
-	"fmt"
+	"errors"
 	"time"
 )
 
-const (
-	AcctGrantCode uint16 = 9
+type OrgID uint64
+
+type Config struct {
+	StripeSecretKey           string
+	EventDeliveryProjectEvery time.Duration
+	EntitlementReconcileEvery time.Duration
+	PendingTimeout            time.Duration
+	UseStripe                 bool
+}
+
+func DefaultConfig() Config {
+	return Config{
+		EventDeliveryProjectEvery: time.Second,
+		EntitlementReconcileEvery: time.Hour,
+		PendingTimeout:            time.Hour,
+		UseStripe:                 true,
+	}
+}
+
+var (
+	ErrInvalidConfig     = errors.New("billing: invalid config")
+	ErrPaymentRequired   = errors.New("billing: payment required")
+	ErrForbidden         = errors.New("billing: forbidden")
+	ErrContractNotFound  = errors.New("billing: contract not found")
+	ErrNoStripeCustomer  = errors.New("billing: no stripe customer")
+	ErrUnsupportedChange = errors.New("billing: unsupported contract change")
+	ErrUnsupportedCadence = errors.New("billing: unsupported cadence")
+	ErrInsufficientBalance = errors.New("billing: insufficient balance")
+	ErrOrgSuspended = errors.New("billing: org suspended")
+	ErrWindowNotFound = errors.New("billing: window not found")
+	ErrWindowNotReserved = errors.New("billing: window not reserved")
+	ErrWindowNotActivated = errors.New("billing: window not activated")
+	ErrWindowAlreadySettled = errors.New("billing: window already settled")
+	ErrWindowAlreadyVoided = errors.New("billing: window already voided")
 )
 
-type OperatorAcctType uint16
+type CheckoutParams struct {
+	AmountCents int64
+	SuccessURL  string
+	CancelURL   string
+}
 
-const (
-	AcctRevenue       OperatorAcctType = 3
-	AcctStripeHolding OperatorAcctType = 5
-)
+type ContractChangeRequest struct {
+	TargetPlanID string
+	SuccessURL   string
+	CancelURL    string
+}
 
-type XferKind uint8
+type ContractChangeResult struct {
+	URL             string
+	ChangeID        string
+	InvoiceID       string
+	Status          string
+	PriceDeltaUnits uint64
+}
 
-const (
-	KindReservation   XferKind = 1
-	KindSettlement    XferKind = 2
-	KindVoid          XferKind = 3
-	KindStripeDeposit XferKind = 5
-)
+type BillingCadence string
 
-type (
-	OrgID uint64
-	JobID int64
-)
+const CadenceMonthly BillingCadence = "monthly"
 
-type PricingPhase string
+type WindowReservation struct {
+	WindowID            string             `json:"window_id"`
+	OrgID               OrgID              `json:"org_id"`
+	ProductID           string             `json:"product_id"`
+	PlanID              string             `json:"plan_id"`
+	ActorID             string             `json:"actor_id"`
+	SourceType          string             `json:"source_type"`
+	SourceRef           string             `json:"source_ref"`
+	WindowSeq           uint32             `json:"window_seq"`
+	ReservationShape    string             `json:"reservation_shape"`
+	ReservedQuantity    uint32             `json:"reserved_quantity"`
+	ReservedChargeUnits uint64             `json:"reserved_charge_units"`
+	PricingPhase        string             `json:"pricing_phase"`
+	Allocation          map[string]float64 `json:"allocation"`
+	SKURates            map[string]uint64  `json:"sku_rates"`
+	CostPerUnit         uint64             `json:"cost_per_unit"`
+	WindowStart         time.Time          `json:"window_start"`
+	ActivatedAt         *time.Time         `json:"activated_at,omitempty"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	RenewBy             *time.Time         `json:"renew_by,omitempty"`
+}
 
-const (
-	PricingPhaseIncluded PricingPhase = "included"
-	PricingPhaseMetered  PricingPhase = "metered"
-)
+type ReserveRequest struct {
+	OrgID           OrgID
+	ProductID       string
+	ActorID         string
+	ConcurrentCount uint64
+	SourceType      string
+	SourceRef       string
+	WindowSeq       uint32
+	Allocation      map[string]float64
+	BillingJobID    int64
+}
 
-type ReservationShape string
+type SettleResult struct {
+	WindowID            string
+	ActualQuantity      uint32
+	BillableQuantity    uint32
+	WriteoffQuantity    uint32
+	BilledChargeUnits   uint64
+	WriteoffChargeUnits uint64
+	SettledAt           time.Time
+}
 
-const (
-	ReservationShapeTime  ReservationShape = "time"
-	ReservationShapeUnits ReservationShape = "units"
-)
+type PlanRecord struct {
+	PlanID             string
+	ProductID          string
+	DisplayName        string
+	BillingMode        string
+	Tier               string
+	Currency           string
+	MonthlyAmountCents uint64
+	AnnualAmountCents  uint64
+	Active             bool
+	IsDefault          bool
+}
 
-type GrantSourceType uint8
+type ContractRecord struct {
+	ContractID       string
+	ProductID        string
+	PlanID           string
+	PhaseID          string
+	CadenceKind      string
+	Status           string
+	PaymentState     string
+	EntitlementState string
+	StartsAt         time.Time
+	EndsAt           *time.Time
+	PhaseStart       *time.Time
+	PhaseEnd         *time.Time
+}
 
-const (
-	SourceFreeTier   GrantSourceType = 1
-	SourceContract   GrantSourceType = 2
-	SourcePurchase   GrantSourceType = 3
-	SourcePromo      GrantSourceType = 4
-	SourceRefund     GrantSourceType = 5
-	SourceReceivable GrantSourceType = 6
-)
+type GrantBalance struct {
+	OrgID               OrgID
+	GrantID             string
+	ScopeType           string
+	ScopeProductID      string
+	ScopeBucketID       string
+	ScopeSKUID          string
+	Source              string
+	SourceReferenceID   string
+	EntitlementPeriodID string
+	PolicyVersion       string
+	PlanID              string
+	PlanDisplayName     string
+	StartsAt            time.Time
+	PeriodStart         *time.Time
+	PeriodEnd           *time.Time
+	ExpiresAt           *time.Time
+	OriginalAmount      uint64
+	Amount              uint64
+	Available           uint64
+	Pending             uint64
+	Spent               uint64
+}
 
 type Statement struct {
 	OrgID          OrgID
@@ -70,12 +175,6 @@ type Statement struct {
 	Totals         StatementTotals
 }
 
-// StatementLineItem is one (plan, bucket, sku, pricing_phase, unit_rate) row in
-// the customer-facing invoice. Each row carries both the gross charge and the
-// per-source drain split (free tier, contract, purchase, promo, refund,
-// receivable) so the UI can render a receipt-style breakdown without a second
-// aggregation table. ReservedUnits captures the in-flight reservation share
-// for this (bucket, sku) pair; it is invoice-preview-only and never bills.
 type StatementLineItem struct {
 	ProductID         string
 	PlanID            string
@@ -98,10 +197,10 @@ type StatementLineItem struct {
 }
 
 type StatementGrantSummary struct {
-	ScopeType      GrantScopeType
+	ScopeType      string
 	ScopeProductID string
 	ScopeBucketID  string
-	Source         GrantSourceType
+	Source         string
 	Available      uint64
 	Pending        uint64
 }
@@ -116,419 +215,4 @@ type StatementTotals struct {
 	ReceivableUnits uint64
 	ReservedUnits   uint64
 	TotalDueUnits   uint64
-}
-
-// GrantPeriod is the half-open billing window [Start, End) a recurring grant
-// belongs to. The 001_billing_schema.up.sql CHECK constraints make
-// credit_grants.period_start and credit_grants.period_end either both NULL or
-// both NOT NULL with end > start; modeling them as a single value type is how
-// that joint invariant is enforced in the Go layer. A non-nil *GrantPeriod
-// always satisfies end > start; the (set, nil) and (nil, set) combinations
-// are unrepresentable.
-type GrantPeriod struct {
-	Start time.Time
-	End   time.Time
-}
-
-// Contains reports whether the half-open interval [Start, End) contains now.
-// This is the canonical "is this grant currently in its issued period" check
-// the entitlements view-model uses to fold a grant's OriginalAmount into the
-// "Period started with" column.
-func (p GrantPeriod) Contains(now time.Time) bool {
-	return !p.Start.After(now) && now.Before(p.End)
-}
-
-type GrantBalance struct {
-	GrantID             GrantID
-	ScopeType           GrantScopeType
-	ScopeProductID      string
-	ScopeBucketID       string
-	ScopeSKUID          string
-	Source              GrantSourceType
-	SourceReferenceID   string
-	EntitlementPeriodID string
-	PolicyVersion       string
-	// PlanID and PlanDisplayName are JOINed in for contract-source grants
-	// via credit_grants.entitlement_period_id → entitlement_periods.contract_id
-	// → contract_phases.plan_id → plans.display_name. Empty for any
-	// non-contract source.
-	PlanID          string
-	PlanDisplayName string
-	StartsAt        time.Time
-	Period          *GrantPeriod
-	ExpiresAt       *time.Time
-	// OriginalAmount is the grant's deposited amount, equal to the TigerBeetle
-	// account's credits_posted. Grants are issued with a single deposit
-	// transfer and never topped up, so this is constant for the lifetime of
-	// the grant. The entitlements view uses it as the "amount at start of
-	// period" for grants whose period contains now.
-	OriginalAmount uint64
-	Available      uint64
-	Pending        uint64
-	// Spent is the TigerBeetle account's debits_posted — the total settled
-	// consumption against this grant. Available + Pending + Spent ==
-	// OriginalAmount in the steady state.
-	Spent uint64
-}
-
-type ReservePolicy struct {
-	Shape                 ReservationShape `json:"shape"`
-	TargetQuantity        uint32           `json:"target_quantity"`
-	MinQuantity           uint32           `json:"min_quantity"`
-	AllowPartialReserve   bool             `json:"allow_partial_reserve"`
-	RenewSlackQuantity    uint32           `json:"renew_slack_quantity"`
-	OperatorGraceQuantity uint32           `json:"operator_grace_quantity"`
-}
-
-type WindowFundingLeg struct {
-	GrantID             GrantID         `json:"grant_id"`
-	TransferID          TransferID      `json:"transfer_id"`
-	ChargeProductID     string          `json:"charge_product_id"`
-	ChargeBucketID      string          `json:"charge_bucket_id"`
-	ChargeSKUID         string          `json:"charge_sku_id,omitempty"`
-	Amount              uint64          `json:"amount"`
-	Source              GrantSourceType `json:"source"`
-	GrantScopeType      GrantScopeType  `json:"grant_scope_type"`
-	GrantScopeProductID string          `json:"grant_scope_product_id"`
-	GrantScopeBucketID  string          `json:"grant_scope_bucket_id"`
-	GrantScopeSKUID     string          `json:"grant_scope_sku_id,omitempty"`
-}
-
-type WindowReservation struct {
-	WindowID            string             `json:"window_id"`
-	OrgID               OrgID              `json:"org_id"`
-	ProductID           string             `json:"product_id"`
-	PlanID              string             `json:"plan_id"`
-	ActorID             string             `json:"actor_id"`
-	SourceType          string             `json:"source_type"`
-	SourceRef           string             `json:"source_ref"`
-	WindowSeq           uint32             `json:"window_seq"`
-	ReservationShape    ReservationShape   `json:"reservation_shape"`
-	ReservedQuantity    uint32             `json:"reserved_quantity"`
-	ReservedChargeUnits uint64             `json:"reserved_charge_units"`
-	PricingPhase        PricingPhase       `json:"pricing_phase"`
-	Allocation          map[string]float64 `json:"allocation"`
-	SKURates            map[string]uint64  `json:"sku_rates"`
-	CostPerUnit         uint64             `json:"cost_per_unit"`
-	WindowStart         time.Time          `json:"window_start"`
-	ActivatedAt         *time.Time         `json:"activated_at,omitempty"`
-	ExpiresAt           time.Time          `json:"expires_at"`
-	RenewBy             *time.Time         `json:"renew_by,omitempty"`
-}
-
-type ReserveRequest struct {
-	OrgID           OrgID
-	ProductID       string
-	ActorID         string
-	Allocation      map[string]float64
-	ConcurrentCount uint64
-	SourceType      string
-	SourceRef       string
-	WindowSeq       uint32
-}
-
-type SettleResult struct {
-	WindowID            string    `json:"window_id"`
-	ActualQuantity      uint32    `json:"actual_quantity"`
-	BillableQuantity    uint32    `json:"billable_quantity"`
-	WriteoffQuantity    uint32    `json:"writeoff_quantity"`
-	BilledChargeUnits   uint64    `json:"billed_charge_units"`
-	WriteoffChargeUnits uint64    `json:"writeoff_charge_units"`
-	SettledAt           time.Time `json:"settled_at"`
-}
-
-// MeteringRow is the canonical settled-window projection written to ClickHouse.
-// The per-source drain maps are keyed by SKU id (ChargeSKUID on the originating
-// funding leg), not bucket id, because the funder drains most-specific-scope
-// first and the customer-facing invoice renders one line per SKU. Bucket-level
-// drain splits are derivable by grouping component_*_units through the
-// rate_context's sku→bucket mapping in the rare analytics query that needs it.
-type MeteringRow struct {
-	WindowID                 string             `ch:"window_id"`
-	OrgID                    string             `ch:"org_id"`
-	ActorID                  string             `ch:"actor_id"`
-	ProductID                string             `ch:"product_id"`
-	SourceType               string             `ch:"source_type"`
-	SourceRef                string             `ch:"source_ref"`
-	WindowSeq                uint32             `ch:"window_seq"`
-	ReservationShape         string             `ch:"reservation_shape"`
-	StartedAt                time.Time          `ch:"started_at"`
-	EndedAt                  time.Time          `ch:"ended_at"`
-	ReservedQuantity         uint64             `ch:"reserved_quantity"`
-	ActualQuantity           uint64             `ch:"actual_quantity"`
-	BillableQuantity         uint64             `ch:"billable_quantity"`
-	WriteoffQuantity         uint64             `ch:"writeoff_quantity"`
-	CycleID                  string             `ch:"cycle_id"`
-	PricingContractID        string             `ch:"pricing_contract_id"`
-	PricingPhaseID           string             `ch:"pricing_phase_id"`
-	PricingPlanID            string             `ch:"pricing_plan_id"`
-	PricingPhase             string             `ch:"pricing_phase"`
-	Dimensions               map[string]float64 `ch:"dimensions"`
-	ComponentQuantities      map[string]float64 `ch:"component_quantities"`
-	ComponentChargeUnits     map[string]uint64  `ch:"component_charge_units"`
-	BucketChargeUnits        map[string]uint64  `ch:"bucket_charge_units"`
-	ChargeUnits              uint64             `ch:"charge_units"`
-	WriteoffChargeUnits      uint64             `ch:"writeoff_charge_units"`
-	FreeTierUnits            uint64             `ch:"free_tier_units"`
-	ContractUnits            uint64             `ch:"contract_units"`
-	PurchaseUnits            uint64             `ch:"purchase_units"`
-	PromoUnits               uint64             `ch:"promo_units"`
-	RefundUnits              uint64             `ch:"refund_units"`
-	ReceivableUnits          uint64             `ch:"receivable_units"`
-	AdjustmentUnits          uint64             `ch:"adjustment_units"`
-	AdjustmentReason         string             `ch:"adjustment_reason"`
-	ComponentFreeTierUnits   map[string]uint64  `ch:"component_free_tier_units"`
-	ComponentContractUnits   map[string]uint64  `ch:"component_contract_units"`
-	ComponentPurchaseUnits   map[string]uint64  `ch:"component_purchase_units"`
-	ComponentPromoUnits      map[string]uint64  `ch:"component_promo_units"`
-	ComponentRefundUnits     map[string]uint64  `ch:"component_refund_units"`
-	ComponentReceivableUnits map[string]uint64  `ch:"component_receivable_units"`
-	ComponentAdjustmentUnits map[string]uint64  `ch:"component_adjustment_units"`
-	UsageEvidence            map[string]uint64  `ch:"usage_evidence"`
-	CostPerUnit              uint64             `ch:"cost_per_unit"`
-	RecordedAt               time.Time          `ch:"recorded_at"`
-	TraceID                  string             `ch:"trace_id"`
-}
-
-type MeteringWriter interface {
-	InsertMeteringRow(ctx context.Context, row MeteringRow) error
-}
-
-type CreditGrant struct {
-	OrgID               OrgID
-	ScopeType           GrantScopeType
-	ScopeProductID      string
-	ScopeBucketID       string
-	ScopeSKUID          string
-	Amount              uint64
-	Source              string
-	SourceReferenceID   string
-	EntitlementPeriodID string
-	PolicyVersion       string
-	ChangeID            string
-	CalculationKind     string
-	StartsAt            *time.Time
-	Period              *GrantPeriod
-	ExpiresAt           *time.Time
-}
-
-type CheckoutParams struct {
-	AmountCents int64
-	SuccessURL  string
-	CancelURL   string
-}
-
-type BillingCadence string
-
-const (
-	CadenceMonthly BillingCadence = "monthly"
-	CadenceAnnual  BillingCadence = "annual"
-)
-
-type ContractRecord struct {
-	ContractID       string
-	OrgID            string
-	ProductID        string
-	PlanID           string
-	PhaseID          string
-	CadenceKind      string
-	Status           string
-	PaymentState     EntitlementPaymentState
-	EntitlementState EntitlementState
-	StartsAt         time.Time
-	EndsAt           *time.Time
-	PhaseStart       *time.Time
-	PhaseEnd         *time.Time
-}
-
-type PlanRecord struct {
-	PlanID             string
-	ProductID          string
-	DisplayName        string
-	BillingMode        string
-	Tier               string
-	Currency           string
-	MonthlyAmountCents uint64
-	AnnualAmountCents  uint64
-	Active             bool
-	IsDefault          bool
-}
-
-type EntitlementCadence string
-
-const (
-	EntitlementCadenceMonthly EntitlementCadence = "monthly"
-	EntitlementCadenceAnnual  EntitlementCadence = "annual"
-)
-
-type EntitlementAnchorKind string
-
-const (
-	AnchorCalendarMonth EntitlementAnchorKind = "calendar_month"
-	AnchorContractPhase EntitlementAnchorKind = "contract_phase"
-	AnchorBillingCycle  EntitlementAnchorKind = "billing_cycle"
-)
-
-type EntitlementProrationMode string
-
-const (
-	ProrationNone       EntitlementProrationMode = "none"
-	ProrationByTimeLeft EntitlementProrationMode = "prorate_by_time_left"
-)
-
-type EntitlementPaymentState string
-
-const (
-	PaymentNotRequired   EntitlementPaymentState = "not_required"
-	PaymentPending       EntitlementPaymentState = "pending"
-	PaymentPaid          EntitlementPaymentState = "paid"
-	PaymentFailed        EntitlementPaymentState = "failed"
-	PaymentUncollectible EntitlementPaymentState = "uncollectible"
-	PaymentRefunded      EntitlementPaymentState = "refunded"
-)
-
-type EntitlementState string
-
-const (
-	EntitlementScheduled EntitlementState = "scheduled"
-	EntitlementActive    EntitlementState = "active"
-	EntitlementGrace     EntitlementState = "grace"
-	EntitlementClosed    EntitlementState = "closed"
-	EntitlementVoided    EntitlementState = "voided"
-)
-
-type EntitlementPolicy struct {
-	PolicyID       string
-	Source         GrantSourceType
-	ProductID      string
-	ScopeType      GrantScopeType
-	ScopeProductID string
-	ScopeBucketID  string
-	ScopeSKUID     string
-	AmountUnits    uint64
-	Cadence        EntitlementCadence
-	AnchorKind     EntitlementAnchorKind
-	ProrationMode  EntitlementProrationMode
-	PolicyVersion  string
-	ActiveFrom     time.Time
-	ActiveUntil    *time.Time
-}
-
-type EntitlementPeriod struct {
-	PeriodID          string
-	CycleID           string
-	OrgID             OrgID
-	ProductID         string
-	Source            GrantSourceType
-	PolicyID          string
-	ContractID        string
-	PhaseID           string
-	LineID            string
-	ChangeID          string
-	CalculationKind   string
-	ProviderInvoiceID string
-	ProviderEventID   string
-	ScopeType         GrantScopeType
-	ScopeProductID    string
-	ScopeBucketID     string
-	ScopeSKUID        string
-	AmountUnits       uint64
-	PeriodStart       time.Time
-	PeriodEnd         time.Time
-	PolicyVersion     string
-	PaymentState      EntitlementPaymentState
-	EntitlementState  EntitlementState
-	SourceReferenceID string
-	CreatedReason     string
-}
-
-type BillingEvent struct {
-	EventID           string    `ch:"event_id"`
-	EventType         string    `ch:"event_type"`
-	EventVersion      uint16    `ch:"event_version"`
-	AggregateType     string    `ch:"aggregate_type"`
-	AggregateID       string    `ch:"aggregate_id"`
-	ContractID        string    `ch:"contract_id"`
-	CycleID           string    `ch:"cycle_id"`
-	PricingContractID string    `ch:"pricing_contract_id"`
-	PricingPhaseID    string    `ch:"pricing_phase_id"`
-	PricingPlanID     string    `ch:"pricing_plan_id"`
-	InvoiceID         string    `ch:"invoice_id"`
-	ProviderEventID   string    `ch:"provider_event_id"`
-	OrgID             string    `ch:"org_id"`
-	ProductID         string    `ch:"product_id"`
-	OccurredAt        time.Time `ch:"occurred_at"`
-	Payload           string    `ch:"payload"`
-	PayloadHash       string    `ch:"payload_hash"`
-	CorrelationID     string    `ch:"correlation_id"`
-	CausationEventID  string    `ch:"causation_event_id"`
-	RecordedAt        time.Time `ch:"recorded_at"`
-}
-
-func ParseGrantSourceType(source string) (GrantSourceType, error) {
-	switch source {
-	case "free_tier":
-		return SourceFreeTier, nil
-	case "contract":
-		return SourceContract, nil
-	case "purchase":
-		return SourcePurchase, nil
-	case "promo":
-		return SourcePromo, nil
-	case "refund":
-		return SourceRefund, nil
-	case "receivable":
-		return SourceReceivable, nil
-	default:
-		return 0, fmt.Errorf("unknown grant source %q", source)
-	}
-}
-
-func (t GrantSourceType) String() string {
-	switch t {
-	case SourceFreeTier:
-		return "free_tier"
-	case SourceContract:
-		return "contract"
-	case SourcePurchase:
-		return "purchase"
-	case SourcePromo:
-		return "promo"
-	case SourceRefund:
-		return "refund"
-	case SourceReceivable:
-		return "receivable"
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-func (t GrantSourceType) IsFreeTier() bool {
-	return t == SourceFreeTier
-}
-
-// GrantSourceLabel is the customer-facing label for a grant source. For
-// contract grants the caller passes the JOINed plan display name; if it's
-// non-empty the plan name is the label, otherwise we fall back to a generic
-// "Contract" string. Non-contract sources ignore planDisplayName.
-func GrantSourceLabel(source GrantSourceType, planDisplayName string) string {
-	switch source {
-	case SourceFreeTier:
-		return "Free"
-	case SourceContract:
-		if planDisplayName != "" {
-			return planDisplayName
-		}
-		return "Contract"
-	case SourcePurchase:
-		return "Top Up"
-	case SourcePromo:
-		return "Promo"
-	case SourceRefund:
-		return "Refund"
-	case SourceReceivable:
-		return "Receivable"
-	default:
-		return source.String()
-	}
 }

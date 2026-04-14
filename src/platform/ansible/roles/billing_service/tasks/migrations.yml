@@ -5,14 +5,14 @@
   run_once: true
   ansible.builtin.shell:
     cmd: "set -o pipefail && find . -name '[0-9][0-9][0-9]_*.up.sql' -exec sha256sum {} + | sort | sha256sum"
-    chdir: "{{ playbook_dir }}/../../../billing-service/postgresql-migrations"
+    chdir: "{{ playbook_dir }}/../../../billing-service/migrations"
     executable: /bin/bash
   register: billing_service_pg_migrations_local_hash
   changed_when: false
 
 - name: Read remote PostgreSQL migrations fingerprint
   ansible.builtin.slurp:
-    src: /opt/forge-metal/postgresql-migrations/.applied-hash
+    src: /opt/forge-metal/billing-service-migrations/.applied-hash
   register: billing_service_pg_migrations_remote_hash
   failed_when: false
 
@@ -49,12 +49,12 @@
   block:
     - name: Remove deployed PostgreSQL migrations directory
       ansible.builtin.file:
-        path: /opt/forge-metal/postgresql-migrations
+        path: /opt/forge-metal/billing-service-migrations
         state: absent
 
     - name: Create deployed PostgreSQL migrations directory
       ansible.builtin.file:
-        path: /opt/forge-metal/postgresql-migrations
+        path: /opt/forge-metal/billing-service-migrations
         state: directory
         owner: root
         group: root
@@ -62,8 +62,8 @@
 
     - name: Upload PostgreSQL migrations
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../../../billing-service/postgresql-migrations/"
-        dest: /opt/forge-metal/postgresql-migrations/
+        src: "{{ playbook_dir }}/../../../billing-service/migrations/"
+        dest: /opt/forge-metal/billing-service-migrations/
         mode: "0644"
 
     - name: Probe billing callers before billing ledger reset
@@ -142,12 +142,12 @@
           -U billing
           -d sandbox
           -v ON_ERROR_STOP=1
-          -f /opt/forge-metal/postgresql-migrations/{{ item }}
+          -f /opt/forge-metal/billing-service-migrations/{{ item }}
       environment:
         PGPASSWORD: "{{ postgresql_billing_password }}"
       loop: >-
         {{
-          query('ansible.builtin.fileglob', playbook_dir + '/../../../billing-service/postgresql-migrations/[0-9][0-9][0-9]_*.up.sql')
+          query('ansible.builtin.fileglob', playbook_dir + '/../../../billing-service/migrations/[0-9][0-9][0-9]_*.up.sql')
           | map('basename')
           | sort
         }}
@@ -159,7 +159,7 @@
     - name: Record PostgreSQL migrations fingerprint
       ansible.builtin.copy:
         content: "{{ billing_service_pg_migrations_local_hash.stdout.split()[0] }}\n"
-        dest: /opt/forge-metal/postgresql-migrations/.applied-hash
+        dest: /opt/forge-metal/billing-service-migrations/.applied-hash
         mode: "0644"
 
 - name: Reconcile billing object ownership and privileges
@@ -177,26 +177,41 @@
         table_name text;
       BEGIN
         FOREACH table_name IN ARRAY ARRAY[
-          'products',
-          'plans',
           'orgs',
+          'products',
+          'credit_buckets',
+          'skus',
+          'plans',
+          'plan_sku_rates',
+          'entitlement_policies',
+          'plan_entitlements',
           'contracts',
+          'provider_bindings',
+          'payment_methods',
+          'billing_provider_events',
+          'contract_changes',
           'contract_phases',
           'contract_entitlement_lines',
           'billing_cycles',
           'entitlement_periods',
           'credit_grants',
           'billing_windows',
+          'invoice_finalizations',
           'billing_invoices',
           'invoice_line_items',
           'invoice_adjustments',
+          'invoice_number_allocators',
+          'billing_account_registry',
           'billing_events',
           'billing_event_delivery_queue',
-          'billing_provider_events',
-          'payment_methods',
-          'provider_bindings',
-          'invoice_number_allocators',
-          'billing_account_registry'
+          'billing_tasks',
+          'billing_clock_overrides',
+          'river_migration',
+          'river_job',
+          'river_queue',
+          'river_leader',
+          'river_client',
+          'river_client_queue'
         ]
         LOOP
           IF to_regclass('public.' || table_name) IS NOT NULL THEN
