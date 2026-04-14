@@ -47,4 +47,32 @@ The current database layout is:
 
 The OTel tables live in `default`, not in an `otel` database.
 
+## PostgreSQL Access
+
+PostgreSQL is not exposed directly. Use the repo wrapper so you do not have to
+manually prefix SSH, the admin password, or the stable worker `psql` path.
+
+Use it from the repo root:
+
+```bash
+make pg-list
+make pg-query DB=billing QUERY='SELECT count(*) FROM orgs'
+make pg-query DB=billing QUERY='SELECT count(*) FROM billing_events'
+make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
+make pg-shell DB=billing
+```
+
+Current service-owned database names:
+
+- `billing`: billing-service PostgreSQL state, River tables, billing events,
+  contracts, cycles, grants, windows, finalizations, and document artifacts.
+- `sandbox_rental`: sandbox-rental-service product control-plane state.
+- `identity_service`: identity-service state.
+- `mailbox_service`: mailbox-service state.
+- `frontend_auth`: TanStack Start server-owned OAuth session state.
+- `storefront`: reserved billing-owned database for future storefront surfaces.
+
+The billing product ID remains `sandbox`. Do not use `DB=sandbox`; that was a
+legacy billing database name and should not exist on a current deployment.
+
 Use `guest-rootfs.yml` when the guest kernel, rootfs, or staged Firecracker guest artifacts changed. It rebuilds and restages the guest artifacts without touching the rest of the platform.

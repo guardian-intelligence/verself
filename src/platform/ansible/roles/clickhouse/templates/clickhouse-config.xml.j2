@@ -62,7 +62,7 @@
         <billing_pg>
             <host>127.0.0.1</host>
             <port>5432</port>
-            <database>sandbox</database>
+            <database>{{ billing_service_pg_database | default('billing') }}</database>
             <user>billing</user>
             <password>{{ postgresql_billing_password }}</password>
         </billing_pg>

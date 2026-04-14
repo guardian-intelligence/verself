@@ -29,7 +29,7 @@ Run from `src/platform/ansible/`. `--tags` targets individual roles (e.g. `--tag
 | `observability-smoke.yml` | Minimal smoke probe used by `telemetry-proof` (`debug/assert` + `fm_uri`) |
 | `vm-guest-telemetry-dev.yml` | Hot-swap vm-guest-telemetry, boot + probe in Firecracker VM (~10s) |
 | `security-patch.yml` | Rolling OS security updates |
-| `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PG state and restart callers |
+| `billing-reset.yml` | Exhaustively wipe TigerBeetle + billing PostgreSQL database `billing` and restart callers |
 | `identity-reset.yml` | Exhaustively wipe identity-service PG state, re-apply migrations, restart |
 | `seed-system.yml` | Seed platform tenant + Acme tenant, billing, mailboxes, auth verify. `--tags identity,billing,stalwart,verify,dev-oidc` |
 
@@ -49,6 +49,20 @@ OTel logs live in `default.otel_logs`, not `forge_metal.otel_logs`:
 
 ```bash
 make clickhouse-query QUERY='SELECT Timestamp, Body FROM default.otel_logs ORDER BY Timestamp DESC LIMIT 10'
+```
+
+## Query PostgreSQL
+
+Use the Makefile wrappers instead of hand-typing SSH, passwords, and deployed
+client paths. The billing-service database is `billing`; `sandbox` is a product
+ID, not a PostgreSQL database name. The sandbox-rental-service database remains
+`sandbox_rental`.
+
+```bash
+make pg-list
+make pg-query DB=billing QUERY='SELECT count(*) FROM orgs'
+make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
+make pg-shell DB=billing
 ```
 
 ## Debug with traces

@@ -129,6 +129,21 @@ clock changes can synchronously apply due cycle rollover, scheduled
 downgrades/cancellations, current-period grants, and corresponding
 `billing_events`.
 
+Billing naming is intentionally split:
+
+- `BILLING_PRODUCT_ID=sandbox` is the product catalog/product-metering ID.
+- `DB=billing` is the billing-service PostgreSQL database.
+- `DB=sandbox_rental` is the sandbox-rental-service PostgreSQL database.
+- `DB=sandbox` is a legacy billing database name and should not exist.
+
+Use the PostgreSQL wrapper for direct inspection:
+
+```bash
+make pg-query DB=billing QUERY='SELECT count(*) FROM orgs'
+make pg-query DB=billing QUERY='SELECT event_type, count(*) FROM billing_events GROUP BY event_type ORDER BY event_type'
+make pg-query DB=sandbox_rental QUERY='SELECT count(*) FROM executions'
+```
+
 ### 5. Log in
 
 ```bash

@@ -17,6 +17,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${script_dir}/lib/verification-context.sh"
 verification_context_init "${BASH_SOURCE[0]}"
 output_dir="${2:-$(dirname "${run_json_path}")/evidence}"
+billing_db="${BILLING_DB:-billing}"
 
 mkdir -p "${output_dir}/clickhouse" "${output_dir}/postgres" "${output_dir}/tigerbeetle"
 : >"${output_dir}/clickhouse/execution_scheduler_span_sequence.tsv"
@@ -263,7 +264,7 @@ ORDER BY occurred_at, event_id
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/billing_events.tsv"
 
-remote_psql sandbox "
+remote_psql "${billing_db}" "
   COPY (
     SELECT
       finalization_id,
@@ -285,7 +286,7 @@ remote_psql sandbox "
   ) TO STDOUT WITH CSV HEADER;
 " >"${output_dir}/postgres/billing_finalizations.csv"
 
-remote_psql sandbox "
+remote_psql "${billing_db}" "
   COPY (
     SELECT
       document_id,
@@ -427,7 +428,7 @@ if [[ -n "${attempt_id}" ]]; then
   ) TO STDOUT WITH (FORMAT csv, HEADER true);
   " >"${output_dir}/postgres/river_execution_jobs.csv"
 
-  remote_psql sandbox "
+  remote_psql "${billing_db}" "
   COPY (
     SELECT
       window_id,
@@ -466,7 +467,7 @@ if [[ -n "${attempt_id}" ]]; then
   ) TO STDOUT WITH (FORMAT csv, HEADER true);
   " >"${output_dir}/postgres/billing_windows.csv"
 
-  remote_psql sandbox "
+  remote_psql "${billing_db}" "
   COPY (
     SELECT funding_legs::text
     FROM billing_windows
@@ -520,7 +521,7 @@ if [[ "${run_status}" == "succeeded" && -n "${execution_id}" && -n "${attempt_id
     " | tr -d '[:space:]'
   )"
   billing_window_count="$(
-    remote_psql_tsv sandbox "
+    remote_psql_tsv "${billing_db}" "
       SELECT count(*)
       FROM billing_windows
       WHERE source_type = 'execution_attempt'
