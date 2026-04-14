@@ -201,6 +201,9 @@ func (c *Client) CreateContractChange(ctx context.Context, orgID OrgID, contract
 	if target.ProductID != existing.ProductID || current.ProductID != existing.ProductID {
 		return ContractChangeResult{}, fmt.Errorf("%w: plan product mismatch", ErrUnsupportedChange)
 	}
+	if target.PlanID == current.PlanID {
+		return ContractChangeResult{URL: req.SuccessURL, Status: "unchanged"}, nil
+	}
 	if target.MonthlyAmountCents <= current.MonthlyAmountCents {
 		change, err := c.scheduleDowngrade(ctx, orgID, existing, target.PlanID)
 		if err != nil {
@@ -327,12 +330,16 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 
 func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote, providerInvoiceID string) error {
 	return c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		_, err := tx.Exec(ctx, `UPDATE contract_phases SET state = 'superseded', entitlement_state = 'closed', effective_end = $3, closed_at = $3, superseded_by_phase_id = $4 WHERE phase_id = $1 AND contract_id = $2 AND state IN ('active','grace')`, quote.FromPhaseID, quote.ContractID, quote.EffectiveAt, quote.ToPhaseID)
+		_, err := tx.Exec(ctx, `UPDATE contract_phases SET state = 'superseded', entitlement_state = 'closed', effective_end = $3, closed_at = $3 WHERE phase_id = $1 AND contract_id = $2 AND state IN ('active','grace')`, quote.FromPhaseID, quote.ContractID, quote.EffectiveAt)
 		if err != nil {
-			return fmt.Errorf("supersede old phase: %w", err)
+			return fmt.Errorf("close old phase: %w", err)
 		}
 		if err := c.insertContractPhaseTx(ctx, tx, quote.OrgID, quote.ProductID, quote.ContractID, quote.ToPhaseID, quote.TargetPlanID, "active", "paid", quote.EffectiveAt); err != nil {
 			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE contract_phases SET superseded_by_phase_id = $3 WHERE phase_id = $1 AND contract_id = $2 AND state = 'superseded'`, quote.FromPhaseID, quote.ContractID, quote.ToPhaseID)
+		if err != nil {
+			return fmt.Errorf("link superseded phase: %w", err)
 		}
 		if err := c.copyPlanEntitlementLinesTx(ctx, tx, quote.OrgID, quote.ProductID, quote.ContractID, quote.ToPhaseID, quote.TargetPolicies, quote.CycleEnd); err != nil {
 			return err
@@ -364,6 +371,10 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 		return err
 	}
 	return c.WithTx(ctx, "billing.contract.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		var alreadyActive bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contract_phases WHERE phase_id = $1 AND contract_id = $2 AND state = 'active' AND payment_state = 'paid')`, phaseID, contractID).Scan(&alreadyActive); err != nil {
+			return fmt.Errorf("check active contract phase: %w", err)
+		}
 		if err := c.insertContractTx(ctx, tx, orgID, productID, contractID, planID, effectiveAt); err != nil {
 			return err
 		}
@@ -372,6 +383,9 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 		}
 		if err := c.copyPlanEntitlementLinesTx(ctx, tx, orgID, productID, contractID, phaseID, policies, lineActiveFrom); err != nil {
 			return err
+		}
+		if alreadyActive {
+			return nil
 		}
 		if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_activated", AggregateType: "contract", AggregateID: contractID, OrgID: orgID, ProductID: productID, OccurredAt: effectiveAt, Payload: map[string]any{"contract_id": contractID, "pricing_phase_id": phaseID, "pricing_plan_id": planID}}); err != nil {
 			return err

@@ -29,19 +29,21 @@ export async function completeStripeCheckout(
     await emailField.fill(env.testEmail);
   }
 
-  await app.page.locator("#cardNumber").fill(env.stripeCard);
-  await app.page.locator("#cardExpiry").fill(env.stripeExpiry);
-  await app.page.locator("#cardCvc").fill(env.stripeCVC);
-  await app.page.locator("#billingName").fill(`${env.testFirstName} ${env.testLastName}`);
+  if (await isStripeCardFormVisible(app)) {
+    await app.page.locator("#cardNumber").fill(env.stripeCard);
+    await app.page.locator("#cardExpiry").fill(env.stripeExpiry);
+    await app.page.locator("#cardCvc").fill(env.stripeCVC);
+    await app.page.locator("#billingName").fill(`${env.testFirstName} ${env.testLastName}`);
 
-  const countrySelect = app.page.locator("#billingCountry");
-  if (await countrySelect.isVisible().catch(() => false)) {
-    await countrySelect.selectOption("US");
-  }
+    const countrySelect = app.page.locator("#billingCountry");
+    if (await countrySelect.isVisible().catch(() => false)) {
+      await countrySelect.selectOption("US");
+    }
 
-  const postalCode = app.page.locator("#billingPostalCode");
-  if (await postalCode.isVisible().catch(() => false)) {
-    await postalCode.fill("10001");
+    const postalCode = app.page.locator("#billingPostalCode");
+    if (await postalCode.isVisible().catch(() => false)) {
+      await postalCode.fill("10001");
+    }
   }
 
   await clickStripeSubmit(app);
@@ -53,6 +55,9 @@ export async function completeStripeCheckout(
 async function revealStripeCardForm(app: SandboxHarness): Promise<void> {
   await app.waitForCondition("stripe card form", 45_000, async () => {
     if (await isStripeCardFormVisible(app)) {
+      return true;
+    }
+    if (await isStripeSavedPaymentReady(app)) {
       return true;
     }
 
@@ -73,6 +78,17 @@ async function revealStripeCardForm(app: SandboxHarness): Promise<void> {
 
     return false;
   });
+}
+
+async function isStripeSavedPaymentReady(app: SandboxHarness): Promise<boolean> {
+  const buttons = app.page.getByRole("button", { name: /^(Pay|Subscribe|Save)$/i });
+  const buttonCount = await buttons.count();
+  for (let index = 0; index < buttonCount; index += 1) {
+    if (await buttons.nth(index).isVisible().catch(() => false)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function clickStripeCardSelector(
