@@ -539,14 +539,16 @@ func closePurchaseGrants(ctx context.Context, pg *pgxpool.Pool, orgID uint64, pr
 
 func appendStateEvent(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint64, planID string, balanceUnits uint64, now time.Time) error {
 	payload := map[string]any{
-		"email":        cfg.email,
-		"org_id":       orgIDText(orgID),
-		"product_id":   cfg.productID,
-		"state":        cfg.state,
-		"plan_id":      planID,
-		"balance_set":  cfg.balanceSet,
-		"updated_by":   cleanNonEmpty(cfg.updatedBy, "set-user-state"),
-		"business_now": now.Format(time.RFC3339Nano),
+		"email":                     cfg.email,
+		"org_id":                    orgIDText(orgID),
+		"product_id":                cfg.productID,
+		"state":                     cfg.state,
+		"plan_id":                   planID,
+		"balance_set":               cfg.balanceSet,
+		"updated_by":                cleanNonEmpty(cfg.updatedBy, "set-user-state"),
+		"business_now":              now.Format(time.RFC3339Nano),
+		"fixture_reset":             true,
+		"closed_grant_ledger_sweep": false,
 	}
 	if cfg.balanceSet {
 		payload["balance_units"] = balanceUnits
