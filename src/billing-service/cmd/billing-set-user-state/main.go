@@ -454,10 +454,12 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 			    ends_at = EXCLUDED.ends_at,
 			    status = 'open',
 			    finalization_due_at = EXCLUDED.finalization_due_at,
-			    blocked_reason = '',
+			    closed_reason = '',
+			    active_finalization_id = NULL,
+			    successor_cycle_id = NULL,
+			    closed_by_event_id = NULL,
 			    closed_for_usage_at = NULL,
-			    finalized_at = NULL,
-			    invoice_id = NULL
+			    finalized_at = NULL
 		`, cycleID, orgIDText(orgID), cfg.productID, cycleStart, cycleEnd)
 		if err != nil {
 			return fmt.Errorf("ensure open cycle: %w", err)

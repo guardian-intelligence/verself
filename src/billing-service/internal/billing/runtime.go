@@ -30,6 +30,8 @@ const (
 	MeteringProjectWindowKind       = "billing.metering.project_window"
 	MeteringProjectPendingKind      = "billing.metering.project_pending"
 	DueWorkApplyPendingKind         = "billing.due_work.apply_pending"
+	FinalizationRunKind             = "billing.finalization.run"
+	FinalizationRunPendingKind      = "billing.finalization.run_pending"
 )
 
 type Runtime struct {
@@ -86,6 +88,18 @@ type DueWorkApplyPendingArgs struct {
 
 func (DueWorkApplyPendingArgs) Kind() string { return DueWorkApplyPendingKind }
 
+type FinalizationRunArgs struct {
+	FinalizationID string `json:"finalization_id" river:"unique"`
+}
+
+func (FinalizationRunArgs) Kind() string { return FinalizationRunKind }
+
+type FinalizationRunPendingArgs struct {
+	Limit int `json:"limit"`
+}
+
+func (FinalizationRunPendingArgs) Kind() string { return FinalizationRunPendingKind }
+
 type ProviderEventApplyWorker struct {
 	river.WorkerDefaults[ProviderEventApplyArgs]
 	billing *Client
@@ -126,6 +140,16 @@ type DueWorkApplyPendingWorker struct {
 	billing *Client
 }
 
+type FinalizationRunWorker struct {
+	river.WorkerDefaults[FinalizationRunArgs]
+	billing *Client
+}
+
+type FinalizationRunPendingWorker struct {
+	river.WorkerDefaults[FinalizationRunPendingArgs]
+	billing *Client
+}
+
 func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) (*Runtime, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("billing runtime requires pgx pool")
@@ -145,6 +169,8 @@ func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) 
 	river.AddWorker(workers, &MeteringProjectWindowWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &DueWorkApplyPendingWorker{billing: billingClient})
+	river.AddWorker(workers, &FinalizationRunWorker{billing: billingClient})
+	river.AddWorker(workers, &FinalizationRunPendingWorker{billing: billingClient})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger: logger,
@@ -222,11 +248,25 @@ func (r *Runtime) EnqueueMaintenance(ctx context.Context, cadence time.Duration)
 		{args: ProviderEventApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "provider-event")},
 		{args: MeteringProjectPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "metering")},
 		{args: DueWorkApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "due-work")},
+		{args: FinalizationRunPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "finalization")},
 	}
 	for _, job := range jobs {
 		if _, err := r.client.Insert(ctx, job.args, job.opts); err != nil {
 			return fmt.Errorf("enqueue billing maintenance %s: %w", job.args.Kind(), err)
 		}
+	}
+	return nil
+}
+
+func (r *Runtime) EnqueueFinalizationRunTx(ctx context.Context, tx pgx.Tx, finalizationID string) error {
+	_, err := r.client.InsertTx(ctx, tx, FinalizationRunArgs{FinalizationID: finalizationID}, &river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueBillingDelivery,
+		Tags:        []string{"finalization"},
+		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByQueue: true},
+	})
+	if err != nil {
+		return fmt.Errorf("enqueue finalization run: %w", err)
 	}
 	return nil
 }
@@ -325,6 +365,28 @@ func (w *DueWorkApplyPendingWorker) Work(ctx context.Context, job *river.Job[Due
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", DueWorkApplyPendingKind), attribute.String("river.queue", QueueBillingReconcile))
 	_, err := w.billing.ApplyPendingDueBillingWork(ctx, job.Args.Limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *FinalizationRunWorker) Work(ctx context.Context, job *river.Job[FinalizationRunArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("billing.finalization_id", job.Args.FinalizationID), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", FinalizationRunKind), attribute.String("river.queue", QueueBillingDelivery))
+	_, err := w.billing.FinalizeBillingFinalization(ctx, job.Args.FinalizationID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *FinalizationRunPendingWorker) Work(ctx context.Context, job *river.Job[FinalizationRunPendingArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", FinalizationRunPendingKind), attribute.String("river.queue", QueueBillingReconcile))
+	_, err := w.billing.FinalizePendingBillingFinalizations(ctx, job.Args.Limit)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

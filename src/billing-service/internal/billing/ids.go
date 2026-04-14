@@ -67,8 +67,12 @@ func changeID(contractID, targetPlanID string, effectiveAt time.Time) string {
 	return textID("change", contractID, targetPlanID, effectiveAt.UTC().Format(time.RFC3339Nano))
 }
 
-func invoiceID(changeID string) string {
-	return textID("invoice", changeID)
+func finalizationID(subjectType, subjectID string) string {
+	return textID("finalization", subjectType, subjectID)
+}
+
+func documentID(subjectType, subjectID string) string {
+	return textID("document", subjectType, subjectID)
 }
 
 func eventID(eventType, aggregateID string, occurredAt time.Time, payloadHash string) string {

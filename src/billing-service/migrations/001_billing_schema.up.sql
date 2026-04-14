@@ -195,7 +195,7 @@ CREATE INDEX contracts_org_product_state_idx
 
 CREATE TABLE provider_bindings (
     binding_id            TEXT        PRIMARY KEY CHECK (binding_id <> ''),
-    aggregate_type        TEXT        NOT NULL CHECK (aggregate_type IN ('contract', 'payment_method', 'invoice', 'payment_intent', 'customer')),
+    aggregate_type        TEXT        NOT NULL CHECK (aggregate_type IN ('contract', 'payment_method', 'document', 'finalization', 'payment_intent', 'customer')),
     aggregate_id          TEXT        NOT NULL CHECK (aggregate_id <> ''),
     contract_id           TEXT        REFERENCES contracts(contract_id) ON DELETE CASCADE,
     provider              TEXT        NOT NULL CHECK (provider IN ('stripe', 'manual')),
@@ -255,7 +255,8 @@ CREATE TABLE billing_provider_events (
     provider_payment_intent_id  TEXT,
     contract_id                 TEXT,
     change_id                   TEXT,
-    invoice_id                  TEXT,
+    finalization_id             TEXT,
+    document_id                 TEXT,
     binding_id                  TEXT        REFERENCES provider_bindings(binding_id) ON DELETE SET NULL,
     org_id                      TEXT        REFERENCES orgs(org_id) ON DELETE SET NULL,
     product_id                  TEXT        REFERENCES products(product_id) ON DELETE SET NULL,
@@ -442,10 +443,12 @@ CREATE TABLE billing_cycles (
     cadence_kind          TEXT        NOT NULL CHECK (cadence_kind IN ('anniversary_monthly', 'calendar_monthly', 'annual', 'manual')),
     starts_at             TIMESTAMPTZ NOT NULL,
     ends_at               TIMESTAMPTZ NOT NULL,
-    status                TEXT        NOT NULL CHECK (status IN ('open', 'closing', 'closed_for_usage', 'invoice_finalizing', 'invoiced', 'blocked', 'voided')),
+    status                TEXT        NOT NULL CHECK (status IN ('open', 'closing', 'closed_for_usage', 'finalized', 'blocked', 'voided')),
     finalization_due_at   TIMESTAMPTZ NOT NULL,
-    invoice_id            TEXT,
-    blocked_reason        TEXT        NOT NULL DEFAULT '',
+    active_finalization_id TEXT,
+    successor_cycle_id    TEXT        REFERENCES billing_cycles(cycle_id) ON DELETE SET NULL,
+    closed_by_event_id    TEXT,
+    closed_reason         TEXT        NOT NULL DEFAULT '',
     closed_for_usage_at   TIMESTAMPTZ,
     finalized_at          TIMESTAMPTZ,
     metadata              JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -657,13 +660,23 @@ CREATE INDEX billing_window_ledger_legs_grant_idx
     ON billing_window_ledger_legs (grant_id, state, window_id, leg_seq)
     WHERE grant_id IS NOT NULL;
 
-CREATE TABLE invoice_finalizations (
-    invoice_finalization_id             TEXT        PRIMARY KEY CHECK (invoice_finalization_id <> ''),
-    cycle_id                            TEXT        NOT NULL REFERENCES billing_cycles(cycle_id) ON DELETE RESTRICT,
+CREATE TABLE billing_finalizations (
+    finalization_id                     TEXT        PRIMARY KEY CHECK (finalization_id <> ''),
+    subject_type                        TEXT        NOT NULL CHECK (subject_type IN ('cycle', 'contract_change', 'manual_adjustment', 'credit_note', 'provider_correction')),
+    subject_id                          TEXT        NOT NULL CHECK (subject_id <> ''),
+    cycle_id                            TEXT        REFERENCES billing_cycles(cycle_id) ON DELETE RESTRICT,
+    contract_change_id                  TEXT        REFERENCES contract_changes(change_id) ON DELETE SET NULL,
     org_id                              TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
     product_id                          TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-    invoice_id                          TEXT,
-    state                               TEXT        NOT NULL CHECK (state IN ('started', 'blocked', 'issued', 'failed', 'canceled')),
+    reason                              TEXT        NOT NULL CHECK (reason IN ('scheduled_period_end', 'free_to_paid_activation', 'immediate_upgrade_delta', 'contract_change_collection', 'cadence_change', 'enterprise_amendment', 'payment_dispute', 'contract_revocation', 'manual_adjustment', 'credit_note', 'provider_correction', 'operator_correction')),
+    trigger_event_id                    TEXT,
+    document_id                         TEXT,
+    document_kind                       TEXT        NOT NULL CHECK (document_kind IN ('invoice', 'statement', 'internal_statement', 'credit_note', 'adjustment_invoice')),
+    state                               TEXT        NOT NULL CHECK (state IN ('pending', 'collecting_facts', 'awaiting_ledger_commands', 'awaiting_provider_preview', 'ready_to_issue', 'blocked', 'issued', 'collection_pending', 'paid', 'payment_failed', 'closed', 'failed', 'voided')),
+    customer_visible                    BOOLEAN     NOT NULL DEFAULT false,
+    notification_policy                 TEXT        NOT NULL DEFAULT 'never' CHECK (notification_policy IN ('always', 'send_if_activity', 'never')),
+    has_usage                           BOOLEAN     NOT NULL DEFAULT false,
+    has_financial_activity              BOOLEAN     NOT NULL DEFAULT false,
     started_at                          TIMESTAMPTZ NOT NULL,
     completed_at                        TIMESTAMPTZ,
     blocked_reason                      TEXT        NOT NULL DEFAULT '',
@@ -677,21 +690,31 @@ CREATE TABLE invoice_finalizations (
     created_at                          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                          TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (completed_at IS NULL OR completed_at >= started_at),
-    UNIQUE (cycle_id, idempotency_key)
+    CHECK ((subject_type = 'cycle') = (cycle_id IS NOT NULL AND contract_change_id IS NULL)),
+    CHECK ((subject_type = 'contract_change') = (contract_change_id IS NOT NULL) OR subject_type <> 'contract_change'),
+    UNIQUE (subject_type, subject_id, idempotency_key)
 );
 
-CREATE INDEX invoice_finalizations_cycle_idx
-    ON invoice_finalizations (cycle_id, state, started_at DESC, invoice_finalization_id);
+CREATE INDEX billing_finalizations_cycle_idx
+    ON billing_finalizations (cycle_id, state, started_at DESC, finalization_id)
+    WHERE cycle_id IS NOT NULL;
 
-CREATE TABLE billing_invoices (
-    invoice_id                 TEXT        PRIMARY KEY CHECK (invoice_id <> ''),
-    invoice_number             TEXT,
+CREATE INDEX billing_finalizations_subject_idx
+    ON billing_finalizations (subject_type, subject_id, state, started_at DESC, finalization_id);
+
+CREATE UNIQUE INDEX billing_finalizations_active_cycle_idx
+    ON billing_finalizations (cycle_id)
+    WHERE subject_type = 'cycle' AND state <> 'voided';
+
+CREATE TABLE billing_documents (
+    document_id                TEXT        PRIMARY KEY CHECK (document_id <> ''),
+    document_number            TEXT,
+    document_kind              TEXT        NOT NULL CHECK (document_kind IN ('invoice', 'statement', 'internal_statement', 'credit_note', 'adjustment_invoice')),
+    finalization_id            TEXT        REFERENCES billing_finalizations(finalization_id) ON DELETE SET NULL,
     org_id                     TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
     product_id                 TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-    cycle_id                   TEXT        NOT NULL REFERENCES billing_cycles(cycle_id) ON DELETE RESTRICT,
-    invoice_finalization_id    TEXT        REFERENCES invoice_finalizations(invoice_finalization_id) ON DELETE SET NULL,
+    cycle_id                   TEXT        REFERENCES billing_cycles(cycle_id) ON DELETE RESTRICT,
     change_id                  TEXT        REFERENCES contract_changes(change_id) ON DELETE SET NULL,
-    invoice_kind               TEXT        NOT NULL CHECK (invoice_kind IN ('cycle', 'activation', 'contract_change', 'adjustment', 'credit_note')),
     status                     TEXT        NOT NULL CHECK (status IN ('draft', 'finalizing', 'issued', 'paid', 'payment_failed', 'blocked', 'voided')),
     payment_status             TEXT        NOT NULL DEFAULT 'n_a' CHECK (payment_status IN ('n_a', 'pending', 'paid', 'failed', 'uncollectible')),
     period_start               TIMESTAMPTZ NOT NULL,
@@ -704,7 +727,7 @@ CREATE TABLE billing_invoices (
     total_due_units            BIGINT      NOT NULL DEFAULT 0,
     recipient_email            TEXT        NOT NULL DEFAULT '',
     recipient_name             TEXT        NOT NULL DEFAULT '',
-    invoice_snapshot_json      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    document_snapshot_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
     rendered_html              TEXT        NOT NULL DEFAULT '',
     content_hash               TEXT        NOT NULL DEFAULT '',
     stripe_invoice_id          TEXT,
@@ -712,43 +735,43 @@ CREATE TABLE billing_invoices (
     stripe_invoice_pdf_url     TEXT,
     stripe_payment_intent_id   TEXT,
     resend_message_id          TEXT,
-    voided_by_invoice_id       TEXT        REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL,
+    voided_by_document_id      TEXT        REFERENCES billing_documents(document_id) ON DELETE SET NULL,
     blocked_reason             TEXT        NOT NULL DEFAULT '',
     metadata                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (period_end > period_start),
     CHECK (issued_at IS NULL OR status IN ('issued', 'paid', 'payment_failed', 'voided')),
-    CHECK (invoice_number IS NOT NULL OR status IN ('draft', 'finalizing', 'blocked'))
+    CHECK (document_number IS NOT NULL OR status IN ('draft', 'finalizing', 'blocked'))
 );
 
-CREATE UNIQUE INDEX billing_invoices_number_idx
-    ON billing_invoices (invoice_number)
-    WHERE invoice_number IS NOT NULL;
+CREATE UNIQUE INDEX billing_documents_number_idx
+    ON billing_documents (document_number)
+    WHERE document_number IS NOT NULL;
 
-CREATE UNIQUE INDEX billing_invoices_cycle_kind_idx
-    ON billing_invoices (cycle_id, invoice_kind)
-    WHERE status <> 'voided' AND invoice_kind = 'cycle';
-
-CREATE UNIQUE INDEX billing_invoices_finalization_idx
-    ON billing_invoices (invoice_finalization_id)
-    WHERE invoice_finalization_id IS NOT NULL AND status <> 'voided';
+CREATE UNIQUE INDEX billing_documents_finalization_idx
+    ON billing_documents (finalization_id)
+    WHERE finalization_id IS NOT NULL AND status <> 'voided';
 
 ALTER TABLE billing_cycles
-    ADD CONSTRAINT billing_cycles_invoice_fk
-    FOREIGN KEY (invoice_id) REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL;
+    ADD CONSTRAINT billing_cycles_active_finalization_fk
+    FOREIGN KEY (active_finalization_id) REFERENCES billing_finalizations(finalization_id) ON DELETE SET NULL;
 
-ALTER TABLE invoice_finalizations
-    ADD CONSTRAINT invoice_finalizations_invoice_fk
-    FOREIGN KEY (invoice_id) REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL;
+ALTER TABLE billing_finalizations
+    ADD CONSTRAINT billing_finalizations_document_fk
+    FOREIGN KEY (document_id) REFERENCES billing_documents(document_id) ON DELETE SET NULL;
 
 ALTER TABLE billing_provider_events
-    ADD CONSTRAINT billing_provider_events_invoice_fk
-    FOREIGN KEY (invoice_id) REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL;
+    ADD CONSTRAINT billing_provider_events_finalization_fk
+    FOREIGN KEY (finalization_id) REFERENCES billing_finalizations(finalization_id) ON DELETE SET NULL;
 
-CREATE TABLE invoice_line_items (
+ALTER TABLE billing_provider_events
+    ADD CONSTRAINT billing_provider_events_document_fk
+    FOREIGN KEY (document_id) REFERENCES billing_documents(document_id) ON DELETE SET NULL;
+
+CREATE TABLE billing_document_line_items (
     line_item_id                   TEXT        PRIMARY KEY CHECK (line_item_id <> ''),
-    invoice_id                     TEXT        NOT NULL REFERENCES billing_invoices(invoice_id) ON DELETE CASCADE,
+    document_id                    TEXT        NOT NULL REFERENCES billing_documents(document_id) ON DELETE CASCADE,
     line_type                      TEXT        NOT NULL CHECK (line_type IN ('usage', 'recurring_charge', 'adjustment', 'tax', 'rounding')),
     product_id                     TEXT        REFERENCES products(product_id) ON DELETE RESTRICT,
     bucket_id                      TEXT        REFERENCES credit_buckets(bucket_id) ON DELETE RESTRICT,
@@ -772,16 +795,16 @@ CREATE TABLE invoice_line_items (
     created_at                     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX invoice_line_items_invoice_idx
-    ON invoice_line_items (invoice_id, line_type, line_item_id);
+CREATE INDEX billing_document_line_items_document_idx
+    ON billing_document_line_items (document_id, line_type, line_item_id);
 
-CREATE INDEX invoice_line_items_sources_idx
-    ON invoice_line_items (source_window_id, source_phase_id, source_entitlement_period_id);
+CREATE INDEX billing_document_line_items_sources_idx
+    ON billing_document_line_items (source_window_id, source_phase_id, source_entitlement_period_id);
 
 CREATE TABLE invoice_adjustments (
     adjustment_id              TEXT        PRIMARY KEY CHECK (adjustment_id <> ''),
-    invoice_id                 TEXT        NOT NULL REFERENCES billing_invoices(invoice_id) ON DELETE CASCADE,
-    invoice_finalization_id    TEXT        NOT NULL REFERENCES invoice_finalizations(invoice_finalization_id) ON DELETE RESTRICT,
+    document_id                TEXT        NOT NULL REFERENCES billing_documents(document_id) ON DELETE CASCADE,
+    finalization_id            TEXT        NOT NULL REFERENCES billing_finalizations(finalization_id) ON DELETE RESTRICT,
     org_id                     TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
     product_id                 TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
     window_id                  TEXT        REFERENCES billing_windows(window_id) ON DELETE SET NULL,
@@ -805,7 +828,7 @@ CREATE TABLE invoice_adjustments (
 
 CREATE UNIQUE INDEX invoice_adjustments_deterministic_system_idx
     ON invoice_adjustments (
-        invoice_finalization_id,
+        finalization_id,
         org_id,
         product_id,
         COALESCE(window_id, ''),
@@ -815,13 +838,65 @@ CREATE UNIQUE INDEX invoice_adjustments_deterministic_system_idx
     )
     WHERE adjustment_source = 'system_policy';
 
-CREATE TABLE invoice_number_allocators (
+CREATE TABLE document_number_allocators (
     issuer_id     TEXT        NOT NULL CHECK (issuer_id <> ''),
-    invoice_year  INTEGER     NOT NULL CHECK (invoice_year >= 2000),
+    document_year INTEGER     NOT NULL CHECK (document_year >= 2000),
     prefix        TEXT        NOT NULL DEFAULT 'FM' CHECK (prefix <> ''),
     next_number   BIGINT      NOT NULL CHECK (next_number > 0),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (issuer_id, invoice_year)
+    PRIMARY KEY (issuer_id, document_year)
+);
+
+CREATE TABLE billing_document_previews (
+    preview_id                    TEXT        PRIMARY KEY CHECK (preview_id <> ''),
+    subject_type                  TEXT        NOT NULL CHECK (subject_type IN ('cycle', 'contract_change', 'manual_adjustment', 'credit_note', 'provider_correction')),
+    subject_id                    TEXT        NOT NULL CHECK (subject_id <> ''),
+    cycle_id                      TEXT        REFERENCES billing_cycles(cycle_id) ON DELETE CASCADE,
+    finalization_id               TEXT        REFERENCES billing_finalizations(finalization_id) ON DELETE SET NULL,
+    org_id                        TEXT        NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+    product_id                    TEXT        NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    document_kind                 TEXT        NOT NULL CHECK (document_kind IN ('invoice', 'statement', 'internal_statement', 'credit_note', 'adjustment_invoice')),
+    input_fingerprint             TEXT        NOT NULL CHECK (input_fingerprint <> ''),
+    state                         TEXT        NOT NULL CHECK (state IN ('built', 'provider_preview_pending', 'provider_preview_verified', 'failed', 'expired')),
+    forge_metal_snapshot_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    stripe_preview_response_json  JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    stripe_preview_expires_at     TIMESTAMPTZ,
+    subtotal_units                BIGINT      NOT NULL DEFAULT 0,
+    adjustment_units              BIGINT      NOT NULL DEFAULT 0,
+    tax_units                     BIGINT      NOT NULL DEFAULT 0,
+    total_due_units               BIGINT      NOT NULL DEFAULT 0,
+    expires_at                    TIMESTAMPTZ NOT NULL,
+    last_error                    TEXT        NOT NULL DEFAULT '',
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (subject_type, subject_id, input_fingerprint)
+);
+
+CREATE INDEX billing_document_previews_subject_idx
+    ON billing_document_previews (subject_type, subject_id, state, created_at DESC, preview_id);
+
+CREATE INDEX billing_document_previews_expiry_idx
+    ON billing_document_previews (expires_at, preview_id)
+    WHERE state <> 'expired';
+
+CREATE TABLE billing_payment_disputes (
+    dispute_id                    TEXT        PRIMARY KEY CHECK (dispute_id <> ''),
+    provider                      TEXT        NOT NULL CHECK (provider IN ('stripe', 'manual')),
+    provider_dispute_id           TEXT        NOT NULL CHECK (provider_dispute_id <> ''),
+    provider_payment_intent_id    TEXT        NOT NULL DEFAULT '',
+    provider_invoice_id           TEXT        NOT NULL DEFAULT '',
+    org_id                        TEXT        REFERENCES orgs(org_id) ON DELETE SET NULL,
+    product_id                    TEXT        REFERENCES products(product_id) ON DELETE SET NULL,
+    contract_id                   TEXT        REFERENCES contracts(contract_id) ON DELETE SET NULL,
+    document_id                   TEXT        REFERENCES billing_documents(document_id) ON DELETE SET NULL,
+    state                         TEXT        NOT NULL CHECK (state IN ('opened', 'needs_response', 'under_review', 'won', 'lost', 'closed')),
+    amount_units                  BIGINT      NOT NULL DEFAULT 0 CHECK (amount_units >= 0),
+    opened_at                     TIMESTAMPTZ NOT NULL,
+    closed_at                     TIMESTAMPTZ,
+    payload                       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (provider, provider_dispute_id)
 );
 
 CREATE TABLE billing_ledger_accounts (
@@ -987,8 +1062,10 @@ CREATE TRIGGER entitlement_periods_set_updated_at BEFORE UPDATE ON entitlement_p
 CREATE TRIGGER credit_grants_set_updated_at BEFORE UPDATE ON credit_grants FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_windows_set_updated_at BEFORE UPDATE ON billing_windows FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_window_ledger_legs_set_updated_at BEFORE UPDATE ON billing_window_ledger_legs FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
-CREATE TRIGGER invoice_finalizations_set_updated_at BEFORE UPDATE ON invoice_finalizations FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
-CREATE TRIGGER billing_invoices_set_updated_at BEFORE UPDATE ON billing_invoices FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_finalizations_set_updated_at BEFORE UPDATE ON billing_finalizations FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_documents_set_updated_at BEFORE UPDATE ON billing_documents FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_document_previews_set_updated_at BEFORE UPDATE ON billing_document_previews FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
+CREATE TRIGGER billing_payment_disputes_set_updated_at BEFORE UPDATE ON billing_payment_disputes FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_ledger_accounts_set_updated_at BEFORE UPDATE ON billing_ledger_accounts FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_ledger_commands_set_updated_at BEFORE UPDATE ON billing_ledger_commands FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_ledger_drift_events_set_updated_at BEFORE UPDATE ON billing_ledger_drift_events FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();

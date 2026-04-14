@@ -125,6 +125,18 @@ func (c *ServiceClient) ListGrants(ctx context.Context, orgID uint64, productID 
 	return out, nil
 }
 
+func (c *ServiceClient) ListDocuments(ctx context.Context, orgID uint64, productID string, reqEditors ...RequestEditorFn) (apiwire.BillingDocuments, error) {
+	query := url.Values{}
+	if productID != "" {
+		query.Set("product_id", productID)
+	}
+	var out apiwire.BillingDocuments
+	if err := c.getJSON(ctx, "/internal/billing/v1/orgs/"+apiwire.Uint64(orgID).String()+"/documents", query, &out, "list documents", nil, reqEditors...); err != nil {
+		return apiwire.BillingDocuments{}, err
+	}
+	return out, nil
+}
+
 func (c *ServiceClient) GetStatement(ctx context.Context, orgID uint64, productID string, reqEditors ...RequestEditorFn) (apiwire.BillingStatement, error) {
 	query := url.Values{}
 	if productID != "" {

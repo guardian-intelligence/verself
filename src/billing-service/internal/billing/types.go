@@ -62,7 +62,8 @@ type ContractChangeRequest struct {
 type ContractChangeResult struct {
 	URL             string
 	ChangeID        string
-	InvoiceID       string
+	FinalizationID  string
+	DocumentID      string
 	Status          string
 	PriceDeltaUnits uint64
 }
@@ -162,6 +163,28 @@ type ContractRecord struct {
 	EndsAt                    *time.Time
 	PhaseStart                *time.Time
 	PhaseEnd                  *time.Time
+}
+
+type DocumentRecord struct {
+	DocumentID             string
+	DocumentNumber         string
+	DocumentKind           string
+	FinalizationID         string
+	ProductID              string
+	CycleID                string
+	Status                 string
+	PaymentStatus          string
+	PeriodStart            time.Time
+	PeriodEnd              time.Time
+	IssuedAt               *time.Time
+	Currency               string
+	SubtotalUnits          uint64
+	AdjustmentUnits        int64
+	TaxUnits               uint64
+	TotalDueUnits          uint64
+	StripeHostedInvoiceURL string
+	StripeInvoicePDFURL    string
+	StripePaymentIntentID  string
 }
 
 type GrantBalance struct {
