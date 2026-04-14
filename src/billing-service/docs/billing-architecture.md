@@ -10,13 +10,13 @@ River wakes workers to advance what is due.
 Workers apply idempotent state transitions.
 TigerBeetle records operational financial truth.
 ClickHouse proves and presents the projection.
-Forge Metal owns billing periods, plan policy, invoice artifacts, and consent.
+Forge Metal owns billing periods, plan policy, finalization, billing documents, and consent.
 Stripe is a payment rail and hosted payment-method provider, not the billing domain model.
 ```
 
-PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit-grant metadata, billing-cycle rows, billing-window metadata, invoices, invoice adjustments, provider bindings, provider events, ledger command rows, billing event rows, event-delivery queue rows, and reconciliation cursors. TigerBeetle owns accepted balance-changing account and transfer facts. River owns durable asynchronous execution of billing work derived from PostgreSQL state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement or ledger truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers and persisted TigerBeetle IDs still converge to the same contract, phase, cycle, entitlement period, grant, ledger command, invoice, adjustment, and billing event facts.
+PostgreSQL owns billing domain state and scheduling facts: catalog rows, contracts, contract changes, contract phases, entitlement lines, entitlement periods, credit-grant metadata, billing-cycle rows, billing-window metadata, finalizations, billing documents, invoice adjustments, provider bindings, provider events, ledger command rows, billing event rows, event-delivery queue rows, and reconciliation cursors. TigerBeetle owns accepted balance-changing account and transfer facts. River owns durable asynchronous execution of billing work derived from PostgreSQL state. A River job is a wakeup, retry, concurrency, and observability handle; it is not entitlement or ledger truth. If a River job is late, duplicated, retried, canceled, or reconstructed by reconciliation, deterministic PostgreSQL identifiers and persisted TigerBeetle IDs still converge to the same contract, phase, cycle, entitlement period, grant, ledger command, finalization, document, adjustment, and billing event facts.
 
-Stripe is a payment and hosted billing provider. The target architecture does not use Stripe Subscriptions as the self-serve contract state machine. Forge Metal owns cadence, cycle rollover, contract changes, plan phases, entitlement materialization, invoice issue/finalization, overage consent, and dunning policy. Stripe is consulted when a card is vaulted, a hosted payment-method management surface is needed, an invoice is sent to Stripe for collection, a payment/refund/dispute event arrives, or Stripe Tax is enabled.
+Stripe is a payment and hosted billing provider. The target architecture does not use Stripe Subscriptions as the self-serve contract state machine. Forge Metal owns cadence, cycle rollover, contract changes, plan phases, entitlement materialization, finalization, billing document issue, overage consent, and dunning policy. Stripe is consulted when a card is vaulted, a hosted payment-method management surface is needed, a Forge Metal invoice document is sent to Stripe for collection, a payment/refund/dispute event arrives, or Stripe Tax is enabled.
 
 Reference points in this repo:
 
@@ -44,52 +44,52 @@ Forge Metal follows the industry-standard price-side shape: immediate upgrades c
 - Spendable balances, pending reservations, posted consumption, voids, top-up deposits, receivable accrual, receivable clearing, expiry sweeps, and financial corrections must be represented in TigerBeetle. PostgreSQL rows describe the domain operation; TigerBeetle accounts and transfers are the balance authority.
 - PostgreSQL domain identifiers remain deterministic text identifiers. TigerBeetle account IDs, transfer IDs, and correlation IDs are separate 128-bit values generated with TigerBeetle's time-based ID scheme, persisted before dispatch, and reused on retry.
 - A PostgreSQL row must not become customer-spendable or terminally settled until the corresponding TigerBeetle command has been acknowledged or reconciled as already posted.
-- Billing cycles define invoice/finalization periods only. Contract phases define commercial policy intervals. Do not add a parallel `plan_bindings` table unless `contract_phases` is being renamed.
-- Usage invoices must be computed from `billing_windows` and their captured `rate_context`/funding legs, not from live plan rates.
-- Cycle rollover must not wait on Stripe, invoice rendering, email delivery, or payment collection. New usage must have a successor cycle even when invoice finalization is delayed or blocked.
+- Billing cycles define backend billing periods only. Contract phases define commercial policy intervals. Do not add a parallel `plan_bindings` table unless `contract_phases` is being renamed.
+- Usage lines must be computed from `billing_windows` and their captured `rate_context`/funding legs, not from live plan rates.
+- Cycle rollover must not wait on Stripe, document rendering, email delivery, or payment collection. New usage must have a successor cycle even when finalization is delayed or blocked.
 - Provider webhooks must be durably recorded before being applied.
-- ClickHouse projection may lag and must never be required for authorization, invoice issuance, or ledger correctness.
-- Stripe never owns cadence, billing cycles, contract shape, SKU rates, grant scope, entitlement precedence, billing-window funding, invoice numbering, or metering.
+- ClickHouse projection may lag and must never be required for authorization, document issuance, or ledger correctness.
+- Stripe never owns cadence, billing cycles, contract shape, SKU rates, grant scope, entitlement precedence, billing-window funding, document numbering, or metering.
 - The free tier is universal and independent from paid contracts. Paid contract creation, upgrade, downgrade, cancellation, or payment failure must not close or decrement free-tier grants.
 - Premium usage must not drain non-premium bucket grants, and non-premium usage must not drain premium bucket grants. Cross-bucket funding must be represented by product-level or account-level grants.
 - Paid plan changes must be path-independent for a given effective time: a customer must not receive more total paid entitlement by stepping through intermediate self-serve plans than by moving directly from the current plan to the target plan. Immediate upgrades grant only the remaining positive entitlement delta between the target plan and the current plan; already-issued current-cycle paid grants remain available until their own period end instead of being replaced by a full prorated target-plan grant.
 - A payment method on file is not overage consent. Free-tier orgs and paid orgs that enabled hard caps must not receive receivable funding legs for usage beyond authorized grants and prepaid balances.
-- If usage without overage consent leaks through reservation or settlement, billing finalization must apply a deterministic automatic invoice adjustment before any customer charge is finalized. Automatic no-consent adjustments are capped at USD $0.99 per org per invoice finalization run; exceeding that cap blocks finalization and forces operator review instead of billing the customer.
-- Invoices are immutable after issue. Corrections are explicit adjustment invoices or credit-note invoices linked to the original artifact.
-- Forge Metal's stored invoice snapshot/rendered body is the canonical customer invoice artifact. Stripe invoice PDFs and hosted invoice pages are provider/payment artifacts that must reconcile to the Forge Metal invoice totals but do not become billing truth.
+- If usage without overage consent leaks through reservation or settlement, finalization must apply a deterministic automatic invoice adjustment before any customer charge is finalized. Automatic no-consent adjustments are capped at USD $0.99 per org per finalization run; exceeding that cap blocks finalization and forces operator review instead of billing the customer.
+- Billing documents are immutable after issue. Corrections are explicit adjustment invoices or credit-note documents linked to the original artifact.
+- Forge Metal's stored document snapshot/rendered body is the canonical customer billing artifact. Stripe invoice PDFs and hosted invoice pages are provider/payment artifacts that must reconcile to Forge Metal document totals but do not become billing truth.
 
 ## System roles
 
 | System | Role |
 |---|---|
-| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit-grant metadata, billing cycles, billing-window metadata, invoices, invoice adjustments, payment methods, provider bindings, provider events, ledger command state, billing event rows, event-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
-| River | Durable queue and scheduler runtime for provider-event application, contract-change execution, phase-boundary advancement, entitlement-period materialization, ledger command dispatch, ledger reconciliation, cycle rollover, invoice finalization, Stripe invoice collection, invoice email delivery, retries, and periodic repair. |
-| TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, pending reservations, settlements, voids, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer invoice artifact and not a substitute for PostgreSQL domain state. |
-| ClickHouse | Append-only usage evidence plus billing event, metering, invoice, adjustment, and provider-event projections used for invoice preview, statements, dashboards, verification, and reconciliation. |
+| PostgreSQL | Source of truth for catalog tables, contracts, contract changes, phases, entitlement lines, entitlement periods, credit-grant metadata, billing cycles, billing-window metadata, finalizations, billing documents, invoice adjustments, payment methods, provider bindings, provider events, ledger command state, billing event rows, event-delivery queue rows, schedule-defining timestamps, and reconciliation cursors. |
+| River | Durable queue and scheduler runtime for provider-event application, contract-change execution, phase-boundary advancement, entitlement-period materialization, ledger command dispatch, ledger reconciliation, cycle rollover, finalization, Stripe invoice collection, document email delivery, retries, and periodic repair. |
+| TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, pending reservations, settlements, voids, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer billing document artifact and not a substitute for PostgreSQL domain state. |
+| ClickHouse | Append-only usage evidence plus billing event, metering, document, adjustment, and provider-event projections used for document preview, statements, dashboards, verification, and reconciliation. |
 | Stripe | SetupIntents, PaymentMethods, Customer Portal, one-off invoice collection, payment intents, refunds, disputes, optional Stripe Tax, and hosted payment artifacts. Stripe Subscriptions are not part of the target domain model. |
-| Mailbox service | Transactional delivery of Forge Metal invoice emails from the stored invoice artifact. Stripe invoice emailing is disabled in the target Forge Metal canonical-invoice path. |
+| Mailbox service | Transactional delivery of Forge Metal document emails from the stored billing document artifact. Stripe invoice emailing is disabled in the target Forge Metal canonical-document path. |
 
 ## Design commitments and reversible choices
 
 The load-bearing commitments are:
 
-- Forge Metal owns cadence, contract shape, phases, entitlements, invoice artifacts, invoice numbering, overage consent, and finalization policy. Stripe Subscriptions must not become the self-serve contract state machine.
+- Forge Metal owns cadence, contract shape, phases, entitlements, billing documents, document numbering, overage consent, and finalization policy. Stripe Subscriptions must not become the self-serve contract state machine.
 - PostgreSQL owns every schedule-defining timestamp and every durable state-machine row. A River job may be missing, duplicated, canceled, delayed, or reconstructed without changing billing truth.
-- Cycle rollover and invoice finalization are separate transition paths. Rollover opens the successor cycle before Stripe collection, invoice email, or payment completion so valid usage is not blocked by a slow external rail.
-- Forge Metal's issued invoice artifact is canonical. Stripe invoice PDFs, hosted invoice pages, and payment intents are provider artifacts that must reconcile back to the Forge Metal row.
-- TigerBeetle account and transfer IDs are operational ledger identifiers only. They must not replace `contract_id`, `phase_id`, `cycle_id`, `period_id`, `grant_id`, `window_id`, `invoice_id`, `adjustment_id`, or `event_id` in public APIs, ClickHouse facts, or PostgreSQL domain relationships.
+- Cycle rollover and finalization are separate transition paths. Rollover opens the successor cycle before Stripe collection, document email, or payment completion so valid usage is not blocked by a slow external rail.
+- Forge Metal's issued billing document is canonical. Stripe invoice PDFs, hosted invoice pages, and payment intents are provider artifacts that must reconcile back to the Forge Metal row.
+- TigerBeetle account and transfer IDs are operational ledger identifiers only. They must not replace `contract_id`, `phase_id`, `cycle_id`, `period_id`, `grant_id`, `window_id`, `finalization_id`, `document_id`, `adjustment_id`, or `event_id` in public APIs, ClickHouse facts, or PostgreSQL domain relationships.
 - Ledger command rows are durable side-effect state, not immutable billing facts. Immutable material facts live in `billing_events`; TigerBeetle transfers live in TigerBeetle; command rows bridge the two without becoming a third ledger.
 - A payment method on file is not overage consent. Free-tier and hard-cap customers must not receive customer receivables for leaked no-consent usage.
-- Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, invoice, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
+- Enterprise agreements and self-serve Stripe-backed agreements use the same contract, phase, change, entitlement, cycle, finalization, document, and adjustment tables. Enterprise is a contract kind, phase kind, recurrence policy, collection method, and provider-binding choice, not a second billing engine.
 - Self-serve catalog upgrades must be anti-arbitrage and path-independent at the same effective timestamp: charge the prorated positive price delta, preserve already-issued current-cycle paid grants until their own expiry, and issue only the prorated positive entitlement delta for the target phase.
-- ClickHouse is proof/read-model infrastructure. It must not perform billing transitions, authorize usage, issue invoices, or decide ledger correctness.
+- ClickHouse is proof/read-model infrastructure. It must not perform billing transitions, authorize usage, issue documents, or decide ledger correctness.
 
 The implementation choices that may vary without changing the target architecture are:
 
 - Exact River job names, queue names, and job granularity, as long as jobs remain deterministic over domain identity.
 - Whether a boundary uses bounded repair scanners, transactionally enqueues every one-row River job with its domain row, or does both for belt-and-suspenders recovery.
-- Whether payment retry execution is delegated to Stripe automatic collection or owned by Forge Metal dunning through `billing.payment.retry`, as long as Forge Metal invoice state remains canonical.
-- Dormant zero-usage zero-total cycle notification policy. The accounting behavior is fixed: every closed cycle has a finalization record and an invoice artifact or internal statement artifact; customer email is suppressed only when policy says the cycle is dormant and not useful to the customer.
+- Whether payment retry execution is delegated to Stripe automatic collection or owned by Forge Metal dunning through `billing.payment.retry`, as long as Forge Metal document payment state remains canonical.
+- Dormant zero-usage zero-total cycle notification policy. The accounting behavior is fixed: every closed cycle has a finalization record and a billing document or internal statement artifact; customer email is suppressed only when policy says the cycle is dormant and not useful to the customer.
 - ClickHouse projection table layout, as long as PostgreSQL remains authoritative for domain state, TigerBeetle remains authoritative for balances, and projections remain idempotent by deterministic identifiers.
 - Exact numeric TigerBeetle account and transfer codes, as long as code meanings are stable after first production use and are stored in code/docs/registry together.
 
@@ -136,9 +136,9 @@ Target billing job kinds:
 - `billing.entitlement_period.ensure`: materialize one deterministic entitlement period and its grant.
 - `billing.entitlement_reconcile.org`: repair current and next entitlement periods for one org.
 - `billing.cycle.rollover`: close a cycle for usage, open the successor cycle, and enqueue finalization for the closed cycle.
-- `billing.invoice.finalize`: compute the immutable invoice artifact, enforce overage consent, apply automatic adjustments, enforce the adjustment cap, allocate the invoice number, and mark the invoice as issued or blocked.
-- `billing.invoice.stripe_collect`: create/finalize the Stripe invoice for a Forge Metal invoice that needs Stripe collection.
-- `billing.invoice.email`: send the stored Forge Metal invoice email through mailbox-service.
+- `billing.finalization.run`: compute and advance one finalization step for a cycle, contract change, or correction subject; enforce overage consent, apply automatic adjustments, enforce the adjustment cap, allocate the document number, and issue or block the document.
+- `billing.document.stripe_collect`: create/finalize the Stripe invoice for a Forge Metal invoice document that needs Stripe collection.
+- `billing.document.email`: send the stored Forge Metal document email through mailbox-service.
 - `billing.payment.retry`: run payment retry policy only when Forge Metal owns dunning instead of delegating automatic collection to Stripe.
 - `billing.ledger.command_dispatch`: dispatch one durable TigerBeetle command, then mark the corresponding PostgreSQL rows posted, settled, voided, retryable, or dead-lettered.
 - `billing.ledger.command_dispatch_pending`: repair stuck or missing ledger dispatch work.
@@ -163,9 +163,9 @@ Job uniqueness must be derived from domain identity, not random worker identity:
 - Phase boundary jobs key by `(phase_id, boundary_kind, boundary_at)`.
 - Entitlement period jobs key by `period_id` or the deterministic period source tuple.
 - Cycle rollover jobs key by `(cycle_id, ends_at)`.
-- Invoice finalization jobs key by `invoice_finalization_id` or `cycle_id` when there is exactly one invoice per cycle.
-- Stripe collection jobs key by `invoice_id`.
-- Invoice email jobs key by `invoice_id`.
+- Finalization jobs key by `finalization_id`.
+- Stripe collection jobs key by `document_id`.
+- Document email jobs key by `document_id`.
 - Ledger command jobs key by `command_id`.
 - Ledger reconciliation jobs key by `(reconcile_scope, org_id, product_id, reconcile_at_bucket)`.
 - Grant expiry jobs key by `(grant_id, expires_at)`.
@@ -182,31 +182,31 @@ River docs to keep near this design:
 
 ## TigerBeetle ledger model
 
-TigerBeetle is the operational financial ledger for credit-unit balances. PostgreSQL is still the domain source of truth: it defines which org, product, contract, phase, cycle, grant, window, invoice, and adjustment exists and what state machine transition is allowed. TigerBeetle answers a narrower but load-bearing question: what balance exists, what amount is pending, and what immutable debit/credit movement has been accepted by the ledger.
+TigerBeetle is the operational financial ledger for credit-unit balances. PostgreSQL is still the domain source of truth: it defines which org, product, contract, phase, cycle, grant, window, finalization, document, and adjustment exists and what state machine transition is allowed. TigerBeetle answers a narrower but load-bearing question: what balance exists, what amount is pending, and what immutable debit/credit movement has been accepted by the ledger.
 
-TigerBeetle is not the legal invoice artifact, not a general-purpose customer-support database, and not a replacement for PostgreSQL constraints. It is also not a GAAP general ledger. The account names below deliberately track Forge Metal operational credit flows: issued allowance, purchased credits, pending usage locks, settled usage value, customer receivables, absorbed no-consent usage, and internal showback. Finance exports can map those flows into GAAP accounts later, but the billing hot path must not wait for that mapping.
+TigerBeetle is not the legal billing document artifact, not a general-purpose customer-support database, and not a replacement for PostgreSQL constraints. It is also not a GAAP general ledger. The account names below deliberately track Forge Metal operational credit flows: issued allowance, purchased credits, pending usage locks, settled usage value, customer receivables, absorbed no-consent usage, and internal showback. Finance exports can map those flows into GAAP accounts later, but the billing hot path must not wait for that mapping.
 
 The supported TigerBeetle ledger for Forge Metal credit units is ledger `1`, denominated in Forge Metal ledger units. The USD scale is `100_000` ledger units per cent. Ledgers represent asset classes or materially different partitions; do not use one ledger per org. Tenant, product, grant source, and business-time identity belong in PostgreSQL and TigerBeetle `user_data_*` fields.
 
 ### Ledger identity
 
-PostgreSQL domain IDs are deterministic text IDs. Examples: `grant_id`, `window_id`, `cycle_id`, `contract_id`, `phase_id`, `invoice_id`, and `event_id`. They remain the IDs exposed in APIs, OpenAPI specs, ClickHouse projections, support queries, and billing events.
+PostgreSQL domain IDs are deterministic text IDs. Examples: `grant_id`, `window_id`, `cycle_id`, `contract_id`, `phase_id`, `finalization_id`, `document_id`, and `event_id`. They remain the IDs exposed in APIs, OpenAPI specs, ClickHouse projections, support queries, and billing events.
 
 TigerBeetle object IDs are separate 128-bit IDs:
 
 - `account_id`: the TigerBeetle account ID for an operator account, grant account, or receivable account.
 - `tb_transfer_id`: the TigerBeetle transfer ID for a deposit, reservation, settlement, void, receivable, payment-clearing, expiry, correction, or showback movement.
-- `ledger_correlation_id`: a query correlation value stored in TigerBeetle `user_data_128` and in PostgreSQL. It may point at a window, grant, invoice finalization, provider event, or ledger command, but it is not the domain ID.
+- `ledger_correlation_id`: a query correlation value stored in TigerBeetle `user_data_128` and in PostgreSQL. It may point at a window, grant, finalization, provider event, or ledger command, but it is not the domain ID.
 
 TigerBeetle IDs must use the client `id()`/`types.ID()` time-based scheme and must be persisted before dispatch. Retries reuse the persisted ID list exactly. Do not derive TigerBeetle account or transfer IDs from SHA-256, FNV, ULID byte swaps, leg indexes, transfer kinds, or text domain IDs. Business idempotency comes from PostgreSQL unique keys and persisted command payloads; TigerBeetle idempotency comes from replaying the same TigerBeetle IDs.
 
 `user_data_*` conventions:
 
 - Grant accounts use `user_data_64 = org_id` and `user_data_32 = grant_source_code`.
-- Customer receivable accounts use `user_data_64 = org_id`, `user_data_32 = receivable_scope_code`, and `user_data_128 = cycle, invoice, or org/product receivable correlation ID depending on account granularity.
+- Customer receivable accounts use `user_data_64 = org_id`, `user_data_32 = receivable_scope_code`, and `user_data_128 = cycle, document, finalization, or org/product receivable correlation ID depending on account granularity.
 - Reservation, settlement, and void transfers use `user_data_128 = window ledger_correlation_id`, `user_data_64 = business_clock_ms`, and `code = transfer reason`.
 - Deposit, expiry, refund, and grant-correction transfers use `user_data_128 = deposit_transfer_id` or another persisted grant correlation ID.
-- Invoice finalization, no-consent adjustment, receivable-clearing, and payment-clearing transfers use `user_data_128 = invoice_finalization or invoice ledger_correlation_id`.
+- Finalization, no-consent adjustment, receivable-clearing, and payment-clearing transfers use `user_data_128 = finalization or document ledger_correlation_id`.
 
 TigerBeetle preview query APIs may be used by operator tools and reconciliation, but the hot path should use IDs already stored in PostgreSQL and `LookupAccounts`/`LookupTransfers`. PostgreSQL remains the index for text domain IDs.
 
@@ -225,14 +225,14 @@ Account codes are stable protocol values once production data exists. The exact 
 | `operator_writeoff_expense` | singleton or per product | debit-positive expense | `credits_must_not_exceed_debits`, `history` | Records absorbed no-consent usage and other non-recoverable policy writeoffs for showback. |
 | `operator_expired_credits` | singleton or per product | credit-positive sink | `history` | Receives unused customer grant balance swept at expiry. |
 | `operator_revenue` | singleton or per product | credit-positive settlement | `debits_must_not_exceed_credits`, `history` | Receives posted usage value, recognized invoice value, and revenue-classified clearing movements. Do not treat this raw operational account as GAAP revenue without invoice classification. |
-| `operator_receivable` | singleton or per product | credit-positive clearing | `debits_must_not_exceed_credits`, `history` | Counterparty for explicitly consented postpaid usage while the customer receivable is awaiting invoice issue or payment clearing. |
+| `operator_receivable` | singleton or per product | credit-positive clearing | `debits_must_not_exceed_credits`, `history` | Counterparty for explicitly consented postpaid usage while the customer receivable is awaiting document issue or payment clearing. |
 | `operator_revoked_contract_allowance` | singleton or per product | credit-positive sink | `debits_must_not_exceed_credits`, `history` | Receives unused recurring contract allowance swept after terminal non-payment, fraud, cancellation reversal, or operator correction. |
 | `customer_grant` | one per `credit_grants` row | credit-positive spendable balance | `debits_must_not_exceed_credits`, `history` | Holds one scoped grant. Available balance is `credits_posted - debits_posted - debits_pending`. |
-| `customer_receivable` | per org/product/cycle or per invoice | debit-positive receivable | `credits_must_not_exceed_debits`, `history` | Accrues explicitly consented postpaid overage or invoice receivables and is cleared by payment or adjustment. |
+| `customer_receivable` | per org/product/cycle or per document | debit-positive receivable | `credits_must_not_exceed_debits`, `history` | Accrues explicitly consented postpaid overage or document receivables and is cleared by payment or adjustment. |
 
 Operator singleton account IDs are generated once and stored in `billing_ledger_accounts`. Customer grant and receivable account IDs are TigerBeetle time-based IDs generated when PostgreSQL creates the corresponding domain row. On boot and during reconciliation, billing verifies that registered operator accounts exist with the expected ledger, code, flags, and user data.
 
-Dogfood/internal usage should not introduce a separate grant source. Internal contracts use the same `contract` grant source and `operator_contract_allowance_clearing` funding path as customer contracts; invoice finalization nets the internal invoice to zero through explicit adjustments. This keeps internal traffic on the customer path without adding a shadow accounting model.
+Dogfood/internal usage should not introduce a separate grant source. Internal contracts use the same `contract` grant source and `operator_contract_allowance_clearing` funding path as customer contracts; finalization nets the internal document to zero through explicit adjustments. This keeps internal traffic on the customer path without adding a shadow accounting model.
 
 ### Transfer taxonomy
 
@@ -246,7 +246,7 @@ Transfer codes are stable protocol values once production data exists. Target tr
 | `reservation_receivable` | `customer_receivable` | `operator_receivable` | yes | Locks explicitly consented postpaid overage before work starts without pretending that a vaulted payment method is overage consent. |
 | `settlement_post` | references pending transfer | references pending transfer | no | Posts all or part of a pending reservation. |
 | `settlement_void` | references pending transfer | references pending transfer | no | Releases all or part of a pending reservation. |
-| `invoice_receivable_accrue` | `customer_receivable` | `operator_receivable` | no | Accrues collectible invoice amounts that are not already represented by posted receivable reservation legs. |
+| `document_receivable_accrue` | `customer_receivable` | `operator_receivable` | no | Accrues collectible document amounts that are not already represented by posted receivable reservation legs. |
 | `receivable_revenue_recognition` | `operator_receivable` | `operator_revenue` | no | Reclassifies issued or collected receivable value into the operational revenue account when invoice policy says the amount is no longer merely pending collection. |
 | `grant_expiry_sweep` | `customer_grant` | `operator_expired_credits` | no | Removes unused grant balance at `expires_at`. |
 | `contract_allowance_revoke` | `customer_grant` | `operator_revoked_contract_allowance` | no | Removes unearned, unused contract allowance after terminal non-payment, fraud, or correction. |
@@ -277,7 +277,7 @@ Dispatch rules:
 
 - Grant deposits and request-path reservations dispatch synchronously before returning customer-visible success.
 - Settlement and void commands may be retried by River, but `billing_windows` must remain in a non-terminal `settling` or `voiding` state until TigerBeetle acknowledges the post/void transfers.
-- Background commands such as expiry sweeps, receivable clearing, invoice showback, and corrections dispatch through River and are repaired by reconciliation.
+- Background commands such as expiry sweeps, receivable clearing, document showback, and corrections dispatch through River and are repaired by reconciliation.
 - A command in `in_progress` whose lease expires is eligible for re-lease and replay with the same persisted payload. A process crash after lease acquisition must not require operator intervention.
 - A command in `posted` whose aggregate row is still non-terminal is eligible for aggregate completion without replaying TigerBeetle. Examples: a posted `grant_deposit` with `credit_grants.ledger_posting_state != 'posted'`, a posted `reserve_window` with `billing_windows.state = 'reserving'`, a posted `settle_window` with `state = 'settling'`, or a posted `void_window` with `state = 'voiding'`.
 - A command retry must submit the exact same TigerBeetle IDs and linked-chain layout. Changing amount, account, code, flags, or ordering requires a new command generation and an explicit correction plan.
@@ -308,7 +308,7 @@ Purchased top-up credit is prepaid balance, not postpaid overage consent.
 6. Only after TigerBeetle acknowledges the command does PostgreSQL mark the grant `ledger_posting_state = 'posted'`, emit `grant_ledger_posted`, and make the balance visible to reserve and balance reads.
 7. Duplicate provider events converge on the same purchase grant and same persisted TigerBeetle IDs.
 
-A payment method on file does not participate in this flow unless the customer explicitly initiates a purchase or invoice collection. A free-tier customer may store a card without authorizing top-up purchases or metered overage invoices.
+A payment method on file does not participate in this flow unless the customer explicitly initiates a purchase or invoice-document collection. A free-tier customer may store a card without authorizing top-up purchases or metered overage invoices.
 
 ### Grant funding flow
 
@@ -318,7 +318,7 @@ Every spendable grant is a TigerBeetle `customer_grant` account credited by exac
 - `contract`: debit `operator_contract_allowance_clearing`, credit `customer_grant`.
 - `purchase`: debit `operator_stripe_holding`, credit `customer_grant`.
 - `promo`: debit `operator_promo_expense`, credit `customer_grant`.
-- `refund` or manually restored balance: debit `operator_refund_expense` or the policy-specific source account, credit `customer_grant`, and link back to the invoice/refund/correction artifact.
+- `refund` or manually restored balance: debit `operator_refund_expense` or the policy-specific source account, credit `customer_grant`, and link back to the document/refund/correction artifact.
 
 Free-tier and contract entitlement materialization may be triggered by org provisioning, reserve self-healing, or River recurrence work. All paths converge on the same deterministic PostgreSQL period/grant rows and the same persisted TigerBeetle command IDs.
 
@@ -353,19 +353,19 @@ Void is the safe-failure path:
 
 Receivable-backed funding is allowed only when the customer has explicitly accepted the relevant overage model. A vaulted card is not enough.
 
-For paid orgs with `overage_policy = 'bill_published_rate'`, reserve may add `reservation_receivable` legs after all eligible grants and prepaid balances are exhausted. Those legs debit a `customer_receivable` account and credit `operator_receivable` as pending transfers. Settlement posts the actual billable amount and voids the unused remainder. Invoice finalization then renders the receivable into customer-facing invoice lines and collection jobs.
+For paid orgs with `overage_policy = 'bill_published_rate'`, reserve may add `reservation_receivable` legs after all eligible grants and prepaid balances are exhausted. Those legs debit a `customer_receivable` account and credit `operator_receivable` as pending transfers. Settlement posts the actual billable amount and voids the unused remainder. Finalization then renders the receivable into customer-facing document lines and collection jobs.
 
-Recurring base charges, upgrade price deltas, taxes, and other invoice amounts that are not grant-backed usage are represented by PostgreSQL invoice lines first. When they create a collectible amount due, finalization creates or updates the relevant `customer_receivable` ledger account and posts a receivable-accrual command. Payment success clears that receivable through `operator_stripe_holding`. If collection happens before issue in a hosted payment flow, the provider event is still recorded first, and finalization reconciles the already-collected provider amount to the issued Forge Metal invoice.
+Recurring base charges, upgrade price deltas, taxes, and other document amounts that are not grant-backed usage are represented by PostgreSQL document lines first. When they create a collectible amount due, finalization creates or updates the relevant `customer_receivable` ledger account and posts a receivable-accrual command. Payment success clears that receivable through `operator_stripe_holding`. If collection happens before issue in a hosted payment flow, the provider event is still recorded first, and finalization reconciles the already-collected provider amount to the issued Forge Metal document.
 
-For free-tier orgs and paid hard-cap orgs, reserve must not create receivable legs. If usage leaks through because of a race, stale reservation, retry, or bug, settlement records `writeoff_quantity` and `writeoff_charge_units` on the window but does not debit a customer receivable. Invoice finalization converts that evidence into deterministic system-policy `invoice_adjustments` within the USD $0.99 cap. The optional TigerBeetle showback movement is `no_consent_adjustment_showback`: debit `operator_writeoff_expense`, credit `operator_revenue`, tagged to the invoice finalization. That movement records gross usage value and operator-funded expense for analytics; it does not create spendable balance or customer debt.
+For free-tier orgs and paid hard-cap orgs, reserve must not create receivable legs. If usage leaks through because of a race, stale reservation, retry, or bug, settlement records `writeoff_quantity` and `writeoff_charge_units` on the window but does not debit a customer receivable. Finalization converts that evidence into deterministic system-policy `invoice_adjustments` within the USD $0.99 cap. The optional TigerBeetle showback movement is `no_consent_adjustment_showback`: debit `operator_writeoff_expense`, credit `operator_revenue`, tagged to the finalization. That movement records gross usage value and operator-funded expense for analytics; it does not create spendable balance or customer debt.
 
-If a receivable was created under consent and a later correction proves the customer did not authorize it, finalization must reverse or correct the receivable with a `ledger_correction` transfer correlated to the original window/invoice. Do not hide the correction by mutating the original transfer or silently dropping the invoice line.
+If a receivable was created under consent and a later correction proves the customer did not authorize it, finalization must reverse or correct the receivable with a `ledger_correction` transfer correlated to the original window/document. Do not hide the correction by mutating the original transfer or silently dropping the document line.
 
 ### Showback and internal usage
 
 Showback is an operator accounting projection over the same customer-facing machinery. It is not a separate usage path.
 
-- Internal/dogfood usage uses internal contracts, contract grants, and the same reservation and settlement flow as customer usage. The invoice nets to zero through explicit adjustments rather than bypassing the billing service.
+- Internal/dogfood usage uses internal contracts, contract grants, and the same reservation and settlement flow as customer usage. The billing document nets to zero through explicit adjustments rather than bypassing the billing service.
 - Free-tier usage drains `operator_free_tier_expense`-funded grants and reports consumed value by product, bucket, SKU, org, and period.
 - No-consent leaked usage creates `invoice_adjustments` with `cost_center`, `expense_category`, `recoverable = false`, and `affects_customer_balance = false`; optional TigerBeetle showback transfers mirror the adjustment total.
 - Promo campaigns create promo grants from `operator_promo_expense`, not ad hoc balance edits.
@@ -382,7 +382,7 @@ Billing reconciliation compares PostgreSQL ledger metadata against TigerBeetle s
 3. Grant balance parity: posted grant deposits, pending reservation legs, posted settlement legs, expiry sweeps, refunds, and corrections reconcile to the TigerBeetle account balances.
 4. Window leg parity: every `billing_window_ledger_legs` row in `pending`, `posted`, or `voided` has the expected TigerBeetle reservation/post/void transfer IDs.
 5. Command drain health: no ledger command remains due, leased, or retryable beyond policy without alerting or DLQ transition.
-6. Receivable parity: customer receivable balances reconcile to unfinalized/finalized receivable invoice lines, payments, adjustments, and corrections.
+6. Receivable parity: customer receivable balances reconcile to unfinalized/finalized receivable document lines, payments, adjustments, and corrections.
 7. Accounting identity: all included account movements on a ledger net to zero under the configured account balance convention.
 
 Drift writes a durable PostgreSQL drift row and a `billing_events` fact that projects to ClickHouse. Severe drift, such as missing operator accounts or an accounting identity violation, trips a billing ledger write guard until an operator resolves or explicitly waives the condition.
@@ -391,7 +391,7 @@ The single-node deployment can run TigerBeetle as one replica for development an
 
 ## Core billing model
 
-The billing model is SKU-driven for usage, contract-driven for recurring entitlements, cycle-driven for invoice periods, and invoice-driven for customer-facing payment artifacts.
+The billing model is SKU-driven for usage, contract-driven for recurring entitlements, cycle-driven for backend billing periods, finalization-driven for accounting closure, and document-driven for customer-facing payment artifacts.
 
 A product is something billable. A SKU is a billable usage component. A SKU belongs to a credit bucket. Buckets are the entitlement lanes customers see and consume against. Examples:
 
@@ -424,8 +424,9 @@ billing_cycles
   -> billing_window_ledger_legs
   -> billing_ledger_commands
   -> TigerBeetle pending/post/void transfers
-  -> billing_invoices
-  -> invoice_line_items
+  -> billing_finalizations
+  -> billing_documents
+  -> billing_document_line_items
   -> invoice_adjustments
   -> billing_events
   -> billing_event_delivery_queue
@@ -437,16 +438,20 @@ Provider ingress is modeled as:
 provider webhook/API event
   -> billing_provider_events
   -> River billing.provider_event.apply
-  -> provider-neutral payment, invoice, contract, phase, or adjustment mutation
+  -> provider-neutral payment, document, finalization, contract, phase, dispute, or adjustment mutation
   -> billing_events
   -> billing_event_delivery_queue
 ```
 
 A `contract` is the commercial agreement with an org. A `contract_phase` is the time-bounded version of that agreement: Hobby for a cycle, Pro after an immediate upgrade, or a bespoke enterprise package for a signed term. A `contract_entitlement_line` is the recurring promise inside the phase: which source funds which scope, how much, and on what recurrence. An `entitlement_period` materializes one recurrence window. A `credit_grant` is the PostgreSQL metadata row for a spendable TigerBeetle-backed balance issued from that period. The grant is not spendable until its ledger deposit command is posted.
 
-A `billing_cycle` is the bookkeeping interval for an `(org, product)` billing timeline. A cycle has no financial meaning by itself. It only names the half-open interval `[starts_at, ends_at)` that invoice generation uses to select settled windows, recurring charges, entitlement periods, adjustments, and contract phase overlaps. A cycle can contain multiple contract phases, and one contract phase can span multiple cycles.
+A `billing_cycle` is the backend bookkeeping interval for an `(org, product)` billing timeline. Customer-facing copy should call this a billing period. A cycle has no financial meaning by itself. It only names the half-open interval `[starts_at, ends_at)` that finalization uses to select settled windows, recurring charges, entitlement periods, adjustments, payments, disputes, and contract phase overlaps. A cycle can contain multiple contract phases, and one contract phase can span multiple cycles.
 
-There is no separate `plan_bindings` concept. Contract phases are the plan/policy intervals. The funder uses the contract phase active at reservation time to capture rate and entitlement context into `billing_windows` and `billing_window_ledger_legs`; invoice generation uses that captured context, not a live phase lookup, so retroactive plan edits cannot rewrite history.
+A `billing_finalization` is the mutable accounting workflow for turning one accounting subject into an issued or blocked document. The dominant subject is a closed billing cycle; immediate self-serve activation charges, immediate upgrade delta charges, manual corrections, and credit-note flows can also use finalization with a non-cycle subject. Finalization decides whether the subject creates a collectible invoice, a customer-visible zero-dollar statement, an internal statement, a credit note, or a blocked operator state. It is the place where consent is verified, no-consent adjustments are capped, Stripe tax previews are reconciled, and immutable document creation becomes allowed.
+
+A `billing_document` is the immutable issued artifact. The document can be a collectible invoice, a zero-dollar customer statement, an internal statement, a credit note, or an adjustment invoice. The document content is immutable after issue even though payment status and provider attachment fields may change later.
+
+There is no separate `plan_bindings` concept. Contract phases are the plan/policy intervals. The funder uses the contract phase active at reservation time to capture rate and entitlement context into `billing_windows` and `billing_window_ledger_legs`; document generation uses that captured context, not a live phase lookup, so retroactive plan edits cannot rewrite history.
 
 The supported entitlement scopes form a tightest-to-widest funnel: `sku` -> `bucket` -> `product` -> `account`. Entitlements are non-overlapping within a layer:
 
@@ -475,7 +480,7 @@ PostgreSQL columns that store TigerBeetle IDs should use a domain equivalent to:
 CREATE DOMAIN tbid AS BYTEA CHECK (octet_length(VALUE) = 16);
 ```
 
-Use `tbid` for TigerBeetle account IDs, transfer IDs, and ledger correlation IDs. Do not use it for `grant_id`, `window_id`, `contract_id`, `cycle_id`, `invoice_id`, `command_id`, or `event_id`.
+Use `tbid` for TigerBeetle account IDs, transfer IDs, and ledger correlation IDs. Do not use it for `grant_id`, `window_id`, `contract_id`, `cycle_id`, `finalization_id`, `document_id`, `command_id`, or `event_id`.
 
 ### `products`
 
@@ -493,7 +498,7 @@ The product owns the reserve policy because the liability shape is product-speci
 
 ### `credit_buckets`
 
-Named entitlement lanes. These are the buckets free-tier and recurring contract lines fund, and invoice previews group by.
+Named entitlement lanes. These are the buckets free-tier and recurring contract lines fund, and document previews group by.
 
 Key fields:
 
@@ -533,7 +538,7 @@ Key fields:
 - `active`
 - `is_default`
 
-A plan is a reusable packaging template, not an active customer agreement. Self-serve flows use plan price IDs only to map invoice line items to optional Stripe Prices. Enterprise contracts may reference a plan for display and rate-card inheritance, but bespoke enterprise terms must be represented by contract phases and entitlement lines.
+A plan is a reusable packaging template, not an active customer agreement. Self-serve flows use plan price IDs only to map document line items to optional Stripe Prices. Enterprise contracts may reference a plan for display and rate-card inheritance, but bespoke enterprise terms must be represented by contract phases and entitlement lines.
 
 A plan no longer carries included-credit JSON. Plan entitlements are linked through `plan_entitlements` and copied into `contract_entitlement_lines` when a catalog-plan phase is created.
 
@@ -550,7 +555,7 @@ Key fields:
 - `active_from`
 - `active_until`
 
-This table is the product/SKU rate card used for reservation cost calculations and invoice line items. Rate context is copied into each `billing_windows.rate_context` so invoices do not depend on mutable catalog rows.
+This table is the product/SKU rate card used for reservation cost calculations and document line items. Rate context is copied into each `billing_windows.rate_context` so documents do not depend on mutable catalog rows.
 
 ### `entitlement_policies`
 
@@ -615,12 +620,12 @@ The contract payment state machine is separate from the entitlement state machin
 
 ### `provider_bindings`
 
-Optional external provider identity for a contract, payment method, invoice, payment intent, or other provider-backed object.
+Optional external provider identity for a contract, payment method, billing document, payment intent, or other provider-backed object.
 
 Key fields:
 
 - `binding_id`
-- `aggregate_type` (`contract`, `payment_method`, `invoice`, `payment_intent`, `customer`)
+- `aggregate_type` (`contract`, `payment_method`, `document`, `finalization`, `payment_intent`, `customer`)
 - `aggregate_id`
 - `contract_id`
 - `provider` (`stripe`, `manual`)
@@ -630,7 +635,7 @@ Key fields:
 - `sync_state` (`none`, `pending`, `synced`, `error`)
 - `metadata`
 
-A Stripe self-serve contract usually has a customer-level binding and invoice/payment-intent references on invoice/payment rows. It must not have a Stripe subscription binding in the target architecture. An enterprise contract may have no binding, a `manual_contract` binding, or a later CRM/ERP binding without changing entitlement issuance.
+A Stripe self-serve contract usually has a customer-level binding and Stripe invoice/payment-intent references on document/payment rows. It must not have a Stripe subscription binding in the target architecture. An enterprise contract may have no binding, a `manual_contract` binding, or a CRM/ERP binding without changing entitlement issuance.
 
 ### `payment_methods`
 
@@ -671,7 +676,8 @@ Key fields:
 - `provider_invoice_id`
 - `provider_payment_intent_id`
 - `contract_id`
-- `invoice_id`
+- `finalization_id`
+- `document_id`
 - `binding_id`
 - `org_id`
 - `received_at`
@@ -686,9 +692,43 @@ Key fields:
 - `last_error`
 - `idempotency_key`
 
-There must be a unique key on `(provider, provider_event_id)`. Webhook ingress writes this row before applying the event and transactionally enqueues `billing.provider_event.apply`. Duplicate provider deliveries converge on the same row and same River job identity. Out-of-order events are not applied by arrival order; the worker translates each event into a provider-neutral mutation and lets the payment/invoice/contract/phase state machines decide whether it is still relevant.
+There must be a unique key on `(provider, provider_event_id)`. Webhook ingress writes this row before applying the event and transactionally enqueues `billing.provider_event.apply`. Duplicate provider deliveries converge on the same row and same River job identity. Out-of-order events are not applied by arrival order; the worker translates each event into a provider-neutral mutation and lets the payment/document/finalization/contract/phase state machines decide whether it is still relevant.
 
 This table is the primary fault-injection seam for Stripe. Tests exercise the provider-event boundary with delayed, duplicated, missing, failed, terminal, malformed, and out-of-order events, then verify PostgreSQL state plus `forge_metal.billing_events` projection.
+
+### `billing_payment_disputes`
+
+Provider-neutral dispute and chargeback state linked to the document/payment/contract it can affect.
+
+Key fields:
+
+- `dispute_id`
+- `provider`
+- `provider_dispute_id`
+- `provider_charge_id`
+- `provider_payment_intent_id`
+- `provider_invoice_id`
+- `document_id`
+- `finalization_id`
+- `contract_id`
+- `phase_id`
+- `org_id`
+- `product_id`
+- `state` (`opened`, `won`, `lost`, `operator_resolved`)
+- `provider_status`
+- `amount_units`
+- `fee_units`
+- `currency`
+- `opened_event_id`
+- `closed_event_id`
+- `opened_at`
+- `closed_at`
+- `action_taken` (`none`, `access_suspended`, `allowance_revoked`, `manual_review`)
+- `metadata`
+- `created_at`
+- `updated_at`
+
+Disputes are not modeled as ordinary refunds because provider dispute creation can remove funds immediately while the final outcome can still become won or lost. The dispute row is the durable state machine that links Stripe `charge.dispute.created` and `charge.dispute.closed` events to Forge Metal contract access, document payment state, allowance revocation, chargeback-loss accounting, and user/operator notifications.
 
 ### `contract_changes`
 
@@ -800,7 +840,7 @@ Recurring entitlement scheduling is not a timer hidden in River. The recurrence 
 
 ### `billing_cycles`
 
-Bookkeeping intervals for invoice/finalization periods.
+Bookkeeping intervals for backend billing periods. Keep `billing_cycles` as the code/table name; expose this concept to customers as a billing period.
 
 Key fields:
 
@@ -814,10 +854,12 @@ Key fields:
 - `cadence_kind` (`anniversary_monthly`, `calendar_monthly`, `annual`, `manual`)
 - `starts_at`
 - `ends_at`
-- `status` (`open`, `closing`, `closed_for_usage`, `invoice_finalizing`, `invoiced`, `blocked`, `voided`)
+- `status` (`open`, `closing`, `closed_for_usage`, `finalized`, `voided`)
+- `closed_reason` (`scheduled_period_end`, `free_to_paid_activation`, `cadence_change`, `enterprise_amendment`, `payment_dispute`, `contract_revocation`, `operator_correction`)
 - `finalization_due_at`
-- `invoice_id`
-- `blocked_reason`
+- `active_finalization_id`
+- `successor_cycle_id`
+- `closed_by_event_id`
 - `closed_for_usage_at`
 - `finalized_at`
 - `created_at`
@@ -828,10 +870,62 @@ Required invariants:
 - Unique `(org_id, product_id, anchor_at, cycle_seq)`.
 - At most one `open` or `closing` cycle per `(org_id, product_id)`.
 - No overlapping non-voided cycle intervals per `(org_id, product_id)`, preferably enforced with a PostgreSQL exclusion constraint over `tstzrange(starts_at, ends_at, '[)')`.
-- A cycle has no financial meaning on its own. It is a named interval used by invoice generation and reporting.
+- A cycle has no financial meaning on its own. It is a named interval used by finalization, document generation, and reporting.
 - Free-tier orgs have cycles. They are not absent from cycle accounting just because no paid contract exists.
+- A cycle may be finalized into a customer-visible invoice, customer-visible statement, internal statement, credit-note flow, or blocked finalization; the finalization row owns that state, not the cycle.
 
-The only normal path that creates a successor cycle is `openNextCycle(predecessor)`. Scheduled rollover and immediate boundary changes both call the same transition. Rollover closes the predecessor for usage and opens the successor before any Stripe call, invoice email, or payment collection.
+The only normal path that creates a successor cycle is `openNextCycle(predecessor)`. Scheduled rollover and immediate boundary changes both call the same transition. Rollover closes the predecessor for usage and opens the successor before any Stripe call, document email, or payment collection.
+
+### `billing_finalizations`
+
+Mutable accounting workflow for issuing or blocking the document for one accounting subject.
+
+Key fields:
+
+- `finalization_id`
+- `subject_type` (`cycle`, `contract_change`, `manual_adjustment`, `credit_note`, `provider_correction`)
+- `subject_id`
+- `cycle_id` (required for cycle subjects; nullable or attribution-only for non-cycle subjects)
+- `contract_change_id`
+- `org_id`
+- `product_id`
+- `reason` (`scheduled_period_end`, `free_to_paid_activation`, `immediate_upgrade_delta`, `contract_change_collection`, `cadence_change`, `enterprise_amendment`, `payment_dispute`, `contract_revocation`, `manual_adjustment`, `credit_note`, `provider_correction`, `operator_correction`)
+- `trigger_event_id`
+- `state` (`pending`, `collecting_facts`, `awaiting_ledger_commands`, `awaiting_provider_preview`, `ready_to_issue`, `blocked`, `issued`, `collection_pending`, `paid`, `payment_failed`, `closed`, `voided`)
+- `document_id`
+- `document_kind` (`invoice`, `statement`, `internal_statement`, `credit_note`, `adjustment_invoice`)
+- `customer_visible`
+- `notification_policy` (`none`, `in_app`, `email`, `email_and_in_app`)
+- `has_usage`
+- `has_financial_activity`
+- `input_fingerprint`
+- `subtotal_units`
+- `adjustment_units`
+- `tax_units`
+- `total_due_units`
+- `no_consent_adjustment_units`
+- `blocked_reason`
+- `blocked_at`
+- `state_version`
+- `started_at`
+- `issued_at`
+- `closed_at`
+- `created_at`
+- `updated_at`
+
+The finalization row is the mutable state machine. It is not an outbox and not an immutable fact stream. Every externally meaningful finalization transition writes `billing_events` rows in the same PostgreSQL transaction; `billing_event_delivery_queue` projects those facts. Any TigerBeetle movement created by finalization is represented by `billing_ledger_commands`. Stripe collection remains a River/provider command keyed by the issued document identity and Stripe idempotency key. Do not add a finalization-specific outbox table.
+
+For `subject_type = 'cycle'`, `cycle_id` is required and the subject interval is the closed cycle. For `subject_type = 'contract_change'`, `contract_change_id` is required and `cycle_id` may point at the cycle whose commercial context the change belongs to, but the finalization must not close or finalize that cycle. This is how immediate activation invoices and immediate upgrade-delta invoices share the same document, Stripe preview, tax, numbering, and payment logic without pretending a mid-cycle upgrade is a cycle finalization.
+
+`has_usage` is true when the period contains settled customer usage windows. `has_financial_activity` is true when the period contains usage, recurring charges, entitlement grants that should be disclosed, top-up purchases, payments, refunds, disputes, adjustments, receivable activity, or document corrections. Paid contract overlap makes a period financially active even when metered usage is zero.
+
+Customer visibility is deterministic:
+
+- Free periods are customer-visible only when they contain settled usage or customer-visible financial activity such as purchases, refunds, disputes, or adjustments. Free-tier grant issuance by itself does not make an empty free period customer-visible.
+- Paid periods are customer-visible when a paid contract phase overlaps the cycle, even if usage is zero, because the contract/entitlement/payment history is billing activity.
+- Contract-change finalizations are customer-visible when they collect payment, change customer-visible entitlements, issue a credit note, or require customer consent. Purely internal operator corrections can issue `internal_statement` documents.
+- Internal/dogfood periods can issue `internal_statement` documents and suppress customer notification while still preserving the same accounting trail.
+- Blocked finalizations are operator-visible and must not become customer debt.
 
 ### `entitlement_periods`
 
@@ -842,7 +936,7 @@ Key fields:
 - `period_id`
 - `org_id`
 - `product_id`
-- `cycle_id`
+- `cycle_id` (required for cycle documents; nullable or attribution-only for non-cycle documents)
 - `source`
 - `policy_id`
 - `contract_id`
@@ -965,7 +1059,7 @@ Sandbox time windows use AWS-Lambda-style millisecond quantities. `reserved_quan
 
 `funding_legs` may be retained as a denormalized snapshot for API and ClickHouse projection, but it is not the authoritative financial leg table. `billing_window_ledger_legs` owns per-leg transfer IDs, source attribution, component SKU attribution, and leg state.
 
-`writeoff_quantity` and `writeoff_charge_units` are settlement evidence, not a customer credit. They capture usage that was admitted but cannot be billed because it exceeded the reserved quantity or the org's overage-consent policy. Invoice finalization turns that evidence into deterministic `invoice_adjustments` rows when the window would otherwise create unauthorized receivable units. Optional TigerBeetle showback transfers mirror those adjustments for operator reporting without creating customer debt.
+`writeoff_quantity` and `writeoff_charge_units` are settlement evidence, not a customer credit. They capture usage that was admitted but cannot be billed because it exceeded the reserved quantity or the org's overage-consent policy. Finalization turns that evidence into deterministic `invoice_adjustments` rows when the window would otherwise create unauthorized receivable units. Optional TigerBeetle showback transfers mirror those adjustments for operator reporting without creating customer debt.
 
 ### `billing_window_ledger_legs`
 
@@ -1000,9 +1094,9 @@ Key fields:
 - `created_at`
 - `updated_at`
 
-The primary key is `(window_id, leg_seq)`. Leg order is the exact funding waterfall order used for settlement trimming and invoice attribution. The transfer IDs are TigerBeetle IDs, not domain IDs. `source = 'receivable'` uses `customer_receivable_account_id` and leaves `grant_id` empty; grant-backed sources require `grant_id` and `grant_account_id`. There is no `internal` source because dogfood usage is funded by internal contracts using the normal `contract` source and then netted by invoice adjustment.
+The primary key is `(window_id, leg_seq)`. Leg order is the exact funding waterfall order used for settlement trimming and document attribution. The transfer IDs are TigerBeetle IDs, not domain IDs. `source = 'receivable'` uses `customer_receivable_account_id` and leaves `grant_id` empty; grant-backed sources require `grant_id` and `grant_account_id`. There is no `internal` source because dogfood usage is funded by internal contracts using the normal `contract` source and then netted by invoice adjustment.
 
-This table is the indexed source for explaining how a window drained balances. TigerBeetle is still the balance authority, but PostgreSQL stores the domain reason for each transfer so invoices, support tools, and ClickHouse projections do not need to depend on preview TigerBeetle query APIs.
+This table is the indexed source for explaining how a window drained balances. TigerBeetle is still the balance authority, but PostgreSQL stores the domain reason for each transfer so documents, support tools, and ClickHouse projections do not need to depend on preview TigerBeetle query APIs.
 
 ### `billing_ledger_accounts`
 
@@ -1030,7 +1124,7 @@ Durable PostgreSQL command state for TigerBeetle side effects.
 Key fields:
 
 - `command_id`
-- `operation` (`grant_deposit`, `reserve_window`, `settle_window`, `void_window`, `invoice_receivable_accrue`, `expire_grant`, `revoke_contract_allowance`, `refund_balance_remove`, `receivable_clear_payment`, `receivable_revenue_recognition`, `adjustment_showback`, `ledger_correction`)
+- `operation` (`grant_deposit`, `reserve_window`, `settle_window`, `void_window`, `document_receivable_accrue`, `expire_grant`, `revoke_contract_allowance`, `refund_balance_remove`, `receivable_clear_payment`, `receivable_revenue_recognition`, `adjustment_showback`, `ledger_correction`)
 - `aggregate_type`
 - `aggregate_id`
 - `org_id`
@@ -1082,18 +1176,22 @@ Key fields:
 
 Critical drift emits a `billing_events` fact and trips the ledger write guard. Examples include missing operator accounts, account-flag mismatch, grant account missing for a posted grant, a posted PostgreSQL leg without a TigerBeetle transfer, or a ledger accounting identity violation.
 
-### `billing_invoices`
+### `billing_documents`
 
-Immutable customer invoice artifacts.
+Immutable issued billing artifacts.
 
 Key fields:
 
-- `invoice_id`
-- `invoice_number`
+- `document_id`
+- `document_number`
+- `document_kind` (`invoice`, `statement`, `internal_statement`, `credit_note`, `adjustment_invoice`)
+- `finalization_id`
+- `subject_type`
+- `subject_id`
 - `org_id`
 - `product_id`
 - `cycle_id`
-- `status` (`draft`, `finalizing`, `issued`, `paid`, `payment_failed`, `blocked`, `voided`)
+- `status` (`issued`, `voided`)
 - `payment_status` (`n_a`, `pending`, `paid`, `failed`, `uncollectible`)
 - `period_start`
 - `period_end`
@@ -1105,7 +1203,7 @@ Key fields:
 - `total_due_units`
 - `recipient_email`
 - `recipient_name`
-- `invoice_snapshot_json`
+- `document_snapshot_json`
 - `rendered_html`
 - `content_hash`
 - `stripe_invoice_id`
@@ -1113,15 +1211,15 @@ Key fields:
 - `stripe_invoice_pdf_url`
 - `stripe_payment_intent_id`
 - `resend_message_id`
-- `voided_by_invoice_id`
+- `voided_by_document_id`
 - `created_at`
 - `updated_at`
 
-Invoice generation builds gross usage lines, recurring charge lines, tax lines from configured tax policy, funding splits, and adjustment candidates from PostgreSQL domain rows, normalized ledger legs, and TigerBeetle-backed command state. Invoice finalization is the state-machine boundary that proves every customer-chargeable receivable unit is backed by explicit consent. If a tax provider can change the customer amount due, tax calculation is part of finalization and must complete before the Forge Metal invoice is issued.
+Document generation builds gross usage lines, recurring charge lines, tax lines from configured tax policy, funding splits, and adjustment candidates from PostgreSQL domain rows, normalized ledger legs, and TigerBeetle-backed command state. Finalization is the state-machine boundary that proves every customer-chargeable receivable unit is backed by explicit consent. If a tax provider can change the customer amount due, tax calculation is part of finalization and must complete before the Forge Metal document is issued.
 
-A Forge Metal invoice is immutable after issue. Corrections create a new adjustment invoice or credit-note invoice linked through `voided_by_invoice_id` or an explicit credit-note relation. The original remains queryable for audit.
+A Forge Metal document is immutable after issue. Corrections create a new adjustment invoice or credit-note document linked through `voided_by_document_id` or an explicit credit-note relation. The original remains queryable for audit.
 
-`invoice_snapshot_json` is the canonical rendering input. `rendered_html` is the exact body emailed to the customer or shown in the Forge Metal console. `content_hash` lets operators prove what was issued without recomputing from mutable catalog or policy tables.
+`document_snapshot_json` is the canonical rendering input. `rendered_html` is the exact body emailed to the customer, rendered as PDF, or shown in the Forge Metal console. `content_hash` lets operators prove what was issued without recomputing from mutable catalog or policy tables. Forge Metal-rendered HTML/PDF is the canonical customer artifact; Stripe-hosted pages and PDFs are provider/payment artifacts that must reconcile to the same total but do not replace the Forge Metal document.
 
 Finalization must:
 
@@ -1131,21 +1229,22 @@ Finalization must:
 4. Apply deterministic automatic credit adjustments for no-consent receivable units when the adjustment total is within the cap.
 5. Block finalization when no-consent automatic adjustments would exceed the cap.
 6. Resolve tax and convert ledger units to Stripe invoice cents with an explicit rounding/residual policy when Stripe collection is needed.
-7. Allocate an invoice number only when the invoice artifact is ready to issue.
-8. Insert the immutable invoice artifact.
-9. Emit billing event facts for created adjustments, issued invoices, finalized invoices, or blocked finalizations.
-10. Enqueue Stripe collection and invoice email jobs when applicable.
+7. Set `customer_visible`, `document_kind`, and `notification_policy` from deterministic period activity.
+8. Allocate a document number only when the document artifact is ready to issue.
+9. Insert the immutable document artifact and line items.
+10. Emit billing event facts for created adjustments, issued documents, finalized documents, or blocked finalizations.
+11. Enqueue Stripe collection and document email jobs when applicable.
 
-If Stripe Tax is enabled, the Stripe draft/tax verification step happens while the Forge Metal invoice is still finalizing. The local invoice must not move to `issued` until tax units and the provider-facing cent total have been reconciled into `invoice_snapshot_json`.
+If Stripe Tax is enabled, the Stripe draft/tax verification step happens while the Forge Metal finalization is still in `awaiting_provider_preview`. The local document must not move to `issued` until tax units and the provider-facing cent total have been reconciled into `document_snapshot_json`.
 
-### `invoice_line_items`
+### `billing_document_line_items`
 
-Immutable line items belonging to a `billing_invoices` artifact.
+Immutable line items belonging to a `billing_documents` artifact.
 
 Key fields:
 
 - `line_item_id`
-- `invoice_id`
+- `document_id`
 - `line_type` (`usage`, `recurring_charge`, `adjustment`, `tax`, `rounding`)
 - `product_id`
 - `bucket_id`
@@ -1172,13 +1271,13 @@ Line items are denormalized on purpose. They are the customer-facing artifact an
 
 ### `invoice_adjustments`
 
-Invoice-scoped credits or debits that affect amount due without creating spendable customer balance.
+Document-scoped credits or debits that affect amount due without creating spendable customer balance.
 
 Key fields:
 
 - `adjustment_id`
-- `invoice_id`
-- `invoice_finalization_id`
+- `document_id`
+- `finalization_id`
 - `org_id`
 - `product_id`
 - `window_id`
@@ -1198,15 +1297,15 @@ Key fields:
 - `policy_version`
 - `created_at`
 
-Automatic no-consent adjustments use `adjustment_source = 'system_policy'`, `adjustment_type = 'credit'`, `customer_visible = false`, `recoverable = false`, and `affects_customer_balance = false`. They are deterministic over `(invoice_finalization_id, org_id, product_id, window_id, sku_id, reason_code, policy_version)` so finalization retries cannot double-credit the invoice.
+Automatic no-consent adjustments use `adjustment_source = 'system_policy'`, `adjustment_type = 'credit'`, `customer_visible = false`, `recoverable = false`, and `affects_customer_balance = false`. They are deterministic over `(finalization_id, org_id, product_id, window_id, sku_id, reason_code, policy_version)` so finalization retries cannot double-credit the document.
 
-The default automatic no-consent adjustment cap is USD $0.99 per org per invoice finalization run. Because billing cycles are scoped to `(org, product)`, the normal case is one product; if statement-level finalization batches multiple products, the cap is shared across the batch. In the USD ledger scale, that is `99 * 100_000` ledger units. This cap is a circuit breaker, not overage consent. If the cap would be exceeded, finalization enters a blocked state, emits `invoice_finalization_blocked`, blocks further no-consent execution for the affected org/product, and waits for operator resolution. Operator resolution may create an explicit manual adjustment or credit-note invoice, but must not create a customer receivable unless the customer grants overage consent.
+The default automatic no-consent adjustment cap is USD $0.99 per org per finalization run. Because billing cycles are scoped to `(org, product)`, the normal case is one product; if statement-level finalization batches multiple products, the cap is shared across the batch. In the USD ledger scale, that is `99 * 100_000` ledger units. This cap is a circuit breaker, not overage consent. If the cap would be exceeded, finalization enters a blocked state, emits `billing_finalization_blocked`, blocks further no-consent execution for the affected org/product, and waits for operator resolution. Operator resolution may create an explicit manual adjustment or credit-note document, but must not create a customer receivable unless the customer grants overage consent.
 
-Invoice adjustments do not create spendable customer balance. When an adjustment needs operator showback in TigerBeetle, finalization creates a separate ledger command such as `no_consent_adjustment_showback`, correlated to the invoice finalization and adjustment row. That transfer records internal expense/clearing movement only; the invoice adjustment remains the customer-facing and policy-enforcing artifact.
+Invoice adjustments do not create spendable customer balance. When an adjustment needs operator showback in TigerBeetle, finalization creates a separate ledger command such as `no_consent_adjustment_showback`, correlated to the finalization and adjustment row. That transfer records internal expense/clearing movement only; the adjustment remains the customer-facing and policy-enforcing artifact.
 
-### `invoice_number_allocators`
+### `document_number_allocators`
 
-Gapless customer-facing invoice number allocation.
+Gapless customer-facing document number allocation.
 
 Key fields:
 
@@ -1216,9 +1315,41 @@ Key fields:
 - `next_number`
 - `updated_at`
 
-The allocator row is locked with `SELECT ... FOR UPDATE` and incremented in the same transaction that inserts the issued invoice artifact. PostgreSQL sequences are not acceptable for gapless invoice numbers because sequence values can be lost on rollback. If any external side effect fails after number allocation, the invoice artifact remains present and transitions to `voided`, `blocked`, or `payment_failed`; it is not deleted.
+The allocator row is locked with `SELECT ... FOR UPDATE` and incremented in the same transaction that inserts the issued document artifact. PostgreSQL sequences are not acceptable for gapless document numbers because sequence values can be lost on rollback. If any external side effect fails after number allocation, the document artifact remains present and transitions to `voided` or an associated finalization/payment failure state; it is not deleted.
 
-The target number format is `FM-{year}-{seq}` unless the operator configures a different issuer prefix. Scope allocation by `(issuer_id, year)` to avoid a global hot row and avoid leaking total invoice volume across years or issuers.
+The target number format is `FM-{year}-{seq}` unless the operator configures a different issuer prefix. Scope allocation by `(issuer_id, year)` avoids a global hot row and avoids leaking total document volume across years or issuers.
+
+### `billing_document_previews`
+
+Short-lived backend preview cache for current or closed-cycle document previews.
+
+Key fields:
+
+- `preview_id`
+- `subject_type`
+- `subject_id`
+- `cycle_id`
+- `finalization_id`
+- `org_id`
+- `product_id`
+- `document_kind`
+- `input_fingerprint`
+- `state` (`built`, `provider_preview_pending`, `provider_preview_verified`, `failed`, `expired`)
+- `forge_metal_snapshot_json`
+- `stripe_preview_response_json`
+- `stripe_preview_expires_at`
+- `subtotal_units`
+- `adjustment_units`
+- `tax_units`
+- `total_due_units`
+- `created_by_actor_id`
+- `created_at`
+- `expires_at`
+- `last_error`
+
+Preview rows are not document artifacts, not finalization facts, and not payment objects. They exist so current-period preview requests can be repeated without recomputing or re-calling Stripe when the inputs have not changed. The `input_fingerprint` covers cycle, windows, ledger legs, contract phases, adjustments, tax settings, customer tax identity, and provider-preview parameters. Any changed input creates a new preview.
+
+Stripe preview responses must be treated as tax/total verification evidence only. Stripe preview invoices are not payable Forge Metal documents, must not allocate Forge Metal document numbers, and must not become the canonical PDF source.
 
 ### `billing_events`
 
@@ -1242,7 +1373,7 @@ Key fields:
 
 The billing event row is append-only. Re-inserting the same `event_id` with the same canonical `payload_hash` is an idempotent no-op. Re-inserting the same `event_id` with a different hash is a data-integrity error because a supposedly immutable fact changed meaning.
 
-Grant materialization writes the PostgreSQL grant row, ledger IDs, and deposit command before dispatch. `grant_issued` means the durable grant metadata exists; it must never be interpreted as available balance. `grant_ledger_posted` means TigerBeetle accepted the account and deposit transfer, PostgreSQL marked `ledger_posting_state = 'posted'`, and the grant can fund reservations if its scope and time window match. Contract creation, provider event ingestion, payment-method changes, contract changes, phase transitions, entitlement materialization, cycle rollover, billing-window reservation/settlement decisions, invoice finalization, invoice adjustments, Stripe collection updates, ledger command outcomes, and invoice email delivery also write billing events in the same transaction as their authoritative PostgreSQL state change.
+Grant materialization writes the PostgreSQL grant row, ledger IDs, and deposit command before dispatch. `grant_issued` means the durable grant metadata exists; it must never be interpreted as available balance. `grant_ledger_posted` means TigerBeetle accepted the account and deposit transfer, PostgreSQL marked `ledger_posting_state = 'posted'`, and the grant can fund reservations if its scope and time window match. Contract creation, provider event ingestion, payment-method changes, contract changes, phase transitions, entitlement materialization, cycle rollover, billing-window reservation/settlement decisions, finalization transitions, invoice adjustments, Stripe collection updates, ledger command outcomes, and document email delivery also write billing events in the same transaction as their authoritative PostgreSQL state change.
 
 Successful delivery does not mutate `billing_events`; delivery status is operational state and belongs outside the fact stream.
 
@@ -1289,6 +1420,8 @@ Expected event types include:
 - `provider_event_applied`
 - `billing_cycle_opened`
 - `billing_cycle_closed_for_usage`
+- `billing_finalization_started`
+- `billing_finalization_blocked`
 - `grant_issued`
 - `grant_ledger_posted`
 - `grant_expired`
@@ -1304,13 +1437,20 @@ Expected event types include:
 - `contract_catalog_reconciled`
 - `billing_window_projected`
 - `invoice_adjustment_created`
-- `invoice_issued`
-- `invoice_finalized`
-- `invoice_finalization_blocked`
+- `billing_document_issued`
+- `billing_statement_issued`
+- `billing_document_voided`
+- `billing_document_preview_created`
+- `billing_document_preview_stripe_verified`
 - `stripe_invoice_collection_started`
 - `stripe_invoice_paid`
 - `stripe_invoice_payment_failed`
-- `invoice_email_sent`
+- `payment_dispute_opened`
+- `payment_dispute_won`
+- `payment_dispute_lost`
+- `contract_access_suspended`
+- `contract_allowance_revoked`
+- `billing_document_email_sent`
 
 ## State machines
 
@@ -1320,10 +1460,10 @@ Each state transition has an execution source:
 
 - API transition: a user or internal caller requests a contract, change, purchase, cancellation, or admin action.
 - Provider event transition: Stripe or another provider reports setup-intent, payment, invoice, refund, dispute, or deletion state.
-- Scheduled transition: a phase boundary, cycle boundary, recurrence boundary, grace deadline, or invoice finalization time becomes due.
+- Scheduled transition: a phase boundary, cycle boundary, recurrence boundary, grace deadline, or finalization due time becomes due.
 - Reconciliation transition: a repair worker reconstructs missing deterministic rows or missing River jobs.
 - Request-path transition: reserve performs bounded entitlement self-healing from already-authorized PostgreSQL state.
-- Finalization transition: invoice finalization verifies consent, applies deterministic invoice adjustments, and blocks customer charging when policy invariants are not met.
+- Finalization transition: finalization verifies consent, applies deterministic invoice adjustments, and blocks customer charging when policy invariants are not met.
 
 ### Contract lifecycle
 
@@ -1383,13 +1523,36 @@ A phase can be scheduled before it is effective, pending payment before its gran
 
 ```text
 open -> closing -> closed_for_usage
-closed_for_usage -> invoice_finalizing -> invoiced
-closed_for_usage -> invoice_finalizing -> blocked
-blocked -> invoice_finalizing -> invoiced
+closed_for_usage -> finalized
 any non-terminal -> voided
 ```
 
-`open` means new billing windows may attach to the cycle. `closed_for_usage` means no new windows can attach; finalization may still be pending. `blocked` means invoice finalization hit a policy invariant and must not charge the customer. A blocked finalization must not prevent `openNextCycle` from having created the successor cycle.
+`open` means new billing windows may attach to the cycle. `closed_for_usage` means no new windows can attach; finalization may still be pending. `finalized` means the active finalization reached a terminal issued, closed, paid, payment-failed, voided, or blocked state. A blocked finalization must not prevent `openNextCycle` from having created the successor cycle.
+
+### Finalization lifecycle
+
+```text
+pending -> collecting_facts
+collecting_facts -> awaiting_ledger_commands
+awaiting_ledger_commands -> collecting_facts
+collecting_facts -> awaiting_provider_preview
+awaiting_provider_preview -> ready_to_issue
+collecting_facts -> ready_to_issue
+ready_to_issue -> issued
+issued -> collection_pending
+collection_pending -> paid
+collection_pending -> payment_failed
+payment_failed -> paid
+issued -> closed
+pending -> voided
+collecting_facts -> blocked
+awaiting_ledger_commands -> blocked
+awaiting_provider_preview -> blocked
+ready_to_issue -> blocked
+blocked -> collecting_facts
+```
+
+`pending` means an accounting subject has a durable finalization row but no facts have been collected. `collecting_facts` recomputes the document candidate from PostgreSQL and TigerBeetle-backed ledger state. `awaiting_ledger_commands` means finalization-created TigerBeetle commands, such as no-consent showback or receivable accrual, must post before issuing a document. `awaiting_provider_preview` means Stripe tax/total preview is required before issue. `ready_to_issue` is the only state allowed to allocate a document number. `blocked` means a policy invariant failed and no customer charge may be finalized. A retry from `blocked` must recompute from the same or explicitly corrected facts and emit an operator-visible event.
 
 ### Entitlement-period lifecycle
 
@@ -1434,19 +1597,29 @@ voiding --ledger command retryable_failed--> voiding
 
 `reserved` is reached only after TigerBeetle accepts the pending reservation transfers. `settled` is reached only after TigerBeetle accepts the post/void transfers for every reservation leg. `voided` is reached only after TigerBeetle accepts void transfers or reconciliation proves the pending transfers have expired or were already voided. Ledger command retry failures keep the window in `settling` or `voiding`; they must not be returned to callers as usable reservations or terminal settlements.
 
-### Invoice lifecycle
+### Billing-document lifecycle
 
 ```text
-draft -> finalizing -> issued
-issued -> paid
-issued -> payment_failed
-payment_failed -> paid
 issued -> voided
-finalizing -> blocked
-blocked -> finalizing -> issued
+issued -> payment_pending
+payment_pending -> paid
+payment_pending -> payment_failed
+payment_failed -> paid
+payment_failed -> uncollectible
 ```
 
-A `blocked` invoice must not be charged because a policy invariant failed, usually because no-consent automatic adjustments would exceed the cap or because the consent posture changed while finalization was in flight. Blocked finalization is an operator-facing state, not a customer debt state.
+A document is immutable after `issued`. Payment status and provider attachment fields may change, but document lines, totals, period boundaries, recipient snapshot, and rendered body must not. A blocked finalization is not a document lifecycle state because blocked finalizations are not customer debt and must not allocate a document number unless an operator deliberately issues a correction or explanatory internal statement.
+
+### Dispute lifecycle
+
+```text
+none -> opened
+opened -> won
+opened -> lost
+opened -> operator_resolved
+```
+
+Dispute state belongs to the payment/provider side of the issued document and the affected contract/change. On `charge.dispute.created`, billing records the provider event, marks the payment/document disputed, suspends or narrows the affected paid phase according to contract policy, stops future paid entitlement materialization, closes paid grants for future reservation selection when required, and opens a successor free or suspended cycle if paid access is revoked. On `charge.dispute.closed`, `won` restores or preserves payment state while `lost` records chargeback loss, revokes unused paid allowance through ledger commands, and keeps already-settled usage as auditable document/payment/correction history rather than mutating original windows.
 
 ### Provider-event lifecycle
 
@@ -1500,7 +1673,7 @@ Reservation is a financial lock, not a final charge.
 12. Settle computes actual usage, posts final spend, voids any remainder, and only then marks the window `settled`.
 13. Metering projection is scheduled after settlement.
 
-The request path never waits for River, Stripe, invoice finalization, email delivery, or ClickHouse to prove current entitlements. It either creates missing deterministic current-period entitlement rows in the request transaction, or fails because the contract state/policy says the org is not entitled.
+The request path never waits for River, Stripe, finalization, email delivery, or ClickHouse to prove current entitlements. It either creates missing deterministic current-period entitlement rows in the request transaction, or fails because the contract state/policy says the org is not entitled.
 
 Self-healing rules:
 
@@ -1509,11 +1682,11 @@ Self-healing rules:
 - Pending Stripe payment is not self-healable because the payment fact is external.
 - If the product intentionally allows immediate access before payment finality, that must be represented by an explicit `grace` transition in PostgreSQL, not inferred during reserve.
 - Reserve may close or ignore local rows only when their authoritative PostgreSQL phase/period state already proves they cannot fund current usage.
-- Reserve must never call Stripe, scan provider APIs, render invoices, send emails, or read ClickHouse.
+- Reserve must never call Stripe, scan provider APIs, render billing documents, send emails, or read ClickHouse.
 - Reserve must never return a usable reservation before TigerBeetle accepts the pending transfer command.
 - Reserve must never fall back to PostgreSQL arithmetic when TigerBeetle balance lookup fails.
 - Reserve must not create receivable funding legs for org/product postures that lack overage consent. Free-tier orgs and paid hard-cap orgs must deny admission once authorized grants and prepaid balances are exhausted.
-- Settlement may record writeoff evidence for leaked no-consent usage, but that evidence must not become a customer receivable. Invoice finalization is the only place where it becomes an automatic adjustment line.
+- Settlement may record writeoff evidence for leaked no-consent usage, but that evidence must not become a customer receivable. Finalization is the only place where it becomes an automatic adjustment line.
 
 This satisfies the user-facing guarantee: a customer must not lose a valid entitlement because a scheduled job was late. It also preserves payment correctness: a customer must not receive paid entitlements just because a provider event has not arrived.
 
@@ -1527,37 +1700,45 @@ Recurring grants are materialized from durable rows; they are not computed from 
 - Period and grant identifiers are deterministic over org, source, scope, contract, phase, line, policy version, cycle id, and period boundaries. TigerBeetle IDs inside those rows are generated once and persisted, not recomputed from the deterministic domain ID. Retrying org provisioning, webhook handling, River jobs, reconciliation, or reserve self-healing must converge on the same PostgreSQL rows and the same TigerBeetle command IDs.
 - River pre-materializes future due work, retries failed materialization, and repairs missed jobs. PostgreSQL rows remain the entitlement truth.
 
-## Cycle rollover and invoice finalization
+## Cycle rollover and finalization
 
-Cycle rollover and invoice finalization are separate transition paths.
+Cycle rollover and finalization are separate transition paths.
 
-`billing.cycle.rollover` runs at `billing_cycles.ends_at` or at an immediate commercial boundary such as free -> paid or cadence change. It must:
+`billing.cycle.rollover` runs at `billing_cycles.ends_at` or at an immediate commercial boundary such as free -> paid, cadence change, enterprise amendment, payment dispute, contract revocation, or operator correction. It must:
 
 1. Lock the open predecessor cycle.
 2. Mark it `closing` and then `closed_for_usage` so no new billing windows attach to it.
 3. Apply due period-end `contract_changes` to determine successor policy.
 4. Open the successor cycle with deterministic `(org_id, product_id, anchor_at, cycle_seq)` identity.
 5. Attach or create successor contract phases as required.
-6. Enqueue `billing.invoice.finalize` for the closed predecessor.
-7. Enqueue `billing.cycle.rollover` for the successor.
+6. Insert `billing_finalizations(state = 'pending', reason = ...)` for the closed predecessor.
+7. Emit `billing_cycle_closed_for_usage`, `billing_cycle_opened`, and any reason-specific events such as `billing_period_split_for_cadence_change`.
+8. Enqueue `billing.finalization.run` for the finalization row.
+9. Enqueue `billing.cycle.rollover` for the successor.
 
-It must not call Stripe, render invoice HTML, send email, or wait for payment collection. That prevents a slow or failed payment rail from causing a customer to lose a valid entitlement window.
+It must not call Stripe, render document HTML, send email, or wait for payment collection. That prevents a slow or failed payment rail from causing a customer to lose a valid entitlement window.
 
-`billing.invoice.finalize` runs after a cycle is closed for usage. It must:
+`billing.finalization.run` advances one `billing_finalizations` row by one bounded step. Cycle finalizations run after the cycle is closed for usage. Contract-change, correction, and credit-note finalizations run when their subject reaches a ready-to-finalize state. The worker must:
 
-1. Lock the cycle and any existing invoice for the cycle.
-2. Recompute the invoice snapshot from settled windows, captured rate context, recurring charge policy, contract phases, entitlement periods, and adjustments.
-3. Verify that every settled window has posted or voided TigerBeetle ledger legs and no unresolved ledger command needed for the invoice scope.
+1. Lock the finalization row, subject row, cycle when present, and any existing document for the finalization.
+2. Recompute the document snapshot from settled windows, captured rate context, recurring charge policy, contract phases, entitlement periods, payments, disputes, and adjustments.
+3. Verify that every settled window in the subject scope has posted or voided TigerBeetle ledger legs and no unresolved ledger command needed for the finalization scope.
 4. Enforce overage consent and the USD $0.99 automatic no-consent adjustment cap from the PostgreSQL finalization set.
-5. Create any required invoice-adjustment and optional no-consent showback ledger commands.
-6. Convert ledger units to Stripe cents only after the Forge Metal total is final.
-7. Allocate a gapless invoice number.
-8. Insert the immutable Forge Metal invoice and invoice line items.
-9. Mark the cycle `invoiced`, or mark it `blocked` with a reason.
-10. Enqueue Stripe collection if `total_due_units > 0` and payment collection is required.
-11. Enqueue invoice email delivery according to notification policy.
+5. Create any required invoice-adjustment rows and optional TigerBeetle commands such as no-consent showback, receivable accrual, receivable clearing, or allowance revocation.
+6. Move to `awaiting_ledger_commands` until those commands post.
+7. Convert ledger units to Stripe cents only after the Forge Metal total is final.
+8. If Stripe Tax or provider total verification is required, move to `awaiting_provider_preview` and run the provider preview command before issue.
+9. Set deterministic `document_kind`, `customer_visible`, `has_usage`, `has_financial_activity`, and `notification_policy`.
+10. Allocate a gapless document number only from `ready_to_issue`.
+11. Insert the immutable Forge Metal document and line items.
+12. Mark the finalization `issued`, `closed`, `collection_pending`, `paid`, `payment_failed`, or `blocked` according to document kind and collection state.
+13. Mark the cycle `finalized` when a cycle finalization reaches a terminal state. Non-cycle finalizations must not mutate cycle status except through an explicit contract-change boundary.
+14. Enqueue Stripe collection if `document_kind = 'invoice'`, `total_due_units > 0`, and payment collection is required.
+15. Enqueue document email or notification delivery according to `notification_policy`.
 
-Every closed cycle produces a finalization record and either a customer invoice artifact or an internal statement artifact. Dormant zero-usage zero-total cycles suppress customer email and customer-facing notification by policy, but they are not absent from accounting history. A non-dormant zero-total cycle, including a cycle with usage fully covered by free tier, contract grants, prepaid balance, or automatic adjustments, produces a customer-visible invoice or statement because it explains real customer activity.
+Every closed cycle produces a finalization record. It produces a customer-visible invoice when a collectible amount is due, a customer-visible statement when the total is zero but customer-visible billing activity occurred, or an internal statement when the period must be accounted for but should not notify the customer. Dormant zero-usage zero-total free cycles suppress customer email and customer-facing notification by policy, but they are not absent from accounting history. Paid no-usage periods are customer-visible because the paid contract, recurring entitlement grant, payment, and renewal history are financial activity even when usage is zero.
+
+Cycle catch-up is deterministic. If an org is inactive for several periods, reconciliation advances the cycle chain from the last open or due cycle to the current business time by repeating the same rollover/finalization function. Paid cycles still receive customer-visible invoices or statements even when usage is zero because recurring paid entitlement and collection facts are billing activity. Dormant free cycles may finalize as internal statements with suppressed customer delivery. Billing history and current-period UI must therefore read the finalization/document read model first and use raw usage only as supporting evidence; an absence of usage rows is not proof that the customer has no billing activity.
 
 ## Upgrade, downgrade, and cancellation semantics
 
@@ -1590,14 +1771,17 @@ Default flow:
 
 1. API inserts a self-serve `contract` in `pending_activation` and a `contract_change(change_type = 'create', timing = 'immediate')`.
 2. API records the intended paid plan in a pending `contract_phase` and copies plan-linked entitlement policies into `contract_entitlement_lines` for that phase.
-3. The immediate boundary command calls the same cycle transition used by scheduled rollover: close the current cycle for usage, open a new cycle anchored at the change moment, and enqueue finalization for the closed cycle.
-4. Stripe collection for the paid activation is created as a one-off invoice or hosted payment flow against the Forge Metal invoice artifact; no Stripe Subscription is created.
-5. Provider events are persisted in `billing_provider_events` and applied asynchronously.
-6. On `invoice.paid` or an explicitly accepted grace decision, the worker sets the contract and phase entitlement state to `active` or `grace`.
-7. Entitlement periods and credit grants are materialized for the new cycle after paid activation.
-8. Free-tier grants continue independently and must not be closed by the paid activation.
+3. Stripe collection for the paid activation is created from a `billing_finalizations(subject_type = 'contract_change')` row and its Forge Metal invoice document; no Stripe Subscription is created.
+4. Provider events are persisted in `billing_provider_events` and applied asynchronously.
+5. Provider API success moves the change toward `awaiting_payment`; it does not activate paid entitlements and does not close the free cycle.
+6. On `invoice.paid` or an explicitly accepted grace decision, the worker records `actual_effective_at`, calls the same cycle transition used by scheduled rollover, closes the current cycle for usage, opens a new cycle anchored at the activation moment, and enqueues finalization for the closed free cycle.
+7. The worker sets the contract and phase entitlement state to `active` or `grace`.
+8. Entitlement periods and credit grants are materialized for the new cycle after paid activation.
+9. Free-tier grants continue independently and must not be closed by the paid activation.
 
 Because free -> paid closes the free cycle for usage and opens a new paid cycle anchored at the paid activation time, the first paid Hobby cycle normally charges the full Hobby cycle price and issues the full Hobby contract grants for that new cycle. Free-tier grants from their own recurrence remain separate sources and continue to drain before contract grants.
+
+The closed free cycle still goes through finalization. If it has settled usage, explicit adjustments, provider-visible customer activity, or other customer-visible financial activity, it issues a zero-total statement so the customer can see what changed before paid activation. If it has no customer-visible activity, it issues an internal statement and suppresses customer delivery. The new paid cycle notification is driven by `billing_cycle_opened` / `billing_period_started` domain events, not by a Stripe checkout redirect.
 
 ### Immediate paid upgrade
 
@@ -1607,7 +1791,7 @@ Default for Hobby -> Pro.
 2. Compute and store the proration basis from the locked current cycle, current phase, target plan, and effective timestamp.
 3. Keep the old phase active until payment succeeds or an explicitly accepted grace decision arrives.
 4. Create the target Pro phase in `pending_payment` or `grace` according to policy.
-5. Create a one-off Forge Metal invoice for the positive prorated price delta when the business policy requires immediate collection.
+5. Create a `billing_finalizations(subject_type = 'contract_change')` row and Forge Metal invoice document for the positive prorated price delta when the business policy requires immediate collection.
 6. Provider API success moves the change to `awaiting_payment`; it does not activate new paid entitlements by itself.
 7. On `invoice.paid` or accepted grace, set the old phase `effective_end = actual_effective_at` and `state = 'superseded'`.
 8. Activate the new phase with `effective_start = actual_effective_at`. The target phase carries full Pro entitlement lines because those terms apply to subsequent full cycles.
@@ -1634,7 +1818,7 @@ The customer does not get a full prorated Pro grant of `120,000,000 * 75% = 90,0
 
 Pending reservations that already selected old Hobby funding before the upgrade settle or void against their original funding legs. The upgrade path must not snapshot TigerBeetle balances and re-mint "remaining Hobby" into a replacement grant; keeping the old current-cycle grant open until expiry avoids double-spend and lost-capacity races around pending reservations. New reservations after Pro activation can consume remaining Hobby carryforward plus the Pro delta grant, while their pricing context is captured from the active Pro phase.
 
-Paid overages accrued before the upgrade remain attached to the old phase/rate context captured in their billing windows. They are not netted against the upgrade charge or erased by the Pro activation. If usage leaked without overage consent, invoice finalization applies the automatic no-consent adjustment rules rather than charging the customer.
+Paid overages accrued before the upgrade remain attached to the old phase/rate context captured in their billing windows. They are not netted against the upgrade charge or erased by the Pro activation. If usage leaked without overage consent, finalization applies the automatic no-consent adjustment rules rather than charging the customer.
 
 Failure cases:
 
@@ -1678,6 +1862,8 @@ Changing from anniversary monthly to calendar monthly, monthly to annual, or pro
 
 The transition closes the current cycle for usage, opens a successor cycle with the new `cadence_kind` and anchor, and enqueues finalization for the closed cycle. This keeps cadence changes on the same path as free -> paid and avoids special-cycle code.
 
+For an anniversary self-serve plan amended into an enterprise calendar-month contract, the successor may be a stub cycle from the amendment effective time to the next calendar boundary. Future cycles then follow normal calendar-month recurrence in the contract timezone. Billing windows must attach to exactly one cycle; any long-running window that crosses the cadence boundary is split at the boundary so rate context, entitlement context, and document line attribution remain unambiguous. Already settled windows stay on the predecessor cycle and are never re-priced by the cadence change.
+
 ## Stripe provider ingress and hardening
 
 Stripe is one provider adapter for self-serve payment collection and payment-method management. Stripe Subscriptions are not part of the target architecture.
@@ -1686,9 +1872,9 @@ Target Stripe usage:
 
 1. Vaulting: SetupIntent -> PaymentMethod -> `payment_methods` row linked to `provider_customer_id`.
 2. Payment-method management: Customer Portal for card management, not a first-party card-vault UI.
-3. Invoice collection: one-off Stripe invoices or payment intents created from an issued immutable Forge Metal invoice artifact. The only exception is Stripe Tax pre-issue draft verification, where a provider draft is created from a Forge Metal finalization candidate solely to compute and reconcile tax before the Forge Metal artifact is issued.
-4. Optional Stripe Tax: when enabled, Stripe tax computation is a pre-issue finalization input. The Forge Metal invoice must not be issued until tax units are known and reconciled into the stored invoice snapshot.
-5. Refunds/disputes: provider events update Forge Metal payment state and adjustment/refund records.
+3. Invoice collection: one-off Stripe invoices or payment intents created from an issued immutable Forge Metal invoice document. The only exception is Stripe Tax pre-issue draft/preview verification, where a provider object is created from a Forge Metal finalization candidate solely to compute and reconcile tax before the Forge Metal document is issued.
+4. Optional Stripe Tax: when enabled, Stripe tax computation is a pre-issue finalization input. The Forge Metal document must not be issued until tax units are known and reconciled into the stored document snapshot.
+5. Refunds/disputes: provider events update Forge Metal payment state, dispute state, contract access state, and adjustment/refund records.
 
 The Stripe webhook route must do the minimum synchronous work required to safely accept a provider event:
 
@@ -1711,22 +1897,23 @@ The provider-event worker translates Stripe objects into provider-neutral state 
 - `charge.refunded`
 - `charge.dispute.created`
 - `charge.dispute.closed`
+- `charge.dispute.updated`
 
 Do not subscribe the billing endpoint to `customer.subscription.*` events in the target architecture.
 
-Stripe collection flow for a finalizing or issued Forge Metal invoice:
+Stripe collection flow for a finalizing or issued Forge Metal invoice document:
 
-1. Build a Forge Metal finalization candidate in PostgreSQL from settled windows, recurring charges, adjustments, rounding policy, and overage-consent policy.
-2. When Stripe Tax is disabled, issue the immutable Forge Metal invoice before provider collection. When Stripe Tax is enabled, create a Stripe draft from the finalization candidate before issue, use it only to compute/verify tax, persist the reconciled tax units into `invoice_snapshot_json`, and then issue the immutable Forge Metal invoice.
-3. Create the Stripe draft invoice with `auto_advance = false` so Stripe cannot finalize the provider invoice before Forge Metal verification completes, `collection_method = charge_automatically` only when the org has collection consent, and metadata containing `invoice_id`.
-4. Add invoice items with deterministic idempotency keys per Forge Metal invoice line and finalization generation. Do not reuse a Stripe idempotency key after changing request parameters.
-5. Verify the Stripe draft total matches the Forge Metal invoice total after ledger-unit-to-cent rounding and tax policy.
+1. Build a Forge Metal finalization candidate in PostgreSQL from the subject facts: settled windows for cycle subjects, contract-change price deltas for immediate activation/upgrade subjects, plus recurring charges, adjustments, rounding policy, and overage-consent policy where applicable.
+2. When Stripe Tax is disabled, issue the immutable Forge Metal document before provider collection. When Stripe Tax is enabled, call Stripe preview/draft verification from the finalization candidate before issue, use it only to compute/verify tax, persist the reconciled tax units into `document_snapshot_json`, and then issue the immutable Forge Metal document.
+3. Create the Stripe draft invoice with `auto_advance = false` so Stripe cannot finalize the provider invoice before Forge Metal verification completes, `collection_method = charge_automatically` only when the org has collection consent, and metadata containing `document_id` and `finalization_id`.
+4. Add invoice items with deterministic idempotency keys per Forge Metal document line and finalization generation. Do not reuse a Stripe idempotency key after changing request parameters.
+5. Verify the Stripe draft or preview total matches the Forge Metal document total after ledger-unit-to-cent rounding and tax policy.
 6. After draft verification and Forge Metal issue, explicitly finalize the Stripe invoice. If the product policy delegates payment retry to Stripe, configure the invoice so Stripe performs automatic collection/retry after finalization and report results through webhooks. If Forge Metal owns dunning, keep provider automation disabled, explicitly finalize/pay through `billing.payment.retry`, and model retries as River-driven domain work.
-7. Persist `stripe_invoice_id`, hosted invoice URL, invoice PDF URL, payment intent ID, and provider status on the Forge Metal invoice row.
+7. Persist `stripe_invoice_id`, hosted invoice URL, invoice PDF URL, payment intent ID, and provider status on the Forge Metal document row.
 8. On payment success, persist the provider event and dispatch ledger commands for `stripe_payment_in` plus `receivable_clear_payment` for the invoice's outstanding receivable accounts.
-9. Treat Stripe webhooks as payment-state inputs, not invoice truth.
+9. Treat Stripe webhooks as payment-state inputs, not document truth.
 
-When Stripe Tax is enabled, the draft creation and tax verification steps occur before the Forge Metal invoice is marked `issued`; after issue, Stripe collection must not mutate the Forge Metal invoice total.
+When Stripe Tax is enabled, the draft or preview tax verification steps occur before the Forge Metal document is marked `issued`; after issue, Stripe collection must not mutate the Forge Metal document total.
 
 The ledger unit to Stripe cent conversion must be explicit. Stripe invoice amounts are cent-denominated for USD. Forge Metal ledger units are finer-grained, so finalization must apply one rounding/residual policy: carry forward residuals, write them off through an adjustment, or accumulate them in an org/product rounding bucket. Silent truncation is not allowed.
 
@@ -1751,7 +1938,7 @@ Hardening requirements:
 - Handle duplicate deliveries using `(provider, provider_event_id)` idempotency.
 - Handle automatic retries by making provider-event application idempotent and replayable.
 - Use Stripe sandboxes to validate invoice creation, payment-method vaulting, duplicate events, delayed events, replay, payment failure, refunds, disputes, and tax behavior.
-- Disable Stripe invoice emails. The target Forge Metal path sends invoice emails through mailbox-service from the stored Forge Metal invoice body.
+- Disable Stripe invoice emails. The target Forge Metal path sends document emails through mailbox-service from the stored Forge Metal document body.
 
 Stripe docs to keep near this design:
 
@@ -1765,11 +1952,13 @@ Stripe docs to keep near this design:
 - Automatic invoice advancement: <https://docs.stripe.com/invoicing/integration/automatic-advancement-collection>
 - Idempotent requests: <https://docs.stripe.com/api/idempotent_requests>
 - Invoices API: <https://docs.stripe.com/api/invoices>
+- Create Preview Invoice API: <https://docs.stripe.com/api/invoices/create_preview>
 - Create invoice API: <https://docs.stripe.com/api/invoices/create>
 - Finalize invoice API: <https://docs.stripe.com/api/invoices/finalize>
 - Invoice items API: <https://docs.stripe.com/api/invoiceitems>
+- Dispute testing events: <https://docs.stripe.com/testing-use-cases>
 
-Stripe never becomes the source of truth for cycles, contract phases, SKU pricing, entitlement scope, grant funding, invoice artifacts, invoice numbering, or metering. It is strongest as a payment-method, hosted payment, optional tax, refund, dispute, and lifecycle-signal provider.
+Stripe never becomes the source of truth for cycles, contract phases, SKU pricing, entitlement scope, grant funding, billing documents, document numbering, or metering. It is strongest as a payment-method, hosted payment, optional tax, refund, dispute, and lifecycle-signal provider.
 
 ## Enterprise contracts
 
@@ -1778,10 +1967,10 @@ Enterprise contracts use the same tables and state machines.
 - A bespoke enterprise agreement creates a `contracts` row with `contract_kind = 'enterprise'`.
 - The active terms live in `contract_phases` with `phase_kind = 'bespoke'`.
 - Recurring allowances live in `contract_entitlement_lines` with `recurrence_anchor_kind = 'calendar_month_day'`, an anchor day, and a contract timezone.
-- Invoice cycles live in `billing_cycles` with `cadence_kind = 'calendar_monthly'`, `annual`, or `manual` depending on the contract.
+- Backend billing periods live in `billing_cycles` with `cadence_kind = 'calendar_monthly'`, `annual`, or `manual` depending on the contract.
 - Amendments, renewals, upgrades, downgrades, and cancellations use `contract_changes`.
 - Payment collection can be manual or provider-backed without changing entitlement generation.
-- River schedules phase boundaries, cycle rollover, entitlement materialization, invoice finalization, invoice delivery, and reconciliation exactly as it does for self-serve contracts.
+- River schedules phase boundaries, cycle rollover, entitlement materialization, finalization, document delivery, and reconciliation exactly as it does for self-serve contracts.
 - TigerBeetle account and transfer flows are the same as self-serve contracts: contract allowances fund `customer_grant` accounts, reservations post or void through window ledger legs, consented overage accrues to customer receivable accounts, and manual payment clears receivables through a provider or manual clearing command.
 
 The design must not fork into a second enterprise billing schema. Enterprise is a contract kind, phase kind, recurrence configuration, cycle cadence, and optional provider binding, not a parallel billing engine.
@@ -1801,37 +1990,40 @@ The shape:
 
 Within a bucket table, rows are sorted bucket-scope-first then SKU-scope, then by `GrantSourceFundingOrder`. Across the view, the cell-level next-to-spend position is a load-bearing claim about funder behavior. The contract is pinned by `entitlements_view_funding_test.go`: every cell projects back to a `scopedGrantBalance` and runs `planGrantFunding` against a representative charge, asserting the funder's first leg matches the cell's top entry. Any future change to `GrantScopeFundingOrder`, `GrantSourceFundingOrder`, or the view's sort logic must keep that test green or the customer-facing claim drifts from reality.
 
-## Invoice preview
+## Document preview
 
-Invoice preview is built from the same data invoice finalization uses:
+Document preview is built from the same data finalization uses:
 
-1. The current or closed `billing_cycles` row.
-2. Settled billing windows in PostgreSQL.
+1. The current or closed `billing_cycles` row, or the `contract_changes` subject for immediate activation/upgrade previews.
+2. Settled billing windows in PostgreSQL plus reserved-but-unsettled windows as clearly marked pending activity.
 3. Normalized `billing_window_ledger_legs` for grant, receivable, source, and SKU attribution.
 4. Projected metering rows in ClickHouse when available for display acceleration, with PostgreSQL plus TigerBeetle-backed ledger legs as truth.
 5. SKU metadata and captured rate context from billing windows.
 6. Contract, phase, and entitlement-period metadata from PostgreSQL.
-7. Adjustment rules and entitlement/grant consumption.
-8. Forge Metal invoice snapshot rows once issued.
+7. Recurring charges, payment, refund, dispute, and adjustment facts from PostgreSQL.
+8. Adjustment rules and entitlement/grant consumption.
+9. Forge Metal document snapshot rows once issued.
 
 The preview shows:
 
-- SKU line items first, using the SKU display name and quantity unit captured for the invoice.
+- SKU line items first, using the SKU display name and quantity unit captured for the document.
 - Bucket summaries next, using the bucket display name.
 - Free-tier, contract, purchased, promo, and refund funding after that.
-- Automatic system adjustments after funding in operator/finalization views. Customer-facing invoices render them only when `customer_visible = true`, and never as spendable balance.
+- Automatic system adjustments after funding in operator/finalization views. Customer-facing documents render them only when `customer_visible = true`, and never as spendable balance.
 - Reserved but not yet finalized execution spend as a separate line.
 - Remaining entitlement for the billing cycle and any purchased balance.
 
-Blocked finalizations are not collectible invoices. They render operator-facing policy failure state and must not render as a customer amount due.
+Blocked finalizations are not collectible invoice documents. They render operator-facing policy failure state and must not render as a customer amount due.
 
-That keeps the preview structurally aligned with the final invoice rather than inventing a separate UI model.
+Current-period preview uses `billing_document_previews`. A preview row is keyed by `input_fingerprint`, expires quickly, and is discarded when any source fact changes. Stripe Create Preview Invoice may be called for tax and provider-total verification, but the Stripe preview is not payable, not editable into the Forge Metal document, not a durable invoice, and not the PDF source. The canonical preview body is rendered from Forge Metal's preview snapshot so the current-period UI and final issued document share one structure.
 
-## ClickHouse metering and invoice projection
+That keeps the preview structurally aligned with the final document rather than inventing a separate UI model.
 
-ClickHouse stores the invoice read model, not the transaction ledger.
+## ClickHouse metering and document projection
 
-Billing event projection is at-least-once. Projection tables that use `ReplacingMergeTree` deduplicate during background merges, so they can temporarily expose duplicate rows for the same deterministic key. Operator verification queries that require immediate uniqueness must query PostgreSQL domain truth, use ClickHouse `FINAL`, or explicitly group by deterministic identifiers such as `event_id` and the relevant version column. Production authorization, invoice issuance, ledger writes, queue deletion, and provider-event application must not depend on ClickHouse merge timing.
+ClickHouse stores the billing document and metering read models, not the transaction ledger.
+
+Billing event projection is at-least-once. Projection tables that use `ReplacingMergeTree` deduplicate during background merges, so they can temporarily expose duplicate rows for the same deterministic key. Operator verification queries that require immediate uniqueness must query PostgreSQL domain truth, use ClickHouse `FINAL`, or explicitly group by deterministic identifiers such as `event_id` and the relevant version column. Production authorization, document issuance, ledger writes, queue deletion, and provider-event application must not depend on ClickHouse merge timing.
 
 The target metering projection contains row-level usage evidence and projected charge units, including:
 
@@ -1854,15 +2046,17 @@ The target metering projection contains row-level usage evidence and projected c
 - `adjustment_reason`
 - `usage_evidence`
 
-The per-source drain maps are keyed by SKU id, not bucket id. The funder attributes every cent of every drain to the SKU that triggered it via the `ChargeSKUID` axis on funding legs. These maps preserve that attribution through to ClickHouse so the customer-facing invoice can show per-line drain splits without a secondary aggregation. Bucket-level drain splits are derivable by grouping `component_*_units` keys through each row's `rate_context.sku_buckets` mapping in analytics queries that still need the bucket axis.
+The per-source drain maps are keyed by SKU id, not bucket id. The funder attributes every cent of every drain to the SKU that triggered it via the `ChargeSKUID` axis on funding legs. These maps preserve that attribution through to ClickHouse so the customer-facing document can show per-line drain splits without a secondary aggregation. Bucket-level drain splits are derivable by grouping `component_*_units` keys through each row's `rate_context.sku_buckets` mapping in analytics queries that still need the bucket axis.
 
-Invoice projections include `billing_cycle_opened`, `billing_cycle_closed_for_usage`, `invoice_issued`, `invoice_adjustment_created`, `invoice_finalization_blocked`, `stripe_invoice_collection_started`, `stripe_invoice_paid`, `stripe_invoice_payment_failed`, and `invoice_email_sent` events. These are proof/read-model facts; PostgreSQL remains authoritative for the invoice artifact and state machine.
+Raw product usage is not billing truth. The billing read model is built from billing windows, normalized ledger legs, contract/phase context, finalization state, issued documents, payments, disputes, and adjustments. Product services may emit richer usage telemetry for debugging or capacity planning, but customer-facing billing history must derive from settled billing facts and the finalization/document state machine.
+
+Document projections include `billing_cycle_opened`, `billing_cycle_closed_for_usage`, `billing_finalization_started`, `billing_document_issued`, `billing_statement_issued`, `invoice_adjustment_created`, `billing_finalization_blocked`, `billing_document_preview_created`, `billing_document_preview_stripe_verified`, `stripe_invoice_collection_started`, `stripe_invoice_paid`, `stripe_invoice_payment_failed`, and `billing_document_email_sent` events. These are proof/read-model facts; PostgreSQL remains authoritative for the document artifact and finalization state machine.
 
 Ledger projections include `grant_ledger_posted`, `ledger_command_posted`, `ledger_command_failed`, `ledger_drift_detected`, `billing_window_reserved`, `billing_window_settled`, `billing_window_voided`, `grant_expired`, `receivable_accrued`, `receivable_cleared`, and `no_consent_adjustment_showback_posted`. These projections prove that PostgreSQL domain rows and TigerBeetle side effects converged; they do not replace TigerBeetle account lookup for balance reads.
 
 ClickHouse billing rows use contract projection names (`contract_units`, `pricing_contract_id`, `pricing_phase_id`, `pricing_plan_id`) rather than provider-specific subscription field names.
 
-For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. That gives the invoice preview a real storage signal instead of an inferred one.
+For sandbox jobs, trusted block storage evidence comes from the orchestrator's provisioned zvol size and is written as `rootfs_provisioned_bytes` in usage evidence. That gives the document preview a real storage signal instead of an inferred one.
 
 ClickHouse docs to keep near this design:
 
@@ -1878,11 +2072,11 @@ Provider-event fault cases:
 - Delayed `invoice.paid` after local Stripe invoice creation.
 - `invoice.payment_failed` followed by later `invoice.paid`.
 - `setup_intent.succeeded` without overage consent.
-- Refund or dispute event for an invoice already marked paid locally.
+- Refund or dispute event for a document already marked paid locally.
 - Missing provider metadata resolved through local binding state.
 - Unsupported provider event type recorded and ignored.
-- Worker failure after provider event is recorded but before invoice/payment mutation.
-- Worker failure after invoice/payment mutation but before event delivery projection.
+- Worker failure after provider event is recorded but before document/payment mutation.
+- Worker failure after document/payment mutation but before event delivery projection.
 
 Scheduler fault cases:
 
@@ -1893,7 +2087,7 @@ Scheduler fault cases:
 - Entitlement materialization job runs twice for the same period.
 - Event delivery projection job fails after ClickHouse insert but before deleting the queue row.
 - Reserve runs before scheduled free-tier or active contract entitlement materialization.
-- Invoice finalization is delayed while successor cycle remains open for valid usage.
+- Finalization is delayed while the successor cycle remains open for valid usage.
 
 Ledger fault cases:
 
@@ -1910,19 +2104,19 @@ Ledger fault cases:
 - Reconciliation finds a TigerBeetle customer-grant account that PostgreSQL does not know about.
 - TigerBeetle is unavailable during a customer balance read; the service must fail or return a marked stale projection, not recompute financial truth from PostgreSQL JSON.
 
-Invoice finalization fault cases:
+Finalization fault cases:
 
 - Free-tier org has a payment method on file but no paid contract or overage consent.
 - Free-tier leaked overage is below the automatic-adjustment cap.
 - Free-tier leaked overage exceeds the automatic-adjustment cap.
 - Paid hard-cap org leaks usage after grants and prepaid balances are exhausted.
-- Duplicate invoice finalization job retries after automatic adjustments were created.
-- Overage consent changes while invoice finalization is in progress.
+- Duplicate finalization job retries after automatic adjustments were created.
+- Overage consent changes while finalization is in progress.
 - Stripe draft invoice creation succeeds but invoice item creation fails.
-- Stripe total diverges from the Forge Metal invoice after rounding or tax.
-- Invoice email delivery fails after invoice issue and Stripe collection succeeds.
+- Stripe total diverges from the Forge Metal document after rounding or tax.
+- Document email delivery fails after issue and Stripe collection succeeds.
 
-Expected behavior is convergence, not exactly-once execution. PostgreSQL state, deterministic identifiers, TigerBeetle idempotency, Stripe idempotency keys, invoice immutability, and billing event delivery idempotency must make repeated work safe.
+Expected behavior is convergence, not exactly-once execution. PostgreSQL state, deterministic identifiers, TigerBeetle idempotency, Stripe idempotency keys, document immutability, and billing event delivery idempotency must make repeated work safe.
 
 ## Edge-case appendix
 
@@ -1958,11 +2152,11 @@ TigerBeetle is authoritative. PostgreSQL marks the window `denied`, marks legs f
 
 **Work launches, launch fails, and void dispatch is delayed.**
 
-The window moves to `voiding` and remains non-terminal until TigerBeetle accepts the void or reconciliation proves the pending reservation expired without posting. Pending balance may be temporarily unavailable, which is safer than double-spending it. No metering row or invoice usage line is emitted for a voiding window.
+The window moves to `voiding` and remains non-terminal until TigerBeetle accepts the void or reconciliation proves the pending reservation expired without posting. Pending balance may be temporarily unavailable, which is safer than double-spending it. No metering row or document usage line is emitted for a voiding window.
 
 **Settlement command posts, then PostgreSQL fails before `billing_windows.state = 'settled'`.**
 
-The window remains `settling`, which means settlement math is durable but terminal ledger acknowledgement has not been reflected into the aggregate. Projection and invoice finalization must ignore the row as unsettled. Repair completes leg states, marks the window `settled`, emits `billing_window_settled`, and then projects metering.
+The window remains `settling`, which means settlement math is durable but terminal ledger acknowledgement has not been reflected into the aggregate. Projection and finalization must ignore the row as unsettled. Repair completes leg states, marks the window `settled`, emits `billing_window_settled`, and then projects metering.
 
 **A settlement reports less usage than the reservation.**
 
@@ -1974,9 +2168,21 @@ Only the billable guest run phase is charged. Host launch latency, image setup, 
 
 ### Contract changes and recurring entitlements
 
+**Free -> paid activation closes a free cycle that had real usage.**
+
+The predecessor free cycle closes for usage and finalizes independently before the paid cycle begins. If settled usage or another customer-visible billing fact exists, finalization issues a zero-total statement instead of hiding the period. If the free period is dormant, finalization creates an internal statement and suppresses customer delivery. The paid cycle starts from its own anchor and never mutates or consumes the free grant.
+
+**Free -> paid checkout is abandoned or payment fails.**
+
+The contract-change finalization may be payment-failed or voided, but the free cycle remains open because activation never reached `invoice.paid` or an accepted grace decision. No paid grants materialize. Free-tier reservation and self-healing continue from the current free-cycle posture.
+
 **A customer upgrades after consuming most of the lower-tier grant.**
 
 Already-issued current-cycle paid grants remain open until their own expiry. The upgrade charges the positive prorated price delta and issues only the positive prorated entitlement delta between the target phase and the current phase for the remainder of the cycle. The customer cannot extract more entitlement by stepping through intermediate plans because each immediate upgrade is computed against the effective entitlement already promised at that timestamp.
+
+**An immediate upgrade needs payment collection without closing the current cycle.**
+
+The upgrade creates a `billing_finalizations(subject_type = 'contract_change')` row for the prorated price-delta document. That finalization may create a Stripe invoice or payment intent, but it must not mark the current cycle `closed_for_usage` or `finalized`. The cycle continues to accept post-upgrade windows after the contract change reaches `active` or `grace`; normal period-end finalization later includes the full cycle's usage and references the earlier contract-change document as payment/change history.
 
 **A customer schedules a downgrade or cancellation, then resumes the current plan before period end.**
 
@@ -1990,9 +2196,17 @@ Entitlement continuity is controlled by contract/phase `entitlement_state`, not 
 
 The recurrence policy lives on entitlement lines and phases. Both contract kinds materialize `entitlement_periods`, `credit_grants`, and `billing_cycles` through the same machinery; only the anchor calculation differs. Enterprise does not get a second subscription state machine.
 
+**An enterprise amendment changes cadence in the middle of a running workload.**
+
+The cycle boundary is still immediate at the amendment effective time when the contract says the cadence changes immediately. A workload window that crosses the boundary is split into predecessor and successor windows with separate rate context and ledger legs. If the product cannot split a specific long-running measurement safely, the amendment must be scheduled for period end or the workload must be checkpointed and restarted at the boundary. Do not attach one billing window to two cycles.
+
+**A paid customer returns after several idle months.**
+
+Due-work reconciliation advances every missed paid cycle and finalization because paid recurring entitlement and collection are financial activity even with no usage. Customer billing history shows those periods and their documents. A dormant free customer may have internal finalizations for the same gap, but the customer UI may suppress them unless usage or another customer-visible billing fact occurred.
+
 **Business time is advanced or reset by an operator script.**
 
-The business clock is an input to due-work discovery and period calculation, not a reason to mutate history. Already-opened cycles, periods, grants, windows, and invoices keep their timestamps. Reconciliation may open newly due periods after a forward jump. A backward reset must not create overlapping cycles or duplicate periods because deterministic domain identifiers and non-overlap constraints still apply.
+The business clock is an input to due-work discovery and period calculation, not a reason to mutate history. Already-opened cycles, periods, grants, windows, finalizations, and documents keep their timestamps. Reconciliation may open newly due periods after a forward jump. A backward reset must not create overlapping cycles or duplicate periods because deterministic domain identifiers and non-overlap constraints still apply.
 
 ### Overage consent and adjustments
 
@@ -2002,25 +2216,33 @@ The payment method only authorizes future provider collection flows chosen by th
 
 **A paid customer switches from bill-published-rate overage to hard cap mid-cycle.**
 
-Reservation snapshots the overage policy used to admit work. Usage admitted before the change under explicit consent can settle into receivable legs. Usage admitted after hard cap must not create receivable legs. Finalization verifies the captured reservation policy and the current invoice policy; ambiguous or missing consent blocks charging rather than surprising the customer.
+Reservation snapshots the overage policy used to admit work. Usage admitted before the change under explicit consent can settle into receivable legs. Usage admitted after hard cap must not create receivable legs. Finalization verifies the captured reservation policy and the current document policy; ambiguous or missing consent blocks charging rather than surprising the customer.
 
 **No-consent leaked usage exceeds the automatic adjustment cap.**
 
-Finalization must not issue a collectible invoice for the leaked amount. It creates or updates a blocked finalization record, emits `invoice_finalization_blocked`, prevents further no-consent execution for the affected org/product until operator resolution, and leaves explicit evidence for a manual adjustment, credit-note invoice, or engineering fix.
+Finalization must not issue a collectible invoice document for the leaked amount. It creates or updates a blocked finalization record, emits `billing_finalization_blocked`, prevents further no-consent execution for the affected org/product until operator resolution, and leaves explicit evidence for a manual adjustment, credit-note document, or engineering fix.
 
 **A direct top-up is refunded after partial spend.**
 
-Only unspent purchased balance can be removed from the customer grant account through `refund_balance_remove`. Any refund exceeding unspent balance is represented as an invoice/payment correction, goodwill adjustment, or operator-approved ledger correction. The system must not create a negative customer grant balance to make Stripe refund state “fit.”
+Only unspent purchased balance can be removed from the customer grant account through `refund_balance_remove`. Any refund exceeding unspent balance is represented as a document/payment correction, goodwill adjustment, or operator-approved ledger correction. The system must not create a negative customer grant balance to make Stripe refund state “fit.”
 
-### Invoice and provider boundaries
+### Document and provider boundaries
 
-**Stripe invoice totals diverge from the Forge Metal invoice because of rounding, tax, or provider line construction.**
+**Stripe invoice totals diverge from the Forge Metal document because of rounding, tax, or provider line construction.**
 
-The Forge Metal invoice stays in `finalizing` or `blocked`; it does not become issued. The residual must be represented as an explicit rounding/tax line or the provider draft must be corrected until totals reconcile. Stripe PDFs and hosted pages are allowed only after the Forge Metal artifact is issued with a matching provider collection amount.
+The Forge Metal finalization stays in `awaiting_provider_preview` or `blocked`; the document does not become issued and no document number is allocated. The residual must be represented as an explicit rounding/tax line or the provider draft must be corrected until totals reconcile. Stripe PDFs and hosted pages are allowed only after the Forge Metal artifact is issued with a matching provider collection amount.
+
+**A user previews a current-period billing document through Stripe.**
+
+Stripe's preview API can be used only to verify tax and provider totals from a Forge Metal finalization candidate. The preview response is stored as provider evidence on `billing_document_previews`, expires quickly, and cannot be promoted into a payable invoice, document number, PDF, or legal artifact. The canonical preview body is rendered from Forge Metal snapshot data.
 
 **Stripe reports `invoice.payment_failed` and later `invoice.paid`.**
 
-Both provider events are immutable facts. The invoice payment state moves through failed/pending-retry to paid without changing the issued invoice artifact. Dunning and entitlement grace decisions read contract and invoice state, not Stripe subscription state.
+Both provider events are immutable facts. The document payment state moves through failed/pending-retry to paid without changing the issued document artifact. Dunning and entitlement grace decisions read contract and document payment state, not Stripe subscription state.
+
+**Stripe opens a dispute on a paid document.**
+
+The provider event creates or updates `billing_payment_disputes`, marks the document/payment as disputed, and applies the contract's dispute policy. If policy revokes paid access immediately, rollover closes the paid cycle for usage with `closed_reason = 'payment_dispute'`, opens a free or suspended successor cycle, stops future paid entitlement materialization, and prevents unused disputed paid grants from funding new reservations. Already settled windows remain historical facts. If the dispute is won, payment state is restored or preserved. If it is lost, the system records chargeback loss, revokes unused paid allowance through ledger commands, and handles consumed usage through document/payment correction rather than mutating the original document.
 
 **Provider metadata is missing but a binding exists locally.**
 
@@ -2030,7 +2252,11 @@ The provider event worker may resolve the event through `provider_bindings` only
 
 **ClickHouse contains duplicate event rows after a retry.**
 
-This is acceptable for at-least-once delivery. Proof queries use `FINAL`, deterministic `event_id`, or aggregation by `event_id` depending on the table engine. Authorization, invoice issue, and balance reads never depend on ClickHouse immediate exactness.
+This is acceptable for at-least-once delivery. Proof queries use `FINAL`, deterministic `event_id`, or aggregation by `event_id` depending on the table engine. Authorization, document issue, and balance reads never depend on ClickHouse immediate exactness.
+
+**A finalization row needs to notify Stripe, mailbox-service, and ClickHouse.**
+
+Do not add a finalization-specific outbox table. The finalization row is mutable workflow state. Immutable facts are emitted into `billing_events`; sink-specific projection state lives in `billing_event_delivery_queue`; TigerBeetle side effects live in `billing_ledger_commands`; Stripe and mailbox-service work is scheduled as idempotent River work keyed by `document_id` or `finalization_id` and backed by provider binding rows when external IDs exist.
 
 **A ledger command reaches `dead_letter`.**
 
@@ -2046,23 +2272,26 @@ PostgreSQL timestamps and row state define due work. Periodic repair reconstruct
 
 ## API naming target
 
-The public/internal billing API is contract- and invoice-oriented:
+The public/internal billing API is contract-, finalization-, and document-oriented:
 
 - `/contracts` instead of `/subscriptions`
 - `/contracts/{contract_id}/changes` for upgrade, downgrade, cancel, renew, and amend requests
 - `/billing-cycles` for cycle inspection and operator repair
-- `/invoices` and `/invoices/{invoice_id}` for issued invoice artifacts
-- `/invoices/{invoice_id}/adjustments` for manual/admin adjustments and credit-note flows
+- `/billing-finalizations` and `/billing-finalizations/{finalization_id}` for operator-visible accounting closure state
+- `/billing-documents` and `/billing-documents/{document_id}` for issued invoice, statement, internal-statement, credit-note, and adjustment-invoice artifacts
+- `/billing-documents/preview` for current or closed-cycle previews
+- `/billing-documents/{document_id}/adjustments` for manual/admin adjustments and credit-note flows
 - `/payment-methods` for setup-intent-backed payment method management state
 - `/provider-events` instead of `/subscription-provider-events`
-- `/ledger-commands` and `/ledger-drift` for operator-only inspection and repair; customer APIs should expose balances, invoices, grants, and usage explanations, not raw TigerBeetle account internals
-- `contract_id`, `phase_id`, `cycle_id`, `invoice_id`, and `change_id` in responses instead of a single mutable subscription plan field
+- `/payment-disputes` for provider-neutral dispute state and operator repair
+- `/ledger-commands` and `/ledger-drift` for operator-only inspection and repair; customer APIs should expose balances, documents, grants, and usage explanations, not raw TigerBeetle account internals
+- `contract_id`, `phase_id`, `cycle_id`, `finalization_id`, `document_id`, and `change_id` in responses instead of a single mutable subscription plan field
 
 Stripe-specific terms appear only at provider-adapter boundaries, provider binding rows, payment method rows, provider event rows, and Stripe UI flows such as Customer Portal and hosted payment collection.
 
 ## Production verification gates
 
-Use PostgreSQL, ClickHouse traces, metering rows, invoice rows, provider-event rows, and billing events as the proof point for the deployed path.
+Use PostgreSQL, ClickHouse traces, metering rows, finalization rows, document rows, provider-event rows, and billing events as the proof point for the deployed path.
 
 1. **River billing runtime present**
 
@@ -2297,12 +2526,35 @@ ORDER BY recorded_at DESC
 LIMIT 5
 ```
 
-13. **Invoice artifact is immutable and issued from stored snapshot**
+13. **Finalization subjects are explicit and terminal**
 
 ```sql
 SELECT
-  invoice_id,
-  invoice_number,
+  finalization_id,
+  subject_type,
+  subject_id,
+  cycle_id,
+  contract_change_id,
+  state,
+  document_id,
+  document_kind,
+  customer_visible,
+  total_due_units,
+  blocked_reason,
+  updated_at
+FROM billing_finalizations
+ORDER BY updated_at DESC
+LIMIT 20
+```
+
+14. **Billing document artifact is immutable and issued from stored snapshot**
+
+```sql
+SELECT
+  document_id,
+  document_number,
+  document_kind,
+  finalization_id,
   org_id,
   product_id,
   cycle_id,
@@ -2312,25 +2564,25 @@ SELECT
   content_hash,
   stripe_invoice_id,
   issued_at
-FROM billing_invoices
+FROM billing_documents
 ORDER BY issued_at DESC
 LIMIT 20
 ```
 
-14. **No-consent adjustments enforce the cap**
+15. **No-consent adjustments enforce the cap**
 
 Confirm free-tier and paid hard-cap orgs do not produce collectible receivable units without overage consent. Automatic no-consent adjustments must stay within the USD $0.99 per-org finalization cap; cap overflow must create a blocked finalization event instead of a customer charge.
 
 ```sql
 SELECT
-  invoice_finalization_id,
+  finalization_id,
   org_id,
   sum(amount_units) FILTER (WHERE adjustment_source = 'system_policy') AS automatic_adjustment_units,
   max(reason_code) AS example_reason
 FROM invoice_adjustments
 WHERE reason_code IN ('free_tier_overage_absorbed', 'paid_hard_cap_overage_absorbed')
-GROUP BY invoice_finalization_id, org_id
-ORDER BY invoice_finalization_id DESC
+GROUP BY finalization_id, org_id
+ORDER BY finalization_id DESC
 LIMIT 20
 ```
 
@@ -2345,12 +2597,12 @@ SELECT
   payload_hash,
   recorded_at
 FROM forge_metal.billing_events FINAL
-WHERE event_type IN ('invoice_adjustment_created', 'invoice_finalization_blocked')
+WHERE event_type IN ('invoice_adjustment_created', 'billing_finalization_blocked')
 ORDER BY recorded_at DESC
 LIMIT 20
 ```
 
-15. **Stripe subscriptions are absent from target provider events**
+16. **Stripe subscriptions are absent from target provider events**
 
 ```sql
 SELECT event_type, count(*)
