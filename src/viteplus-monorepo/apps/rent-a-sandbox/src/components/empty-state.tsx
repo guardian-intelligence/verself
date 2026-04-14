@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@forge-metal/ui";
+import { cn } from "@forge-metal/ui/lib/utils";
 
 export function EmptyState({
   title,
@@ -16,14 +16,15 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={cn("rounded-lg border border-border bg-card px-8 py-10 text-center", className)}
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 border border-dashed border-foreground bg-background px-8 py-12 text-center",
+        className,
+      )}
     >
-      {icon ? (
-        <div className="mx-auto mb-4 flex justify-center text-muted-foreground">{icon}</div>
-      ) : null}
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="mt-2 text-sm text-muted-foreground">{body}</div>
-      {action ? <div className="mt-5">{action}</div> : null}
+      {icon ? <div className="text-muted-foreground">{icon}</div> : null}
+      <h2 className="font-mono text-sm font-semibold uppercase tracking-[0.15em]">{title}</h2>
+      <div className="max-w-prose text-sm text-muted-foreground">{body}</div>
+      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
 }

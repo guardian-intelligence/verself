@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { Button } from "@forge-metal/ui/components/ui/button";
 import { ErrorCallout } from "~/components/error-callout";
 import { usePlanCardActionMutation } from "~/features/billing/mutations";
 import { loadSubscribePage } from "~/features/billing/queries";
@@ -14,7 +15,7 @@ import {
 import { useBillingAccount } from "~/features/billing/use-billing-account";
 import { formatCents, formatDateTimeUTC } from "~/lib/format";
 
-export const Route = createFileRoute("/_authenticated/billing/subscribe")({
+export const Route = createFileRoute("/_authenticated/settings/billing/subscribe")({
   loader: ({ context }) => loadSubscribePage(context.queryClient, context.auth),
   component: SubscribePage,
 });
@@ -32,13 +33,18 @@ function SubscribePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Choose a Plan</h1>
-      <p className="text-muted-foreground">
-        Create a contract to get monthly bucketed allowances for sandbox usage.
-      </p>
+      <div className="space-y-1">
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Plan
+        </h2>
+        <p className="text-2xl font-semibold">Choose a plan</p>
+        <p className="text-sm text-muted-foreground">
+          Create a contract to get monthly bucketed allowances for sandbox usage.
+        </p>
+      </div>
 
       {plans.length > 0 ? (
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           {cards.map((card) => {
             const intent = intentFor(card, account);
             return (
@@ -54,7 +60,7 @@ function SubscribePage() {
           })}
         </div>
       ) : (
-        <div className="border border-border rounded-lg p-6 text-sm text-muted-foreground">
+        <div className="border border-foreground p-6 font-mono text-xs uppercase tracking-wider text-muted-foreground">
           No contract plans are currently available.
         </div>
       )}
@@ -78,33 +84,49 @@ function PlanCardView({ account, card, intent, isPending, onClick }: PlanCardVie
   const { plan } = card;
   const copy = planCardCopy(card, account, isPending);
   const disabled = isPending || intent.kind === "disabled";
+  const current = card.kind === "current" || card.kind === "current_resumable";
 
   return (
     <div
       data-testid={`contract-plan-${plan.plan_id}`}
       data-card-kind={card.kind}
-      className="border border-border rounded-lg p-6 flex flex-col gap-4"
+      className="flex flex-col gap-4 border border-foreground bg-background p-6"
     >
       <div>
-        <h3 className="text-lg font-semibold">{plan.display_name}</h3>
-        <p className="text-muted-foreground text-sm">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="font-mono text-sm font-semibold uppercase tracking-wider">
+            {plan.display_name}
+          </h3>
+          {current ? (
+            <span className="border border-foreground px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider">
+              Current
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
           Monthly sandbox usage allowance for the {plan.tier} tier.
         </p>
       </div>
-      <div className="text-2xl font-bold">
-        {formatCents(plan.monthly_amount_cents, plan.currency)}/mo
+      <div className="font-mono text-3xl font-semibold tabular-nums">
+        {formatCents(plan.monthly_amount_cents, plan.currency)}
+        <span className="text-xs text-muted-foreground">/mo</span>
       </div>
-      {copy.hint ? <p className="text-xs text-muted-foreground">{copy.hint}</p> : null}
-      <button
+      {copy.hint ? (
+        <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+          {copy.hint}
+        </p>
+      ) : null}
+      <Button
         type="button"
+        variant={current ? "outline" : "default"}
         data-testid={`start-contract-plan-${plan.plan_id}`}
         onClick={onClick}
         disabled={disabled}
         title={copy.tooltip}
-        className="mt-auto px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm disabled:opacity-50"
+        className="mt-auto rounded-none"
       >
         {copy.label}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -124,7 +146,7 @@ function planCardCopy(
   isPending: boolean,
 ): PlanCardCopy {
   if (isPending) {
-    return { label: "Redirecting..." };
+    return { label: "Redirecting…" };
   }
 
   switch (card.kind) {
@@ -143,7 +165,7 @@ function planCardCopy(
     case "upgrade_target":
       return {
         label: `Upgrade to ${card.plan.display_name}`,
-        hint: `Takes effect immediately with a prorated charge.`,
+        hint: "Takes effect immediately with a prorated charge.",
       };
     case "downgrade_target":
       return {

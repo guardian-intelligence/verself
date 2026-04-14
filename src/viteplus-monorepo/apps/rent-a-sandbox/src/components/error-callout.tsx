@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { cn } from "@forge-metal/ui";
+import { Alert, AlertDescription, AlertTitle } from "@forge-metal/ui/components/ui/alert";
+import { cn } from "@forge-metal/ui/lib/utils";
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
@@ -19,16 +20,17 @@ export function ErrorCallout({
   className?: string;
 }) {
   return (
-    <div
+    <Alert
+      role="alert"
+      variant="destructive"
       className={cn(
-        "rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive",
+        "rounded-none border-foreground border-l-2 border-l-destructive",
         className,
       )}
-      role="alert"
     >
-      <div className="font-medium">{title}</div>
-      <p className="mt-1">{errorMessage(error, "An unexpected error occurred.")}</p>
+      <AlertTitle className="font-mono text-xs uppercase tracking-wider">{title}</AlertTitle>
+      <AlertDescription>{errorMessage(error, "An unexpected error occurred.")}</AlertDescription>
       {action ? <div className="mt-3">{action}</div> : null}
-    </div>
+    </Alert>
   );
 }

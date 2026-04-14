@@ -22,7 +22,7 @@ export function useCreateExecutionMutation({
     mutationFn: (data: ExecutionRequest) => submitDirectExecution({ data }),
     onSuccess: async (execution) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: authQueryKey(auth, "jobs") }),
+        queryClient.invalidateQueries({ queryKey: authQueryKey(auth, "executions") }),
         queryClient.invalidateQueries({ queryKey: entitlementsQuery(auth).queryKey }),
       ]);
       await onSuccess?.(execution);

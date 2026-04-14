@@ -308,8 +308,13 @@ export class SandboxHarness {
     const loginRedirectButton = this.page.getByRole("button", { name: /click here/i });
     const otherUserButton = this.page.getByRole("button", { name: /other user/i });
     const skipButton = this.page.getByRole("button", { name: /^Skip$/ });
-    const dashboardHeading = this.page.getByRole("heading", { name: "Dashboard" });
-    const signOutLink = this.page.getByRole("link", { name: "Sign out" });
+    // The shell routes `/` → `/executions` when authenticated; the omnibar
+    // is the stable SSR-visible marker for "we landed inside the app shell".
+    // `signOutLink` used to map to a standalone nav link; post-retool the
+    // sign-out action lives inside the account popover, so we key on the
+    // popover trigger (always rendered when signed in) instead.
+    const dashboardHeading = this.page.getByTestId("shell-omnibar");
+    const signOutLink = this.page.getByTestId("shell-account-trigger");
 
     await this.goto("/");
     if (await isDashboardReady({ dashboardHeading, signOutLink })) {
@@ -398,8 +403,8 @@ export class SandboxHarness {
     // Sums the entitlements view's hidden test attribute. The visible UI never
     // shows a top-line balance — this is a relative-comparison anchor for e2e
     // (started vs finished) only.
-    if (!this.page.url().includes("/billing")) {
-      await this.goto("/billing");
+    if (!this.page.url().includes("/settings/billing")) {
+      await this.goto("/settings/billing");
     }
     const view = this.page.getByTestId("entitlements-view");
     await view.first().waitFor({ state: "visible", timeout: shortTimeoutMS });

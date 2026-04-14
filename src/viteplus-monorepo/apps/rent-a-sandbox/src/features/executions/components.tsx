@@ -4,6 +4,10 @@ import { ClientOnly, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import { Button } from "@forge-metal/ui/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@forge-metal/ui/components/ui/card";
+import { Field, FieldError, FieldLabel } from "@forge-metal/ui/components/ui/field";
+import { Textarea } from "@forge-metal/ui/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -58,45 +62,36 @@ function ExecutionListPanelContent({ orgId }: { orgId: string }) {
   return <ExecutionTable executions={rows.executions} />;
 }
 
-export function ExecutionDetailPanel({ jobId }: { jobId: string }) {
+export function ExecutionDetailPanel({ executionId }: { executionId: string }) {
   return (
-    <ClientOnly fallback={<ExecutionDetailLoading jobId={jobId} />}>
-      <ExecutionDetailPanelContent jobId={jobId} />
+    <ClientOnly fallback={<ExecutionDetailLoading executionId={executionId} />}>
+      <ExecutionDetailPanelContent executionId={executionId} />
     </ClientOnly>
   );
 }
 
-function ExecutionDetailPanelContent({ jobId }: { jobId: string }) {
+function ExecutionDetailPanelContent({ executionId }: { executionId: string }) {
   const auth = useSignedInAuth();
-  const execution = useSuspenseQuery(executionQuery(auth, jobId)).data;
+  const execution = useSuspenseQuery(executionQuery(auth, executionId)).data;
 
   const attempt = execution.latest_attempt;
   const isRunning = isExecutionActiveStatus(execution.status);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          to="/executions"
+          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
           Executions
         </Link>
         <span className="text-muted-foreground">/</span>
-        <h1 className="font-mono text-xl font-bold">{execution.execution_id.slice(0, 8)}</h1>
+        <h1 className="font-mono text-xl font-semibold">{execution.execution_id.slice(0, 8)}</h1>
         <ExecutionStatusBadge status={execution.status} />
-        {execution.repo_id && (
-          <>
-            <span className="text-muted-foreground">/</span>
-            <Link
-              to="/repos/$repoId"
-              params={{ repoId: execution.repo_id }}
-              className="text-sm text-primary hover:underline"
-            >
-              Repo
-            </Link>
-          </>
-        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <InfoCard
           label="Repository"
           value={formatExecutionRepo(execution.repo, execution.repo_url)}
@@ -106,9 +101,9 @@ function ExecutionDetailPanelContent({ jobId }: { jobId: string }) {
           label="Duration"
           value={attempt.duration_ms ? `${(attempt.duration_ms / 1000).toFixed(1)}s` : "--"}
         />
-        <InfoCard label="Exit Code" value={String(attempt.exit_code ?? "--")} />
+        <InfoCard label="Exit code" value={String(attempt.exit_code ?? "--")} />
         <InfoCard
-          label="ZFS Written"
+          label="ZFS written"
           value={attempt.zfs_written ? formatBytes(attempt.zfs_written) : "--"}
         />
         <InfoCard label="Kind" value={execution.kind} />
@@ -122,16 +117,19 @@ function ExecutionDetailPanelContent({ jobId }: { jobId: string }) {
   );
 }
 
-function ExecutionDetailLoading({ jobId }: { jobId: string }) {
-  const executionPrefix = jobId.slice(0, 8);
+function ExecutionDetailLoading({ executionId }: { executionId: string }) {
+  const executionPrefix = executionId.slice(0, 8);
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link to="/jobs" className="text-muted-foreground hover:text-foreground text-sm">
+        <Link
+          to="/executions"
+          className="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
           Executions
         </Link>
         <span className="text-muted-foreground">/</span>
-        <h1 className="font-mono text-xl font-bold">{executionPrefix}</h1>
+        <h1 className="font-mono text-xl font-semibold">{executionPrefix}</h1>
       </div>
       <ExecutionLogsLoading isRunning />
     </div>
@@ -163,7 +161,7 @@ export function ExecutionSubmissionForm({
         e.stopPropagation();
         void form.handleSubmit();
       }}
-      className="max-w-md space-y-4"
+      className="max-w-xl space-y-4"
     >
       <form.Field
         name="runCommand"
@@ -172,22 +170,20 @@ export function ExecutionSubmissionForm({
         }}
       >
         {(field) => (
-          <div>
-            <label htmlFor={field.name} className="text-sm font-medium">
-              Run command
-            </label>
-            <textarea
+          <Field>
+            <FieldLabel htmlFor={field.name}>Run command</FieldLabel>
+            <Textarea
               id={field.name}
               value={field.state.value}
               onBlur={field.handleBlur}
               onChange={(e) => field.handleChange(e.target.value)}
               rows={4}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+              className="rounded-none font-mono"
             />
             {field.state.meta.isTouched && field.state.meta.errors.length > 0 ? (
-              <p className="mt-1 text-sm text-destructive">{field.state.meta.errors[0]}</p>
+              <FieldError>{field.state.meta.errors[0]}</FieldError>
             ) : null}
-          </div>
+          </Field>
         )}
       </form.Field>
 
@@ -197,13 +193,13 @@ export function ExecutionSubmissionForm({
 
       <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
         {([canSubmit, isSubmitting]) => (
-          <button
+          <Button
             type="submit"
             disabled={!canSubmit || isSubmitting || mutation.isPending}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="rounded-none"
           >
-            {mutation.isPending || isSubmitting ? "Submitting..." : "Submit Execution"}
-          </button>
+            {mutation.isPending || isSubmitting ? "Submitting…" : "Submit execution"}
+          </Button>
         )}
       </form.Subscribe>
     </form>
@@ -247,31 +243,35 @@ function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="border border-foreground">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="px-4">ID</TableHead>
-              <TableHead className="px-4">Status</TableHead>
-              <TableHead className="px-4">Created</TableHead>
+              <TableHead className="font-mono text-[10px] uppercase tracking-wider">ID</TableHead>
+              <TableHead className="font-mono text-[10px] uppercase tracking-wider">
+                Status
+              </TableHead>
+              <TableHead className="font-mono text-[10px] uppercase tracking-wider">
+                Created
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {pageRows.map((execution) => (
               <TableRow key={execution.execution_id}>
-                <TableCell className="px-4">
+                <TableCell>
                   <Link
-                    to="/jobs/$jobId"
-                    params={{ jobId: execution.execution_id }}
-                    className="font-mono text-primary hover:underline"
+                    to="/executions/$executionId"
+                    params={{ executionId: execution.execution_id }}
+                    className="font-mono hover:underline"
                   >
                     {execution.execution_id.slice(0, 8)}
                   </Link>
                 </TableCell>
-                <TableCell className="px-4">
+                <TableCell>
                   <ExecutionStatusBadge status={execution.status} />
                 </TableCell>
-                <TableCell className="px-4 text-muted-foreground">
+                <TableCell className="font-mono text-muted-foreground">
                   {formatDateTimeUTC(execution.created_at)}
                 </TableCell>
               </TableRow>
@@ -315,8 +315,8 @@ function ExecutionTablePagination({
 
   return (
     <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
-      <p className="text-xs text-muted-foreground">
-        Showing {start.toLocaleString()}–{end.toLocaleString()} of {totalCount.toLocaleString()}
+      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        {start.toLocaleString()}–{end.toLocaleString()} of {totalCount.toLocaleString()}
       </p>
       <Pagination className="mx-0 w-auto justify-end">
         <PaginationContent>
@@ -379,12 +379,9 @@ function ExecutionListError({ status }: { status: string }) {
       title="Could not load executions"
       error={`Execution sync failed (${status}).`}
       action={
-        <Link
-          to="/jobs"
-          className="rounded-md border border-border px-3 py-1.5 text-foreground hover:bg-accent"
-        >
-          Retry
-        </Link>
+        <Button asChild variant="outline" className="rounded-none">
+          <Link to="/executions">Retry</Link>
+        </Button>
       }
     />
   );
@@ -394,22 +391,11 @@ function ExecutionListEmpty() {
   return (
     <EmptyState
       title="No executions yet"
-      body="Import a repo or launch a manual execution to get started."
+      body="Launch a manual execution to get started."
       action={
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            to="/repos"
-            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-          >
-            Import a repo
-          </Link>
-          <Link
-            to="/jobs/new"
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:opacity-90"
-          >
-            Manual execution
-          </Link>
-        </div>
+        <Button asChild variant="default" className="rounded-none">
+          <Link to="/executions/new">New execution</Link>
+        </Button>
       }
     />
   );
@@ -418,9 +404,11 @@ function ExecutionListEmpty() {
 function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 text-lg font-semibold">Logs</h2>
+      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        Logs
+      </h2>
       <Callout title="Loading logs">
-        {isRunning ? "Waiting for output..." : "No log output yet."}
+        {isRunning ? "Waiting for output…" : "No log output yet."}
       </Callout>
     </div>
   );
@@ -429,12 +417,14 @@ function ExecutionLogsLoading({ isRunning }: { isRunning: boolean }) {
 function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 text-lg font-semibold">Logs</h2>
+      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        Logs
+      </h2>
       <ErrorCallout
         title="Log stream unavailable"
         error={`Log stream unavailable (${status}).`}
         action={
-          <div className="text-xs text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
             {isRunning
               ? "The attempt is still running, but logs have not synced yet."
               : "No log output is available."}
@@ -448,8 +438,10 @@ function ExecutionLogsError({ status, isRunning }: { status: string; isRunning: 
 function ExecutionLogsEmpty({ isRunning }: { isRunning: boolean }) {
   return (
     <div>
-      <h2 className="mb-2 text-lg font-semibold">Logs</h2>
-      <Callout title="Logs">{isRunning ? "Waiting for output..." : "No log output."}</Callout>
+      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        Logs
+      </h2>
+      <Callout title="Logs">{isRunning ? "Waiting for output…" : "No log output."}</Callout>
     </div>
   );
 }
@@ -459,21 +451,25 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
 
   return (
     <div>
-      <h2 className="mb-2 text-lg font-semibold">Logs</h2>
+      <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        Logs
+      </h2>
       <div className="relative">
         <pre
           ref={scrollRef}
-          className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-foreground/5 p-4 font-mono text-sm"
+          className="max-h-[600px] overflow-x-auto overflow-y-auto whitespace-pre-wrap border border-foreground bg-foreground/5 p-4 font-mono text-xs"
         >
           <code ref={contentRef}>{logText}</code>
         </pre>
         {!isAtBottom && logText ? (
-          <button
+          <Button
+            type="button"
             onClick={() => scrollToBottom()}
-            className="absolute bottom-3 right-3 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-md hover:opacity-90"
+            className="absolute bottom-3 right-3 rounded-none"
+            size="sm"
           >
             Scroll to bottom
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -482,10 +478,16 @@ function ExecutionLogsBody({ logText }: { logText: string }) {
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 truncate text-sm font-medium">{value}</div>
-    </div>
+    <Card className="gap-1 rounded-none border-foreground p-3 shadow-none">
+      <CardHeader className="p-0">
+        <CardTitle className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          {label}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="truncate font-mono text-sm font-medium">{value}</div>
+      </CardContent>
+    </Card>
   );
 }
 

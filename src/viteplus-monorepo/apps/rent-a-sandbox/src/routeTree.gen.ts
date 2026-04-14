@@ -14,16 +14,15 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedReposIndexRouteImport } from './routes/_authenticated/repos/index'
-import { Route as AuthenticatedOrganizationIndexRouteImport } from './routes/_authenticated/organization/index'
-import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
-import { Route as AuthenticatedBillingIndexRouteImport } from './routes/_authenticated/billing/index'
-import { Route as AuthenticatedReposNewRouteImport } from './routes/_authenticated/repos/new'
-import { Route as AuthenticatedReposRepoIdRouteImport } from './routes/_authenticated/repos/$repoId'
-import { Route as AuthenticatedJobsNewRouteImport } from './routes/_authenticated/jobs/new'
-import { Route as AuthenticatedJobsJobIdRouteImport } from './routes/_authenticated/jobs/$jobId'
-import { Route as AuthenticatedBillingSubscribeRouteImport } from './routes/_authenticated/billing/subscribe'
-import { Route as AuthenticatedBillingCreditsRouteImport } from './routes/_authenticated/billing/credits'
+import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedExecutionsIndexRouteImport } from './routes/_authenticated/executions/index'
+import { Route as AuthenticatedSettingsOrganizationRouteImport } from './routes/_authenticated/settings/organization'
+import { Route as AuthenticatedExecutionsNewRouteImport } from './routes/_authenticated/executions/new'
+import { Route as AuthenticatedExecutionsExecutionIdRouteImport } from './routes/_authenticated/executions/$executionId'
+import { Route as AuthenticatedSettingsBillingIndexRouteImport } from './routes/_authenticated/settings/billing/index'
+import { Route as AuthenticatedSettingsBillingSubscribeRouteImport } from './routes/_authenticated/settings/billing/subscribe'
+import { Route as AuthenticatedSettingsBillingCreditsRouteImport } from './routes/_authenticated/settings/billing/credits'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -49,60 +48,59 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedReposIndexRoute = AuthenticatedReposIndexRouteImport.update({
-  id: '/repos/',
-  path: '/repos/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedOrganizationIndexRoute =
-  AuthenticatedOrganizationIndexRouteImport.update({
-    id: '/organization/',
-    path: '/organization/',
+const AuthenticatedSettingsRouteRoute =
+  AuthenticatedSettingsRouteRouteImport.update({
+    id: '/settings',
+    path: '/settings',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
-  id: '/jobs/',
-  path: '/jobs/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedBillingIndexRoute =
-  AuthenticatedBillingIndexRouteImport.update({
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedExecutionsIndexRoute =
+  AuthenticatedExecutionsIndexRouteImport.update({
+    id: '/executions/',
+    path: '/executions/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettingsOrganizationRoute =
+  AuthenticatedSettingsOrganizationRouteImport.update({
+    id: '/organization',
+    path: '/organization',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedExecutionsNewRoute =
+  AuthenticatedExecutionsNewRouteImport.update({
+    id: '/executions/new',
+    path: '/executions/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedExecutionsExecutionIdRoute =
+  AuthenticatedExecutionsExecutionIdRouteImport.update({
+    id: '/executions/$executionId',
+    path: '/executions/$executionId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSettingsBillingIndexRoute =
+  AuthenticatedSettingsBillingIndexRouteImport.update({
     id: '/billing/',
     path: '/billing/',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedReposNewRoute = AuthenticatedReposNewRouteImport.update({
-  id: '/repos/new',
-  path: '/repos/new',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedReposRepoIdRoute =
-  AuthenticatedReposRepoIdRouteImport.update({
-    id: '/repos/$repoId',
-    path: '/repos/$repoId',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedJobsNewRoute = AuthenticatedJobsNewRouteImport.update({
-  id: '/jobs/new',
-  path: '/jobs/new',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedJobsJobIdRoute = AuthenticatedJobsJobIdRouteImport.update({
-  id: '/jobs/$jobId',
-  path: '/jobs/$jobId',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedBillingSubscribeRoute =
-  AuthenticatedBillingSubscribeRouteImport.update({
+const AuthenticatedSettingsBillingSubscribeRoute =
+  AuthenticatedSettingsBillingSubscribeRouteImport.update({
     id: '/billing/subscribe',
     path: '/billing/subscribe',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedBillingCreditsRoute =
-  AuthenticatedBillingCreditsRouteImport.update({
+const AuthenticatedSettingsBillingCreditsRoute =
+  AuthenticatedSettingsBillingCreditsRouteImport.update({
     id: '/billing/credits',
     path: '/billing/credits',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -110,32 +108,29 @@ export interface FileRoutesByFullPath {
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/billing/credits': typeof AuthenticatedBillingCreditsRoute
-  '/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
-  '/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
-  '/jobs/new': typeof AuthenticatedJobsNewRoute
-  '/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
-  '/repos/new': typeof AuthenticatedReposNewRoute
-  '/billing/': typeof AuthenticatedBillingIndexRoute
-  '/jobs/': typeof AuthenticatedJobsIndexRoute
-  '/organization/': typeof AuthenticatedOrganizationIndexRoute
-  '/repos/': typeof AuthenticatedReposIndexRoute
+  '/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
+  '/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
+  '/executions/new': typeof AuthenticatedExecutionsNewRoute
+  '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/executions/': typeof AuthenticatedExecutionsIndexRoute
+  '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
+  '/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
+  '/settings/billing/': typeof AuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/billing/credits': typeof AuthenticatedBillingCreditsRoute
-  '/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
-  '/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
-  '/jobs/new': typeof AuthenticatedJobsNewRoute
-  '/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
-  '/repos/new': typeof AuthenticatedReposNewRoute
-  '/billing': typeof AuthenticatedBillingIndexRoute
-  '/jobs': typeof AuthenticatedJobsIndexRoute
-  '/organization': typeof AuthenticatedOrganizationIndexRoute
-  '/repos': typeof AuthenticatedReposIndexRoute
+  '/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
+  '/executions/new': typeof AuthenticatedExecutionsNewRoute
+  '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/executions': typeof AuthenticatedExecutionsIndexRoute
+  '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
+  '/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
+  '/settings/billing': typeof AuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -144,16 +139,15 @@ export interface FileRoutesById {
   '/callback': typeof CallbackRoute
   '/login': typeof LoginRoute
   '/logout': typeof LogoutRoute
-  '/_authenticated/billing/credits': typeof AuthenticatedBillingCreditsRoute
-  '/_authenticated/billing/subscribe': typeof AuthenticatedBillingSubscribeRoute
-  '/_authenticated/jobs/$jobId': typeof AuthenticatedJobsJobIdRoute
-  '/_authenticated/jobs/new': typeof AuthenticatedJobsNewRoute
-  '/_authenticated/repos/$repoId': typeof AuthenticatedReposRepoIdRoute
-  '/_authenticated/repos/new': typeof AuthenticatedReposNewRoute
-  '/_authenticated/billing/': typeof AuthenticatedBillingIndexRoute
-  '/_authenticated/jobs/': typeof AuthenticatedJobsIndexRoute
-  '/_authenticated/organization/': typeof AuthenticatedOrganizationIndexRoute
-  '/_authenticated/repos/': typeof AuthenticatedReposIndexRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRouteRouteWithChildren
+  '/_authenticated/executions/$executionId': typeof AuthenticatedExecutionsExecutionIdRoute
+  '/_authenticated/executions/new': typeof AuthenticatedExecutionsNewRoute
+  '/_authenticated/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
+  '/_authenticated/executions/': typeof AuthenticatedExecutionsIndexRoute
+  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/settings/billing/credits': typeof AuthenticatedSettingsBillingCreditsRoute
+  '/_authenticated/settings/billing/subscribe': typeof AuthenticatedSettingsBillingSubscribeRoute
+  '/_authenticated/settings/billing/': typeof AuthenticatedSettingsBillingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -162,32 +156,29 @@ export interface FileRouteTypes {
     | '/callback'
     | '/login'
     | '/logout'
-    | '/billing/credits'
-    | '/billing/subscribe'
-    | '/jobs/$jobId'
-    | '/jobs/new'
-    | '/repos/$repoId'
-    | '/repos/new'
-    | '/billing/'
-    | '/jobs/'
-    | '/organization/'
-    | '/repos/'
+    | '/settings'
+    | '/executions/$executionId'
+    | '/executions/new'
+    | '/settings/organization'
+    | '/executions/'
+    | '/settings/'
+    | '/settings/billing/credits'
+    | '/settings/billing/subscribe'
+    | '/settings/billing/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/callback'
     | '/login'
     | '/logout'
-    | '/billing/credits'
-    | '/billing/subscribe'
-    | '/jobs/$jobId'
-    | '/jobs/new'
-    | '/repos/$repoId'
-    | '/repos/new'
-    | '/billing'
-    | '/jobs'
-    | '/organization'
-    | '/repos'
+    | '/executions/$executionId'
+    | '/executions/new'
+    | '/settings/organization'
+    | '/executions'
+    | '/settings'
+    | '/settings/billing/credits'
+    | '/settings/billing/subscribe'
+    | '/settings/billing'
   id:
     | '__root__'
     | '/'
@@ -195,16 +186,15 @@ export interface FileRouteTypes {
     | '/callback'
     | '/login'
     | '/logout'
-    | '/_authenticated/billing/credits'
-    | '/_authenticated/billing/subscribe'
-    | '/_authenticated/jobs/$jobId'
-    | '/_authenticated/jobs/new'
-    | '/_authenticated/repos/$repoId'
-    | '/_authenticated/repos/new'
-    | '/_authenticated/billing/'
-    | '/_authenticated/jobs/'
-    | '/_authenticated/organization/'
-    | '/_authenticated/repos/'
+    | '/_authenticated/settings'
+    | '/_authenticated/executions/$executionId'
+    | '/_authenticated/executions/new'
+    | '/_authenticated/settings/organization'
+    | '/_authenticated/executions/'
+    | '/_authenticated/settings/'
+    | '/_authenticated/settings/billing/credits'
+    | '/_authenticated/settings/billing/subscribe'
+    | '/_authenticated/settings/billing/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -252,103 +242,111 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/repos/': {
-      id: '/_authenticated/repos/'
-      path: '/repos'
-      fullPath: '/repos/'
-      preLoaderRoute: typeof AuthenticatedReposIndexRouteImport
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/organization/': {
-      id: '/_authenticated/organization/'
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/executions/': {
+      id: '/_authenticated/executions/'
+      path: '/executions'
+      fullPath: '/executions/'
+      preLoaderRoute: typeof AuthenticatedExecutionsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/settings/organization': {
+      id: '/_authenticated/settings/organization'
       path: '/organization'
-      fullPath: '/organization/'
-      preLoaderRoute: typeof AuthenticatedOrganizationIndexRouteImport
+      fullPath: '/settings/organization'
+      preLoaderRoute: typeof AuthenticatedSettingsOrganizationRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/executions/new': {
+      id: '/_authenticated/executions/new'
+      path: '/executions/new'
+      fullPath: '/executions/new'
+      preLoaderRoute: typeof AuthenticatedExecutionsNewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/jobs/': {
-      id: '/_authenticated/jobs/'
-      path: '/jobs'
-      fullPath: '/jobs/'
-      preLoaderRoute: typeof AuthenticatedJobsIndexRouteImport
+    '/_authenticated/executions/$executionId': {
+      id: '/_authenticated/executions/$executionId'
+      path: '/executions/$executionId'
+      fullPath: '/executions/$executionId'
+      preLoaderRoute: typeof AuthenticatedExecutionsExecutionIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/billing/': {
-      id: '/_authenticated/billing/'
+    '/_authenticated/settings/billing/': {
+      id: '/_authenticated/settings/billing/'
       path: '/billing'
-      fullPath: '/billing/'
-      preLoaderRoute: typeof AuthenticatedBillingIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      fullPath: '/settings/billing/'
+      preLoaderRoute: typeof AuthenticatedSettingsBillingIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/repos/new': {
-      id: '/_authenticated/repos/new'
-      path: '/repos/new'
-      fullPath: '/repos/new'
-      preLoaderRoute: typeof AuthenticatedReposNewRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/repos/$repoId': {
-      id: '/_authenticated/repos/$repoId'
-      path: '/repos/$repoId'
-      fullPath: '/repos/$repoId'
-      preLoaderRoute: typeof AuthenticatedReposRepoIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/jobs/new': {
-      id: '/_authenticated/jobs/new'
-      path: '/jobs/new'
-      fullPath: '/jobs/new'
-      preLoaderRoute: typeof AuthenticatedJobsNewRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/jobs/$jobId': {
-      id: '/_authenticated/jobs/$jobId'
-      path: '/jobs/$jobId'
-      fullPath: '/jobs/$jobId'
-      preLoaderRoute: typeof AuthenticatedJobsJobIdRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/billing/subscribe': {
-      id: '/_authenticated/billing/subscribe'
+    '/_authenticated/settings/billing/subscribe': {
+      id: '/_authenticated/settings/billing/subscribe'
       path: '/billing/subscribe'
-      fullPath: '/billing/subscribe'
-      preLoaderRoute: typeof AuthenticatedBillingSubscribeRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      fullPath: '/settings/billing/subscribe'
+      preLoaderRoute: typeof AuthenticatedSettingsBillingSubscribeRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/billing/credits': {
-      id: '/_authenticated/billing/credits'
+    '/_authenticated/settings/billing/credits': {
+      id: '/_authenticated/settings/billing/credits'
       path: '/billing/credits'
-      fullPath: '/billing/credits'
-      preLoaderRoute: typeof AuthenticatedBillingCreditsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      fullPath: '/settings/billing/credits'
+      preLoaderRoute: typeof AuthenticatedSettingsBillingCreditsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
   }
 }
 
+interface AuthenticatedSettingsRouteRouteChildren {
+  AuthenticatedSettingsOrganizationRoute: typeof AuthenticatedSettingsOrganizationRoute
+  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+  AuthenticatedSettingsBillingCreditsRoute: typeof AuthenticatedSettingsBillingCreditsRoute
+  AuthenticatedSettingsBillingSubscribeRoute: typeof AuthenticatedSettingsBillingSubscribeRoute
+  AuthenticatedSettingsBillingIndexRoute: typeof AuthenticatedSettingsBillingIndexRoute
+}
+
+const AuthenticatedSettingsRouteRouteChildren: AuthenticatedSettingsRouteRouteChildren =
+  {
+    AuthenticatedSettingsOrganizationRoute:
+      AuthenticatedSettingsOrganizationRoute,
+    AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+    AuthenticatedSettingsBillingCreditsRoute:
+      AuthenticatedSettingsBillingCreditsRoute,
+    AuthenticatedSettingsBillingSubscribeRoute:
+      AuthenticatedSettingsBillingSubscribeRoute,
+    AuthenticatedSettingsBillingIndexRoute:
+      AuthenticatedSettingsBillingIndexRoute,
+  }
+
+const AuthenticatedSettingsRouteRouteWithChildren =
+  AuthenticatedSettingsRouteRoute._addFileChildren(
+    AuthenticatedSettingsRouteRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedBillingCreditsRoute: typeof AuthenticatedBillingCreditsRoute
-  AuthenticatedBillingSubscribeRoute: typeof AuthenticatedBillingSubscribeRoute
-  AuthenticatedJobsJobIdRoute: typeof AuthenticatedJobsJobIdRoute
-  AuthenticatedJobsNewRoute: typeof AuthenticatedJobsNewRoute
-  AuthenticatedReposRepoIdRoute: typeof AuthenticatedReposRepoIdRoute
-  AuthenticatedReposNewRoute: typeof AuthenticatedReposNewRoute
-  AuthenticatedBillingIndexRoute: typeof AuthenticatedBillingIndexRoute
-  AuthenticatedJobsIndexRoute: typeof AuthenticatedJobsIndexRoute
-  AuthenticatedOrganizationIndexRoute: typeof AuthenticatedOrganizationIndexRoute
-  AuthenticatedReposIndexRoute: typeof AuthenticatedReposIndexRoute
+  AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
+  AuthenticatedExecutionsExecutionIdRoute: typeof AuthenticatedExecutionsExecutionIdRoute
+  AuthenticatedExecutionsNewRoute: typeof AuthenticatedExecutionsNewRoute
+  AuthenticatedExecutionsIndexRoute: typeof AuthenticatedExecutionsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedBillingCreditsRoute: AuthenticatedBillingCreditsRoute,
-  AuthenticatedBillingSubscribeRoute: AuthenticatedBillingSubscribeRoute,
-  AuthenticatedJobsJobIdRoute: AuthenticatedJobsJobIdRoute,
-  AuthenticatedJobsNewRoute: AuthenticatedJobsNewRoute,
-  AuthenticatedReposRepoIdRoute: AuthenticatedReposRepoIdRoute,
-  AuthenticatedReposNewRoute: AuthenticatedReposNewRoute,
-  AuthenticatedBillingIndexRoute: AuthenticatedBillingIndexRoute,
-  AuthenticatedJobsIndexRoute: AuthenticatedJobsIndexRoute,
-  AuthenticatedOrganizationIndexRoute: AuthenticatedOrganizationIndexRoute,
-  AuthenticatedReposIndexRoute: AuthenticatedReposIndexRoute,
+  AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
+  AuthenticatedExecutionsExecutionIdRoute:
+    AuthenticatedExecutionsExecutionIdRoute,
+  AuthenticatedExecutionsNewRoute: AuthenticatedExecutionsNewRoute,
+  AuthenticatedExecutionsIndexRoute: AuthenticatedExecutionsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
