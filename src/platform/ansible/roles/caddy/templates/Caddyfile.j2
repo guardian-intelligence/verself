@@ -49,6 +49,25 @@
 	}
 }
 
+# connect-src 'self' is load-bearing: it blocks the browser from calling any
+# Go service origin directly (billing.<domain>, auth.<domain>, etc.), which
+# enforces the architectural rule that browser code never holds Zitadel bearer
+# tokens — all API traffic must traverse TanStack Start server functions on the
+# same origin, which read the server-owned session and attach bearers there.
+# See src/platform/docs/identity-and-iam.md (Frontend Sessions).
+# script-src keeps 'unsafe-inline' because Vinxi/TanStack Start injects inline
+# hydration scripts; tightening to nonces is a future hardening step.
+(frontend_security_headers) {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+		Cross-Origin-Opener-Policy same-origin
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+	}
+}
+
 (sandbox_api_cors_headers) {
 	header {
 		Access-Control-Allow-Origin "https://{{ rent_a_sandbox_domain }}"
@@ -256,6 +275,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 
 	handle {
 		import waf_detection
+		import frontend_security_headers
 		reverse_proxy {{ services.rent_a_sandbox.host }}:{{ services.rent_a_sandbox.port }}
 	}
 }
@@ -292,6 +312,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	}
 
 	handle {
+		import frontend_security_headers
 		reverse_proxy {{ services.webmail.host }}:{{ services.webmail.port }}
 	}
 }
@@ -301,6 +322,7 @@ http://{{ caddy_firecracker_host_service_ip }}:{{ services.firecracker_host_serv
 	import waf_detection
 
 	handle {
+		import frontend_security_headers
 		reverse_proxy {{ services.letters.host }}:{{ services.letters.port }}
 	}
 }
