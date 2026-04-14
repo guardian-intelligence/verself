@@ -26,7 +26,6 @@ func TestCorrelationFromHeadersSanitizesAndMaps(t *testing.T) {
 	headers.Set(headerTaskTemplateID, "template-123")
 	headers.Set(headerTaskInstanceID, "instance-abc")
 	headers.Set(headerProbeID, "probe-42")
-	headers.Set(headerVerificationRun, "verification-run")
 	headers.Set(headerCorrelationID, "correlation-99")
 
 	meta := CorrelationFromHeaders(headers)
@@ -45,16 +44,13 @@ func TestCorrelationFromHeadersSanitizesAndMaps(t *testing.T) {
 	if got, want := meta.ProbeID, "probe-42"; got != want {
 		t.Fatalf("probe id = %q, want %q", got, want)
 	}
-	if got, want := meta.VerificationRun, "verification-run"; got != want {
-		t.Fatalf("verification run = %q, want %q", got, want)
-	}
 	if got, want := meta.CorrelationID, "correlation-99"; got != want {
 		t.Fatalf("correlation id = %q, want %q", got, want)
 	}
 
 	attrs := meta.Attributes()
-	if len(attrs) != 7 {
-		t.Fatalf("attributes length = %d, want 7", len(attrs))
+	if len(attrs) != 6 {
+		t.Fatalf("attributes length = %d, want 6", len(attrs))
 	}
 }
 

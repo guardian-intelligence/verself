@@ -82,7 +82,6 @@ import { rentASandboxAuthMiddleware } from "./auth";
 const IDENTITY_SERVICE_BASE_URL = requireURLFromEnv("IDENTITY_SERVICE_BASE_URL");
 const SANDBOX_RENTAL_SERVICE_BASE_URL = requireURLFromEnv("SANDBOX_RENTAL_SERVICE_BASE_URL");
 const IDENTITY_SERVICE_AUTH_PROJECT_ID = process.env.IDENTITY_SERVICE_AUTH_PROJECT_ID?.trim();
-const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 
 export { IdentityApiError, isIdentityApiError };
 export { SandboxRentalApiError, isSandboxRentalApiError, isSandboxRentalNotFound };
@@ -119,13 +118,6 @@ export type {
   UpdateMemberRolesRequest,
 };
 
-async function getServerVerificationRunID(): Promise<string | undefined> {
-  // This module is imported by client query code, so keep Start's server helpers
-  // behind a dynamic import or Vite will pull server-only modules into the browser graph.
-  const { getRequestHeader } = await import("@tanstack/react-start/server");
-  return getRequestHeader(verificationRunHeader)?.trim() || undefined;
-}
-
 async function resolveAuthContext(
   context: { auth?: AuthSession } | undefined,
 ): Promise<AuthSession> {
@@ -146,12 +138,10 @@ async function resolveAuthContext(
 
 async function sandboxRentalClientOptions(context: { auth?: AuthSession } | undefined) {
   const auth = await resolveAuthContext(context);
-  const options = {
+  return {
     accessToken: auth.accessToken,
     baseUrl: SANDBOX_RENTAL_SERVICE_BASE_URL,
   };
-  const verificationRunID = await getServerVerificationRunID();
-  return verificationRunID ? { ...options, verificationRunId: verificationRunID } : options;
 }
 
 async function identityClientOptions(context: { auth?: AuthSession } | undefined) {

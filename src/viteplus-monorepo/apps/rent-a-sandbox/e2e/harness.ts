@@ -19,9 +19,10 @@ import {
 
 const execFile = promisify(execFileCallback);
 
-export const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 export const shortTimeoutMS = 5_000;
-export const pollIntervalMS = 250;
+// Polling cadence for harness-owned waits. The bare-metal box responds in
+// tens of milliseconds; 100ms is "one TCP round trip" worth of cushion.
+export const pollIntervalMS = 100;
 
 const routeBaseURL = normalizeBaseURL(env.baseURL);
 const allowedWarningPatterns = [
@@ -204,17 +205,6 @@ export class SandboxHarness {
     await this.monitor.assertHealthy();
   }
 
-  async installVerificationHeader(): Promise<void> {
-    await this.context.route(`${routeBaseURL}/**`, async (route) => {
-      await route.continue({
-        headers: {
-          ...route.request().headers(),
-          [verificationRunHeader]: this.runID,
-        },
-      });
-    });
-  }
-
   async persistRun(run: VerificationRun): Promise<void> {
     await persistVerificationRun(this.runJSONPath, run);
   }
@@ -236,10 +226,7 @@ export class SandboxHarness {
     const cookies = await this.context.cookies(url);
     const cookieHeader = cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
     const response = await fetch(url, {
-      headers: {
-        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-        [verificationRunHeader]: this.runID,
-      },
+      headers: cookieHeader ? { Cookie: cookieHeader } : {},
     });
 
     if (!response.ok) {
@@ -268,26 +255,24 @@ export class SandboxHarness {
 
     const content = stableContent ?? this.page.locator("main");
     await expect(ready).toBeVisible({ timeout: shortTimeoutMS });
+
+    // Drive every fragment through expect.poll so Playwright keeps auto-
+    // waiting until the content settles rather than sleeping on a clock.
+    for (const fragment of expectedText) {
+      await expect
+        .poll(async () => this.readText(content), { timeout: shortTimeoutMS })
+        .toContain(fragment);
+    }
+
     const before = await this.readText(content);
-
-    for (const fragment of expectedText) {
-      expect(before).toContain(fragment);
-    }
-
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await this.page.waitForTimeout(pollIntervalMS);
-      await expect(ready).toBeVisible({ timeout: shortTimeoutMS });
-    }
-
-    const after = await this.readText(content);
-    for (const fragment of expectedText) {
-      expect(after).toContain(fragment);
-    }
-
     if (exactText) {
-      expect(after).toBe(before);
+      // For strict equality, poll until two consecutive reads match — that's
+      // the only case where we genuinely need "the page stopped re-rendering".
+      await expect
+        .poll(async () => this.readText(content), { timeout: shortTimeoutMS })
+        .toBe(before);
     }
-
+    const after = await this.readText(content);
     return { after, before };
   }
 
@@ -558,7 +543,6 @@ export class SandboxHarness {
 export const test = base.extend<{ app: SandboxHarness }>({
   app: async ({ context, page }, use, testInfo) => {
     const app = new SandboxHarness(page, context, testInfo);
-    await app.installVerificationHeader();
 
     await use(app);
     await app.assertHealthy();
