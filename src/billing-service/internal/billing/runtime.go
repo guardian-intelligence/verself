@@ -27,6 +27,7 @@ const (
 	EventDeliveryProjectPendingKind = "billing.event_delivery.project_pending"
 	MeteringProjectWindowKind       = "billing.metering.project_window"
 	MeteringProjectPendingKind      = "billing.metering.project_pending"
+	DueWorkApplyPendingKind         = "billing.due_work.apply_pending"
 )
 
 type Runtime struct {
@@ -65,6 +66,12 @@ type MeteringProjectPendingArgs struct {
 
 func (MeteringProjectPendingArgs) Kind() string { return MeteringProjectPendingKind }
 
+type DueWorkApplyPendingArgs struct {
+	Limit int `json:"limit"`
+}
+
+func (DueWorkApplyPendingArgs) Kind() string { return DueWorkApplyPendingKind }
+
 type ProviderEventApplyWorker struct {
 	river.WorkerDefaults[ProviderEventApplyArgs]
 	billing *Client
@@ -90,6 +97,11 @@ type MeteringProjectPendingWorker struct {
 	billing *Client
 }
 
+type DueWorkApplyPendingWorker struct {
+	river.WorkerDefaults[DueWorkApplyPendingArgs]
+	billing *Client
+}
+
 func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) (*Runtime, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("billing runtime requires pgx pool")
@@ -106,6 +118,7 @@ func NewRuntime(pool *pgxpool.Pool, billingClient *Client, logger *slog.Logger) 
 	river.AddWorker(workers, &EventDeliveryProjectPendingWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectWindowWorker{billing: billingClient})
 	river.AddWorker(workers, &MeteringProjectPendingWorker{billing: billingClient})
+	river.AddWorker(workers, &DueWorkApplyPendingWorker{billing: billingClient})
 
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger: logger,
@@ -180,6 +193,7 @@ func (r *Runtime) EnqueueMaintenance(ctx context.Context, cadence time.Duration)
 		{args: EventDeliveryProjectPendingArgs{Sink: clickHouseBillingEventsSink, Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "event-delivery")},
 		{args: ProviderEventApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "provider-event")},
 		{args: MeteringProjectPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "metering")},
+		{args: DueWorkApplyPendingArgs{Limit: 100}, opts: scannerInsertOpts(QueueBillingReconcile, cadence, "due-work")},
 	}
 	for _, job := range jobs {
 		if _, err := r.client.Insert(ctx, job.args, job.opts); err != nil {
@@ -250,6 +264,17 @@ func (w *MeteringProjectPendingWorker) Work(ctx context.Context, job *river.Job[
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", MeteringProjectPendingKind), attribute.String("river.queue", QueueBillingReconcile))
 	_, err := w.billing.ProjectPendingMeteringWindows(ctx, job.Args.Limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
+}
+
+func (w *DueWorkApplyPendingWorker) Work(ctx context.Context, job *river.Job[DueWorkApplyPendingArgs]) error {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Int("billing.limit", job.Args.Limit), attribute.Int64("river.job_id", job.ID), attribute.String("river.job_kind", DueWorkApplyPendingKind), attribute.String("river.queue", QueueBillingReconcile))
+	_, err := w.billing.ApplyPendingDueBillingWork(ctx, job.Args.Limit)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

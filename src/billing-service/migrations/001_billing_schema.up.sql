@@ -852,46 +852,6 @@ CREATE INDEX billing_event_delivery_dead_letter_idx
     ON billing_event_delivery_queue (sink, dead_lettered_at, event_id, generation)
     WHERE state = 'dead_letter';
 
-CREATE TABLE billing_tasks (
-    task_id             TEXT        PRIMARY KEY CHECK (task_id <> ''),
-    task_kind           TEXT        NOT NULL CHECK (task_kind <> ''),
-    aggregate_type      TEXT        NOT NULL CHECK (aggregate_type <> ''),
-    aggregate_id        TEXT        NOT NULL CHECK (aggregate_id <> ''),
-    org_id              TEXT        NOT NULL DEFAULT '',
-    product_id          TEXT        NOT NULL DEFAULT '',
-    due_at              TIMESTAMPTZ NOT NULL,
-    state               TEXT        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'running', 'retryable_failed', 'dead_letter', 'done', 'canceled')),
-    attempts            INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    max_attempts        INTEGER     NOT NULL DEFAULT 25 CHECK (max_attempts > 0),
-    next_attempt_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    locked_at           TIMESTAMPTZ,
-    lock_expires_at     TIMESTAMPTZ,
-    locked_by           TEXT        NOT NULL DEFAULT '',
-    idempotency_key     TEXT        NOT NULL CHECK (idempotency_key <> ''),
-    payload             JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    last_error          TEXT        NOT NULL DEFAULT '',
-    dead_lettered_at    TIMESTAMPTZ,
-    dead_letter_reason  TEXT        NOT NULL DEFAULT '',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (attempts <= max_attempts),
-    CHECK ((state = 'dead_letter') = (dead_lettered_at IS NOT NULL))
-);
-
-CREATE UNIQUE INDEX billing_tasks_idempotency_idx
-    ON billing_tasks (idempotency_key);
-
-CREATE INDEX billing_tasks_due_idx
-    ON billing_tasks (state, due_at, next_attempt_at, task_kind, task_id)
-    WHERE state IN ('pending', 'retryable_failed');
-
-CREATE INDEX billing_tasks_locked_expired_idx
-    ON billing_tasks (lock_expires_at, task_id)
-    WHERE state = 'running';
-
-CREATE INDEX billing_tasks_aggregate_idx
-    ON billing_tasks (aggregate_type, aggregate_id, task_kind, created_at DESC);
-
 CREATE TABLE billing_clock_overrides (
     scope_kind    TEXT        NOT NULL CHECK (scope_kind IN ('global', 'org', 'org_product')),
     scope_id      TEXT        NOT NULL DEFAULT '',
@@ -927,7 +887,6 @@ CREATE TRIGGER invoice_finalizations_set_updated_at BEFORE UPDATE ON invoice_fin
 CREATE TRIGGER billing_invoices_set_updated_at BEFORE UPDATE ON billing_invoices FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_account_registry_set_updated_at BEFORE UPDATE ON billing_account_registry FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_event_delivery_queue_set_updated_at BEFORE UPDATE ON billing_event_delivery_queue FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
-CREATE TRIGGER billing_tasks_set_updated_at BEFORE UPDATE ON billing_tasks FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 CREATE TRIGGER billing_clock_overrides_set_updated_at BEFORE UPDATE ON billing_clock_overrides FOR EACH ROW EXECUTE FUNCTION billing_set_updated_at();
 
 -- River v0.34.0 runtime schema. Keep this section in lockstep with the River

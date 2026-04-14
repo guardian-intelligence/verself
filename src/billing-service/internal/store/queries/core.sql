@@ -29,24 +29,6 @@ FROM plans
 WHERE product_id = $1 AND active AND NOT is_default
 ORDER BY monthly_amount_cents, plan_id;
 
--- name: ListContractsForOrg :many
-WITH current_phase AS (
-    SELECT DISTINCT ON (contract_id)
-           contract_id, phase_id, COALESCE(plan_id, '') AS plan_id, effective_start, effective_end
-    FROM contract_phases
-    WHERE org_id = $1
-      AND state IN ('active', 'grace', 'pending_payment', 'scheduled')
-      AND effective_start <= $2
-      AND (effective_end IS NULL OR effective_end > $2)
-    ORDER BY contract_id, effective_start DESC, phase_id DESC
-)
-SELECT c.contract_id, c.product_id, COALESCE(cp.plan_id, '') AS plan_id, COALESCE(cp.phase_id, '') AS phase_id,
-       c.state, c.payment_state, c.entitlement_state, c.starts_at, c.ends_at, cp.effective_start AS phase_start, cp.effective_end AS phase_end
-FROM contracts c
-LEFT JOIN current_phase cp ON cp.contract_id = c.contract_id
-WHERE c.org_id = $1
-ORDER BY c.starts_at DESC, c.contract_id DESC;
-
 -- name: InsertBillingEvent :exec
 INSERT INTO billing_events (
     event_id, event_type, event_version, aggregate_type, aggregate_id,

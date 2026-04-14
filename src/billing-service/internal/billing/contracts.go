@@ -29,23 +29,24 @@ type planEntitlementPolicy struct {
 }
 
 type contractChangeQuote struct {
-	ChangeID        string                     `json:"change_id"`
-	ContractID      string                     `json:"contract_id"`
-	OrgID           OrgID                      `json:"org_id"`
-	ProductID       string                     `json:"product_id"`
-	FromPlanID      string                     `json:"from_plan_id"`
-	TargetPlanID    string                     `json:"target_plan_id"`
-	FromPhaseID     string                     `json:"from_phase_id"`
-	ToPhaseID       string                     `json:"to_phase_id"`
-	CycleID         string                     `json:"cycle_id"`
-	CycleStart      time.Time                  `json:"cycle_start"`
-	CycleEnd        time.Time                  `json:"cycle_end"`
-	EffectiveAt     time.Time                  `json:"effective_at"`
-	RequestedAt     time.Time                  `json:"requested_at"`
-	PriceDeltaCents uint64                     `json:"price_delta_cents"`
-	PriceDeltaUnits uint64                     `json:"price_delta_units"`
-	Deltas          []contractEntitlementDelta `json:"deltas"`
-	TargetPolicies  []planEntitlementPolicy    `json:"target_policies"`
+	ChangeID          string                     `json:"change_id"`
+	ContractID        string                     `json:"contract_id"`
+	OrgID             OrgID                      `json:"org_id"`
+	ProductID         string                     `json:"product_id"`
+	FromPlanID        string                     `json:"from_plan_id"`
+	TargetPlanID      string                     `json:"target_plan_id"`
+	FromPhaseID       string                     `json:"from_phase_id"`
+	ToPhaseID         string                     `json:"to_phase_id"`
+	CycleID           string                     `json:"cycle_id"`
+	CycleStart        time.Time                  `json:"cycle_start"`
+	CycleEnd          time.Time                  `json:"cycle_end"`
+	EffectiveAt       time.Time                  `json:"effective_at"`
+	RequestedAt       time.Time                  `json:"requested_at"`
+	ProviderRequestID string                     `json:"provider_request_id"`
+	PriceDeltaCents   uint64                     `json:"price_delta_cents"`
+	PriceDeltaUnits   uint64                     `json:"price_delta_units"`
+	Deltas            []contractEntitlementDelta `json:"deltas"`
+	TargetPolicies    []planEntitlementPolicy    `json:"target_policies"`
 }
 
 type contractEntitlementDelta struct {
@@ -94,13 +95,16 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 	if err != nil {
 		return "", err
 	}
-	now := time.Now().UTC()
+	now, err := c.BusinessNow(ctx, c.queries, orgID, plan.ProductID)
+	if err != nil {
+		return "", err
+	}
 	phaseID := phaseID(contractID, planID, now)
-	metadata := map[string]string{"org_id": orgIDText(orgID), "product_id": plan.ProductID, "plan_id": planID, "contract_id": contractID, "phase_id": phaseID, "cadence": string(cadence)}
+	checkoutAttemptID := textID("stripe_setup_checkout", contractID, planID, time.Now().UTC().Format(time.RFC3339Nano))
+	metadata := map[string]string{"org_id": orgIDText(orgID), "product_id": plan.ProductID, "plan_id": planID, "contract_id": contractID, "phase_id": phaseID, "cadence": string(cadence), "checkout_attempt_id": checkoutAttemptID}
 	params := &stripe.CheckoutSessionCreateParams{Mode: stripe.String(string(stripe.CheckoutSessionModeSetup)), Customer: stripe.String(customerID), Currency: stripe.String(plan.Currency), SuccessURL: stripe.String(successURL), CancelURL: stripe.String(cancelURL), SetupIntentData: &stripe.CheckoutSessionCreateSetupIntentDataParams{Description: stripe.String(plan.DisplayName + " payment method"), Metadata: metadata}, Metadata: metadata}
-	// Checkout setup sessions carry per-attempt metadata and return URLs; a plan-level key
-	// replays stale parameters across browser e2e runs and Stripe rejects the request.
-	params.SetIdempotencyKey(textID("stripe_setup_checkout", contractID, planID, phaseID, successURL, cancelURL))
+	// Checkout setup sessions are single-use; key them by attempt, not business-effective phase.
+	params.SetIdempotencyKey(checkoutAttemptID)
 	session, err := c.stripe.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("create stripe setup checkout: %w", err)
@@ -110,33 +114,39 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 
 func (c *Client) GetContract(ctx context.Context, orgID OrgID, contractID string) (ContractRecord, error) {
 	var record ContractRecord
-	now, err := c.BusinessNow(ctx, c.queries, orgID, "")
-	if err != nil {
-		return ContractRecord{}, err
-	}
 	var startsAt time.Time
-	var endsAt, phaseStart, phaseEnd *time.Time
-	err = c.pg.QueryRow(ctx, `
-		WITH current_phase AS (
-			SELECT phase_id, COALESCE(plan_id, '') AS plan_id, effective_start, effective_end
-			FROM contract_phases
-			WHERE contract_id = $1
-			  AND state IN ('active','grace','pending_payment','scheduled')
-			  AND effective_start <= $3
-			  AND (effective_end IS NULL OR effective_end > $3)
-			ORDER BY CASE state WHEN 'active' THEN 1 WHEN 'grace' THEN 2 ELSE 3 END, effective_start DESC, phase_id DESC
-			LIMIT 1
-		)
-		SELECT c.contract_id, c.product_id, COALESCE(cp.plan_id,''), COALESCE(cp.phase_id,''), c.state, c.payment_state, c.entitlement_state, c.starts_at, c.ends_at, cp.effective_start, cp.effective_end
+	var endsAt *time.Time
+	err := c.pg.QueryRow(ctx, `
+		SELECT c.contract_id, c.product_id, c.state, c.payment_state, c.entitlement_state, c.starts_at, c.ends_at
 		FROM contracts c
-		LEFT JOIN current_phase cp ON true
 		WHERE c.contract_id = $1 AND c.org_id = $2
-	`, contractID, orgIDText(orgID), now).Scan(&record.ContractID, &record.ProductID, &record.PlanID, &record.PhaseID, &record.Status, &record.PaymentState, &record.EntitlementState, &startsAt, &endsAt, &phaseStart, &phaseEnd)
+	`, contractID, orgIDText(orgID)).Scan(&record.ContractID, &record.ProductID, &record.Status, &record.PaymentState, &record.EntitlementState, &startsAt, &endsAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ContractRecord{}, ErrContractNotFound
 	}
 	if err != nil {
 		return ContractRecord{}, fmt.Errorf("load contract %s: %w", contractID, err)
+	}
+	if _, err := c.ApplyDueBillingWork(ctx, orgID, record.ProductID); err != nil {
+		return ContractRecord{}, err
+	}
+	now, err := c.BusinessNow(ctx, c.queries, orgID, record.ProductID)
+	if err != nil {
+		return ContractRecord{}, err
+	}
+	var phaseStart, phaseEnd *time.Time
+	err = c.pg.QueryRow(ctx, `
+		SELECT phase_id, COALESCE(plan_id, '') AS plan_id, effective_start, effective_end
+		FROM contract_phases
+		WHERE contract_id = $1
+		  AND state IN ('active','grace','pending_payment','scheduled')
+		  AND effective_start <= $2
+		  AND (effective_end IS NULL OR effective_end > $2)
+		ORDER BY CASE state WHEN 'active' THEN 1 WHEN 'grace' THEN 2 ELSE 3 END, effective_start DESC, phase_id DESC
+		LIMIT 1
+	`, contractID, now).Scan(&record.PhaseID, &record.PlanID, &phaseStart, &phaseEnd)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return ContractRecord{}, fmt.Errorf("load contract phase %s: %w", contractID, err)
 	}
 	record.CadenceKind = "anniversary_monthly"
 	record.StartsAt = startsAt.UTC()
@@ -155,7 +165,10 @@ func (c *Client) CancelContract(ctx context.Context, orgID OrgID, contractID str
 	if err != nil {
 		return ContractRecord{}, err
 	}
-	now := time.Now().UTC()
+	now, err := c.BusinessNow(ctx, c.queries, orgID, record.ProductID)
+	if err != nil {
+		return ContractRecord{}, err
+	}
 	err = c.WithTx(ctx, "billing.contract.cancel", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		_, err := tx.Exec(ctx, `UPDATE contracts SET state = 'cancel_scheduled', cancel_at = $3, ends_at = $3 WHERE contract_id = $1 AND org_id = $2 AND state IN ('active','past_due')`, contractID, orgIDText(orgID), cycle.EndsAt)
 		if err != nil {
@@ -215,7 +228,8 @@ func (c *Client) CreateContractChange(ctx context.Context, orgID OrgID, contract
 	if err != nil {
 		return ContractChangeResult{}, err
 	}
-	if err := c.insertPendingUpgrade(ctx, quote); err != nil {
+	quote, err = c.insertPendingUpgrade(ctx, quote)
+	if err != nil {
 		return ContractChangeResult{}, err
 	}
 	status := "paid"
@@ -248,7 +262,10 @@ func (c *Client) scheduleDowngrade(ctx context.Context, orgID OrgID, existing Co
 	if err != nil {
 		return "", err
 	}
-	now := time.Now().UTC()
+	now, err := c.BusinessNow(ctx, c.queries, orgID, existing.ProductID)
+	if err != nil {
+		return "", err
+	}
 	changeID := changeID(existing.ContractID, targetPlanID, cycle.EndsAt)
 	toPhaseID := phaseID(existing.ContractID, targetPlanID, cycle.EndsAt)
 	err = c.WithTx(ctx, "billing.contract_change.schedule_downgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
@@ -295,24 +312,27 @@ func (c *Client) prepareUpgradeQuote(ctx context.Context, orgID OrgID, existing 
 	}
 	toPhaseID := phaseID(existing.ContractID, target.PlanID, now)
 	changeID := changeID(existing.ContractID, target.PlanID, now)
-	return contractChangeQuote{ChangeID: changeID, ContractID: existing.ContractID, OrgID: orgID, ProductID: existing.ProductID, FromPlanID: current.PlanID, TargetPlanID: target.PlanID, FromPhaseID: existing.PhaseID, ToPhaseID: toPhaseID, CycleID: cycle.CycleID, CycleStart: cycle.StartsAt, CycleEnd: cycle.EndsAt, EffectiveAt: now, RequestedAt: now, PriceDeltaCents: priceDeltaCents, PriceDeltaUnits: units, Deltas: deltas, TargetPolicies: targetPolicies}, nil
+	providerRequestID := textID("stripe_upgrade_request", changeID, time.Now().UTC().Format(time.RFC3339Nano))
+	return contractChangeQuote{ChangeID: changeID, ContractID: existing.ContractID, OrgID: orgID, ProductID: existing.ProductID, FromPlanID: current.PlanID, TargetPlanID: target.PlanID, FromPhaseID: existing.PhaseID, ToPhaseID: toPhaseID, CycleID: cycle.CycleID, CycleStart: cycle.StartsAt, CycleEnd: cycle.EndsAt, EffectiveAt: now, RequestedAt: now, ProviderRequestID: providerRequestID, PriceDeltaCents: priceDeltaCents, PriceDeltaUnits: units, Deltas: deltas, TargetPolicies: targetPolicies}, nil
 }
 
-func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQuote) error {
+func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQuote) (contractChangeQuote, error) {
 	payload, err := json.Marshal(quote)
 	if err != nil {
-		return err
+		return quote, err
 	}
-	return c.WithTx(ctx, "billing.contract_change.request_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+	err = c.WithTx(ctx, "billing.contract_change.request_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		number, err := allocateInvoiceNumberTx(ctx, tx, quote.RequestedAt)
 		if err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO contract_changes (change_id, contract_id, org_id, product_id, change_type, timing, requested_effective_at, from_phase_id, to_phase_id, target_plan_id, state, provider, idempotency_key, requested_at, proration_basis_cycle_id, price_delta_units, entitlement_delta_mode, proration_numerator, proration_denominator, payload)
-			VALUES ($1,$2,$3,$4,'upgrade','immediate',$5,NULLIF($6,''),$7,$8,'awaiting_payment','stripe',$1,$9,$10,$11,'positive_delta',$12,$13,$14)
-			ON CONFLICT (contract_id, idempotency_key) DO NOTHING
-		`, quote.ChangeID, quote.ContractID, orgIDText(quote.OrgID), quote.ProductID, quote.EffectiveAt, quote.FromPhaseID, quote.ToPhaseID, quote.TargetPlanID, quote.RequestedAt, quote.CycleID, int64(quote.PriceDeltaUnits), int64(quote.CycleEnd.Sub(quote.EffectiveAt)), int64(quote.CycleEnd.Sub(quote.CycleStart)), payload)
+			INSERT INTO contract_changes (change_id, contract_id, org_id, product_id, change_type, timing, requested_effective_at, from_phase_id, to_phase_id, target_plan_id, state, provider, provider_request_id, idempotency_key, requested_at, proration_basis_cycle_id, price_delta_units, entitlement_delta_mode, proration_numerator, proration_denominator, payload)
+			VALUES ($1,$2,$3,$4,'upgrade','immediate',$5,NULLIF($6,''),$7,$8,'awaiting_payment','stripe',$9,$1,$10,$11,$12,'positive_delta',$13,$14,$15)
+			ON CONFLICT (contract_id, idempotency_key) DO UPDATE
+			SET provider_request_id = COALESCE(contract_changes.provider_request_id, EXCLUDED.provider_request_id),
+			    updated_at = now()
+		`, quote.ChangeID, quote.ContractID, orgIDText(quote.OrgID), quote.ProductID, quote.EffectiveAt, quote.FromPhaseID, quote.ToPhaseID, quote.TargetPlanID, quote.ProviderRequestID, quote.RequestedAt, quote.CycleID, int64(quote.PriceDeltaUnits), int64(quote.CycleEnd.Sub(quote.EffectiveAt)), int64(quote.CycleEnd.Sub(quote.CycleStart)), payload)
 		if err != nil {
 			return fmt.Errorf("insert upgrade change: %w", err)
 		}
@@ -326,15 +346,33 @@ func (c *Client) insertPendingUpgrade(ctx context.Context, quote contractChangeQ
 		}
 		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_requested", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.RequestedAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "target_plan_id": quote.TargetPlanID, "invoice_id": invoiceID(quote.ChangeID), "price_delta_units": quote.PriceDeltaUnits}})
 	})
+	if err != nil {
+		return quote, err
+	}
+	if err := c.pg.QueryRow(ctx, `SELECT COALESCE(provider_request_id, '') FROM contract_changes WHERE change_id = $1`, quote.ChangeID).Scan(&quote.ProviderRequestID); err != nil {
+		return quote, fmt.Errorf("load upgrade provider request id: %w", err)
+	}
+	if quote.ProviderRequestID == "" {
+		return quote, fmt.Errorf("upgrade change %s missing provider_request_id", quote.ChangeID)
+	}
+	return quote, nil
 }
 
 func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote, providerInvoiceID string) error {
 	return c.WithTx(ctx, "billing.contract_change.apply_upgrade", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
-		_, err := tx.Exec(ctx, `UPDATE contract_phases SET state = 'superseded', entitlement_state = 'closed', effective_end = $3, closed_at = $3 WHERE phase_id = $1 AND contract_id = $2 AND state IN ('active','grace')`, quote.FromPhaseID, quote.ContractID, quote.EffectiveAt)
+		closed, err := c.supersedeContractPhaseForUpgradeTx(ctx, tx, quote)
 		if err != nil {
-			return fmt.Errorf("close old phase: %w", err)
+			return err
+		}
+		if closed {
+			if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_phase_closed", AggregateType: "contract_phase", AggregateID: quote.FromPhaseID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "pricing_phase_id": quote.FromPhaseID, "pricing_plan_id": quote.FromPlanID, "effective_at": quote.EffectiveAt.Format(time.RFC3339Nano), "reason": "upgrade"}}); err != nil {
+				return err
+			}
 		}
 		if err := c.insertContractPhaseTx(ctx, tx, quote.OrgID, quote.ProductID, quote.ContractID, quote.ToPhaseID, quote.TargetPlanID, "active", "paid", quote.EffectiveAt); err != nil {
+			return err
+		}
+		if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_phase_started", AggregateType: "contract_phase", AggregateID: quote.ToPhaseID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "pricing_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "effective_at": quote.EffectiveAt.Format(time.RFC3339Nano), "reason": "upgrade"}}); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE contract_phases SET superseded_by_phase_id = $3 WHERE phase_id = $1 AND contract_id = $2 AND state = 'superseded'`, quote.FromPhaseID, quote.ContractID, quote.ToPhaseID)
@@ -363,6 +401,281 @@ func (c *Client) applyPaidUpgrade(ctx context.Context, quote contractChangeQuote
 		}
 		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: quote.ChangeID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"contract_id": quote.ContractID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "from_phase_id": quote.FromPhaseID, "to_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "invoice_id": invoiceID(quote.ChangeID), "provider_invoice_id": providerInvoiceID}})
 	})
+}
+
+func (c *Client) supersedeContractPhaseForUpgradeTx(ctx context.Context, tx pgx.Tx, quote contractChangeQuote) (bool, error) {
+	var phaseStart time.Time
+	var entitlementState string
+	err := tx.QueryRow(ctx, `
+		UPDATE contract_phases
+		SET state = 'superseded',
+		    entitlement_state = CASE WHEN effective_start < $3 THEN 'closed' ELSE 'voided' END,
+		    effective_end = CASE WHEN effective_start < $3 THEN $3 ELSE NULL END,
+		    closed_at = $3
+		WHERE phase_id = $1
+		  AND contract_id = $2
+		  AND state IN ('active','grace')
+		RETURNING effective_start, entitlement_state
+	`, quote.FromPhaseID, quote.ContractID, quote.EffectiveAt).Scan(&phaseStart, &entitlementState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("close old phase: %w", err)
+	}
+	if !phaseStart.Before(quote.EffectiveAt) && entitlementState != "voided" {
+		return false, fmt.Errorf("zero-duration upgrade phase %s did not void entitlement state", quote.FromPhaseID)
+	}
+	return true, nil
+}
+
+type dueContractChange struct {
+	ChangeID             string
+	ContractID           string
+	ChangeType           string
+	FromPhaseID          string
+	ToPhaseID            string
+	TargetPlanID         string
+	RequestedEffectiveAt time.Time
+}
+
+func (c *Client) applyDueContractChangesTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, cycle billingCycle, now time.Time) (uint64, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT change_id, contract_id, change_type, COALESCE(from_phase_id, ''), COALESCE(to_phase_id, ''), COALESCE(target_plan_id, ''), requested_effective_at
+		FROM contract_changes
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND state = 'scheduled'
+		  AND requested_effective_at <= $3
+		ORDER BY requested_effective_at, change_id
+		FOR UPDATE
+	`, orgIDText(orgID), productID, cycle.EndsAt)
+	if err != nil {
+		return 0, fmt.Errorf("query due contract changes: %w", err)
+	}
+	defer rows.Close()
+	changes := []dueContractChange{}
+	for rows.Next() {
+		var change dueContractChange
+		if err := rows.Scan(&change.ChangeID, &change.ContractID, &change.ChangeType, &change.FromPhaseID, &change.ToPhaseID, &change.TargetPlanID, &change.RequestedEffectiveAt); err != nil {
+			return 0, fmt.Errorf("scan due contract change: %w", err)
+		}
+		change.RequestedEffectiveAt = change.RequestedEffectiveAt.UTC()
+		changes = append(changes, change)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("scan due contract changes: %w", err)
+	}
+	var applied uint64
+	for _, change := range changes {
+		switch change.ChangeType {
+		case "cancel":
+			if err := c.applyScheduledCancelTx(ctx, tx, q, orgID, productID, cycle, now, change); err != nil {
+				return applied, err
+			}
+		case "downgrade":
+			if err := c.applyScheduledDowngradeTx(ctx, tx, q, orgID, productID, cycle, now, change); err != nil {
+				return applied, err
+			}
+		default:
+			return applied, fmt.Errorf("unsupported scheduled contract change %s type %s", change.ChangeID, change.ChangeType)
+		}
+		applied++
+	}
+	return applied, nil
+}
+
+func (c *Client) applyScheduledCancelTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, cycle billingCycle, now time.Time, change dueContractChange) error {
+	if err := c.markContractChangeApplyingTx(ctx, tx, change.ChangeID); err != nil {
+		return err
+	}
+	phaseRows, err := tx.Query(ctx, `
+		SELECT phase_id, COALESCE(plan_id, '')
+		FROM contract_phases
+		WHERE contract_id = $1
+		  AND org_id = $2
+		  AND product_id = $3
+		  AND state IN ('active', 'grace', 'scheduled')
+		  AND effective_start < $4
+		ORDER BY effective_start, phase_id
+		FOR UPDATE
+	`, change.ContractID, orgIDText(orgID), productID, cycle.EndsAt)
+	if err != nil {
+		return fmt.Errorf("query cancellation phases: %w", err)
+	}
+	defer phaseRows.Close()
+	type phaseRef struct {
+		PhaseID string
+		PlanID  string
+	}
+	phases := []phaseRef{}
+	for phaseRows.Next() {
+		var phase phaseRef
+		if err := phaseRows.Scan(&phase.PhaseID, &phase.PlanID); err != nil {
+			return fmt.Errorf("scan cancellation phase: %w", err)
+		}
+		phases = append(phases, phase)
+	}
+	if err := phaseRows.Err(); err != nil {
+		return fmt.Errorf("scan cancellation phases: %w", err)
+	}
+	for _, phase := range phases {
+		if err := c.closeContractPhaseTx(ctx, tx, q, orgID, productID, cycle, change, phase.PhaseID, phase.PlanID, "cancel"); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE contracts
+		SET state = 'ended',
+		    entitlement_state = 'closed',
+		    ends_at = COALESCE(ends_at, $3),
+		    cancel_at = COALESCE(cancel_at, $3),
+		    closed_at = $3
+		WHERE contract_id = $1
+		  AND org_id = $2
+		  AND state IN ('active', 'past_due', 'suspended', 'cancel_scheduled')
+	`, change.ContractID, orgIDText(orgID), cycle.EndsAt)
+	if err != nil {
+		return fmt.Errorf("close canceled contract: %w", err)
+	}
+	if err := c.markContractChangeAppliedTx(ctx, tx, change.ChangeID, cycle.EndsAt); err != nil {
+		return err
+	}
+	return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: change.ChangeID, OrgID: orgID, ProductID: productID, OccurredAt: cycle.EndsAt, Payload: map[string]any{"contract_id": change.ContractID, "change_id": change.ChangeID, "change_type": "cancel", "cycle_id": cycle.CycleID, "effective_at": cycle.EndsAt.Format(time.RFC3339Nano), "applied_at": now.UTC().Format(time.RFC3339Nano)}})
+}
+
+func (c *Client) applyScheduledDowngradeTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, cycle billingCycle, now time.Time, change dueContractChange) error {
+	if change.TargetPlanID == "" {
+		return fmt.Errorf("scheduled downgrade %s missing target_plan_id", change.ChangeID)
+	}
+	targetPolicies, err := c.planEntitlementPolicies(ctx, change.TargetPlanID)
+	if err != nil {
+		return err
+	}
+	if change.ToPhaseID == "" {
+		change.ToPhaseID = phaseID(change.ContractID, change.TargetPlanID, cycle.EndsAt)
+	}
+	if change.FromPhaseID == "" {
+		fromPhaseID, err := c.activePhaseAtTx(ctx, tx, change.ContractID, orgID, productID, cycle.EndsAt)
+		if err != nil {
+			return err
+		}
+		change.FromPhaseID = fromPhaseID
+	}
+	if err := c.markContractChangeApplyingTx(ctx, tx, change.ChangeID); err != nil {
+		return err
+	}
+	fromPlanID, err := c.phasePlanIDTx(ctx, tx, change.FromPhaseID)
+	if err != nil {
+		return err
+	}
+	if err := c.closeContractPhaseTx(ctx, tx, q, orgID, productID, cycle, change, change.FromPhaseID, fromPlanID, "downgrade"); err != nil {
+		return err
+	}
+	if err := c.insertContractPhaseTx(ctx, tx, orgID, productID, change.ContractID, change.ToPhaseID, change.TargetPlanID, "active", "paid", cycle.EndsAt); err != nil {
+		return err
+	}
+	if err := c.copyPlanEntitlementLinesTx(ctx, tx, orgID, productID, change.ContractID, change.ToPhaseID, targetPolicies, cycle.EndsAt); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE contracts
+		SET state = 'active',
+		    payment_state = 'paid',
+		    entitlement_state = 'active',
+		    display_name = $3,
+		    ends_at = NULL,
+		    cancel_at = NULL,
+		    closed_at = NULL
+		WHERE contract_id = $1
+		  AND org_id = $2
+		  AND state IN ('active', 'past_due', 'suspended', 'cancel_scheduled')
+	`, change.ContractID, orgIDText(orgID), change.TargetPlanID)
+	if err != nil {
+		return fmt.Errorf("update downgraded contract: %w", err)
+	}
+	if err := c.markContractChangeAppliedTx(ctx, tx, change.ChangeID, cycle.EndsAt); err != nil {
+		return err
+	}
+	if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_phase_started", AggregateType: "contract_phase", AggregateID: change.ToPhaseID, OrgID: orgID, ProductID: productID, OccurredAt: cycle.EndsAt, Payload: map[string]any{"contract_id": change.ContractID, "change_id": change.ChangeID, "cycle_id": cycle.CycleID, "pricing_phase_id": change.ToPhaseID, "pricing_plan_id": change.TargetPlanID, "effective_at": cycle.EndsAt.Format(time.RFC3339Nano), "reason": "downgrade"}}); err != nil {
+		return err
+	}
+	return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_applied", AggregateType: "contract_change", AggregateID: change.ChangeID, OrgID: orgID, ProductID: productID, OccurredAt: cycle.EndsAt, Payload: map[string]any{"contract_id": change.ContractID, "change_id": change.ChangeID, "change_type": "downgrade", "cycle_id": cycle.CycleID, "from_phase_id": change.FromPhaseID, "to_phase_id": change.ToPhaseID, "pricing_plan_id": change.TargetPlanID, "effective_at": cycle.EndsAt.Format(time.RFC3339Nano), "applied_at": now.UTC().Format(time.RFC3339Nano)}})
+}
+
+func (c *Client) markContractChangeApplyingTx(ctx context.Context, tx pgx.Tx, changeID string) error {
+	_, err := tx.Exec(ctx, `UPDATE contract_changes SET state = 'applying', attempts = attempts + 1 WHERE change_id = $1 AND state = 'scheduled'`, changeID)
+	if err != nil {
+		return fmt.Errorf("mark contract change applying: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) markContractChangeAppliedTx(ctx context.Context, tx pgx.Tx, changeID string, effectiveAt time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE contract_changes SET state = 'applied', actual_effective_at = $2 WHERE change_id = $1`, changeID, effectiveAt)
+	if err != nil {
+		return fmt.Errorf("mark contract change applied: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) closeContractPhaseTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, cycle billingCycle, change dueContractChange, phaseID string, planID string, reason string) error {
+	if phaseID == "" {
+		return nil
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE contract_phases
+		SET state = 'closed',
+		    entitlement_state = 'closed',
+		    effective_end = COALESCE(effective_end, $3),
+		    closed_at = $3
+		WHERE phase_id = $1
+		  AND contract_id = $2
+		  AND state IN ('active', 'grace', 'scheduled')
+	`, phaseID, change.ContractID, cycle.EndsAt)
+	if err != nil {
+		return fmt.Errorf("close contract phase: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	return appendEvent(ctx, tx, q, eventFact{EventType: "contract_phase_closed", AggregateType: "contract_phase", AggregateID: phaseID, OrgID: orgID, ProductID: productID, OccurredAt: cycle.EndsAt, Payload: map[string]any{"contract_id": change.ContractID, "change_id": change.ChangeID, "cycle_id": cycle.CycleID, "pricing_phase_id": phaseID, "pricing_plan_id": planID, "effective_at": cycle.EndsAt.Format(time.RFC3339Nano), "reason": reason}})
+}
+
+func (c *Client) activePhaseAtTx(ctx context.Context, tx pgx.Tx, contractID string, orgID OrgID, productID string, effectiveAt time.Time) (string, error) {
+	var phaseID string
+	err := tx.QueryRow(ctx, `
+		SELECT phase_id
+		FROM contract_phases
+		WHERE contract_id = $1
+		  AND org_id = $2
+		  AND product_id = $3
+		  AND state IN ('active', 'grace')
+		  AND effective_start < $4
+		  AND (effective_end IS NULL OR effective_end > $4)
+		ORDER BY effective_start DESC, phase_id DESC
+		LIMIT 1
+		FOR UPDATE
+	`, contractID, orgIDText(orgID), productID, effectiveAt).Scan(&phaseID)
+	if err != nil {
+		return "", fmt.Errorf("load active phase at boundary: %w", err)
+	}
+	return phaseID, nil
+}
+
+func (c *Client) phasePlanIDTx(ctx context.Context, tx pgx.Tx, phaseID string) (string, error) {
+	if phaseID == "" {
+		return "", nil
+	}
+	var planID string
+	err := tx.QueryRow(ctx, `SELECT COALESCE(plan_id, '') FROM contract_phases WHERE phase_id = $1`, phaseID).Scan(&planID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("load phase plan: %w", err)
+	}
+	return planID, nil
 }
 
 func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, productID, planID, contractID, phaseID string, effectiveAt time.Time, lineActiveFrom time.Time) error {
@@ -469,7 +782,7 @@ func (c *Client) insertUpgradeDeltaGrantTx(ctx context.Context, tx pgx.Tx, quote
 	if err != nil {
 		return fmt.Errorf("insert upgrade delta grant: %w", err)
 	}
-	return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "credit_grant_issued", AggregateType: "credit_grant", AggregateID: grantID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"grant_id": grantID, "contract_id": quote.ContractID, "phase_id": quote.ToPhaseID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "source": "contract", "amount": delta.Amount}})
+	return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "grant_issued", AggregateType: "credit_grant", AggregateID: grantID, OrgID: quote.OrgID, ProductID: quote.ProductID, OccurredAt: quote.EffectiveAt, Payload: map[string]any{"grant_id": grantID, "contract_id": quote.ContractID, "pricing_contract_id": quote.ContractID, "phase_id": quote.ToPhaseID, "pricing_phase_id": quote.ToPhaseID, "pricing_plan_id": quote.TargetPlanID, "change_id": quote.ChangeID, "cycle_id": quote.CycleID, "source": "contract", "amount": delta.Amount}})
 }
 
 func (c *Client) planEntitlementPolicies(ctx context.Context, planID string) ([]planEntitlementPolicy, error) {

@@ -85,15 +85,34 @@ func (c *Client) ListEntitlementsView(ctx context.Context, orgID OrgID) (Entitle
 			return EntitlementsView{}, err
 		}
 	}
-	grants, err := c.ListGrantBalances(ctx, orgID, "")
+	grantsByID := map[string]GrantBalance{}
+	nowByProduct := map[string]time.Time{}
+	for _, product := range catalog.Products {
+		now, err := c.BusinessNow(ctx, c.queries, orgID, product.ProductID)
+		if err != nil {
+			return EntitlementsView{}, err
+		}
+		nowByProduct[product.ProductID] = now
+		productGrants, err := c.ListGrantBalances(ctx, orgID, product.ProductID)
+		if err != nil {
+			return EntitlementsView{}, err
+		}
+		for _, grant := range productGrants {
+			grantsByID[grant.GrantID] = grant
+		}
+	}
+	grants := make([]GrantBalance, 0, len(grantsByID))
+	for _, grant := range grantsByID {
+		grants = append(grants, grant)
+	}
+	sort.SliceStable(grants, func(i, j int) bool {
+		return grants[i].StartsAt.Before(grants[j].StartsAt) || (grants[i].StartsAt.Equal(grants[j].StartsAt) && grants[i].GrantID < grants[j].GrantID)
+	})
+	defaultNow, err := c.BusinessNow(ctx, c.queries, orgID, "")
 	if err != nil {
 		return EntitlementsView{}, err
 	}
-	now, err := c.BusinessNow(ctx, c.queries, orgID, "")
-	if err != nil {
-		return EntitlementsView{}, err
-	}
-	return buildEntitlementsView(orgID, now, catalog, grants), nil
+	return buildEntitlementsView(orgID, defaultNow, nowByProduct, catalog, grants), nil
 }
 
 func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog, error) {
@@ -144,7 +163,7 @@ func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog
 	return entitlementCatalog{Products: products}, rows.Err()
 }
 
-func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalog, grants []GrantBalance) EntitlementsView {
+func buildEntitlementsView(orgID OrgID, defaultNow time.Time, nowByProduct map[string]time.Time, catalog entitlementCatalog, grants []GrantBalance) EntitlementsView {
 	view := EntitlementsView{OrgID: orgID, Universal: EntitlementSlot{ScopeType: "account", CoverageLabel: "All products"}}
 	productIndex := map[string]int{}
 	bucketIndex := map[string]map[string]int{}
@@ -165,6 +184,7 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 		view.Products = append(view.Products, section)
 	}
 	for _, grant := range grants {
+		now := grantBusinessNow(defaultNow, nowByProduct, grant)
 		periodStart := uint64(0)
 		if grant.PeriodStart != nil && grant.PeriodEnd != nil && !now.Before(*grant.PeriodStart) && now.Before(*grant.PeriodEnd) {
 			periodStart = grant.OriginalAmount
@@ -233,6 +253,15 @@ func buildEntitlementsView(orgID OrgID, now time.Time, catalog entitlementCatalo
 		}
 	}
 	return view
+}
+
+func grantBusinessNow(defaultNow time.Time, nowByProduct map[string]time.Time, grant GrantBalance) time.Time {
+	if grant.ScopeProductID != "" {
+		if now, ok := nowByProduct[grant.ScopeProductID]; ok {
+			return now
+		}
+	}
+	return defaultNow
 }
 
 func addSourceTotal(slot *EntitlementSlot, grant GrantBalance, periodStart uint64) {
