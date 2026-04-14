@@ -259,8 +259,8 @@ SELECT
   causation_event_id,
   recorded_at
 FROM forge_metal.billing_events
-WHERE occurred_at BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
-ORDER BY occurred_at, event_id
+WHERE recorded_at BETWEEN parseDateTime64BestEffort('${window_start}') AND parseDateTime64BestEffort('${window_end}')
+ORDER BY recorded_at, event_id
 FORMAT TSVWithNames
 " >"${output_dir}/clickhouse/billing_events.tsv"
 
