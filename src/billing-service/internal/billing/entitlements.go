@@ -197,6 +197,9 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in 
 		return fmt.Errorf("insert credit grant %s: %w", in.GrantID, err)
 	}
 	if tag.RowsAffected() == 0 {
+		if err := c.reopenMaterializedEntitlementAndGrantTx(ctx, tx, in); err != nil {
+			return err
+		}
 		return nil
 	}
 	payload := map[string]any{
@@ -218,6 +221,52 @@ func (c *Client) insertEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in 
 		"entitlement_policy_id": in.PolicyID,
 	}
 	return appendEvent(ctx, tx, c.queries.WithTx(tx), eventFact{EventType: "grant_issued", AggregateType: "credit_grant", AggregateID: in.GrantID, OrgID: in.OrgID, ProductID: in.ProductID, OccurredAt: in.PeriodStart, Payload: payload})
+}
+
+func (c *Client) reopenMaterializedEntitlementAndGrantTx(ctx context.Context, tx pgx.Tx, in entitlementInsert) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE entitlement_periods
+		SET cycle_id = $4,
+		    amount_units = $5,
+		    period_start = $6,
+		    period_end = $7,
+		    policy_version = $8,
+		    payment_state = $9,
+		    entitlement_state = $10,
+		    calculation_kind = $11,
+		    metadata = (metadata - 'voided_by') || jsonb_build_object('reopened_by', 'entitlement-materializer'),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND source = $2
+		  AND source_reference_id = $3
+		  AND entitlement_state = 'voided'
+	`, orgIDText(in.OrgID), in.Source, in.SourceReferenceID, in.CycleID, int64(in.Amount), in.PeriodStart, in.PeriodEnd, in.PolicyVersion, in.PaymentState, in.EntitlementState, in.CalculationKind); err != nil {
+		return fmt.Errorf("reopen entitlement period %s: %w", in.PeriodID, err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE credit_grants
+		SET entitlement_period_id = $8,
+		    policy_version = $9,
+		    starts_at = $10,
+		    period_start = $10,
+		    period_end = $11,
+		    expires_at = $11,
+		    closed_at = NULL,
+		    closed_reason = '',
+		    metadata = (metadata - 'closed_by') || jsonb_build_object('reopened_by', 'entitlement-materializer'),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND source = $2
+		  AND scope_type = $3
+		  AND COALESCE(scope_product_id, '') = $4
+		  AND COALESCE(scope_bucket_id, '') = $5
+		  AND COALESCE(scope_sku_id, '') = $6
+		  AND source_reference_id = $7
+		  AND closed_at IS NOT NULL
+	`, orgIDText(in.OrgID), in.Source, in.ScopeType, in.ScopeProductID, in.ScopeBucketID, in.ScopeSKUID, in.SourceReferenceID, in.PeriodID, in.PolicyVersion, in.PeriodStart, in.PeriodEnd); err != nil {
+		return fmt.Errorf("reopen credit grant %s: %w", in.GrantID, err)
+	}
+	return nil
 }
 
 func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantBalance, error) {

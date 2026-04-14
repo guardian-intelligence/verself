@@ -28,6 +28,10 @@ type output struct {
 	CyclesRolledOver       uint64 `json:"cycles_rolled_over"`
 	ContractChangesApplied uint64 `json:"contract_changes_applied"`
 	EntitlementsEnsured    uint64 `json:"entitlements_ensured"`
+	VoidedCycleCount       int    `json:"voided_cycle_count,omitempty"`
+	ClosedGrantCount       int    `json:"closed_grant_count,omitempty"`
+	CurrentCycleID         string `json:"current_cycle_id,omitempty"`
+	PreviousBusinessNow    string `json:"previous_business_now,omitempty"`
 }
 
 func main() {
@@ -38,22 +42,21 @@ func main() {
 }
 
 func run() error {
-	var pgDSNFile, pgDSN, productID, setRaw, reason string
+	var pgDSNFile, pgDSN, org, productID, setRaw, reason string
 	var orgID uint64
 	var advanceSeconds int64
-	var clear bool
+	var clear, wallClock bool
 	flag.StringVar(&pgDSNFile, "pg-dsn-file", "", "path to billing PG DSN")
 	flag.StringVar(&pgDSN, "pg-dsn", "", "billing PG DSN")
 	flag.Uint64Var(&orgID, "org-id", 0, "billing org id")
+	flag.StringVar(&org, "org", "", "billing org id, display name, billing email, or platform shortcut")
 	flag.StringVar(&productID, "product-id", "sandbox", "billing product id")
 	flag.StringVar(&setRaw, "set", "", "set business time to RFC3339/RFC3339Nano")
 	flag.Int64Var(&advanceSeconds, "advance-seconds", 0, "advance business time by seconds")
 	flag.BoolVar(&clear, "clear", false, "clear org-product clock override")
+	flag.BoolVar(&wallClock, "wall-clock", false, "clear override and repair current cycle around wall-clock time")
 	flag.StringVar(&reason, "reason", "billing-clock", "operator reason")
 	flag.Parse()
-	if orgID == 0 {
-		return fmt.Errorf("--org-id is required")
-	}
 	selected := 0
 	if setRaw != "" {
 		selected++
@@ -64,8 +67,11 @@ func run() error {
 	if clear {
 		selected++
 	}
+	if wallClock {
+		selected++
+	}
 	if selected > 1 {
-		return fmt.Errorf("choose only one of --set, --advance-seconds, or --clear")
+		return fmt.Errorf("choose only one of --set, --advance-seconds, --clear, or --wall-clock")
 	}
 	dsn, err := resolvePGDSN(pgDSN, pgDSNFile)
 	if err != nil {
@@ -78,6 +84,10 @@ func run() error {
 		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pg.Close()
+	resolvedOrgID, err := resolveOrgID(ctx, pg, orgID, org)
+	if err != nil {
+		return err
+	}
 	ledgerClient, err := openLedgerClient()
 	if err != nil {
 		return err
@@ -97,30 +107,99 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		state, err = client.SetBusinessClock(ctx, billing.OrgID(orgID), productID, businessNow, reason)
+		state, err = client.SetBusinessClock(ctx, billing.OrgID(resolvedOrgID), productID, businessNow, reason)
 		if err != nil {
 			return err
 		}
 	case advanceSeconds != 0:
-		state, err = client.AdvanceBusinessClock(ctx, billing.OrgID(orgID), productID, time.Duration(advanceSeconds)*time.Second, reason)
+		state, err = client.AdvanceBusinessClock(ctx, billing.OrgID(resolvedOrgID), productID, time.Duration(advanceSeconds)*time.Second, reason)
 		if err != nil {
 			return err
 		}
 	case clear:
-		state, err = client.ClearBusinessClock(ctx, billing.OrgID(orgID), productID, reason)
+		state, err = client.ClearBusinessClock(ctx, billing.OrgID(resolvedOrgID), productID, reason)
+		if err != nil {
+			return err
+		}
+	case wallClock:
+		state, err = client.ResetBusinessClockToWallClock(ctx, billing.OrgID(resolvedOrgID), productID, reason)
 		if err != nil {
 			return err
 		}
 	default:
-		state, err = client.GetBusinessClock(ctx, billing.OrgID(orgID), productID)
+		state, err = client.GetBusinessClock(ctx, billing.OrgID(resolvedOrgID), productID)
 		if err != nil {
 			return err
 		}
 	}
-	payload := output{OrgID: fmt.Sprintf("%d", state.OrgID), ProductID: state.ProductID, ScopeKind: state.ScopeKind, ScopeID: state.ScopeID, BusinessNow: state.BusinessNow.Format(time.RFC3339Nano), HasOverride: state.HasOverride, Generation: state.Generation, CyclesRolledOver: state.DueWork.CyclesRolledOver, ContractChangesApplied: state.DueWork.ContractChangesApplied, EntitlementsEnsured: state.DueWork.EntitlementsEnsured}
+	payload := output{
+		OrgID:                  fmt.Sprintf("%d", state.OrgID),
+		ProductID:              state.ProductID,
+		ScopeKind:              state.ScopeKind,
+		ScopeID:                state.ScopeID,
+		BusinessNow:            state.BusinessNow.Format(time.RFC3339Nano),
+		HasOverride:            state.HasOverride,
+		Generation:             state.Generation,
+		CyclesRolledOver:       state.DueWork.CyclesRolledOver,
+		ContractChangesApplied: state.DueWork.ContractChangesApplied,
+		EntitlementsEnsured:    state.DueWork.EntitlementsEnsured,
+		VoidedCycleCount:       len(state.Repair.VoidedCycleIDs),
+		ClosedGrantCount:       len(state.Repair.ClosedGrantIDs),
+		CurrentCycleID:         state.Repair.CurrentCycleID,
+	}
+	if state.Repair.PreviousBusinessNow != nil {
+		payload.PreviousBusinessNow = state.Repair.PreviousBusinessNow.Format(time.RFC3339Nano)
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
+}
+
+func resolveOrgID(ctx context.Context, pg *pgxpool.Pool, orgID uint64, org string) (uint64, error) {
+	if orgID != 0 {
+		return orgID, nil
+	}
+	org = strings.TrimSpace(org)
+	if org == "" {
+		return 0, fmt.Errorf("--org-id or --org is required")
+	}
+	if id, err := strconv.ParseUint(org, 10, 64); err == nil && id > 0 {
+		return id, nil
+	}
+	predicate := `display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`
+	args := []any{org}
+	if org == "platform" {
+		predicate = `trust_tier = 'platform'`
+		args = nil
+	}
+	query := `SELECT org_id FROM orgs WHERE ` + predicate + ` ORDER BY created_at, org_id LIMIT 2`
+	rows, err := pg.Query(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("resolve org %q: %w", org, err)
+	}
+	defer rows.Close()
+	matches := []string{}
+	for rows.Next() {
+		var match string
+		if err := rows.Scan(&match); err != nil {
+			return 0, err
+		}
+		matches = append(matches, match)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("org %q not found; pass --org-id", org)
+	}
+	if len(matches) > 1 {
+		return 0, fmt.Errorf("org %q matched multiple billing orgs; pass --org-id", org)
+	}
+	parsed, err := strconv.ParseUint(matches[0], 10, 64)
+	if err != nil || parsed == 0 {
+		return 0, fmt.Errorf("resolved org id is not numeric: %q", matches[0])
+	}
+	return parsed, nil
 }
 
 func openLedgerClient() (*ledger.Client, error) {

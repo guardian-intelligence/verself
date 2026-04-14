@@ -132,6 +132,330 @@ func (c *Client) ClearBusinessClock(ctx context.Context, orgID OrgID, productID 
 	return c.reconcileClockTarget(ctx, orgID, productID, DueWorkSummary{})
 }
 
+func (c *Client) ResetBusinessClockToWallClock(ctx context.Context, orgID OrgID, productID string, reason string) (BusinessClockState, error) {
+	if productID == "" {
+		return BusinessClockState{}, fmt.Errorf("product_id is required")
+	}
+	scopeKind, scopeID := orgProductClockScope(orgID, productID)
+	wallNow := time.Now().UTC()
+	repair := BusinessClockRepairSummary{}
+	if err := c.WithTx(ctx, "billing.clock.reset_to_wall_clock", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		if err := c.lockOrgProductTx(ctx, tx, orgID, productID); err != nil {
+			return err
+		}
+		var previous time.Time
+		err := tx.QueryRow(ctx, `
+			SELECT business_now
+			FROM billing_clock_overrides
+			WHERE scope_kind = $1 AND scope_id = $2
+			FOR UPDATE
+		`, scopeKind, scopeID).Scan(&previous)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("lock business clock override: %w", err)
+		}
+		if err == nil {
+			previous = previous.UTC()
+			repair.PreviousBusinessNow = &previous
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM billing_clock_overrides WHERE scope_kind = $1 AND scope_id = $2`, scopeKind, scopeID); err != nil {
+			return fmt.Errorf("clear business clock override: %w", err)
+		}
+
+		paid, err := c.activePaidPhaseForWallClockResetTx(ctx, tx, orgID, productID, wallNow)
+		if err != nil {
+			return err
+		}
+		startsAt := monthStartUTC(wallNow)
+		endsAt := nextMonth(wallNow)
+		cadence := "calendar_monthly"
+		if paid.ok {
+			startsAt = wallNow
+			endsAt = cycleEndAfter("anniversary_monthly", startsAt)
+			cadence = "anniversary_monthly"
+			if err := c.shiftActiveContractToWallClockTx(ctx, tx, paid, wallNow); err != nil {
+				return err
+			}
+		}
+
+		voided, err := c.voidCyclesOverlappingWallClockResetTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow, reason)
+		if err != nil {
+			return err
+		}
+		repair.VoidedCycleIDs = voided
+		closedGrantIDs, err := c.closeCurrentEntitlementGrantsForWallClockResetTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow)
+		if err != nil {
+			return err
+		}
+		repair.ClosedGrantIDs = closedGrantIDs
+		if err := c.voidCurrentEntitlementPeriodsForWallClockResetTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow, reason); err != nil {
+			return err
+		}
+		if err := c.reopenWallClockTargetEntitlementsTx(ctx, tx, orgID, productID, startsAt, endsAt, wallNow); err != nil {
+			return err
+		}
+		cycle, err := c.insertWallClockResetCycleTx(ctx, tx, q, orgID, productID, startsAt, endsAt, cadence, wallNow)
+		if err != nil {
+			return err
+		}
+		repair.CurrentCycleID = cycle.CycleID
+		payload := map[string]any{
+			"scope_kind":                   scopeKind,
+			"scope_id":                     scopeID,
+			"reset_at":                     wallNow.Format(time.RFC3339Nano),
+			"reason":                       reason,
+			"voided_cycle_ids":             repair.VoidedCycleIDs,
+			"voided_cycle_count":           len(repair.VoidedCycleIDs),
+			"closed_entitlement_grant_ids": repair.ClosedGrantIDs,
+			"closed_entitlement_grants":    len(repair.ClosedGrantIDs),
+			"current_cycle_id":             repair.CurrentCycleID,
+			"preserved_paid_plan":          paid.ok,
+			"preserved_purchase_balances":  true,
+		}
+		if repair.PreviousBusinessNow != nil {
+			payload["previous_business_now"] = repair.PreviousBusinessNow.Format(time.RFC3339Nano)
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "billing_clock_reset_to_wall_clock", AggregateType: "billing_clock", AggregateID: scopeID, OrgID: orgID, ProductID: productID, OccurredAt: wallNow, Payload: payload})
+	}); err != nil {
+		return BusinessClockState{}, err
+	}
+	state, err := c.reconcileClockTarget(ctx, orgID, productID, DueWorkSummary{})
+	if err != nil {
+		return BusinessClockState{}, err
+	}
+	state.Repair = repair
+	return state, nil
+}
+
+type wallClockPaidPhase struct {
+	ok         bool
+	contractID string
+	phaseID    string
+	planID     string
+}
+
+func (c *Client) activePaidPhaseForWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, wallNow time.Time) (wallClockPaidPhase, error) {
+	row := tx.QueryRow(ctx, `
+		SELECT c.contract_id, p.phase_id, COALESCE(p.plan_id, '')
+		FROM contracts c
+		JOIN contract_phases p ON p.contract_id = c.contract_id
+		WHERE c.org_id = $1
+		  AND c.product_id = $2
+		  AND c.state IN ('active', 'past_due', 'cancel_scheduled')
+		  AND p.state IN ('active', 'grace')
+		ORDER BY CASE WHEN p.effective_start <= $3 AND (p.effective_end IS NULL OR p.effective_end > $3) THEN 0 ELSE 1 END,
+		         p.effective_start DESC,
+		         p.phase_id DESC
+		LIMIT 1
+		FOR UPDATE OF c, p
+	`, orgIDText(orgID), productID, wallNow)
+	var paid wallClockPaidPhase
+	if err := row.Scan(&paid.contractID, &paid.phaseID, &paid.planID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return wallClockPaidPhase{}, nil
+		}
+		return wallClockPaidPhase{}, fmt.Errorf("load active paid phase for wall-clock reset: %w", err)
+	}
+	paid.ok = paid.planID != ""
+	return paid, nil
+}
+
+func (c *Client) shiftActiveContractToWallClockTx(ctx context.Context, tx pgx.Tx, paid wallClockPaidPhase, wallNow time.Time) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE contracts
+		SET starts_at = LEAST(starts_at, $2),
+		    updated_at = now()
+		WHERE contract_id = $1
+	`, paid.contractID, wallNow); err != nil {
+		return fmt.Errorf("shift active contract to wall clock: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE contract_phases
+		SET effective_start = LEAST(effective_start, $2),
+		    effective_end = CASE WHEN effective_end IS NOT NULL AND effective_end <= $2 THEN NULL ELSE effective_end END,
+		    activated_at = COALESCE(activated_at, $2),
+		    updated_at = now()
+		WHERE phase_id = $1
+	`, paid.phaseID, wallNow); err != nil {
+		return fmt.Errorf("shift active contract phase to wall clock: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) voidCyclesOverlappingWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time, reason string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE billing_cycles
+		SET status = 'voided',
+		    finalized_at = COALESCE(finalized_at, $5::timestamptz),
+		    closed_reason = CASE WHEN closed_reason = '' THEN 'wall_clock_reset' ELSE closed_reason END,
+		    metadata = metadata || jsonb_build_object('voided_by', 'billing-wall-clock', 'voided_at', $5::timestamptz::text, 'reason', $6::text),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND status <> 'voided'
+		  AND tstzrange(starts_at, ends_at, '[)') && tstzrange($3::timestamptz, $4::timestamptz, '[)')
+		RETURNING cycle_id
+	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow, reason)
+	if err != nil {
+		return nil, fmt.Errorf("void cycles for wall-clock reset: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (c *Client) closeCurrentEntitlementGrantsForWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		UPDATE credit_grants
+		SET closed_at = $5::timestamptz,
+		    closed_reason = 'wall_clock_reset',
+		    metadata = metadata || jsonb_build_object('closed_by', 'billing-wall-clock', 'closed_at', $5::timestamptz::text),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND closed_at IS NULL
+		  AND source IN ('free_tier', 'contract')
+		  AND (
+		    scope_product_id = $2
+		    OR entitlement_period_id IN (SELECT period_id FROM entitlement_periods WHERE org_id = $1 AND product_id = $2)
+		  )
+		  AND NOT (period_start = $3::timestamptz AND period_end = $4::timestamptz)
+		RETURNING grant_id
+	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow)
+	if err != nil {
+		return nil, fmt.Errorf("close entitlement grants for wall-clock reset: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (c *Client) voidCurrentEntitlementPeriodsForWallClockResetTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time, reason string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE entitlement_periods
+		SET entitlement_state = 'voided',
+		    metadata = metadata || jsonb_build_object('voided_by', 'billing-wall-clock', 'voided_at', $5::timestamptz::text, 'reason', $6::text),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND source IN ('free_tier', 'contract')
+		  AND entitlement_state IN ('scheduled', 'active', 'grace')
+		  AND NOT (period_start = $3::timestamptz AND period_end = $4::timestamptz)
+	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow, reason)
+	if err != nil {
+		return fmt.Errorf("void entitlement periods for wall-clock reset: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) reopenWallClockTargetEntitlementsTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID string, startsAt, endsAt, wallNow time.Time) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE entitlement_periods
+		SET entitlement_state = 'active',
+		    metadata = (metadata - 'voided_by') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND product_id = $2
+		  AND source IN ('free_tier', 'contract')
+		  AND period_start = $3::timestamptz
+		  AND period_end = $4::timestamptz
+		  AND entitlement_state = 'voided'
+		  AND metadata->>'voided_by' = 'billing-wall-clock'
+	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow); err != nil {
+		return fmt.Errorf("reopen target entitlement periods for wall-clock reset: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE credit_grants
+		SET closed_at = NULL,
+		    closed_reason = '',
+		    metadata = (metadata - 'closed_by') || jsonb_build_object('reopened_by', 'billing-wall-clock', 'reopened_at', $5::timestamptz::text),
+		    updated_at = now()
+		WHERE org_id = $1
+		  AND source IN ('free_tier', 'contract')
+		  AND period_start = $3::timestamptz
+		  AND period_end = $4::timestamptz
+		  AND closed_reason = 'wall_clock_reset'
+		  AND (
+		    scope_product_id = $2
+		    OR entitlement_period_id IN (SELECT period_id FROM entitlement_periods WHERE org_id = $1 AND product_id = $2)
+		  )
+	`, orgIDText(orgID), productID, startsAt, endsAt, wallNow); err != nil {
+		return fmt.Errorf("reopen target entitlement grants for wall-clock reset: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) insertWallClockResetCycleTx(ctx context.Context, tx pgx.Tx, q *store.Queries, orgID OrgID, productID string, startsAt, endsAt time.Time, cadence string, wallNow time.Time) (billingCycle, error) {
+	cycle := billingCycle{CycleID: cycleID(orgID, productID, startsAt), Currency: "usd", AnchorAt: startsAt, CycleSeq: 0, CadenceKind: cadence, StartsAt: startsAt, EndsAt: endsAt}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at, closed_reason, metadata)
+		VALUES ($1,$2,$3,'usd',$4,0,$5,$4,$6,'open',$6,'',jsonb_build_object('opened_by', 'billing-wall-clock'))
+		ON CONFLICT (cycle_id) DO UPDATE
+		SET currency = EXCLUDED.currency,
+		    anchor_at = EXCLUDED.anchor_at,
+		    cycle_seq = EXCLUDED.cycle_seq,
+		    cadence_kind = EXCLUDED.cadence_kind,
+		    starts_at = EXCLUDED.starts_at,
+		    ends_at = EXCLUDED.ends_at,
+		    status = 'open',
+		    finalization_due_at = EXCLUDED.finalization_due_at,
+		    closed_reason = '',
+		    active_finalization_id = NULL,
+		    successor_cycle_id = NULL,
+		    closed_by_event_id = NULL,
+		    closed_for_usage_at = NULL,
+		    finalized_at = NULL,
+		    metadata = (billing_cycles.metadata - 'voided_by') || jsonb_build_object('opened_by', 'billing-wall-clock'),
+		    updated_at = now()
+		WHERE billing_cycles.status = 'voided'
+	`, cycle.CycleID, orgIDText(orgID), productID, startsAt, cadence, endsAt)
+	if err != nil {
+		return billingCycle{}, fmt.Errorf("insert wall-clock reset billing cycle: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		existing, ok, err := c.openBillingCycleContainingTx(ctx, tx, orgID, productID, wallNow)
+		if err != nil {
+			return billingCycle{}, err
+		}
+		if ok {
+			return existing, nil
+		}
+		return billingCycle{}, fmt.Errorf("insert wall-clock reset billing cycle %s: conflicting cycle", cycle.CycleID)
+	}
+	if err := appendEvent(ctx, tx, q, eventFact{
+		EventType:     "billing_cycle_opened",
+		AggregateType: "billing_cycle",
+		AggregateID:   cycle.CycleID,
+		OrgID:         orgID,
+		ProductID:     productID,
+		OccurredAt:    wallNow,
+		Payload: map[string]any{
+			"cycle_id":     cycle.CycleID,
+			"starts_at":    cycle.StartsAt.Format(time.RFC3339Nano),
+			"ends_at":      cycle.EndsAt.Format(time.RFC3339Nano),
+			"anchor_at":    cycle.AnchorAt.Format(time.RFC3339Nano),
+			"cycle_seq":    cycle.CycleSeq,
+			"cadence_kind": cycle.CadenceKind,
+			"reason":       "wall_clock_reset",
+		},
+	}); err != nil {
+		return billingCycle{}, err
+	}
+	return cycle, nil
+}
+
 func (c *Client) reconcileClockTarget(ctx context.Context, orgID OrgID, productID string, summary DueWorkSummary) (BusinessClockState, error) {
 	due, err := c.ApplyDueBillingWork(ctx, orgID, productID)
 	if err != nil {
@@ -140,6 +464,9 @@ func (c *Client) reconcileClockTarget(ctx context.Context, orgID OrgID, productI
 	summary.CyclesRolledOver += due.CyclesRolledOver
 	summary.ContractChangesApplied += due.ContractChangesApplied
 	if err := c.ensureCurrentEntitlements(ctx, orgID, productID); err != nil {
+		return BusinessClockState{}, err
+	}
+	if _, err := c.PostPendingGrantDeposits(ctx, orgID, productID); err != nil {
 		return BusinessClockState{}, err
 	}
 	summary.EntitlementsEnsured++

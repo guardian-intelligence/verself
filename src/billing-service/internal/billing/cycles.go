@@ -134,6 +134,9 @@ func (c *Client) ApplyPendingDueBillingWork(ctx context.Context, limit int) (int
 		if err := c.ensureCurrentEntitlements(ctx, OrgID(parsed), target.productID); err != nil {
 			return applied, err
 		}
+		if _, err := c.PostPendingGrantDeposits(ctx, OrgID(parsed), target.productID); err != nil {
+			return applied, err
+		}
 		applied++
 	}
 	return applied, nil

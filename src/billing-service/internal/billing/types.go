@@ -83,6 +83,14 @@ type BusinessClockState struct {
 	HasOverride bool
 	Generation  uint64
 	DueWork     DueWorkSummary
+	Repair      BusinessClockRepairSummary
+}
+
+type BusinessClockRepairSummary struct {
+	PreviousBusinessNow *time.Time
+	VoidedCycleIDs      []string
+	ClosedGrantIDs      []string
+	CurrentCycleID      string
 }
 
 type BillingCadence string
