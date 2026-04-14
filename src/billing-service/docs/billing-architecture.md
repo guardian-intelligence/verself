@@ -166,7 +166,7 @@ Job uniqueness must be derived from domain identity, not random worker identity:
 - Invoice finalization jobs key by `invoice_finalization_id` or `cycle_id` when there is exactly one invoice per cycle.
 - Stripe collection jobs key by `invoice_id`.
 - Invoice email jobs key by `invoice_id`.
-- Ledger command jobs key by `ledger_command_id`.
+- Ledger command jobs key by `command_id`.
 - Ledger reconciliation jobs key by `(reconcile_scope, org_id, product_id, reconcile_at_bucket)`.
 - Grant expiry jobs key by `(grant_id, expires_at)`.
 - Event delivery projection jobs key by `event_id`.
@@ -194,19 +194,19 @@ PostgreSQL domain IDs are deterministic text IDs. Examples: `grant_id`, `window_
 
 TigerBeetle object IDs are separate 128-bit IDs:
 
-- `tb_account_id`: the TigerBeetle account ID for an operator account, grant account, or receivable account.
+- `account_id`: the TigerBeetle account ID for an operator account, grant account, or receivable account.
 - `tb_transfer_id`: the TigerBeetle transfer ID for a deposit, reservation, settlement, void, receivable, payment-clearing, expiry, correction, or showback movement.
-- `tb_correlation_id`: a query correlation value stored in TigerBeetle `user_data_128` and in PostgreSQL. It may point at a window, grant, invoice finalization, provider event, or ledger command, but it is not the domain ID.
+- `ledger_correlation_id`: a query correlation value stored in TigerBeetle `user_data_128` and in PostgreSQL. It may point at a window, grant, invoice finalization, provider event, or ledger command, but it is not the domain ID.
 
 TigerBeetle IDs must use the client `id()`/`types.ID()` time-based scheme and must be persisted before dispatch. Retries reuse the persisted ID list exactly. Do not derive TigerBeetle account or transfer IDs from SHA-256, FNV, ULID byte swaps, leg indexes, transfer kinds, or text domain IDs. Business idempotency comes from PostgreSQL unique keys and persisted command payloads; TigerBeetle idempotency comes from replaying the same TigerBeetle IDs.
 
 `user_data_*` conventions:
 
-- Grant accounts use `user_data_64 = org_id`, `user_data_32 = grant_source_code`, and `user_data_128 = grant tb_correlation_id`.
+- Grant accounts use `user_data_64 = org_id` and `user_data_32 = grant_source_code`.
 - Customer receivable accounts use `user_data_64 = org_id`, `user_data_32 = receivable_scope_code`, and `user_data_128 = cycle, invoice, or org/product receivable correlation ID depending on account granularity.
-- Reservation, settlement, and void transfers use `user_data_128 = window tb_correlation_id`, `user_data_64 = business_clock_ms`, and `code = transfer reason`.
-- Deposit, expiry, refund, and grant-correction transfers use `user_data_128 = grant tb_correlation_id`.
-- Invoice finalization, no-consent adjustment, receivable-clearing, and payment-clearing transfers use `user_data_128 = invoice_finalization or invoice tb_correlation_id`.
+- Reservation, settlement, and void transfers use `user_data_128 = window ledger_correlation_id`, `user_data_64 = business_clock_ms`, and `code = transfer reason`.
+- Deposit, expiry, refund, and grant-correction transfers use `user_data_128 = deposit_transfer_id` or another persisted grant correlation ID.
+- Invoice finalization, no-consent adjustment, receivable-clearing, and payment-clearing transfers use `user_data_128 = invoice_finalization or invoice ledger_correlation_id`.
 
 TigerBeetle preview query APIs may be used by operator tools and reconciliation, but the hot path should use IDs already stored in PostgreSQL and `LookupAccounts`/`LookupTransfers`. PostgreSQL remains the index for text domain IDs.
 
@@ -231,7 +231,7 @@ Account codes are stable protocol values once production data exists. The exact 
 | `customer_grant` | one per `credit_grants` row | credit-positive spendable balance | `debits_must_not_exceed_credits`, `history` | Holds one scoped grant. Available balance is `credits_posted - debits_posted - debits_pending`. |
 | `customer_receivable` | per org/product/cycle or per invoice | debit-positive receivable | `credits_must_not_exceed_debits`, `history` | Accrues explicitly consented postpaid overage or invoice receivables and is cleared by payment or adjustment. |
 
-Operator singleton account IDs may be generated once and stored in `billing_ledger_account_registry`, or assigned fixed non-zero constants before production. Customer grant and receivable account IDs must be TigerBeetle time-based IDs generated when PostgreSQL creates the corresponding row. On boot and during reconciliation, billing verifies that registered operator accounts exist with the expected ledger, code, and flags.
+Operator singleton account IDs are generated once and stored in `billing_ledger_accounts`. Customer grant account IDs are TigerBeetle time-based IDs generated when PostgreSQL creates the corresponding `credit_grants` row. On boot and during reconciliation, billing verifies that registered operator accounts exist with the expected ledger, code, and flags.
 
 ### Transfer taxonomy
 
@@ -265,11 +265,10 @@ Every TigerBeetle side effect is represented by a durable PostgreSQL ledger comm
 Ledger command lifecycle:
 
 ```text
-pending -> dispatching -> posted
-pending -> dispatching -> retryable_failed -> pending
-retryable_failed -> dispatching -> posted
-retryable_failed -> dispatching -> dead_letter
-posted -> reconciled
+pending -> in_progress -> posted
+pending -> in_progress -> retryable_failed
+retryable_failed -> in_progress -> posted
+retryable_failed -> in_progress -> dead_letter
 dead_letter -> pending (operator requeue, generation incremented)
 ```
 
@@ -286,7 +285,7 @@ Dispatch rules:
 Customer balance reads load grant metadata from PostgreSQL and balances from TigerBeetle:
 
 1. PostgreSQL selects open, active, in-scope `credit_grants` whose `ledger_posting_state = 'posted'` and whose time window contains the business clock.
-2. Billing batches `LookupAccounts(tb_account_id...)` for those grants.
+2. Billing batches `LookupAccounts(account_id...)` for those grants.
 3. For each `customer_grant` account, spendable availability is `credits_posted - debits_posted - debits_pending`.
 4. Pending amount is `debits_pending`.
 5. Customer-facing spent-by-source and spent-by-SKU is derived from settled `billing_window_ledger_legs` and metering projection, not from raw `debits_posted`, because expiry sweeps, refunds, and corrections also debit grant accounts.
@@ -300,7 +299,7 @@ Purchased top-up credit is prepaid balance, not postpaid overage consent.
 
 1. Stripe Checkout, PaymentIntent, or another provider collection path records the intended purchase with provider metadata containing `org_id`, `product_id`, purchase amount, and idempotency key.
 2. The provider webhook is persisted in `billing_provider_events` before any balance mutation.
-3. On `payment_intent.succeeded` or equivalent confirmed payment, PostgreSQL creates a deterministic `credit_grants(source = 'purchase')` row in `ledger_posting_state = 'pending'`, with a `tb_account_id`, `tb_correlation_id`, and deposit command IDs.
+3. On `payment_intent.succeeded` or equivalent confirmed payment, PostgreSQL creates a deterministic `credit_grants(source = 'purchase')` row in `ledger_posting_state = 'pending'`, with `account_id`, `deposit_transfer_id`, and a durable `billing_ledger_commands(operation = 'grant_deposit')` envelope.
 4. The ledger command creates the customer grant account and linked transfers for `stripe_payment_in` and `purchase_grant_deposit`, unless the payment-in transfer was already posted by an earlier command for the same provider object.
 5. Only after TigerBeetle acknowledges the command does PostgreSQL mark the grant `ledger_posting_state = 'posted'`, emit `grant_issued`, and make the balance visible to reserve and balance reads.
 6. Duplicate provider events converge on the same purchase grant and same persisted TigerBeetle IDs.
@@ -473,7 +472,7 @@ PostgreSQL columns that store TigerBeetle IDs should use a domain equivalent to:
 CREATE DOMAIN tbid AS BYTEA CHECK (octet_length(VALUE) = 16);
 ```
 
-Use `tbid` for TigerBeetle account IDs, transfer IDs, command IDs when represented as TigerBeetle IDs, and `tb_correlation_id` fields. Do not use it for `grant_id`, `window_id`, `contract_id`, `cycle_id`, `invoice_id`, or `event_id`.
+Use `tbid` for TigerBeetle account IDs, transfer IDs, and ledger correlation IDs. Do not use it for `grant_id`, `window_id`, `contract_id`, `cycle_id`, `invoice_id`, `command_id`, or `event_id`.
 
 ### `products`
 
@@ -897,11 +896,9 @@ Key fields:
 - `expires_at`
 - `closed_at`
 - `closed_reason`
-- `tb_account_id`
-- `tb_correlation_id`
-- `deposit_ledger_command_id`
+- `account_id`
 - `deposit_transfer_id`
-- `ledger_posting_state` (`pending`, `posting`, `posted`, `retryable_failed`, `dead_letter`, `failed`)
+- `ledger_posting_state` (`pending`, `in_progress`, `posted`, `retryable_failed`, `dead_letter`, `failed`)
 - `ledger_posted_at`
 - `ledger_last_error`
 
@@ -952,10 +949,7 @@ Key fields:
 - `rate_context`
 - `usage_summary`
 - `funding_legs`
-- `tb_correlation_id`
-- `reservation_ledger_command_id`
-- `settlement_ledger_command_id`
-- `void_ledger_command_id`
+- `ledger_correlation_id`
 - `window_start`
 - `expires_at`
 - `settled_at`
@@ -999,8 +993,7 @@ Key fields:
 - `amount_reserved`
 - `amount_posted`
 - `amount_voided`
-- `state` (`pending_tb`, `pending`, `posting`, `posted`, `voiding`, `voided`, `retryable_failed`, `expired`, `failed`)
-- `ledger_command_id`
+- `state` (`pending_tb`, `pending`, `posted`, `voided`, `failed`)
 - `created_at`
 - `updated_at`
 
@@ -1008,21 +1001,18 @@ The primary key is `(window_id, leg_seq)`. Leg order is the exact funding waterf
 
 This table is the indexed source for explaining how a window drained balances. TigerBeetle is still the balance authority, but PostgreSQL stores the domain reason for each transfer so invoices, support tools, and ClickHouse projections do not need to depend on preview TigerBeetle query APIs.
 
-### `billing_ledger_account_registry`
+### `billing_ledger_accounts`
 
 Registry for operator accounts and other non-grant TigerBeetle accounts that must exist before ledger commands can dispatch.
 
 Key fields:
 
 - `account_key`
-- `account_code`
-- `account_role`
-- `tb_account_id`
+- `account_id`
 - `ledger`
+- `code`
 - `flags`
-- `user_data_128`
-- `user_data_64`
-- `user_data_32`
+- `account_kind`
 - `description`
 - `metadata`
 - `created_at`
@@ -1036,15 +1026,14 @@ Durable PostgreSQL command state for TigerBeetle side effects.
 
 Key fields:
 
-- `ledger_command_id`
+- `command_id`
 - `operation` (`grant_deposit`, `reserve_window`, `settle_window`, `void_window`, `invoice_receivable_accrue`, `expire_grant`, `refund_balance`, `receivable_clear`, `adjustment_showback`, `ledger_correction`)
 - `aggregate_type`
 - `aggregate_id`
 - `org_id`
 - `product_id`
 - `idempotency_key`
-- `state` (`pending`, `dispatching`, `posted`, `retryable_failed`, `dead_letter`, `reconciled`)
-- `generation`
+- `state` (`pending`, `in_progress`, `posted`, `retryable_failed`, `dead_letter`)
 - `payload`
 - `attempts`
 - `next_attempt_at`
@@ -1077,8 +1066,8 @@ Key fields:
 - `aggregate_id`
 - `org_id`
 - `product_id`
-- `ledger_command_id`
-- `tb_account_id`
+- `command_id`
+- `account_id`
 - `tb_transfer_id`
 - `expected`
 - `observed`
@@ -1414,15 +1403,15 @@ any non-terminal -> voided
 ### Credit-grant ledger lifecycle
 
 ```text
-pending -> posting -> posted
-pending -> posting -> retryable_failed -> posting
+pending -> in_progress -> posted
+pending -> in_progress -> retryable_failed -> in_progress
 retryable_failed -> dead_letter
 posted -> expiring -> expired
 posted -> closing -> closed
 any non-posted -> failed
 ```
 
-`pending` means the PostgreSQL grant row exists but must not fund reservations. `posting` means the deposit command is being dispatched. `posted` means the TigerBeetle grant account and deposit transfer exist and the grant can fund reservations if its scope and time window match. `expired` means remaining balance was swept to `operator_expired_credits`. `closed` means PostgreSQL policy has closed the grant for future funding; it does not mutate historical TigerBeetle settlement transfers.
+`pending` means the PostgreSQL grant row exists but must not fund reservations. `in_progress` means the deposit command is being dispatched. `posted` means the TigerBeetle grant account and deposit transfer exist and the grant can fund reservations if its scope and time window match. `closed` means PostgreSQL policy has closed the grant for future funding; it does not mutate historical TigerBeetle settlement transfers.
 
 ### Billing-window ledger lifecycle
 
@@ -1480,11 +1469,10 @@ Projection failures are retried by River using deterministic `(event_id, sink, g
 ### Ledger command lifecycle
 
 ```text
-pending -> dispatching -> posted
-pending -> dispatching -> retryable_failed -> pending
-retryable_failed -> dispatching -> posted
-retryable_failed -> dispatching -> dead_letter
-posted -> reconciled
+pending -> in_progress -> posted
+pending -> in_progress -> retryable_failed
+retryable_failed -> in_progress -> posted
+retryable_failed -> in_progress -> dead_letter
 dead_letter -> pending (operator requeue, generation incremented)
 ```
 
@@ -2031,7 +2019,7 @@ GROUP BY operation, state
 ORDER BY operation, state
 ```
 
-The normal steady state has no stale `pending`, `dispatching`, or `retryable_failed` commands outside the retry policy. `dead_letter` is allowed only when an operator is actively resolving a documented incident.
+The normal steady state has no stale `pending`, `in_progress`, or `retryable_failed` commands outside the retry policy. `dead_letter` is allowed only when an operator is actively resolving a documented incident.
 
 6. **Ledger drift is empty**
 

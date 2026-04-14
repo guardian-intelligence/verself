@@ -842,7 +842,7 @@ PY
 
 for grant_id in "${grant_ids[@]}"; do
   [[ -n "${grant_id}" ]] || continue
-  verification_ssh "sudo /opt/forge-metal/profile/bin/tb-inspect '${grant_id}'" \
+  verification_ssh "sudo /opt/forge-metal/profile/bin/tb-inspect --pg-dsn-file /etc/credstore/billing/pg-dsn --grant-id '${grant_id}'" \
     >"${output_dir}/tigerbeetle/grant-${grant_id}.txt"
 done
 
