@@ -1,23 +1,11 @@
-import type { EntitlementSlot, EntitlementSourceTotal, EntitlementsView } from "~/server-fns/api";
+import type { EntitlementSlot, EntitlementsView } from "~/server-fns/api";
 import { formatLedgerAmount } from "~/lib/format";
 
 // Display-only presentation of the honest slot model. The server returns
 // the four-scope slot tree (account → product → bucket → sku); this panel
-// renders only the account-scoped "Account Balance" header and exposes a
-// per-SKU source lookup that the Usage table uses to annotate each drain row
-// with its remaining balance. The dedicated Credit Balances table was
-// intentionally removed — per-SKU coverage is now surfaced inline next to the
-// drain amount it will cover, not duplicated in a parallel table.
-//
-// Pooling note: bucket- and product-scoped sources (e.g. a Hobby plan's
-// per-bucket allotment) appear in every SKU's combined source list. That is
-// deliberately optimistic — each row answers "how much juice could this SKU
-// draw, ignoring contention with siblings" — and matches how the funder
-// actually drains: most-specific scope first, then pooled scopes. Do not try
-// to "fix" the apparent over-count across SKUs; it's the whole reason the slot
-// tree exists. Purchase (account balance) is the only source that is NOT
-// pooled into per-SKU lookups, because the Account Balance header tells the
-// customer it only drains after everything else.
+// renders only the account-scoped "Account Balance" header. Per-SKU coverage
+// lookups now live in features/billing/state (CreditsProductState.bySKU),
+// which the Usage table consumes directly instead of re-walking the tree.
 
 export function EntitlementsPanel({ view }: { view: EntitlementsView }) {
   // The hidden `data-test-available-units` attribute is a deliberate
@@ -88,55 +76,6 @@ function AccountBalanceHeader({
       </p>
     </section>
   );
-}
-
-// SKURemainingLookup is keyed by SKU id. Each entry is the combined
-// (sku ∪ bucket ∪ product) source list for that SKU, in the same order the
-// funder drains: most-specific source first, pooled scopes last. The Usage
-// table uses this to render "Free tier ($0.27 remaining)" next to each drain
-// row, with the source's Label and AvailableUnits straight from this list.
-//
-// Purchase (account-scoped) sources are intentionally excluded — the Account
-// Balance header above already surfaces them, and the Usage drain row for
-// "Account balance" doesn't show a remaining suffix.
-export type SKURemainingLookup = Map<string, EntitlementSourceTotal[]>;
-
-export function buildSKURemainingLookup(view: EntitlementsView): SKURemainingLookup {
-  const map: SKURemainingLookup = new Map();
-  for (const section of view.products ?? []) {
-    const productSources = section.product_slot?.sources ?? [];
-    for (const bucket of section.buckets ?? []) {
-      const bucketSources = bucket.bucket_slot?.sources ?? [];
-      for (const sku of bucket.sku_slots ?? []) {
-        map.set(sku.sku_id, combineSources([...sku.sources, ...bucketSources, ...productSources]));
-      }
-    }
-  }
-  return map;
-}
-
-function combineSources(sources: EntitlementSourceTotal[]): EntitlementSourceTotal[] {
-  const rank: Record<string, number> = {
-    free_tier: 0,
-    contract: 1,
-    promo: 2,
-    refund: 3,
-    purchase: 4,
-  };
-  const byKey = new Map<string, EntitlementSourceTotal>();
-  for (const source of sources) {
-    if (source.available_units === 0) continue;
-    // Account-scoped top-ups surface only via the Account Balance header.
-    if (source.source === "purchase") continue;
-    const key = `${source.source}:${source.plan_id || "_"}:${source.label}`;
-    const existing = byKey.get(key);
-    if (existing) {
-      existing.available_units += source.available_units;
-    } else {
-      byKey.set(key, { ...source });
-    }
-  }
-  return Array.from(byKey.values()).sort((a, b) => (rank[a.source] ?? 99) - (rank[b.source] ?? 99));
 }
 
 function collectVisibleSlots(view: EntitlementsView): EntitlementSlot[] {

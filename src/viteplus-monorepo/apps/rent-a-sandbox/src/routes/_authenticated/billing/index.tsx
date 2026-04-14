@@ -1,26 +1,17 @@
-import { Fragment, useState } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { Fragment, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useSignedInAuth } from "@forge-metal/auth-web/react";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
 import { BillingFlashNotice, ContractStatusPill } from "~/features/billing/components";
-import {
-  EntitlementsPanel,
-  buildSKURemainingLookup,
-  type SKURemainingLookup,
-} from "~/features/billing/entitlements";
+import { EntitlementsPanel } from "~/features/billing/entitlements";
+import { parseFlashSearch, projectFlashIntent } from "~/features/billing/flash";
 import {
   useCancelContractMutation,
   useCreatePortalSessionMutation,
 } from "~/features/billing/mutations";
-import {
-  contractsQuery,
-  entitlementsQuery,
-  loadBillingPage,
-  statementQuery,
-} from "~/features/billing/queries";
-import { parseBillingFlashSearch } from "~/features/billing/search";
+import { loadBillingPage } from "~/features/billing/queries";
+import type { CreditsProductState } from "~/features/billing/state";
+import { useBillingAccountWithStatement } from "~/features/billing/use-billing-account";
 import {
   formatDateTimeMillisUTC,
   formatDateUTC,
@@ -29,7 +20,7 @@ import {
   formatLedgerAmountPrecise,
   formatLedgerRate,
 } from "~/lib/format";
-import type { Statement } from "~/server-fns/api";
+import type { EntitlementSourceTotal, Statement } from "~/lib/sandbox-rental-api";
 
 type StatementLineItem = Statement["line_items"][number];
 type LineItemDrainKey =
@@ -40,11 +31,16 @@ type LineItemDrainKey =
   | "refund_units";
 type DrainSourceKind = "free_tier" | "contract" | "purchase" | "promo" | "refund";
 
-const drainSources: Array<{
-  key: LineItemDrainKey;
-  source: DrainSourceKind;
-  fallbackLabel: string;
-}> = [
+interface DrainSourceSpec {
+  readonly key: LineItemDrainKey;
+  readonly source: DrainSourceKind;
+  readonly fallbackLabel: string;
+}
+
+// The ORDER of this array is the ORDER drains render inside each usage line.
+// It matches the funder's consumption order so the UI column reads top-down
+// the same way the ledger drains.
+const DRAIN_SOURCES: readonly DrainSourceSpec[] = [
   { key: "free_tier_units", source: "free_tier", fallbackLabel: "Free tier" },
   { key: "contract_units", source: "contract", fallbackLabel: "Contract" },
   { key: "purchase_units", source: "purchase", fallbackLabel: "Account balance" },
@@ -52,35 +48,31 @@ const drainSources: Array<{
   { key: "refund_units", source: "refund", fallbackLabel: "Refund" },
 ];
 
-const sandboxProductID = "sandbox";
+const SANDBOX_PRODUCT_ID = "sandbox";
 
 export const Route = createFileRoute("/_authenticated/billing/")({
-  validateSearch: parseBillingFlashSearch,
+  validateSearch: parseFlashSearch,
   loader: ({ context }) => loadBillingPage(context.queryClient, context.auth),
   component: BillingPage,
 });
 
 function BillingPage() {
-  const auth = useSignedInAuth();
-  const flash = Route.useSearch();
+  const flashSearch = Route.useSearch();
+  const flashIntent = useMemo(() => projectFlashIntent(flashSearch), [flashSearch]);
   const initial = Route.useLoaderData();
+  const { account, snapshot } = useBillingAccountWithStatement({
+    initialPlans: initial.plans,
+    initialContracts: initial.contracts,
+    initialEntitlements: initial.entitlements,
+    initialStatement: initial.statement,
+  });
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
-  const entitlements = useSuspenseQuery({
-    ...entitlementsQuery(auth),
-    initialData: initial.entitlements,
-  }).data;
-  const contracts = useSuspenseQuery({
-    ...contractsQuery(auth),
-    initialData: initial.contracts,
-  }).data;
-  const statement = useSuspenseQuery({
-    ...statementQuery(auth, sandboxProductID),
-    initialData: initial.statement,
-  }).data;
   const portalMutation = useCreatePortalSessionMutation();
   const cancelMutation = useCancelContractMutation();
 
-  const contractRows = contracts.contracts ?? [];
+  const contractRows = snapshot.contracts.contracts ?? [];
+  const statement = snapshot.statement;
+  const sandboxCredits = account.credits.byProduct.get(SANDBOX_PRODUCT_ID);
 
   return (
     <div className="space-y-8">
@@ -112,7 +104,7 @@ function BillingPage() {
         </div>
       </div>
 
-      <BillingFlashNotice {...flash} />
+      <BillingFlashNotice intent={flashIntent} />
 
       {portalMutation.error ? (
         <ErrorCallout error={portalMutation.error} title="Billing portal failed" />
@@ -122,12 +114,11 @@ function BillingPage() {
         <ErrorCallout error={cancelMutation.error} title="Contract cancellation failed" />
       ) : null}
 
-      <EntitlementsPanel view={entitlements} />
+      <EntitlementsPanel view={snapshot.entitlements} />
 
-      <StatementPreview
-        statement={statement}
-        skuRemaining={buildSKURemainingLookup(entitlements)}
-      />
+      {statement ? (
+        <StatementPreview statement={statement} sandboxCredits={sandboxCredits} />
+      ) : null}
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold mb-3">Contracts</h2>
@@ -228,12 +219,12 @@ function BillingPage() {
 
 function StatementPreview({
   statement,
-  skuRemaining,
+  sandboxCredits,
 }: {
   statement: Statement;
-  skuRemaining: SKURemainingLookup;
+  sandboxCredits: CreditsProductState | undefined;
 }) {
-  const lineItems = statement.line_items ?? [];
+  const lineItems = statement.line_items;
   const grandTotal = statement.totals.total_due_units;
 
   return (
@@ -260,7 +251,7 @@ function StatementPreview({
               <UsageLineRow
                 key={`${line.product_id}:${line.plan_id}:${line.bucket_id}:${line.sku_id}:${line.pricing_phase}:${line.unit_rate}`}
                 line={line}
-                skuRemaining={skuRemaining}
+                sandboxCredits={sandboxCredits}
               />
             ))}
             <div
@@ -286,29 +277,25 @@ function StatementPreview({
 
 function UsageLineRow({
   line,
-  skuRemaining,
+  sandboxCredits,
 }: {
   line: StatementLineItem;
-  skuRemaining: SKURemainingLookup;
+  sandboxCredits: CreditsProductState | undefined;
 }) {
-  const availableSources = skuRemaining.get(line.sku_id) ?? [];
-  const drains = drainSources
-    .map((source) => {
-      const amount = line[source.key];
-      const match = findRemainingSource(availableSources, source.source, line.plan_id);
-      return {
-        ...source,
-        amount,
-        label: match?.label ?? source.fallbackLabel,
-        planId: match?.plan_id ?? "",
-        remainingUnits: match?.available_units ?? 0,
-      };
-    })
-    // Keep any class where either this cycle drew against it OR it still has
-    // headroom to draw against — matches the user expectation that active
-    // entitlements (e.g. Pro contract allotments) appear as line items even
-    // before the funder touches them.
-    .filter((row) => row.amount > 0 || row.remainingUnits > 0);
+  const availableSources = sandboxCredits?.bySKU.get(line.sku_id) ?? [];
+  const drains = DRAIN_SOURCES.map((source) => {
+    const amount = line[source.key];
+    const match = findRemainingSource(availableSources, source.source, line.plan_id);
+    return {
+      key: source.key,
+      source: source.source,
+      fallbackLabel: source.fallbackLabel,
+      amount,
+      label: match ? match.label : source.fallbackLabel,
+      planId: match ? match.plan_id : undefined,
+      remainingUnits: match ? match.available_units : 0,
+    };
+  }).filter((row) => row.amount > 0 || row.remainingUnits > 0);
   const hasReserved = line.reserved_units > 0;
   const skuTitle = `${line.bucket_display_name} — ${line.sku_display_name}`;
   const totalRows = 1 + drains.length + (hasReserved ? 1 : 0);
@@ -347,7 +334,7 @@ function UsageLineRow({
                 <span
                   className="ml-1 text-xs"
                   data-source={drain.source}
-                  data-plan-id={drain.planId || undefined}
+                  data-plan-id={drain.planId}
                 >
                   ({formatLedgerAmount(drain.remainingUnits)} remaining)
                 </span>
@@ -378,13 +365,11 @@ function UsageLineRow({
   );
 }
 
-type EntitlementSourceTotalLite = NonNullable<ReturnType<SKURemainingLookup["get"]>>[number];
-
 function findRemainingSource(
-  sources: readonly EntitlementSourceTotalLite[],
+  sources: readonly EntitlementSourceTotal[],
   drainSource: DrainSourceKind,
   linePlanID: string,
-): EntitlementSourceTotalLite | undefined {
+): EntitlementSourceTotal | undefined {
   for (const source of sources) {
     if (source.source !== drainSource) continue;
     if (drainSource === "contract" && source.plan_id !== linePlanID) continue;
