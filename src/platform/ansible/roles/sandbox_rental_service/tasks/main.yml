@@ -316,6 +316,7 @@
       Environment=SANDBOX_RIVER_PG_MIN_CONNS={{ sandbox_rental_service_river_pg_min_conns }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_LIFETIME_SECONDS={{ sandbox_rental_service_river_pg_conn_max_lifetime_seconds }}
       Environment=SANDBOX_RIVER_PG_CONN_MAX_IDLE_SECONDS={{ sandbox_rental_service_river_pg_conn_max_idle_seconds }}
+      Environment=SANDBOX_GITHUB_APP_ENABLED={{ sandbox_rental_service_github_app_enabled | bool | ternary('true', 'false') }}
       Environment=SANDBOX_GITHUB_APP_ID={{ sandbox_rental_service_github_app_id }}
       Environment=SANDBOX_GITHUB_APP_SLUG={{ sandbox_rental_service_github_app_slug }}
       Environment=SANDBOX_GITHUB_APP_CLIENT_ID={{ sandbox_rental_service_github_app_client_id }}

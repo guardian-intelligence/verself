@@ -87,12 +87,18 @@ func run() error {
 	authAudience := requireEnv("SANDBOX_AUTH_AUDIENCE")
 	authJWKSURL := envOr("SANDBOX_AUTH_JWKS_URL", "")
 	vmOrchestratorSocket := envOr("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
+	githubAppEnabled := envBool("SANDBOX_GITHUB_APP_ENABLED", false)
 	githubAppID := envInt64("SANDBOX_GITHUB_APP_ID", 0)
 	githubAppSlug := envOr("SANDBOX_GITHUB_APP_SLUG", "")
 	githubAppClientID := envOr("SANDBOX_GITHUB_APP_CLIENT_ID", "")
 	githubAPIBaseURL := envOr("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
 	githubWebBaseURL := envOr("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	githubRunnerGroupID := envInt64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
+	if !githubAppEnabled && githubAppID == 0 && githubAppSlug == "" && githubAppClientID == "" {
+		githubAppPrivateKey = ""
+		githubAppWebhookSecret = ""
+		githubAppClientSecret = ""
+	}
 
 	// --- open connections ---
 
@@ -397,6 +403,19 @@ func envInt64(key string, fallback int64) int64 {
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value < 0 {
 		fmt.Fprintf(os.Stderr, "env %s must be a non-negative integer\n", key)
+		os.Exit(1)
+	}
+	return value
+}
+
+func envBool(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "env %s must be a boolean\n", key)
 		os.Exit(1)
 	}
 	return value
