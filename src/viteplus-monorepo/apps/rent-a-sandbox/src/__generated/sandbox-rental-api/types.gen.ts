@@ -19,6 +19,10 @@ export type BillingContract = {
   ends_at?: string;
   entitlement_state: string;
   payment_state: string;
+  pending_change_effective_at?: string;
+  pending_change_id?: string;
+  pending_change_target_plan_id?: string;
+  pending_change_type?: string;
   phase_end?: string;
   phase_id: string;
   phase_start?: string;

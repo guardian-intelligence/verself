@@ -173,9 +173,9 @@ The billing model is SKU-driven for usage, contract-driven for recurring entitle
 
 A product is something billable. A SKU is a billable usage component. A SKU belongs to a credit bucket. Buckets are the entitlement lanes customers see and consume against. Examples:
 
-- `Compute` bucket, SKU `AMD EPYC 4484PX @ 5.66GHz`, quantity unit `vCPU-second`
-- `Memory` bucket, SKU `Standard Memory`, quantity unit `GiB-second`
-- `Block Storage` bucket, SKU `Premium NVMe`, quantity unit `GiB-second`
+- `Compute` bucket, SKU `AMD EPYC 4484PX @ 5.66GHz`, quantity unit `vCPU-ms`
+- `Memory` bucket, SKU `Standard Memory`, quantity unit `GiB-ms`
+- `Block Storage` bucket, SKU `Premium NVMe`, quantity unit `GiB-ms`
 
 Metered usage prices are attached to the plan/SKU pair, not to ad hoc JSON on the plan row. Provider price IDs on a plan are optional Stripe invoice-item references; they are not the source of truth for SKU pricing or metering.
 
@@ -494,6 +494,8 @@ For immediate paid upgrades, the change row stores the proration basis instead o
 
 Do not model deferred downgrades or cancellations as nullable hint fields like `next_cycle_plan_id`. A scheduled commercial change needs idempotency, audit history, actor identity, cancellation/reversal state, and failure handling.
 
+At most one live scheduled period-end downgrade/cancellation may exist per contract. Enforce this in PostgreSQL with a partial unique index over `contract_id` for `state = 'scheduled'`, `timing = 'period_end'`, and `change_type IN ('downgrade', 'cancel')`. Application code should cancel or replace the existing local change deliberately; it must not accidentally stack multiple future plan transitions or escape to Stripe to resolve ambiguity.
+
 ### `contract_phases`
 
 Time-bounded commercial policy intervals for a contract.
@@ -663,14 +665,15 @@ Key fields:
 
 Source-funded grants are deterministic over `org_id`, `source`, scope, and `source_reference_id` so retries are idempotent without making Stripe the only reference namespace. Free-tier and contract grants carry `entitlement_period_id`, `policy_version`, `period_start`, `period_end`, `starts_at`, and `expires_at`. A paid phase transition must distinguish unearned future grants from already-earned current-cycle carryforward. Terminal or superseding phase events close future-period, voided, fraudulent, or otherwise unearned grant rows for the affected phase, but a normal immediate upgrade leaves already-issued current-cycle grants open until their own expiry and issues only a target-phase delta grant for the rest of the cycle.
 
-Grant consumption is two-level precedence: scope tightness first, source priority second. The constants live in `internal/billing/grant_funding_plan.go` and are also baked into the entitlements view's row sort:
+Grant consumption is strict and step-function-shaped: scope tightness first, source priority second, recurring-contract tier priority third. Settlement trims the already-reserved funding legs in that order; it must never scale every source proportionally. The implementation lives in `internal/billing/grants.go` and is intentionally different from the entitlements view's display order, which is account-to-SKU because the customer is asking "what coverage do I have" rather than "what drains first":
 
 ```go
 GrantScopeFundingOrder  = []GrantScopeType{ GrantScopeSKU, GrantScopeBucket, GrantScopeProduct, GrantScopeAccount }
-GrantSourceFundingOrder = []GrantSourceType{ SourceFreeTier, SourceContract, SourcePurchase, SourcePromo, SourceRefund, SourceReceivable }
+GrantSourceFundingOrder = []GrantSourceType{ SourceFreeTier, SourceContract, SourcePromo, SourceRefund, SourcePurchase, SourceReceivable }
+GrantPlanFundingOrder   = []PlanTier{ Default, Hobby, Pro, Enterprise }
 ```
 
-The domain source for any recurring paid agreement is `contract`. Stripe Hobby, Stripe Pro, and enterprise MSA credits all drain at the same priority because they are all recurring contract entitlements.
+The domain source for any recurring paid agreement is `contract`. Stripe Hobby, Stripe Pro, and enterprise MSA credits share the recurring-contract source class, but concrete tiers still drain in ascending tier order within a scope so an upgrade cannot cause lower-tier already-earned entitlements to sit behind newer higher-tier entitlements. Account-level purchased balance drains after scoped free-tier, contract, promo, and refund grants.
 
 ### `billing_windows`
 
@@ -710,6 +713,8 @@ Key fields:
 - `last_projection_error`
 
 `billing_windows` are request-path financial locks, not queued jobs. Settlement and projection can be retried asynchronously, but the window row remains the authoritative state projection of the reservation lifecycle.
+
+Sandbox time windows use AWS-Lambda-style millisecond quantities. `reserved_quantity`, `actual_quantity`, `billable_quantity`, and `writeoff_quantity` are milliseconds for `reservation_shape = 'time'`; the SKU quantity unit makes the resource dimension explicit (`vCPU-ms`, `GiB-ms`). VM launch and environment setup time are not billable. The billed duration comes from the billable guest `run` phase duration when available and falls back to host-side billable phase start/end evidence only when the guest duration is absent.
 
 `writeoff_quantity` and `writeoff_charge_units` are settlement evidence, not a customer credit. They capture usage that was admitted but cannot be billed because it exceeded the reserved quantity or the org's overage-consent policy. Invoice finalization turns that evidence into a deterministic `invoice_adjustments` row when the window would otherwise create unauthorized receivable units.
 
@@ -908,7 +913,9 @@ Expected event types include:
 - `payment_method_vaulted`
 - `contract_created`
 - `contract_change_requested`
+- `contract_change_canceled`
 - `contract_change_applied`
+- `contract_resume_applied`
 - `contract_phase_started`
 - `contract_phase_closed`
 - `provider_event_received`
@@ -949,6 +956,7 @@ past_due -> active
 active -> suspended
 suspended -> active
 active -> cancel_scheduled
+cancel_scheduled -> active
 cancel_scheduled -> ended
 active -> ended
 any non-terminal -> voided
@@ -974,6 +982,8 @@ any non-terminal -> canceled
 Self-serve paid activations and immediate upgrades pass through `provider_pending` and `awaiting_payment` when a Stripe invoice is required before entitlement activation. Enterprise amendments can often go from `requested` to `scheduled`, `applying`, or `applied` without provider state.
 
 Provider API success does not activate target paid entitlements by itself. For paid self-serve changes, provider API success moves the change toward `awaiting_payment` unless the business policy explicitly records a `grace` transition. `invoice.paid` or an accepted grace transition activates the new paid phase and materializes grants.
+
+Canceling a scheduled period-end downgrade or cancellation is a local contract-change transition. If the user asks to start or change into the plan that is already the currently active paid phase, billing cancels matching scheduled period-end `contract_changes`, restores the contract from `cancel_scheduled` to `active` when applicable, clears cancellation boundary timestamps, and emits `contract_change_canceled` plus `contract_resume_applied`. It must not create a Stripe Checkout session, Stripe invoice, provider request, or provider event. A database uniqueness guard should reject more than one live scheduled period-end downgrade/cancellation for a contract, so the worst case is a failed local transaction rather than duplicate provider work.
 
 ### Phase lifecycle
 
@@ -1219,6 +1229,8 @@ Default for Pro -> Hobby.
 
 If the River boundary job is late, reserve uses PostgreSQL state and self-healing rules. Reconciliation repairs the missing boundary job. Downgrades must not take away paid capacity before the period the customer already paid for ends.
 
+If the customer resumes the current Pro plan before the period boundary, cancel the scheduled downgrade locally. The current Pro phase remains active, the scheduled Hobby phase is not activated, and no Stripe Checkout or invoice is created because no new payment method, payment consent, or charge is required.
+
 Immediate downgrades are not a self-serve default. If an explicit admin or enterprise amendment allows an immediate downgrade, it must preview the customer-visible result, avoid negative entitlement grants, and represent any refund or account credit as an invoice adjustment or credit-note artifact rather than mutating prior grants.
 
 ### Cancellation
@@ -1229,6 +1241,8 @@ Default for paid -> free is period-end cancellation.
 2. Mark the contract `cancel_scheduled` and preserve the active phase until the current billing cycle ends.
 3. At cycle rollover, close the active paid phase, close remaining phase grants, mark the paid contract `ended`, and open a successor cycle with no active paid phase.
 4. Free-tier grants continue independently and are reconciled on their calendar or billing-cycle schedule.
+
+If the customer resumes the same paid plan before `cancel_at`, cancel the scheduled cancellation locally. The contract returns from `cancel_scheduled` to `active`, the active phase's period-end `effective_end` is cleared, and no Stripe Checkout or invoice is created.
 
 Immediate cancellation is reserved for explicit admin actions, fraud, or payment terminality, and must record a closed reason.
 

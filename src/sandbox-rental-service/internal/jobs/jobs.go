@@ -63,9 +63,9 @@ const (
 	defaultLogStream    = "stdout"
 	executionSourceType = "execution_attempt"
 
-	billingSKUCompute      = "sandbox_compute_amd_epyc_4484px_vcpu_second"
-	billingSKUMemory       = "sandbox_memory_standard_gib_second"
-	billingSKUBlockStorage = "sandbox_block_storage_premium_nvme_gib_second"
+	billingSKUCompute      = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
+	billingSKUMemory       = "sandbox_memory_standard_gib_ms"
+	billingSKUBlockStorage = "sandbox_block_storage_premium_nvme_gib_ms"
 
 	workloadSecretGitHubJITConfig = "github_jit_config"
 	workloadSecretWorkflowPrefix  = "workflow_secret:"
@@ -105,7 +105,7 @@ type BillingClient interface {
 		reqEditors ...billingclient.RequestEditorFn,
 	) (billingclient.Reservation, error)
 	Activate(ctx context.Context, reservation billingclient.Reservation, activatedAt time.Time, reqEditors ...billingclient.RequestEditorFn) (billingclient.Reservation, error)
-	Settle(ctx context.Context, reservation billingclient.Reservation, actualSeconds uint32, usageSummary map[string]any, reqEditors ...billingclient.RequestEditorFn) error
+	Settle(ctx context.Context, reservation billingclient.Reservation, actualMillis uint32, usageSummary map[string]any, reqEditors ...billingclient.RequestEditorFn) error
 	Void(ctx context.Context, reservation billingclient.Reservation, reqEditors ...billingclient.RequestEditorFn) error
 }
 
@@ -528,9 +528,9 @@ func (s *Service) reserveQueuedExecution(ctx context.Context, item executionWork
 
 	s.Logger.InfoContext(ctx, "execution reserved", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "billing_job_id", billingJobID, "org_id", item.OrgID, "kind", item.Kind, "window_seq", reservation.WindowSeq, "fm_correlation_id", item.CorrelationID)
 	s.writeSystemLog(ctx, item.ExecutionID, item.AttemptID,
-		"reserved billing window seq=%d seconds=%d pricing_phase=%s kind=%s",
+		"reserved billing window seq=%d millis=%d pricing_phase=%s kind=%s",
 		reservation.WindowSeq,
-		reservation.WindowSecs,
+		reservation.WindowMillis,
 		reservation.PricingPhase,
 		item.Kind,
 	)
@@ -570,6 +570,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 
 	currentReservation := reservation
 	totalChargeUnits := uint64(0)
+	settledQuantity := int64(0)
 	forcedFailureReason := ""
 	skipFinalBilling := false
 	windowAdvanceUnresolved := false
@@ -671,16 +672,16 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			}
 			s.writeSystemLog(ctx, executionID, attemptID, "execution completed state=%s exit_code=%d duration_ms=%d", outcome.State, outcome.ExitCode, outcome.DurationMs)
 
-			actualSeconds := actualSecondsForReservation(currentReservation, outcome.CompletedAt)
-			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualSeconds), usageSummaryForOutcome(outcome)); settleErr != nil {
-				s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, actualSeconds, settleErr, totalChargeUnits)
+			actualMillis := actualMillisForOutcome(currentReservation, outcome, settledQuantity)
+			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(actualMillis), usageSummaryForOutcome(outcome)); settleErr != nil {
+				s.handleSettleFailure(ctx, executionID, attemptID, orgID, actorID, req, currentReservation, outcome, actualMillis, settleErr, totalChargeUnits)
 				return nil
 			}
-			windowChargeUnits := chargeUnits(currentReservation.CostPerSec, actualSeconds)
+			windowChargeUnits := chargeUnits(currentReservation.CostPerMillis, actualMillis)
 			totalChargeUnits += windowChargeUnits
 			settledAt := time.Now().UTC()
-			s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_quantity=%d charge_units=%d", currentReservation.WindowSeq, actualSeconds, windowChargeUnits)
-			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), actualSeconds, currentReservation.PricingPhase, settledAt); err != nil {
+			s.writeSystemLog(ctx, executionID, attemptID, "billing settled window_seq=%d actual_quantity_ms=%d charge_units=%d", currentReservation.WindowSeq, actualMillis, windowChargeUnits)
+			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), actualMillis, currentReservation.PricingPhase, settledAt); err != nil {
 				s.Logger.ErrorContext(ctx, "mark window settled", "attempt_id", attemptID, "error", err)
 				return nil
 			}
@@ -697,10 +698,10 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 			if skipFinalBilling || windowAdvanceUnresolved {
 				continue
 			}
-			windowSeconds := actualSecondsForReservation(currentReservation, time.Now().UTC())
-			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(windowSeconds), nil); settleErr != nil {
-				s.Logger.ErrorContext(ctx, "billing window advance settle", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "actual_quantity", windowSeconds, "error", settleErr)
-				s.writeSystemLog(ctx, executionID, attemptID, "billing window advance settle failed window_seq=%d actual_quantity=%d error=%v", currentReservation.WindowSeq, windowSeconds, settleErr)
+			windowMillis := actualMillisForReservation(currentReservation, time.Now().UTC())
+			if settleErr := s.Billing.Settle(ctx, currentReservation, uint32(windowMillis), nil); settleErr != nil {
+				s.Logger.ErrorContext(ctx, "billing window advance settle", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "actual_quantity_ms", windowMillis, "error", settleErr)
+				s.writeSystemLog(ctx, executionID, attemptID, "billing window advance settle failed window_seq=%d actual_quantity_ms=%d error=%v", currentReservation.WindowSeq, windowMillis, settleErr)
 				forcedFailureReason = "billing_window_advance_failed"
 				windowAdvanceUnresolved = true
 				nextWindowReserveAt = time.Time{}
@@ -708,10 +709,11 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				continue
 			}
 
-			windowChargeUnits := chargeUnits(currentReservation.CostPerSec, windowSeconds)
+			windowChargeUnits := chargeUnits(currentReservation.CostPerMillis, windowMillis)
 			totalChargeUnits += windowChargeUnits
+			settledQuantity += int64(windowMillis)
 			settledAt := time.Now().UTC()
-			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), windowSeconds, currentReservation.PricingPhase, settledAt); err != nil {
+			if err := s.markWindowSettled(ctx, attemptID, int(currentReservation.WindowSeq), windowMillis, currentReservation.PricingPhase, settledAt); err != nil {
 				s.Logger.ErrorContext(ctx, "mark advanced window settled", "attempt_id", attemptID, "window_seq", currentReservation.WindowSeq, "error", err)
 				forcedFailureReason = "billing_window_advance_persist_failed"
 				skipFinalBilling = true
@@ -739,7 +741,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				}
 				skipFinalBilling = true
 				nextWindowReserveAt = time.Time{}
-				s.writeSystemLog(ctx, executionID, attemptID, "billing reserve-next failed current_window_seq=%d actual_quantity=%d error=%v", currentReservation.WindowSeq, windowSeconds, reserveErr)
+				s.writeSystemLog(ctx, executionID, attemptID, "billing reserve-next failed current_window_seq=%d actual_quantity_ms=%d error=%v", currentReservation.WindowSeq, windowMillis, reserveErr)
 				cancel()
 				continue
 			}
@@ -756,7 +758,7 @@ func (s *Service) execute(ctx context.Context, executionID, attemptID uuid.UUID,
 				continue
 			}
 
-			s.writeSystemLog(ctx, executionID, attemptID, "billing advanced window_seq=%d next_window_seq=%d actual_quantity=%d charge_units=%d", currentReservation.WindowSeq, nextReservation.WindowSeq, windowSeconds, windowChargeUnits)
+			s.writeSystemLog(ctx, executionID, attemptID, "billing advanced window_seq=%d next_window_seq=%d actual_quantity_ms=%d charge_units=%d", currentReservation.WindowSeq, nextReservation.WindowSeq, windowMillis, windowChargeUnits)
 			currentReservation = nextReservation
 			nextWindowReserveAt = nextReservation.RenewBy
 		}
@@ -771,7 +773,7 @@ func (s *Service) handleSettleFailure(
 	req SubmitRequest,
 	reservation billingclient.Reservation,
 	outcome executionOutcome,
-	actualSeconds int,
+	actualMillis int,
 	settleErr error,
 	totalChargeUnits uint64,
 ) {
@@ -791,8 +793,8 @@ func (s *Service) handleSettleFailure(
 		failureOutcome.DurationMs = failureOutcome.CompletedAt.Sub(failureOutcome.StartedAt).Milliseconds()
 	}
 
-	s.Logger.ErrorContext(ctx, "billing settle", "execution_id", executionID, "attempt_id", attemptID, "actual_quantity", actualSeconds, "error", settleErr)
-	s.writeSystemLog(ctx, executionID, attemptID, "billing settle failed window_seq=%d actual_quantity=%d error=%v", reservation.WindowSeq, actualSeconds, settleErr)
+	s.Logger.ErrorContext(ctx, "billing settle", "execution_id", executionID, "attempt_id", attemptID, "actual_quantity_ms", actualMillis, "error", settleErr)
+	s.writeSystemLog(ctx, executionID, attemptID, "billing settle failed window_seq=%d actual_quantity_ms=%d error=%v", reservation.WindowSeq, actualMillis, settleErr)
 	if err := s.markFinalizing(ctx, executionID, attemptID, failureOutcome); err != nil {
 		s.Logger.ErrorContext(ctx, "persist billing failure on finalizing attempt", "execution_id", executionID, "attempt_id", attemptID, "error", err)
 	}
@@ -970,7 +972,7 @@ func (s *Service) runVMWorkload(ctx context.Context, executionID, attemptID uuid
 	}
 	if !startedAt.IsZero() {
 		outcome.StartedAt = startedAt
-		outcome.DurationMs = outcome.CompletedAt.Sub(startedAt).Milliseconds()
+		outcome.DurationMs = billableDurationMillis(result, startedAt, outcome.CompletedAt)
 	}
 	if waitErr != nil {
 		outcome.State = StateFailed
@@ -1021,6 +1023,21 @@ func billablePhaseStartedAt(event vmorchestrator.HostRunEvent) (time.Time, bool)
 		return event.CreatedAt.UTC(), true
 	}
 	return time.Now().UTC(), true
+}
+
+func billableDurationMillis(result vmorchestrator.RunResult, startedAt time.Time, completedAt time.Time) int64 {
+	for _, phase := range result.PhaseResults {
+		if phase.Name == "run" && phase.DurationMS > 0 {
+			return phase.DurationMS
+		}
+	}
+	if result.RunDuration > 0 {
+		return result.RunDuration.Milliseconds()
+	}
+	if !startedAt.IsZero() && !completedAt.IsZero() {
+		return completedAt.Sub(startedAt).Milliseconds()
+	}
+	return 0
 }
 
 func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
@@ -1419,8 +1436,8 @@ func (window executionBillingWindow) reservation(attemptID uuid.UUID) (billingcl
 	if reservation.ReservationShape == "" {
 		reservation.ReservationShape = window.ReservationShape
 	}
-	if reservation.WindowSecs == 0 {
-		reservation.WindowSecs = int32(window.ReservedQuantity)
+	if reservation.WindowMillis == 0 {
+		reservation.WindowMillis = int32(window.ReservedQuantity)
 	}
 	if reservation.PricingPhase == "" {
 		reservation.PricingPhase = window.PricingPhase
@@ -1737,7 +1754,7 @@ func (s *Service) markReserved(ctx context.Context, executionID, attemptID uuid.
 			attempt_id, billing_window_id, window_seq, reservation_shape,
 			reserved_quantity, pricing_phase, reservation_jsonb, state, window_start, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'reserved', $8, $9)
-	`, attemptID, reservation.WindowId, reservation.WindowSeq, reservation.ReservationShape, reservation.WindowSecs, reservation.PricingPhase, string(reservationJSON), reservation.WindowStart, now); err != nil {
+	`, attemptID, reservation.WindowId, reservation.WindowSeq, reservation.ReservationShape, reservation.WindowMillis, reservation.PricingPhase, string(reservationJSON), reservation.WindowStart, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1769,7 +1786,7 @@ func (s *Service) markNextWindowReserved(ctx context.Context, attemptID uuid.UUI
 			attempt_id, billing_window_id, window_seq, reservation_shape,
 			reserved_quantity, pricing_phase, reservation_jsonb, state, window_start, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'reserved', $8, $9)
-	`, attemptID, next.WindowId, next.WindowSeq, next.ReservationShape, next.WindowSecs, next.PricingPhase, string(reservationJSON), next.WindowStart, reservedAt); err != nil {
+	`, attemptID, next.WindowId, next.WindowSeq, next.ReservationShape, next.WindowMillis, next.PricingPhase, string(reservationJSON), next.WindowStart, reservedAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -1926,12 +1943,12 @@ func (s *Service) markTerminal(ctx context.Context, executionID, attemptID uuid.
 	return tx.Commit()
 }
 
-func (s *Service) markWindowSettled(ctx context.Context, attemptID uuid.UUID, windowSeq, actualSeconds int, pricingPhase string, settledAt time.Time) error {
+func (s *Service) markWindowSettled(ctx context.Context, attemptID uuid.UUID, windowSeq, actualMillis int, pricingPhase string, settledAt time.Time) error {
 	_, err := s.PG.ExecContext(ctx, `
 		UPDATE execution_billing_windows
 		SET actual_quantity = $3, pricing_phase = $4, state = 'settled', settled_at = $5
 		WHERE attempt_id = $1 AND window_seq = $2
-	`, attemptID, windowSeq, actualSeconds, pricingPhase, settledAt)
+	`, attemptID, windowSeq, actualMillis, pricingPhase, settledAt)
 	return err
 }
 
@@ -2197,7 +2214,7 @@ func (s *Service) recordExecutionCompletion(
 		"execution_id", executionID,
 		"attempt_id", attemptID,
 		"state", outcome.State,
-		"actual_quantity", actualSecondsForReservation(reservation, outcome.CompletedAt),
+		"actual_quantity_ms", actualMillisForOutcome(reservation, outcome, 0),
 		"charge_units", charge,
 		"pricing_phase", reservation.PricingPhase,
 	)
@@ -2462,33 +2479,52 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func actualSecondsForReservation(reservation billingclient.Reservation, endedAt time.Time) int {
-	return actualSecondsForWindow(reservation.WindowStart, endedAt, int(reservation.WindowSecs))
+func actualMillisForReservation(reservation billingclient.Reservation, endedAt time.Time) int {
+	return actualMillisForWindow(reservation.WindowStart, endedAt, int(reservation.WindowMillis))
 }
 
-func actualSecondsForWindow(windowStart, endedAt time.Time, windowSeconds int) int {
-	if windowSeconds <= 0 {
+func actualMillisForWindow(windowStart, endedAt time.Time, windowMillis int) int {
+	if windowMillis <= 0 {
 		return 1
 	}
 	if endedAt.IsZero() {
 		endedAt = time.Now().UTC()
 	}
 	startedAt := windowStart.UTC()
-	seconds := int(endedAt.UTC().Sub(startedAt) / time.Second)
-	if seconds <= 0 {
-		seconds = 1
+	elapsed := endedAt.UTC().Sub(startedAt)
+	millis := int((elapsed + time.Millisecond - 1) / time.Millisecond)
+	if millis <= 0 {
+		millis = 1
 	}
-	if seconds > windowSeconds {
-		return windowSeconds
+	if millis > windowMillis {
+		return windowMillis
 	}
-	return seconds
+	return millis
 }
 
-func chargeUnits(costPerSec int64, seconds int) uint64 {
-	if costPerSec <= 0 || seconds <= 0 {
+func actualMillisForOutcome(reservation billingclient.Reservation, outcome executionOutcome, settledQuantity int64) int {
+	windowMillis := int64(reservation.WindowMillis)
+	if windowMillis <= 0 {
+		return actualMillisForReservation(reservation, outcome.CompletedAt)
+	}
+	if outcome.DurationMs > 0 {
+		remaining := outcome.DurationMs - settledQuantity
+		if remaining <= 0 {
+			return 0
+		}
+		if remaining > windowMillis {
+			return int(windowMillis)
+		}
+		return int(remaining)
+	}
+	return actualMillisForReservation(reservation, outcome.CompletedAt)
+}
+
+func chargeUnits(costPerMillis int64, millis int) uint64 {
+	if costPerMillis <= 0 || millis <= 0 {
 		return 0
 	}
-	return uint64(costPerSec) * uint64(seconds)
+	return uint64(costPerMillis) * uint64(millis)
 }
 
 func buildBillingAllocation(vcpus int, memMiB int, rootfsProvisionedBytes uint64) map[string]float64 {

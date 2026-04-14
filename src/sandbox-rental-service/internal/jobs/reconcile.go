@@ -326,9 +326,9 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 			return fmt.Errorf("mark reconciled window activated %s: %w", candidate.AttemptID, err)
 		}
 	}
-	actualSeconds := actualSecondsForReservation(candidate.Reservation, candidate.CompletedAt.Time)
-	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualSeconds), nil); err != nil {
-		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_quantity=%d error=%v", candidate.WindowSeq, actualSeconds, err)
+	actualMillis := actualMillisForOutcome(candidate.Reservation, outcomeFromCandidate(candidate), 0)
+	if err := s.Billing.Settle(ctx, candidate.Reservation, uint32(actualMillis), nil); err != nil {
+		s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settle failed window_seq=%d actual_quantity_ms=%d error=%v", candidate.WindowSeq, actualMillis, err)
 		candidate.FailureReason = "billing_settle_failed"
 		if updateErr := s.markFinalizing(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); updateErr != nil {
 			return fmt.Errorf("persist billing failure on reconciled attempt %s: %w", candidate.AttemptID, updateErr)
@@ -339,8 +339,8 @@ func (s *Service) settleReconciledAttempt(ctx context.Context, candidate reconci
 		return nil
 	}
 	settledAt := time.Now().UTC()
-	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_quantity=%d", candidate.WindowSeq, actualSeconds)
-	if err := s.markWindowSettled(ctx, candidate.AttemptID, candidate.WindowSeq, actualSeconds, candidate.Reservation.PricingPhase, settledAt); err != nil {
+	s.writeSystemLog(ctx, candidate.ExecutionID, candidate.AttemptID, "reconciler settled reserved window_seq=%d actual_quantity_ms=%d", candidate.WindowSeq, actualMillis)
+	if err := s.markWindowSettled(ctx, candidate.AttemptID, candidate.WindowSeq, actualMillis, candidate.Reservation.PricingPhase, settledAt); err != nil {
 		return fmt.Errorf("mark reconciled window settled %s: %w", candidate.AttemptID, err)
 	}
 	if err := s.markTerminal(ctx, candidate.ExecutionID, candidate.AttemptID, outcomeFromCandidate(candidate)); err != nil {
@@ -453,7 +453,7 @@ func (candidate reconcileCandidate) reservation() billingclient.Reservation {
 		SourceRef:        candidate.AttemptID.String(),
 		WindowSeq:        int32(candidate.WindowSeq),
 		ReservationShape: candidate.ReservationShape,
-		WindowSecs:       int32(candidate.ReservedQuantity),
+		WindowMillis:     int32(candidate.ReservedQuantity),
 		PricingPhase:     candidate.PricingPhase,
 		WindowStart:      candidate.WindowStart.UTC(),
 		ActivatedAt:      activatedAt,
@@ -464,8 +464,8 @@ func applyRunSnapshotToCandidate(candidate reconcileCandidate, snapshot vmorches
 	candidate.CompletedAt = sql.NullTime{Time: time.Now().UTC(), Valid: true}
 	if snapshot.Result != nil {
 		candidate.ExitCode = snapshot.Result.ExitCode
-		candidate.DurationMs = snapshot.Result.Duration.Milliseconds()
-		if snapshot.Result.Duration <= 0 && candidate.StartedAt.Valid {
+		candidate.DurationMs = billableDurationMillis(*snapshot.Result, candidate.StartedAt.Time, candidate.CompletedAt.Time)
+		if candidate.DurationMs <= 0 && candidate.StartedAt.Valid {
 			candidate.DurationMs = candidate.CompletedAt.Time.Sub(candidate.StartedAt.Time).Milliseconds()
 		}
 	}

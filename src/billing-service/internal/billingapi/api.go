@@ -397,7 +397,7 @@ func entitlementSlot(slot billing.EntitlementSlot) apiwire.BillingEntitlementSlo
 }
 
 func contractResponse(contract billing.ContractRecord) apiwire.BillingContract {
-	return apiwire.BillingContract{ContractID: contract.ContractID, ProductID: contract.ProductID, PlanID: contract.PlanID, PhaseID: contract.PhaseID, CadenceKind: contract.CadenceKind, Status: contract.Status, PaymentState: contract.PaymentState, EntitlementState: contract.EntitlementState, StartsAt: contract.StartsAt, EndsAt: contract.EndsAt, PhaseStart: contract.PhaseStart, PhaseEnd: contract.PhaseEnd}
+	return apiwire.BillingContract{ContractID: contract.ContractID, ProductID: contract.ProductID, PlanID: contract.PlanID, PhaseID: contract.PhaseID, CadenceKind: contract.CadenceKind, Status: contract.Status, PaymentState: contract.PaymentState, EntitlementState: contract.EntitlementState, PendingChangeID: contract.PendingChangeID, PendingChangeType: contract.PendingChangeType, PendingChangeTargetPlanID: contract.PendingChangeTargetPlanID, PendingChangeEffectiveAt: contract.PendingChangeEffectiveAt, StartsAt: contract.StartsAt, EndsAt: contract.EndsAt, PhaseStart: contract.PhaseStart, PhaseEnd: contract.PhaseEnd}
 }
 
 func reservationResponse(reservation billing.WindowReservation) apiwire.BillingWindowReservation {

@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	defaultWindowSeconds uint32 = 300
-	defaultRenewBefore   uint32 = 30
+	defaultWindowMillis  uint32 = 5 * 60 * 1000
+	defaultRenewBefore   uint32 = 30 * 1000
 	pricingPhaseIncluded        = "included"
 )
 
@@ -32,6 +32,7 @@ type pricingContext struct {
 	SKURates           map[string]uint64 `json:"sku_rates"`
 	SKUBuckets         map[string]string `json:"sku_buckets"`
 	SKUDisplayNames    map[string]string `json:"sku_display_names"`
+	SKUQuantityUnits   map[string]string `json:"sku_quantity_units"`
 	BucketDisplayNames map[string]string `json:"bucket_display_names"`
 	CostPerUnit        uint64            `json:"cost_per_unit"`
 }
@@ -160,7 +161,7 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 		if err != nil {
 			return err
 		}
-		quantity := defaultWindowSeconds
+		quantity := defaultWindowMillis
 		componentCharges, bucketCharges, costPerUnit, err := computeWindowCharges(req.Allocation, pricing.SKURates, pricing.SKUBuckets, quantity)
 		if err != nil {
 			return err
@@ -200,8 +201,8 @@ func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowR
 			return err
 		}
 		windowID := billingWindowID(req.ProductID, req.SourceType, req.SourceRef, req.WindowSeq)
-		expiresAt := now.Add(time.Duration(quantity) * time.Second)
-		renewBy := expiresAt.Add(-time.Duration(defaultRenewBefore) * time.Second)
+		expiresAt := now.Add(time.Duration(quantity) * time.Millisecond)
+		renewBy := expiresAt.Add(-time.Duration(defaultRenewBefore) * time.Millisecond)
 		if !renewBy.After(now) {
 			renewBy = expiresAt
 		}
@@ -256,16 +257,16 @@ func (c *Client) ActivateWindow(ctx context.Context, windowID string, activatedA
 	if activatedAt.After(window.ExpiresAt) {
 		return WindowReservation{}, fmt.Errorf("%w: reservation expired", ErrWindowNotReserved)
 	}
-	renewBy := activatedAt.Add(time.Duration(window.ReservedQuantity-defaultRenewBefore) * time.Second)
+	renewBy := activatedAt.Add(time.Duration(window.ReservedQuantity-defaultRenewBefore) * time.Millisecond)
 	if !renewBy.After(activatedAt) {
-		renewBy = activatedAt.Add(time.Duration(window.ReservedQuantity) * time.Second)
+		renewBy = activatedAt.Add(time.Duration(window.ReservedQuantity) * time.Millisecond)
 	}
 	err = c.WithTx(ctx, "billing.window.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
 		ct, err := tx.Exec(ctx, `
 			UPDATE billing_windows
 			SET state = 'active', window_start = $2, activated_at = $2, expires_at = $3, renew_by = $4
 			WHERE window_id = $1 AND state = 'reserved' AND activated_at IS NULL
-		`, windowID, activatedAt, activatedAt.Add(time.Duration(window.ReservedQuantity)*time.Second), renewBy)
+		`, windowID, activatedAt, activatedAt.Add(time.Duration(window.ReservedQuantity)*time.Millisecond), renewBy)
 		if err != nil {
 			return fmt.Errorf("activate billing window: %w", err)
 		}
@@ -317,7 +318,7 @@ func (c *Client) SettleWindow(ctx context.Context, windowID string, actualQuanti
 	if err != nil {
 		return SettleResult{}, fmt.Errorf("marshal usage summary: %w", err)
 	}
-	settledFundingLegs := settleFundingLegs(window.FundingLegs, window.ReservedQuantity, billable, billedUnits)
+	settledFundingLegs := settleFundingLegs(window.FundingLegs, componentBilled)
 	fundingJSON, err := fundingLegsJSON(settledFundingLegs)
 	if err != nil {
 		return SettleResult{}, err
@@ -588,9 +589,10 @@ func (c *Client) loadPricingContextTx(ctx context.Context, tx pgx.Tx, orgID OrgI
 	out.SKURates = map[string]uint64{}
 	out.SKUBuckets = map[string]string{}
 	out.SKUDisplayNames = map[string]string{}
+	out.SKUQuantityUnits = map[string]string{}
 	out.BucketDisplayNames = map[string]string{}
 	rows, err := tx.Query(ctx, `
-		SELECT r.sku_id, r.unit_rate, s.bucket_id, s.display_name, b.display_name
+		SELECT r.sku_id, r.unit_rate, s.bucket_id, s.display_name, s.quantity_unit, b.display_name
 		FROM plan_sku_rates r
 		JOIN skus s ON s.sku_id = r.sku_id
 		JOIN credit_buckets b ON b.bucket_id = s.bucket_id
@@ -602,14 +604,15 @@ func (c *Client) loadPricingContextTx(ctx context.Context, tx pgx.Tx, orgID OrgI
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var skuID, bucketID, skuName, bucketName string
+		var skuID, bucketID, skuName, quantityUnit, bucketName string
 		var rate int64
-		if err := rows.Scan(&skuID, &rate, &bucketID, &skuName, &bucketName); err != nil {
+		if err := rows.Scan(&skuID, &rate, &bucketID, &skuName, &quantityUnit, &bucketName); err != nil {
 			return pricingContext{}, fmt.Errorf("scan sku rate: %w", err)
 		}
 		out.SKURates[skuID] = uint64(rate)
 		out.SKUBuckets[skuID] = bucketID
 		out.SKUDisplayNames[skuID] = skuName
+		out.SKUQuantityUnits[skuID] = quantityUnit
 		out.BucketDisplayNames[bucketID] = bucketName
 	}
 	if err := rows.Err(); err != nil {
@@ -662,7 +665,7 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 	rows, err := tx.Query(ctx, `
 		SELECT g.grant_id, g.scope_type, COALESCE(g.scope_product_id,''), COALESCE(g.scope_bucket_id,''), COALESCE(g.scope_sku_id,''),
 		       g.amount, g.source, g.source_reference_id, COALESCE(g.entitlement_period_id,''), g.policy_version,
-		       COALESCE(cp.plan_id,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
+		       COALESCE(cp.plan_id,''), COALESCE(pl.tier,''), COALESCE(pl.display_name,''), g.starts_at, g.period_start, g.period_end, g.expires_at
 		FROM credit_grants g
 		LEFT JOIN entitlement_periods ep ON ep.period_id = g.entitlement_period_id
 		LEFT JOIN contract_phases cp ON cp.phase_id = ep.phase_id
@@ -684,7 +687,7 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 		var grant GrantBalance
 		var amount int64
 		var periodStart, periodEnd, expiresAt pgtype.Timestamptz
-		if err := rows.Scan(&grant.GrantID, &grant.ScopeType, &grant.ScopeProductID, &grant.ScopeBucketID, &grant.ScopeSKUID, &amount, &grant.Source, &grant.SourceReferenceID, &grant.EntitlementPeriodID, &grant.PolicyVersion, &grant.PlanID, &grant.PlanDisplayName, &grant.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
+		if err := rows.Scan(&grant.GrantID, &grant.ScopeType, &grant.ScopeProductID, &grant.ScopeBucketID, &grant.ScopeSKUID, &amount, &grant.Source, &grant.SourceReferenceID, &grant.EntitlementPeriodID, &grant.PolicyVersion, &grant.PlanID, &grant.PlanTier, &grant.PlanDisplayName, &grant.StartsAt, &periodStart, &periodEnd, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan grant for reservation: %w", err)
 		}
 		grant.OrgID = orgID
@@ -700,7 +703,10 @@ func (c *Client) grantBalancesTx(ctx context.Context, tx pgx.Tx, orgID OrgID, pr
 		}
 		out = append(out, grant)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return grantsByFundingPriority(out), nil
 }
 
 func (c *Client) grantUsageTx(ctx context.Context, tx pgx.Tx, orgID OrgID) (map[string]uint64, map[string]uint64, error) {
@@ -782,7 +788,7 @@ func (c *Client) projectMeteringForWindow(ctx context.Context, w persistedWindow
 			componentBySource[leg.Source][leg.ComponentSKUID] += leg.Amount
 		}
 	}
-	endedAt := w.WindowStart.Add(time.Duration(w.ActualQuantity) * time.Second)
+	endedAt := w.WindowStart.Add(time.Duration(w.ActualQuantity) * time.Millisecond)
 	if w.SettledAt != nil && w.ActualQuantity == 0 {
 		endedAt = *w.SettledAt
 	}
@@ -893,40 +899,18 @@ func fundingLegsForComponent(legs []fundingLeg, skuID string) uint64 {
 	return out
 }
 
-func settleFundingLegs(legs []fundingLeg, reservedQuantity uint32, billableQuantity uint32, billedAmount uint64) []fundingLeg {
-	if billedAmount == 0 || billableQuantity == 0 || len(legs) == 0 {
+func settleFundingLegs(legs []fundingLeg, componentBilled map[string]uint64) []fundingLeg {
+	if len(legs) == 0 || len(componentBilled) == 0 {
 		return []fundingLeg{}
 	}
-	if reservedQuantity == 0 || billableQuantity >= reservedQuantity {
-		return trimFundingLegs(legs, billedAmount)
-	}
-	scaled := make([]fundingLeg, 0, len(legs))
-	var cumulative, emitted uint64
+	remainingBySKU := cloneUintMap(componentBilled)
+	trimmed := make([]fundingLeg, 0, len(componentBilled))
 	for _, leg := range legs {
-		cumulative += leg.Amount * uint64(billableQuantity)
-		amount := cumulative/uint64(reservedQuantity) - emitted
-		if amount == 0 {
+		if leg.Amount == 0 || leg.ComponentSKUID == "" {
 			continue
 		}
-		next := leg
-		next.Amount = amount
-		scaled = append(scaled, next)
-		emitted += amount
-	}
-	return trimFundingLegs(scaled, billedAmount)
-}
-
-func trimFundingLegs(legs []fundingLeg, maxAmount uint64) []fundingLeg {
-	if maxAmount == 0 || len(legs) == 0 {
-		return []fundingLeg{}
-	}
-	trimmed := make([]fundingLeg, 0, len(legs))
-	remaining := maxAmount
-	for _, leg := range legs {
+		remaining := remainingBySKU[leg.ComponentSKUID]
 		if remaining == 0 {
-			break
-		}
-		if leg.Amount == 0 {
 			continue
 		}
 		next := leg
@@ -934,7 +918,7 @@ func trimFundingLegs(legs []fundingLeg, maxAmount uint64) []fundingLeg {
 			next.Amount = remaining
 		}
 		trimmed = append(trimmed, next)
-		remaining -= next.Amount
+		remainingBySKU[leg.ComponentSKUID] = remaining - next.Amount
 	}
 	return trimmed
 }

@@ -30,12 +30,12 @@ export function useCreateCheckoutSessionMutation() {
 
 export function useCreateContractSessionMutation() {
   return useMutation({
-    mutationFn: (planId: string) =>
+    mutationFn: ({ planId, action = "start" }: { planId: string; action?: string }) =>
       createContractSession({
         data: {
           plan_id: planId,
           cadence: "monthly",
-          success_url: `${window.location.origin}/billing?contracted=true`,
+          success_url: billingSuccessURL({ contractAction: action, targetPlanID: planId }),
           cancel_url: `${window.location.origin}/billing/subscribe`,
         },
       }),
@@ -47,12 +47,23 @@ export function useCreateContractSessionMutation() {
 
 export function useCreateContractChangeSessionMutation() {
   return useMutation({
-    mutationFn: ({ contractId, targetPlanId }: { contractId: string; targetPlanId: string }) =>
+    mutationFn: ({
+      contractId,
+      targetPlanId,
+      action,
+    }: {
+      contractId: string;
+      targetPlanId: string;
+      action: "upgrade" | "downgrade" | "resume";
+    }) =>
       createContractChangeSession({
         data: {
           contract_id: contractId,
           target_plan_id: targetPlanId,
-          success_url: `${window.location.origin}/billing?contracted=true`,
+          success_url: billingSuccessURL({
+            contractAction: action,
+            targetPlanID: targetPlanId,
+          }),
           cancel_url: `${window.location.origin}/billing/subscribe`,
         },
       }),
@@ -98,3 +109,8 @@ export function useCancelContractMutation() {
 
 export { useCreateCheckoutSessionMutation as useCreditCheckoutMutation };
 export { useCreatePortalSessionMutation as useBillingPortalMutation };
+
+function billingSuccessURL(params: Record<string, string>) {
+  const search = new URLSearchParams({ contracted: "true", ...params });
+  return `${window.location.origin}/billing?${search.toString()}`;
+}

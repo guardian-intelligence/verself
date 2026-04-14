@@ -263,8 +263,8 @@ func parseReservation(in apiwire.BillingWindowReservation) (Reservation, error) 
 		}
 		skuRates[key] = int64(parsed)
 	}
-	costPerSec := in.CostPerUnit.Uint64()
-	if costPerSec > math.MaxInt64 {
+	costPerMillis := in.CostPerUnit.Uint64()
+	if costPerMillis > math.MaxInt64 {
 		return Reservation{}, fmt.Errorf("billing-client: reservation cost_per_unit exceeds int64")
 	}
 	reservation := Reservation{
@@ -277,11 +277,11 @@ func parseReservation(in apiwire.BillingWindowReservation) (Reservation, error) 
 		SourceRef:        in.SourceRef,
 		WindowSeq:        int32(in.WindowSeq),
 		ReservationShape: in.ReservationShape,
-		WindowSecs:       int32(in.ReservedQuantity),
+		WindowMillis:     int32(in.ReservedQuantity),
 		PricingPhase:     in.PricingPhase,
 		Allocation:       in.Allocation,
 		SKURates:         skuRates,
-		CostPerSec:       int64(costPerSec),
+		CostPerMillis:    int64(costPerMillis),
 		WindowStart:      in.WindowStart.UTC(),
 		ExpiresAt:        in.ExpiresAt.UTC(),
 	}

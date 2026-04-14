@@ -140,18 +140,22 @@ type PlanRecord struct {
 }
 
 type ContractRecord struct {
-	ContractID       string
-	ProductID        string
-	PlanID           string
-	PhaseID          string
-	CadenceKind      string
-	Status           string
-	PaymentState     string
-	EntitlementState string
-	StartsAt         time.Time
-	EndsAt           *time.Time
-	PhaseStart       *time.Time
-	PhaseEnd         *time.Time
+	ContractID                string
+	ProductID                 string
+	PlanID                    string
+	PhaseID                   string
+	CadenceKind               string
+	Status                    string
+	PaymentState              string
+	EntitlementState          string
+	PendingChangeID           string
+	PendingChangeType         string
+	PendingChangeTargetPlanID string
+	PendingChangeEffectiveAt  *time.Time
+	StartsAt                  time.Time
+	EndsAt                    *time.Time
+	PhaseStart                *time.Time
+	PhaseEnd                  *time.Time
 }
 
 type GrantBalance struct {
@@ -166,6 +170,7 @@ type GrantBalance struct {
 	EntitlementPeriodID string
 	PolicyVersion       string
 	PlanID              string
+	PlanTier            string
 	PlanDisplayName     string
 	StartsAt            time.Time
 	PeriodStart         *time.Time

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -71,7 +72,10 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 	contractID := contractID(orgID, plan.ProductID)
 	if existing, err := c.GetContract(ctx, orgID, contractID); err == nil {
 		if existing.PlanID == planID && (existing.Status == "active" || existing.Status == "cancel_scheduled") {
-			return successURL, nil
+			if _, err := c.resumeCurrentPlan(ctx, orgID, existing); err != nil {
+				return "", err
+			}
+			return contractReturnURL(successURL, map[string]string{"contractAction": "resume", "targetPlanID": planID}), nil
 		}
 		result, err := c.CreateContractChange(ctx, orgID, contractID, ContractChangeRequest{TargetPlanID: planID, SuccessURL: successURL, CancelURL: cancelURL})
 		if err != nil {
@@ -89,7 +93,7 @@ func (c *Client) CreateContract(ctx context.Context, orgID OrgID, planID string,
 		if err := c.activateCatalogContract(ctx, orgID, plan.ProductID, planID, contractID, phaseID(contractID, planID, now), now, now); err != nil {
 			return "", err
 		}
-		return successURL, nil
+		return contractReturnURL(successURL, map[string]string{"contractAction": "start", "targetPlanID": planID}), nil
 	}
 	customerID, err := c.ensureStripeCustomer(ctx, orgID)
 	if err != nil {
@@ -153,7 +157,38 @@ func (c *Client) GetContract(ctx context.Context, orgID OrgID, contractID string
 	record.EndsAt = normalizeTimePtr(endsAt)
 	record.PhaseStart = normalizeTimePtr(phaseStart)
 	record.PhaseEnd = normalizeTimePtr(phaseEnd)
+	if err := c.loadPendingScheduledContractChange(ctx, orgID, &record); err != nil {
+		return ContractRecord{}, err
+	}
 	return record, nil
+}
+
+func (c *Client) loadPendingScheduledContractChange(ctx context.Context, orgID OrgID, record *ContractRecord) error {
+	if record == nil || record.ContractID == "" {
+		return nil
+	}
+	var effectiveAt time.Time
+	err := c.pg.QueryRow(ctx, `
+		SELECT change_id, change_type, COALESCE(target_plan_id, '') AS target_plan_id, requested_effective_at
+		FROM contract_changes
+		WHERE contract_id = $1
+		  AND org_id = $2
+		  AND product_id = $3
+		  AND state = 'scheduled'
+		  AND timing = 'period_end'
+		  AND change_type IN ('downgrade', 'cancel')
+		ORDER BY requested_effective_at, change_id
+		LIMIT 1
+	`, record.ContractID, orgIDText(orgID), record.ProductID).Scan(&record.PendingChangeID, &record.PendingChangeType, &record.PendingChangeTargetPlanID, &effectiveAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load pending scheduled contract change %s: %w", record.ContractID, err)
+	}
+	effectiveAt = effectiveAt.UTC()
+	record.PendingChangeEffectiveAt = &effectiveAt
+	return nil
 }
 
 func (c *Client) CancelContract(ctx context.Context, orgID OrgID, contractID string) (ContractRecord, error) {
@@ -215,14 +250,21 @@ func (c *Client) CreateContractChange(ctx context.Context, orgID OrgID, contract
 		return ContractChangeResult{}, fmt.Errorf("%w: plan product mismatch", ErrUnsupportedChange)
 	}
 	if target.PlanID == current.PlanID {
-		return ContractChangeResult{URL: req.SuccessURL, Status: "unchanged"}, nil
-	}
-	if target.MonthlyAmountCents <= current.MonthlyAmountCents {
-		change, err := c.scheduleDowngrade(ctx, orgID, existing, target.PlanID)
+		resumed, err := c.resumeCurrentPlan(ctx, orgID, existing)
 		if err != nil {
 			return ContractChangeResult{}, err
 		}
-		return ContractChangeResult{URL: req.SuccessURL, ChangeID: change, Status: "scheduled"}, nil
+		if resumed {
+			return ContractChangeResult{URL: contractReturnURL(req.SuccessURL, map[string]string{"contractAction": "resume", "targetPlanID": target.PlanID}), Status: "resumed"}, nil
+		}
+		return ContractChangeResult{URL: contractReturnURL(req.SuccessURL, map[string]string{"contractAction": "unchanged", "targetPlanID": target.PlanID}), Status: "unchanged"}, nil
+	}
+	if target.MonthlyAmountCents <= current.MonthlyAmountCents {
+		change, effectiveAt, err := c.scheduleDowngrade(ctx, orgID, existing, target.PlanID)
+		if err != nil {
+			return ContractChangeResult{}, err
+		}
+		return ContractChangeResult{URL: contractReturnURL(req.SuccessURL, map[string]string{"contractAction": "downgrade", "contractEffectiveAt": effectiveAt.Format(time.RFC3339Nano), "targetPlanID": target.PlanID}), ChangeID: change, Status: "scheduled"}, nil
 	}
 	quote, err := c.prepareUpgradeQuote(ctx, orgID, existing, current, target)
 	if err != nil {
@@ -252,19 +294,121 @@ func (c *Client) CreateContractChange(ctx context.Context, orgID OrgID, contract
 		if err := c.applyPaidUpgrade(ctx, quote, providerInvoiceID); err != nil {
 			return ContractChangeResult{}, err
 		}
-		url = req.SuccessURL
+		url = contractReturnURL(req.SuccessURL, map[string]string{"contractAction": "upgrade", "contractEffectiveAt": quote.EffectiveAt.Format(time.RFC3339Nano), "targetPlanID": target.PlanID})
 	}
 	return ContractChangeResult{URL: url, ChangeID: quote.ChangeID, InvoiceID: invoiceID(quote.ChangeID), Status: status, PriceDeltaUnits: quote.PriceDeltaUnits}, nil
 }
 
-func (c *Client) scheduleDowngrade(ctx context.Context, orgID OrgID, existing ContractRecord, targetPlanID string) (string, error) {
-	cycle, err := c.EnsureOpenBillingCycle(ctx, orgID, existing.ProductID)
-	if err != nil {
-		return "", err
+type scheduledChangeToCancel struct {
+	ChangeID             string
+	ChangeType           string
+	TargetPlanID         string
+	RequestedEffectiveAt time.Time
+}
+
+func (c *Client) resumeCurrentPlan(ctx context.Context, orgID OrgID, existing ContractRecord) (bool, error) {
+	if existing.ContractID == "" || existing.PlanID == "" {
+		return false, nil
 	}
 	now, err := c.BusinessNow(ctx, c.queries, orgID, existing.ProductID)
 	if err != nil {
-		return "", err
+		return false, err
+	}
+	resumed := false
+	err = c.WithTx(ctx, "billing.contract.resume_current_plan", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		rows, err := tx.Query(ctx, `
+			SELECT change_id, change_type, COALESCE(target_plan_id, ''), requested_effective_at
+			FROM contract_changes
+			WHERE contract_id = $1
+			  AND org_id = $2
+			  AND product_id = $3
+			  AND state = 'scheduled'
+			  AND timing = 'period_end'
+			  AND change_type IN ('downgrade', 'cancel')
+			ORDER BY requested_effective_at, change_id
+			FOR UPDATE
+		`, existing.ContractID, orgIDText(orgID), existing.ProductID)
+		if err != nil {
+			return fmt.Errorf("query scheduled contract changes to resume: %w", err)
+		}
+		defer rows.Close()
+		changes := []scheduledChangeToCancel{}
+		for rows.Next() {
+			var change scheduledChangeToCancel
+			if err := rows.Scan(&change.ChangeID, &change.ChangeType, &change.TargetPlanID, &change.RequestedEffectiveAt); err != nil {
+				return fmt.Errorf("scan scheduled contract change to resume: %w", err)
+			}
+			change.RequestedEffectiveAt = change.RequestedEffectiveAt.UTC()
+			changes = append(changes, change)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("scan scheduled contract changes to resume: %w", err)
+		}
+		if len(changes) == 0 {
+			return nil
+		}
+		resumed = true
+		if _, err := tx.Exec(ctx, `
+			UPDATE contract_changes
+			SET state = 'canceled',
+			    updated_at = now()
+			WHERE contract_id = $1
+			  AND org_id = $2
+			  AND product_id = $3
+			  AND state = 'scheduled'
+			  AND timing = 'period_end'
+			  AND change_type IN ('downgrade', 'cancel')
+		`, existing.ContractID, orgIDText(orgID), existing.ProductID); err != nil {
+			return fmt.Errorf("cancel scheduled contract changes during resume: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE contracts
+			SET state = CASE WHEN state = 'cancel_scheduled' THEN 'active' ELSE state END,
+			    ends_at = NULL,
+			    cancel_at = NULL,
+			    closed_at = NULL,
+			    updated_at = now()
+			WHERE contract_id = $1
+			  AND org_id = $2
+			  AND state IN ('active', 'past_due', 'suspended', 'cancel_scheduled')
+		`, existing.ContractID, orgIDText(orgID)); err != nil {
+			return fmt.Errorf("restore current contract during resume: %w", err)
+		}
+		for _, change := range changes {
+			if change.ChangeType == "cancel" {
+				if _, err := tx.Exec(ctx, `
+					UPDATE contract_phases
+					SET effective_end = NULL,
+					    updated_at = now()
+					WHERE contract_id = $1
+					  AND org_id = $2
+					  AND product_id = $3
+					  AND state IN ('active', 'grace', 'scheduled')
+					  AND effective_end = $4
+				`, existing.ContractID, orgIDText(orgID), existing.ProductID, change.RequestedEffectiveAt); err != nil {
+					return fmt.Errorf("restore phase boundary during cancellation resume: %w", err)
+				}
+			}
+			if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_canceled", AggregateType: "contract_change", AggregateID: change.ChangeID, OrgID: orgID, ProductID: existing.ProductID, OccurredAt: now, Payload: map[string]any{"contract_id": existing.ContractID, "change_id": change.ChangeID, "change_type": change.ChangeType, "target_plan_id": change.TargetPlanID, "pricing_plan_id": existing.PlanID, "requested_effective_at": change.RequestedEffectiveAt.Format(time.RFC3339Nano), "reason": "resume_current_plan"}}); err != nil {
+				return err
+			}
+		}
+		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_resume_applied", AggregateType: "contract", AggregateID: existing.ContractID, OrgID: orgID, ProductID: existing.ProductID, OccurredAt: now, Payload: map[string]any{"contract_id": existing.ContractID, "pricing_plan_id": existing.PlanID, "canceled_changes": len(changes), "reason": "resume_current_plan"}})
+	})
+	if err != nil {
+		return false, err
+	}
+	return resumed, nil
+}
+
+func (c *Client) scheduleDowngrade(ctx context.Context, orgID OrgID, existing ContractRecord, targetPlanID string) (string, time.Time, error) {
+	cycle, err := c.EnsureOpenBillingCycle(ctx, orgID, existing.ProductID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	now, err := c.BusinessNow(ctx, c.queries, orgID, existing.ProductID)
+	if err != nil {
+		return "", time.Time{}, err
 	}
 	changeID := changeID(existing.ContractID, targetPlanID, cycle.EndsAt)
 	toPhaseID := phaseID(existing.ContractID, targetPlanID, cycle.EndsAt)
@@ -279,7 +423,25 @@ func (c *Client) scheduleDowngrade(ctx context.Context, orgID OrgID, existing Co
 		}
 		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_change_scheduled", AggregateType: "contract_change", AggregateID: changeID, OrgID: orgID, ProductID: existing.ProductID, OccurredAt: now, Payload: map[string]any{"contract_id": existing.ContractID, "change_id": changeID, "cycle_id": cycle.CycleID, "from_phase_id": existing.PhaseID, "to_phase_id": toPhaseID, "target_plan_id": targetPlanID}})
 	})
-	return changeID, err
+	return changeID, cycle.EndsAt, err
+}
+
+func contractReturnURL(rawURL string, params map[string]string) string {
+	if rawURL == "" || len(params) == 0 {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	query := parsed.Query()
+	for key, value := range params {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func (c *Client) prepareUpgradeQuote(ctx context.Context, orgID OrgID, existing ContractRecord, current PlanRecord, target PlanRecord) (contractChangeQuote, error) {

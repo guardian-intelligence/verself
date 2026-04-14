@@ -323,6 +323,12 @@ CREATE INDEX contract_changes_due_idx
 CREATE INDEX contract_changes_contract_idx
     ON contract_changes (contract_id, requested_effective_at DESC, change_id);
 
+CREATE UNIQUE INDEX contract_changes_one_scheduled_period_end_idx
+    ON contract_changes (contract_id)
+    WHERE state = 'scheduled'
+      AND timing = 'period_end'
+      AND change_type IN ('downgrade', 'cancel');
+
 CREATE UNIQUE INDEX contract_changes_provider_request_idx
     ON contract_changes (provider, provider_request_id)
     WHERE provider IS NOT NULL AND provider_request_id IS NOT NULL;
