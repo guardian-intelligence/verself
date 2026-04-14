@@ -62,6 +62,35 @@ These scripts do not export the Zitadel admin PAT, ClickHouse password,
 Stalwart direct protocol passwords, or Forgejo provider API token. Those remain
 behind the existing operator wrappers and remote credstore files.
 
+Use the helper below to move a seeded user's billing fixture state quickly when
+you need to run end-to-end scenarios against a known plan tier or prepaid
+balance:
+
+```bash
+DOMAIN="$(cd src/platform && awk -F'"' '/^forge_metal_domain:/{print $2}' ansible/group_vars/all/main.yml)"
+make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=free
+make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=hobby
+make set-user-state EMAIL="ceo@${DOMAIN}" ORG=platform STATE=pro BALANCE_CENTS=10000
+make set-user-state EMAIL=ceo@example.com ORG_ID=123 PLAN_ID=sandbox-pro BALANCE_UNITS=500000000 BUSINESS_NOW=2026-04-13T12:00:00Z
+```
+
+The helper is implemented at `src/platform/scripts/set-user-state.sh`. It builds
+and runs `src/billing-service/cmd/billing-set-user-state` on the target node so
+contract, cycle, entitlement, grant, clock override, and billing event rows use
+the same ID rules as billing-service. It is an operator/test fixture helper, not
+a customer API.
+
+Useful overrides:
+
+- `EMAIL` (required; written to `orgs.billing_email`)
+- `ORG` or `ORG_ID` (required; `ORG=platform` resolves the platform billing org)
+- `BILLING_PRODUCT_ID` (default: `sandbox`)
+- `STATE` (`free`, `hobby`, `pro`, or another plan tier)
+- `PLAN_ID` (exact plan id; `free`/`none` clears paid contracts)
+- `BALANCE_UNITS` or `BALANCE_CENTS` (exact account purchase balance)
+- `BUSINESS_NOW` (RFC3339/RFC3339Nano org-product billing clock override)
+- `OVERAGE_POLICY`, `TRUST_TIER`, `ORG_NAME`
+
 ### 5. Log in
 
 ```bash

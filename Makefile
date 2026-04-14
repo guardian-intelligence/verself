@@ -1,5 +1,6 @@
 .PHONY: test lint lint-conversions lint-ansible fmt vet tidy openapi openapi-check openapi-wire-check \
-       hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member billing-reset verification-reset \
+       hooks-install doctor inventory-check seed-system assume-persona assume-platform-admin assume-acme-admin assume-acme-member \
+       set-user-state billing-reset verification-reset \
        vm-guest-telemetry-build traces deploy-trace telemetry-proof telemetry-proof-fail clickhouse-shell clickhouse-query clickhouse-schemas mail mail-accounts mail-mailboxes \
        mail-code mail-read mail-send mail-send-agents mail-send-ceo mail-passwords edit-secrets verification-repo \
        wipe-pg-db vm-orchestrator-proof vm-orchestrator-proof-gap vm-orchestrator-proof-regression vm-orchestrator-proof-bridge-fault sandbox-inner sandbox-middle sandbox-proof scheduler-proof verify-scheduler grafana-proof services-doctor
@@ -16,6 +17,7 @@ OT       := src/otel
 INVENTORY := $(FM)/ansible/inventory/hosts.ini
 GO_DIRS  := $(AW) $(VMO) $(BS) $(IS) $(AM) $(SR) $(MS) $(OT)
 GO_PKGS  := $(addsuffix /...,$(addprefix ./,$(GO_DIRS)))
+BILLING_PRODUCT_ID ?= sandbox
 ASSUME_PERSONA_OUTPUT_FLAG := $(if $(OUTPUT),--output "$(OUTPUT)",)
 ASSUME_PERSONA_PRINT_FLAG := $(if $(filter 1 true yes,$(PRINT)),--print,)
 ASSUME_PERSONA_FLAGS := $(ASSUME_PERSONA_OUTPUT_FLAG) $(ASSUME_PERSONA_PRINT_FLAG)
@@ -107,6 +109,21 @@ assume-acme-admin: inventory-check ## Useful utility: write env for Acme org adm
 
 assume-acme-member: inventory-check ## Useful utility: write env for Acme org member persona
 	@cd $(FM) && ./scripts/assume-persona.sh acme-member $(ASSUME_PERSONA_FLAGS)
+
+set-user-state: inventory-check ## Set billing fixture state: make set-user-state EMAIL=ceo@example.com ORG=platform STATE=pro [BALANCE_CENTS=10000]
+	@cd $(FM) && ./scripts/set-user-state.sh \
+		--email "$(EMAIL)" \
+		--org "$(ORG)" \
+		--org-id "$(ORG_ID)" \
+		--org-name "$(ORG_NAME)" \
+		--state "$(STATE)" \
+		--plan-id "$(PLAN_ID)" \
+		--product-id "$(BILLING_PRODUCT_ID)" \
+		--balance-units "$(BALANCE_UNITS)" \
+		--balance-cents "$(BALANCE_CENTS)" \
+		--business-now "$(BUSINESS_NOW)" \
+		--overage-policy "$(OVERAGE_POLICY)" \
+		--trust-tier "$(TRUST_TIER)"
 
 billing-reset: inventory-check ## Exhaustively wipe billing state (TigerBeetle + billing PostgreSQL schema) and restart billing callers
 	cd $(FM)/ansible && ansible-playbook playbooks/billing-reset.yml

@@ -274,6 +274,7 @@ Architecture documents live with the service they describe:
 * Some directories have their own AGENTS.md file. When working inside those directories, please read them as they contain juicy context.
 * Edit beyond what you intded as a result of runting linters/formatters are expected. You don't have to worry about them.
 * When in doubt, use the industry standard pattern. Pagination, idempotency, rate limiting, OpenAPI, OpenTelemetry, state machines -- these and basically everything else are all solved problems with boring and battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
+* Do not provide time estimates.
 
 ## Tool Use Contract
 
@@ -287,21 +288,20 @@ Architecture documents live with the service they describe:
 
 * When providing a recommendation, consider different plausible options and provide a differentiated recommendation that leans towards a simpler solution that best fits the long term goal of this project.
 * Speculating that your code changes work as expected is not allowed. Unit tests and successful builds are low signal and are not to be trusted. Real observability traces in ClickHouse that exercise your modified code is the only admitted proof of code task-completion. ClickHouse currently exists for the purpose of producing verifiable completion artifacts. If a new schema is needed, you are permitted to create one.
-* Do not speculate about host-level causes (resource exhaustion, network issues, etc.) without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to environmental factors.
+* Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `make clickhouse-query` — check them before attributing failures to transient or pre-existing factors.
 * Do not stop work short of verifying your changes with a live rehearsal of a playbook to execute fresh rebuild and redeploy. You have full authority to wipe databases and recreate them as needed. In fact, prefer to do that over time-consuming and tricky migrations during this early phase of development.
 * The repo has a fixture flow that seeds Forgejo repos, submits direct VM executions through sandbox-rental-service, and verifies ClickHouse evidence.
 * When writing design documents, code comments, system architecture diagrams, API documentation, or any other kind of technical writing, ensure that the writing style targets the following audience: distinguished engineers that are experts in the relevant technologies but mostly just need information on how the system being described is different or deviates from standard practice. Avoid throat-clearing, get straight into the information.
-* When editing byte-layouts, avoid piecemeal edits as that's how you end up with contradictions.
 * Destructive commands like `git restore`, `git checkout -- <file>`, `rm -rf` will be blocked.
 
 ## Coding Contract
 
 * When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-* Prefer Ansible over shell scripts, except in extreme bootstrap cases.
+* Prefer Ansible over shell scripts
 * Ansible playbook files must have a newline at the end. This will be caught by `ansible-lint`.
 * Treat errors as data. Use tagged and structured errors to aid in control flow.
 * Avoid fallbacks and defaults in Ansible code. Ansible should fail fast with useful logging.
-* Remember the philosophy that tests will never be able to assert that a system works correctly. They only assert the absence of some set of bugs. Prefer fewer high-signal top-contour tests and pair happy-path tests with sad-path tests to improve the signal of both sides.
+* 1 e2e test of the website is worth 1000 unit tests. Avoid checking in unit tests, though they provide some benefit in some cases. It's better to have a comprehensive suite of e2e tests running as periodic canaries.
 * Package management for python must be done with `uv` do not use pip or conda.
 * Don't resolve failures through silent no-ops and imperative checks. Failures should be loud and signals should be followed in order to address root causes.
 * PostgreSQL migrations live with the service that owns the schema (e.g. `src/billing-service/migrations/`), one database per service; the platform provisions databases and roles, the service's Ansible role applies its migrations.
