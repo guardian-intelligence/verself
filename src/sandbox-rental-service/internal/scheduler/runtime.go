@@ -48,11 +48,10 @@ type Runtime struct {
 }
 
 type ProbeRequest struct {
-	Message           string
-	OrgID             uint64
-	ActorID           string
-	VerificationRunID string
-	CorrelationID     string
+	Message       string
+	OrgID         uint64
+	ActorID       string
+	CorrelationID string
 }
 
 type ProbeResult struct {
@@ -63,13 +62,12 @@ type ProbeResult struct {
 }
 
 type ExecutionAdvanceRequest struct {
-	ExecutionID       string
-	AttemptID         string
-	OrgID             uint64
-	ActorID           string
-	VerificationRunID string
-	CorrelationID     string
-	TraceParent       string
+	ExecutionID   string
+	AttemptID     string
+	OrgID         uint64
+	ActorID       string
+	CorrelationID string
+	TraceParent   string
 }
 
 type ExecutionAdvanceResult struct {
@@ -80,12 +78,11 @@ type ExecutionAdvanceResult struct {
 }
 
 type ProbeArgs struct {
-	Message           string `json:"message,omitempty"`
-	OrgID             uint64 `json:"org_id,omitempty"`
-	ActorID           string `json:"actor_id,omitempty"`
-	VerificationRunID string `json:"verification_run_id,omitempty"`
-	CorrelationID     string `json:"correlation_id,omitempty"`
-	SubmittedAt       string `json:"submitted_at"`
+	Message       string `json:"message,omitempty"`
+	OrgID         uint64 `json:"org_id,omitempty"`
+	ActorID       string `json:"actor_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
 }
 
 func (ProbeArgs) Kind() string { return ProbeKind }
@@ -99,14 +96,13 @@ func (ProbeArgs) InsertOpts() river.InsertOpts {
 }
 
 type ExecutionAdvanceArgs struct {
-	ExecutionID       string `json:"execution_id"`
-	AttemptID         string `json:"attempt_id"`
-	OrgID             uint64 `json:"org_id,omitempty"`
-	ActorID           string `json:"actor_id,omitempty"`
-	VerificationRunID string `json:"verification_run_id,omitempty"`
-	CorrelationID     string `json:"correlation_id,omitempty"`
-	TraceParent       string `json:"trace_parent,omitempty"`
-	SubmittedAt       string `json:"submitted_at"`
+	ExecutionID   string `json:"execution_id"`
+	AttemptID     string `json:"attempt_id"`
+	OrgID         uint64 `json:"org_id,omitempty"`
+	ActorID       string `json:"actor_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
 }
 
 func (ExecutionAdvanceArgs) Kind() string { return ExecutionAdvanceKind }
@@ -132,14 +128,12 @@ func (w *ProbeWorker) Work(ctx context.Context, job *river.Job[ProbeArgs]) error
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", ProbeKind),
 		attribute.String("river.queue", QueueScheduler),
-		attribute.String("verification.run_id", job.Args.VerificationRunID),
 		attribute.String("fm.correlation_id", job.Args.CorrelationID),
 	)
 	w.logger.InfoContext(ctx, "scheduler probe completed",
 		"river_job_id", job.ID,
 		"river_job_kind", ProbeKind,
 		"river_queue", QueueScheduler,
-		"verification_run_id", job.Args.VerificationRunID,
 		"fm_correlation_id", job.Args.CorrelationID,
 	)
 	return nil
@@ -200,14 +194,13 @@ func executionTraceContextMiddleware() rivertype.Middleware {
 
 func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req ExecutionAdvanceRequest) (ExecutionAdvanceResult, error) {
 	args := ExecutionAdvanceArgs{
-		ExecutionID:       strings.TrimSpace(req.ExecutionID),
-		AttemptID:         strings.TrimSpace(req.AttemptID),
-		OrgID:             req.OrgID,
-		ActorID:           strings.TrimSpace(req.ActorID),
-		VerificationRunID: strings.TrimSpace(req.VerificationRunID),
-		CorrelationID:     strings.TrimSpace(req.CorrelationID),
-		TraceParent:       strings.TrimSpace(req.TraceParent),
-		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+		ExecutionID:   strings.TrimSpace(req.ExecutionID),
+		AttemptID:     strings.TrimSpace(req.AttemptID),
+		OrgID:         req.OrgID,
+		ActorID:       strings.TrimSpace(req.ActorID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
@@ -243,12 +236,11 @@ func (r *Runtime) EnqueueProbe(ctx context.Context, req ProbeRequest) (ProbeResu
 	defer span.End()
 
 	args := ProbeArgs{
-		Message:           strings.TrimSpace(req.Message),
-		OrgID:             req.OrgID,
-		ActorID:           strings.TrimSpace(req.ActorID),
-		VerificationRunID: strings.TrimSpace(req.VerificationRunID),
-		CorrelationID:     strings.TrimSpace(req.CorrelationID),
-		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+		Message:       strings.TrimSpace(req.Message),
+		OrgID:         req.OrgID,
+		ActorID:       strings.TrimSpace(req.ActorID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	result, err := r.client.Insert(ctx, args, nil)
 	if err != nil {
@@ -262,14 +254,12 @@ func (r *Runtime) EnqueueProbe(ctx context.Context, req ProbeRequest) (ProbeResu
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", job.Kind),
 		attribute.String("river.queue", job.Queue),
-		attribute.String("verification.run_id", args.VerificationRunID),
 		attribute.String("fm.correlation_id", args.CorrelationID),
 	)
 	r.logger.InfoContext(ctx, "scheduler probe enqueued",
 		"river_job_id", job.ID,
 		"river_job_kind", job.Kind,
 		"river_queue", job.Queue,
-		"verification_run_id", args.VerificationRunID,
 		"fm_correlation_id", args.CorrelationID,
 	)
 	return ProbeResult{

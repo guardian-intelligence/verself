@@ -60,12 +60,9 @@ import {
   throwGeneratedServiceError,
 } from "./service-api";
 
-const verificationRunHeader = "X-Forge-Metal-Verification-Run";
 const maxSafeInteger = BigInt(Number.MAX_SAFE_INTEGER);
 
-export interface SandboxRentalClientOptions extends BearerClientOptions {
-  verificationRunId?: string;
-}
+export type SandboxRentalClientOptions = BearerClientOptions;
 
 export class SandboxRentalApiError extends ServiceApiError {
   constructor(status: number, path: string, body: string) {
@@ -106,14 +103,9 @@ function throwSandboxRentalError(
 }
 
 function createSandboxRentalClient(options: SandboxRentalClientOptions): Client {
-  const headers = createBearerJSONHeaders(options.accessToken);
-  if (options.verificationRunId) {
-    headers.set(verificationRunHeader, options.verificationRunId);
-  }
-
   return createClient({
     baseUrl: options.baseUrl,
-    headers,
+    headers: createBearerJSONHeaders(options.accessToken),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
 }

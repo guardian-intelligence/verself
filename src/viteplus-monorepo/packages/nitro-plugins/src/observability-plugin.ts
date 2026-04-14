@@ -6,7 +6,6 @@ import { correlationMiddleware } from "./correlation-middleware.ts";
 import { correlationContextKey, correlationHeaderName } from "./correlation.ts";
 
 const requestStartKey = "forge_metal_request_started_at_ns";
-const verificationRunHeader = "x-forge-metal-verification-run";
 
 function correlationIDFromContext(value: unknown): string {
   if (typeof value === "string") {
@@ -88,7 +87,6 @@ export default definePlugin((nitroApp) => {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
       fm_correlation_id: correlationID,
-      verification_run_id: h3Event.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event.req.method,
       http_target: `${url.pathname}${url.search}`,
       url_path: url.pathname,
@@ -114,7 +112,6 @@ export default definePlugin((nitroApp) => {
       trace_id: spanContext?.traceId ?? "",
       span_id: spanContext?.spanId ?? "",
       fm_correlation_id: correlationID,
-      verification_run_id: h3Event?.req.headers.get(verificationRunHeader) ?? "",
       http_method: h3Event?.req.method ?? "",
       http_target: url ? `${url.pathname}${url.search}` : "",
       url_path: url?.pathname ?? "",

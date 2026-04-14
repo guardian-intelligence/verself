@@ -237,15 +237,14 @@ type JobEventRow struct {
 	ZFSWritten        uint64    `ch:"zfs_written"`
 	StdoutBytes       uint64    `ch:"stdout_bytes"`
 	StderrBytes       uint64    `ch:"stderr_bytes"`
-	BillingJobID      int64     `ch:"billing_job_id"`
-	ChargeUnits       uint64    `ch:"charge_units"`
-	PricingPhase      string    `ch:"pricing_phase"`
-	CorrelationID     string    `ch:"correlation_id"`
-	VerificationRunID string    `ch:"verification_run_id"`
-	StartedAt         time.Time `ch:"started_at"`
-	CompletedAt       time.Time `ch:"completed_at"`
-	CreatedAt         time.Time `ch:"created_at"`
-	TraceID           string    `ch:"trace_id"`
+	BillingJobID  int64     `ch:"billing_job_id"`
+	ChargeUnits   uint64    `ch:"charge_units"`
+	PricingPhase  string    `ch:"pricing_phase"`
+	CorrelationID string    `ch:"correlation_id"`
+	StartedAt     time.Time `ch:"started_at"`
+	CompletedAt   time.Time `ch:"completed_at"`
+	CreatedAt     time.Time `ch:"created_at"`
+	TraceID       string    `ch:"trace_id"`
 }
 
 // Service manages execution submission, billing, and state transitions.
@@ -306,11 +305,10 @@ type executionWorkItem struct {
 	WorkflowYAML       string
 	WorkflowEvent      string
 	GitHubJITConfig    string
-	WorkflowEnv        map[string]string
-	WorkflowInputs     map[string]string
-	WorkflowSecrets    map[string]string
-	VerificationRunID  string
-	CorrelationID      string
+	WorkflowEnv     map[string]string
+	WorkflowInputs  map[string]string
+	WorkflowSecrets map[string]string
+	CorrelationID   string
 	AttemptSeq         int
 	State              string
 	OrchestratorRunID  string
@@ -397,7 +395,6 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	executionID := uuid.New()
 	attemptID := uuid.New()
 	correlationID := strings.TrimSpace(CorrelationIDFromContext(ctx))
-	verificationRunID := VerificationRunIDFromContext(ctx)
 	now := time.Now().UTC()
 
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.submit",
@@ -410,13 +407,12 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 			attribute.String("execution.workload_kind", req.WorkloadKind),
 			attribute.String("execution.runner_class", req.RunnerClass),
 			attribute.String("execution.repo", req.Repo),
-			attribute.String("verification.run_id", verificationRunID),
 		))
 	defer span.End()
 	traceID := traceIDFromContext(ctx)
 	traceParent := traceParentFromContext(ctx)
 
-	job, err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, traceParent, correlationID, verificationRunID, now)
+	job, err := s.insertQueuedExecution(ctx, executionID, attemptID, orgID, actorID, req, traceID, traceParent, correlationID, now)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -429,15 +425,6 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	)
 
 	s.Logger.InfoContext(ctx, "execution queued", "execution_id", executionID, "attempt_id", attemptID, "river_job_id", job.JobID, "river_job_kind", job.Kind, "river_queue", job.Queue, "org_id", orgID, "kind", req.Kind, "fm_correlation_id", correlationID)
-	if verificationRunID != "" {
-		s.Logger.InfoContext(ctx, "execution verification correlation",
-			"verification_run_id", verificationRunID,
-			"execution_id", executionID,
-			"attempt_id", attemptID,
-			"org_id", orgID,
-			"kind", req.Kind,
-		)
-	}
 
 	return executionID, attemptID, nil
 }
@@ -448,7 +435,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
-	ctx = WithVerificationRunID(ctx, item.VerificationRunID)
 
 	switch item.State {
 	case StateQueued:
@@ -1282,7 +1268,6 @@ func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemp
 			e.ref,
 			e.default_branch,
 			e.run_command,
-			e.verification_run_id,
 			e.correlation_id,
 			a.attempt_seq,
 			a.state,
@@ -1344,7 +1329,6 @@ func (s *Service) loadExecutionWorkItem(ctx context.Context, executionID, attemp
 		&item.Ref,
 		&item.DefaultBranch,
 		&item.RunCommand,
-		&item.VerificationRunID,
 		&item.CorrelationID,
 		&item.AttemptSeq,
 		&item.State,
@@ -1452,7 +1436,7 @@ func (window executionBillingWindow) reservation(attemptID uuid.UUID) (billingcl
 	return reservation, nil
 }
 
-func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID, traceParent, correlationID, verificationRunID string, now time.Time) (scheduler.ExecutionAdvanceResult, error) {
+func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemptID uuid.UUID, orgID uint64, actorID string, req SubmitRequest, traceID, traceParent, correlationID string, now time.Time) (scheduler.ExecutionAdvanceResult, error) {
 	if s.PGX == nil {
 		return scheduler.ExecutionAdvanceResult{}, fmt.Errorf("pgx pool is required for transactional execution enqueue")
 	}
@@ -1478,19 +1462,19 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 			INSERT INTO executions (
 				execution_id, org_id, actor_id, kind, source_kind, workload_kind, source_ref,
 				runner_class, external_provider, external_task_id, provider,
-				product_id, status, correlation_id, verification_run_id,
+				product_id, status, correlation_id,
 				idempotency_key, repo_id, repo, repo_url, ref, default_branch, run_command,
 				latest_attempt_id, created_at, updated_at
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7,
 				$8, $9, $10, $11,
-				$12, $13, $14, $15,
-				NULLIF($16, ''), $17, $18, $19, $20, $21, $22,
-				$23, $24, $24
+				$12, $13, $14,
+				NULLIF($15, ''), $16, $17, $18, $19, $20, $21,
+				$22, $23, $23
 			)
 		`, executionID, int64(orgID), actorID, req.Kind, sourceKind, workloadKind, sourceRef,
 		req.RunnerClass, req.ExternalProvider, req.ExternalTaskID, req.Provider,
-		req.ProductID, StateQueued, correlationID, verificationRunID,
+		req.ProductID, StateQueued, correlationID,
 		req.IdempotencyKey, repoID, req.Repo, req.RepoURL, req.Ref, req.DefaultBranch, req.RunCommand,
 		attemptID, now); err != nil {
 		return scheduler.ExecutionAdvanceResult{}, err
@@ -1544,13 +1528,12 @@ func (s *Service) insertQueuedExecution(ctx context.Context, executionID, attemp
 	}
 
 	job, err := s.Scheduler.EnqueueExecutionAdvanceTx(ctx, tx, scheduler.ExecutionAdvanceRequest{
-		ExecutionID:       executionID.String(),
-		AttemptID:         attemptID.String(),
-		OrgID:             orgID,
-		ActorID:           actorID,
-		VerificationRunID: verificationRunID,
-		CorrelationID:     correlationID,
-		TraceParent:       traceParent,
+		ExecutionID:   executionID.String(),
+		AttemptID:     attemptID.String(),
+		OrgID:         orgID,
+		ActorID:       actorID,
+		CorrelationID: correlationID,
+		TraceParent:   traceParent,
 	})
 	if err != nil {
 		return scheduler.ExecutionAdvanceResult{}, err
@@ -2196,21 +2179,19 @@ func (s *Service) recordExecutionCompletion(
 		ExitCode:          int32(outcome.ExitCode),
 		DurationMs:        outcome.DurationMs,
 		ZFSWritten:        outcome.ZFSWritten,
-		StdoutBytes:       outcome.StdoutBytes,
-		StderrBytes:       outcome.StderrBytes,
-		BillingJobID:      reservation.JobId,
-		ChargeUnits:       charge,
-		PricingPhase:      reservation.PricingPhase,
-		CorrelationID:     CorrelationIDFromContext(ctx),
-		VerificationRunID: VerificationRunIDFromContext(ctx),
-		StartedAt:         outcome.StartedAt,
-		CompletedAt:       outcome.CompletedAt,
-		CreatedAt:         outcome.StartedAt,
-		TraceID:           traceIDFromContext(ctx),
+		StdoutBytes:   outcome.StdoutBytes,
+		StderrBytes:   outcome.StderrBytes,
+		BillingJobID:  reservation.JobId,
+		ChargeUnits:   charge,
+		PricingPhase:  reservation.PricingPhase,
+		CorrelationID: CorrelationIDFromContext(ctx),
+		StartedAt:     outcome.StartedAt,
+		CompletedAt:   outcome.CompletedAt,
+		CreatedAt:     outcome.StartedAt,
+		TraceID:       traceIDFromContext(ctx),
 	})
 	s.Logger.InfoContext(ctx, "execution completed",
 		"fm_correlation_id", CorrelationIDFromContext(ctx),
-		"verification_run_id", VerificationRunIDFromContext(ctx),
 		"execution_id", executionID,
 		"attempt_id", attemptID,
 		"state", outcome.State,

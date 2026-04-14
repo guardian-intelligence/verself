@@ -90,7 +90,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
 
       await requestHobbyCancellation(app);
 
-      await app.waitForCondition("hobby contract cancellation", 90_000, async () => {
+      await app.waitForCondition("hobby contract cancellation", 30_000, async () => {
         await app.goto("/billing");
         const rowTexts = await hobbyContractRows(app)
           .allInnerTexts()
@@ -98,13 +98,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         const scheduledRowText = rowTexts.find(
           (text) => text.includes("sandbox-hobby") && text.includes("cancel_scheduled"),
         );
-
-        if (scheduledRowText?.includes("active")) {
-          return scheduledRowText;
-        }
-
-        await app.page.waitForTimeout(2_000);
-        return false;
+        return scheduledRowText?.includes("active") ? scheduledRowText : false;
       });
 
       run.detail_url = "/billing";
@@ -158,7 +152,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await activateContract(app, hobbyPlan);
       await activateContract(app, proPlan);
 
-      await app.waitForCondition("pro upgrade carries hobby forward", 120_000, async () => {
+      await app.waitForCondition("pro upgrade carries hobby forward", 30_000, async () => {
         await app.goto("/billing");
         const proRowTexts = await contractRows(app, proPlan.planID)
           .allInnerTexts()
@@ -175,13 +169,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
           (text) =>
             text.includes(hobbyPlan.planID) && text.includes("active") && text.includes("paid"),
         );
-
-        if (activeProRowText && activeHobbyRows.length === 0) {
-          return activeProRowText;
-        }
-
-        await app.page.waitForTimeout(2_000);
-        return false;
+        return activeProRowText && activeHobbyRows.length === 0 ? activeProRowText : false;
       });
 
       run.detail_url = "/billing";
@@ -461,80 +449,63 @@ async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
   await app.expectSSRHTML("/billing?contracted=true", ["Plan checkout complete", "Contracts"]);
   await app.goto("/billing?contracted=true");
 
-  return await app.waitForCondition(`${plan.planID} contract activation`, 120_000, async () => {
+  return await app.waitForCondition(`${plan.planID} contract activation`, 30_000, async () => {
+    await app.goto("/billing?contracted=true");
     const rowTexts = await contractRows(app, plan.planID)
       .allInnerTexts()
       .catch(() => []);
     const activeRowText = rowTexts.find(
       (text) => text.includes(plan.planID) && text.includes("active") && text.includes("paid"),
     );
-
-    if (activeRowText) {
-      return activeRowText;
-    }
-
-    await app.page.waitForTimeout(2_000);
-    return false;
+    return activeRowText ?? false;
   });
 }
 
 async function beginCreditCheckout(app: SandboxHarness, buttonName: RegExp) {
-  await app.waitForCondition("credit checkout redirect", 30_000, async () => {
-    if (app.page.url().includes("checkout.stripe.com")) {
-      return true;
-    }
-
-    const checkoutButton = app.page.getByRole("button", { name: buttonName });
-    if (!(await checkoutButton.isVisible().catch(() => false))) {
-      return false;
-    }
-    if (!(await checkoutButton.isEnabled().catch(() => false))) {
-      return false;
-    }
-
-    // SSR can expose the button before the TanStack Start click handler hydrates.
-    await checkoutButton.click();
-    await app.page.waitForTimeout(500);
-    return app.page.url().includes("checkout.stripe.com") ? true : false;
-  });
+  if (app.page.url().includes("checkout.stripe.com")) {
+    return;
+  }
+  const checkoutButton = app.page.getByRole("button", { name: buttonName });
+  await expect(checkoutButton).toBeVisible({ timeout: shortTimeoutMS });
+  await expect(checkoutButton).toBeEnabled({ timeout: shortTimeoutMS });
+  await checkoutButton.click();
+  await app.page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
 }
 
 async function beginContractCheckout(
   app: SandboxHarness,
   plan: ContractPlanSpec,
 ): Promise<"checkout" | "billing"> {
-  return await app.waitForCondition(`${plan.planID} checkout redirect`, 30_000, async () => {
-    if (app.page.url().includes("checkout.stripe.com")) {
-      return "checkout";
-    }
-    if (isContractedBillingURL(app.page.url())) {
+  if (app.page.url().includes("checkout.stripe.com")) {
+    return "checkout";
+  }
+  if (isContractedBillingURL(app.page.url())) {
+    return "billing";
+  }
+
+  const subscribeButton = app.page.getByTestId(`start-contract-plan-${plan.planID}`);
+  await expect(subscribeButton).toBeVisible({ timeout: shortTimeoutMS });
+
+  // A disabled button carrying "Current plan" copy means the user is already
+  // on this plan — we short-circuit to the billing view because there is no
+  // checkout to wait for.
+  if (!(await subscribeButton.isEnabled().catch(() => false))) {
+    const buttonText = await subscribeButton.innerText().catch(() => "");
+    if (buttonText.includes("Current plan")) {
+      await app.goto("/billing?contracted=true");
       return "billing";
     }
+    await expect(subscribeButton).toBeEnabled({ timeout: shortTimeoutMS });
+  }
 
-    const subscribeButton = app.page.getByTestId(`start-contract-plan-${plan.planID}`);
-    if (!(await subscribeButton.isVisible().catch(() => false))) {
-      return false;
-    }
-    if (!(await subscribeButton.isEnabled().catch(() => false))) {
-      const buttonText = await subscribeButton.innerText().catch(() => "");
-      if (buttonText.includes("Current plan")) {
-        await app.goto("/billing?contracted=true");
-        return "billing";
-      }
-      return false;
-    }
-
-    // SSR can expose the button before the TanStack Start click handler hydrates.
-    await subscribeButton.click();
-    await app.page.waitForTimeout(500);
-    if (app.page.url().includes("checkout.stripe.com")) {
-      return "checkout";
-    }
-    if (isContractedBillingURL(app.page.url())) {
-      return "billing";
-    }
-    return false;
-  });
+  await subscribeButton.click();
+  // The handler either redirects to Stripe or to /billing?contracted=true —
+  // wait for whichever lands first.
+  await app.page.waitForURL(
+    (url) => url.toString().includes("checkout.stripe.com") || isContractedBillingURL(url.toString()),
+    { timeout: 30_000 },
+  );
+  return app.page.url().includes("checkout.stripe.com") ? "checkout" : "billing";
 }
 
 function isContractedBillingURL(rawURL: string) {

@@ -33,9 +33,8 @@ import (
 )
 
 const (
-	verificationRunHeader = "X-Forge-Metal-Verification-Run"
-	correlationHeader     = "X-Forge-Metal-Correlation-Id"
-	correlationCookie     = "fm_correlation_id"
+	correlationHeader = "X-Forge-Metal-Correlation-Id"
+	correlationCookie = "fm_correlation_id"
 
 	sandboxAPIRequestBodyLimit = 1 << 20
 	sandboxMaxHeaderBytes      = 16 << 10
@@ -262,11 +261,7 @@ func run() error {
 		ProjectID: authAudience,
 		JWKSURL:   authJWKSURL,
 	})(privateMux)
-	verificationHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		runID := strings.TrimSpace(r.Header.Get(verificationRunHeader))
-		if runID != "" {
-			r = r.WithContext(jobs.WithVerificationRunID(r.Context(), runID))
-		}
+	correlationForwarder := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		correlationID := strings.TrimSpace(r.Header.Get(correlationHeader))
 		if correlationID == "" {
 			if cookie, err := r.Cookie(correlationCookie); err == nil {
@@ -278,7 +273,7 @@ func run() error {
 		}
 		authHandler.ServeHTTP(w, r)
 	})
-	rootMux.Handle("/", verificationHandler)
+	rootMux.Handle("/", correlationForwarder)
 	rootHandler := http.Handler(rootMux)
 	rootHandler = limitPublicAPIRequestBodies(rootHandler, sandboxAPIRequestBodyLimit)
 	rootHandler = fmotel.CorrelationMiddleware(rootHandler)

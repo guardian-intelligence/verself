@@ -2,7 +2,6 @@ import { defineConfig, devices } from "@playwright/test";
 import { deriveAppBaseURL } from "@forge-metal/web-env";
 
 const BASE_URL = deriveAppBaseURL("mail");
-const verificationRunID = process.env.VERIFICATION_RUN_ID?.trim();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,13 +15,6 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     ignoreHTTPSErrors: true,
-    ...(verificationRunID
-      ? {
-          extraHTTPHeaders: {
-            "X-Forge-Metal-Verification-Run": verificationRunID,
-          },
-        }
-      : {}),
   },
   projects: [
     {

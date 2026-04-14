@@ -26,11 +26,10 @@ func (s *Service) EnqueueSchedulerProbe(ctx context.Context, req SchedulerProbeR
 		return SchedulerProbeResult{}, fmt.Errorf("scheduler runtime unavailable")
 	}
 	result, err := s.Scheduler.EnqueueProbe(ctx, scheduler.ProbeRequest{
-		Message:           strings.TrimSpace(req.Message),
-		OrgID:             req.OrgID,
-		ActorID:           strings.TrimSpace(req.ActorID),
-		VerificationRunID: strings.TrimSpace(VerificationRunIDFromContext(ctx)),
-		CorrelationID:     strings.TrimSpace(CorrelationIDFromContext(ctx)),
+		Message:       strings.TrimSpace(req.Message),
+		OrgID:         req.OrgID,
+		ActorID:       strings.TrimSpace(req.ActorID),
+		CorrelationID: strings.TrimSpace(CorrelationIDFromContext(ctx)),
 	})
 	if err != nil {
 		return SchedulerProbeResult{}, err

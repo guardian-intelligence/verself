@@ -28,7 +28,6 @@ func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 func (w *ExecutionAdvanceWorker) Work(ctx context.Context, job *river.Job[scheduler.ExecutionAdvanceArgs]) error {
 	args := job.Args
 	ctx = WithCorrelationID(ctx, args.CorrelationID)
-	ctx = WithVerificationRunID(ctx, args.VerificationRunID)
 
 	executionID, err := uuid.Parse(args.ExecutionID)
 	if err != nil {
@@ -46,7 +45,6 @@ func (w *ExecutionAdvanceWorker) Work(ctx context.Context, job *river.Job[schedu
 		attribute.Int64("river.job_id", job.ID),
 		attribute.String("river.job_kind", scheduler.ExecutionAdvanceKind),
 		attribute.String("river.queue", scheduler.QueueExecution),
-		attribute.String("verification.run_id", args.VerificationRunID),
 		attribute.String("fm.correlation_id", args.CorrelationID),
 	)
 
