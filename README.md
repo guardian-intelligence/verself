@@ -155,7 +155,6 @@ Billing naming is intentionally split:
 - `BILLING_PRODUCT_ID=sandbox` is the product catalog/product-metering ID.
 - `DB=billing` is the billing-service PostgreSQL database.
 - `DB=sandbox_rental` is the sandbox-rental-service PostgreSQL database.
-- `DB=sandbox` is a legacy billing database name and should not exist.
 
 Use the PostgreSQL wrapper for direct inspection:
 
