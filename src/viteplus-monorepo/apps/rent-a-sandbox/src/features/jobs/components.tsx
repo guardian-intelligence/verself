@@ -1,8 +1,26 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useSignedInAuth } from "@forge-metal/auth-web/react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@forge-metal/ui/components/ui/table";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@forge-metal/ui/components/ui/pagination";
 import { Callout } from "~/components/callout";
 import { EmptyState } from "~/components/empty-state";
 import { ErrorCallout } from "~/components/error-callout";
@@ -210,49 +228,149 @@ function ExecutionLogsPanel({ attemptId, isRunning }: { attemptId: string; isRun
   return <ExecutionLogsBody logText={logs.logText} />;
 }
 
+const EXECUTIONS_PAGE_SIZE = 25;
+
 function ExecutionTable({ executions }: { executions: ElectricExecution[] }) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(executions.length / EXECUTIONS_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = useMemo(
+    () =>
+      executions.slice(
+        (currentPage - 1) * EXECUTIONS_PAGE_SIZE,
+        currentPage * EXECUTIONS_PAGE_SIZE,
+      ),
+    [executions, currentPage],
+  );
+
+  const goTo = (next: number) => setPage(Math.min(Math.max(1, next), pageCount));
+
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50">
-          <tr>
-            <th className="px-4 py-2 text-left font-medium">ID</th>
-            <th className="px-4 py-2 text-left font-medium">Repository</th>
-            <th className="px-4 py-2 text-left font-medium">Ref</th>
-            <th className="px-4 py-2 text-left font-medium">Status</th>
-            <th className="px-4 py-2 text-left font-medium">Created</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {executions.map((execution) => (
-            <tr key={execution.execution_id} className="hover:bg-accent/30">
-              <td className="px-4 py-2">
-                <Link
-                  to="/jobs/$jobId"
-                  params={{ jobId: execution.execution_id }}
-                  className="font-mono text-primary hover:underline"
-                >
-                  {execution.execution_id.slice(0, 8)}
-                </Link>
-              </td>
-              <td className="max-w-[300px] truncate px-4 py-2">
-                {formatExecutionRepo(execution.repo, execution.repo_url)}
-              </td>
-              <td className="px-4 py-2 font-mono">
-                {execution.ref || execution.default_branch || "--"}
-              </td>
-              <td className="px-4 py-2">
-                <ExecutionStatusBadge status={execution.status} />
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {formatDateTimeUTC(execution.created_at)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="px-4">ID</TableHead>
+              <TableHead className="px-4">Status</TableHead>
+              <TableHead className="px-4">Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pageRows.map((execution) => (
+              <TableRow key={execution.execution_id}>
+                <TableCell className="px-4">
+                  <Link
+                    to="/jobs/$jobId"
+                    params={{ jobId: execution.execution_id }}
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {execution.execution_id.slice(0, 8)}
+                  </Link>
+                </TableCell>
+                <TableCell className="px-4">
+                  <ExecutionStatusBadge status={execution.status} />
+                </TableCell>
+                <TableCell className="px-4 text-muted-foreground">
+                  {formatDateTimeUTC(execution.created_at)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {pageCount > 1 ? (
+        <ExecutionTablePagination
+          currentPage={currentPage}
+          pageCount={pageCount}
+          totalCount={executions.length}
+          onChange={goTo}
+        />
+      ) : null}
     </div>
   );
+}
+
+function ExecutionTablePagination({
+  currentPage,
+  pageCount,
+  totalCount,
+  onChange,
+}: {
+  currentPage: number;
+  pageCount: number;
+  totalCount: number;
+  onChange: (page: number) => void;
+}) {
+  const pages = buildPageList(currentPage, pageCount);
+  const start = (currentPage - 1) * EXECUTIONS_PAGE_SIZE + 1;
+  const end = Math.min(currentPage * EXECUTIONS_PAGE_SIZE, totalCount);
+
+  const handle =
+    (next: number): React.MouseEventHandler<HTMLAnchorElement> =>
+    (event) => {
+      event.preventDefault();
+      onChange(next);
+    };
+
+  return (
+    <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
+      <p className="text-xs text-muted-foreground">
+        Showing {start.toLocaleString()}–{end.toLocaleString()} of {totalCount.toLocaleString()}
+      </p>
+      <Pagination className="mx-0 w-auto justify-end">
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              href="#"
+              aria-disabled={currentPage === 1}
+              className={currentPage === 1 ? "pointer-events-none opacity-50" : undefined}
+              onClick={handle(currentPage - 1)}
+            />
+          </PaginationItem>
+          {pages.map((entry, index) =>
+            entry === "ellipsis" ? (
+              <PaginationItem key={`ellipsis-${index}`}>
+                <PaginationEllipsis />
+              </PaginationItem>
+            ) : (
+              <PaginationItem key={entry}>
+                <PaginationLink
+                  href="#"
+                  isActive={entry === currentPage}
+                  onClick={handle(entry)}
+                >
+                  {entry}
+                </PaginationLink>
+              </PaginationItem>
+            ),
+          )}
+          <PaginationItem>
+            <PaginationNext
+              href="#"
+              aria-disabled={currentPage === pageCount}
+              className={currentPage === pageCount ? "pointer-events-none opacity-50" : undefined}
+              onClick={handle(currentPage + 1)}
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
+  );
+}
+
+function buildPageList(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: Array<number | "ellipsis"> = [1];
+  const left = Math.max(2, current - 1);
+  const right = Math.min(total - 1, current + 1);
+  if (left > 2) pages.push("ellipsis");
+  for (let i = left; i <= right; i++) pages.push(i);
+  if (right < total - 1) pages.push("ellipsis");
+  pages.push(total);
+  return pages;
 }
 
 function ExecutionListLoading() {
