@@ -404,10 +404,37 @@ func (c *Client) insertActivationCycleTx(ctx context.Context, tx pgx.Tx, q *stor
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO billing_cycles (cycle_id, org_id, product_id, currency, predecessor_cycle_id, anchor_at, cycle_seq, cadence_kind, starts_at, ends_at, status, finalization_due_at)
 		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,0,$7,$8,$9,'open',$9)
-		ON CONFLICT (cycle_id) DO NOTHING
+		ON CONFLICT (cycle_id) DO UPDATE
+		SET currency = EXCLUDED.currency,
+		    predecessor_cycle_id = EXCLUDED.predecessor_cycle_id,
+		    anchor_at = EXCLUDED.anchor_at,
+		    cycle_seq = EXCLUDED.cycle_seq,
+		    cadence_kind = EXCLUDED.cadence_kind,
+		    starts_at = EXCLUDED.starts_at,
+		    ends_at = EXCLUDED.ends_at,
+		    status = 'open',
+		    finalization_due_at = EXCLUDED.finalization_due_at,
+		    closed_reason = '',
+		    active_finalization_id = NULL,
+		    successor_cycle_id = NULL,
+		    closed_by_event_id = NULL,
+		    closed_for_usage_at = NULL,
+		    finalized_at = NULL,
+		    metadata = billing_cycles.metadata - 'voided_by'
+		WHERE billing_cycles.status = 'voided'
 	`, cycle.CycleID, orgIDText(orgID), productID, cycle.Currency, predecessorCycleID, cycle.AnchorAt, cycle.CadenceKind, cycle.StartsAt, cycle.EndsAt)
 	if err != nil {
 		return billingCycle{}, fmt.Errorf("insert activation billing cycle: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		existing, ok, err := c.openBillingCycleContainingTx(ctx, tx, orgID, productID, startsAt)
+		if err != nil {
+			return billingCycle{}, err
+		}
+		if ok && existing.CycleID == cycle.CycleID {
+			return existing, nil
+		}
+		return billingCycle{}, fmt.Errorf("insert activation billing cycle %s: conflicting non-open cycle", cycle.CycleID)
 	}
 	if predecessorCycleID != "" {
 		if _, err := tx.Exec(ctx, `UPDATE billing_cycles SET successor_cycle_id = $2 WHERE cycle_id = $1 AND successor_cycle_id IS NULL`, predecessorCycleID, cycle.CycleID); err != nil {
