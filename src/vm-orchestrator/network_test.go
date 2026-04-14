@@ -219,6 +219,45 @@ func TestAllocatorRecoverKeepsLivePID(t *testing.T) {
 	}
 }
 
+func TestAllocatorRecoverDeletesTapForFreeSlot(t *testing.T) {
+	t.Parallel()
+
+	allocator := testAllocator(t, "172.16.0.0/29")
+	lease, err := allocator.Acquire(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := allocator.Release(context.Background(), "job-1"); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	allocator.tapExistsFunc = func(name string) bool {
+		return name == lease.TapName
+	}
+
+	ops := &networkTestPrivOps{}
+	if err := allocator.Recover(context.Background(), ops); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	if len(ops.deletedTaps) != 1 || ops.deletedTaps[0] != lease.TapName {
+		t.Fatalf("deleted taps: got %v want [%s]", ops.deletedTaps, lease.TapName)
+	}
+	state, runID, err := readSlotState(allocator.cfg.StateDBPath, lease.SlotIndex)
+	if err != nil {
+		t.Fatalf("readSlotState: %v", err)
+	}
+	if state != "free" || runID != "" {
+		t.Fatalf("expected recovered stale tap to remain free, got state=%q run_id=%q", state, runID)
+	}
+	next, err := allocator.Acquire(context.Background(), "job-2")
+	if err != nil {
+		t.Fatalf("Acquire after stale tap recovery: %v", err)
+	}
+	if next.SlotIndex != lease.SlotIndex {
+		t.Fatalf("expected recovered free slot %d to be reusable, got %d", lease.SlotIndex, next.SlotIndex)
+	}
+}
+
 func TestAllocatorAttachPIDPersistsStartTicks(t *testing.T) {
 	t.Parallel()
 
@@ -325,4 +364,45 @@ func forceSlotCreatedAt(stateDBPath string, slot int, when time.Time) error {
 
 	_, err = db.Exec(`UPDATE network_slots SET created_at_unix_nano = ?, updated_at_unix_nano = ? WHERE slot_index = ?`, when.UnixNano(), when.UnixNano(), slot)
 	return err
+}
+
+type networkTestPrivOps struct {
+	deletedTaps []string
+}
+
+func (p *networkTestPrivOps) ZFSClone(context.Context, string, string, string) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) ZFSSnapshot(context.Context, string, string, map[string]string) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) ZFSDestroy(context.Context, string) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) TapCreate(context.Context, string, string) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) TapUp(context.Context, string) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) TapDelete(_ context.Context, tapName string) error {
+	p.deletedTaps = append(p.deletedTaps, tapName)
+	return nil
+}
+
+func (p *networkTestPrivOps) SetupJail(context.Context, string, string, string, int, int) error {
+	return nil
+}
+
+func (p *networkTestPrivOps) StartJailer(context.Context, string, JailerConfig) (*JailerProcess, error) {
+	return nil, nil
+}
+
+func (p *networkTestPrivOps) Chmod(context.Context, string, uint32) error {
+	return nil
 }
