@@ -1,12 +1,24 @@
 import type { ReactNode } from "react";
-import { cn } from "@forge-metal/ui";
+import { Alert, AlertDescription, AlertTitle } from "@forge-metal/ui/components/ui/alert";
+import { cn } from "@forge-metal/ui/lib/utils";
 
-const toneClasses = {
-  default: "border-border bg-muted/20 text-foreground",
-  success: "border-success/50 bg-success/5 text-foreground",
-  warning: "border-warning/50 bg-warning/5 text-foreground",
-  destructive: "border-destructive/50 bg-destructive/5 text-foreground",
-} as const;
+type CalloutTone = "default" | "success" | "warning" | "destructive";
+
+const toneToAlertVariant: Record<CalloutTone, "default" | "destructive"> = {
+  default: "default",
+  success: "default",
+  warning: "default",
+  destructive: "destructive",
+};
+
+// Black-and-white receipt variant: tone is conveyed by the left border
+// weight and the `data-callout-tone` attribute, not background color.
+const toneBorderClass: Record<CalloutTone, string> = {
+  default: "border-l-2 border-l-foreground",
+  success: "border-l-2 border-l-foreground",
+  warning: "border-l-2 border-l-foreground border-dashed",
+  destructive: "border-l-2 border-l-foreground",
+};
 
 export function Callout({
   title,
@@ -17,23 +29,27 @@ export function Callout({
 }: {
   title?: string;
   children: ReactNode;
-  tone?: keyof typeof toneClasses;
+  tone?: CalloutTone;
   action?: ReactNode;
   className?: string;
 }) {
   return (
-    <div
+    <Alert
+      data-callout-tone={tone}
+      variant={toneToAlertVariant[tone]}
       className={cn(
-        "flex items-start justify-between gap-4 rounded-lg border p-4 text-sm",
-        toneClasses[tone],
+        "flex items-start justify-between gap-4 rounded-none border-foreground",
+        toneBorderClass[tone],
         className,
       )}
     >
-      <div className="min-w-0 space-y-1">
-        {title ? <p className="font-medium">{title}</p> : null}
-        <div className="text-muted-foreground">{children}</div>
+      <div className="min-w-0 flex-1 space-y-1">
+        {title ? (
+          <AlertTitle className="font-mono text-xs uppercase tracking-wider">{title}</AlertTitle>
+        ) : null}
+        <AlertDescription className="text-sm">{children}</AlertDescription>
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
-    </div>
+    </Alert>
   );
 }

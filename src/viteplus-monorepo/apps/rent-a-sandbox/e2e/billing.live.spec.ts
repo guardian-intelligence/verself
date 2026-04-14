@@ -18,32 +18,35 @@ test.describe("Rent-a-Sandbox Billing", () => {
       app.resetBrowserSignals();
 
       const topUpLedgerUnits = 1_000_000_000;
-      await app.expectSSRHTML("/billing/credits", [
-        "Purchase Credits",
+      await app.expectSSRHTML("/settings/billing/credits", [
+        "Purchase credits",
         "Add prepaid account balance",
       ]);
       await app.assertStableRoute({
-        path: "/billing/credits",
-        ready: app.page.getByRole("heading", { name: "Purchase Credits" }),
-        expectedText: ["Purchase Credits", "Add prepaid account balance", "$100"],
+        path: "/settings/billing/credits",
+        ready: app.page.getByRole("heading", { name: "Purchase credits" }),
+        expectedText: ["Purchase credits", "Add prepaid account balance", "$100"],
       });
 
-      await app.goto("/billing");
+      await app.goto("/settings/billing");
       run.started_balance = await app.readBalance();
       const startedAccountBalance = await readVisibleAccountBalanceUnits(app);
 
-      await expect(app.page.getByRole("heading", { name: "Billing" })).toBeVisible();
+      await expect(app.page.getByTestId("settings-tab-billing")).toHaveAttribute(
+        "data-status",
+        "active",
+      );
 
-      await app.page.getByRole("link", { name: "Buy Credits" }).click();
-      await expect(app.page.getByRole("heading", { name: "Purchase Credits" })).toBeVisible();
+      await app.page.getByRole("link", { name: "Buy credits" }).click();
+      await expect(app.page.getByRole("heading", { name: "Purchase credits" })).toBeVisible();
       await beginCreditCheckout(app, /^\$100\b/);
 
       await completeStripeCheckout(app);
-      await app.expectSSRHTML("/billing?purchased=true", ["Credits purchased", "Account Balance"]);
+      await app.expectSSRHTML("/settings/billing?purchased=true", ["Credits purchased", "Account Balance"]);
 
-      run.detail_url = "/billing?purchased=true";
+      run.detail_url = "/settings/billing?purchased=true";
       const purchaseResult = await app.waitForCondition("purchased balance", 90_000, async () => {
-        await app.goto("/billing?purchased=true");
+        await app.goto("/settings/billing?purchased=true");
         const currentBalance = await app.readBalance();
         const currentAccountBalance = await readVisibleAccountBalanceUnits(app);
         const flashVisible = await app.page
@@ -91,7 +94,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await requestHobbyCancellation(app);
 
       await app.waitForCondition("hobby contract cancellation", 30_000, async () => {
-        await app.goto("/billing");
+        await app.goto("/settings/billing");
         const rowTexts = await hobbyContractRows(app)
           .allInnerTexts()
           .catch(() => []);
@@ -101,7 +104,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         return scheduledRowText?.includes("active") ? scheduledRowText : false;
       });
 
-      run.detail_url = "/billing";
+      run.detail_url = "/settings/billing";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -125,7 +128,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await resetContractState(app);
       await activateContract(app, hobbyPlan);
 
-      run.detail_url = "/billing?contracted=true";
+      run.detail_url = "/settings/billing?contracted=true";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -153,7 +156,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await activateContract(app, proPlan);
 
       await app.waitForCondition("pro upgrade carries hobby forward", 30_000, async () => {
-        await app.goto("/billing");
+        await app.goto("/settings/billing");
         const proRowTexts = await contractRows(app, proPlan.planID)
           .allInnerTexts()
           .catch(() => []);
@@ -172,7 +175,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         return activeProRowText && activeHobbyRows.length === 0 ? activeProRowText : false;
       });
 
-      run.detail_url = "/billing";
+      run.detail_url = "/settings/billing";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -199,12 +202,12 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
-      await app.goto("/billing");
+      await app.goto("/settings/billing");
       run.started_balance = await app.readBalance();
 
       await app.assertStableRoute({
-        path: "/billing/subscribe",
-        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        path: "/settings/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a plan" }),
         expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
       });
 
@@ -227,7 +230,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         "hobby active after period-end downgrade",
         shortTimeoutMS,
         async () => {
-          await app.goto("/billing");
+          await app.goto("/settings/billing");
           const activeHobbyRowText = (
             await contractRows(app, hobbyPlan.planID)
               .allInnerTexts()
@@ -272,7 +275,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
       );
       expect(document.document_number).toMatch(/^FM-\d{4}-\d{6}$/);
 
-      run.detail_url = "/billing";
+      run.detail_url = "/settings/billing";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -297,12 +300,12 @@ test.describe("Rent-a-Sandbox Billing", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
-      await app.goto("/billing");
+      await app.goto("/settings/billing");
       run.started_balance = await app.readBalance();
 
       await app.assertStableRoute({
-        path: "/billing/subscribe",
-        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        path: "/settings/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a plan" }),
         expectedText: ["Choose a Plan", hobbyPlan.displayName, hobbyPlan.priceText],
       });
 
@@ -313,8 +316,8 @@ test.describe("Rent-a-Sandbox Billing", () => {
       const downgradeEffectiveAt = contractEffectiveAtFromCurrentURL(app);
 
       await app.assertStableRoute({
-        path: "/billing/subscribe",
-        ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+        path: "/settings/billing/subscribe",
+        ready: app.page.getByRole("heading", { name: "Choose a plan" }),
         expectedText: ["Choose a Plan", `Resume ${proPlan.displayName}`],
       });
 
@@ -335,7 +338,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         "pro remains active after resumed downgrade",
         shortTimeoutMS,
         async () => {
-          await app.goto("/billing");
+          await app.goto("/settings/billing");
           const activeProRowText = (
             await contractRows(app, proPlan.planID)
               .allInnerTexts()
@@ -361,7 +364,7 @@ test.describe("Rent-a-Sandbox Billing", () => {
         },
       );
 
-      run.detail_url = "/billing";
+      run.detail_url = "/settings/billing";
       run.finished_balance = await app.readBalance();
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
@@ -430,27 +433,27 @@ function oneSecondAfter(value: Date) {
 }
 
 async function activateContract(app: SandboxHarness, plan: ContractPlanSpec) {
-  await app.expectSSRHTML("/billing/subscribe", [
+  await app.expectSSRHTML("/settings/billing/subscribe", [
     "Choose a Plan",
     plan.displayName,
     plan.priceText.replace("/mo", ""),
     "/mo",
   ]);
   await app.assertStableRoute({
-    path: "/billing/subscribe",
-    ready: app.page.getByRole("heading", { name: "Choose a Plan" }),
+    path: "/settings/billing/subscribe",
+    ready: app.page.getByRole("heading", { name: "Choose a plan" }),
     expectedText: ["Choose a Plan", plan.displayName, plan.priceText],
   });
 
   const redirect = await beginContractCheckout(app, plan);
   if (redirect === "checkout") {
-    await completeStripeCheckout(app, { returnURLIncludes: "/billing?contracted=true" });
+    await completeStripeCheckout(app, { returnURLIncludes: "/settings/billing?contracted=true" });
   }
-  await app.expectSSRHTML("/billing?contracted=true", ["Plan checkout complete", "Contracts"]);
-  await app.goto("/billing?contracted=true");
+  await app.expectSSRHTML("/settings/billing?contracted=true", ["Plan checkout complete", "Contracts"]);
+  await app.goto("/settings/billing?contracted=true");
 
   return await app.waitForCondition(`${plan.planID} contract activation`, 30_000, async () => {
-    await app.goto("/billing?contracted=true");
+    await app.goto("/settings/billing?contracted=true");
     const rowTexts = await contractRows(app, plan.planID)
       .allInnerTexts()
       .catch(() => []);
@@ -492,7 +495,7 @@ async function beginContractCheckout(
   if (!(await subscribeButton.isEnabled().catch(() => false))) {
     const buttonText = await subscribeButton.innerText().catch(() => "");
     if (buttonText.includes("Current plan")) {
-      await app.goto("/billing?contracted=true");
+      await app.goto("/settings/billing?contracted=true");
       return "billing";
     }
     await expect(subscribeButton).toBeEnabled({ timeout: shortTimeoutMS });
@@ -509,7 +512,7 @@ async function beginContractCheckout(
 }
 
 function isContractedBillingURL(rawURL: string) {
-  return rawURL.includes("/billing") && rawURL.includes("contracted=true");
+  return rawURL.includes("/settings/billing") && rawURL.includes("contracted=true");
 }
 
 async function requestHobbyCancellation(app: SandboxHarness) {

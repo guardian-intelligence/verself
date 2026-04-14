@@ -14,7 +14,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
       await app.ensureLoggedIn();
       app.resetBrowserSignals();
 
-      await app.expectSSRHTML("/organization", [
+      await app.expectSSRHTML("/settings/organization", [
         "Invite member",
         "Members",
         "Member capabilities",
@@ -24,7 +24,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
         "View billing",
       ]);
       await app.assertStableRoute({
-        path: "/organization",
+        path: "/settings/organization",
         ready: app.page.getByRole("heading", { name: "Member capabilities" }),
         expectedText: [
           "Invite member",
@@ -42,7 +42,7 @@ test.describe("Rent-a-Sandbox Organization", () => {
       // toggle → save → reload persistence once stable.
       await expect(app.page.getByRole("button", { name: "Save capabilities" })).toBeVisible();
 
-      run.detail_url = "/organization";
+      run.detail_url = "/settings/organization";
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
     } catch (error) {

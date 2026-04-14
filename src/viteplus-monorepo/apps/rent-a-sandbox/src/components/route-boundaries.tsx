@@ -1,5 +1,6 @@
 import { Link, type ErrorComponentProps, type NotFoundRouteProps } from "@tanstack/react-router";
 import { Skeleton } from "@forge-metal/ui";
+import { Button } from "@forge-metal/ui/components/ui/button";
 import { EmptyState } from "./empty-state";
 import { ErrorCallout } from "./error-callout";
 
@@ -7,12 +8,12 @@ export function AppPending() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-80 max-w-full" />
+        <Skeleton className="h-6 w-40 rounded-none" />
+        <Skeleton className="h-4 w-72 max-w-full rounded-none" />
       </div>
       <div className="grid gap-4">
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full rounded-none" />
+        <Skeleton className="h-28 w-full rounded-none" />
       </div>
     </div>
   );
@@ -25,20 +26,13 @@ export function AppRouteError({ error, reset }: ErrorComponentProps) {
         title="Unable to load this page"
         error={error}
         action={
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => reset()}
-              className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground hover:opacity-90"
-            >
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="default" className="rounded-none" onClick={() => reset()}>
               Retry
-            </button>
-            <Link
-              to="/"
-              className="rounded-md border border-border px-3 py-1.5 text-foreground hover:bg-accent"
-            >
-              Back to dashboard
-            </Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-none">
+              <Link to="/executions">Back to executions</Link>
+            </Button>
           </div>
         }
       />
@@ -52,12 +46,9 @@ export function AppNotFound(_props: NotFoundRouteProps) {
       title="Not found"
       body="The page or resource you requested does not exist."
       action={
-        <Link
-          to="/"
-          className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
-        >
-          Return to dashboard
-        </Link>
+        <Button asChild variant="default" className="rounded-none">
+          <Link to="/executions">Return to executions</Link>
+        </Button>
       }
     />
   );

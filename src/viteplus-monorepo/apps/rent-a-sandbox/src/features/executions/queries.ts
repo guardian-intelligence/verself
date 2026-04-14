@@ -10,11 +10,11 @@ import { getExecution } from "~/server-fns/api";
 import { ensureOrNotFound } from "~/lib/query-loader";
 import { isExecutionActiveStatus } from "./status";
 
-// The jobs page is gated on billing credits state, so we preload the three
-// billing snapshot sources the selector needs. Statement is intentionally
-// omitted — the credits_exhausted check derives from the entitlements tree,
-// not from the current billing cycle's line items.
-export async function loadJobsIndex(
+// The executions page is gated on billing credits state, so we preload the
+// three billing snapshot sources the selector needs. Statement is
+// intentionally omitted — the credits_exhausted check derives from the
+// entitlements tree, not from the current billing cycle's line items.
+export async function loadExecutionsIndex(
   queryClient: QueryClient,
   auth: AuthenticatedAuth,
 ): Promise<{ account: BillingAccount }> {
@@ -34,7 +34,7 @@ export async function loadJobsIndex(
 
 export function executionQuery(auth: AuthenticatedAuth, executionId: string) {
   return queryOptions({
-    queryKey: authQueryKey(auth, "jobs", executionId),
+    queryKey: authQueryKey(auth, "executions", executionId),
     queryFn: () => getExecution({ data: { executionId } }),
     staleTime: 10_000,
     refetchInterval: (query) => {

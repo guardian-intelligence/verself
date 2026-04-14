@@ -6,22 +6,18 @@ test.describe("Rent-a-Sandbox Shell", () => {
     await ensureTestUserExists();
   });
 
-  test("guest shell is server-rendered and protected routes redirect to auth", async ({ app }) => {
+  test("unauthenticated root redirects into the sign-in flow", async ({ app }) => {
     const run = app.createRun();
 
     try {
       run.detail_url = "/";
 
-      await app.expectSSRHTML("/", ["Rent-a-Sandbox", "Sign in to manage sandboxes"]);
-      await app.assertStableRoute({
-        path: "/",
-        ready: app.page.getByText("Sign in to manage sandboxes"),
-        expectedText: ["Rent-a-Sandbox", "Sign in to manage sandboxes", "Firecracker sandboxes"],
-        exactText: true,
-      });
-
-      await app.page.getByRole("link", { name: "Repos", exact: true }).click();
-      await app.waitForCondition("protected route redirect", 10_000, async () => {
+      await app.goto("/");
+      // The authenticated app shell owns every chrome surface, and `/`
+      // now redirects into either `/executions` (authed) or `/login`
+      // (guest). A guest opening `/` should bounce to Zitadel; we assert
+      // the URL lands on the Zitadel origin.
+      await app.waitForCondition("guest redirect to Zitadel", 10_000, async () => {
         return app.page.url().startsWith(env.zitadelBaseURL) ? true : false;
       });
 
@@ -36,7 +32,7 @@ test.describe("Rent-a-Sandbox Shell", () => {
     }
   });
 
-  test("authenticated dashboard shell preserves SSR through hydration", async ({ app }) => {
+  test("authenticated shell lands on executions and navigates via the rail", async ({ app }) => {
     const run = app.createRun();
 
     try {
@@ -46,23 +42,61 @@ test.describe("Rent-a-Sandbox Shell", () => {
       run.detail_url = "/";
       run.started_balance = await app.readBalance();
 
-      await app.expectSSRHTML("/", ["Dashboard", "View Entitlements"]);
+      // `/` redirects to `/executions`; the shell omnibar is our stable
+      // marker that the chrome mounted on the server side.
+      await app.expectSSRHTML("/executions", ["Executions", "Search or jump"]);
       await app.assertStableRoute({
-        path: "/",
-        ready: app.page.getByRole("heading", { name: "Dashboard" }),
-        expectedText: ["Dashboard", "View Entitlements", "Repos", "Executions"],
-        exactText: true,
+        path: "/executions",
+        ready: app.page.getByTestId("shell-omnibar"),
+        expectedText: ["Executions", "Search or jump to"],
       });
 
-      await app.page.getByRole("link", { name: "Billing", exact: true }).click();
-      await expect(app.page).toHaveURL(/\/billing$/);
-      await expect(app.page.getByRole("heading", { name: "Billing" })).toBeVisible();
+      // Navigate from Executions to Settings → Billing via the rail + the
+      // account popover. The popover must be opened before the Settings
+      // link is visible.
+      await app.page.getByTestId("shell-account-trigger").click();
+      await app.page.getByRole("menuitem", { name: /^Settings$/ }).click();
+      await expect(app.page).toHaveURL(/\/settings\/billing$/);
+      await expect(app.page.getByTestId("settings-tab-billing")).toHaveAttribute(
+        "data-status",
+        "active",
+      );
 
-      await app.page.getByRole("link", { name: "Dashboard", exact: true }).click();
-      await expect(app.page).toHaveURL(/\/$/);
-      await expect(app.page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+      // Click the "Executions" rail item back to the product.
+      await app.page.getByTestId("nav-executions").click();
+      await expect(app.page).toHaveURL(/\/executions$/);
 
       run.finished_balance = await app.readBalance();
+      run.status = "succeeded";
+      run.terminal_observed_at = new Date().toISOString();
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message : String(error);
+      throw error;
+    } finally {
+      await app.persistRun(run);
+    }
+  });
+
+  test("command palette opens with Cmd+K and jumps to Billing", async ({ app }) => {
+    const run = app.createRun();
+
+    try {
+      await app.ensureLoggedIn();
+      app.resetBrowserSignals();
+      await app.goto("/executions");
+      run.detail_url = "/executions";
+
+      const isMac = process.platform === "darwin";
+      await app.page.keyboard.press(isMac ? "Meta+K" : "Control+K");
+      await expect(app.page.getByTestId("command-palette-input")).toBeVisible();
+
+      await app.page.getByTestId("command-palette-input").fill("bill");
+      await expect(app.page.getByTestId("command-palette-item-settings:billing")).toBeVisible();
+      await app.page.keyboard.press("Enter");
+
+      await expect(app.page).toHaveURL(/\/settings\/billing$/);
+
       run.status = "succeeded";
       run.terminal_observed_at = new Date().toISOString();
     } catch (error) {

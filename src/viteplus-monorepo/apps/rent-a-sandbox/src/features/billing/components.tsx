@@ -1,29 +1,36 @@
+import { Badge } from "@forge-metal/ui/components/ui/badge";
 import { Callout } from "~/components/callout";
 import { formatDateTimeUTC } from "~/lib/format";
 import type { FlashIntent } from "./flash";
 import { assertUnreachable } from "./state";
 
+// Receipt design: status is conveyed by a single monochrome badge shape
+// plus a `data-contract-status` hook. e2e selectors can target the data
+// attribute; visual distinction comes from variant, not color.
+const TERMINAL_SUCCESS = new Set(["active"]);
+const TERMINAL_NEUTRAL = new Set(["cancel_scheduled", "suspended"]);
+const TERMINAL_FAILURE = new Set(["ended", "voided"]);
+
 export function ContractStatusPill({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    active: "bg-green-100 text-green-800",
-    cancel_scheduled: "bg-yellow-100 text-yellow-800",
-    suspended: "bg-yellow-100 text-yellow-800",
-    ended: "bg-red-100 text-red-800",
-    voided: "bg-red-100 text-red-800",
-  };
+  let variant: "default" | "secondary" | "outline" | "destructive" = "outline";
+  if (TERMINAL_SUCCESS.has(status)) variant = "default";
+  else if (TERMINAL_FAILURE.has(status)) variant = "destructive";
+  else if (TERMINAL_NEUTRAL.has(status)) variant = "secondary";
 
   return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? "bg-muted text-muted-foreground"}`}
+    <Badge
+      variant={variant}
+      data-contract-status={status}
+      className="rounded-none border-foreground font-mono text-[10px] uppercase tracking-wider"
     >
       {status}
-    </span>
+    </Badge>
   );
 }
 
 // Renders a tonally-correct banner for every post-Stripe redirect. The DU
-// wiring forces every new FlashIntent kind to be handled here or the TypeScript
-// exhaustive switch fails at compile time.
+// wiring forces every new FlashIntent kind to be handled here or the
+// TypeScript exhaustive switch fails at compile time.
 export function BillingFlashNotice({ intent }: { intent: FlashIntent }) {
   switch (intent.kind) {
     case "none":

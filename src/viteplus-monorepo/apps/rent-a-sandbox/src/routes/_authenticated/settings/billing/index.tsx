@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Button } from "@forge-metal/ui/components/ui/button";
 import { ErrorCallout } from "~/components/error-callout";
 import { TableEmptyRow } from "~/components/table-empty-row";
 import { BillingFlashNotice, ContractStatusPill } from "~/features/billing/components";
@@ -50,7 +51,7 @@ const DRAIN_SOURCES: readonly DrainSourceSpec[] = [
 
 const SANDBOX_PRODUCT_ID = "sandbox";
 
-export const Route = createFileRoute("/_authenticated/billing/")({
+export const Route = createFileRoute("/_authenticated/settings/billing/")({
   validateSearch: parseFlashSearch,
   loader: ({ context }) => loadBillingPage(context.queryClient, context.auth),
   component: BillingPage,
@@ -77,30 +78,25 @@ function BillingPage() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Billing</h1>
+        <h2 className="font-mono text-sm font-semibold uppercase tracking-wider">Billing</h2>
         <div className="flex flex-wrap gap-3">
           {contractRows.length > 0 ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => portalMutation.mutate()}
               disabled={portalMutation.isPending}
-              className="px-4 py-2 min-w-[128px] rounded-md border border-border hover:bg-accent text-sm disabled:opacity-50"
+              className="rounded-none"
             >
-              {portalMutation.isPending ? "Opening..." : "Manage Billing"}
-            </button>
+              {portalMutation.isPending ? "Opening…" : "Manage billing"}
+            </Button>
           ) : null}
-          <Link
-            to="/billing/subscribe"
-            className="px-4 py-2 rounded-md border border-border hover:bg-accent text-sm"
-          >
-            Choose Plan
-          </Link>
-          <Link
-            to="/billing/credits"
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-sm"
-          >
-            Buy Credits
-          </Link>
+          <Button asChild variant="outline" className="rounded-none">
+            <Link to="/settings/billing/subscribe">Choose plan</Link>
+          </Button>
+          <Button asChild variant="default" className="rounded-none">
+            <Link to="/settings/billing/credits">Buy credits</Link>
+          </Button>
         </div>
       </div>
 
@@ -121,21 +117,37 @@ function BillingPage() {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold mb-3">Contracts</h2>
-        <div className="border border-border rounded-lg overflow-hidden">
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Contracts
+        </h2>
+        <div className="border border-foreground">
           <table className="w-full text-sm">
-            <thead className="bg-muted/50">
+            <thead className="border-b border-foreground bg-foreground/[0.03]">
               <tr>
-                <th className="text-left px-4 py-2 font-medium">Plan</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-                <th className="text-left px-4 py-2 font-medium">Payment</th>
-                <th className="text-left px-4 py-2 font-medium">Entitlement</th>
-                <th className="text-left px-4 py-2 font-medium">Cadence</th>
-                <th className="text-left px-4 py-2 font-medium">Period End</th>
-                <th className="text-right px-4 py-2 font-medium">Actions</th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Plan
+                </th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Payment
+                </th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Entitlement
+                </th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Cadence
+                </th>
+                <th className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-wider">
+                  Period end
+                </th>
+                <th className="px-4 py-2 text-right font-mono text-[10px] uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-foreground/20">
               {contractRows.length > 0 ? (
                 contractRows.map((contract) => {
                   const canCancel =
@@ -149,51 +161,63 @@ function BillingPage() {
                       key={contract.contract_id}
                       data-testid={`contract-row-${contract.contract_id}`}
                     >
-                      <td className="px-4 py-2 font-medium">{contract.plan_id}</td>
+                      <td className="px-4 py-2 font-mono font-medium">{contract.plan_id}</td>
                       <td className="px-4 py-2">
                         <ContractStatusPill status={contract.status} />
                       </td>
-                      <td className="px-4 py-2">{contract.payment_state}</td>
-                      <td className="px-4 py-2">{contract.entitlement_state}</td>
-                      <td className="px-4 py-2">{contract.cadence_kind}</td>
-                      <td className="px-4 py-2 text-muted-foreground">
+                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
+                        {contract.payment_state}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
+                        {contract.entitlement_state}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs uppercase tracking-wider">
+                        {contract.cadence_kind}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-muted-foreground">
                         {contract.ends_at ? formatDateUTC(contract.ends_at) : "--"}
                       </td>
                       <td className="px-4 py-2 text-right">
                         {canCancel ? (
                           isCancelTarget ? (
                             <div className="flex justify-end gap-2">
-                              <button
+                              <Button
                                 type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="rounded-none"
                                 onClick={() => {
                                   cancelMutation.mutate(contract.contract_id, {
                                     onSuccess: () => setCancelTarget(null),
                                   });
                                 }}
                                 disabled={cancelMutation.isPending}
-                                className="px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground hover:opacity-90 text-xs disabled:opacity-50"
                               >
-                                {cancelMutation.isPending ? "Canceling..." : "Confirm Cancellation"}
-                              </button>
-                              <button
+                                {cancelMutation.isPending ? "Canceling…" : "Confirm"}
+                              </Button>
+                              <Button
                                 type="button"
+                                variant="outline"
+                                size="sm"
+                                className="rounded-none"
                                 onClick={() => setCancelTarget(null)}
                                 disabled={cancelMutation.isPending}
-                                className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-xs disabled:opacity-50"
                               >
-                                Keep Contract
-                              </button>
+                                Keep
+                              </Button>
                             </div>
                           ) : (
-                            <button
+                            <Button
                               type="button"
+                              variant="outline"
+                              size="sm"
+                              className="rounded-none"
                               data-testid={`cancel-contract-${contract.contract_id}`}
                               onClick={() => setCancelTarget(contract.contract_id)}
                               disabled={cancelMutation.isPending}
-                              className="px-3 py-1.5 rounded-md border border-border hover:bg-accent text-xs disabled:opacity-50"
                             >
                               Cancel
-                            </button>
+                            </Button>
                           )
                         ) : (
                           <span className="text-muted-foreground">--</span>
@@ -230,14 +254,16 @@ function StatementPreview({
   return (
     <section className="space-y-3" data-testid="statement-usage">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Usage</h2>
-        <p className="text-sm text-muted-foreground">
-          Current billing cycle started at {formatDateTimeMillisUTC(statement.period_start)}
+        <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Usage
+        </h2>
+        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+          Cycle started {formatDateTimeMillisUTC(statement.period_start)}
         </p>
       </div>
 
-      <div className="border border-border rounded-lg overflow-hidden text-sm">
-        <div className="bg-muted/50 px-4 py-2 flex items-baseline justify-between font-medium">
+      <div className="border border-foreground text-sm">
+        <div className="flex items-baseline justify-between border-b border-foreground bg-foreground/[0.03] px-4 py-2 font-mono text-[10px] uppercase tracking-wider">
           <span>SKU</span>
           <span>Usage</span>
         </div>
