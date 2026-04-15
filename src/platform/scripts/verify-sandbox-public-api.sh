@@ -18,7 +18,18 @@ proof_persona="${SANDBOX_PROOF_PERSONA:-platform-admin}"
 workload_profile="${SANDBOX_PROOF_WORKLOAD_PROFILE:-echo}"
 workload_memory_mib="${SANDBOX_PROOF_WORKLOAD_MEMORY_MIB:-3072}"
 workload_cpu_seconds="${SANDBOX_PROOF_WORKLOAD_CPU_SECONDS:-3}"
+workload_cpu_workers="${SANDBOX_PROOF_WORKLOAD_CPU_WORKERS:-1}"
+workload_disk_mib="${SANDBOX_PROOF_WORKLOAD_DISK_MIB:-256}"
+workload_disk_block_kib="${SANDBOX_PROOF_WORKLOAD_DISK_BLOCK_KIB:-1024}"
 proof_log_marker="${SANDBOX_PROOF_LOG_MARKER:-forge-metal-proof}"
+
+case "${workload_profile,,}" in
+  disk | disk-write | disk_write)
+    workload_memory_mib="0"
+    workload_cpu_seconds="0"
+    workload_cpu_workers="1"
+    ;;
+esac
 
 case "${proof_persona}" in
   platform-admin)
@@ -85,13 +96,23 @@ submit_one() {
   local response_path="${artifact_dir}/responses/${index}.json"
   local idempotency_key="${run_id}-${index}"
 
-  python3 - "${idempotency_key}" "${index}" "${max_wall_seconds}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" >"${payload_path}" <<'PY'
+  python3 - "${idempotency_key}" "${index}" "${max_wall_seconds}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" "${workload_cpu_workers}" "${workload_disk_mib}" "${workload_disk_block_kib}" >"${payload_path}" <<'PY'
 import base64
 import json
 import shlex
 import sys
 
-idempotency_key, index, max_wall_seconds, workload_profile, workload_memory_mib, workload_cpu_seconds = sys.argv[1:7]
+(
+    idempotency_key,
+    index,
+    max_wall_seconds,
+    workload_profile,
+    workload_memory_mib,
+    workload_cpu_seconds,
+    workload_cpu_workers,
+    workload_disk_mib,
+    workload_disk_block_kib,
+) = sys.argv[1:10]
 workload_profile = workload_profile.strip().lower()
 
 
@@ -99,72 +120,163 @@ def echo_command(index_value: str) -> str:
     return f"printf 'forge-metal-proof workload=echo index={index_value} ok\\n'"
 
 
-def cpu_mem_command(index_value: str, memory_mib_value: str, cpu_seconds_value: str) -> str:
+def resource_workload_command(
+    profile_value: str,
+    index_value: str,
+    memory_mib_value: str,
+    cpu_seconds_value: str,
+    cpu_workers_value: str,
+    disk_mib_value: str,
+    disk_block_kib_value: str,
+) -> str:
     index_int = int(index_value)
     memory_mib_int = int(memory_mib_value)
     cpu_seconds_float = float(cpu_seconds_value)
-    if memory_mib_int < 1:
-        raise SystemExit("SANDBOX_PROOF_WORKLOAD_MEMORY_MIB must be >= 1")
+    cpu_workers_int = int(cpu_workers_value)
+    disk_mib_int = int(disk_mib_value)
+    disk_block_kib_int = int(disk_block_kib_value)
+    normalized_profile = profile_value.replace("_", "-")
+    if normalized_profile == "cpu-mem" and memory_mib_int < 1:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_MEMORY_MIB must be >= 1 for cpu-mem")
+    if normalized_profile in ("disk", "mixed") and disk_mib_int < 1:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_DISK_MIB must be >= 1 for disk workloads")
+    if memory_mib_int < 0:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_MEMORY_MIB must be >= 0")
     if cpu_seconds_float < 0:
         raise SystemExit("SANDBOX_PROOF_WORKLOAD_CPU_SECONDS must be >= 0")
+    if cpu_workers_int < 1:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_CPU_WORKERS must be >= 1")
+    if disk_block_kib_int < 4:
+        raise SystemExit("SANDBOX_PROOF_WORKLOAD_DISK_BLOCK_KIB must be >= 4")
     source = """import argparse
 import hashlib
+import multiprocessing
+import os
 import resource
 import time
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--profile", required=True)
 parser.add_argument("--index", type=int, required=True)
 parser.add_argument("--memory-mib", type=int, required=True)
 parser.add_argument("--cpu-seconds", type=float, required=True)
+parser.add_argument("--cpu-workers", type=int, required=True)
+parser.add_argument("--disk-mib", type=int, required=True)
+parser.add_argument("--disk-block-kib", type=int, required=True)
 args = parser.parse_args()
 
+PROFILE = args.profile
 INDEX = args.index
 MEMORY_MIB = args.memory_mib
 CPU_SECONDS = args.cpu_seconds
+CPU_WORKERS = args.cpu_workers
+DISK_MIB = args.disk_mib
+DISK_BLOCK_KIB = args.disk_block_kib
 PAGE_BYTES = 4096
 TOTAL_BYTES = MEMORY_MIB * 1024 * 1024
+DISK_BYTES = DISK_MIB * 1024 * 1024
+DISK_BLOCK_BYTES = DISK_BLOCK_KIB * 1024
+scratch_path = f"/workspace/forge-metal-proof-{INDEX}.bin"
 
 started = time.perf_counter()
-buf = bytearray(TOTAL_BYTES)
-for offset in range(0, TOTAL_BYTES, PAGE_BYTES):
-    buf[offset] = ((offset // PAGE_BYTES) + INDEX) & 0xFF
+buf = bytearray(TOTAL_BYTES) if TOTAL_BYTES > 0 else bytearray(1024 * 1024)
+if TOTAL_BYTES > 0:
+    for offset in range(0, TOTAL_BYTES, PAGE_BYTES):
+        buf[offset] = ((offset // PAGE_BYTES) + INDEX) & 0xFF
 touched = time.perf_counter()
 
 view = memoryview(buf)
-deadline = touched + CPU_SECONDS
-chunk_bytes = 1024 * 1024
+CPU_BYTES = len(buf)
+cpu_seed = bytes(view[:min(CPU_BYTES, 1024 * 1024)])
 loops = 0
 digest = "0" * 64
-while time.perf_counter() < deadline:
+
+def run_cpu_worker(worker_index, seconds, seed):
+    local = bytearray(seed)
+    deadline = time.perf_counter() + seconds
+    worker_loops = 0
+    worker_digest = "0" * 64
+    while time.perf_counter() < deadline:
+        h = hashlib.sha256()
+        for _ in range(64):
+            h.update(local)
+        digest_bytes = h.digest()
+        worker_digest = digest_bytes.hex()
+        local[(worker_loops * 7919 + worker_index) % len(local)] ^= digest_bytes[0]
+        worker_loops += 1
+    return worker_loops, worker_digest
+
+if CPU_SECONDS > 0:
+    with multiprocessing.Pool(processes=CPU_WORKERS) as pool:
+        results = pool.starmap(run_cpu_worker, [(worker, CPU_SECONDS, cpu_seed) for worker in range(CPU_WORKERS)])
+    loops = sum(item[0] for item in results)
+    digest = hashlib.sha256("".join(item[1] for item in results).encode("ascii")).hexdigest()
+
+disk_write_seconds = 0.0
+disk_read_seconds = 0.0
+disk_digest = "0" * 64
+if DISK_BYTES > 0:
+    write_started = time.perf_counter()
+    pattern = bytes(((INDEX + offset) & 0xFF for offset in range(256)))
+    block = (pattern * ((DISK_BLOCK_BYTES // len(pattern)) + 1))[:DISK_BLOCK_BYTES]
+    written = 0
+    with open(scratch_path, "wb", buffering=0) as f:
+        while written < DISK_BYTES:
+            n = min(len(block), DISK_BYTES - written)
+            f.write(block[:n])
+            written += n
+        os.fsync(f.fileno())
+    disk_write_seconds = time.perf_counter() - write_started
+
+    read_started = time.perf_counter()
     h = hashlib.sha256()
-    for offset in range(0, TOTAL_BYTES, chunk_bytes):
-        h.update(view[offset:offset + chunk_bytes])
-        if time.perf_counter() >= deadline:
-            break
-    digest = h.hexdigest()
-    buf[(loops * 7919 * PAGE_BYTES) % TOTAL_BYTES] ^= loops & 0xFF
-    loops += 1
+    with open(scratch_path, "rb", buffering=0) as f:
+        while True:
+            chunk = f.read(DISK_BLOCK_BYTES)
+            if not chunk:
+                break
+            h.update(chunk)
+    disk_digest = h.hexdigest()
+    disk_read_seconds = time.perf_counter() - read_started
 
 rss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 print(
     "forge-metal-proof "
-    f"workload=cpu-mem index={{INDEX}} memory_mib={{MEMORY_MIB}} "
-    f"cpu_seconds={{CPU_SECONDS:g}} touch_seconds={{touched - started:.3f}} "
-    f"loops={{loops}} rss_kib={{rss_kib}} digest={{digest[:16]}} ok",
+    f"workload={PROFILE} index={INDEX} memory_mib={MEMORY_MIB} "
+    f"cpu_seconds={CPU_SECONDS:g} cpu_workers={CPU_WORKERS} touch_seconds={touched - started:.3f} "
+    f"loops={loops} disk_mib={DISK_MIB} disk_write_seconds={disk_write_seconds:.3f} "
+    f"disk_read_seconds={disk_read_seconds:.3f} rss_kib={rss_kib} "
+    f"digest={digest[:16]} disk_digest={disk_digest[:16]} ok",
     flush=True,
 )
 """
     encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
     return (
         f"printf %s {shlex.quote(encoded)} | base64 -d | python3 - "
-        f"--index {index_int} --memory-mib {memory_mib_int} --cpu-seconds {cpu_seconds_float:g}"
+        f"--profile {shlex.quote(normalized_profile)} "
+        f"--index {index_int} --memory-mib {memory_mib_int} "
+        f"--cpu-seconds {cpu_seconds_float:g} --cpu-workers {cpu_workers_int} "
+        f"--disk-mib {disk_mib_int} "
+        f"--disk-block-kib {disk_block_kib_int}"
     )
 
 
 if workload_profile == "echo":
     run_command = echo_command(index)
-elif workload_profile in ("cpu-mem", "cpu_mem"):
-    run_command = cpu_mem_command(index, workload_memory_mib, workload_cpu_seconds)
+elif workload_profile in ("cpu-mem", "cpu_mem", "disk", "disk-write", "disk_write", "mixed"):
+    normalized = "disk" if workload_profile in ("disk-write", "disk_write") else workload_profile.replace("_", "-")
+    if normalized == "disk":
+        workload_memory_mib = "0"
+        workload_cpu_seconds = "0"
+    run_command = resource_workload_command(
+        normalized,
+        index,
+        workload_memory_mib,
+        workload_cpu_seconds,
+        workload_cpu_workers,
+        workload_disk_mib,
+        workload_disk_block_kib,
+    )
 else:
     raise SystemExit(f"unsupported SANDBOX_PROOF_WORKLOAD_PROFILE={workload_profile!r}")
 
@@ -187,7 +299,7 @@ PY
 }
 
 export -f submit_one
-export artifact_dir max_wall_seconds run_id SANDBOX_RENTAL_TOKEN api_url workload_profile workload_memory_mib workload_cpu_seconds
+export artifact_dir max_wall_seconds run_id SANDBOX_RENTAL_TOKEN api_url workload_profile workload_memory_mib workload_cpu_seconds workload_cpu_workers workload_disk_mib workload_disk_block_kib
 
 submit_failed=0
 active=0
@@ -709,11 +821,11 @@ if [[ "${span_counts_ok}" -ne 1 ]]; then
   exit 1
 fi
 
-python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" <<'PY'
+python3 - "${artifact_dir}/run.json" "${run_id}" "${submitted_at}" "${submission_count}" "${artifact_dir}" "${workload_profile}" "${workload_memory_mib}" "${workload_cpu_seconds}" "${workload_cpu_workers}" "${workload_disk_mib}" "${workload_disk_block_kib}" <<'PY'
 import json
 import sys
 
-out, run_id, submitted_at, submission_count, artifact_dir, workload_profile, workload_memory_mib, workload_cpu_seconds = sys.argv[1:9]
+out, run_id, submitted_at, submission_count, artifact_dir, workload_profile, workload_memory_mib, workload_cpu_seconds, workload_cpu_workers, workload_disk_mib, workload_disk_block_kib = sys.argv[1:12]
 print(json.dumps({
     "verification_run_id": run_id,
     "submitted_at": submitted_at,
@@ -722,6 +834,9 @@ print(json.dumps({
     "workload_profile": workload_profile,
     "workload_memory_mib": int(workload_memory_mib),
     "workload_cpu_seconds": float(workload_cpu_seconds),
+    "workload_cpu_workers": int(workload_cpu_workers),
+    "workload_disk_mib": int(workload_disk_mib),
+    "workload_disk_block_kib": int(workload_disk_block_kib),
 }, indent=2, sort_keys=True), file=open(out, "w", encoding="utf-8"))
 PY
 
