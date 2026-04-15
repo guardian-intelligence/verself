@@ -403,6 +403,10 @@ export type SandboxSubmitRequest = {
   max_wall_seconds?: number;
   product_id?: string;
   provider?: string;
+  /**
+   * Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+   */
+  resources?: VmResources;
   run_command?: string;
   /**
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
@@ -425,6 +429,25 @@ export type SchedulerProbeResponse = {
   kind: string;
   queue: string;
   status: string;
+};
+
+export type VmResources = {
+  /**
+   * Named guest kernel image. Defaults to "default".
+   */
+  kernel_image?: string;
+  /**
+   * Guest RAM in MiB.
+   */
+  memory_mib: number;
+  /**
+   * Root disk quota in GiB; enforced on the per-lease ZFS clone via refquota/refreservation.
+   */
+  root_disk_gib: number;
+  /**
+   * Number of vCPUs exposed to the guest.
+   */
+  vcpus: number;
 };
 
 export type BillingCancelContractResponseWritable = {
@@ -585,6 +608,10 @@ export type SandboxSubmitRequestWritable = {
   max_wall_seconds?: number;
   product_id?: string;
   provider?: string;
+  /**
+   * Requested VM shape (vCPUs, memory, root disk). Omit to use defaults; out-of-bounds shapes are rejected with 400.
+   */
+  resources?: VmResources;
   run_command?: string;
   /**
    * Runner class label, for example metal-4vcpu-ubuntu-2404.

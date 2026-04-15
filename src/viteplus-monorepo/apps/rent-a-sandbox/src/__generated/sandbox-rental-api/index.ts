@@ -137,4 +137,5 @@ export type {
   SubmitExecutionErrors,
   SubmitExecutionResponse,
   SubmitExecutionResponses,
+  VmResources,
 } from "./types.gen.js";

@@ -118,13 +118,3 @@ argument_specs:
         type: str
         default: vm-clients
         description: "System group granted rw access to the vm-orchestrator Unix socket."
-
-      firecracker_vcpus_per_vm:
-        type: int
-        default: 4
-        description: "Default vCPU count per Firecracker VM."
-
-      firecracker_memory_mib_per_vm:
-        type: int
-        default: 4096
-        description: "Default memory per Firecracker VM in MiB."
