@@ -1,0 +1,22 @@
+name: Forge Metal runner canary
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  runner-canary:
+    runs-on: metal-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prove Forge Metal runner execution
+        run: |
+          set -euo pipefail
+          echo "hello from Forge Metal"
+          uname -a
+          id
+          go version
+          git rev-parse --show-toplevel
