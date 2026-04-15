@@ -364,8 +364,8 @@ function ExecutionListError({ status }: { status: string }) {
       title="Could not load executions"
       error={`Execution sync failed (${status}).`}
       action={
-        <Button asChild variant="outline">
-          <Link to="/executions">Retry</Link>
+        <Button variant="outline" render={<Link to="/executions" />}>
+          Retry
         </Button>
       }
     />
@@ -378,8 +378,8 @@ function ExecutionListEmpty() {
       title="No executions yet"
       body="Launch a manual execution to get started."
       action={
-        <Button asChild variant="default">
-          <Link to="/executions/new">New execution</Link>
+        <Button variant="default" render={<Link to="/executions/new" />}>
+          New execution
         </Button>
       }
     />

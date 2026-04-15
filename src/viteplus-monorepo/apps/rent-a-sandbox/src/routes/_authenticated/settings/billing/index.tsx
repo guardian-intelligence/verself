@@ -90,11 +90,11 @@ function BillingPage() {
             {portalMutation.isPending ? "Opening…" : "Manage billing"}
           </Button>
         ) : null}
-        <Button asChild variant="outline">
-          <Link to="/settings/billing/subscribe">Choose plan</Link>
+        <Button variant="outline" render={<Link to="/settings/billing/subscribe" />}>
+          Choose plan
         </Button>
-        <Button asChild variant="default">
-          <Link to="/settings/billing/credits">Buy credits</Link>
+        <Button variant="default" render={<Link to="/settings/billing/credits" />}>
+          Buy credits
         </Button>
       </div>
 
