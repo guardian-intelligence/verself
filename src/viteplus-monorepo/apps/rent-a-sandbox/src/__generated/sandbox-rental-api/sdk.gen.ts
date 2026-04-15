@@ -22,12 +22,6 @@ import type {
   CreateBillingPortalData,
   CreateBillingPortalErrors,
   CreateBillingPortalResponses,
-  CreateWebhookEndpointData,
-  CreateWebhookEndpointErrors,
-  CreateWebhookEndpointResponses,
-  DeleteWebhookEndpointData,
-  DeleteWebhookEndpointErrors,
-  DeleteWebhookEndpointResponses,
   GetBillingEntitlementsData,
   GetBillingEntitlementsErrors,
   GetBillingEntitlementsResponses,
@@ -40,12 +34,6 @@ import type {
   GetExecutionLogsErrors,
   GetExecutionLogsResponses,
   GetExecutionResponses,
-  GetRepoData,
-  GetRepoErrors,
-  GetRepoResponses,
-  ImportRepoData,
-  ImportRepoErrors,
-  ImportRepoResponses,
   ListBillingContractsData,
   ListBillingContractsErrors,
   ListBillingContractsResponses,
@@ -55,18 +43,6 @@ import type {
   ListGithubInstallationsData,
   ListGithubInstallationsErrors,
   ListGithubInstallationsResponses,
-  ListReposData,
-  ListReposErrors,
-  ListReposResponses,
-  ListWebhookEndpointsData,
-  ListWebhookEndpointsErrors,
-  ListWebhookEndpointsResponses,
-  RescanRepoData,
-  RescanRepoErrors,
-  RescanRepoResponses,
-  RotateWebhookEndpointSecretData,
-  RotateWebhookEndpointSecretErrors,
-  RotateWebhookEndpointSecretResponses,
   SubmitExecutionData,
   SubmitExecutionErrors,
   SubmitExecutionResponses,
@@ -315,125 +291,5 @@ export const beginGithubInstallation = <ThrowOnError extends boolean = false>(
   >({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/api/v1/github/installations/connect",
-    ...options,
-  });
-
-/**
- * List imported repos for the current org
- */
-export const listRepos = <ThrowOnError extends boolean = false>(
-  options?: Options<ListReposData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<ListReposResponses, ListReposErrors, ThrowOnError>({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/repos",
-    ...options,
-  });
-
-/**
- * Import or rescan repo metadata
- */
-export const importRepo = <ThrowOnError extends boolean = false>(
-  options: Options<ImportRepoData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<ImportRepoResponses, ImportRepoErrors, ThrowOnError>({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/repos",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-/**
- * Get repo state and compatibility details
- */
-export const getRepo = <ThrowOnError extends boolean = false>(
-  options: Options<GetRepoData, ThrowOnError>,
-) =>
-  (options.client ?? client).get<GetRepoResponses, GetRepoErrors, ThrowOnError>({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/repos/{repo_id}",
-    ...options,
-  });
-
-/**
- * Rescan repo metadata
- */
-export const rescanRepo = <ThrowOnError extends boolean = false>(
-  options: Options<RescanRepoData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<RescanRepoResponses, RescanRepoErrors, ThrowOnError>({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/repos/{repo_id}/rescan",
-    ...options,
-  });
-
-/**
- * List git webhook endpoints for the current org
- */
-export const listWebhookEndpoints = <ThrowOnError extends boolean = false>(
-  options?: Options<ListWebhookEndpointsData, ThrowOnError>,
-) =>
-  (options?.client ?? client).get<
-    ListWebhookEndpointsResponses,
-    ListWebhookEndpointsErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/webhook-endpoints",
-    ...options,
-  });
-
-/**
- * Create a git webhook endpoint
- */
-export const createWebhookEndpoint = <ThrowOnError extends boolean = false>(
-  options: Options<CreateWebhookEndpointData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<
-    CreateWebhookEndpointResponses,
-    CreateWebhookEndpointErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/webhook-endpoints",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
-
-/**
- * Deactivate a git webhook endpoint
- */
-export const deleteWebhookEndpoint = <ThrowOnError extends boolean = false>(
-  options: Options<DeleteWebhookEndpointData, ThrowOnError>,
-) =>
-  (options.client ?? client).delete<
-    DeleteWebhookEndpointResponses,
-    DeleteWebhookEndpointErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/webhook-endpoints/{endpoint_id}",
-    ...options,
-  });
-
-/**
- * Rotate a git webhook endpoint secret
- */
-export const rotateWebhookEndpointSecret = <ThrowOnError extends boolean = false>(
-  options: Options<RotateWebhookEndpointSecretData, ThrowOnError>,
-) =>
-  (options.client ?? client).post<
-    RotateWebhookEndpointSecretResponses,
-    RotateWebhookEndpointSecretErrors,
-    ThrowOnError
-  >({
-    security: [{ scheme: "bearer", type: "http" }],
-    url: "/api/v1/webhook-endpoints/{endpoint_id}/rotate",
     ...options,
   });

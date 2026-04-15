@@ -73,6 +73,12 @@ func executionRecord(record jobs.ExecutionRecord) apiwire.SandboxExecutionRecord
 }
 
 func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
+	var exitCode *int
+	if record.CompletedAt != nil {
+		exitCodeValue := record.ExitCode
+		exitCode = &exitCodeValue
+	}
+
 	return apiwire.SandboxAttemptRecord{
 		AttemptID:     record.AttemptID,
 		AttemptSeq:    record.AttemptSeq,
@@ -81,7 +87,7 @@ func attemptRecord(record jobs.AttemptRecord) apiwire.SandboxAttemptRecord {
 		ExecID:        record.ExecID,
 		BillingJobID:  record.BillingJobID,
 		FailureReason: record.FailureReason,
-		ExitCode:      record.ExitCode,
+		ExitCode:      exitCode,
 		DurationMs:    record.DurationMs,
 		ZFSWritten:    record.ZFSWritten,
 		StdoutBytes:   record.StdoutBytes,

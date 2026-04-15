@@ -232,9 +232,10 @@ export type SandboxAttemptRecord = {
   completed_at?: string;
   created_at: string;
   duration_ms?: number;
+  exec_id?: string;
   exit_code?: number;
   failure_reason?: string;
-  orchestrator_run_id?: string;
+  lease_id?: string;
   started_at?: string;
   state: string;
   stderr_bytes?: number;
@@ -313,44 +314,6 @@ export type SandboxBillingWindow = {
   window_start: string;
 };
 
-export type SandboxCreateWebhookEndpointRequest = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  /**
-   * Operator-visible endpoint label
-   */
-  label?: string;
-  /**
-   * Git provider to accept webhook events from
-   */
-  provider?: "forgejo";
-  /**
-   * Public git host, for example git.example.com or codeberg.org
-   */
-  provider_host: string;
-};
-
-export type SandboxCreateWebhookEndpointResponse = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  active: boolean;
-  created_at: string;
-  delivery_count: number;
-  endpoint_id: string;
-  integration_id: string;
-  label: string;
-  provider: string;
-  provider_host: string;
-  secret: string;
-  secret_fingerprint?: string;
-  updated_at: string;
-  webhook_url: string;
-};
-
 export type SandboxExecutionLogs = {
   /**
    * A URL to the JSON Schema for this object.
@@ -370,7 +333,6 @@ export type SandboxExecutionRecord = {
   billing_windows?: Array<SandboxBillingWindow> | null;
   correlation_id?: string;
   created_at: string;
-  default_branch?: string;
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
@@ -380,10 +342,6 @@ export type SandboxExecutionRecord = {
   org_id: string;
   product_id: string;
   provider?: string;
-  ref?: string;
-  repo?: string;
-  repo_id?: string;
-  repo_url?: string;
   run_command?: string;
   runner_class?: string;
   source_kind?: string;
@@ -425,58 +383,6 @@ export type SandboxGitHubInstallationRecord = {
   updated_at: string;
 };
 
-export type SandboxImportRepoRequest = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  clone_url: string;
-  default_branch?: string;
-  full_name?: string;
-  name?: string;
-  owner?: string;
-  provider?: string;
-  provider_host?: string;
-  provider_repo_id?: string;
-};
-
-export type SandboxRepoRecord = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  archived_at?: string;
-  clone_url: string;
-  compatibility_status: string;
-  compatibility_summary?: unknown;
-  created_at: string;
-  default_branch: string;
-  full_name: string;
-  last_error?: string;
-  last_scanned_sha?: string;
-  name: string;
-  org_id: string;
-  owner: string;
-  provider: string;
-  provider_host: string;
-  provider_repo_id: string;
-  repo_id: string;
-  state: string;
-  updated_at: string;
-};
-
-export type SandboxRotateWebhookEndpointSecretResponse = {
-  /**
-   * A URL to the JSON Schema for this object.
-   */
-  readonly $schema?: string;
-  endpoint_id: string;
-  previous_retiring_at: string;
-  rotated_at: string;
-  secret: string;
-  secret_fingerprint: string;
-};
-
 export type SandboxSubmitExecutionResult = {
   /**
    * A URL to the JSON Schema for this object.
@@ -492,35 +398,16 @@ export type SandboxSubmitRequest = {
    * A URL to the JSON Schema for this object.
    */
   readonly $schema?: string;
-  default_branch?: string;
   idempotency_key: string;
   kind: string;
+  max_wall_seconds?: number;
   product_id?: string;
   provider?: string;
-  ref?: string;
-  repo?: string;
-  repo_id?: string;
-  repo_url?: string;
   run_command?: string;
   /**
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
    */
   runner_class?: string;
-};
-
-export type SandboxWebhookEndpointRecord = {
-  active: boolean;
-  created_at: string;
-  delivery_count: number;
-  endpoint_id: string;
-  integration_id: string;
-  label: string;
-  last_delivery_at?: string;
-  org_id: string;
-  provider: string;
-  provider_host: string;
-  secret_fingerprint?: string;
-  updated_at: string;
 };
 
 export type SchedulerProbeRequest = {
@@ -642,36 +529,6 @@ export type SandboxBillingPortalRequestWritable = {
   return_url: string;
 };
 
-export type SandboxCreateWebhookEndpointRequestWritable = {
-  /**
-   * Operator-visible endpoint label
-   */
-  label?: string;
-  /**
-   * Git provider to accept webhook events from
-   */
-  provider?: "forgejo";
-  /**
-   * Public git host, for example git.example.com or codeberg.org
-   */
-  provider_host: string;
-};
-
-export type SandboxCreateWebhookEndpointResponseWritable = {
-  active: boolean;
-  created_at: string;
-  delivery_count: number;
-  endpoint_id: string;
-  integration_id: string;
-  label: string;
-  provider: string;
-  provider_host: string;
-  secret: string;
-  secret_fingerprint?: string;
-  updated_at: string;
-  webhook_url: string;
-};
-
 export type SandboxExecutionLogsWritable = {
   attempt_id: string;
   execution_id: string;
@@ -683,7 +540,6 @@ export type SandboxExecutionRecordWritable = {
   billing_windows?: Array<SandboxBillingWindow> | null;
   correlation_id?: string;
   created_at: string;
-  default_branch?: string;
   execution_id: string;
   external_provider?: string;
   external_task_id?: string;
@@ -693,10 +549,6 @@ export type SandboxExecutionRecordWritable = {
   org_id: string;
   product_id: string;
   provider?: string;
-  ref?: string;
-  repo?: string;
-  repo_id?: string;
-  repo_url?: string;
   run_command?: string;
   runner_class?: string;
   source_kind?: string;
@@ -721,46 +573,6 @@ export type SandboxGitHubInstallationConnectResponseWritable = {
   state: string;
 };
 
-export type SandboxImportRepoRequestWritable = {
-  clone_url: string;
-  default_branch?: string;
-  full_name?: string;
-  name?: string;
-  owner?: string;
-  provider?: string;
-  provider_host?: string;
-  provider_repo_id?: string;
-};
-
-export type SandboxRepoRecordWritable = {
-  archived_at?: string;
-  clone_url: string;
-  compatibility_status: string;
-  compatibility_summary?: unknown;
-  created_at: string;
-  default_branch: string;
-  full_name: string;
-  last_error?: string;
-  last_scanned_sha?: string;
-  name: string;
-  org_id: string;
-  owner: string;
-  provider: string;
-  provider_host: string;
-  provider_repo_id: string;
-  repo_id: string;
-  state: string;
-  updated_at: string;
-};
-
-export type SandboxRotateWebhookEndpointSecretResponseWritable = {
-  endpoint_id: string;
-  previous_retiring_at: string;
-  rotated_at: string;
-  secret: string;
-  secret_fingerprint: string;
-};
-
 export type SandboxSubmitExecutionResultWritable = {
   attempt_id: string;
   execution_id: string;
@@ -768,15 +580,11 @@ export type SandboxSubmitExecutionResultWritable = {
 };
 
 export type SandboxSubmitRequestWritable = {
-  default_branch?: string;
   idempotency_key: string;
   kind: string;
+  max_wall_seconds?: number;
   product_id?: string;
   provider?: string;
-  ref?: string;
-  repo?: string;
-  repo_id?: string;
-  repo_url?: string;
   run_command?: string;
   /**
    * Runner class label, for example metal-4vcpu-ubuntu-2404.
@@ -1206,261 +1014,3 @@ export type BeginGithubInstallationResponses = {
 
 export type BeginGithubInstallationResponse =
   BeginGithubInstallationResponses[keyof BeginGithubInstallationResponses];
-
-export type ListReposData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/api/v1/repos";
-};
-
-export type ListReposErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListReposError = ListReposErrors[keyof ListReposErrors];
-
-export type ListReposResponses = {
-  /**
-   * OK
-   */
-  200: Array<SandboxRepoRecord> | null;
-};
-
-export type ListReposResponse = ListReposResponses[keyof ListReposResponses];
-
-export type ImportRepoData = {
-  body: SandboxImportRepoRequestWritable;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path?: never;
-  query?: never;
-  url: "/api/v1/repos";
-};
-
-export type ImportRepoErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ImportRepoError = ImportRepoErrors[keyof ImportRepoErrors];
-
-export type ImportRepoResponses = {
-  /**
-   * Created
-   */
-  201: SandboxRepoRecord;
-};
-
-export type ImportRepoResponse = ImportRepoResponses[keyof ImportRepoResponses];
-
-export type GetRepoData = {
-  body?: never;
-  path: {
-    /**
-     * Repo UUID
-     */
-    repo_id: string;
-  };
-  query?: never;
-  url: "/api/v1/repos/{repo_id}";
-};
-
-export type GetRepoErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type GetRepoError = GetRepoErrors[keyof GetRepoErrors];
-
-export type GetRepoResponses = {
-  /**
-   * OK
-   */
-  200: SandboxRepoRecord;
-};
-
-export type GetRepoResponse = GetRepoResponses[keyof GetRepoResponses];
-
-export type RescanRepoData = {
-  body?: never;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path: {
-    /**
-     * Repo UUID
-     */
-    repo_id: string;
-  };
-  query?: never;
-  url: "/api/v1/repos/{repo_id}/rescan";
-};
-
-export type RescanRepoErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type RescanRepoError = RescanRepoErrors[keyof RescanRepoErrors];
-
-export type RescanRepoResponses = {
-  /**
-   * OK
-   */
-  200: SandboxRepoRecord;
-};
-
-export type RescanRepoResponse = RescanRepoResponses[keyof RescanRepoResponses];
-
-export type ListWebhookEndpointsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/api/v1/webhook-endpoints";
-};
-
-export type ListWebhookEndpointsErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type ListWebhookEndpointsError =
-  ListWebhookEndpointsErrors[keyof ListWebhookEndpointsErrors];
-
-export type ListWebhookEndpointsResponses = {
-  /**
-   * OK
-   */
-  200: Array<SandboxWebhookEndpointRecord> | null;
-};
-
-export type ListWebhookEndpointsResponse =
-  ListWebhookEndpointsResponses[keyof ListWebhookEndpointsResponses];
-
-export type CreateWebhookEndpointData = {
-  body: SandboxCreateWebhookEndpointRequestWritable;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path?: never;
-  query?: never;
-  url: "/api/v1/webhook-endpoints";
-};
-
-export type CreateWebhookEndpointErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type CreateWebhookEndpointError =
-  CreateWebhookEndpointErrors[keyof CreateWebhookEndpointErrors];
-
-export type CreateWebhookEndpointResponses = {
-  /**
-   * Created
-   */
-  201: SandboxCreateWebhookEndpointResponse;
-};
-
-export type CreateWebhookEndpointResponse =
-  CreateWebhookEndpointResponses[keyof CreateWebhookEndpointResponses];
-
-export type DeleteWebhookEndpointData = {
-  body?: never;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path: {
-    /**
-     * Webhook endpoint UUID
-     */
-    endpoint_id: string;
-  };
-  query?: never;
-  url: "/api/v1/webhook-endpoints/{endpoint_id}";
-};
-
-export type DeleteWebhookEndpointErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type DeleteWebhookEndpointError =
-  DeleteWebhookEndpointErrors[keyof DeleteWebhookEndpointErrors];
-
-export type DeleteWebhookEndpointResponses = {
-  /**
-   * No Content
-   */
-  204: void;
-};
-
-export type DeleteWebhookEndpointResponse =
-  DeleteWebhookEndpointResponses[keyof DeleteWebhookEndpointResponses];
-
-export type RotateWebhookEndpointSecretData = {
-  body?: never;
-  headers: {
-    /**
-     * Stable caller-provided key used to make this mutation retry-safe.
-     */
-    "Idempotency-Key": string;
-  };
-  path: {
-    /**
-     * Webhook endpoint UUID
-     */
-    endpoint_id: string;
-  };
-  query?: never;
-  url: "/api/v1/webhook-endpoints/{endpoint_id}/rotate";
-};
-
-export type RotateWebhookEndpointSecretErrors = {
-  /**
-   * Error
-   */
-  default: ErrorModel;
-};
-
-export type RotateWebhookEndpointSecretError =
-  RotateWebhookEndpointSecretErrors[keyof RotateWebhookEndpointSecretErrors];
-
-export type RotateWebhookEndpointSecretResponses = {
-  /**
-   * OK
-   */
-  200: SandboxRotateWebhookEndpointSecretResponse;
-};
-
-export type RotateWebhookEndpointSecretResponse =
-  RotateWebhookEndpointSecretResponses[keyof RotateWebhookEndpointSecretResponses];

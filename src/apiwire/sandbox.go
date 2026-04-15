@@ -99,7 +99,7 @@ type SandboxAttemptRecord struct {
 	ExecID        string     `json:"exec_id,omitempty"`
 	BillingJobID  int64      `json:"billing_job_id,omitempty" minimum:"0" maximum:"9007199254740991"`
 	FailureReason string     `json:"failure_reason,omitempty"`
-	ExitCode      int        `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
+	ExitCode      *int       `json:"exit_code,omitempty" minimum:"0" maximum:"255"`
 	DurationMs    int64      `json:"duration_ms,omitempty" minimum:"0" maximum:"9007199254740991"`
 	ZFSWritten    int64      `json:"zfs_written,omitempty" minimum:"0" maximum:"9007199254740991"`
 	StdoutBytes   int64      `json:"stdout_bytes,omitempty" minimum:"0" maximum:"9007199254740991"`
