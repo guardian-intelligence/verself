@@ -13,6 +13,14 @@ import (
 
 	"github.com/forge-metal/vm-orchestrator/vmproto"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	guestBridgeDialTimeout = 250 * time.Millisecond
+	guestBridgeAckTimeout  = 500 * time.Millisecond
+	guestBridgeRetryDelay  = 50 * time.Millisecond
 )
 
 type guestControl struct {
@@ -28,51 +36,253 @@ type guestControl struct {
 
 type checkpointHandler func(vmproto.CheckpointRequest) vmproto.CheckpointResponse
 
-func connectGuestControl(ctx context.Context, udsPath string, port int) (*guestControl, error) {
-	conn, reader, err := connectGuestBridge(ctx, udsPath, port)
+func connectGuestControl(ctx context.Context, udsPath string, port int, leaseID string) (*guestControl, error) {
+	conn, reader, err := connectGuestBridge(ctx, udsPath, port, leaseID)
 	if err != nil {
 		return nil, err
 	}
 	return &guestControl{conn: conn, reader: reader, codec: vmproto.NewCodec(reader, conn)}, nil
 }
 
-func connectGuestBridge(ctx context.Context, udsPath string, port int) (net.Conn, *bufio.Reader, error) {
-	for {
-		conn, err := net.DialTimeout("unix", udsPath, 250*time.Millisecond)
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, ctx.Err())
-			case <-time.After(50 * time.Millisecond):
-				continue
-			}
+func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID string) (net.Conn, *bufio.Reader, error) {
+	connectCtx, connectSpan := tracer.Start(ctx, "vmorchestrator.guest.vsock_proxy_connect",
+		trace.WithAttributes(
+			attribute.String("lease.id", leaseID),
+			attribute.String("socket.path", udsPath),
+			attribute.Int("guest.port", port),
+		),
+	)
+	attempts := 0
+	var lastErr error
+	var lastRetryErr error
+	defer func() {
+		connectSpan.SetAttributes(attribute.Int("guest.vsock.attempts", attempts))
+		if lastRetryErr != nil {
+			connectSpan.SetAttributes(attribute.String("guest.vsock.last_retry_error", lastRetryErr.Error()))
 		}
-		reader := bufio.NewReader(conn)
-		if _, err := io.WriteString(conn, fmt.Sprintf("CONNECT %d\n", port)); err != nil {
-			conn.Close()
+		if lastErr != nil {
+			connectSpan.SetAttributes(attribute.String("guest.vsock.last_error", lastErr.Error()))
+		}
+		connectSpan.End()
+	}()
+
+	for {
+		attempts++
+		attemptCtx, attemptSpan := tracer.Start(connectCtx, "vmorchestrator.guest.vsock_proxy_connect_attempt",
+			trace.WithAttributes(
+				attribute.String("socket.path", udsPath),
+				attribute.String("lease.id", leaseID),
+				attribute.Int("guest.port", port),
+				attribute.Int("guest.vsock.attempt", attempts),
+			),
+		)
+
+		_, dialSpan := tracer.Start(attemptCtx, "vmorchestrator.guest.vsock_proxy_unix_dial",
+			trace.WithAttributes(
+				attribute.String("socket.path", udsPath),
+				attribute.String("lease.id", leaseID),
+				attribute.Int("guest.port", port),
+				attribute.Int("guest.vsock.attempt", attempts),
+				attribute.Int64("guest.vsock.dial_timeout_ms", guestBridgeDialTimeout.Milliseconds()),
+			),
+		)
+		conn, err := net.DialTimeout("unix", udsPath, guestBridgeDialTimeout)
+		endGuestBridgeSpan(dialSpan, err)
+		if err != nil {
+			lastErr = err
+			lastRetryErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "retry"),
+				attribute.String("guest.vsock.retry_stage", "unix_dial"),
+				attribute.String("guest.vsock.retry_error", err.Error()),
+			)
+			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", ctx.Err())
-			case <-time.After(50 * time.Millisecond):
-				continue
+				lastErr = ctx.Err()
+				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
+				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, ctx.Err())
+			default:
 			}
+			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "unix_dial"); err != nil {
+				lastErr = err
+				connectSpan.SetStatus(codes.Error, err.Error())
+				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, err)
+			}
+			continue
+		}
+		_, writeSpan := tracer.Start(attemptCtx, "vmorchestrator.guest.vsock_proxy_connect_command_write",
+			trace.WithAttributes(
+				attribute.String("socket.path", udsPath),
+				attribute.String("lease.id", leaseID),
+				attribute.Int("guest.port", port),
+				attribute.Int("guest.vsock.attempt", attempts),
+			),
+		)
+		if _, err := io.WriteString(conn, fmt.Sprintf("CONNECT %d\n", port)); err != nil {
+			endGuestBridgeSpan(writeSpan, err)
+			conn.Close()
+			lastErr = err
+			lastRetryErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "retry"),
+				attribute.String("guest.vsock.retry_stage", "connect_command_write"),
+				attribute.String("guest.vsock.retry_error", err.Error()),
+			)
+			attemptSpan.End()
+			select {
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
+				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", ctx.Err())
+			default:
+			}
+			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "connect_command_write"); err != nil {
+				lastErr = err
+				connectSpan.SetStatus(codes.Error, err.Error())
+				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", err)
+			}
+			continue
+		}
+		endGuestBridgeSpan(writeSpan, nil)
+		reader := bufio.NewReader(conn)
+		_, ackSpan := tracer.Start(attemptCtx, "vmorchestrator.guest.vsock_proxy_ack_read",
+			trace.WithAttributes(
+				attribute.String("socket.path", udsPath),
+				attribute.String("lease.id", leaseID),
+				attribute.Int("guest.port", port),
+				attribute.Int("guest.vsock.attempt", attempts),
+				attribute.Int64("guest.vsock.ack_timeout_ms", guestBridgeAckTimeout.Milliseconds()),
+			),
+		)
+		// The vsock proxy can accept the Unix socket before the guest port is listening, so ACK reads must be bounded.
+		if err := conn.SetReadDeadline(time.Now().Add(guestBridgeAckTimeout)); err != nil {
+			endGuestBridgeSpan(ackSpan, err)
+			conn.Close()
+			lastErr = err
+			lastRetryErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "retry"),
+				attribute.String("guest.vsock.retry_stage", "ack_deadline_set"),
+				attribute.String("guest.vsock.retry_error", err.Error()),
+			)
+			attemptSpan.End()
+			select {
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
+				return nil, nil, fmt.Errorf("set guest bridge ack deadline: %w", ctx.Err())
+			default:
+			}
+			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_deadline_set"); err != nil {
+				lastErr = err
+				connectSpan.SetStatus(codes.Error, err.Error())
+				return nil, nil, fmt.Errorf("set guest bridge ack deadline: %w", err)
+			}
+			continue
 		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
+			endGuestBridgeSpan(ackSpan, err)
 			conn.Close()
+			lastErr = err
+			lastRetryErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "retry"),
+				attribute.String("guest.vsock.retry_stage", "ack_read"),
+				attribute.String("guest.vsock.retry_error", err.Error()),
+			)
+			attemptSpan.End()
 			select {
 			case <-ctx.Done():
+				lastErr = ctx.Err()
+				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
 				return nil, nil, fmt.Errorf("read guest bridge ack: %w", ctx.Err())
-			case <-time.After(50 * time.Millisecond):
-				continue
+			default:
 			}
+			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_read"); err != nil {
+				lastErr = err
+				connectSpan.SetStatus(codes.Error, err.Error())
+				return nil, nil, fmt.Errorf("read guest bridge ack: %w", err)
+			}
+			continue
 		}
-		if !strings.HasPrefix(strings.TrimSpace(line), "OK ") {
+		endGuestBridgeSpan(ackSpan, nil)
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
 			conn.Close()
-			return nil, nil, fmt.Errorf("unexpected guest bridge ack %q", strings.TrimSpace(line))
+			lastErr = err
+			lastRetryErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "retry"),
+				attribute.String("guest.vsock.retry_stage", "ack_deadline_clear"),
+				attribute.String("guest.vsock.retry_error", err.Error()),
+			)
+			attemptSpan.End()
+			select {
+			case <-ctx.Done():
+				lastErr = ctx.Err()
+				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
+				return nil, nil, fmt.Errorf("clear guest bridge ack deadline: %w", ctx.Err())
+			default:
+			}
+			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_deadline_clear"); err != nil {
+				lastErr = err
+				connectSpan.SetStatus(codes.Error, err.Error())
+				return nil, nil, fmt.Errorf("clear guest bridge ack deadline: %w", err)
+			}
+			continue
 		}
+		ack := strings.TrimSpace(line)
+		if !strings.HasPrefix(ack, "OK ") {
+			conn.Close()
+			err := fmt.Errorf("unexpected guest bridge ack %q", ack)
+			lastErr = err
+			attemptSpan.SetAttributes(
+				attribute.String("guest.vsock.attempt_result", "terminal_error"),
+				attribute.String("guest.vsock.ack", ack),
+			)
+			attemptSpan.RecordError(err)
+			attemptSpan.SetStatus(codes.Error, err.Error())
+			attemptSpan.End()
+			connectSpan.SetStatus(codes.Error, err.Error())
+			return nil, nil, err
+		}
+		attemptSpan.SetAttributes(
+			attribute.String("guest.vsock.attempt_result", "success"),
+			attribute.String("guest.vsock.ack", ack),
+		)
+		attemptSpan.End()
+		lastErr = nil
+		connectSpan.SetAttributes(attribute.Bool("guest.vsock.connected", true))
 		return conn, reader, nil
 	}
+}
+
+func traceGuestBridgeRetrySleep(ctx context.Context, leaseID string, attempt, port int, stage string) error {
+	_, sleepSpan := tracer.Start(ctx, "vmorchestrator.guest.vsock_proxy_retry_sleep",
+		trace.WithAttributes(
+			attribute.String("lease.id", leaseID),
+			attribute.Int("guest.port", port),
+			attribute.Int("guest.vsock.attempt", attempt),
+			attribute.String("guest.vsock.retry_stage", stage),
+			attribute.Int64("guest.vsock.retry_sleep_ms", guestBridgeRetryDelay.Milliseconds()),
+		),
+	)
+	defer sleepSpan.End()
+	select {
+	case <-ctx.Done():
+		sleepSpan.SetAttributes(attribute.Bool("guest.vsock.retry_sleep_interrupted", true))
+		return ctx.Err()
+	case <-time.After(guestBridgeRetryDelay):
+		return nil
+	}
+}
+
+func endGuestBridgeSpan(span trace.Span, err error) {
+	if err != nil {
+		span.SetAttributes(attribute.String("guest.vsock.error", err.Error()))
+	}
+	span.End()
 }
 
 func (c *guestControl) close() error {
@@ -97,18 +307,19 @@ func (c *guestControl) recv() (vmproto.Envelope, error) {
 	return c.codec.ReadEnvelope()
 }
 
-func (c *guestControl) awaitHello(ctx context.Context) error {
+func (c *guestControl) awaitHello(ctx context.Context) (vmproto.Hello, error) {
 	env, err := c.recv()
 	if err != nil {
-		return fmt.Errorf("read guest hello: %w", err)
+		return vmproto.Hello{}, fmt.Errorf("read guest hello: %w", err)
 	}
 	if env.Type != vmproto.TypeHello {
-		return unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
+		return vmproto.Hello{}, unexpectedGuestControlFrame("await_guest_hello", env.Type, vmproto.TypeHello)
 	}
-	if _, err := vmproto.DecodePayload[vmproto.Hello](env); err != nil {
-		return guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
+	hello, err := vmproto.DecodePayload[vmproto.Hello](env)
+	if err != nil {
+		return vmproto.Hello{}, guestProtocolError("await_guest_hello", "decode hello payload: %v", err)
 	}
-	return nil
+	return hello, nil
 }
 
 func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig) error {

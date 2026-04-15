@@ -54,23 +54,37 @@ func main() {
 
 func runInit() error {
 	bootStart := time.Now()
+	bootTimings := vmproto.GuestBootTimings{
+		InitStartMS:                    0,
+		MountVirtualFilesystemsStartMS: 0,
+	}
 	bridgeFault, err := parseBridgeFaultMode(os.Getenv(bridgeFaultEnvVar))
 	if err != nil {
 		return err
 	}
 
 	mountVirtualFilesystems()
+	bootTimings.MountVirtualFilesystemsDoneMS = elapsedBootMS(bootStart)
+	bootTimings.ConfigureLoopbackStartMS = elapsedBootMS(bootStart)
 	if err := configureLoopback(); err != nil {
 		return fmt.Errorf("configure loopback: %w", err)
 	}
+	bootTimings.ConfigureLoopbackDoneMS = elapsedBootMS(bootStart)
+	bootTimings.SetSubreaperStartMS = elapsedBootMS(bootStart)
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSetChildSubreaper, 1, 0); errno != 0 {
 		fmt.Fprintf(os.Stderr, "%s warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", logPrefix, errno)
 	}
+	bootTimings.SetSubreaperDoneMS = elapsedBootMS(bootStart)
+	bootTimings.StartTelemetryStartMS = elapsedBootMS(bootStart)
 	maybeStartGuestTelemetry()
+	bootTimings.StartTelemetryDoneMS = elapsedBootMS(bootStart)
 
+	bootTimings.SignalNotifyStartMS = elapsedBootMS(bootStart)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
+	bootTimings.SignalNotifyDoneMS = elapsedBootMS(bootStart)
 
+	bootTimings.VSockListenStartMS = elapsedBootMS(bootStart)
 	listener, err := listenVsockListener()
 	if err != nil {
 		return fmt.Errorf("listen vsock: %w", err)
@@ -78,15 +92,22 @@ func runInit() error {
 	defer listener.Close()
 
 	readyAt := time.Now()
+	bootTimings.VSockListenDoneMS = readyAt.Sub(bootStart).Milliseconds()
 	fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
 
+	bootTimings.VSockAcceptStartMS = elapsedBootMS(bootStart)
 	conn, err := listener.Accept()
 	if err != nil {
 		return fmt.Errorf("accept vsock connection: %w", err)
 	}
+	bootTimings.VSockAcceptDoneMS = elapsedBootMS(bootStart)
 	defer conn.Close()
 
-	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault)
+	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault, bootTimings)
+}
+
+func elapsedBootMS(start time.Time) int64 {
+	return time.Since(start).Milliseconds()
 }
 
 func parseBridgeFaultMode(raw string) (bridgeFaultMode, error) {

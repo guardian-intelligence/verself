@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var ErrTelemetryHelloFirst = errors.New("telemetry stream first frame must be hello")
@@ -18,7 +20,12 @@ const telemetryFaultProfileEnvVar = "FORGE_METAL_TELEMETRY_FAULT_PROFILE"
 func streamGuestTelemetry(ctx context.Context, udsPath, leaseID string, observer LeaseObserver, logger *slog.Logger, faultProfile *telemetryFaultProfile) error {
 	observer = normalizeLeaseObserver(observer)
 
-	conn, reader, err := connectGuestBridge(ctx, udsPath, guestTelemetryPort)
+	connectCtx, endConnectSpan := startStepSpan(ctx, "vmorchestrator.guest.telemetry_connect",
+		attribute.String("lease.id", leaseID),
+		attribute.Int("guest.port", guestTelemetryPort),
+	)
+	conn, reader, err := connectGuestBridge(connectCtx, udsPath, guestTelemetryPort, leaseID)
+	endConnectSpan(err)
 	if err != nil {
 		return err
 	}

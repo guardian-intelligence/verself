@@ -529,7 +529,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 		attribute.String("lease.id", leaseID),
 		attribute.String("socket.path", controlSockHost),
 	)
-	control, err := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort)
+	control, err := connectGuestControl(controlCtx, controlSockHost, vmproto.GuestPort, leaseID)
 	endControlConnectSpan(err)
 	if err != nil {
 		return nil, fmt.Errorf("connect guest control: %w", err)
@@ -538,11 +538,14 @@ func (o *Orchestrator) bootDataset(ctx context.Context, leaseID string, spec Lea
 	runtime.cleanups = append(runtime.cleanups, func() { _ = control.close() })
 
 	_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello", attribute.String("lease.id", leaseID))
-	if err := control.awaitHello(ctx); err != nil {
+	hello, err := control.awaitHello(ctx)
+	helloObservedAt := time.Now()
+	if err != nil {
 		endHelloSpan(err)
 		return nil, err
 	}
 	endHelloSpan(nil)
+	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
 	if err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort)); err != nil {
 		return nil, err
 	}
