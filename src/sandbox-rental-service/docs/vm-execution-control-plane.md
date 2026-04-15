@@ -42,6 +42,40 @@ Direct execution flow:
    windows, releasing any lease ID already recorded, and terminalizing the
    attempt.
 
+Single-node VM concurrency budget:
+
+- `SANDBOX_EXECUTION_MAX_WORKERS=16` is the production default for the current
+  single-node bare-metal profile: 24 logical CPUs, 93 GiB RAM, no swap, and the
+  `metal-4vcpu-ubuntu-2404` runner class at 4 vCPU / 4096 MiB / 8 GiB rootfs.
+- Treat the worker count as the customer VM admission limit. One River execution
+  worker can hold one active vm-orchestrator lease, so raising this value raises
+  the maximum number of simultaneous Firecracker VMs, TAP slots, ZFS clones,
+  guest bridges, and billing windows.
+- The default is based on public API proof runs, not theoretical vCPU math. On
+  2026-04-15, `sandbox-mixedcpu4-16w-2048m-128d-3cpu-20260415T075732Z` ran
+  200 submissions at 16 workers with each VM touching 2 GiB RAM, running four
+  CPU-bound workers for 3 seconds, and writing/fsyncing/reading 128 MiB. It
+  passed with exec p50 7.53s, exec p99 8.97s, max 9.21s, max observed 1-minute
+  load 35.07, and minimum observed `MemAvailable` 46.07 GiB.
+- 20 and 24 workers are proven burst settings for smaller CI-shaped jobs, not
+  defaults for arbitrary customer workloads. The same four-worker mixed profile
+  passed at 20 workers in
+  `sandbox-mixedcpu4-20w-2048m-128d-3cpu-20260415T075342Z`, but exec p99 grew
+  to 11.45s and load peaked at 43.79. It passed at 24 workers in
+  `sandbox-mixedcpu4-24w-2048m-128d-3cpu-20260415T080126Z`, but exec p99 grew
+  to 11.97s, max execution duration to 13.50s, boot p99 to 3.32s, load peaked
+  at 52.13, and minimum observed `MemAvailable` fell to 26.59 GiB.
+- Do not set the global default above 16 until admission control distinguishes
+  full-memory arbitrary workloads from constrained CI runner workloads. A future
+  CI runner class may use a higher class-specific limit after it has explicit
+  memory admission, class-local proof runs, and tail-latency SLOs.
+- The current boot-time bottleneck is guest readiness, not Firecracker launch.
+  Across these runs `vmorchestrator.firecracker.instance_start` stayed in the
+  tens of milliseconds, while `vmorchestrator.guest.control_connect` dominated
+  lease boot at roughly 1.0-1.4s p50 and worsened under CPU pressure. Direct
+  netlink can still improve TAP correctness and p99 setup, but it is not the
+  lever that removes the current ~1s boot floor.
+
 Expected proof surface:
 
 - PostgreSQL shows each attempt moving through
