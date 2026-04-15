@@ -211,6 +211,7 @@ export const vSandboxAttemptRecord = v.strictObject({
       v.maxValue(BigInt(9007199254740991)),
     ),
   ),
+  exec_id: v.optional(v.string()),
   exit_code: v.optional(
     v.pipe(
       v.union([v.number(), v.string(), v.bigint()]),
@@ -220,7 +221,7 @@ export const vSandboxAttemptRecord = v.strictObject({
     ),
   ),
   failure_reason: v.optional(v.string()),
-  orchestrator_run_id: v.optional(v.string()),
+  lease_id: v.optional(v.string()),
   started_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
   state: v.string(),
   stderr_bytes: v.optional(
@@ -315,34 +316,6 @@ export const vSandboxBillingWindow = v.strictObject({
   window_start: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vSandboxCreateWebhookEndpointRequest = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  label: v.optional(v.pipe(v.string(), v.maxLength(255))),
-  provider: v.optional(v.picklist(["forgejo"])),
-  provider_host: v.pipe(v.string(), v.maxLength(255)),
-});
-
-export const vSandboxCreateWebhookEndpointResponse = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  active: v.boolean(),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  delivery_count: v.pipe(
-    v.union([v.number(), v.string(), v.bigint()]),
-    v.transform((x) => BigInt(x)),
-    v.minValue(BigInt(0)),
-    v.maxValue(BigInt(9007199254740991)),
-  ),
-  endpoint_id: v.string(),
-  integration_id: v.string(),
-  label: v.string(),
-  provider: v.string(),
-  provider_host: v.string(),
-  secret: v.string(),
-  secret_fingerprint: v.optional(v.string()),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  webhook_url: v.string(),
-});
-
 export const vSandboxExecutionLogs = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   attempt_id: v.string(),
@@ -356,7 +329,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
-  default_branch: v.optional(v.string()),
   execution_id: v.string(),
   external_provider: v.optional(v.string()),
   external_task_id: v.optional(v.string()),
@@ -366,10 +338,6 @@ export const vSandboxExecutionRecord = v.strictObject({
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
-  ref: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  repo_id: v.optional(v.string()),
-  repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
   source_kind: v.optional(v.string()),
@@ -396,49 +364,6 @@ export const vSandboxGitHubInstallationRecord = v.strictObject({
   updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
-export const vSandboxImportRepoRequest = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  clone_url: v.string(),
-  default_branch: v.optional(v.string()),
-  full_name: v.optional(v.string()),
-  name: v.optional(v.string()),
-  owner: v.optional(v.string()),
-  provider: v.optional(v.string()),
-  provider_host: v.optional(v.string()),
-  provider_repo_id: v.optional(v.string()),
-});
-
-export const vSandboxRepoRecord = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  archived_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  clone_url: v.string(),
-  compatibility_status: v.string(),
-  compatibility_summary: v.optional(v.unknown()),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  default_branch: v.string(),
-  full_name: v.string(),
-  last_error: v.optional(v.string()),
-  last_scanned_sha: v.optional(v.string()),
-  name: v.string(),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  owner: v.string(),
-  provider: v.string(),
-  provider_host: v.string(),
-  provider_repo_id: v.string(),
-  repo_id: v.string(),
-  state: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-});
-
-export const vSandboxRotateWebhookEndpointSecretResponse = v.strictObject({
-  $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  endpoint_id: v.string(),
-  previous_retiring_at: v.pipe(v.string(), v.isoTimestamp()),
-  rotated_at: v.pipe(v.string(), v.isoTimestamp()),
-  secret: v.string(),
-  secret_fingerprint: v.string(),
-});
-
 export const vSandboxSubmitExecutionResult = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
   attempt_id: v.string(),
@@ -448,37 +373,20 @@ export const vSandboxSubmitExecutionResult = v.strictObject({
 
 export const vSandboxSubmitRequest = v.strictObject({
   $schema: v.optional(v.pipe(v.pipe(v.string(), v.url()), v.readonly())),
-  default_branch: v.optional(v.string()),
   idempotency_key: v.pipe(v.string(), v.maxLength(128)),
   kind: v.string(),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
-  ref: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  repo_id: v.optional(v.string()),
-  repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
-});
-
-export const vSandboxWebhookEndpointRecord = v.strictObject({
-  active: v.boolean(),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  delivery_count: v.pipe(
-    v.union([v.number(), v.string(), v.bigint()]),
-    v.transform((x) => BigInt(x)),
-    v.minValue(BigInt(0)),
-    v.maxValue(BigInt(9007199254740991)),
-  ),
-  endpoint_id: v.string(),
-  integration_id: v.string(),
-  label: v.string(),
-  last_delivery_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  provider: v.string(),
-  provider_host: v.string(),
-  secret_fingerprint: v.optional(v.string()),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
 });
 
 export const vSchedulerProbeRequest = v.strictObject({
@@ -576,32 +484,6 @@ export const vSandboxBillingPortalRequestWritable = v.strictObject({
   return_url: v.pipe(v.string(), v.maxLength(2048)),
 });
 
-export const vSandboxCreateWebhookEndpointRequestWritable = v.strictObject({
-  label: v.optional(v.pipe(v.string(), v.maxLength(255))),
-  provider: v.optional(v.picklist(["forgejo"])),
-  provider_host: v.pipe(v.string(), v.maxLength(255)),
-});
-
-export const vSandboxCreateWebhookEndpointResponseWritable = v.strictObject({
-  active: v.boolean(),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  delivery_count: v.pipe(
-    v.union([v.number(), v.string(), v.bigint()]),
-    v.transform((x) => BigInt(x)),
-    v.minValue(BigInt(0)),
-    v.maxValue(BigInt(9007199254740991)),
-  ),
-  endpoint_id: v.string(),
-  integration_id: v.string(),
-  label: v.string(),
-  provider: v.string(),
-  provider_host: v.string(),
-  secret: v.string(),
-  secret_fingerprint: v.optional(v.string()),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-  webhook_url: v.string(),
-});
-
 export const vSandboxExecutionLogsWritable = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
@@ -613,7 +495,6 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   billing_windows: v.nullish(v.array(vSandboxBillingWindow)),
   correlation_id: v.optional(v.string()),
   created_at: v.pipe(v.string(), v.isoTimestamp()),
-  default_branch: v.optional(v.string()),
   execution_id: v.string(),
   external_provider: v.optional(v.string()),
   external_task_id: v.optional(v.string()),
@@ -623,10 +504,6 @@ export const vSandboxExecutionRecordWritable = v.strictObject({
   org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
   product_id: v.string(),
   provider: v.optional(v.string()),
-  ref: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  repo_id: v.optional(v.string()),
-  repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
   source_kind: v.optional(v.string()),
@@ -642,46 +519,6 @@ export const vSandboxGitHubInstallationConnectResponseWritable = v.strictObject(
   state: v.string(),
 });
 
-export const vSandboxImportRepoRequestWritable = v.strictObject({
-  clone_url: v.string(),
-  default_branch: v.optional(v.string()),
-  full_name: v.optional(v.string()),
-  name: v.optional(v.string()),
-  owner: v.optional(v.string()),
-  provider: v.optional(v.string()),
-  provider_host: v.optional(v.string()),
-  provider_repo_id: v.optional(v.string()),
-});
-
-export const vSandboxRepoRecordWritable = v.strictObject({
-  archived_at: v.optional(v.pipe(v.string(), v.isoTimestamp())),
-  clone_url: v.string(),
-  compatibility_status: v.string(),
-  compatibility_summary: v.optional(v.unknown()),
-  created_at: v.pipe(v.string(), v.isoTimestamp()),
-  default_branch: v.string(),
-  full_name: v.string(),
-  last_error: v.optional(v.string()),
-  last_scanned_sha: v.optional(v.string()),
-  name: v.string(),
-  org_id: v.pipe(v.string(), v.regex(/^[0-9]+$/)),
-  owner: v.string(),
-  provider: v.string(),
-  provider_host: v.string(),
-  provider_repo_id: v.string(),
-  repo_id: v.string(),
-  state: v.string(),
-  updated_at: v.pipe(v.string(), v.isoTimestamp()),
-});
-
-export const vSandboxRotateWebhookEndpointSecretResponseWritable = v.strictObject({
-  endpoint_id: v.string(),
-  previous_retiring_at: v.pipe(v.string(), v.isoTimestamp()),
-  rotated_at: v.pipe(v.string(), v.isoTimestamp()),
-  secret: v.string(),
-  secret_fingerprint: v.string(),
-});
-
 export const vSandboxSubmitExecutionResultWritable = v.strictObject({
   attempt_id: v.string(),
   execution_id: v.string(),
@@ -689,15 +526,18 @@ export const vSandboxSubmitExecutionResultWritable = v.strictObject({
 });
 
 export const vSandboxSubmitRequestWritable = v.strictObject({
-  default_branch: v.optional(v.string()),
   idempotency_key: v.pipe(v.string(), v.maxLength(128)),
   kind: v.string(),
+  max_wall_seconds: v.optional(
+    v.pipe(
+      v.union([v.number(), v.string(), v.bigint()]),
+      v.transform((x) => BigInt(x)),
+      v.minValue(BigInt(1)),
+      v.maxValue(BigInt(9007199254740991)),
+    ),
+  ),
   product_id: v.optional(v.string()),
   provider: v.optional(v.string()),
-  ref: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  repo_id: v.optional(v.string()),
-  repo_url: v.optional(v.string()),
   run_command: v.optional(v.string()),
   runner_class: v.optional(v.string()),
 });
@@ -827,83 +667,3 @@ export const vBeginGithubInstallationHeaders = v.object({
  * Created
  */
 export const vBeginGithubInstallationResponse = vSandboxGitHubInstallationConnectResponse;
-
-/**
- * OK
- */
-export const vListReposResponse = v.nullable(v.array(vSandboxRepoRecord));
-
-export const vImportRepoBody = vSandboxImportRepoRequestWritable;
-
-export const vImportRepoHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-/**
- * Created
- */
-export const vImportRepoResponse = vSandboxRepoRecord;
-
-export const vGetRepoPath = v.object({
-  repo_id: v.string(),
-});
-
-/**
- * OK
- */
-export const vGetRepoResponse = vSandboxRepoRecord;
-
-export const vRescanRepoHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-export const vRescanRepoPath = v.object({
-  repo_id: v.string(),
-});
-
-/**
- * OK
- */
-export const vRescanRepoResponse = vSandboxRepoRecord;
-
-/**
- * OK
- */
-export const vListWebhookEndpointsResponse = v.nullable(v.array(vSandboxWebhookEndpointRecord));
-
-export const vCreateWebhookEndpointBody = vSandboxCreateWebhookEndpointRequestWritable;
-
-export const vCreateWebhookEndpointHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-/**
- * Created
- */
-export const vCreateWebhookEndpointResponse = vSandboxCreateWebhookEndpointResponse;
-
-export const vDeleteWebhookEndpointHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-export const vDeleteWebhookEndpointPath = v.object({
-  endpoint_id: v.string(),
-});
-
-/**
- * No Content
- */
-export const vDeleteWebhookEndpointResponse = v.void();
-
-export const vRotateWebhookEndpointSecretHeaders = v.object({
-  "Idempotency-Key": v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
-});
-
-export const vRotateWebhookEndpointSecretPath = v.object({
-  endpoint_id: v.string(),
-});
-
-/**
- * OK
- */
-export const vRotateWebhookEndpointSecretResponse = vSandboxRotateWebhookEndpointSecretResponse;
